@@ -81,6 +81,11 @@ type UserPatchSlackID struct {
 	SlackID string `json:"slack_id" binding:"required" example:"U053ELZHB53"`
 }
 
+type UserGroup struct {
+	// Name of the user group
+	Name string `json:"name" binding:"required" example:"engineering"`
+}
+
 type UserInfo struct {
 	User `json:",inline"`
 	// DEPRECATED in flavor of role

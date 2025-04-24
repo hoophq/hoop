@@ -554,8 +554,8 @@ func PatchSlackID(c *gin.Context) {
 //	@Description	List all groups from all users
 //	@Tags			User Management
 //	@Produce		json
-//	@Success		200	{array}		string
-//	@Failure		500	{object}	openapi.HTTPError
+//	@Success		200	{array}		string	"Array of group names"
+//	@Failure		500	{object}	openapi.HTTPError	"{"message": "failed listing groups"}"
 //	@Router			/users/groups [get]
 func ListAllGroups(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -579,6 +579,80 @@ func ListAllGroups(c *gin.Context) {
 		groupsList = append(groupsList, groupName)
 	}
 	c.JSON(http.StatusOK, groupsList)
+}
+
+// CreateGroup
+//
+//	@Summary		Create User Group
+//	@Description	Create a new user group
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body	openapi.UserGroup	true	"Group object"
+//	@Success		201		{object}	openapi.UserGroup	"{"name": "string"}"
+//	@Failure		400		{object}	openapi.HTTPError	"{"message": "error message"}"
+//	@Failure		409		{object}	openapi.HTTPError	"{"message": "group already exists"}"
+//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
+//	@Router			/users/groups [post]
+func CreateGroup(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	var req openapi.UserGroup
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
+		if errors.Is(err, models.ErrAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
+			return
+		}
+		log.Errorf("failed creating group, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating group"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, req)
+}
+
+// DeleteGroup
+//
+//	@Summary		Delete User Group
+//	@Description	Delete a user group
+//	@Tags			User Management
+//	@Produce		json
+//	@Param			name	path	string	true	"The name of the group to delete"
+//	@Success		204		"No Content"
+//	@Failure		404		{object}	openapi.HTTPError	"{"message": "group not found"}"
+//	@Failure		422		{object}	openapi.HTTPError	"{"message": "cannot delete admin group"}"
+//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
+//	@Router			/users/groups/{name} [delete]
+func DeleteGroup(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	name := c.Param("name")
+
+	// Prevent deletion of admin group only
+	if name == types.GroupAdmin {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("cannot delete admin group %s", name)})
+		return
+	}
+
+	// Delete all instances of this group
+	if err := models.DeleteUserGroup(ctx.OrgID, name); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
+			return
+		}
+		log.Errorf("failed deleting group, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting group"})
+		return
+	}
+
+	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 func isValidMailAddress(email string) bool {

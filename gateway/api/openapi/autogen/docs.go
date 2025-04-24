@@ -3491,7 +3491,7 @@ const docTemplate = `{
                 "summary": "List User Groups",
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Array of group names",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -3500,7 +3500,101 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "{\"message\": \"failed listing groups\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new user group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Create User Group",
+                "parameters": [
+                    {
+                        "description": "Group object",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserGroup"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "{\"name\": \"string\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserGroup"
+                        }
+                    },
+                    "400": {
+                        "description": "{\"message\": \"error message\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "{\"message\": \"group already exists\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "{\"message\": \"server error\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/groups/{name}": {
+            "delete": {
+                "description": "Delete a user group",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Delete User Group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the group to delete",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "{\"message\": \"group not found\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "{\"message\": \"cannot delete admin group\"}",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "{\"message\": \"server error\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -4932,6 +5026,13 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {}
                 },
+                "connection_ids": {
+                    "description": "The connection IDs associated with this template",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "created_at": {
                     "description": "The time when the template was created",
                     "type": "string"
@@ -4987,6 +5088,13 @@ const docTemplate = `{
                     "description": "Cmdb Types are custom fields integrated with the Jira Assets API\n\n\t\t{\n\t\t  \"items\": [\n\t\t    {\n\t\t      \"description\": \"Service Field\",\n\t\t      \"jira_field\": \"customfield_10110\",\n\t\t      \"jira_object_type\": \"Service\",\n\t\t      \"required\": true,\n\t\t      \"value\": \"mydb-prod\"\n\t\t    }\n\t\t  ]\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "connection_ids": {
+                    "description": "The connection IDs to associate with this template",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "description": {
                     "description": "The description of the template",
@@ -6393,6 +6501,19 @@ const docTemplate = `{
                     "description": "DEPRECATED in flavor of role",
                     "type": "boolean",
                     "readOnly": true
+                }
+            }
+        },
+        "openapi.UserGroup": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Name of the user group",
+                    "type": "string",
+                    "example": "engineering"
                 }
             }
         },
