@@ -1,16 +1,13 @@
 #!/bin/bash
 
 : "${POSTGRES_DB_URI:?env is required}"
+: "${DEFAULT_AGENT_GRPC_HOST:-"127.0.0.1:8009"}"
+
 SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 set -eo pipefail
 SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
 
-echo "--> wait until gateway is ready ..."
-until curl -s -f -o /dev/null "http://127.0.0.1:8009/api/healthz"
-do
-  sleep 1
-done
-echo "--> gateway is ready, starting default agent ..."
+echo "--> starting default agent ..."
 
 psql -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" <<EOF
 BEGIN;
@@ -20,4 +17,10 @@ INSERT INTO agents (id, org_id, name, mode, key_hash, status)
     ON CONFLICT DO NOTHING;
 COMMIT;
 EOF
-HOOP_KEY=grpc://default:$SECRET_KEY@127.0.0.1:8010?mode=standard hoop start agent
+
+GRPC_SCHEME=grpcs
+if [[ -z $TLS_CA ]]; then
+  GRPC_SCHEME=grpc
+fi
+
+HOOP_TLSCA=$TLS_CA HOOP_KEY="${GRPC_SCHEME}://default:${SECRET_KEY}@${DEFAULT_AGENT_GRPC_HOST}?mode=standard" hoop start agent

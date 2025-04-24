@@ -17,6 +17,7 @@ defaultAgent:
   imageRepository: 'hoophq/hoopdev'
   imageTag: latest
   imagePullPolicy: Always
+  grpcHost: 127.0.0.1:8009
 
 ## Set pod annotations
 ##
@@ -42,6 +43,20 @@ config:
   notification: {}
   #   slackBotToken: ''
   #   bridgeUrl: ''
+
+mainService:
+  # -- Annotations to add in the main service
+  annotations: {}
+    # beta.cloud.google.com/backend-config: '{"ports": {"http": "hoopgateway-http", "grpc": "hoopgateway-grpc"}}'
+    # cloud.google.com/app-protocols: '{"http":"HTTPS", "grpc":"HTTP2"}'
+  # -- GCP BackendConfig resource
+  httpBackendConfig: {}
+    # healthCheckType: HTTPS
+    # timeoutSec: 30
+  # -- GCP BackendConfig resource
+  grpcBackendConfig: {}
+    # healthCheckType: HTTPS
+    # timeoutSec: 259200
 
 ingressApi:
   # -- Enables Ingress

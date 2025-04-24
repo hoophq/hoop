@@ -48,7 +48,7 @@ spec:
       {{- if .Values.defaultAgent.enabled }}
       - image: '{{ .Values.defaultAgent.imageRepository | default "hoophq/hoopdev" }}:{{ .Values.defaultAgent.imageTag | default "latest" }}'
         name: defaultagent
-        command:
+        args:
         - hoop-default-agent.sh
         imagePullPolicy: {{ .Values.defaultAgent.imagePullPolicy | default "Always" }}
         {{- if $.Values.persistence.enabled }}
