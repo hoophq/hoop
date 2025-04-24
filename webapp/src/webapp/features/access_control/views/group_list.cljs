@@ -4,7 +4,6 @@
    ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.config :as config]
    [webapp.connections.constants :as connection-constants]))
 
 (defn- get-group-connections [group-name groups-with-permissions]
@@ -81,7 +80,7 @@
 
     (fn []
       (let [all-groups (or @user-groups [])
-            group-permissions @groups-with-permissions
+            group-permissions (or @groups-with-permissions {})
             filtered-groups (filter #(not= "admin" %) all-groups)
             processed-groups (->> filtered-groups
                                   (map (fn [group-name]
