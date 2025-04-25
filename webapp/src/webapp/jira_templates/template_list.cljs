@@ -4,8 +4,7 @@
    ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.connections.constants :as connection-constants]
-   [webapp.connections.views.setup.connection-update-form :as connection-update-form]))
+   [webapp.connections.constants :as connection-constants]))
 
 (defn- get-template-connections
   [connections template-id]

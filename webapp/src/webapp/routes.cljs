@@ -29,6 +29,9 @@
                      [["/edit/" :connection-name] :edit-connection]]
      "/client" :editor-plugin
      "/dashboard" :dashboard
+     "/features" [["/access-control" :access-control]
+                  ["/access-control/new" :access-control-new]
+                  [["/access-control/edit/" :group-id] :access-control-edit]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]
                     [["/edit/" :guardrail-id] :edit-guardrail]]

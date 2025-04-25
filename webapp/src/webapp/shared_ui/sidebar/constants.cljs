@@ -34,10 +34,7 @@
                       :navigate :reviews-plugin
                       :admin-only? false}])
 
-(def plugins-management [{:name "access_control"
-                          :label "Access Control"
-                          :free-feature? true}
-                         {:name "runbooks"
+(def plugins-management [{:name "runbooks"
                           :label "Runbooks"
                           :free-feature? true}])
 

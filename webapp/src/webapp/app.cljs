@@ -58,6 +58,10 @@
    [webapp.events.segment]
    [webapp.events.slack-plugin]
    [webapp.events.users]
+   [webapp.features.access-control.events]
+   [webapp.features.access-control.subs]
+   [webapp.features.access-control.main :as access-control]
+   [webapp.features.access-control.views.group-form :as group-form]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -427,6 +431,29 @@
 
 (defmethod routes/panels :logout-hoop-panel []
   [layout :auth [logout/main]])
+
+(defmethod routes/panels :access-control-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [access-control/main]]])
+
+(defmethod routes/panels :access-control-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [group-form/main :create]]]])
+
+(defmethod routes/panels :access-control-edit-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        group-id (:group-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [group-form/main :edit {:group-id group-id}]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

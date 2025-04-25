@@ -175,6 +175,13 @@
                     [:div {:class "text-xs text-gray-200 py-1 px-2 border border-gray-200 rounded-md"}
                      "Upgrade"])]]
 
+                [:li
+                 [:a
+                  {:href (routes/url-for :access-control)
+                   :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                               "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                  "Access Control"]]
+
                 (for [plugin sidebar-constants/plugins-management]
                   ^{:key (:name plugin)}
                   [:li
@@ -184,7 +191,7 @@
                                    (rf/dispatch [:navigate :upgrade-plan])
 
                                    (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
-                     :href  "#" #_(routes/url-for :manage-plugin {:plugin-name (:name plugin)})
+                     :href  "#"
                      :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                  "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                  (when (and free-license? (not (:free-feature? plugin)))
