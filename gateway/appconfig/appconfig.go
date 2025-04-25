@@ -190,7 +190,7 @@ func Load() error {
 		licenseSignerOrgID:              allowedOrgID,
 		gcpDLPJsonCredentials:           gcpJsonCred,
 		orgMultitenant:                  os.Getenv("ORG_MULTI_TENANT") == "true",
-		doNotTrack:                      os.Getenv("DO_NOT_TRACK") == "true",
+		doNotTrack:                      os.Getenv("TRACKING") != "true",
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
 		dlpMode:                         dlpMode,
 		hasRedactCredentials:            hasRedactCredentials,

@@ -892,6 +892,10 @@ type ServerInfo struct {
 	// * true - Session download is disabled and not available to users
 	// * false - Session download is enabled and available to users
 	DisableSessionsDownload bool `json:"disable_sessions_download"`
+	// Indicates if all tracking and analytics should be disabled
+	// * true - All tracking/analytics are disabled
+	// * false - Tracking/analytics are enabled
+	DoNotTrack bool `json:"do_not_track"`
 }
 
 type LivenessCheck struct {
