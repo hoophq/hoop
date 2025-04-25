@@ -31,7 +31,7 @@ var (
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
 		HasPostgresRole:         isEnvSet("PGREST_ROLE"),
 		DisableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
-		DoNotTrack:              os.Getenv("TRACKING") != "true",
+		DoNotTrack:              os.Getenv("DO_NOT_TRACK") == "true",
 	}
 )
 
