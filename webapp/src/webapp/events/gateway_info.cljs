@@ -17,7 +17,8 @@
  (fn
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->info {:loading false
-                                  :data info})}))
+                                  :data info})
+    :fx [[:dispatch [:tracking->initialize-if-allowed]]]}))
 
 (rf/reg-event-fx
  :gateway->get-public-info
@@ -36,3 +37,9 @@
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->public-info {:loading false
                                          :data info})}))
+
+;; Subscription for do_not_track
+(rf/reg-sub
+ :gateway->do-not-track
+ (fn [db _]
+   (get-in db [:gateway->info :data :do_not_track] false)))
