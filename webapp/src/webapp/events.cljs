@@ -117,12 +117,18 @@
  :initialize-intercom
  (fn
    [{:keys [db]} [_ user]]
-   (js/window.Intercom
-    "boot"
-    (clj->js {:api_base "https://api-iam.intercom.io"
-              :app_id "ryuapdmp"
-              :name (:name user)
-              :email (:email user)
-              :user_id (:email user)
-              :user_hash (:intercom_hmac_digest user)}))
-   {}))
+   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
+     (if do-not-track
+       ;; If do_not_track is enabled, don't initialize Intercom
+       {}
+       ;; Otherwise, initialize Intercom
+       (do
+         (js/window.Intercom
+          "boot"
+          (clj->js {:api_base "https://api-iam.intercom.io"
+                    :app_id "ryuapdmp"
+                    :name (:name user)
+                    :email (:email user)
+                    :user_id (:email user)
+                    :user_hash (:intercom_hmac_digest user)}))
+         {})))))
