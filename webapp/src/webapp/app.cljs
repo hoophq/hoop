@@ -552,6 +552,7 @@
         gateway-public-info (rf/subscribe [:gateway->public-info])
         analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
     (rf/dispatch [:gateway->get-public-info])
+    (rf/dispatch [:gateway->get-info])
     (.registerPlugin gsap Draggable)
 
     (fn []
