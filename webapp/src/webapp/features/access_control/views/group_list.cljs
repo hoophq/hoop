@@ -76,15 +76,24 @@
 
 (defn main []
   (let [user-groups (rf/subscribe [:user-groups])
-        groups-with-permissions (rf/subscribe [:access-control/groups-with-permissions])]
+        groups-with-permissions (rf/subscribe [:access-control/groups-with-permissions])
+        all-connections (rf/subscribe [:connections])]
+
+    ;; Fetch all connections when component mounts
+    (rf/dispatch [:connections->get-connections])
 
     (fn []
       (let [all-groups (or @user-groups [])
             group-permissions (or @groups-with-permissions {})
+            connections-map (reduce #(assoc %1 (:name %2) %2) {} (:results @all-connections))
             filtered-groups (filter #(not= "admin" %) all-groups)
             processed-groups (->> filtered-groups
                                   (map (fn [group-name]
-                                         (let [group-connections (get-group-connections group-name group-permissions)]
+                                         (let [group-connection-ids (get-group-connections group-name group-permissions)
+                                               ;; Map connection IDs to full connection objects
+                                               group-connections (map (fn [conn]
+                                                                        (or (get connections-map (:name conn)) conn))
+                                                                      group-connection-ids)]
                                            {:name group-name
                                             :active? (contains? group-permissions group-name)
                                             :connections group-connections})))
