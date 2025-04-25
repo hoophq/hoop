@@ -61,7 +61,6 @@
            [:> Text {:size "3" :class "text-[--gray-11]"}
             "Used to identify your access control group."]]
 
-          ;; Group name field
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
            [forms/input
             {:placeholder "e.g. engineering-team"
@@ -73,7 +72,6 @@
              :disabled @is-submitting
              :on-change #(reset! group-name (-> % .-target .-value))}]]]
 
-         ;; Conexões
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
@@ -126,7 +124,6 @@
                               (.preventDefault e)
                               (reset! is-submitting true)
 
-                              ;; Verificar novamente se temos todos os dados necessários
                               (if (and plugin-loaded? connections-loaded?)
                                 (let [connection-ids (map #(get % "value") (or @selected-connections []))
                                       all-results (or (:results @connections) [])
@@ -193,7 +190,6 @@
                :disabled true
                :class "w-full"}]]]
 
-           ;; Connections selection
            [:> Grid {:columns "7" :gap "7"}
             [:> Box {:grid-column "span 2 / span 2"}
              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
