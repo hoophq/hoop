@@ -362,7 +362,7 @@ func CreateDBRoleJob(c *gin.Context) {
 	sid := uuid.NewString()
 	rdsClient, ec2Client := rds.NewFromConfig(cfg), ec2.NewFromConfig(cfg)
 	log.With("sid", sid).Infof("obtained client configuration with success, account-owner=%v, region=%v", isAccountOwner, cfg.Region)
-	if err := NewRDSProvisioner(usrctx.OrgID, identity, req, rdsClient, ec2Client).Run(sid, getAccessToken(c)); err != nil {
+	if err := NewRDSProvisioner(usrctx.OrgID, identity, req, rdsClient, ec2Client).Run(sid); err != nil {
 		log.With("sid", sid).Error(err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -583,17 +583,4 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 		CompletedAt: o.CompletedAt,
 		Spec:        spec,
 	}
-}
-
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	apiKey := c.GetHeader("Api-Key")
-	if apiKey != "" {
-		return apiKey
-	}
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
-	}
-	return ""
 }

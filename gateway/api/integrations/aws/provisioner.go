@@ -70,7 +70,7 @@ func (p *provisioner) hasStep(stepType openapi.DBRoleJobStepType) bool {
 	return slices.Contains(p.apiRequest.JobSteps, stepType)
 }
 
-func (p *provisioner) Run(jobID, accessToken string) error {
+func (p *provisioner) Run(jobID string) error {
 	dbArn := p.apiRequest.AWS.InstanceArn
 	db, err := p.getDbInstance(dbArn)
 	if err != nil {
