@@ -155,7 +155,7 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ConnectionName:                      gwctx.Connection.Name,
 		ConnectionType:                      gwctx.Connection.Type,
 		ConnectionSubType:                   gwctx.Connection.SubType,
-		ConnectionCommand:                   gwctx.Connection.CmdEntrypoint,
+		ConnectionCommand:                   gwctx.Connection.Command,
 		ConnectionSecret:                    gwctx.Connection.Secrets,
 		ConnectionJiraTransitionNameOnClose: gwctx.Connection.JiraTransitionNameOnSessionClose,
 		ConnectionTags:                      gwctx.Connection.Tags,

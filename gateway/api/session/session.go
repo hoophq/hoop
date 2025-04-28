@@ -31,7 +31,6 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
 
@@ -43,12 +42,12 @@ var (
 )
 
 type SessionPostBody struct {
-	Script     string              `json:"script"`
-	Connection string              `json:"connection"`
-	Labels     types.SessionLabels `json:"labels"`
-	Metadata   map[string]any      `json:"metadata"`
-	ClientArgs []string            `json:"client_args"`
-	JiraFields map[string]string   `json:"jira_fields"`
+	Script     string                    `json:"script"`
+	Connection string                    `json:"connection"`
+	Labels     openapi.SessionLabelsType `json:"labels"`
+	Metadata   map[string]any            `json:"metadata"`
+	ClientArgs []string                  `json:"client_args"`
+	JiraFields map[string]string         `json:"jira_fields"`
 }
 
 // RunExec

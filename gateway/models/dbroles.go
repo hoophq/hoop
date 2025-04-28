@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,12 @@ type DBRoleStatus struct {
 	Result  []DBRoleStatusResult `json:"result"`
 }
 
+type HookStatus struct {
+	ExitCode         int    `json:"exit_code"`
+	OutputBase64     string `json:"output"`
+	ExecutionTimeSec int    `json:"execution_time_sec"`
+}
+
 type DBRoleStatusResultCredentialsInfo struct {
 	SecretsManagerProvider string   `json:"secrets_manager_provider"`
 	SecretID               string   `json:"secret_id"`
@@ -44,20 +51,23 @@ type DBRoleStatusResult struct {
 }
 
 type DBRole struct {
-	OrgID       string         `gorm:"column:org_id"`
-	ID          string         `gorm:"column:id"`
-	CreatedAt   time.Time      `gorm:"column:created_at"`
-	CompletedAt *time.Time     `gorm:"column:completed_at"`
-	StatusMap   map[string]any `gorm:"column:status;serializer:json"`
-	SpecMap     map[string]any `gorm:"column:spec;serializer:json"` // Don't export it, having a lowercase it will serialize properly?
+	OrgID         string         `gorm:"column:org_id"`
+	ID            string         `gorm:"column:id"`
+	CreatedAt     time.Time      `gorm:"column:created_at"`
+	CompletedAt   *time.Time     `gorm:"column:completed_at"`
+	StatusMap     map[string]any `gorm:"column:status;serializer:json"`
+	HookStatusMap map[string]any `gorm:"column:hook_status;serializer:json"`
+	SpecMap       map[string]any `gorm:"column:spec;serializer:json"` // Don't export it, having a lowercase it will serialize properly?
 
-	Status *DBRoleStatus  `gorm:"-"`
-	Spec   *AWSDBRoleSpec `gorm:"-"`
+	Status     *DBRoleStatus  `gorm:"-"`
+	HookStatus *HookStatus    `gorm:"-"`
+	Spec       *AWSDBRoleSpec `gorm:"-"`
 }
 
 func CreateDBRoleJob(obj *DBRole) error {
 	obj.SpecMap = dbRoleSpecToMap(obj.Spec)
 	obj.StatusMap = dbRoleStatusToMap(obj.Status)
+	obj.HookStatusMap = hookStatusToMap(obj.HookStatus)
 	err := DB.Table(tableDBRoleJobs).Model(obj).Create(obj).Error
 	if err == gorm.ErrDuplicatedKey {
 		return ErrAlreadyExists
@@ -102,6 +112,15 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsystem.DBProv
 		Result:  result,
 	}
 
+	var hookStatusMap map[string]any
+	if resp.RunbookHook != nil {
+		hookStatusMap = map[string]any{
+			"exit_code":          resp.RunbookHook.ExitCode,
+			"output":             base64.StdEncoding.EncodeToString([]byte(resp.RunbookHook.Output)),
+			"execution_time_sec": resp.RunbookHook.ExecutionTimeSec,
+		}
+	}
+
 	// TODO: fix me
 	var statusMap map[string]any
 	statusData, _ := json.Marshal(status)
@@ -113,9 +132,10 @@ func UpdateDBRoleJob(orgID string, completedAt *time.Time, resp *pbsystem.DBProv
 		Model(job).
 		Clauses(clause.Returning{}).
 		Updates(DBRole{
-			StatusMap:   statusMap,
-			SpecMap:     dbRoleSpecToMap(job.Spec),
-			CompletedAt: completedAt,
+			StatusMap:     statusMap,
+			HookStatusMap: hookStatusMap,
+			SpecMap:       dbRoleSpecToMap(job.Spec),
+			CompletedAt:   completedAt,
 		}).Where("org_id = ? AND id = ?", orgID, resp.SID).
 		Error
 	if err == gorm.ErrDuplicatedKey {
@@ -143,6 +163,11 @@ func ListDBRoleJobs(orgID string) ([]*DBRole, error) {
 		if err := json.Unmarshal(statusData, &j.Status); err != nil {
 			return nil, fmt.Errorf("failed decoding status data: %v", err)
 		}
+
+		hookStatus, _ := json.Marshal(j.HookStatusMap)
+		if err := json.Unmarshal(hookStatus, &j.HookStatus); err != nil {
+			return nil, fmt.Errorf("failed decoding hook status data: %v", err)
+		}
 	}
 	return dbRoles, nil
 }
@@ -169,6 +194,12 @@ func GetDBRoleJobByID(orgID, jobID string) (*DBRole, error) {
 		return nil, fmt.Errorf("failed decoding status data: %v", err)
 	}
 
+	// TODO: fix me
+	hookStatus, _ := json.Marshal(job.HookStatusMap)
+	if err := json.Unmarshal(hookStatus, &job.HookStatus); err != nil {
+		return nil, fmt.Errorf("failed decoding hook status data: %v", err)
+	}
+
 	return &job, nil
 }
 
@@ -187,4 +218,15 @@ func dbRoleStatusToMap(s *DBRoleStatus) (res map[string]any) {
 	specData, _ := json.Marshal(s)
 	_ = json.Unmarshal(specData, &res)
 	return
+}
+
+func hookStatusToMap(s *HookStatus) (res map[string]any) {
+	if s == nil {
+		return nil
+	}
+	return map[string]any{
+		"exit_code":          s.ExitCode,
+		"output":             base64.StdEncoding.EncodeToString([]byte(s.OutputBase64)),
+		"execution_time_sec": s.ExecutionTimeSec,
+	}
 }

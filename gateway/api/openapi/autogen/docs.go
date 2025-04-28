@@ -4444,6 +4444,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2025-02-28T12:34:56Z"
                 },
+                "hook_status": {
+                    "description": "The Runbook execution status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.DBRoleJobHookStatus"
+                        }
+                    ]
+                },
                 "id": {
                     "description": "Unique identifier for this database role job",
                     "type": "string",
@@ -4469,6 +4477,26 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.DBRoleJobStatus"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.DBRoleJobHookStatus": {
+            "type": "object",
+            "properties": {
+                "execution_time_sec": {
+                    "description": "The time it took to execute the runbook",
+                    "type": "integer",
+                    "example": 5
+                },
+                "exit_code": {
+                    "description": "The Unix Exit Code of the runbook execution (0=success)",
+                    "type": "integer",
+                    "example": 0
+                },
+                "output": {
+                    "description": "The stdout and stderr streams captured during execution",
+                    "type": "string",
+                    "example": "output"
                 }
             }
         },

@@ -1334,6 +1334,8 @@ type DBRoleJob struct {
 	Spec AWSDBRoleJobSpec `json:"spec"`
 	// Current status and results of the job execution (null if not started)
 	Status *DBRoleJobStatus `json:"status"`
+	// The Runbook execution status
+	HookStatus *DBRoleJobHookStatus `json:"hook_status"`
 }
 
 type DBTag struct {
@@ -1361,6 +1363,15 @@ type DBRoleJobStatus struct {
 	Message string `json:"message" example:"All user roles have been successfully provisioned"`
 	// Detailed results for each individual role that was provisioned
 	Result []DBRoleJobStatusResult `json:"result"`
+}
+
+type DBRoleJobHookStatus struct {
+	// The Unix Exit Code of the runbook execution (0=success)
+	ExitCode int `json:"exit_code" example:"0"`
+	// The stdout and stderr streams captured during execution
+	Output string `json:"output" example:"output"`
+	// The time it took to execute the runbook
+	ExecutionTimeSec int `json:"execution_time_sec" example:"5"`
 }
 
 type SecretsManagerProviderType string

@@ -23,8 +23,10 @@ import (
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
@@ -68,12 +70,14 @@ func (p *provisioner) hasStep(stepType openapi.DBRoleJobStepType) bool {
 	return slices.Contains(p.apiRequest.JobSteps, stepType)
 }
 
-func (p *provisioner) Run(jobID string) error {
+func (p *provisioner) Run(jobID, accessToken string) error {
 	dbArn := p.apiRequest.AWS.InstanceArn
 	db, err := p.getDbInstance(dbArn)
 	if err != nil {
 		return fmt.Errorf("failed fetching db instance, reason=%v", err)
 	}
+
+	databaseTags := parseAWSTags(db)
 	err = models.CreateDBRoleJob(&models.DBRole{
 		OrgID: p.orgID,
 		ID:    jobID,
@@ -83,7 +87,7 @@ func (p *provisioner) Run(jobID string) error {
 			DBArn:         ptr.ToString(db.DBInstanceArn),
 			DBName:        ptr.ToString(db.DBName),
 			DBEngine:      ptr.ToString(db.Engine),
-			Tags:          parseAWSTags(db),
+			Tags:          databaseTags,
 		},
 		Status: &models.DBRoleStatus{
 			Phase:   pbsystem.StatusRunningType,
@@ -93,6 +97,11 @@ func (p *provisioner) Run(jobID string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create db role job, err=%v", err)
+	}
+
+	runbookConfig, err := apirunbooks.GetRunbookConfig(pgrest.NewOrgContext(p.orgID))
+	if err != nil {
+		return err
 	}
 
 	startedAt := time.Now().UTC()
@@ -176,7 +185,6 @@ func (p *provisioner) Run(jobID string) error {
 			p.updateJob(pbsystem.NewError(jobID, "failed obtaining master user password: %v", err))
 			return
 		}
-		log.With("sid", jobID).Infof("database is available, ready to provision roles for %v", dbArn)
 		request := pbsystem.DBProvisionerRequest{
 			OrgID:            env.OrgID,
 			ResourceID:       dbArn,
@@ -186,7 +194,24 @@ func (p *provisioner) Run(jobID string) error {
 			MasterUsername:   env.GetEnv("MASTER_USERNAME"),
 			MasterPassword:   env.GetEnv("MASTER_PASSWORD"),
 			DatabaseType:     env.GetEnv("DATABASE_TYPE"),
+			DatabaseTags:     databaseTags,
 		}
+
+		if runbookConfig != nil {
+			runbook, err := apirunbooks.FetchRunbookFile(runbookConfig, "hoop-hooks/aws-connect-post-exec.runbook.py", "", map[string]string{})
+			if err != nil {
+				log.With("sid", jobID).Warnf("failed executing runbook, reason=%v", err)
+			}
+			if runbook != nil {
+				request.ExecHook = &pbsystem.ExecHook{
+					Command:   []string{"python3"},
+					InputFile: string(runbook.InputFile),
+				}
+			}
+		}
+
+		log.With("sid", jobID, "runbook-hook", request.ExecHook != nil).
+			Infof("database is available, ready to provision roles for %v", dbArn)
 
 		// set vault provider if it's set
 		if p.apiRequest.VaultProvider != nil {
@@ -213,9 +238,15 @@ func (p *provisioner) Run(jobID string) error {
 			webhookSent = err == nil
 		}
 
-		log.With("sid", jobID).Infof("database provisioner finished, name=%v, engine=%v, status=%v, with-security-group=%v, webhook-sent=%v, duration=%v, message=%v",
+		runbookOutcome := fmt.Sprintf("hook-executed=%v", resp.RunbookHook != nil)
+		if resp.RunbookHook != nil {
+			runbookOutcome += fmt.Sprintf(", hook-exit-code=%v, hook-execution-time-sec=%v, hook-output-length=%v",
+				resp.RunbookHook.ExitCode, resp.RunbookHook.ExecutionTimeSec, len(resp.RunbookHook.Output))
+		}
+		log.With("sid", jobID).Infof("database provisioner finished, name=%v, engine=%v, status=%v, "+
+			"with-security-group=%v, webhook-sent=%v, duration=%v, message=%v, %v",
 			ptr.ToString(db.DBInstanceIdentifier), ptr.ToString(db.Engine), resp.Status, defaultSg != nil,
-			webhookSent, time.Now().UTC().Sub(startedAt).String(), resp.Message)
+			webhookSent, time.Now().UTC().Sub(startedAt).String(), resp.Message, runbookOutcome)
 
 	}()
 	return nil
@@ -361,7 +392,7 @@ func generateRandomPassword() (string, error) {
 	}
 
 	// Map random bytes to characters in the charset
-	for i := 0; i < passwordLength; i++ {
+	for i := range passwordLength {
 		// Use modulo to map the random byte to an index in the charset
 		// This ensures the mapping is within the charset boundaries
 		password[i] = charset[int(password[i])%len(charset)]
@@ -498,41 +529,10 @@ func (p *provisioner) sendWebhook(obj *models.DBRole) error {
 	if err := json.Unmarshal(jsonData, &payload); err != nil {
 		return fmt.Errorf("failed decoding json to map: %v", err)
 	}
-
-	if err := p.sendWebhookCustom(*apiObj); err != nil {
-		return err
-	}
 	return webhooks.SendMessage(p.orgID, webhooks.EventDBRoleJobFinishedType, map[string]any{
 		"event_type":    webhooks.EventDBRoleJobFinishedType,
 		"event_payload": payload,
 	})
-}
-
-func (p *provisioner) sendWebhookCustom(job openapi.DBRoleJob) error {
-	payload := map[string]any{
-		"engine":                job.Spec.DBEngine,
-		"tags":                  job.Spec.DBTags,
-		"usr_dbre_namespace_ro": map[string]any{},
-		"usr_dbre_namespace":    map[string]any{},
-	}
-	vaultKeys := map[string]any{}
-	if job.Status != nil && job.Status.Phase == "completed" {
-		for _, res := range job.Status.Result {
-			if res.CredentialsInfo.SecretsManagerProvider == openapi.SecretsManagerProviderVault {
-				vaultKeys[res.UserRole] = map[string]any{
-					"envs":      res.CredentialsInfo.SecretKeys,
-					"namespace": res.CredentialsInfo.SecretID,
-				}
-			}
-		}
-	}
-
-	payload["vault_keys"] = vaultKeys
-	return webhooks.SendMessage(p.orgID, webhooks.EventDBRoleJobCustomFinishedType, map[string]any{
-		"event_type":    webhooks.EventDBRoleJobCustomFinishedType,
-		"event_payload": payload,
-	})
-
 }
 
 func parseAWSTags(obj *rdstypes.DBInstance) []map[string]any {
@@ -544,5 +544,5 @@ func parseAWSTags(obj *rdstypes.DBInstance) []map[string]any {
 }
 
 func b64enc(format string, v ...any) string {
-	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(format, v...)))
+	return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, format, v...))
 }

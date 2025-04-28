@@ -14,7 +14,7 @@ import (
 
 const maxTemplateSize = 1000000 // 1MB
 
-func fetchRunbookFile(config *templates.RunbookConfig, req openapi.RunbookRequest) (*openapi.Runbook, error) {
+func FetchRunbookFile(config *templates.RunbookConfig, fileName, refHash string, parameters map[string]string) (*openapi.Runbook, error) {
 	c, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err
@@ -22,11 +22,11 @@ func fetchRunbookFile(config *templates.RunbookConfig, req openapi.RunbookReques
 	if c.Hash.IsZero() {
 		return nil, fmt.Errorf("commit hash from remote is empty")
 	}
-	if req.RefHash != "" && req.RefHash != c.Hash.String() {
-		return nil, fmt.Errorf("mismatch git commit, want=%v, have=%v", req.RefHash, c.Hash.String())
+	if refHash != "" && refHash != c.Hash.String() {
+		return nil, fmt.Errorf("mismatch git commit, want=%v, have=%v", refHash, c.Hash.String())
 	}
 	if ctree, _ := c.Tree(); ctree != nil {
-		f := templates.LookupFile(req.FileName, ctree)
+		f := templates.LookupFile(fileName, ctree)
 		if f != nil {
 			blob, err := templates.ReadBlob(f)
 			if err != nil {
@@ -40,7 +40,7 @@ func fetchRunbookFile(config *templates.RunbookConfig, req openapi.RunbookReques
 				return nil, err
 			}
 			parsedTemplate := bytes.NewBuffer([]byte{})
-			if err := t.Execute(parsedTemplate, req.Parameters); err != nil {
+			if err := t.Execute(parsedTemplate, parameters); err != nil {
 				return nil, err
 			}
 			return &openapi.Runbook{
@@ -50,7 +50,7 @@ func fetchRunbookFile(config *templates.RunbookConfig, req openapi.RunbookReques
 				CommitHash: c.Hash.String()}, nil
 		}
 	}
-	return nil, fmt.Errorf("runbook %v not found for %v", req.FileName, c.Hash.String())
+	return nil, fmt.Errorf("runbook %v not found for %v", fileName, c.Hash.String())
 }
 
 func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *templates.RunbookConfig) (*openapi.RunbookList, error) {

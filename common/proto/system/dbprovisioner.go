@@ -23,17 +23,24 @@ type VaultProvider struct {
 	SecretID string `json:"secret_id"`
 }
 
-type DBProvisionerRequest struct {
-	OrgID            string `json:"org_id"`
-	SID              string `json:"sid"`
-	ResourceID       string `json:"resource_id"`
-	DatabaseHostname string `json:"hostname"`
-	DatabasePort     string `json:"port"`
-	MasterUsername   string `json:"master_user"`
-	MasterPassword   string `json:"master_password"`
-	DatabaseType     string `json:"database_type"`
+type ExecHook struct {
+	Command   []string `json:"command"`
+	InputFile string   `json:"input_file"`
+}
 
-	Vault *VaultProvider `json:"vault_provider"`
+type DBProvisionerRequest struct {
+	OrgID            string           `json:"org_id"`
+	SID              string           `json:"sid"`
+	ResourceID       string           `json:"resource_id"`
+	DatabaseHostname string           `json:"hostname"`
+	DatabasePort     string           `json:"port"`
+	MasterUsername   string           `json:"master_user"`
+	MasterPassword   string           `json:"master_password"`
+	DatabaseType     string           `json:"database_type"`
+	DatabaseTags     []map[string]any `json:"database_tags"`
+
+	Vault    *VaultProvider `json:"vault_provider"`
+	ExecHook *ExecHook      `json:"exec_hook"`
 }
 
 type SecretsManagerProviderType string
@@ -63,6 +70,12 @@ type Result struct {
 	CompletedAt    time.Time      `json:"completed_at"`
 }
 
+type RunbookHook struct {
+	ExitCode         int    `json:"exit_code"`
+	Output           string `json:"output"`
+	ExecutionTimeSec int    `json:"execution_time_sec"`
+}
+
 type DBProvisionerStatus struct {
 	Phase   string   `json:"phase"`
 	Status  string   `json:"status"`
@@ -71,10 +84,11 @@ type DBProvisionerStatus struct {
 }
 
 type DBProvisionerResponse struct {
-	SID     string    `json:"sid"`
-	Status  string    `json:"status"`
-	Message string    `json:"message"`
-	Result  []*Result `json:"result"`
+	SID         string       `json:"sid"`
+	Status      string       `json:"status"`
+	Message     string       `json:"message"`
+	Result      []*Result    `json:"result"`
+	RunbookHook *RunbookHook `json:"runbook_hook,omitempty"`
 }
 
 func (r *DBProvisionerRequest) Address() string {
