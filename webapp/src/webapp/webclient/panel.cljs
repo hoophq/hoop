@@ -68,20 +68,45 @@
 
 (def memoized-convert-tree
   (memoize
-   (fn [tree]
-     (let [schema-keys (keys (:schema-tree tree))]
+   (fn [tree max-tables]
+     (let [is-typing (boolean (aget js/window "is_typing"))
+           schema-keys (keys (:schema-tree tree))
+           limit-fn (fn [coll]
+                      (if (and is-typing (> (count coll) max-tables))
+                        (take max-tables coll)
+                        coll))]
        (cond
          (> (count schema-keys) 1) (reduce
                                     (fn [acc schema-key]
-                                      (merge acc (process-schema tree schema-key true)))
+                                      (let [tables (limit-fn (keys (get (:schema-tree tree) schema-key)))]
+                                        (merge acc
+                                               (reduce
+                                                (fn [acc-inner table-key]
+                                                  (let [qualified-key (str schema-key "." table-key)]
+                                                    (assoc acc-inner qualified-key
+                                                           (keys (get (get (:schema-tree tree) schema-key) table-key)))))
+                                                {}
+                                                tables))))
                                     {}
                                     schema-keys)
-         (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
+         (<= (count schema-keys) 1) (let [tables (limit-fn (keys (get (:schema-tree tree) (first schema-keys))))]
+                                      (reduce
+                                       (fn [acc table-key]
+                                         (assoc acc table-key
+                                                (keys (get (get (:schema-tree tree) (first schema-keys)) table-key))))
+                                       {}
+                                       tables))
          :else #js{})))))
 
 (def ^:private timer (r/atom nil))
 (def ^:private typing-intensity (r/atom 0))  ;; Track typing intensity
 (def ^:private code-saved-status (r/atom :saved)) ; :edited | :saved
+(def ^:private is-typing (r/atom false))
+(def ^:private typing-timer (r/atom nil))
+
+(defn update-global-typing-state [is-typing?]
+  (reset! is-typing is-typing?)
+  (aset js/window "is_typing" is-typing?))
 
 (defn- save-code-to-localstorage [code-string]
   (let [code-tmp-db {:date (.now js/Date)
@@ -107,15 +132,7 @@
      "Edited"]]])
 
 (defn convert-tree [tree]
-  (let [schema-keys (keys (:schema-tree tree))]
-    (cond
-      (> (count schema-keys) 1) (reduce
-                                 (fn [acc schema-key]
-                                   (merge acc (process-schema tree schema-key true)))
-                                 {}
-                                 schema-keys)
-      (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
-      :else #js{})))
+  (memoized-convert-tree tree 50))
 
 (defn editor []
   (let [user (rf/subscribe [:users->current-user])
@@ -198,9 +215,10 @@
                                        databse-schema-sanitized (if (= (:status current-schema) :success)
                                                                   current-schema
                                                                   {:status :failure :raw "" :schema-tree []})
+                                       max-tables (if @is-typing 20 100)
                                        schema (if (and is-one-connection-selected?
                                                        (= subtype (:type current-schema)))
-                                                #js{:schema (clj->js (memoized-convert-tree databse-schema-sanitized))}
+                                                #js{:schema (clj->js (memoized-convert-tree databse-schema-sanitized max-tables))}
                                                 #js{})]
                                    (case current-language
                                      "postgres" [(sql
@@ -287,6 +305,9 @@
                    :onChange (fn [value _]
                                (reset! script value)
                                (reset! code-saved-status :edited)
+                               (update-global-typing-state true)
+                               (when @typing-timer (js/clearTimeout @typing-timer))
+                               (reset! typing-timer (js/setTimeout #(update-global-typing-state false) 750))
                                (when @timer (js/clearTimeout @timer))
                                (reset! timer
                                        (js/setTimeout #(save-code-to-localstorage value) 500)))
@@ -296,12 +317,15 @@
                                  (when (and (= feature-ai-ask "enabled")
                                             is-one-connection-selected?)
                                    [(inlineCopilot
-                                     (fn [prefix suffix]
-                                       (extensions/fetch-autocomplete
-                                        (:subtype current-connection)
-                                        prefix
-                                        suffix
-                                        (:raw current-schema))))])
+                                     #js{:getSuggestions (fn [prefix suffix]
+                                                           (extensions/fetch-autocomplete
+                                                            (:subtype current-connection)
+                                                            prefix
+                                                            suffix
+                                                            (:raw current-schema)))
+                                         :debounceMs 800
+                                         :maxPrefixLength 500
+                                         :maxSuffixLength 500})])
                                  [(.of cm-view/keymap (clj->js keymap))]
                                  language-parser-case
                                  (when (= (:status @selected-template) :ready)

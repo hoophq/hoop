@@ -28,12 +28,23 @@
 (defn- field-type-tree [type]
   (memoized-field-type-tree type))
 
+;; Cache para evitar renderizações desnecessárias
+(def render-cache (atom {}))
+
+;; Limites para evitar renderização excessiva
+(def default-max-items 50)
+(def max-expanded-tables 10)
+
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
-        dropdown-columns-status (r/atom :closed)]
+        dropdown-columns-status (r/atom :closed)
+        is-typing (r/atom false)]
+
     (fn []
       (let [current-status @dropdown-status
-            current-columns-status @dropdown-columns-status]
+            current-columns-status @dropdown-columns-status
+            typing? (boolean (aget js/window "is_typing"))
+            limit (if typing? 15 default-max-items)]
         [:div {:class "pl-small"}
          [:div
           [:div {:class "flex items-center gap-small mb-2"}
@@ -49,53 +60,93 @@
             (if (= current-columns-status :open)
               [:> ChevronDown {:size 12}]
               [:> ChevronRight {:size 12}])]]]
+
          [:div {:class (str "pl-small" (when (not= current-columns-status :open)
                                          " h-0 overflow-hidden"))}
           (when (= current-columns-status :open)
-            (doall
-             (for [[field field-type] fields]
-               ^{:key field}
-               [:div
-                [:div {:class "flex items-center gap-small mb-2"}
-                 [:> File {:size 12}]
-                 [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                     "flex items-center")
-                         :on-click #(swap! dropdown-status
-                                           assoc-in [field]
-                                           (if (= (get current-status field) :open) :closed :open))}
-                  [:> Text {:size "1"} field]
-                  (if (= (get current-status field) :open)
-                    [:> ChevronDown {:size 12}]
-                    [:> ChevronRight {:size 12}])]]
-                [:div {:class (when (not= (get current-status field) :open)
-                                "h-0 overflow-hidden")}
-                 (when (= (get current-status field) :open)
-                   [field-type-tree (first (map key field-type))])]])))]]))))
+            [:div
+             ;; Lista de campos com limite
+             (doall
+              (for [[field field-type] (take limit (seq fields))]
+                ^{:key field}
+                [:div
+                 [:div {:class "flex items-center gap-small mb-2"}
+                  [:> File {:size 12}]
+                  [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                      "flex items-center")
+                          :on-click #(swap! dropdown-status
+                                            assoc-in [field]
+                                            (if (= (get current-status field) :open) :closed :open))}
+                   [:> Text {:size "1"} field]
+                   (if (= (get current-status field) :open)
+                     [:> ChevronDown {:size 12}]
+                     [:> ChevronRight {:size 12}])]]
+                 [:div {:class (when (not= (get current-status field) :open)
+                                 "h-0 overflow-hidden")}
+                  (when (and (= (get current-status field) :open) (not typing?))
+                    [field-type-tree (first (map key field-type))])]]))
+
+             ;; Contador de campos restantes
+             (when (> (count fields) limit)
+               [:div {:class "text-xs text-gray-500 italic mt-2"}
+                (str "+" (- (count fields) limit) " more columns"
+                     (when typing? " (typing mode)"))])])]]))))
 
 (defn- tables-tree []
-  (let [dropdown-status (r/atom {})]
+  (let [dropdown-status (r/atom {})
+        expanded-count (r/atom 0)]
+
     (fn [tables]
-      (let [current-status @dropdown-status]
-        [:div {:class "pl-small"}
-         (doall
-          (for [[table fields] tables]
-            ^{:key table}
-            [:div
-             [:div {:class "flex items-center gap-small mb-2"}
-              [:> Table {:size 12}]
-              [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                  "flex items-center")
-                      :on-click #(swap! dropdown-status
-                                        assoc-in [table]
-                                        (if (= (get current-status table) :open) :closed :open))}
-               [:> Text {:size "1"} table]
-               (if (= (get current-status table) :open)
-                 [:> ChevronDown {:size 12}]
-                 [:> ChevronRight {:size 12}])]]
-             [:div {:class (when (not= (get current-status table) :open)
-                             "h-0 overflow-hidden")}
-              (when (= (get current-status table) :open)
-                [fields-tree (into (sorted-map) fields)])]]))]))))
+      (let [current-status @dropdown-status
+            typing? (boolean (aget js/window "is_typing"))
+            limit (if typing? 30 default-max-items)
+            cache-key (str "tables-" (hash tables) "-" typing?)]
+
+        ;; Usar cache para evitar re-renderização desnecessária
+        (if-let [cached (@render-cache cache-key)]
+          cached
+          (let [render-result
+                [:div {:class "pl-small"}
+                 ;; Limitar número de tabelas renderizadas
+                 (doall
+                  (for [[table fields] (take limit (seq tables))]
+                    ^{:key table}
+                    [:div
+                     [:div {:class "flex items-center gap-small mb-2"}
+                      [:> Table {:size 12}]
+                      [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                          "flex items-center")
+                              :on-click (fn []
+                                          ;; Limitar número de tabelas expandidas simultaneamente
+                                          (when (and (not= (get current-status table) :open)
+                                                     (>= @expanded-count max-expanded-tables))
+                                            (let [first-open (first (filter #(= (val %) :open) current-status))]
+                                              (when first-open
+                                                (swap! dropdown-status assoc (key first-open) :closed))))
+
+                                          (swap! dropdown-status
+                                                 assoc-in [table]
+                                                 (if (= (get current-status table) :open)
+                                                   (do (swap! expanded-count dec) :closed)
+                                                   (do (swap! expanded-count inc) :open))))}
+                       [:> Text {:size "1"} table]
+                       (if (= (get current-status table) :open)
+                         [:> ChevronDown {:size 12}]
+                         [:> ChevronRight {:size 12}])]]
+                     [:div {:class (when (not= (get current-status table) :open)
+                                     "h-0 overflow-hidden")}
+                      (when (= (get current-status table) :open)
+                        [fields-tree (into (sorted-map) fields)])]]))
+
+                 ;; Mostrar mensagem se houver mais tabelas do que estamos exibindo
+                 (when (> (count tables) limit)
+                   [:div {:class "text-xs text-gray-500 italic mt-2"}
+                    (str "+" (- (count tables) limit)
+                         " more tables" (when typing? " (typing mode)"))])]]
+            ;; Armazenar em cache, mas limitar tamanho do cache
+            (when (< (count @render-cache) 10)
+              (swap! render-cache assoc cache-key render-result))
+            render-result))))))
 
 (defn- sql-databases-tree [_]
   (let [dropdown-status (r/atom {})]
@@ -229,11 +280,14 @@
   (let [database-schema (rf/subscribe [::subs/database-schema])
         local-connection (r/atom (:connection-name connection))
         ;; Store the schema state locally to avoid re-renders
-        ;; when there are no actual changes
         local-schema-state (r/atom nil)]
 
     (when (and connection (:connection-name connection))
       (get-database-schema (:connection-type connection) connection))
+
+    ;; Limpar cache periodicamente para evitar vazamento de memória
+    (js/setInterval #(when (> (count @render-cache) 20)
+                       (reset! render-cache {})) 60000)
 
     ;; Using memoization for the main component
     (r/create-class
@@ -255,22 +309,37 @@
         (let [[_ old-conn] old-argv
               [_ new-conn] (r/argv this)
               old-schema (get-in @database-schema [:data (:connection-name old-conn)])
-              new-schema (get-in @database-schema [:data (:connection-name new-conn)])]
-          ;; Only updates when the connection or the schema actually change
-          (or (not= (:connection-name old-conn) (:connection-name new-conn))
-              (not= (:status old-schema) (:status new-schema))
-              (not= (:database-schema-status old-schema) (:database-schema-status new-schema))
-              (and (= (:status new-schema) :success)
-                   (not= @local-schema-state new-schema)))))
+              new-schema (get-in @database-schema [:data (:connection-name new-conn)])
+              is-typing (boolean (aget js/window "is_typing"))]
+          ;; Não atualizar durante digitação, a menos que a conexão mude
+          (if is-typing
+            (not= (:connection-name old-conn) (:connection-name new-conn))
+            ;; Only updates when the connection or the schema actually change
+            (or (not= (:connection-name old-conn) (:connection-name new-conn))
+                (not= (:status old-schema) (:status new-schema))
+                (not= (:database-schema-status old-schema) (:database-schema-status new-schema))
+                (and (= (:status new-schema) :success)
+                     (not= @local-schema-state new-schema))))))
+
+      :component-will-unmount
+      (fn []
+        ;; Limpar cache ao desmontar para evitar vazamento de memória
+        (reset! render-cache {}))
 
       :reagent-render
       (fn [{:keys [connection-type connection-name]}]
-        (let [current-schema (get-in @database-schema [:data connection-name])]
+        (let [current-schema (get-in @database-schema [:data connection-name])
+              is-typing (boolean (aget js/window "is_typing"))]
           (when (and (= (:status current-schema) :success)
                      (not= @local-schema-state current-schema))
             (reset! local-schema-state current-schema))
 
           [:div {:class "text-gray-200"}
+           ;; Mantenha a árvore sempre visível, mas adicione um indicador visual durante a digitação
+           (when is-typing
+             [:div {:class "text-xs text-gray-500 italic px-4 py-1"}
+              "Performance mode active during typing"])
+
            [tree-view-status
             {:status (:status current-schema)
              :databases (:databases current-schema)
