@@ -133,10 +133,10 @@
     [:span {:class "text-xs italic"}
      "Edited"]]])
 
-;; Cache para armazenar schemas processados em formato JavaScript
+;; Cache to store processed schemas in JavaScript format
 (def schema-js-cache (r/atom {}))
 
-;; Função para simplificar o schema apenas para autocompletar
+;; Function to simplify the schema only for autocomplete
 (defn simplify-schema-for-autocomplete [schema]
   (let [schema-tree (:schema-tree schema)]
     (reduce-kv
@@ -150,12 +150,12 @@
      {}
      schema-tree)))
 
-;; Criação do Web Worker para processamento assíncrono
+;; Creation of Web Worker for asynchronous processing
 (def schema-worker-blob
   "const processSchema = function(tree, maxTables, isTyping) {
     const schemaKeys = Object.keys(tree);
 
-    // Função para limitar o número de itens conforme necessário
+    // Function to limit the number of items as needed
     const limitFn = (collection) => {
       if (isTyping && collection.length > maxTables) {
         return collection.slice(0, maxTables);
@@ -163,12 +163,12 @@
       return collection;
     };
 
-    // Sem schema
+    // No schema
     if (schemaKeys.length === 0) {
       return {};
     }
 
-    // Múltiplos schemas
+    // Multiple schemas
     if (schemaKeys.length > 1) {
       let result = {};
 
@@ -186,7 +186,7 @@
       return result;
     }
 
-    // Um único schema
+    // Single schema
     const schemaKey = schemaKeys[0];
     const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
     const limitedTables = limitFn(tables);
@@ -216,7 +216,7 @@
     }
   };")
 
-;; Função para inicializar o worker
+;; Function to initialize the worker
 (def schema-worker (atom nil))
 
 (defn init-schema-worker []
@@ -225,7 +225,7 @@
           url (js/URL.createObjectURL blob)]
       (reset! schema-worker (js/Worker. url)))))
 
-;; Função para processar schema no worker
+;; Function to process schema in worker
 (defn process-schema-in-worker [schema max-tables is-typing?]
   (js/Promise.
    (fn [resolve reject]
@@ -240,10 +240,10 @@
          (.postMessage @schema-worker #js{:schema (clj->js schema)
                                           :maxTables max-tables
                                           :isTyping is-typing?}))
-       ;; Fallback caso o worker não esteja disponível
+       ;; Fallback if worker is not available
        (resolve (clj->js (memoized-convert-tree schema max-tables)))))))
 
-;; Função otimizada para obter schema processado
+;; Optimized function to get processed schema
 (defn get-optimized-schema-for-codemirror [connection-name schema is-typing?]
   (let [cache-key [connection-name is-typing?]
         cached-value (get @schema-js-cache cache-key)
@@ -251,29 +251,29 @@
 
     (if (and cached-value
              (= (:schema-version cached-value) (hash (:schema-tree schema))))
-      ;; Retornar valor cacheado se schema não mudou
+      ;; Return cached value if schema hasn't changed
       (js/Promise.resolve (:schema-js cached-value))
 
-      ;; Processar usando o worker ou fallback
+      ;; Process using worker or fallback
       (-> (process-schema-in-worker
            (simplify-schema-for-autocomplete schema)
            max-tables
            is-typing?)
           (.then (fn [processed-schema]
                    (let [js-schema #js{:schema processed-schema}]
-                     ;; Atualizar cache
+                     ;; Update cache
                      (swap! schema-js-cache assoc cache-key
                             {:schema-version (hash (:schema-tree schema))
                              :schema-js js-schema})
                      js-schema)))))))
 
-;; Inicializa o worker quando o módulo é carregado
+;; Initialize worker when module is loaded
 (init-schema-worker)
 
-;; Atom para armazenar o parser SQL atual e suas informações
+;; Atom to store current SQL parser and its information
 (def current-sql-parser (r/atom nil))
 
-;; Função para verificar se precisamos recriar o parser
+;; Function to check if we need to recreate the parser
 (defn should-recreate-parser? [prev-lang current-lang prev-schema current-schema]
   (or (nil? prev-lang)
       (not= prev-lang current-lang)
@@ -281,25 +281,25 @@
       (and (= (:status current-schema) :success)
            (not= (:schema-tree prev-schema) (:schema-tree current-schema)))))
 
-;; Função otimizada para criar ou reutilizar o parser SQL usando Web Worker
+;; Optimized function to create or reuse SQL parser using Web Worker
 (defn get-or-create-sql-parser [current-language current-schema is-typing? is-one-connection?]
   (let [prev-parser-info (:info @current-sql-parser)
         prev-lang (:language prev-parser-info)
         prev-schema (:schema prev-parser-info)]
 
     (if (should-recreate-parser? prev-lang current-language prev-schema current-schema)
-      ;; Só recria o parser se linguagem ou schema mudarem
+      ;; Only recreate parser if language or schema changed
       (let [database-schema-sanitized (if (= (:status current-schema) :success)
                                         current-schema
                                         {:status :failure :raw "" :schema-tree []})
-            ;; Cria uma promessa para resolver o parser SQL
+            ;; Create a promise to resolve the SQL parser
             parser-promise (if is-one-connection?
                              (get-optimized-schema-for-codemirror
                               (:name (:info @current-sql-parser))
                               database-schema-sanitized
                               is-typing?)
                              (js/Promise.resolve #js{}))
-            ;; Cria um parser de fallback para usar enquanto processa o schema
+            ;; Create a fallback parser to use while processing the schema
             fallback-parser (case current-language
                               "postgres" [(sql (.assign js/Object (.-dialect PostgreSQL) #js{}))]
                               "mysql" [(sql (.assign js/Object (.-dialect MySQL) #js{}))]
@@ -316,12 +316,12 @@
                               "" [(.define cm-language/StreamLanguage cm-shell/shell)]
                               [(.define cm-language/StreamLanguage cm-shell/shell)])]
 
-        ;; Usa o parser de fallback inicialmente
+        ;; Use fallback parser initially
         (reset! current-sql-parser {:parser fallback-parser
                                     :info {:language current-language
                                            :schema current-schema}})
 
-        ;; Atualiza o parser quando o schema for processado
+        ;; Update parser when schema is processed
         (.then parser-promise
                (fn [schema]
                  (let [new-parser (case current-language
@@ -329,31 +329,31 @@
                                     "mysql" [(sql (.assign js/Object (.-dialect MySQL) schema))]
                                     "mssql" [(sql (.assign js/Object (.-dialect MSSQL) schema))]
                                     "oracledb" [(sql (.assign js/Object (.-dialect PLSQL) schema))]
-                                    ;; Para outras linguagens, mantém o mesmo parser
+                                    ;; For other languages, keep the same parser
                                     (:parser @current-sql-parser))]
                    (reset! current-sql-parser {:parser new-parser
                                                :info {:language current-language
                                                       :schema current-schema}}))))
 
-        ;; Retorna o parser inicial enquanto processa em background
+        ;; Return the initial parser while processing in background
         fallback-parser)
 
-      ;; Reutiliza o parser existente
+      ;; Reuse existing parser
       (:parser @current-sql-parser))))
 
-;; Definir tempo de debounce para as operações após digitação
+;; Define debounce time for operations after typing
 (def editor-debounce-time 750)
 
-;; Otimização da função de atualização do estado de digitação
+;; Optimization of the typing state update function
 (defn update-global-typing-state-optimized [is-typing?]
   (when (not= @is-typing is-typing?)
     (reset! is-typing is-typing?)
     (aset js/window "is_typing" is-typing?)))
 
-;; Cache para extensões do CodeMirror
+;; Cache for CodeMirror extensions
 (def codemirror-extensions-cache (r/atom {}))
 
-;; Função para criar extensões do CodeMirror de forma otimizada
+;; Function to create CodeMirror extensions in an optimized way
 (defn create-codemirror-extensions [current-language
                                     parser
                                     keymap
@@ -369,9 +369,9 @@
                    is-one-connection-selected?
                    is-template-ready?]]
 
-    ;; Verifica se já temos as extensões em cache
+    ;; Check if we already have the extensions in cache
     (or (get @codemirror-extensions-cache cache-key)
-        ;; Se não, cria novas extensões e armazena em cache
+        ;; If not, create new extensions and store in cache
         (let [extensions
               (concat
                (when (and (= feature-ai-ask "enabled")
@@ -383,7 +383,7 @@
                                           prefix
                                           suffix
                                           (:raw current-schema)))
-                       :debounceMs 1200 ;; Aumentado para reduzir frequência
+                       :debounceMs 1200 ;; Increased to reduce frequency
                        :maxPrefixLength 500
                        :maxSuffixLength 500})])
                [(.of cm-view/keymap (clj->js keymap))]
@@ -392,24 +392,24 @@
                  [(.of (.-editable cm-view/EditorView) false)
                   (.of (.-readOnly cm-state/EditorState) true)]))]
 
-          ;; Armazena no cache e retorna
+          ;; Store in cache and return
           (swap! codemirror-extensions-cache assoc cache-key extensions)
           extensions))))
 
-;; Componente CodeMirror otimizado com memorização
+;; CodeMirror component optimized with memoization
 (def codemirror-editor
   (r/create-class
    {:display-name "OptimizedCodeMirror"
 
-    ;; shouldComponentUpdate verifica se é necessário atualizar
+    ;; shouldComponentUpdate checks if an update is necessary
     :should-component-update
     (fn [this [_ old-props] [_ new-props]]
       (let [should-update (or
-                           ;; Valor do editor mudou
+                           ;; Editor value changed
                            (not= (:value old-props) (:value new-props))
-                           ;; Tema mudou
+                           ;; Theme changed
                            (not= (:theme old-props) (:theme new-props))
-                           ;; Extensões mudaram completamente (nova referência)
+                           ;; Extensions completely changed (new reference)
                            (not= (hash (:extensions old-props)) (hash (:extensions new-props))))]
         should-update))
 
