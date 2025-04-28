@@ -20,6 +20,7 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [goog.object :as gobj]
    [webapp.formatters :as formatters]
    [webapp.subs :as subs]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
@@ -68,20 +69,46 @@
 
 (def memoized-convert-tree
   (memoize
-   (fn [tree]
-     (let [schema-keys (keys (:schema-tree tree))]
+   (fn [tree max-tables]
+     (println "aaaaa")
+     (let [is-typing (boolean (aget js/window "is_typing"))
+           schema-keys (keys (:schema-tree tree))
+           limit-fn (fn [coll]
+                      (if (and is-typing (> (count coll) max-tables))
+                        (take max-tables coll)
+                        coll))]
        (cond
          (> (count schema-keys) 1) (reduce
                                     (fn [acc schema-key]
-                                      (merge acc (process-schema tree schema-key true)))
+                                      (let [tables (limit-fn (keys (get (:schema-tree tree) schema-key)))]
+                                        (merge acc
+                                               (reduce
+                                                (fn [acc-inner table-key]
+                                                  (let [qualified-key (str schema-key "." table-key)]
+                                                    (assoc acc-inner qualified-key
+                                                           (keys (get (get (:schema-tree tree) schema-key) table-key)))))
+                                                {}
+                                                tables))))
                                     {}
                                     schema-keys)
-         (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
+         (<= (count schema-keys) 1) (let [tables (limit-fn (keys (get (:schema-tree tree) (first schema-keys))))]
+                                      (reduce
+                                       (fn [acc table-key]
+                                         (assoc acc table-key
+                                                (keys (get (get (:schema-tree tree) (first schema-keys)) table-key))))
+                                       {}
+                                       tables))
          :else #js{})))))
 
 (def ^:private timer (r/atom nil))
 (def ^:private typing-intensity (r/atom 0))  ;; Track typing intensity
 (def ^:private code-saved-status (r/atom :saved)) ; :edited | :saved
+(def ^:private is-typing (r/atom false))
+(def ^:private typing-timer (r/atom nil))
+
+(defn update-global-typing-state [is-typing?]
+  (reset! is-typing is-typing?)
+  (aset js/window "is_typing" is-typing?))
 
 (defn- save-code-to-localstorage [code-string]
   (let [code-tmp-db {:date (.now js/Date)
@@ -106,16 +133,296 @@
     [:span {:class "text-xs italic"}
      "Edited"]]])
 
-(defn convert-tree [tree]
-  (let [schema-keys (keys (:schema-tree tree))]
-    (cond
-      (> (count schema-keys) 1) (reduce
-                                 (fn [acc schema-key]
-                                   (merge acc (process-schema tree schema-key true)))
-                                 {}
-                                 schema-keys)
-      (<= (count schema-keys) 1) (process-schema tree (first schema-keys) false)
-      :else #js{})))
+;; Cache to store processed schemas in JavaScript format
+(def schema-js-cache (r/atom {}))
+
+;; Function to simplify the schema only for autocomplete
+(defn simplify-schema-for-autocomplete [schema]
+  (let [schema-tree (:schema-tree schema)]
+    (reduce-kv
+     (fn [acc schema-name tables]
+       (assoc acc schema-name
+              (reduce-kv
+               (fn [table-acc table-name columns]
+                 (assoc table-acc table-name (vec (keys columns))))
+               {}
+               tables)))
+     {}
+     schema-tree)))
+
+;; Creation of Web Worker for asynchronous processing
+(def schema-worker-blob
+  "const processSchema = function(tree, maxTables, isTyping) {
+    const schemaKeys = Object.keys(tree);
+
+    // Function to limit the number of items as needed
+    const limitFn = (collection) => {
+      if (isTyping && collection.length > maxTables) {
+        return collection.slice(0, maxTables);
+      }
+      return collection;
+    };
+
+    // No schema
+    if (schemaKeys.length === 0) {
+      return {};
+    }
+
+    // Multiple schemas
+    if (schemaKeys.length > 1) {
+      let result = {};
+
+      for (const schemaKey of schemaKeys) {
+        const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
+        const limitedTables = limitFn(tables);
+
+        for (const tableKey of limitedTables) {
+          const qualifiedKey = schemaKey + '.' + tableKey;
+          const columns = tree[schemaKey][tableKey] || [];
+          result[qualifiedKey] = columns;
+        }
+      }
+
+      return result;
+    }
+
+    // Single schema
+    const schemaKey = schemaKeys[0];
+    const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
+    const limitedTables = limitFn(tables);
+
+    let result = {};
+    for (const tableKey of limitedTables) {
+      const columns = tree[schemaKey][tableKey] || [];
+      result[tableKey] = columns;
+    }
+
+    return result;
+  };
+
+  self.onmessage = function(e) {
+    const { schema, maxTables, isTyping } = e.data;
+
+    try {
+      const processedSchema = processSchema(schema, maxTables, isTyping);
+
+      self.postMessage({
+        processedSchema: processedSchema
+      });
+    } catch (error) {
+      self.postMessage({
+        error: error.message
+      });
+    }
+  };")
+
+;; Function to initialize the worker
+(def schema-worker (atom nil))
+
+(defn init-schema-worker []
+  (when (and (nil? @schema-worker) (exists? js/Blob) (exists? js/URL) (exists? js/Worker))
+    (let [blob (js/Blob. #js[schema-worker-blob] #js{:type "application/javascript"})
+          url (js/URL.createObjectURL blob)]
+      (reset! schema-worker (js/Worker. url)))))
+
+;; Function to process schema in worker
+(defn process-schema-in-worker [schema max-tables is-typing?]
+  (js/Promise.
+   (fn [resolve reject]
+     (if @schema-worker
+       (let [handler (fn handler-fn [e]
+                       (.removeEventListener @schema-worker "message" handler-fn)
+                       (let [^js data (.-data e)]
+                         (if (gobj/get data "error")
+                           (reject (gobj/get data "error"))
+                           (resolve (gobj/get data "processedSchema")))))]
+         (.addEventListener @schema-worker "message" handler)
+         (.postMessage @schema-worker #js{:schema (clj->js schema)
+                                          :maxTables max-tables
+                                          :isTyping is-typing?}))
+       ;; Fallback if worker is not available
+       (resolve (clj->js (memoized-convert-tree schema max-tables)))))))
+
+;; Optimized function to get processed schema
+(defn get-optimized-schema-for-codemirror [connection-name schema is-typing?]
+  (let [cache-key [connection-name is-typing?]
+        cached-value (get @schema-js-cache cache-key)
+        max-tables (if is-typing? 20 100)]
+
+    (if (and cached-value
+             (= (:schema-version cached-value) (hash (:schema-tree schema))))
+      ;; Return cached value if schema hasn't changed
+      (js/Promise.resolve (:schema-js cached-value))
+
+      ;; Process using worker or fallback
+      (-> (process-schema-in-worker
+           (simplify-schema-for-autocomplete schema)
+           max-tables
+           is-typing?)
+          (.then (fn [processed-schema]
+                   (let [js-schema #js{:schema processed-schema}]
+                     ;; Update cache
+                     (swap! schema-js-cache assoc cache-key
+                            {:schema-version (hash (:schema-tree schema))
+                             :schema-js js-schema})
+                     js-schema)))))))
+
+;; Initialize worker when module is loaded
+(init-schema-worker)
+
+;; Atom to store current SQL parser and its information
+(def current-sql-parser (r/atom nil))
+
+;; Function to check if we need to recreate the parser
+(defn should-recreate-parser? [prev-lang current-lang prev-schema current-schema]
+  (or (nil? prev-lang)
+      (not= prev-lang current-lang)
+      (not= (:status prev-schema) (:status current-schema))
+      (and (= (:status current-schema) :success)
+           (not= (:schema-tree prev-schema) (:schema-tree current-schema)))))
+
+;; Optimized function to create or reuse SQL parser using Web Worker
+(defn get-or-create-sql-parser [current-language current-schema is-typing? is-one-connection?]
+  (let [prev-parser-info (:info @current-sql-parser)
+        prev-lang (:language prev-parser-info)
+        prev-schema (:schema prev-parser-info)]
+
+    (if (should-recreate-parser? prev-lang current-language prev-schema current-schema)
+      ;; Only recreate parser if language or schema changed
+      (let [database-schema-sanitized (if (= (:status current-schema) :success)
+                                        current-schema
+                                        {:status :failure :raw "" :schema-tree []})
+            ;; Create a promise to resolve the SQL parser
+            parser-promise (if is-one-connection?
+                             (get-optimized-schema-for-codemirror
+                              (:name (:info @current-sql-parser))
+                              database-schema-sanitized
+                              is-typing?)
+                             (js/Promise.resolve #js{}))
+            ;; Create a fallback parser to use while processing the schema
+            fallback-parser (case current-language
+                              "postgres" [(sql (.assign js/Object (.-dialect PostgreSQL) #js{}))]
+                              "mysql" [(sql (.assign js/Object (.-dialect MySQL) #js{}))]
+                              "mssql" [(sql (.assign js/Object (.-dialect MSSQL) #js{}))]
+                              "oracledb" [(sql (.assign js/Object (.-dialect PLSQL) #js{}))]
+                              "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
+                              "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                              "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                              "mongodb" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                              "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
+                              "python" [(.define cm-language/StreamLanguage cm-python/python)]
+                              "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
+                              "elixir" [(cm-elixir/elixir)]
+                              "" [(.define cm-language/StreamLanguage cm-shell/shell)]
+                              [(.define cm-language/StreamLanguage cm-shell/shell)])]
+
+        ;; Use fallback parser initially
+        (reset! current-sql-parser {:parser fallback-parser
+                                    :info {:language current-language
+                                           :schema current-schema}})
+
+        ;; Update parser when schema is processed
+        (.then parser-promise
+               (fn [schema]
+                 (let [new-parser (case current-language
+                                    "postgres" [(sql (.assign js/Object (.-dialect PostgreSQL) schema))]
+                                    "mysql" [(sql (.assign js/Object (.-dialect MySQL) schema))]
+                                    "mssql" [(sql (.assign js/Object (.-dialect MSSQL) schema))]
+                                    "oracledb" [(sql (.assign js/Object (.-dialect PLSQL) schema))]
+                                    ;; For other languages, keep the same parser
+                                    (:parser @current-sql-parser))]
+                   (reset! current-sql-parser {:parser new-parser
+                                               :info {:language current-language
+                                                      :schema current-schema}}))))
+
+        ;; Return the initial parser while processing in background
+        fallback-parser)
+
+      ;; Reuse existing parser
+      (:parser @current-sql-parser))))
+
+;; Define debounce time for operations after typing
+(def editor-debounce-time 750)
+
+;; Optimization of the typing state update function
+(defn update-global-typing-state-optimized [is-typing?]
+  (when (not= @is-typing is-typing?)
+    (reset! is-typing is-typing?)
+    (aset js/window "is_typing" is-typing?)))
+
+;; Cache for CodeMirror extensions
+(def codemirror-extensions-cache (r/atom {}))
+
+;; Function to create CodeMirror extensions in an optimized way
+(defn create-codemirror-extensions [current-language
+                                    parser
+                                    keymap
+                                    feature-ai-ask
+                                    is-one-connection-selected?
+                                    connection-subtype
+                                    current-schema
+                                    is-template-ready?]
+
+  (let [cache-key [current-language
+                   (hash parser)
+                   feature-ai-ask
+                   is-one-connection-selected?
+                   is-template-ready?]]
+
+    ;; Check if we already have the extensions in cache
+    (or (get @codemirror-extensions-cache cache-key)
+        ;; If not, create new extensions and store in cache
+        (let [extensions
+              (concat
+               (when (and (= feature-ai-ask "enabled")
+                          is-one-connection-selected?)
+                 [(inlineCopilot
+                   #js{:getSuggestions (fn [prefix suffix]
+                                         (extensions/fetch-autocomplete
+                                          connection-subtype
+                                          prefix
+                                          suffix
+                                          (:raw current-schema)))
+                       :debounceMs 1200 ;; Increased to reduce frequency
+                       :maxPrefixLength 500
+                       :maxSuffixLength 500})])
+               [(.of cm-view/keymap (clj->js keymap))]
+               parser
+               (when is-template-ready?
+                 [(.of (.-editable cm-view/EditorView) false)
+                  (.of (.-readOnly cm-state/EditorState) true)]))]
+
+          ;; Store in cache and return
+          (swap! codemirror-extensions-cache assoc cache-key extensions)
+          extensions))))
+
+;; CodeMirror component optimized with memoization
+(def codemirror-editor
+  (r/create-class
+   {:display-name "OptimizedCodeMirror"
+
+    ;; shouldComponentUpdate checks if an update is necessary
+    :should-component-update
+    (fn [this [_ old-props] [_ new-props]]
+      (let [should-update (or
+                           ;; Editor value changed
+                           (not= (:value old-props) (:value new-props))
+                           ;; Theme changed
+                           (not= (:theme old-props) (:theme new-props))
+                           ;; Extensions completely changed (new reference)
+                           (not= (hash (:extensions old-props)) (hash (:extensions new-props))))]
+        should-update))
+
+    :reagent-render
+    (fn [{:keys [value theme extensions on-change]}]
+      [:> CodeMirror/default
+       {:value value
+        :height "100%"
+        :className "h-full text-sm"
+        :theme theme
+        :basicSetup #js{:defaultKeymap false}
+        :onChange on-change
+        :extensions (clj->js extensions)}])}))
 
 (defn editor []
   (let [user (rf/subscribe [:users->current-user])
@@ -194,37 +501,38 @@
             current-schema (get-in @database-schema [:data connection-name])
             language-info @(rf/subscribe [:editor-plugin/language])
             current-language (or (:selected language-info) (:default language-info))
-            language-parser-case (let [subtype (:subtype current-connection)
-                                       databse-schema-sanitized (if (= (:status current-schema) :success)
-                                                                  current-schema
-                                                                  {:status :failure :raw "" :schema-tree []})
-                                       schema (if (and is-one-connection-selected?
-                                                       (= subtype (:type current-schema)))
-                                                #js{:schema (clj->js (memoized-convert-tree databse-schema-sanitized))}
-                                                #js{})]
-                                   (case current-language
-                                     "postgres" [(sql
-                                                  (.assign js/Object (.-dialect PostgreSQL)
-                                                           schema))]
-                                     "mysql" [(sql
-                                               (.assign js/Object (.-dialect MySQL)
-                                                        schema))]
-                                     "mssql" [(sql
-                                               (.assign js/Object (.-dialect MSSQL)
-                                                        schema))]
-                                     "oracledb" [(sql
-                                                  (.assign js/Object (.-dialect PLSQL)
-                                                           schema))]
-                                     "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
-                                     "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                     "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                     "mongodb" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                     "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
-                                     "python" [(.define cm-language/StreamLanguage cm-python/python)]
-                                     "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
-                                     "elixir" [(cm-elixir/elixir)]
-                                     "" [(.define cm-language/StreamLanguage cm-shell/shell)]
-                                     [(.define cm-language/StreamLanguage cm-shell/shell)]))
+
+            ;; Obter o parser SQL otimizado
+            language-parser-case (get-or-create-sql-parser
+                                  current-language
+                                  current-schema
+                                  @is-typing
+                                  is-one-connection-selected?)
+
+            ;; Criar extensões de forma otimizada
+            codemirror-exts (create-codemirror-extensions
+                             current-language
+                             language-parser-case
+                             keymap
+                             feature-ai-ask
+                             is-one-connection-selected?
+                             (:subtype current-connection)
+                             current-schema
+                             (= (:status @selected-template) :ready))
+
+            ;; Handler otimizado para onChange
+            optimized-change-handler (fn [value _]
+                                       (reset! script value)
+                                       (reset! code-saved-status :edited)
+                                       (update-global-typing-state-optimized true)
+                                       (when @typing-timer (js/clearTimeout @typing-timer))
+                                       (reset! typing-timer
+                                               (js/setTimeout
+                                                (fn []
+                                                  (update-global-typing-state-optimized false)
+                                                  (save-code-to-localstorage value))
+                                                editor-debounce-time)))
+
             show-tree? (fn [connection]
                          (or (= (:type connection) "mysql-csv")
                              (= (:type connection) "postgres-csv")
@@ -275,38 +583,14 @@
                                        :preselected-connection (:name current-connection)
                                        :selected-connections (conj @multi-selected-connections current-connection)}]]
 
-                 [:> CodeMirror/default
+                 ;; Usar o componente otimizado do CodeMirror em vez do original
+                 [codemirror-editor
                   {:value @script
-                   :height "100%"
-                   :className "h-full text-sm"
                    :theme (if @dark-mode?
                             materialDark
                             materialLight)
-                   :basicSetup #js{:defaultKeymap false}
-
-                   :onChange (fn [value _]
-                               (reset! script value)
-                               (reset! code-saved-status :edited)
-                               (when @timer (js/clearTimeout @timer))
-                               (reset! timer
-                                       (js/setTimeout #(save-code-to-localstorage value) 500)))
-
-                   :extensions (clj->js
-                                (concat
-                                 (when (and (= feature-ai-ask "enabled")
-                                            is-one-connection-selected?)
-                                   [(inlineCopilot
-                                     (fn [prefix suffix]
-                                       (extensions/fetch-autocomplete
-                                        (:subtype current-connection)
-                                        prefix
-                                        suffix
-                                        (:raw current-schema))))])
-                                 [(.of cm-view/keymap (clj->js keymap))]
-                                 language-parser-case
-                                 (when (= (:status @selected-template) :ready)
-                                   [(.of (.-editable cm-view/EditorView) false)
-                                    (.of (.-readOnly cm-state/EditorState) true)])))}])
+                   :extensions codemirror-exts
+                   :on-change optimized-change-handler}])
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
