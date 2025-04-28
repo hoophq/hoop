@@ -5,7 +5,7 @@
 (def dark-theme
   {"component"                  "#15202b"
 
-       ;; bottombar & topbar
+   ;; bottombar & topbar
    "button"                     "#2f3b47"
    "button-icon"                "#8899a6"
    "input"                      "#15202b"
@@ -14,7 +14,7 @@
    "input:focus|border"         "#0078ff"
    "input-info"                 "#8899a6"
 
-       ;; contextmenu
+   ;; contextmenu
    "contextmenu"                "#15202b"
    "contextmenu|text"           "#ffffff"
    "contextmenu-item:highlight" "#192734"
@@ -25,16 +25,16 @@
    "sheet"                      "#192734"
    "sheet|text"                 "#ffffff"
 
-       ;; scrollbar
+   ;; scrollbar
    "scrollbar"                  "#000000"
    "scrollbar|border"           "#444444"
 
-       ;; grid lines
+   ;; grid lines
    "gridline"                   "#ffffff"
    "gridline-tip"               "#ffffff"
    "gridline|opacity"           0.10
 
-       ;; headers
+   ;; headers
    "header"                     "#15202b"
    "header|text"                "#ffffff"
    "header:highlight"           "#192734"
@@ -42,52 +42,52 @@
    "header:selected|text"       "#ffffff"
    "header-icon"                "#ecf5f4"
 
-       ;; action ranges
+   ;; action ranges
    "cellrange:cut"              "#0078ff"
    "cellrange:copy"             "#0078ff"
    "cellrange:fill"             "#ffffff"
 
-       ;; selection
+   ;; selection
    "cellcursor"                 "#0078ff"
    "cellrange:selected"         "#0078ff"
    "cellrange:selected|border"  "#0078ff"
    "cellrange:selected|opacity" 0.10
 
-       ;; fill handle
+   ;; fill handle
    "fillhandle"                 "#0078ff"
 
-       ;; cell editor
+   ;; cell editor
    "celleditor"                 "#0078ff"
 
-       ;; search
+   ;; search
    "searchcursor"               "#ecf5f4"
    "cell+found"                 "#abc5dc"
    "cell+found|opacity"         0.25
 
-       ;; freezeline
+   ;; freezeline
    "freezeline"                 "#2a4157"
    "freezeline-tip"             "#2f5478"
    "freezelineplaceholder"      "#2f5478"
 
-       ;; move action
+   ;; move action
    "move?ghost"                 "#ffffff"
    "move?ghost|opacity"         0.1
    "move?guide"                 "#8899a6"
    "move?guide|opacity"         0.5
 
-       ;; freeze action
+   ;; freeze action
    "freeze?hint"                 "#0078ff"
    "freeze?ghost"                "#ffffff"
    "freeze?ghost|opacity"        0.1
    "freeze?guide"                "#8899a6"
    "freeze?guide|opacity"        0.5
 
-       ;; resize action
+   ;; resize action
    "resize?hint"                 "#0078ff"
    "resize?guide"                "#0078ff"
    "resize?guide|opacity"        1
 
-       ;; show action
+   ;; show action
    "show?hint"                   "#15202b"
    "show?hint-icon"              "#ffffff"
    "show?hint|border"            "#0078ff"})

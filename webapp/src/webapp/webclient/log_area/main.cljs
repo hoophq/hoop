@@ -1,11 +1,12 @@
 (ns webapp.webclient.log-area.main
-  (:require ["papaparse" :as papa]
-            [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.data-grid-table :as data-grid-table]
-            [webapp.webclient.log-area.output-tabs :refer [tabs]]
-            [webapp.webclient.log-area.logs :as logs]))
+  (:require
+   ["papaparse" :as papa]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.ag-grid-table :as ag-grid-table]
+   [webapp.webclient.log-area.logs :as logs]
+   [webapp.webclient.log-area.output-tabs :refer [tabs]]))
 
 (defn- transform-results->matrix
   [results connection-type]
@@ -67,6 +68,6 @@
                  :tabs available-tabs
                  :selected-tab @selected-tab}]
           (case @selected-tab
-            "Tabular" [data-grid-table/main results-heads results-body dark-mode? tabular-loading? allow-copy?]
+            "Tabular" [ag-grid-table/main results-heads results-body dark-mode? tabular-loading? allow-copy?]
             "Logs" [logs/main :logs logs-content]
             :else [logs/main logs-content])]]))))

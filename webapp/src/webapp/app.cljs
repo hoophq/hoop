@@ -3,6 +3,11 @@
    ["@radix-ui/themes" :refer [Theme Box Heading]]
    ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
+   ["ag-grid-community" :refer [AllCommunityModule
+                                ModuleRegistry
+                                ValidationModule
+                                TextEditorModule
+                                NumberEditorModule]]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -482,6 +487,10 @@
         gateway-public-info (rf/subscribe [:gateway->public-info])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
+    ;; Register AG Grid modules
+    (.registerModules ModuleRegistry #js[AllCommunityModule
+                                         TextEditorModule
+                                         NumberEditorModule])
     (sentry-monitor)
     (fn []
       (when (not (-> @gateway-public-info :loading))
