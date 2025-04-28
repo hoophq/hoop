@@ -20,6 +20,7 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [goog.object :as gobj]
    [webapp.formatters :as formatters]
    [webapp.subs :as subs]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
@@ -69,6 +70,7 @@
 (def memoized-convert-tree
   (memoize
    (fn [tree max-tables]
+     (println "aaaaa")
      (let [is-typing (boolean (aget js/window "is_typing"))
            schema-keys (keys (:schema-tree tree))
            limit-fn (fn [coll]
@@ -131,8 +133,222 @@
     [:span {:class "text-xs italic"}
      "Edited"]]])
 
-(defn convert-tree [tree]
-  (memoized-convert-tree tree 50))
+;; Cache para armazenar schemas processados em formato JavaScript
+(def schema-js-cache (r/atom {}))
+
+;; Função para simplificar o schema apenas para autocompletar
+(defn simplify-schema-for-autocomplete [schema]
+  (let [schema-tree (:schema-tree schema)]
+    (reduce-kv
+     (fn [acc schema-name tables]
+       (assoc acc schema-name
+              (reduce-kv
+               (fn [table-acc table-name columns]
+                 (assoc table-acc table-name (vec (keys columns))))
+               {}
+               tables)))
+     {}
+     schema-tree)))
+
+;; Criação do Web Worker para processamento assíncrono
+(def schema-worker-blob
+  "const processSchema = function(tree, maxTables, isTyping) {
+    const schemaKeys = Object.keys(tree);
+
+    // Função para limitar o número de itens conforme necessário
+    const limitFn = (collection) => {
+      if (isTyping && collection.length > maxTables) {
+        return collection.slice(0, maxTables);
+      }
+      return collection;
+    };
+
+    // Sem schema
+    if (schemaKeys.length === 0) {
+      return {};
+    }
+
+    // Múltiplos schemas
+    if (schemaKeys.length > 1) {
+      let result = {};
+
+      for (const schemaKey of schemaKeys) {
+        const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
+        const limitedTables = limitFn(tables);
+
+        for (const tableKey of limitedTables) {
+          const qualifiedKey = schemaKey + '.' + tableKey;
+          const columns = tree[schemaKey][tableKey] || [];
+          result[qualifiedKey] = columns;
+        }
+      }
+
+      return result;
+    }
+
+    // Um único schema
+    const schemaKey = schemaKeys[0];
+    const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
+    const limitedTables = limitFn(tables);
+
+    let result = {};
+    for (const tableKey of limitedTables) {
+      const columns = tree[schemaKey][tableKey] || [];
+      result[tableKey] = columns;
+    }
+
+    return result;
+  };
+
+  self.onmessage = function(e) {
+    const { schema, maxTables, isTyping } = e.data;
+
+    try {
+      const processedSchema = processSchema(schema, maxTables, isTyping);
+
+      self.postMessage({
+        processedSchema: processedSchema
+      });
+    } catch (error) {
+      self.postMessage({
+        error: error.message
+      });
+    }
+  };")
+
+;; Função para inicializar o worker
+(def schema-worker (atom nil))
+
+(defn init-schema-worker []
+  (when (and (nil? @schema-worker) (exists? js/Blob) (exists? js/URL) (exists? js/Worker))
+    (let [blob (js/Blob. #js[schema-worker-blob] #js{:type "application/javascript"})
+          url (js/URL.createObjectURL blob)]
+      (reset! schema-worker (js/Worker. url)))))
+
+;; Função para processar schema no worker
+(defn process-schema-in-worker [schema max-tables is-typing?]
+  (js/Promise.
+   (fn [resolve reject]
+     (if @schema-worker
+       (let [handler (fn handler-fn [e]
+                       (.removeEventListener @schema-worker "message" handler-fn)
+                       (let [^js data (.-data e)]
+                         (if (gobj/get data "error")
+                           (reject (gobj/get data "error"))
+                           (resolve (gobj/get data "processedSchema")))))]
+         (.addEventListener @schema-worker "message" handler)
+         (.postMessage @schema-worker #js{:schema (clj->js schema)
+                                          :maxTables max-tables
+                                          :isTyping is-typing?}))
+       ;; Fallback caso o worker não esteja disponível
+       (resolve (clj->js (memoized-convert-tree schema max-tables)))))))
+
+;; Função otimizada para obter schema processado
+(defn get-optimized-schema-for-codemirror [connection-name schema is-typing?]
+  (let [cache-key [connection-name is-typing?]
+        cached-value (get @schema-js-cache cache-key)
+        max-tables (if is-typing? 20 100)]
+
+    (if (and cached-value
+             (= (:schema-version cached-value) (hash (:schema-tree schema))))
+      ;; Retornar valor cacheado se schema não mudou
+      (js/Promise.resolve (:schema-js cached-value))
+
+      ;; Processar usando o worker ou fallback
+      (-> (process-schema-in-worker
+           (simplify-schema-for-autocomplete schema)
+           max-tables
+           is-typing?)
+          (.then (fn [processed-schema]
+                   (let [js-schema #js{:schema processed-schema}]
+                     ;; Atualizar cache
+                     (swap! schema-js-cache assoc cache-key
+                            {:schema-version (hash (:schema-tree schema))
+                             :schema-js js-schema})
+                     js-schema)))))))
+
+;; Inicializa o worker quando o módulo é carregado
+(init-schema-worker)
+
+;; Atom para armazenar o parser SQL atual e suas informações
+(def current-sql-parser (r/atom nil))
+
+;; Função para verificar se precisamos recriar o parser
+(defn should-recreate-parser? [prev-lang current-lang prev-schema current-schema]
+  (or (nil? prev-lang)
+      (not= prev-lang current-lang)
+      (not= (:status prev-schema) (:status current-schema))
+      (and (= (:status current-schema) :success)
+           (not= (:schema-tree prev-schema) (:schema-tree current-schema)))))
+
+;; Função otimizada para criar ou reutilizar o parser SQL usando Web Worker
+(defn get-or-create-sql-parser [current-language current-schema is-typing? is-one-connection?]
+  (let [prev-parser-info (:info @current-sql-parser)
+        prev-lang (:language prev-parser-info)
+        prev-schema (:schema prev-parser-info)]
+
+    (if (should-recreate-parser? prev-lang current-language prev-schema current-schema)
+      ;; Só recria o parser se linguagem ou schema mudarem
+      (let [database-schema-sanitized (if (= (:status current-schema) :success)
+                                        current-schema
+                                        {:status :failure :raw "" :schema-tree []})
+            ;; Cria uma promessa para resolver o parser SQL
+            parser-promise (if is-one-connection?
+                             (get-optimized-schema-for-codemirror
+                              (:name (:info @current-sql-parser))
+                              database-schema-sanitized
+                              is-typing?)
+                             (js/Promise.resolve #js{}))
+            ;; Cria um parser de fallback para usar enquanto processa o schema
+            fallback-parser (case current-language
+                              "postgres" [(sql (.assign js/Object (.-dialect PostgreSQL) #js{}))]
+                              "mysql" [(sql (.assign js/Object (.-dialect MySQL) #js{}))]
+                              "mssql" [(sql (.assign js/Object (.-dialect MSSQL) #js{}))]
+                              "oracledb" [(sql (.assign js/Object (.-dialect PLSQL) #js{}))]
+                              "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
+                              "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                              "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                              "mongodb" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
+                              "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
+                              "python" [(.define cm-language/StreamLanguage cm-python/python)]
+                              "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
+                              "elixir" [(cm-elixir/elixir)]
+                              "" [(.define cm-language/StreamLanguage cm-shell/shell)]
+                              [(.define cm-language/StreamLanguage cm-shell/shell)])]
+
+        ;; Usa o parser de fallback inicialmente
+        (reset! current-sql-parser {:parser fallback-parser
+                                    :info {:language current-language
+                                           :schema current-schema}})
+
+        ;; Atualiza o parser quando o schema for processado
+        (.then parser-promise
+               (fn [schema]
+                 (let [new-parser (case current-language
+                                    "postgres" [(sql (.assign js/Object (.-dialect PostgreSQL) schema))]
+                                    "mysql" [(sql (.assign js/Object (.-dialect MySQL) schema))]
+                                    "mssql" [(sql (.assign js/Object (.-dialect MSSQL) schema))]
+                                    "oracledb" [(sql (.assign js/Object (.-dialect PLSQL) schema))]
+                                    ;; Para outras linguagens, mantém o mesmo parser
+                                    (:parser @current-sql-parser))]
+                   (reset! current-sql-parser {:parser new-parser
+                                               :info {:language current-language
+                                                      :schema current-schema}}))))
+
+        ;; Retorna o parser inicial enquanto processa em background
+        fallback-parser)
+
+      ;; Reutiliza o parser existente
+      (:parser @current-sql-parser))))
+
+;; Definir tempo de debounce para as operações após digitação
+(def editor-debounce-time 750)
+
+;; Otimização da função de atualização do estado de digitação
+(defn update-global-typing-state-optimized [is-typing?]
+  (when (not= @is-typing is-typing?)
+    (reset! is-typing is-typing?)
+    (aset js/window "is_typing" is-typing?)))
 
 (defn editor []
   (let [user (rf/subscribe [:users->current-user])
@@ -211,38 +427,14 @@
             current-schema (get-in @database-schema [:data connection-name])
             language-info @(rf/subscribe [:editor-plugin/language])
             current-language (or (:selected language-info) (:default language-info))
-            language-parser-case (let [subtype (:subtype current-connection)
-                                       databse-schema-sanitized (if (= (:status current-schema) :success)
-                                                                  current-schema
-                                                                  {:status :failure :raw "" :schema-tree []})
-                                       max-tables (if @is-typing 20 100)
-                                       schema (if (and is-one-connection-selected?
-                                                       (= subtype (:type current-schema)))
-                                                #js{:schema (clj->js (memoized-convert-tree databse-schema-sanitized max-tables))}
-                                                #js{})]
-                                   (case current-language
-                                     "postgres" [(sql
-                                                  (.assign js/Object (.-dialect PostgreSQL)
-                                                           schema))]
-                                     "mysql" [(sql
-                                               (.assign js/Object (.-dialect MySQL)
-                                                        schema))]
-                                     "mssql" [(sql
-                                               (.assign js/Object (.-dialect MSSQL)
-                                                        schema))]
-                                     "oracledb" [(sql
-                                                  (.assign js/Object (.-dialect PLSQL)
-                                                           schema))]
-                                     "command-line" [(.define cm-language/StreamLanguage cm-shell/shell)]
-                                     "javascript" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                     "nodejs" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                     "mongodb" [(.define cm-language/StreamLanguage cm-javascript/javascript)]
-                                     "ruby-on-rails" [(.define cm-language/StreamLanguage cm-ruby/ruby)]
-                                     "python" [(.define cm-language/StreamLanguage cm-python/python)]
-                                     "clojure" [(.define cm-language/StreamLanguage cm-clojure/clojure)]
-                                     "elixir" [(cm-elixir/elixir)]
-                                     "" [(.define cm-language/StreamLanguage cm-shell/shell)]
-                                     [(.define cm-language/StreamLanguage cm-shell/shell)]))
+
+            ;; Substituir a criação direta do parser por nossa função otimizada
+            language-parser-case (get-or-create-sql-parser
+                                  current-language
+                                  current-schema
+                                  @is-typing
+                                  is-one-connection-selected?)
+
             show-tree? (fn [connection]
                          (or (= (:type connection) "mysql-csv")
                              (= (:type connection) "postgres-csv")
@@ -302,15 +494,18 @@
                             materialLight)
                    :basicSetup #js{:defaultKeymap false}
 
+                   ;; Otimizar o onChange para usar um único timer
                    :onChange (fn [value _]
                                (reset! script value)
                                (reset! code-saved-status :edited)
-                               (update-global-typing-state true)
+                               (update-global-typing-state-optimized true)
                                (when @typing-timer (js/clearTimeout @typing-timer))
-                               (reset! typing-timer (js/setTimeout #(update-global-typing-state false) 750))
-                               (when @timer (js/clearTimeout @timer))
-                               (reset! timer
-                                       (js/setTimeout #(save-code-to-localstorage value) 500)))
+                               (reset! typing-timer
+                                       (js/setTimeout
+                                        (fn []
+                                          (update-global-typing-state-optimized false)
+                                          (save-code-to-localstorage value))
+                                        editor-debounce-time)))
 
                    :extensions (clj->js
                                 (concat
