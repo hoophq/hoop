@@ -350,6 +350,80 @@
     (reset! is-typing is-typing?)
     (aset js/window "is_typing" is-typing?)))
 
+;; Cache para extensões do CodeMirror
+(def codemirror-extensions-cache (r/atom {}))
+
+;; Função para criar extensões do CodeMirror de forma otimizada
+(defn create-codemirror-extensions [current-language
+                                    parser
+                                    keymap
+                                    feature-ai-ask
+                                    is-one-connection-selected?
+                                    connection-subtype
+                                    current-schema
+                                    is-template-ready?]
+
+  (let [cache-key [current-language
+                   (hash parser)
+                   feature-ai-ask
+                   is-one-connection-selected?
+                   is-template-ready?]]
+
+    ;; Verifica se já temos as extensões em cache
+    (or (get @codemirror-extensions-cache cache-key)
+        ;; Se não, cria novas extensões e armazena em cache
+        (let [extensions
+              (concat
+               (when (and (= feature-ai-ask "enabled")
+                          is-one-connection-selected?)
+                 [(inlineCopilot
+                   #js{:getSuggestions (fn [prefix suffix]
+                                         (extensions/fetch-autocomplete
+                                          connection-subtype
+                                          prefix
+                                          suffix
+                                          (:raw current-schema)))
+                       :debounceMs 1200 ;; Aumentado para reduzir frequência
+                       :maxPrefixLength 500
+                       :maxSuffixLength 500})])
+               [(.of cm-view/keymap (clj->js keymap))]
+               parser
+               (when is-template-ready?
+                 [(.of (.-editable cm-view/EditorView) false)
+                  (.of (.-readOnly cm-state/EditorState) true)]))]
+
+          ;; Armazena no cache e retorna
+          (swap! codemirror-extensions-cache assoc cache-key extensions)
+          extensions))))
+
+;; Componente CodeMirror otimizado com memorização
+(def codemirror-editor
+  (r/create-class
+   {:display-name "OptimizedCodeMirror"
+
+    ;; shouldComponentUpdate verifica se é necessário atualizar
+    :should-component-update
+    (fn [this [_ old-props] [_ new-props]]
+      (let [should-update (or
+                           ;; Valor do editor mudou
+                           (not= (:value old-props) (:value new-props))
+                           ;; Tema mudou
+                           (not= (:theme old-props) (:theme new-props))
+                           ;; Extensões mudaram completamente (nova referência)
+                           (not= (hash (:extensions old-props)) (hash (:extensions new-props))))]
+        should-update))
+
+    :reagent-render
+    (fn [{:keys [value theme extensions on-change]}]
+      [:> CodeMirror/default
+       {:value value
+        :height "100%"
+        :className "h-full text-sm"
+        :theme theme
+        :basicSetup #js{:defaultKeymap false}
+        :onChange on-change
+        :extensions (clj->js extensions)}])}))
+
 (defn editor []
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
@@ -428,12 +502,36 @@
             language-info @(rf/subscribe [:editor-plugin/language])
             current-language (or (:selected language-info) (:default language-info))
 
-            ;; Substituir a criação direta do parser por nossa função otimizada
+            ;; Obter o parser SQL otimizado
             language-parser-case (get-or-create-sql-parser
                                   current-language
                                   current-schema
                                   @is-typing
                                   is-one-connection-selected?)
+
+            ;; Criar extensões de forma otimizada
+            codemirror-exts (create-codemirror-extensions
+                             current-language
+                             language-parser-case
+                             keymap
+                             feature-ai-ask
+                             is-one-connection-selected?
+                             (:subtype current-connection)
+                             current-schema
+                             (= (:status @selected-template) :ready))
+
+            ;; Handler otimizado para onChange
+            optimized-change-handler (fn [value _]
+                                       (reset! script value)
+                                       (reset! code-saved-status :edited)
+                                       (update-global-typing-state-optimized true)
+                                       (when @typing-timer (js/clearTimeout @typing-timer))
+                                       (reset! typing-timer
+                                               (js/setTimeout
+                                                (fn []
+                                                  (update-global-typing-state-optimized false)
+                                                  (save-code-to-localstorage value))
+                                                editor-debounce-time)))
 
             show-tree? (fn [connection]
                          (or (= (:type connection) "mysql-csv")
@@ -485,47 +583,14 @@
                                        :preselected-connection (:name current-connection)
                                        :selected-connections (conj @multi-selected-connections current-connection)}]]
 
-                 [:> CodeMirror/default
+                 ;; Usar o componente otimizado do CodeMirror em vez do original
+                 [codemirror-editor
                   {:value @script
-                   :height "100%"
-                   :className "h-full text-sm"
                    :theme (if @dark-mode?
                             materialDark
                             materialLight)
-                   :basicSetup #js{:defaultKeymap false}
-
-                   ;; Otimizar o onChange para usar um único timer
-                   :onChange (fn [value _]
-                               (reset! script value)
-                               (reset! code-saved-status :edited)
-                               (update-global-typing-state-optimized true)
-                               (when @typing-timer (js/clearTimeout @typing-timer))
-                               (reset! typing-timer
-                                       (js/setTimeout
-                                        (fn []
-                                          (update-global-typing-state-optimized false)
-                                          (save-code-to-localstorage value))
-                                        editor-debounce-time)))
-
-                   :extensions (clj->js
-                                (concat
-                                 (when (and (= feature-ai-ask "enabled")
-                                            is-one-connection-selected?)
-                                   [(inlineCopilot
-                                     #js{:getSuggestions (fn [prefix suffix]
-                                                           (extensions/fetch-autocomplete
-                                                            (:subtype current-connection)
-                                                            prefix
-                                                            suffix
-                                                            (:raw current-schema)))
-                                         :debounceMs 800
-                                         :maxPrefixLength 500
-                                         :maxSuffixLength 500})])
-                                 [(.of cm-view/keymap (clj->js keymap))]
-                                 language-parser-case
-                                 (when (= (:status @selected-template) :ready)
-                                   [(.of (.-editable cm-view/EditorView) false)
-                                    (.of (.-readOnly cm-state/EditorState) true)])))}])
+                   :extensions codemirror-exts
+                   :on-change optimized-change-handler}])
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
