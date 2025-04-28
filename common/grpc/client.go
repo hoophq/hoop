@@ -52,8 +52,6 @@ type (
 
 const (
 	OptionConnectionName OptionKey = "connection-name"
-	OptionUserInfo       OptionKey = "user-info"
-	OptionConnectionInfo OptionKey = "connection-info"
 	LocalhostAddr                  = "127.0.0.1:8010"
 
 	// MaxRecvMsgSize defines the maximum message size in bytes that can be received.

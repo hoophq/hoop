@@ -245,7 +245,7 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 		Name:                             conn.Name,
 		Type:                             string(conn.Type),
 		SubType:                          conn.SubType.String,
-		CmdEntrypoint:                    conn.Command,
+		Command:                          conn.Command,
 		Secrets:                          conn.AsSecrets(),
 		Tags:                             conn.ConnectionTags,
 		AgentID:                          conn.AgentID.String,

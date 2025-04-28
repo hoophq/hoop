@@ -24,7 +24,6 @@ import (
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -166,7 +165,7 @@ func RunExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("runbook file %v not found", req.FileName)})
 		return
 	}
-	runbook, err := fetchRunbookFile(config, req)
+	runbook, err := FetchRunbookFile(config, req.FileName, req.RefHash, req.Parameters)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -181,7 +180,7 @@ func RunExec(c *gin.Context) {
 	}
 
 	runbookParamsJson, _ := json.Marshal(req.Parameters)
-	sessionLabels := types.SessionLabels{
+	sessionLabels := openapi.SessionLabelsType{
 		"runbookFile":       req.FileName,
 		"runbookParameters": string(runbookParamsJson),
 	}
@@ -313,4 +312,20 @@ func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connection *models.Con
 		return nil, repoPrefix, err
 	}
 	return runbookConfig, repoPrefix, nil
+}
+
+// GetRunbookConfig returns the runbook if the plugin is enabled and there's an existent configuration set
+func GetRunbookConfig(ctx pgrest.OrgContext) (*templates.RunbookConfig, error) {
+	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
+	}
+	if p == nil || p.Config == nil {
+		return nil, nil
+	}
+	runbookConfig, err := templates.NewRunbookConfig(p.Config.EnvVars)
+	if err != nil {
+		return nil, err
+	}
+	return runbookConfig, nil
 }

@@ -2,6 +2,7 @@ package awsintegration
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -560,10 +561,24 @@ func toDBRoleOpenAPI(o *models.DBRole) *openapi.DBRoleJob {
 		}
 	}
 
+	var hookStatus *openapi.DBRoleJobHookStatus
+	if o.HookStatus != nil {
+		rawOutput, err := base64.StdEncoding.DecodeString(o.HookStatus.OutputBase64)
+		if err != nil {
+			log.Warnf("failed decoding hook status output content, err=%v", err)
+		}
+		hookStatus = &openapi.DBRoleJobHookStatus{
+			ExitCode:         o.HookStatus.ExitCode,
+			Output:           string(rawOutput),
+			ExecutionTimeSec: o.HookStatus.ExecutionTimeSec,
+		}
+	}
+
 	return &openapi.DBRoleJob{
 		OrgID:       o.OrgID,
 		ID:          o.ID,
 		Status:      status,
+		HookStatus:  hookStatus,
 		CreatedAt:   o.CreatedAt,
 		CompletedAt: o.CompletedAt,
 		Spec:        spec,

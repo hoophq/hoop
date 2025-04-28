@@ -48,7 +48,7 @@ func RunDBProvisioner(agentID string, req *pbsystem.DBProvisionerRequest) *pbsys
 		redactMessage(req, &resp)
 		return &resp
 	case <-timeoutCtx.Done():
-		return pbsystem.NewError(req.SID, "timeout waiting for a response")
+		return pbsystem.NewError(req.SID, "timeout waiting for a response from agent %v (%v)", st.AgentName(), st.AgentVersion())
 	}
 }
 
