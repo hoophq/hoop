@@ -198,9 +198,12 @@ func (p *provisioner) Run(jobID string) error {
 		}
 
 		if runbookConfig != nil {
-			runbook, err := apirunbooks.FetchRunbookFile(runbookConfig, "hoop-hooks/aws-connect-post-exec.runbook.py", "", map[string]string{})
+			runbookName := "hoop-hooks/aws-connect-post-exec.runbook.py"
+			runbook, err := apirunbooks.FetchRunbookFile(runbookConfig, runbookName, "", map[string]string{})
 			if err != nil {
-				log.With("sid", jobID).Warnf("failed executing runbook, reason=%v", err)
+				if !strings.HasPrefix(err.Error(), fmt.Sprintf("runbook %v not found", runbookName)) {
+					log.With("sid", jobID).Warnf("failed fetching runbook hook, reason=%v", err)
+				}
 			}
 			if runbook != nil {
 				request.ExecHook = &pbsystem.ExecHook{
