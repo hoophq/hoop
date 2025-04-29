@@ -13,8 +13,6 @@
   2 - when the status is 399 or below, it executes a on-failure function, that is provided by upperscope."
   [{:keys  [status on-failure]}]
   (when (= status 401)
-    ;; Em vez de chamar o evento de logout diretamente, navegar para a tela de logout
-    ;; para uma melhor experiência do usuário
     (rf/dispatch [:navigate :logout-hoop]))
   (when (> status 399) (on-failure)))
 
