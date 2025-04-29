@@ -8,8 +8,8 @@
    [webapp.components.multiselect :as multi-select]))
 
 (defn back-button []
-  [:button {:class "inline-flex items-center text-sm text-gray-600 mb-6 hover:text-gray-900"
-            :on-click #(rf/dispatch [:navigate :access-control])}
+  [:a {:class "inline-flex items-center text-sm text-gray-600 mb-6 hover:text-gray-900"
+       :on-click #(rf/dispatch [:navigate :access-control])}
    [:> hero-outline/ArrowLeftIcon {:class "h-4 w-4 mr-1"}]
    "Back"])
 

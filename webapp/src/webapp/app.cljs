@@ -58,6 +58,8 @@
    [webapp.events.segment]
    [webapp.events.slack-plugin]
    [webapp.events.users]
+   [webapp.features.runbooks.events]
+   [webapp.features.runbooks.subs]
    [webapp.features.access-control.events]
    [webapp.features.access-control.subs]
    [webapp.features.access-control.main :as access-control]
@@ -93,7 +95,9 @@
    [webapp.webclient.events.metadata]
    [webapp.webclient.events.multi-exec]
    [webapp.webclient.events.search]
-   [webapp.webclient.panel :as webclient]))
+   [webapp.webclient.panel :as webclient]
+   [webapp.features.runbooks.main :as runbooks]
+   [webapp.features.runbooks.views.runbook-form :as runbook-form]))
 
 (when (= config/release-type "hoop-ui")
   (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
@@ -116,12 +120,11 @@
       (rf/dispatch [:navigate :login-hoop])
 
       (if (and redirect-after-auth (not (empty? redirect-after-auth)))
-        (do
-          (js/setTimeout
-           #(do
-              (.removeItem js/localStorage "redirect-after-auth")
-              (set! (.. js/window -location -href) redirect-after-auth))
-           500))
+        (js/setTimeout
+         #(do
+            (.removeItem js/localStorage "redirect-after-auth")
+            (set! (.. js/window -location -href) redirect-after-auth))
+         500)
 
         (rf/dispatch [:navigate :home])))
 
@@ -496,6 +499,32 @@
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [group-form/main :edit {:group-id group-id}]]]]))
 
+(defmethod routes/panels :runbooks-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [runbooks/main]]])
+
+(defmethod routes/panels :runbooks-edit-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        connection-id (:connection-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [runbook-form/main :edit {:connection-id connection-id}]]]]))
+
+(defmethod routes/panels :runbooks-edit-path-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        path-id (:path-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [runbook-form/main :edit {:path-id path-id}]]]]))
+
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;;;;;
@@ -524,9 +553,7 @@
            [:div {:class "flex justify-center"}
             [:> Spinner {:size "3"}]]]]])
 
-      (do
-        (println "Loading... 3")
-        [loading-transition]))))
+      [loading-transition])))
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])

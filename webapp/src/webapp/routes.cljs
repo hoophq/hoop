@@ -31,7 +31,9 @@
      "/dashboard" :dashboard
      "/features" [["/access-control" :access-control]
                   ["/access-control/new" :access-control-new]
-                  [["/access-control/edit/" :group-id] :access-control-edit]]
+                  [["/access-control/edit/" :group-id] :access-control-edit]
+                  ["/runbooks" :runbooks]
+                  [["/runbooks/edit/" :connection-id] :runbooks-edit]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]
                     [["/edit/" :guardrail-id] :edit-guardrail]]
@@ -122,18 +124,20 @@
 (defn admin-only []
   (let [is-admin? (rf/subscribe [:user/is-admin?])]
     (fn [component]
-      (if @is-admin?
-        ;; If it's an admin, render the component normally
-        component
-        ;; If it's not an admin, redirect to home and show a loader
-        (do
-          (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
-          [:div {:class "flex items-center justify-center h-full"}
-           [:div {:class "text-center"}
-            [:div {:class "mb-4 text-xl font-medium text-gray-900"}
-             "Redirecting..."]
-            [:div {:class "text-sm text-gray-500"}
-             "You don't have permission to access this page."]]])))))
+      (if (nil? @is-admin?)
+        [:<>]
+        (if @is-admin?
+          ;; If it's an admin, render the component normally
+          component
+          ;; If it's not an admin, redirect to home and show a loader
+          (do
+            (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
+            [:div {:class "flex items-center justify-center h-full"}
+             [:div {:class "text-center"}
+              [:div {:class "mb-4 text-xl font-medium text-gray-900"}
+               "Redirecting..."]
+              [:div {:class "text-sm text-gray-500"}
+               "You don't have permission to access this page."]]]))))))
 
 ;; Function wrapper to wrap admin components
 (defn wrap-admin-only [component]
