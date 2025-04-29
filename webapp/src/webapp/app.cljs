@@ -158,14 +158,6 @@
      [:div {:class "flex justify-center"}
       [:> Spinner {:size "3"}]]]]])
 
-(defn loading-transition []
-  [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-   [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-    [:div {:class "text-center"}
-     [h/h2 "Loading..." {:class "mb-4"}]
-     [:div {:class "flex justify-center"}
-      [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
-
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])]
     (if (nil? (.getItem js/localStorage "jwt-token"))
@@ -173,7 +165,6 @@
         (let [current-url (.. js/window -location -href)]
           (.setItem js/localStorage "redirect-after-auth" current-url)
           (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
-        (println "Loading... 1")
         [loading-transition])
 
       (do
@@ -185,8 +176,6 @@
           (rf/dispatch [:clarity->verify-environment (:data @user)])
           (rf/dispatch [:connections->connection-get-status])
 
-          (println @user)
-
           (cond
             (and (not (:loading @user)) (empty? (:data @user)))
             (do
@@ -195,7 +184,6 @@
                 (.removeItem js/localStorage "jwt-token")
                 (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
 
-              (println "Loading... 2")
               [loading-transition])
 
             :else
