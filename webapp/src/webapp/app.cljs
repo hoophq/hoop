@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Theme Box Heading]]
+   ["@radix-ui/themes" :refer [Theme Box Heading Spinner]]
    ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
    [bidi.bidi :as bidi]
@@ -128,8 +128,8 @@
     [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
       [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:span.w-16
-       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]]))
+      [:div {:class "flex justify-center"}
+       [:> Spinner {:size "3"}]]]]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -147,8 +147,8 @@
     [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
       [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:span.w-16
-       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]]))
+      [:div {:class "flex justify-center"}
+       [:> Spinner {:size "3"}]]]]))
 
 (defn loading-transition []
   [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
@@ -156,7 +156,7 @@
     [:div {:class "text-center"}
      [h/h2 "Loading..." {:class "mb-4"}]
      [:div {:class "flex justify-center"}
-      [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
+      [:> Spinner {:size "3"}]]]]])
 
 (defn loading-transition []
   [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
@@ -173,6 +173,7 @@
         (let [current-url (.. js/window -location -href)]
           (.setItem js/localStorage "redirect-after-auth" current-url)
           (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
+        (println "Loading... 1")
         [loading-transition])
 
       (do
@@ -184,16 +185,17 @@
           (rf/dispatch [:clarity->verify-environment (:data @user)])
           (rf/dispatch [:connections->connection-get-status])
 
-          (cond
-            (:loading @user)
-            [loaders/over-page-loader]
+          (println @user)
 
+          (cond
             (and (not (:loading @user)) (empty? (:data @user)))
             (do
               (let [current-url (.. js/window -location -href)]
                 (.setItem js/localStorage "redirect-after-auth" current-url)
                 (.removeItem js/localStorage "jwt-token")
                 (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
+
+              (println "Loading... 2")
               [loading-transition])
 
             :else
@@ -532,23 +534,21 @@
            [h/h2 "Page not found" {:class "mb-4"}]
            [:p {:class "text-gray-600 mb-6"} "In a few seconds you will be redirected to the home page."]
            [:div {:class "flex justify-center"}
-            [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
+            [:> Spinner {:size "3"}]]]]])
 
-      [loading-transition])))
+      (do
+        (println "Loading... 3")
+        [loading-transition]))))
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])
-        navigation-status (rf/subscribe [::subs/navigation-status])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
     (sentry-monitor)
     (fn []
       (cond
         (-> @gateway-public-info :loading)
-        [loading-transition]
-
-        (= @navigation-status :transitioning)
         [loading-transition]
 
         :else

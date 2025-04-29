@@ -90,10 +90,10 @@
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
         apply-filter (fn [filter-update]
-                      ;; Clear search results when applying filters
+                       ;; Clear search results when applying filters
                        (reset! searched-connections nil)
                        (reset! searched-criteria-connections "")
-                      ;; Apply the filter
+                       ;; Apply the filter
                        (rf/dispatch [:connections->filter-connections filter-update]))
         clear-all-filters (fn []
                             (reset! selected-tag-values {})
