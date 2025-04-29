@@ -105,19 +105,31 @@
         url-params (new js/URLSearchParams search-string)
         token (.get url-params "token")
         error (.get url-params "error")
-        redirect-after-auth (.getItem js/localStorage "redirect-after-auth")
-        destiny (if error :login-hoop :onboarding)]
+        redirect-after-auth (.getItem js/localStorage "redirect-after-auth")]
+
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
-    (if (nil? redirect-after-auth)
-      (rf/dispatch [:navigate destiny])
-      (let [_ (.replace (. js/window -location) redirect-after-auth)
-            _ (.removeItem js/localStorage "redirect-after-auth")]))
 
-    [:div "Verifying authentication"
-     [:span.w-16
-      [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
+    (.setItem js/localStorage "jwt-token" token)
+
+    (if error
+      (rf/dispatch [:navigate :login-hoop])
+
+      (if (and redirect-after-auth (not (empty? redirect-after-auth)))
+        (do
+          (js/setTimeout
+           #(do
+              (.removeItem js/localStorage "redirect-after-auth")
+              (set! (.. js/window -location -href) redirect-after-auth))
+           500))
+
+        (rf/dispatch [:navigate :home])))
+
+    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
+      [h/h2 "Verifying authentication..." {:class "mb-4"}]
+      [:span.w-16
+       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -132,29 +144,29 @@
     (.setItem js/localStorage "jwt-token" token)
     (rf/dispatch [:navigate destiny])
 
-    [:div "Verifying authentication"
-     [:span.w-16
-      [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
+    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
+      [h/h2 "Verifying authentication..." {:class "mb-4"}]
+      [:span.w-16
+       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]]))
 
 (defn loading-transition []
   [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
    [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
     [:div {:class "text-center"}
-     [h/h2 "Carregando..." {:class "mb-4"}]
+     [h/h2 "Loading..." {:class "mb-4"}]
      [:div {:class "flex justify-center"}
       [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
 
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])]
-    ;; Verificar se temos um token JWT
     (if (nil? (.getItem js/localStorage "jwt-token"))
-      ;; Se não temos token, redirecionar para login
       (do
-        (js/console.log "Token não encontrado, redirecionando para login")
-        (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500)
+        (let [current-url (.. js/window -location -href)]
+          (.setItem js/localStorage "redirect-after-auth" current-url)
+          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
         [loading-transition])
 
-      ;; Se temos token, tentar carregar os dados do usuário
       (do
         (rf/dispatch [:users->get-user])
         (rf/dispatch [:gateway->get-info])
@@ -165,19 +177,17 @@
           (rf/dispatch [:connections->connection-get-status])
 
           (cond
-            ;; Se o usuário está carregando, mostrar loader
             (:loading @user)
             [loaders/over-page-loader]
 
-            ;; Se o usuário não está carregando, mas está vazio (token inválido/expirado)
             (and (not (:loading @user)) (empty? (:data @user)))
             (do
-              (js/console.log "Dados do usuário vazios, possível token expirado")
-              (.removeItem js/localStorage "jwt-token")
-              (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500)
+              (let [current-url (.. js/window -location -href)]
+                (.setItem js/localStorage "redirect-after-auth" current-url)
+                (.removeItem js/localStorage "jwt-token")
+                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
               [loading-transition])
 
-            ;; Usuário carregado com sucesso
             :else
             [:section
              {:class "antialiased min-h-screen"}
@@ -504,24 +514,20 @@
                          :integrations #js [(.browserTracingIntegration Sentry)]}))))
 
 (defmethod routes/panels :default []
-  ;; Obter o pathname atual
   (let [pathname (.. js/window -location -pathname)
-        ;; Verificar se realmente precisamos mostrar o painel de erro
         matched-route (try (bidi/match-route @routes/routes pathname) (catch js/Error _ nil))]
 
-    ;; Se for um URL inválido (sem match), mostrar erro e redirecionar
     (if (nil? matched-route)
       (do
         (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
         [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
          [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
           [:div {:class "text-center"}
-           [h/h2 "Página não encontrada" {:class "mb-4"}]
-           [:p {:class "text-gray-600 mb-6"} "Em alguns segundos você será redirecionado para a página inicial."]
+           [h/h2 "Page not found" {:class "mb-4"}]
+           [:p {:class "text-gray-600 mb-6"} "In a few seconds you will be redirected to the home page."]
            [:div {:class "flex justify-center"}
             [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
 
-      ;; Se for um URL válido mas estamos no :default por outro motivo, apenas mostrar carregando
       [loading-transition])))
 
 (defn main-panel []
@@ -533,15 +539,12 @@
     (sentry-monitor)
     (fn []
       (cond
-        ;; Mostrar carregamento enquanto gateway info está sendo buscada
         (-> @gateway-public-info :loading)
         [loading-transition]
 
-        ;; Mostrar carregamento durante transições de navegação
         (= @navigation-status :transitioning)
         [loading-transition]
 
-        ;; Mostrar o conteúdo principal quando tudo estiver pronto
         :else
         [:> Theme {:radius "large" :panelBackground "solid"}
          [routes/panels @active-panel @gateway-public-info]]))))

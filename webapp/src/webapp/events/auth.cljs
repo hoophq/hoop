@@ -6,12 +6,13 @@
 (rf/reg-event-fx
  :auth->get-auth-link
  (fn [_ [_ {:keys [prompt-login?]}]]
-   (let [on-success #(.replace js/window.location (:login_url %))
+   (let [on-success (fn [response]
+                      (.replace js/window.location (:login_url response)))
          base-uri (if prompt-login? "/login?prompt=login&redirect=" "/login?redirect=")
          get-email [:fetch {:method "GET"
                             :uri (str base-uri
-                                      (str (. (. js/window -location) -origin)
-                                           (routes/url-for :auth-callback-hoop)))
+                                      (. (. js/window -location) -origin)
+                                      (routes/url-for :auth-callback-hoop))
                             :on-success on-success}]]
      {:fx [[:dispatch get-email]]})))
 
@@ -21,8 +22,8 @@
    (let [on-success #(.replace js/window.location (:login_url %))
          get-email [:fetch {:method "GET"
                             :uri (str "/login?prompt=login&screen_hint=signup&redirect="
-                                      (str (. (. js/window -location) -origin)
-                                           (routes/url-for :signup-callback-hoop)))
+                                      (. (. js/window -location) -origin)
+                                      (routes/url-for :signup-callback-hoop))
                             :on-success on-success}]]
      {:fx [[:dispatch get-email]]})))
 
