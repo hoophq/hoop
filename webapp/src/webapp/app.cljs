@@ -162,7 +162,7 @@
   [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
    [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
     [:div {:class "text-center"}
-     [h/h2 "Carregando..." {:class "mb-4"}]
+     [h/h2 "Loading..." {:class "mb-4"}]
      [:div {:class "flex justify-center"}
       [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
 
