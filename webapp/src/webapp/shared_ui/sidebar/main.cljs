@@ -249,7 +249,7 @@
                             :id (some-> @user :data :id)}})
     (fn []
       (if (empty? (:data @user))
-        [:div "loading..."]
+        [:<>]
         [:div
          [mobile-sidebar @user @my-plugins]
          [desktop-sidebar @user @my-plugins]]))))
