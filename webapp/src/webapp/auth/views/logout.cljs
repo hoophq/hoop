@@ -1,8 +1,7 @@
 (ns webapp.auth.views.logout
   (:require [webapp.components.headings :as h]
             [webapp.config :as config]
-            [webapp.routes :as routes]
-            [re-frame.core :as rf]))
+            [webapp.routes :as routes]))
 
 (defn main []
   (.removeItem js/localStorage "jwt-token")

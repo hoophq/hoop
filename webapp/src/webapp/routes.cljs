@@ -89,9 +89,6 @@
 (defn dispatch
   [route]
   (let [panel (keyword (str (name (:handler route)) "-panel"))]
-    ;; Adicionar log para depuração de rotas
-    (js/console.log "Rota reconhecida:" (str route))
-    (js/console.log "Painel a ser carregado:" (str panel))
     (rf/dispatch [::events/set-active-panel panel])))
 
 (defonce history

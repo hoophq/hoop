@@ -423,8 +423,6 @@
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         session-id (-> current-route :route-params :session-id)]
-    (js/console.log "Carregando detalhes da sessão:" session-id)
-    (js/console.log "Rota atual:" (str current-route))
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:audit->get-session-details-page session-id])
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
