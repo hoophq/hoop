@@ -57,9 +57,5 @@
          (set! (.. js/window -location -href) auth0-logout-url)
          {:db {}})
 
-       (do
-         (.removeItem js/localStorage "jwt-token")
-         (set! (.. js/window -location -href) (routes/url-for (if idp?
-                                                                :idplogin-hoop
-                                                                :login-hoop)))
-         {:db {}})))))
+       {:db {}
+        :navigate {:handler :logout-hoop}}))))
