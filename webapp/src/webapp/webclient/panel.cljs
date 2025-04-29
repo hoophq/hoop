@@ -150,100 +150,9 @@
      {}
      schema-tree)))
 
-;; Creation of Web Worker for asynchronous processing
-(def schema-worker-blob
-  "const processSchema = function(tree, maxTables, isTyping) {
-    const schemaKeys = Object.keys(tree);
+(defn process-schema-sync [schema max-tables is-typing?]
+  (js/Promise.resolve (clj->js (memoized-convert-tree schema max-tables))))
 
-    // Function to limit the number of items as needed
-    const limitFn = (collection) => {
-      if (isTyping && collection.length > maxTables) {
-        return collection.slice(0, maxTables);
-      }
-      return collection;
-    };
-
-    // No schema
-    if (schemaKeys.length === 0) {
-      return {};
-    }
-
-    // Multiple schemas
-    if (schemaKeys.length > 1) {
-      let result = {};
-
-      for (const schemaKey of schemaKeys) {
-        const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
-        const limitedTables = limitFn(tables);
-
-        for (const tableKey of limitedTables) {
-          const qualifiedKey = schemaKey + '.' + tableKey;
-          const columns = tree[schemaKey][tableKey] || [];
-          result[qualifiedKey] = columns;
-        }
-      }
-
-      return result;
-    }
-
-    // Single schema
-    const schemaKey = schemaKeys[0];
-    const tables = tree[schemaKey] ? Object.keys(tree[schemaKey]) : [];
-    const limitedTables = limitFn(tables);
-
-    let result = {};
-    for (const tableKey of limitedTables) {
-      const columns = tree[schemaKey][tableKey] || [];
-      result[tableKey] = columns;
-    }
-
-    return result;
-  };
-
-  self.onmessage = function(e) {
-    const { schema, maxTables, isTyping } = e.data;
-
-    try {
-      const processedSchema = processSchema(schema, maxTables, isTyping);
-
-      self.postMessage({
-        processedSchema: processedSchema
-      });
-    } catch (error) {
-      self.postMessage({
-        error: error.message
-      });
-    }
-  };")
-
-;; Function to initialize the worker
-(def schema-worker (atom nil))
-
-(defn init-schema-worker []
-  (when (and (nil? @schema-worker) (exists? js/Blob) (exists? js/URL) (exists? js/Worker))
-    (let [blob (js/Blob. #js[schema-worker-blob] #js{:type "application/javascript"})
-          url (js/URL.createObjectURL blob)]
-      (reset! schema-worker (js/Worker. url)))))
-
-;; Function to process schema in worker
-(defn process-schema-in-worker [schema max-tables is-typing?]
-  (js/Promise.
-   (fn [resolve reject]
-     (if @schema-worker
-       (let [handler (fn handler-fn [e]
-                       (.removeEventListener @schema-worker "message" handler-fn)
-                       (let [^js data (.-data e)]
-                         (if (gobj/get data "error")
-                           (reject (gobj/get data "error"))
-                           (resolve (gobj/get data "processedSchema")))))]
-         (.addEventListener @schema-worker "message" handler)
-         (.postMessage @schema-worker #js{:schema (clj->js schema)
-                                          :maxTables max-tables
-                                          :isTyping is-typing?}))
-       ;; Fallback if worker is not available
-       (resolve (clj->js (memoized-convert-tree schema max-tables)))))))
-
-;; Optimized function to get processed schema
 (defn get-optimized-schema-for-codemirror [connection-name schema is-typing?]
   (let [cache-key [connection-name is-typing?]
         cached-value (get @schema-js-cache cache-key)
@@ -254,8 +163,8 @@
       ;; Return cached value if schema hasn't changed
       (js/Promise.resolve (:schema-js cached-value))
 
-      ;; Process using worker or fallback
-      (-> (process-schema-in-worker
+      ;; Process synchronously
+      (-> (process-schema-sync
            (simplify-schema-for-autocomplete schema)
            max-tables
            is-typing?)
@@ -266,9 +175,6 @@
                             {:schema-version (hash (:schema-tree schema))
                              :schema-js js-schema})
                      js-schema)))))))
-
-;; Initialize worker when module is loaded
-(init-schema-worker)
 
 ;; Atom to store current SQL parser and its information
 (def current-sql-parser (r/atom nil))
