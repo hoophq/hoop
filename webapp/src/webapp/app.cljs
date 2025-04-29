@@ -105,19 +105,31 @@
         url-params (new js/URLSearchParams search-string)
         token (.get url-params "token")
         error (.get url-params "error")
-        redirect-after-auth (.getItem js/localStorage "redirect-after-auth")
-        destiny (if error :login-hoop :onboarding)]
+        redirect-after-auth (.getItem js/localStorage "redirect-after-auth")]
+
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
-    (if (nil? redirect-after-auth)
-      (rf/dispatch [:navigate destiny])
-      (let [_ (.replace (. js/window -location) redirect-after-auth)
-            _ (.removeItem js/localStorage "redirect-after-auth")]))
 
-    [:div "Verifying authentication"
-     [:span.w-16
-      [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
+    (.setItem js/localStorage "jwt-token" token)
+
+    (if error
+      (rf/dispatch [:navigate :login-hoop])
+
+      (if (and redirect-after-auth (not (empty? redirect-after-auth)))
+        (do
+          (js/setTimeout
+           #(do
+              (.removeItem js/localStorage "redirect-after-auth")
+              (set! (.. js/window -location -href) redirect-after-auth))
+           500))
+
+        (rf/dispatch [:navigate :home])))
+
+    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
+      [h/h2 "Verifying authentication..." {:class "mb-4"}]
+      [:span.w-16
+       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -132,29 +144,60 @@
     (.setItem js/localStorage "jwt-token" token)
     (rf/dispatch [:navigate destiny])
 
-    [:div "Verifying authentication"
-     [:span.w-16
-      [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
+    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
+      [h/h2 "Verifying authentication..." {:class "mb-4"}]
+      [:span.w-16
+       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]]))
+
+(defn loading-transition []
+  [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+   [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
+    [:div {:class "text-center"}
+     [h/h2 "Loading..." {:class "mb-4"}]
+     [:div {:class "flex justify-center"}
+      [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
 
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])]
-    (rf/dispatch [:users->get-user])
-    (rf/dispatch [:gateway->get-info])
-    (fn [panels]
-      (rf/dispatch [:routes->get-route])
-      (rf/dispatch [:clarity->verify-environment (:data @user)])
-      (rf/dispatch [:connections->connection-get-status])
-      (if (empty? (:data @user))
-        [loaders/over-page-loader]
-        [:section
-         {:class "antialiased min-h-screen"}
-         [modals/modal]
-         [modals/modal-radix]
-         [dialog/dialog]
-         [dialog/new-dialog]
-         [snackbar/snackbar]
-         [draggable-card/main]
-         [sidebar/main panels]]))))
+    (if (nil? (.getItem js/localStorage "jwt-token"))
+      (do
+        (let [current-url (.. js/window -location -href)]
+          (.setItem js/localStorage "redirect-after-auth" current-url)
+          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
+        [loading-transition])
+
+      (do
+        (rf/dispatch [:users->get-user])
+        (rf/dispatch [:gateway->get-info])
+
+        (fn [panels]
+          (rf/dispatch [:routes->get-route])
+          (rf/dispatch [:clarity->verify-environment (:data @user)])
+          (rf/dispatch [:connections->connection-get-status])
+
+          (cond
+            (:loading @user)
+            [loaders/over-page-loader]
+
+            (and (not (:loading @user)) (empty? (:data @user)))
+            (do
+              (let [current-url (.. js/window -location -href)]
+                (.setItem js/localStorage "redirect-after-auth" current-url)
+                (.removeItem js/localStorage "jwt-token")
+                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
+              [loading-transition])
+
+            :else
+            [:section
+             {:class "antialiased min-h-screen"}
+             [modals/modal]
+             [modals/modal-radix]
+             [dialog/dialog]
+             [dialog/new-dialog]
+             [snackbar/snackbar]
+             [draggable-card/main]
+             [sidebar/main panels]]))))))
 
 (defmulti layout identity)
 (defmethod layout :application-hoop [_ panels]
@@ -459,15 +502,6 @@
 ;; END HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod routes/panels :default []
-  [:div {:class "rounded-lg p-large bg-white"}
-   [:header {:class "text-center"}
-    [h/h1 "Page not found"]]
-   [:footer {:class "text-center"}
-    [:a {:href "/"
-         :class "text-xs text-blue-500"}
-     "Go to homepage"]]])
-
 (defn sentry-monitor []
   (let [sentry-dsn config/sentry-dsn
         sentry-sample-rate config/sentry-sample-rate]
@@ -477,13 +511,38 @@
                          :sampleRate sentry-sample-rate
                          :integrations #js [(.browserTracingIntegration Sentry)]}))))
 
+(defmethod routes/panels :default []
+  (let [pathname (.. js/window -location -pathname)
+        matched-route (try (bidi/match-route @routes/routes pathname) (catch js/Error _ nil))]
+
+    (if (nil? matched-route)
+      (do
+        (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
+        [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+         [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
+          [:div {:class "text-center"}
+           [h/h2 "Page not found" {:class "mb-4"}]
+           [:p {:class "text-gray-600 mb-6"} "In a few seconds you will be redirected to the home page."]
+           [:div {:class "flex justify-center"}
+            [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
+
+      [loading-transition])))
+
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        navigation-status (rf/subscribe [::subs/navigation-status])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
     (sentry-monitor)
     (fn []
-      (when (not (-> @gateway-public-info :loading))
+      (cond
+        (-> @gateway-public-info :loading)
+        [loading-transition]
+
+        (= @navigation-status :transitioning)
+        [loading-transition]
+
+        :else
         [:> Theme {:radius "large" :panelBackground "solid"}
          [routes/panels @active-panel @gateway-public-info]]))))

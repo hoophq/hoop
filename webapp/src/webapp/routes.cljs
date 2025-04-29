@@ -77,7 +77,10 @@
 
 (defn parse
   [url]
-  (bidi/match-route @routes url))
+  (try
+    (bidi/match-route @routes url)
+    (catch js/Error e
+      {:handler :home})))
 
 (defn url-for
   [& args]

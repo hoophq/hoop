@@ -9,10 +9,11 @@
 
 (defn not-ok
   "This functions has two possible outcomes:
-  1 - When the status is 401 (Unauthorized), it saves the requested path so the user can be redirected to it later (see in [webapp.app] namespace, in auth-callback-panel function), then it dispatches the :logout event so the application clean up old tokens and ask to the user to login again;
+  1 - When the status is 401 (Unauthorized), it redirects user to the logout page
   2 - when the status is 399 or below, it executes a on-failure function, that is provided by upperscope."
   [{:keys  [status on-failure]}]
-  (when (= status 401) (let [_ (rf/dispatch [:auth->logout])]))
+  (when (= status 401)
+    (rf/dispatch [:navigate :logout-hoop]))
   (when (> status 399) (on-failure)))
 
 (defmulti response-parser identity)

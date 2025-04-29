@@ -9,7 +9,10 @@
    [webapp.config :as config]))
 
 (defn submit []
-  (rf/dispatch [:auth->get-auth-link]))
+  (let [redirect-after-auth (.getItem js/localStorage "redirect-after-auth")]
+    (if (nil? redirect-after-auth)
+      (rf/dispatch [:auth->get-auth-link])
+      (rf/dispatch [:auth->get-auth-link]))))
 
 (defmulti ^:private login-error-message identity)
 (defmethod ^:private login-error-message "slack_not_configured" [_]
