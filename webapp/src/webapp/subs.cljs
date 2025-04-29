@@ -14,6 +14,11 @@
    (:active-panel db)))
 
 (re-frame/reg-sub
+ ::navigation-status
+ (fn [db _]
+   (or (:navigation-status db) :completed)))
+
+(re-frame/reg-sub
  :feature-flags
  (fn [db _]
    (:feature-flags db)))

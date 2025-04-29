@@ -136,25 +136,58 @@
      [:span.w-16
       [:img.inline.animate-spin {:src (str config/webapp-url "/icons/icon-refresh.svg")}]]]))
 
+(defn loading-transition []
+  [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+   [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
+    [:div {:class "text-center"}
+     [h/h2 "Carregando..." {:class "mb-4"}]
+     [:div {:class "flex justify-center"}
+      [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
+
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])]
-    (rf/dispatch [:users->get-user])
-    (rf/dispatch [:gateway->get-info])
-    (fn [panels]
-      (rf/dispatch [:routes->get-route])
-      (rf/dispatch [:clarity->verify-environment (:data @user)])
-      (rf/dispatch [:connections->connection-get-status])
-      (if (empty? (:data @user))
-        [loaders/over-page-loader]
-        [:section
-         {:class "antialiased min-h-screen"}
-         [modals/modal]
-         [modals/modal-radix]
-         [dialog/dialog]
-         [dialog/new-dialog]
-         [snackbar/snackbar]
-         [draggable-card/main]
-         [sidebar/main panels]]))))
+    ;; Verificar se temos um token JWT
+    (if (nil? (.getItem js/localStorage "jwt-token"))
+      ;; Se não temos token, redirecionar para login
+      (do
+        (js/console.log "Token não encontrado, redirecionando para login")
+        (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500)
+        [loading-transition])
+
+      ;; Se temos token, tentar carregar os dados do usuário
+      (do
+        (rf/dispatch [:users->get-user])
+        (rf/dispatch [:gateway->get-info])
+
+        (fn [panels]
+          (rf/dispatch [:routes->get-route])
+          (rf/dispatch [:clarity->verify-environment (:data @user)])
+          (rf/dispatch [:connections->connection-get-status])
+
+          (cond
+            ;; Se o usuário está carregando, mostrar loader
+            (:loading @user)
+            [loaders/over-page-loader]
+
+            ;; Se o usuário não está carregando, mas está vazio (token inválido/expirado)
+            (and (not (:loading @user)) (empty? (:data @user)))
+            (do
+              (js/console.log "Dados do usuário vazios, possível token expirado")
+              (.removeItem js/localStorage "jwt-token")
+              (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500)
+              [loading-transition])
+
+            ;; Usuário carregado com sucesso
+            :else
+            [:section
+             {:class "antialiased min-h-screen"}
+             [modals/modal]
+             [modals/modal-radix]
+             [dialog/dialog]
+             [dialog/new-dialog]
+             [snackbar/snackbar]
+             [draggable-card/main]
+             [sidebar/main panels]]))))))
 
 (defmulti layout identity)
 (defmethod layout :application-hoop [_ panels]
@@ -372,6 +405,8 @@
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         session-id (-> current-route :route-params :session-id)]
+    (js/console.log "Carregando detalhes da sessão:" session-id)
+    (js/console.log "Rota atual:" (str current-route))
     (rf/dispatch [:destroy-page-loader])
     (rf/dispatch [:audit->get-session-details-page session-id])
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
@@ -459,15 +494,6 @@
 ;; END HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;;;;;
 
-(defmethod routes/panels :default []
-  [:div {:class "rounded-lg p-large bg-white"}
-   [:header {:class "text-center"}
-    [h/h1 "Page not found"]]
-   [:footer {:class "text-center"}
-    [:a {:href "/"
-         :class "text-xs text-blue-500"}
-     "Go to homepage"]]])
-
 (defn sentry-monitor []
   (let [sentry-dsn config/sentry-dsn
         sentry-sample-rate config/sentry-sample-rate]
@@ -477,13 +503,45 @@
                          :sampleRate sentry-sample-rate
                          :integrations #js [(.browserTracingIntegration Sentry)]}))))
 
+(defmethod routes/panels :default []
+  ;; Obter o pathname atual
+  (let [pathname (.. js/window -location -pathname)
+        ;; Verificar se realmente precisamos mostrar o painel de erro
+        matched-route (try (bidi/match-route @routes/routes pathname) (catch js/Error _ nil))]
+
+    ;; Se for um URL inválido (sem match), mostrar erro e redirecionar
+    (if (nil? matched-route)
+      (do
+        (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
+        [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
+         [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
+          [:div {:class "text-center"}
+           [h/h2 "Página não encontrada" {:class "mb-4"}]
+           [:p {:class "text-gray-600 mb-6"} "Em alguns segundos você será redirecionado para a página inicial."]
+           [:div {:class "flex justify-center"}
+            [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]]])
+
+      ;; Se for um URL válido mas estamos no :default por outro motivo, apenas mostrar carregando
+      [loading-transition])))
+
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        navigation-status (rf/subscribe [::subs/navigation-status])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
     (sentry-monitor)
     (fn []
-      (when (not (-> @gateway-public-info :loading))
+      (cond
+        ;; Mostrar carregamento enquanto gateway info está sendo buscada
+        (-> @gateway-public-info :loading)
+        [loading-transition]
+
+        ;; Mostrar carregamento durante transições de navegação
+        (= @navigation-status :transitioning)
+        [loading-transition]
+
+        ;; Mostrar o conteúdo principal quando tudo estiver pronto
+        :else
         [:> Theme {:radius "large" :panelBackground "solid"}
          [routes/panels @active-panel @gateway-public-info]]))))

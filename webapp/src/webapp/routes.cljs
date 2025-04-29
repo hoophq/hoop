@@ -77,7 +77,12 @@
 
 (defn parse
   [url]
-  (bidi/match-route @routes url))
+  (try
+    ;; Tenta fazer o match normalmente
+    (bidi/match-route @routes url)
+    (catch js/Error e
+      ;; Apenas se ocorrer um erro na correspondência da rota, vamos para home
+      {:handler :home})))
 
 (defn url-for
   [& args]
@@ -86,6 +91,9 @@
 (defn dispatch
   [route]
   (let [panel (keyword (str (name (:handler route)) "-panel"))]
+    ;; Adicionar log para depuração de rotas
+    (js/console.log "Rota reconhecida:" (str route))
+    (js/console.log "Painel a ser carregado:" (str panel))
     (rf/dispatch [::events/set-active-panel panel])))
 
 (defonce history

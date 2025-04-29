@@ -12,8 +12,9 @@
 
 (rf/reg-event-fx
  :navigate
- (fn [_ [_ handler query-params & params]]
-   {:navigate {:handler handler
+ (fn [{:keys [db]} [_ handler query-params & params]]
+   {:db (assoc db :navigation-status :transitioning)
+    :navigate {:handler handler
                :params params
                :query-params (or query-params {})}}))
 
@@ -22,7 +23,9 @@
  ::set-active-panel
  (fn [{:keys [db]} [_ active-panel]]
    (js/window.Intercom "update")
-   {:db (assoc db :active-panel active-panel)}))
+   {:db (-> db
+            (assoc :active-panel active-panel)
+            (assoc :navigation-status :completed))}))
 
 (rf/reg-event-fx
  :fetch
