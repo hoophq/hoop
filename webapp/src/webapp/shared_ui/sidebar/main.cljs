@@ -18,7 +18,7 @@
                             true
                             false)]
         [:<>
-   ;; sidebar opened
+         ;; sidebar opened
          [:> ui/Transition {:show sidebar-open?
                             :as react/Fragment}
           [:> ui/Dialog {:as "div"
@@ -58,9 +58,9 @@
                                                   :aria-hidden "true"}]]]]
               [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-[#182449] px-6 pb-4 ring-1 ring-white ring-opacity-10"}
                [navigation/main user my-plugins]]]]]]]
-   ;; end sidebar opened
+         ;; end sidebar opened
 
-   ;; sidebar closed
+         ;; sidebar closed
          [:div {:class "sticky top-0 z-30 flex items-center justify-between gap-x-6 bg-[#182449] px-4 py-3 shadow-sm sm:px-6 lg:hidden"}
           [:button {:type "button"
                     :class "-m-2.5 p-2.5 text-gray-700 lg:hidden"
@@ -68,7 +68,7 @@
            [:span {:class "sr-only"} "Open sidebar"]
            [:> hero-outline-icon/Bars3Icon {:class "h-6 w-6 shrink-0 text-white"
                                             :aria-hidden "true"}]]]
-   ;; sidebar closed
+         ;; sidebar closed
          ]))))
 
 (defn hover-side-menu-link? [uri-item current-route]
@@ -90,7 +90,7 @@
                             false)
             current-route @current-route]
         [:<>
-       ;; sidebar opened
+         ;; sidebar opened
          [:> ui/Transition {:show sidebar-open?
                             :as react/Fragment
                             :enter "transition-opacity duration-400 ease-in-out transform"
@@ -106,9 +106,9 @@
                                                          :aria-hidden "true"}]]
            [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
             [navigation/main user my-plugins]]]]
-       ;; end sidebar opened
+         ;; end sidebar opened
 
-       ;; sidebar closed
+         ;; sidebar closed
          [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:bg-[#182449]"}
           [:div {:class "border-t bg-[#182449] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
@@ -231,7 +231,7 @@
                    :onClick #(rf/dispatch [:sidebar-desktop->open])
                    :class "text-gray-400 hover:text-white hover:bg-white/5 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
                [user-icon/initials-white (:name user-data)]]]]]]]
-       ;; end sidebar closed
+         ;; end sidebar closed
          ]))))
 
 (defn container []
@@ -248,9 +248,11 @@
                             :name (some-> @user :data :name)
                             :id (some-> @user :data :id)}})
     (fn []
-      [:div
-       [mobile-sidebar @user @my-plugins]
-       [desktop-sidebar @user @my-plugins]])))
+      (if (empty? (:data @user))
+        [:div "loading..."]
+        [:div
+         [mobile-sidebar @user @my-plugins]
+         [desktop-sidebar @user @my-plugins]]))))
 
 (defn main [_]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])]

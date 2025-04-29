@@ -1,7 +1,9 @@
 (ns webapp.auth.views.logout
-  (:require [webapp.components.headings :as h]
-            [webapp.config :as config]
-            [webapp.routes :as routes]))
+  (:require
+   ["@radix-ui/themes" :refer [Spinner]]
+   [webapp.components.headings :as h]
+   [webapp.config :as config]
+   [webapp.routes :as routes]))
 
 (defn main []
   (.removeItem js/localStorage "jwt-token")
@@ -23,4 +25,4 @@
      [:p {:class "text-gray-600"} "You will be redirected in a few seconds."]]
 
     [:div {:class "flex justify-center"}
-     [:div {:class "w-8 h-8 border-t-2 border-b-2 border-blue-500 rounded-full animate-spin"}]]]])
+     [:> Spinner {:size "3"}]]]])
