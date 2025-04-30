@@ -50,6 +50,7 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		Infof("starting mongodb connection at %v", connenv.Address())
 
 	opts := map[string]string{
+		"sid":               sid,
 		"connection_string": connenv.connectionString,
 		"connection_id":     clientConnectionID,
 		// Not Implemented yet

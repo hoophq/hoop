@@ -49,6 +49,7 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 		Infof("starting SSH proxy connection at %v", connenv.Address())
 
 	opts := map[string]string{
+		"sid":                    sid,
 		"hostname":               connenv.host,
 		"port":                   connenv.port,
 		"username":               connenv.user,

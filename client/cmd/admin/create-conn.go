@@ -135,10 +135,6 @@ var createConnectionCmd = &cobra.Command{
 		if agentID == "" && !skipStrictValidation {
 			styles.PrintErrorAndExit("could not find agent by name %q", connAgentFlag)
 		}
-		redactEnabled := false
-		if len(connRedactTypesFlag) > 0 {
-			redactEnabled = true
-		}
 
 		connectionTags := map[string]string{}
 		for _, keyValTag := range connTagsFlag {
@@ -157,7 +153,7 @@ var createConnectionCmd = &cobra.Command{
 			"secret":                 envVar,
 			"agent_id":               agentID,
 			"reviewers":              reviewersFlag,
-			"redact_enabled":         redactEnabled,
+			"redact_enabled":         true,
 			"redact_types":           connRedactTypesFlag,
 			"connection_tags":        connectionTags,
 			"guardrail_rules":        connGuardRailRules,
