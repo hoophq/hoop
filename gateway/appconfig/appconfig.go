@@ -34,6 +34,7 @@ type Config struct {
 	pgCred                          *pgCredentials
 	gcpDLPJsonCredentials           string
 	dlpProvider                     string
+	dlpMode                         string
 	hasRedactCredentials            bool
 	msPresidioAnalyzerURL           string
 	msPresidioAnonymizerURL         string
@@ -168,6 +169,10 @@ func Load() error {
 			return fmt.Errorf("failed decoding env SSH_CLIENT_HOST_KEY, err=%v", err)
 		}
 	}
+	dlpMode := os.Getenv("DLP_MODE")
+	if dlpMode == "" {
+		dlpMode = "best-effort"
+	}
 
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
@@ -187,6 +192,7 @@ func Load() error {
 		orgMultitenant:                  os.Getenv("ORG_MULTI_TENANT") == "true",
 		doNotTrack:                      os.Getenv("DO_NOT_TRACK") == "true",
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
+		dlpMode:                         dlpMode,
 		hasRedactCredentials:            hasRedactCredentials,
 		msPresidioAnalyzerURL:           os.Getenv("MSPRESIDIO_ANALYZER_URL"),
 		msPresidioAnonymizerURL:         os.Getenv("MSPRESIDIO_ANONYMIZER_URL"),
@@ -339,6 +345,7 @@ func (c Config) WebhookAppKey() string                 { return c.webhookAppKey 
 func (c Config) WebhookAppURL() *url.URL               { return c.webhookAppURL }
 func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCredentials }
 func (c Config) DlpProvider() string                   { return c.dlpProvider }
+func (c Config) DlpMode() string                       { return c.dlpMode }
 func (c Config) HasRedactCredentials() bool            { return c.hasRedactCredentials }
 func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnalyzerURL }
 func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }

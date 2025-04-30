@@ -1,4 +1,4 @@
-FROM ubuntu:focal-20240530
+FROM ubuntu:focal-20250404
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
@@ -6,7 +6,7 @@ ARG CLOJURE_VERSION=1.10.3.1040
 ARG AWS_CLI_VERSION=2.9.6
 ARG AWS_SM_VERSION=1.2.398.0
 ARG GCLOUD_VERSION=488.0.0-0
-ARG GCLOUD_GKE_AUTH_PLUGIN=467.0.0-0
+ARG GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0
 ARG NODE_VERSION=20.17.0
 
 # Common
@@ -120,7 +120,7 @@ RUN apt-get update -y && \
     sqlcmd \
     unixodbc-dev \
     google-cloud-cli=$GCLOUD_VERSION \
-    google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_GKE_AUTH_PLUGIN && \
+    google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_GKE_AUTHN_PLUGIN_VERSION && \
     rm -rf /var/lib/apt/lists/*
 
 # Download and install Oracle Instant Client and SQL*Plus
@@ -151,7 +151,7 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
 
 # Configure environment variables
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24:$LD_LIBRARY_PATH"
+ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24"
 
 # clojure
 RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION.sh -o clojure-install.sh && \
@@ -162,14 +162,14 @@ RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION
     clojure -e "(clojure-version)"
 
 RUN pip3 install -U \
-    boto3==1.20.39 \
+    boto3==1.37.38 \
     requests==2.27.1
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 ENV NODE_PATH=/usr/local/lib/node_modules/
 
 ENV PATH="/app:${PATH}"

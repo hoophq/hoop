@@ -26,10 +26,11 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	stdoutw := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
 	stderrw := pb.NewStreamWriter(a.client, pbclient.WriteStderr, spec)
 	opts := map[string]string{
-		"dlp_provider":              a.getDlpProvider(),
-		"mspresidio_analyzer_url":   a.getMSPresidioAnalyzerURL(),
-		"mspresidio_anonymizer_url": a.getMSPresidioAnonymizerURL(),
-		"dlp_gcp_credentials":       a.getGCPCredentials(),
+		"dlp_provider":              connParams.DlpProvider,
+		"dlp_mode":                  connParams.DlpMode,
+		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
+		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
+		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 	}
 	args := append(connParams.CmdList, connParams.ClientArgs...)

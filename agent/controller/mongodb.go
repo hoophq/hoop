@@ -50,9 +50,14 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		Infof("starting mongodb connection at %v", connenv.Address())
 
 	opts := map[string]string{
-		"connection_string":     connenv.connectionString,
-		"connection_id":         clientConnectionID,
-		"dlp_gcp_credentials":   a.getGCPCredentials(),
+		"connection_string": connenv.connectionString,
+		"connection_id":     clientConnectionID,
+		// Not Implemented yet
+		// "dlp_provider":        connParams.DlpProvider,
+		// "mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
+		// "mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
+		"dlp_mode":              connParams.DlpMode,
+		"dlp_gcp_credentials":   connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
 		"dlp_masking_character": "#",
 	}

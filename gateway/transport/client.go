@@ -14,7 +14,6 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
@@ -201,19 +200,22 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			pb.SpecConnectionType:   pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).Bytes(),
 		}
 
-		if jsonCred := appconfig.Get().GcpDLPJsonCredentials(); jsonCred != "" {
+		// The injection of these credentials via spec item are DEPRECATED in flavor of
+		// propagating these values in the AgentConnectionParams
+		// It should be kept for compatibility with older agents (< 1.35.11)
+		if jsonCred := s.AppConfig.GcpDLPJsonCredentials(); jsonCred != "" {
 			spec[pb.SpecAgentGCPRawCredentialsKey] = []byte(jsonCred)
 		}
 
-		if dlpProvider := appconfig.Get().DlpProvider(); dlpProvider != "" {
+		if dlpProvider := s.AppConfig.DlpProvider(); dlpProvider != "" {
 			spec[pb.SpecAgentDlpProvider] = []byte(dlpProvider)
 		}
 
-		if msPresidioAnalyzerURL := appconfig.Get().MSPresidioAnalyzerURL(); msPresidioAnalyzerURL != "" {
+		if msPresidioAnalyzerURL := s.AppConfig.MSPresidioAnalyzerURL(); msPresidioAnalyzerURL != "" {
 			spec[pb.SpecAgentMSPresidioAnalyzerURL] = []byte(msPresidioAnalyzerURL)
 		}
 
-		if msPresidioAnonymizerURL := appconfig.Get().MSPresidioAnomymizerURL(); msPresidioAnonymizerURL != "" {
+		if msPresidioAnonymizerURL := s.AppConfig.MSPresidioAnomymizerURL(); msPresidioAnonymizerURL != "" {
 			spec[pb.SpecAgentMSPresidioAnonymizerURL] = []byte(msPresidioAnonymizerURL)
 		}
 
@@ -227,16 +229,21 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 		clientArgs := clientArgsDecode(pkt.Spec)
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-			ConnectionName: pctx.ConnectionName,
-			ConnectionType: pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
-			UserID:         pctx.UserID,
-			UserEmail:      pctx.UserEmail,
-			EnvVars:        pctx.ConnectionSecret,
-			CmdList:        pctx.ConnectionCommand,
-			ClientArgs:     clientArgs,
-			ClientVerb:     pctx.ClientVerb,
-			ClientOrigin:   pctx.ClientOrigin,
-			DLPInfoTypes:   stream.GetRedactInfoTypes(),
+			ConnectionName:           pctx.ConnectionName,
+			ConnectionType:           pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			UserID:                   pctx.UserID,
+			UserEmail:                pctx.UserEmail,
+			EnvVars:                  pctx.ConnectionSecret,
+			CmdList:                  pctx.ConnectionCommand,
+			ClientArgs:               clientArgs,
+			ClientVerb:               pctx.ClientVerb,
+			ClientOrigin:             pctx.ClientOrigin,
+			DlpProvider:              s.AppConfig.DlpProvider(),
+			DlpMode:                  s.AppConfig.DlpMode(),
+			DlpGcpRawCredentialsJSON: s.AppConfig.GcpDLPJsonCredentials(),
+			DlpPresidioAnalyzerURL:   s.AppConfig.MSPresidioAnalyzerURL(),
+			DlpPresidioAnonymizerURL: s.AppConfig.MSPresidioAnomymizerURL(),
+			DLPInfoTypes:             stream.GetRedactInfoTypes(),
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)

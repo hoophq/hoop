@@ -1,8 +1,8 @@
-FROM ubuntu:focal-20230605
+FROM ubuntu:focal-20250404
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
-ENV POSTGREST_VERSION 11.2.2
+ENV POSTGREST_VERSION=11.2.2
 
 RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
@@ -33,9 +33,9 @@ RUN mkdir -p /app && \
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 COPY rootfs /
 COPY dist/binaries/ /tmp/

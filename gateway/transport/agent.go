@@ -115,7 +115,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		}
 
 		if err = proxyStream.Send(pkt); err != nil {
-			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, err=%v", err)
+			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, type=%v, err=%v", pkt.Type, err)
 		}
 	}
 }
