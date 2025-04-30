@@ -40,7 +40,13 @@ type (
 		ClientArgs     []string
 		ClientVerb     string
 		ClientOrigin   string
-		DLPInfoTypes   []string
+
+		DlpProvider              string
+		DlpMode                  string
+		DLPInfoTypes             []string
+		DlpGcpRawCredentialsJSON string
+		DlpPresidioAnalyzerURL   string
+		DlpPresidioAnonymizerURL string
 	}
 
 	// TODO: remove it later, kept for compatibility issues

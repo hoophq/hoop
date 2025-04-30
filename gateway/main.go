@@ -99,6 +99,7 @@ func Run() {
 		ApiHostname:   appconfig.Get().ApiHostname(),
 		ReviewService: reviewService,
 		IDProvider:    idProvider,
+		AppConfig:     appconfig.Get(),
 	}
 	// order matters
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{

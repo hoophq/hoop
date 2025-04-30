@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -43,6 +44,7 @@ type (
 		ReviewService review.Service
 		IDProvider    *idp.Provider
 		ApiHostname   string
+		AppConfig     appconfig.Config
 	}
 )
 
