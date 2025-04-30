@@ -49,6 +49,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 
 	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
 	opts := map[string]string{
+		"sid":                       sessionID,
 		"hostname":                  connenv.host,
 		"port":                      connenv.port,
 		"username":                  connenv.user,

@@ -26,6 +26,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	stdoutw := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
 	stderrw := pb.NewStreamWriter(a.client, pbclient.WriteStderr, spec)
 	opts := map[string]string{
+		"sid":                       sid,
 		"dlp_provider":              connParams.DlpProvider,
 		"dlp_mode":                  connParams.DlpMode,
 		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
