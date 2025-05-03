@@ -1,121 +1,111 @@
+
 ![hero](github.png)
 
-<h1 align="center"><b>hoop.dev</b></h1>
-<p align="center">
-    🔒 Secure, seamless access to databases and servers. No compromises.
-    <br />
-    <br />
-    <a target="_blank" href="https://hoop.dev">Website</a>
-    ·
-    <a target="_blank" href="https://hoop.dev/docs">Docs</a>
-    ·
-    <a href="https://github.com/hoophq/hoop/discussions">Discussions</a>
-  </p>
-</p>
+<h1 align="center">
+<b>hoop.dev</b>
+</h1>
+<p align="center"> 🔒 Secure infrastructure access without complexity or cost 
+<br /> <br />
+ <a target="_blank" href="https://hoop.dev">Website</a> · <a target="_blank" href="https://hoop.dev/docs">Docs</a> · <a href="https://github.com/hoophq/hoop/discussions">Discussions</a> </p> </p>
+ <p align="center"><a href="https://github.com/hoophq/hoop/actions/workflows/release.yml"><img src="https://img.shields.io/github/v/release/hoophq/hoop.svg?style=flat" /> </a><img src="https://img.shields.io/badge/Setup-4.3_min-success" /></p>
 
+Hoop.dev is the free, open-source access gateway for databases and servers - the secure alternative to VPNs, credential sharing, and access tickets.
 
-<p align="center">
-    <a href="https://github.com/hoophq/hoop/actions/workflows/release.yml">
-        <img src="https://img.shields.io/github/v/release/hoophq/hoop.svg?style=flat" />
-    </a>
-    <a href="https://github.com/hoophq/hoop/actions/workflows/release.yml">
-        <img src="https://github.com/hoophq/hoop/actions/workflows/release.yml/badge.svg" />
-    </a>
-</p>
+## What is hoop.dev?
 
-## Features
+Hoop is a **proxy** that secures and simplifies access to your infrastructure. It acts as an intelligent pipeline between your team and your resources (databases, servers, Kubernetes):
 
-- 🔐 **Zero Trust Access**: Connect securely without VPNs or exposed credentials
-- 🛡️ **Real-time Data Masking**: Automatically hide sensitive data in transit
-- 🛠 **Granular Access Control**: Just-in-Time, least-privilege access to resources
-- 🌐 **Audit Logging**: Comprehensive logs of all actions and queries
-- 🤖 **ChatOps Integration**: Approve access requests via Slack or MS Teams
-- ☁️ **Multi-Cloud Support**: Works with AWS, GCP, Azure, and on-premises setups
+-   **No VPNs or exposed credentials**  - Outbound-only connections with zero inbound firewall rules
+-   **Free SSO integration**  - Works with Google, Okta, JumpCloud, and more with no additional fees
+-   **Complete audit trail**  - Every action is recorded in a standardized format for compliance
+-   **Deploy in minutes**  - Average setup time of 4.3 minutes across 200+ deployments
 
-## 🌟 Why Hoop?
-
-- **Simplified Access Management**: No more VPN or SSH key nightmares
-- **Enhanced Security**: Reduce attack surface and prevent credential leaks
-- **Compliance Made Easy**: Meet SOC2, HIPAA, and GDPR requirements out of the box
-- **Developer Productivity**: Faster, safer access to the resources devs need
-
-<!--
 ## 🚀 Quick Start
 
 Get up and running in minutes:
+
+bash
 
 ```bash
 # create a jwt secret for auth
 echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
 
 # download and run
-curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml | docker compose -f - up
-
+curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml
+docker compose up
 ```
-[View full installation options](#installation)
--->
+
+[View full installation options](https://claude.ai/chat/cd0e4113-01b1-47b0-8d1a-6eec819a3f07#installation)
+
+## How hoop.dev Works
+
+Show Image
+
+Hoop creates a secure **pipe** between users and infrastructure:
+
+1.  **Authentication**  - Users authenticate through your existing identity provider (Google, Okta, etc.)
+2.  **Connection**  - Hoop agents establish outbound-only connections to your resources
+3.  **Access**  - Users connect through the Hoop proxy with just-in-time permissions
+4.  **Audit**  - Every action is recorded for complete visibility and compliance
+
+## Why Use hoop.dev?
+
+### ⚡ Eliminate Security Vulnerabilities
+
+VPNs and public endpoints create unnecessary attack vectors. Hoop agents establish protected outbound-only connections between authenticated users and your authorized resources—no inbound traffic required. This reduces your attack surface while simplifying your network architecture, minimizing time spent managing complex firewall rules.
+
+### 💸 End the SSO Tax
+
+Enterprise tools charge substantial fees annually just to connect your identity provider. Hoop integrates freely with Google Workspaces, Okta, JumpCloud, Entra ID, Auth0, and AWS Cognito—with no additional licensing fees. Save on costs while improving security through unified authentication without the SSO tax that other solutions impose.
+
+### 🔑 Automate Access Controls
+
+Stop spending hours processing access request tickets. Hoop automatically maps your existing identity provider groups to read-only, read-write, or admin profiles across all your infrastructure. Delegate access management to IT using your existing group structure and free up engineering time for higher-value tasks.
+
+### 📊 Standardize Audit Trails
+
+Multiple audit formats across different systems create compliance challenges. Hoop records every action in a single, standardized format across all your infrastructure—from database queries to Kubernetes commands. Transform audit preparation from a time-consuming project to a streamlined process while maintaining compliance with SOC2, GDPR, and other frameworks.
+
 ## 📚 Popular Guides
 
-- [Secure MySQL Access](https://hoop.dev/docs/quickstarts/mysql)
-- [Kubernetes Integration](https://hoop.dev/docs/quickstarts/kubernetes)
-- [AI-Powered Data Masking](https://hoop.dev/docs/learn/ai-data-masking)
-- [Implement Just-in-Time Reviews](https://hoop.dev/docs/learn/jit-reviews)
+### Databases
 
-[Explore all guides](#guides)
+-   [MySQL](https://hoop.dev/docs/quickstart/databases/mysql)
+-   [PostgreSQL](https://hoop.dev/docs/quickstart/databases/postgres)
+-   [MongoDB](https://hoop.dev/docs/quickstart/databases/mongodb)
+-   [MSSQL](https://hoop.dev/docs/quickstart/databases/mssql)
 
-## 🌟 Key Features
+### Cloud & Infrastructure
 
-- [AI Data Masking](https://hoop.dev/docs/learn/ai-data-masking)
-- [Granular Access Control](https://hoop.dev/docs/learn/access-control)
-- [Just-in-Time Reviews](https://hoop.dev/docs/learn/jit-reviews)
-- [Automated Runbooks](https://hoop.dev/docs/learn/runbooks)
-- [Secrets Manager Integration](https://hoop.dev/docs/learn/secrets-manager)
-- [Comprehensive Session Recording](https://hoop.dev/docs/learn/session-recording)
-- [Webhooks/SIEM Support](https://hoop.dev/docs/learn/webhooks-siem)
-- [AI Query Builder](https://hoop.dev/docs/learn/ai-query-builder)
+-   [Kubernetes](https://hoop.dev/docs/quickstart/cloud-services/kubernetes)
+-   [AWS](https://hoop.dev/docs/quickstart/cloud-services/aws/aws-cli)
+-   [SSH Jump Hosts](https://hoop.dev/docs/quickstart/web-applications/jump-hosts)
 
-[Explore features](#features)
-
-
-## About hoop.dev
-
-Hoop.dev is an access gateway for databases and servers with an API for packet manipulation. Because of the modern architecture powering Hoop, the open-source version includes advanced features like:
-
- * **Passwordless Auth, No Certificates**: older gateways require high-maintenance certificate authorities. Hoop uses OIDC and Oauth2 for authentication, letting your IDP handle everything behind the scenes. Forget about certificates!
- * **Open-source SSO**: support for Okta, Keycloak, Jumpcloud, and others. There is no need for Enterprise versions to integrate your own IDP. You're not limited to GitHub sign-in.
- * **Session recording**: Linux, Docker, Kubernetes, Mysql, Postgres, MongoDB, and many more.
- * **Just-in-time access**: grant time-bound sessions using groups synced from your IDP.
- * **Slack and Teams Access Requests**: Chatbot approval workflows can be done without leaving your chat app.
-
-Discover the unique capabilities that only Hoop can offer. From packet manipulation to web and proxy modes, Hoop is designed to meet your diverse needs.
-
-* **Manipulate packets**: Programmatically changes the gateway's environment and each connection's packets in real-time. Check out the [Secrets Manager integration example](https://hoop.dev/docs/learn/secrets-manager).
- * **Web and proxy modes**: Existing gateways lock you into either a web client interface or a proxy that requires desktop agents. Hoop gives you both options.
- * **Custom connections**: bring your own CLI or hide complex options from developers.
-
-See the full list of features for the free open-source and the enterprise versions on [hoop.dev/features](https://hoop.dev/features).
+[View all guides](https://hoop.dev/docs/quickstart)
 
 ## Installation
 
 ### Docker
 
-[See Docker Compose installation documentation](https://hoop.dev/docs/getting-started/installation/docker-compose)
-<!--
+bash
+
 ```bash
 # create a jwt secret for auth
 echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
 
 # download and run
-curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml | docker compose -f - up
+curl  -sL https://hoop.dev/docker-compose.yml > docker-compose.yml &&  docker compose up
+```
 
--->
+[See Docker Compose installation documentation](https://hoop.dev/docs/setup/deployment/docker-compose)
+
 ### Kubernetes
 
-[See Kubernetes Deployment Documentation](https://hoop.dev/docs/deploy/kubernetes)
+[See Kubernetes Deployment Documentation](https://hoop.dev/docs/setup/deployment/kubernetes)
 
 ### AWS
 
- [See AWS Deploy & Host Documentation](https://hoop.dev/docs/deploy/AWS)
+[See AWS Deploy & Host Documentation](https://hoop.dev/docs/setup/deployment/AWS)
 
 | Region | Launch Stack |
 |--------|--------------|
@@ -128,55 +118,24 @@ curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml | docker compo
 | Frankfurt (eu-central-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://eu-central-1.console.aws.amazon.com/cloudformation/home?region=eu-central-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-eu-central-1.s3.eu-central-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
 | Sydney (ap-southeast-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-ap-southeast-2.s3.ap-southeast-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
 
-<!--
-## 🚀 Quick Start
+[View all regions](https://hoop.dev/docs/deploy/AWS)
 
-Get up and running in minutes:
+## Advanced Features
 
-```bash
-curl -sL https://hoop.dev/install.sh | sh
-```
+What makes Hoop unique is its ability to not only inspect but also modify connections between users and infrastructure:
 
-[View full installation options](#installation)
--->
-## Guides
+-   [**AI Data Masking**](https://hoop.dev/docs/learn/features/ai-data-masking)  - Automatically hide sensitive data like emails, SSNs, and credit cards
+-   [**Just-in-Time Reviews**](https://hoop.dev/docs/learn/features/reviews/overview)  - Approve risky commands in real-time through Slack or MS Teams
+-   [**Runbooks**](https://hoop.dev/docs/learn/features/runbooks)  - Create pre-approved workflows for common tasks
+-   [**Web & Native Modes**](https://hoop.dev/docs/clients)  - Use the web interface or connect through your native database tools
 
-### Databases
-- [MySQL](https://hoop.dev/docs/quickstarts/mysql)
-- [PostgreSQL](https://hoop.dev/docs/quickstarts/postgres)
-- [MongoDB](https://hoop.dev/docs/quickstarts/mongodb)
-- [MSSQL](https://hoop.dev/docs/quickstarts/mssql)
-- [Oracle](https://hoop.dev/docs/quickstarts/oracle)
-- [Apache Cassandra](https://hoop.dev/docs/quickstarts/apache-cassandra)
+[See all features](https://hoop.dev/docs/learn/features)
 
-### Cloud & Infrastructure
-- [Kubernetes](https://hoop.dev/docs/quickstarts/kubernetes)
-- [AWS](https://hoop.dev/docs/quickstarts/aws)
-- [SSH Jump Hosts](https://hoop.dev/docs/quickstarts/ssh-jump-hosts)
+## You'll be in Good Company
 
-### Application Consoles
-- [Ruby on Rails Console](https://hoop.dev/docs/quickstarts/ruby-on-rails)
-- [Elixir IEx](https://hoop.dev/docs/quickstarts/elixir-IEx)
-- [PHP Artisan](https://hoop.dev/docs/quickstarts/php-artisan)
-- [Python Environments](https://hoop.dev/docs/quickstarts/python)
-
-### Web & APIs
-- [Web Apps & APIs](https://hoop.dev/docs/quickstarts/webapps-and-apis)
-
-[Explore all guides](https://hoop.dev/docs/quickstarts)
-
-## Features
-
-- [AI Data Masking](https://hoop.dev/docs/learn/ai-data-masking)
-- [Access Control](https://hoop.dev/docs/learn/access-control)
-- [Just-in-Time Reviews](https://hoop.dev/docs/learn/jit-reviews)
-- [Runbooks](https://hoop.dev/docs/learn/runbooks)
-- [Secrets Manager](https://hoop.dev/docs/learn/secrets-manager)
-- [Session Recording](https://hoop.dev/docs/learn/session-recording)
-- [Webhooks/SIEM](https://hoop.dev/docs/learn/webhooks-siem)
-- [AI Query Builder](https://hoop.dev/docs/learn/ai-query-builder)
-
-[See all features](https://hoop.dev/features)
+-   **200+ successful deployments**  from companies around the world
+-   **4.3 minute average setup time**  across all deployments
+-   **Trusted by teams**  from startups to enterprises
 
 ## 🤝 Contributing
 
