@@ -35,7 +35,7 @@ curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml
 docker compose up
 ```
 
-[View full installation options](https://claude.ai/chat/cd0e4113-01b1-47b0-8d1a-6eec819a3f07#installation)
+[View full installation options](https://hoop.dev/docs/setup/deployment/overview)
 
 ## How hoop.dev Works
 
