@@ -39,8 +39,6 @@ docker compose up
 
 ## How hoop.dev Works
 
-Show Image
-
 Hoop creates a secure **pipe** between users and infrastructure:
 
 1.  **Authentication**  - Users authenticate through your existing identity provider (Google, Okta, etc.)
