@@ -69,9 +69,9 @@ func Post(c *gin.Context) {
 	setConnectionDefaults(&req)
 
 	req.ID = uuid.NewString()
-	req.Status = pgrest.ConnectionStatusOffline
+	req.Status = models.ConnectionStatusOffline
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
-		req.Status = pgrest.ConnectionStatusOnline
+		req.Status = models.ConnectionStatusOnline
 	}
 
 	err = models.UpsertConnection(&models.Connection{
@@ -168,9 +168,9 @@ func Put(c *gin.Context) {
 	// immutable fields
 	req.ID = conn.ID
 	req.Name = conn.Name
-	req.Status = pgrest.ConnectionStatusOffline
+	req.Status = models.ConnectionStatusOffline
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
-		req.Status = pgrest.ConnectionStatusOnline
+		req.Status = models.ConnectionStatusOnline
 	}
 	err = models.UpsertConnection(&models.Connection{
 		ID:                  conn.ID,

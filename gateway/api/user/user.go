@@ -554,8 +554,8 @@ func PatchSlackID(c *gin.Context) {
 //	@Description	List all groups from all users
 //	@Tags			User Management
 //	@Produce		json
-//	@Success		200	{array}		string	"Array of group names"
-//	@Failure		500	{object}	openapi.HTTPError	"{"message": "failed listing groups"}"
+//	@Success		200	{array}		string				"Array of group names"
+//	@Failure		500	{object}	openapi.HTTPError	"{"message": "failed	listing	groups"}"
 //	@Router			/users/groups [get]
 func ListAllGroups(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -588,11 +588,11 @@ func ListAllGroups(c *gin.Context) {
 //	@Tags			User Management
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body	openapi.UserGroup	true	"Group object"
+//	@Param			request	body		openapi.UserGroup	true	"Group object"
 //	@Success		201		{object}	openapi.UserGroup	"{"name": "string"}"
-//	@Failure		400		{object}	openapi.HTTPError	"{"message": "error message"}"
-//	@Failure		409		{object}	openapi.HTTPError	"{"message": "group already exists"}"
-//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
+//	@Failure		400		{object}	openapi.HTTPError	"{"message": "error		message"}"
+//	@Failure		409		{object}	openapi.HTTPError	"{"message": "group		already	exists"}"
+//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server	error"}"
 //	@Router			/users/groups [post]
 func CreateGroup(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -626,9 +626,9 @@ func CreateGroup(c *gin.Context) {
 //	@Produce		json
 //	@Param			name	path	string	true	"The name of the group to delete"
 //	@Success		204		"No Content"
-//	@Failure		404		{object}	openapi.HTTPError	"{"message": "group not found"}"
-//	@Failure		422		{object}	openapi.HTTPError	"{"message": "cannot delete admin group"}"
-//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
+//	@Failure		404		{object}	openapi.HTTPError	"{"message": "group		not		found"}"
+//	@Failure		422		{object}	openapi.HTTPError	"{"message": "cannot	delete	admin	group"}"
+//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server	error"}"
 //	@Router			/users/groups/{name} [delete]
 func DeleteGroup(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)

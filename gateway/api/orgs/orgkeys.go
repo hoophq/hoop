@@ -9,17 +9,17 @@ import (
 	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
-	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
+const agentKeyDefaultName string = "_default"
+
 var (
-	agentKeyDefaultName = "_default"
-	ErrAlreadyExists    = errors.New("org key already exists")
+	ErrAlreadyExists = errors.New("org key already exists")
 )
 
 // CreateOrgKey
@@ -62,14 +62,15 @@ func CreateAgentKey(c *gin.Context) {
 //	@Router			/orgs/keys [get]
 func GetAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)
-	if err != nil {
+	ag, err := models.GetAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "organization token not found"})
+		return
+	case nil:
+	default:
 		log.Errorf("failed fetching for existing organization token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if ag == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "organization token not found"})
 		return
 	}
 	dsn, err := dsnkeys.New(appconfig.Get().GrpcURL(), agentKeyDefaultName, ag.Key)
@@ -95,18 +96,19 @@ func GetAgentKey(c *gin.Context) {
 //	@Router			/orgs/keys [delete]
 func RevokeAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)
-	if err != nil {
-		log.Errorf("failed fetching organization token, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if ag == nil {
+	_, err := models.GetAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
+	switch err {
+	case models.ErrNotFound:
 		c.Writer.WriteHeader(204)
 		return
-	}
-	if err := pgagents.New().Delete(ctx, ag.ID); err != nil {
-		log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, err)
+	case nil:
+		if err := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName); err != nil {
+			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+	default:
+		log.Errorf("failed fetching for existing organization token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -114,33 +116,28 @@ func RevokeAgentKey(c *gin.Context) {
 }
 
 func ProvisionOrgAgentKey(ctx pgrest.OrgContext, grpcURL string) (agentID, dsn string, err error) {
-	ag, err := pgagents.New().FetchOneByNameOrID(ctx, agentKeyDefaultName)
-	if err != nil {
-		return "", "", fmt.Errorf("failed fetching for existing organization token, err=%v", err)
-	}
-	if ag != nil {
+	_, err = models.GetAgentByNameOrID(ctx.GetOrgID(), agentKeyDefaultName)
+	switch err {
+	case models.ErrNotFound:
+	case nil:
 		return "", "", ErrAlreadyExists
+	default:
+		return "", "", fmt.Errorf("failed fetching for existing organization token, err=%v", err)
 	}
 	secretKey, secretKeyHash, err := dsnkeys.GenerateSecureRandomKey()
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating organization token: %v", err)
 	}
-	agentID = apiagents.DeterministicAgentUUID(ctx.GetOrgID(), agentKeyDefaultName)
-	ag = &pgrest.Agent{
-		ID:       agentID,
-		OrgID:    ctx.GetOrgID(),
-		Name:     agentKeyDefaultName,
-		Mode:     proto.AgentModeMultiConnectionType,
-		KeyHash:  secretKeyHash, // TODO: change to token hash
-		Key:      secretKey,
-		Status:   pgrest.AgentStatusDisconnected,
-		Metadata: map[string]string{},
-	}
 	dsn, err = dsnkeys.New(grpcURL, agentKeyDefaultName, secretKey)
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating agent key: %v", err)
 	}
-	if err := pgagents.New().Upsert(ag); err != nil {
+	err = models.CreateAgent(
+		ctx.GetOrgID(),
+		agentKeyDefaultName,
+		proto.AgentModeMultiConnectionType,
+		secretKeyHash)
+	if err != nil {
 		return "", "", fmt.Errorf("failed generating organization token: %v", err)
 	}
 	return

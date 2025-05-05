@@ -73,7 +73,7 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 	conn.Name = req.Name
 	conn.Type = req.Type
 	conn.SubType = sql.NullString{String: req.Subtype, Valid: true}
-	conn.Status = pgrest.ConnectionStatusOnline
+	conn.Status = models.ConnectionStatusOnline
 	conn.AccessModeConnect = "enabled"
 	conn.AccessModeExec = "enabled"
 	conn.AccessModeRunbooks = "enabled"

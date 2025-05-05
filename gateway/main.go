@@ -15,7 +15,6 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/indexer"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
@@ -29,7 +28,6 @@ import (
 	pluginsrbac "github.com/hoophq/hoop/gateway/transport/plugins/accesscontrol"
 	pluginsaudit "github.com/hoophq/hoop/gateway/transport/plugins/audit"
 	pluginsdlp "github.com/hoophq/hoop/gateway/transport/plugins/dlp"
-	pluginsindex "github.com/hoophq/hoop/gateway/transport/plugins/index"
 	pluginsreview "github.com/hoophq/hoop/gateway/transport/plugins/review"
 	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -87,11 +85,10 @@ func Run() {
 	}
 
 	a := &api.Api{
-		IndexerHandler: indexer.Handler{},
-		ReviewHandler:  review.Handler{Service: &reviewService},
-		IDProvider:     idProvider,
-		GrpcURL:        grpcURL,
-		TLSConfig:      tlsConfig,
+		ReviewHandler: review.Handler{Service: &reviewService},
+		IDProvider:    idProvider,
+		GrpcURL:       grpcURL,
+		TLSConfig:     tlsConfig,
 	}
 
 	g := &transport.Server{
@@ -108,7 +105,6 @@ func Run() {
 			apiURL,
 		),
 		pluginsaudit.New(),
-		pluginsindex.New(),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginswebhooks.New(),

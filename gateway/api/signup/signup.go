@@ -18,7 +18,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pgusers "github.com/hoophq/hoop/gateway/pgrest/users"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -71,7 +70,7 @@ func Post(c *gin.Context) {
 	}
 	orgID, err := pgorgs.New().CreateOrGetOrg(req.OrgName, licenseDataJSONBytes)
 	switch err {
-	case pgusers.ErrOrgAlreadyExists:
+	case pgorgs.ErrOrgAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
 	case nil:
 		agentcontroller.Sync()

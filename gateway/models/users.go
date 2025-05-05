@@ -100,21 +100,14 @@ func CreateUser(user User) error {
 }
 
 func UpdateUser(user *User) error {
-	if err := DB.Save(&user).Error; err != nil {
-		log.Errorf("failed to update user, reason=%v", err)
-		return err
-	}
-
-	return nil
+	return DB.Save(&user).Error
 }
 
 func DeleteUser(orgID, subject string) error {
-	if err := DB.Where("org_id = ? AND subject = ?", orgID, subject).Delete(&User{}).Error; err != nil {
-		log.Errorf("failed to delete user, reason=%v", err)
-		return err
-	}
-
-	return nil
+	return DB.
+		Where("org_id = ? AND subject = ?", orgID, subject).
+		Delete(&User{}).
+		Error
 }
 
 func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {

@@ -7,7 +7,6 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -34,7 +33,7 @@ type AgentStream struct {
 	context        context.Context
 	cancelFn       context.CancelCauseFunc
 	connectionName string
-	agent          pgrest.Agent
+	agent          models.Agent
 	metadata       metadata.MD
 }
 
@@ -45,7 +44,7 @@ func GetAgentStream(streamAgentID streamtypes.ID) *AgentStream {
 }
 
 func IsAgentOnline(streamAgentID streamtypes.ID) bool { return GetAgentStream(streamAgentID) != nil }
-func NewAgent(a pgrest.Agent, s pb.Transport_ConnectServer) *AgentStream {
+func NewAgent(a models.Agent, s pb.Transport_ConnectServer) *AgentStream {
 	streamCtx := s.Context()
 	ctx, cancelFn := context.WithCancelCause(streamCtx)
 	md, _ := metadata.FromIncomingContext(streamCtx)
@@ -98,7 +97,6 @@ func (s *AgentStream) StreamAgentID() streamtypes.ID {
 }
 
 func (s *AgentStream) GetOrgID() string       { return s.agent.OrgID }
-func (s *AgentStream) GetOrgName() string     { return s.agent.Org.Name }
 func (s *AgentStream) AgentID() string        { return s.agent.ID }
 func (s *AgentStream) AgentName() string      { return s.agent.Name }
 func (s *AgentStream) AgentVersion() string   { return s.agent.GetMeta("version") }

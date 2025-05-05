@@ -126,31 +126,31 @@ func (c *connections) FetchByIDs(ctx pgrest.OrgContext, connectionIDs []string) 
 // 	return
 // }
 
-func (c *connections) UpdateStatusByName(ctx pgrest.OrgContext, connectionName, status string) error {
-	err := pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), connectionName).
-		Patch(map[string]any{"status": status}).
-		Error()
-	if err == pgrest.ErrNotFound {
-		return nil
-	}
-	return err
-}
+// func (c *connections) UpdateStatusByName(ctx pgrest.OrgContext, connectionName, status string) error {
+// 	err := pgrest.New("/connections?org_id=eq.%v&name=eq.%v", ctx.GetOrgID(), connectionName).
+// 		Patch(map[string]any{"status": status}).
+// 		Error()
+// 	if err == pgrest.ErrNotFound {
+// 		return nil
+// 	}
+// 	return err
+// }
 
-func (c *connections) UpdateStatusByAgentID(ctx pgrest.OrgContext, agentID, status string) error {
-	err := pgrest.New("/connections?org_id=eq.%v&agent_id=eq.%v", ctx.GetOrgID(), agentID).
-		Patch(map[string]any{"status": status}).
-		Error()
-	if err == pgrest.ErrNotFound {
-		return nil
-	}
-	return err
-}
+// func (c *connections) UpdateStatusByAgentID(ctx pgrest.OrgContext, agentID, status string) error {
+// 	err := pgrest.New("/connections?org_id=eq.%v&agent_id=eq.%v", ctx.GetOrgID(), agentID).
+// 		Patch(map[string]any{"status": status}).
+// 		Error()
+// 	if err == pgrest.ErrNotFound {
+// 		return nil
+// 	}
+// 	return err
+// }
 
-// UpdateAllToOffline update the status of all connection resources to offline
-func (a *connections) UpdateAllToOffline() error {
-	err := pgrest.New("/connections").Patch(map[string]any{"status": pgrest.ConnectionStatusOffline}).Error()
-	if err == pgrest.ErrNotFound {
-		return nil
-	}
-	return err
-}
+// // UpdateAllToOffline update the status of all connection resources to offline
+// func (a *connections) UpdateAllToOffline() error {
+// 	err := pgrest.New("/connections").Patch(map[string]any{"status": pgrest.ConnectionStatusOffline}).Error()
+// 	if err == pgrest.ErrNotFound {
+// 		return nil
+// 	}
+// 	return err
+// }

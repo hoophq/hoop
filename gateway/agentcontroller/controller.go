@@ -5,15 +5,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/agentcontroller"
 	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 )
 
 const defaultTickTime = time.Minute * 5
@@ -101,7 +98,6 @@ func Sync() {
 }
 
 func conciliateDeployments(gatewayGrpcURL string, items []*agentcontroller.AgentRequest, client *apiClient) (errReport []string) {
-	agentcli := pgagents.New()
 	for _, req := range items {
 		dsnKey, secretKeyHash, err := generateDsnKey(gatewayGrpcURL, req.Name)
 		if err != nil {
@@ -109,38 +105,10 @@ func conciliateDeployments(gatewayGrpcURL string, items []*agentcontroller.Agent
 			continue
 		}
 		req.DSNKey = dsnKey
-		agent, err := agentcli.FetchOneByNameOrID(pgrest.NewOrgContext(req.ID), req.Name)
-		if err != nil {
-			errReport = append(errReport, fmt.Sprintf("failed obtaining agent demo %s/%s, err=%v", req.ID, req.Name, err))
-			continue
+		err = models.CreateAgent(req.ID, req.Name, proto.AgentModeStandardType, secretKeyHash)
+		if err == models.ErrAlreadyExists {
+			err = models.RotateAgentSecretKey(req.ID, req.Name, secretKeyHash)
 		}
-		if agent == nil {
-			agent = &pgrest.Agent{
-				ID:       uuid.NewString(),
-				OrgID:    req.ID,
-				Name:     req.Name,
-				Mode:     proto.AgentModeStandardType,
-				KeyHash:  "",
-				Status:   pgrest.AgentStatusDisconnected,
-				Metadata: map[string]string{},
-			}
-		}
-		err = agentcli.Upsert(&pgrest.Agent{
-			ID:      agent.ID,
-			OrgID:   agent.OrgID,
-			KeyHash: secretKeyHash,
-			Name:    agent.Name,
-			Mode:    agent.Mode,
-			Status:  string(agent.Status),
-			Metadata: map[string]string{
-				"hostname":       agent.GetMeta("hostname"),
-				"platform":       agent.GetMeta("platform"),
-				"goversion":      agent.GetMeta("goversion"),
-				"version":        agent.GetMeta("version"),
-				"kernel_version": agent.GetMeta("kernel_version"),
-				"compiler":       agent.GetMeta("compiler"),
-				"machine_id":     agent.GetMeta("machine_id"),
-			}})
 		if err != nil {
 			errReport = append(errReport, fmt.Sprintf("failed updating agent demo %s/%s, err=%v", req.ID, req.Name, err))
 		}

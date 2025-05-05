@@ -41,18 +41,16 @@ import (
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/indexer"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 )
 
 type Api struct {
-	IndexerHandler indexer.Handler
-	ReviewHandler  review.Handler
-	IDProvider     *idp.Provider
-	GrpcURL        string
-	TLSConfig      *tls.Config
-	logger         *zap.Logger
+	ReviewHandler review.Handler
+	IDProvider    *idp.Provider
+	GrpcURL       string
+	TLSConfig     *tls.Config
+	logger        *zap.Logger
 }
 
 //	@title			Hoop Api
@@ -443,12 +441,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apireports.SessionReport)
-
-	r.POST("/plugins/indexer/sessions/search",
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventSearch),
-		api.IndexerHandler.Search,
-	)
 
 	r.GET("/plugins/runbooks/connections/:name/templates",
 		apiroutes.ReadOnlyAccessRole,
