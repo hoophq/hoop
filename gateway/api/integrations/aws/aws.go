@@ -24,7 +24,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -319,16 +318,17 @@ func CreateDBRoleJob(c *gin.Context) {
 		return
 	}
 	dbArn := req.AWS.InstanceArn
-	agent, err := pgagents.New().FetchOneByNameOrID(usrctx, req.AgentID)
-	if err != nil {
+	_, err := models.GetAgentByNameOrID(usrctx.OrgID, req.AgentID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusBadRequest, gin.H{"message": "agent does not exists"})
+		return
+	case nil:
+	default:
+		log.Errorf("unable to fetch agent information, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to validate agent, reason=" + err.Error()})
 		return
 	}
-	if agent == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "agent does not exists"})
-		return
-	}
-
 	resourceAWSAccountID := parseDatabaseArnAccountID(dbArn)
 	if resourceAWSAccountID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Errorf("unable to parse database arn %q", dbArn)})

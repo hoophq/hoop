@@ -3,18 +3,14 @@ package apiagents
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -31,18 +27,14 @@ type AgentRequest struct {
 //	@Tags			Agents
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.AgentRequest	true	"The request body resource"
-//	@Success		201		{object}	openapi.AgentCreateResponse
-//	@Failure		400		{object}	openapi.HTTPError
-//	@Failure		409		{object}	openapi.HTTPError
-//	@Failure		422		{object}	openapi.HTTPError
-//	@Failure		500		{object}	openapi.HTTPError
+//	@Param			request			body		openapi.AgentRequest	true	"The request body resource"
+//	@Success		201				{object}	openapi.AgentCreateResponse
+//	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/agents [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	req := openapi.AgentRequest{Mode: proto.AgentModeStandardType}
-	// req := AgentRequest{Mode: proto.AgentModeStandardType}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Infof("failed parsing request payload, err=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -50,18 +42,6 @@ func Post(c *gin.Context) {
 	}
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
-
-	existentAgent, err := pgagents.New().FetchOneByNameOrID(ctx, req.Name)
-	if err != nil {
-		log.Errorf("failed validating agent, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if existentAgent != nil {
-		log.Infof("agent %v already exists", req.Name)
-		c.JSON(http.StatusConflict, gin.H{"message": "agent already exists"})
 		return
 	}
 
@@ -83,24 +63,17 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	err = pgagents.New().Upsert(&pgrest.Agent{
-		// a deterministic uuid allows automatic reasign of resources
-		// in case of removal and creating with the same name (e.g. connections)
-		ID:       DeterministicAgentUUID(ctx.GetOrgID(), req.Name),
-		Name:     req.Name,
-		OrgID:    ctx.GetOrgID(),
-		KeyHash:  secretKeyHash,
-		Mode:     req.Mode,
-		Status:   pgrest.AgentStatusDisconnected,
-		Metadata: map[string]string{},
-	})
-	if err != nil {
-		log.Errorf("failed persisting agent token, err=%v", err)
-		sentry.CaptureException(err)
+	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
+	switch err {
+	case models.ErrAlreadyExists:
+		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
+	case nil:
+		c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
+	default:
+		log.Errorf("failed creating agent resource, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
 }
 
 // DeleteAgent
@@ -111,29 +84,20 @@ func Post(c *gin.Context) {
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"The name or ID of the resource"
 //	@Success		204
-//	@Failure		404	{object}	openapi.HTTPError
-//	@Failure		500	{object}	openapi.HTTPError
+//	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/agents/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-
 	nameOrID := c.Param("nameOrID")
-	agent, err := pgagents.New().FetchOneByNameOrID(ctx, nameOrID)
-	if err != nil {
-		log.Errorf("failed fetching agent, err=%v", err)
+	err := models.DeleteAgentByNameOrID(ctx.OrgID, nameOrID)
+	switch err {
+	case nil:
+		c.Writer.WriteHeader(204)
+	default:
+		log.Errorf("failed removing agent resource %v, err=%#v", nameOrID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	if agent == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-	if err := pgagents.New().Delete(ctx, agent.ID); err != nil {
-		log.Errorf("failed evicting agent %v, err=%v", agent.ID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	c.Writer.WriteHeader(204)
 }
 
 // ListAgents
@@ -147,12 +111,11 @@ func Delete(c *gin.Context) {
 //	@Router			/agents [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	// items, err := pgagents.New().FindAll(context, pgrest.WithEqFilter(c.Request.URL.Query()))
-	items, err := pgagents.New().FindAll(ctx)
+	items, err := models.ListAgents(ctx.OrgID)
 	if err != nil {
 		log.Errorf("failed listing agents, reason=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing agents"})
+		return
 	}
 	result := []openapi.AgentListResponse{}
 	for _, a := range items {
@@ -174,19 +137,14 @@ func List(c *gin.Context) {
 			Status:   a.Status,
 			Metadata: a.Metadata,
 			// DEPRECATE top level metadata keys
-			Hostname:      a.GetMeta("hostname"),
-			MachineID:     a.GetMeta("machine_id"),
-			KernelVersion: a.GetMeta("kernel_version"),
-			Version:       a.GetMeta("version"),
-			GoVersion:     a.GetMeta("goversion"),
-			Compiler:      a.GetMeta("compiler"),
-			Platform:      a.GetMeta("platform"),
+			Hostname:      a.Metadata["hostname"],
+			MachineID:     a.Metadata["machine_id"],
+			KernelVersion: a.Metadata["kernel_version"],
+			Version:       a.Metadata["version"],
+			GoVersion:     a.Metadata["goversion"],
+			Compiler:      a.Metadata["compiler"],
+			Platform:      a.Metadata["platform"],
 		})
 	}
 	c.JSON(http.StatusOK, result)
-}
-
-func DeterministicAgentUUID(orgID, agentName string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(
-		strings.Join([]string{"agent", orgID, agentName}, "/"))).String()
 }

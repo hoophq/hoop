@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hoophq/hoop/gateway/pgrest"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,7 +14,7 @@ type GatewayContextKey struct{}
 type GatewayContext struct {
 	UserContext types.APIContext
 	Connection  types.ConnectionInfo
-	Agent       pgrest.Agent
+	Agent       models.Agent
 
 	BearerToken string
 	IsAdminExec bool
@@ -51,9 +51,9 @@ func ParseGatewayContextInto(ctx context.Context, into any) error {
 			*into.(*GatewayContext) = *v
 			assigned = true
 		}
-	case *pgrest.Agent:
-		if _, ok := into.(*pgrest.Agent); ok {
-			*into.(*pgrest.Agent) = *v
+	case *models.Agent:
+		if _, ok := into.(*models.Agent); ok {
+			*into.(*models.Agent) = *v
 			assigned = true
 		}
 	default:

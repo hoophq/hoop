@@ -27,8 +27,8 @@ const (
 	tableConnections               = "private.connections"
 	tableGuardRailRulesConnections = "private.guardrail_rules_connections"
 
-	ConnectionStatusOnline  = "online"
-	ConnectionStatusOffline = "offline"
+	ConnectionStatusOnline  string = "online"
+	ConnectionStatusOffline string = "offline"
 )
 
 type Connection struct {
@@ -204,6 +204,20 @@ func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
 		return &ErrNotFoundGuardRailRules{rules: notFoundRules}
 	}
 	return nil
+}
+
+func dedupeResourceNames(resourceNames []string) (v []string) {
+	m := map[string]any{}
+	for _, name := range resourceNames {
+		m[name] = nil
+	}
+	for name := range m {
+		if name == "" {
+			continue
+		}
+		v = append(v, name)
+	}
+	return v
 }
 
 func DeleteConnection(orgID, name string) error {
@@ -439,16 +453,9 @@ func setConnectionOptionDefaults(opts *ConnectionFilterOption) {
 	}
 }
 
-func dedupeResourceNames(resourceNames []string) (v []string) {
-	m := map[string]any{}
-	for _, name := range resourceNames {
-		m[name] = nil
-	}
-	for name := range m {
-		if name == "" {
-			continue
-		}
-		v = append(v, name)
-	}
-	return v
+func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
+	return DB.Table(tableConnections).
+		Where("org_id = ? AND name = ?", orgID, connectionName).
+		Updates(map[string]any{"status": status}).
+		Error
 }

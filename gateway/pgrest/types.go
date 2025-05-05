@@ -66,30 +66,6 @@ type EnvVar struct {
 	Envs  map[string]string `json:"envs"`
 }
 
-const (
-	AgentStatusConnected    = "CONNECTED"
-	AgentStatusDisconnected = "DISCONNECTED"
-)
-
-type Agent struct {
-	ID        string            `json:"id"`
-	OrgID     string            `json:"org_id"`
-	Name      string            `json:"name"`
-	Mode      string            `json:"mode"`
-	Key       string            `json:"key"`
-	KeyHash   string            `json:"key_hash"`
-	Status    string            `json:"status"`
-	Metadata  map[string]string `json:"metadata"`
-	UpdatedAt *string           `json:"updated_at"`
-
-	Org Org `json:"orgs"`
-}
-
-const (
-	ConnectionStatusOnline  = "online"
-	ConnectionStatusOffline = "offline"
-)
-
 type Connection struct {
 	ID                 string            `json:"id"`
 	OrgID              string            `json:"org_id"`
@@ -110,7 +86,6 @@ type Connection struct {
 	// read only attributes
 	Org              Org                `json:"orgs"`
 	PluginConnection []PluginConnection `json:"plugin_connections"`
-	Agent            Agent              `json:"agents"`
 }
 
 func (c Connection) AsSecrets() map[string]any {

@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/hoophq/hoop/client/cmd/admin"
 	"github.com/hoophq/hoop/client/cmd/config"
+	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/spf13/cobra"
@@ -49,4 +51,10 @@ func init() {
 
 	rootCmd.AddCommand(config.MainCmd)
 	rootCmd.AddCommand(admin.MainCmd)
+}
+
+func printErrorAndExit(format string, v ...any) {
+	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
+	fmt.Println(errOutput)
+	os.Exit(1)
 }

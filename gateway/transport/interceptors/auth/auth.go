@@ -15,8 +15,8 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgagents "github.com/hoophq/hoop/gateway/pgrest/agents"
 	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	"github.com/hoophq/hoop/gateway/security/idp"
@@ -259,10 +259,10 @@ func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*
 	}, nil
 }
 
-func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*pgrest.Agent, error) {
+func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*models.Agent, error) {
 	if strings.HasPrefix(bearerToken, "x-agt-") {
-		ag, err := pgagents.New().FetchOneByToken(bearerToken)
-		if err != nil || ag == nil {
+		ag, err := models.GetAgentByToken(bearerToken)
+		if err != nil {
 			md.Delete("authorization")
 			log.Debugf("invalid agent authentication (legacy auth), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -276,8 +276,8 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*pg
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
 
-	ag, err := pgagents.New().FetchOneByToken(dsn.SecretKeyHash)
-	if err != nil || ag == nil {
+	ag, err := models.GetAgentByToken(dsn.SecretKeyHash)
+	if err != nil {
 		md.Delete("authorization")
 		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
