@@ -24,7 +24,7 @@ func New() *Segment {
 
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserEmail == "" || ctx.OrgID == "" ||
-		appconfig.Get().DoNotTrack() {
+		!appconfig.Get().AnalyticsTracking() {
 		return
 	}
 
@@ -64,7 +64,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 // - https://segment.com/docs/connections/spec/best-practices-identify/#anonymousid-generation
 // - https://segment.com/docs/connections/spec/best-practices-identify/#merging-identified-and-anonymous-user-profiles
 func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[string]any) {
-	if s.Client == nil || appconfig.Get().DoNotTrack() {
+	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
 		return
 	}
 	if properties == nil {
@@ -83,7 +83,7 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 
 // Track generates an event to segment
 func (s *Segment) Track(userEmail, eventName string, properties map[string]any) {
-	if s.Client == nil || appconfig.Get().DoNotTrack() {
+	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
 		return
 	}
 	if properties == nil {

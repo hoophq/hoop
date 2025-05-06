@@ -22,8 +22,8 @@
  :tracking->initialize-if-allowed
  (fn
    [{:keys [db]} _]
-   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
-     (if do-not-track
+   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+     (if (not analytics-tracking)
        ;; Tracking is disabled, ensure all tracking is stopped
        {:fx [[:dispatch [:tracking->disable-all-tracking]]]}
        ;; Tracking is allowed, initialize all tracking components
@@ -65,8 +65,8 @@
 (rf/reg-event-fx
  :tracking->ensure-canny-available
  (fn [{:keys [db]} [_ user-data]]
-   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
-     (if do-not-track
+   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+     (if (not analytics-tracking)
        ;; Tracking is disabled, do nothing
        {}
        ;; Otherwise, identify user in Canny if available

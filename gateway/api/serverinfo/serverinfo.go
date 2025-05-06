@@ -31,7 +31,7 @@ var (
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
 		HasPostgresRole:         isEnvSet("PGREST_ROLE"),
 		DisableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
-		DoNotTrack:              os.Getenv("DO_NOT_TRACK") == "true",
+		AnalyticsTracking:       getAnalyticsTrackingStatus(),
 	}
 )
 
@@ -109,4 +109,11 @@ func defaultOSSLicense() *license.License {
 func isEnvSet(key string) bool {
 	val, isset := os.LookupEnv(key)
 	return isset && val != ""
+}
+
+func getAnalyticsTrackingStatus() string {
+	if os.Getenv("ANALYTICS_TRACKING") == "disabled" {
+		return string(openapi.AnalyticsTrackingDisabled)
+	}
+	return string(openapi.AnalyticsTrackingEnabled)
 }

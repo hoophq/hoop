@@ -117,9 +117,9 @@
  :initialize-intercom
  (fn
    [{:keys [db]} [_ user]]
-   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
-     (if do-not-track
-       ;; If do_not_track is enabled, don't initialize Intercom
+   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+     (if (not analytics-tracking)
+       ;; If analytics tracking is disabled, don't initialize Intercom
        {}
        ;; Otherwise, initialize Intercom
        (do

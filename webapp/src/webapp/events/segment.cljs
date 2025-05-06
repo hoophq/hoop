@@ -7,9 +7,9 @@
 (rf/reg-event-fx
  :segment->load
  (fn [{:keys [db]} [_ event-callback]]
-   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
-     (if do-not-track
-       ;; If do_not_track is enabled, don't load segment
+   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+     (if (not analytics-tracking)
+       ;; If analytics tracking is disabled, don't load segment
        {}
        ;; Otherwise, load segment
        (let [segment-analytics (.load AnalyticsBrowser #js{:writeKey config/segment-write-key})]
@@ -21,9 +21,9 @@
 (rf/reg-event-fx
  :segment->identify
  (fn [{:keys [db]} [_ user]]
-   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
-     (if do-not-track
-       ;; If do_not_track is enabled, don't send identify events
+   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+     (if (not analytics-tracking)
+       ;; If analytics tracking is disabled, don't send identify events
        {}
        ;; Otherwise, send identify events
        (let [user-id (:id user)
@@ -37,9 +37,9 @@
 (rf/reg-event-fx
  :segment->track
  (fn [{:keys [db]} [_ event-name properties]]
-   (let [do-not-track (get-in db [:gateway->info :data :do_not_track] false)]
-     (if do-not-track
-       ;; If do_not_track is enabled, don't send track events
+   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+     (if (not analytics-tracking)
+       ;; If analytics tracking is disabled, don't send track events
        {}
        ;; Otherwise, send track events
        (let [analytics (-> db :segment->analytics)

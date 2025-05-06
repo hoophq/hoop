@@ -812,6 +812,13 @@ const (
 	FeatureStatusDisabled FeatureStatusType = "disabled"
 )
 
+type AnalyticsTrackingStatusType string
+
+const (
+	AnalyticsTrackingEnabled  AnalyticsTrackingStatusType = "enabled"
+	AnalyticsTrackingDisabled AnalyticsTrackingStatusType = "disabled"
+)
+
 var FeatureList = []string{"ask-ai"}
 
 type FeatureRequest struct {
@@ -892,10 +899,10 @@ type ServerInfo struct {
 	// * true - Session download is disabled and not available to users
 	// * false - Session download is enabled and available to users
 	DisableSessionsDownload bool `json:"disable_sessions_download"`
-	// Indicates if all tracking and analytics should be disabled
-	// * true - All tracking/analytics are disabled
-	// * false - Tracking/analytics are enabled
-	DoNotTrack bool `json:"do_not_track"`
+	// Indicates if all tracking and analytics should be enabled or disabled
+	// * enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)
+	// * disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)
+	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
 }
 
 type LivenessCheck struct {
