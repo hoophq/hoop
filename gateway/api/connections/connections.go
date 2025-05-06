@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -30,6 +31,18 @@ import (
 
 type Review struct {
 	ApprovalGroups []string `json:"groups"`
+}
+
+// Estruturas para respostas dos novos endpoints
+type TablesResponse struct {
+	Schemas []struct {
+		Name   string   `json:"name"`
+		Tables []string `json:"tables"`
+	} `json:"schemas"`
+}
+
+type ColumnsResponse struct {
+	Columns []openapi.ConnectionColumn `json:"columns"`
 }
 
 // CreateConnection
@@ -677,6 +690,348 @@ func GetDatabaseSchemas(c *gin.Context) {
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Infof("runexec timeout (50s), it will return async")
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+	}
+}
+
+// ListTables retorna apenas as tabelas de um banco de dados sem detalhes das colunas
+//
+//	@Summary		List Database Tables
+//	@Description	List tables from a database without column details
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Param			database	query		string	true	"Name of the database"
+//	@Success		200			{object}	TablesResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/tables [get]
+func ListTables(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	dbName := c.Query("database")
+
+	// Validate database name to prevent SQL injection
+	if dbName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "database parameter is required"})
+		return
+	}
+
+	if err := validateDatabaseName(dbName); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	conn, err := FetchByName(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
+	if conn.Type != "database" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
+		return
+	}
+
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+	script := getTablesQuery(currentConnectionType, dbName)
+	if script == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
+		return
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+		Verb:           pb.ClientVerbPlainExec,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run([]byte(script), nil):
+		default:
+		}
+	}()
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		if outcome.ExitCode != 0 {
+			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to list tables: %s", outcome.Output)})
+			return
+		}
+
+		response := TablesResponse{Schemas: []struct {
+			Name   string   `json:"name"`
+			Tables []string `json:"tables"`
+		}{}}
+
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
+			// Parse MongoDB output
+			output := cleanMongoOutput(outcome.Output)
+			if output != "" {
+				var result []map[string]interface{}
+				if err := json.Unmarshal([]byte(output), &result); err != nil {
+					log.Errorf("failed parsing mongo response: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+					return
+				}
+
+				// Organize tables by schema
+				schemaMap := make(map[string][]string)
+				for _, row := range result {
+					schemaName := getString(row, "schema_name")
+					tableName := getString(row, "object_name")
+					schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+				}
+
+				// Convert map to response structure
+				for schemaName, tables := range schemaMap {
+					response.Schemas = append(response.Schemas, struct {
+						Name   string   `json:"name"`
+						Tables []string `json:"tables"`
+					}{
+						Name:   schemaName,
+						Tables: tables,
+					})
+				}
+			}
+		} else {
+			// Parse SQL output
+			lines := strings.Split(outcome.Output, "\n")
+			schemaMap := make(map[string][]string)
+
+			// Process each line (skip header)
+			startLine := 1
+			if currentConnectionType == pb.ConnectionTypeMSSQL {
+				// Find the line with dashes for MSSQL
+				for i, line := range lines {
+					if strings.Contains(line, "----") {
+						startLine = i + 1
+						break
+					}
+				}
+			}
+
+			for i, line := range lines {
+				line = strings.TrimSpace(line)
+				if i < startLine || line == "" || strings.HasPrefix(line, "(") {
+					continue
+				}
+
+				fields := strings.Split(line, "\t")
+				if len(fields) < 3 {
+					continue
+				}
+
+				schemaName := fields[0]
+				tableName := fields[2]
+				schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+			}
+
+			// Convert map to response structure
+			for schemaName, tables := range schemaMap {
+				response.Schemas = append(response.Schemas, struct {
+					Name   string   `json:"name"`
+					Tables []string `json:"tables"`
+				}{
+					Name:   schemaName,
+					Tables: tables,
+				})
+			}
+		}
+
+		c.JSON(http.StatusOK, response)
+
+	case <-timeoutCtx.Done():
+		client.Close()
+		log.Infof("runexec timeout (30s), it will return async")
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+	}
+}
+
+// GetTableColumns retorna apenas as colunas de uma tabela específica
+//
+//	@Summary		Get Table Columns
+//	@Description	Get columns from a specific table
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Param			database	query		string	true	"Name of the database"
+//	@Param			table		query		string	true	"Name of the table"
+//	@Param			schema		query		string	true	"Name of the schema"
+//	@Success		200			{object}	ColumnsResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/columns [get]
+func GetTableColumns(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	dbName := c.Query("database")
+	tableName := c.Query("table")
+	schemaName := c.Query("schema")
+
+	// Validações
+	if dbName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "database parameter is required"})
+		return
+	}
+
+	if tableName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "table parameter is required"})
+		return
+	}
+
+	if err := validateDatabaseName(dbName); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	conn, err := FetchByName(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
+	if conn.Type != "database" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
+		return
+	}
+
+	// Se o schema não for fornecido, usa 'public' para PostgreSQL e o próprio database para outros bancos
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+	if schemaName == "" {
+		if currentConnectionType == pb.ConnectionTypePostgres {
+			schemaName = "public"
+		} else {
+			schemaName = dbName
+		}
+	}
+
+	script := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
+	if script == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
+		return
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+		Verb:           pb.ClientVerbPlainExec,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run([]byte(script), nil):
+		default:
+		}
+	}()
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		if outcome.ExitCode != 0 {
+			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to get columns: %s", outcome.Output)})
+			return
+		}
+
+		response := ColumnsResponse{Columns: []openapi.ConnectionColumn{}}
+
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
+			// Parse MongoDB output
+			output := cleanMongoOutput(outcome.Output)
+			if output != "" {
+				var result []map[string]interface{}
+				if err := json.Unmarshal([]byte(output), &result); err != nil {
+					log.Errorf("failed parsing mongo response: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+					return
+				}
+
+				for _, row := range result {
+					column := openapi.ConnectionColumn{
+						Name:     getString(row, "column_name"),
+						Type:     getString(row, "column_type"),
+						Nullable: !getBool(row, "not_null"),
+					}
+					response.Columns = append(response.Columns, column)
+				}
+			}
+		} else {
+			// Parse SQL output
+			lines := strings.Split(outcome.Output, "\n")
+
+			// Process each line (skip header)
+			startLine := 1
+			if currentConnectionType == pb.ConnectionTypeMSSQL {
+				// Find the line with dashes for MSSQL
+				for i, line := range lines {
+					if strings.Contains(line, "----") {
+						startLine = i + 1
+						break
+					}
+				}
+			}
+
+			for i, line := range lines {
+				line = strings.TrimSpace(line)
+				if i < startLine || line == "" || strings.HasPrefix(line, "(") {
+					continue
+				}
+
+				fields := strings.Split(line, "\t")
+				if len(fields) < 3 {
+					continue
+				}
+
+				column := openapi.ConnectionColumn{
+					Name:     fields[0],
+					Type:     fields[1],
+					Nullable: fields[2] != "t" && fields[2] != "1",
+				}
+				response.Columns = append(response.Columns, column)
+			}
+		}
+
+		c.JSON(http.StatusOK, response)
+
+	case <-timeoutCtx.Done():
+		client.Close()
+		log.Infof("runexec timeout (30s), it will return async")
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
 	}
 }

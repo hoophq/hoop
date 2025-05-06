@@ -276,10 +276,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.ListDatabases)
-	r.GET("/connections/:nameOrID/schemas",
+	r.GET("/connections/:nameOrID/tables",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
-		apiconnections.GetDatabaseSchemas)
+		apiconnections.ListTables)
+	r.GET("/connections/:nameOrID/columns",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.GetTableColumns)
 
 	// TODO(san): needs more testing, will add these endpoints later on
 	// r.POST("/connection-tags",
