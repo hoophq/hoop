@@ -8,8 +8,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
 	"github.com/hoophq/hoop/gateway/review"
@@ -102,7 +102,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 }
 
 func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
-	orgList, err := pgorgs.New().FetchAllOrgs()
+	orgList, err := models.ListAllOrganizations()
 	if err != nil {
 		return fmt.Errorf("failed listing organizations: %v", err)
 	}

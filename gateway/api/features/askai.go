@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -35,7 +35,7 @@ func PostChatCompletions(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	log := log.With("org", ctx.OrgName, "user", ctx.UserEmail)
 
-	isFeatureEnabled, err := pgaudit.New().IsFeatureAskAiEnabled(ctx)
+	isFeatureEnabled, err := models.IsFeatureAskAiEnabled(ctx.OrgID)
 	if err != nil {
 		log.Errorf("unable to verify if ask-ai feature is enabled, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to verify feature status"})

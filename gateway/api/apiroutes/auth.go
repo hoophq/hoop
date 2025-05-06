@@ -12,9 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -29,24 +27,23 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 			return
 		}
 		orgID := strings.Split(apiKey, "|")[0]
-		newOrgCtx := pgrest.NewOrgContext(orgID)
-		org, err := pgorgs.New().FetchOrgByContext(newOrgCtx)
-		if err != nil || org == nil {
+		org, err := models.GetOrganizationByNameOrID(orgID)
+		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
 			return
 		}
 
 		deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
-		r.setUserContext(&pguserauth.Context{
-			OrgID:       orgID,
-			OrgName:     org.Name,
-			OrgLicense:  org.License,
-			UserUUID:    deterministicUuid.String(),
-			UserSubject: "API_KEY",
-			UserName:    "API_KEY",
-			UserEmail:   "API_KEY",
-			UserStatus:  "active",
-			UserGroups:  []string{types.GroupAdmin},
+		r.setUserContext(&models.Context{
+			OrgID:          orgID,
+			OrgName:        org.Name,
+			OrgLicenseData: org.LicenseData,
+			UserID:         deterministicUuid.String(),
+			UserSubject:    "API_KEY",
+			UserName:       "API_KEY",
+			UserEmail:      "API_KEY",
+			UserStatus:     "active",
+			UserGroups:     []string{types.GroupAdmin},
 		}, c)
 		return
 	}
@@ -61,7 +58,7 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 		return
 	}
 
-	ctx, err := pguserauth.New().FetchUserContext(subject)
+	ctx, err := models.GetUserContext(subject)
 	if err != nil {
 		log.Errorf("failed fetching user, subject=%v, err=%v", subject, err)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
@@ -119,7 +116,7 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 }
 
 // setUserContext and call next middleware
-func (r *Router) setUserContext(ctx *pguserauth.Context, c *gin.Context) {
+func (r *Router) setUserContext(ctx *models.Context, c *gin.Context) {
 	auditApiChanges(c, ctx)
 	c.Set(storagev2.ContextKey,
 		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
@@ -185,7 +182,7 @@ func parseHeaderForDebug(authTokenHeader string) string {
 	return fmt.Sprintf("isjwt=true, header=%v, payload=%v", string(headerBytes), string(payloadBytes))
 }
 
-func auditApiChanges(c *gin.Context, ctx *pguserauth.Context) {
+func auditApiChanges(c *gin.Context, ctx *models.Context) {
 	if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
 		return
 	}

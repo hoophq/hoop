@@ -7,11 +7,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -38,7 +38,7 @@ func Register(c *gin.Context) {
 	// local auth creates the user at the default organization for now.
 	// we plan to make it much more permissive, but at this moment this
 	// limitation comes to make sure things are working as expected.
-	org, totalUsers, err := pgorgs.New().FetchOrgByName("default")
+	org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
 	if err != nil {
 		log.Debugf("failed fetching default organization, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch default organization"})
@@ -47,7 +47,7 @@ func Register(c *gin.Context) {
 	// if there is one user already, do not allow new users to be created
 	// it avoids a security issue of anyone being able to add themselves to
 	// the default organization. Instead, they should get an invitation
-	if totalUsers > 0 {
+	if org.TotalUsers > 0 {
 		log.Debugf("default organization already has users")
 		c.AbortWithStatus(http.StatusForbidden)
 		return

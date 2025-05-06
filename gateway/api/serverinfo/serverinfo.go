@@ -12,7 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -51,8 +51,8 @@ func New(grpcURL string) *handler { return &handler{grpcURL: grpcURL} }
 //	@Router			/serverinfo [get]
 func (h *handler) Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	org, err := pgorgs.New().FetchOrgByContext(ctx)
-	if err != nil || org == nil {
+	org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
+	if err != nil {
 		errMsg := fmt.Sprintf("failed obtaining organization, reason=%v", err)
 		log.Error(errMsg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
@@ -62,7 +62,7 @@ func (h *handler) Get(c *gin.Context) {
 	apiHostname := appc.ApiHostname()
 	l, licenseVerifyErr := defaultOSSLicense(), ""
 	if org.LicenseData != nil {
-		l, err = license.Parse(*org.LicenseData, apiHostname)
+		l, err = license.Parse(org.LicenseData, apiHostname)
 		if err != nil {
 			licenseVerifyErr = err.Error()
 		}

@@ -20,10 +20,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
@@ -56,16 +52,15 @@ func (h *handler) Login(c *gin.Context) {
 		return
 	}
 
-	// if strings.HasPrefix(appconfig.Get().ApiURL(), redirectURL)
 	stateUID := uuid.NewString()
-	err = pglogin.New().Upsert(&types.Login{
-		ID:       stateUID,
-		Redirect: redirectURL,
-		Outcome:  "",
-		SlackID:  "",
+	err = models.CreateLogin(&models.Login{
+		ID:        stateUID,
+		Redirect:  redirectURL,
+		Outcome:   "",
+		SlackID:   "",
+		UpdatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		sentry.CaptureException(err)
 		log.Errorf("internal error storing the login, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error storing the login"})
 		return
@@ -119,13 +114,12 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	code := c.Query("code")
 
 	log.With("state", stateUUID).Infof("starting callback")
-	login, err := pglogin.New().FetchOne(stateUUID)
-	if err != nil || login == nil {
+	login, err := models.GetLoginByState(stateUUID)
+	if err != nil {
 		log.With("state", stateUUID).
 			Warnf("login record is empty or returned with error, err=%v, isempty=%v", err, login == nil)
 		statusCode := http.StatusBadRequest
-		if err != nil {
-			sentry.CaptureException(err)
+		if err != models.ErrNotFound {
 			statusCode = http.StatusInternalServerError
 		}
 		c.JSON(statusCode, gin.H{"message": "failed to retrieve login state internally"})
@@ -173,8 +167,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	} else {
 		subject = dbUser.Subject
 	}
-	ctx, err := pguserauth.New().FetchUserContext(subject)
-
+	ctx, err := models.GetUserContext(subject)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed fetching user subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)
@@ -251,10 +244,10 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	// in case the user doesn't exist, we create a new organization
 	// and add that user to the new organization
 	if iuser == nil {
-		newOrgId := uuid.NewString()
 		newOrgName := fmt.Sprintf("%s %s", uinfo.Email, "Organization")
-		if err := pgorgs.New().CreateOrg(newOrgId, newOrgName, nil); err != nil {
-			return false, fmt.Errorf("failed setting new org, reason=%v", err)
+		org, err := models.CreateOrganization(newOrgName, nil)
+		if err != nil {
+			return false, fmt.Errorf("failed creating organization, reason=%v", err)
 		}
 
 		emailVerified := false
@@ -265,7 +258,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 		userID := uuid.NewString()
 		newUser := models.User{
 			ID:       userID,
-			OrgID:    newOrgId,
+			OrgID:    org.ID,
 			Subject:  uinfo.Subject,
 			Name:     uinfo.Profile,
 			Email:    uinfo.Email,
@@ -277,7 +270,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 			return false, fmt.Errorf("failed saving new user %s/%s, err=%v", newUser.Subject, newUser.Email, err)
 		}
 		adminUserGroup := models.UserGroup{
-			OrgID:  newOrgId,
+			OrgID:  org.ID,
 			UserID: userID,
 			Name:   types.GroupAdmin,
 		}
@@ -314,7 +307,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	return true, nil
 }
 
-func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (isNewUser bool, err error) {
+func syncSingleTenantUser(ctx *models.Context, uinfo idp.ProviderUserInfo) (isNewUser bool, err error) {
 	// if the user exists, sync the groups and the slack id
 	userGroups := ctx.UserGroups
 	if uinfo.MustSyncGroups {
@@ -339,7 +332,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 			verified = *uinfo.EmailVerified
 		}
 		user := models.User{
-			ID:    ctx.UserUUID,
+			ID:    ctx.UserID,
 			OrgID: ctx.OrgID,
 			// always get the subject from the IDP
 			Subject:  uinfo.Subject,
@@ -357,7 +350,7 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		for i := range userGroups {
 			newUserGroups = append(newUserGroups, models.UserGroup{
 				OrgID:  ctx.OrgID,
-				UserID: ctx.UserUUID,
+				UserID: ctx.UserID,
 				Name:   userGroups[i],
 			})
 		}
@@ -368,12 +361,17 @@ func syncSingleTenantUser(ctx *pguserauth.Context, uinfo idp.ProviderUserInfo) (
 		return false, nil
 	}
 
-	org, totalUsers, err := pgorgs.New().FetchOrgByName(proto.DefaultOrgName)
-	if err != nil || org == nil || totalUsers == -1 {
-		return false, fmt.Errorf("failed fetching default org, users=%v, err=%v", err, totalUsers)
+	orgList, err := models.ListAllOrganizations()
+	if err != nil || len(orgList) == 0 {
+		return false, fmt.Errorf("failed fetching default organization, err=%v", err)
+	}
+
+	org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
+	if err != nil {
+		return false, fmt.Errorf("failed fetching default org, err=%v", err)
 	}
 	// first user is admin
-	if totalUsers == 0 {
+	if org.TotalUsers == 0 {
 		userGroups = append(userGroups, types.GroupAdmin)
 		trackClient := analytics.New()
 		// When the first user is created, there's already an
@@ -502,9 +500,8 @@ func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.Pro
 	return token, uinfo, nil
 }
 
-func updateLoginState(l *pgrest.Login) {
-	loginState := &types.Login{ID: l.ID, Redirect: l.Redirect, Outcome: l.Outcome, SlackID: l.SlackID}
-	if err := pglogin.New().Upsert(loginState); err != nil {
+func updateLoginState(login *models.Login) {
+	if err := models.UpdateLoginOutcome(login.ID, login.Outcome); err != nil {
 		log.Warnf("failed updating login state, reason=%v", err)
 	}
 }
@@ -531,11 +528,11 @@ func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Toke
 }
 
 // analyticsTrack tracks the user signup/login event
-func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *pguserauth.Context) {
+func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
 	licenseType := license.OSSType
-	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+	if len(ctx.OrgLicenseData) > 0 {
 		var l license.License
-		err := json.Unmarshal(*ctx.OrgLicenseData, &l)
+		err := json.Unmarshal(ctx.OrgLicenseData, &l)
 		if err == nil {
 			licenseType = l.Payload.Type
 		}

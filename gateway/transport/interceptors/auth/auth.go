@@ -16,9 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
-	pguserauth "github.com/hoophq/hoop/gateway/pgrest/userauth"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc"
@@ -129,7 +126,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := pguserauth.New().FetchUserContext(subject)
+		userCtx, err := models.GetUserContext(subject)
 		if err != nil || userCtx.IsEmpty() {
 			log.Errorf("failed fetching user context, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -138,7 +135,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "user is not active")
 		}
 		ctxVal = &GatewayContext{
-			UserContext: *userCtx.ToAPIContext(),
+			UserContext: *userCtx,
 			BearerToken: bearerToken,
 		}
 	// client proxy authentication (access token)
@@ -152,30 +149,28 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		if apiKeyEnv != "" && apiKeyEnv == bearerToken && !isOrgMultitenant {
 			log.Debug("Authenticating with API key")
 			orgID := strings.Split(bearerToken, "|")[0]
-			newOrgCtx := pgrest.NewOrgContext(orgID)
-			org, err := pgorgs.New().FetchOrgByContext(newOrgCtx)
-			if err != nil || org == nil {
+			org, err := models.GetOrganizationByNameOrID(orgID)
+			if err != nil {
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
-			ctx := &pguserauth.Context{
-				OrgID:       orgID,
-				OrgName:     org.Name,
-				OrgLicense:  org.License,
-				UserUUID:    deterministicUuid.String(),
-				UserSubject: "API_KEY",
-				UserName:    "API_KEY",
-				UserEmail:   "API_KEY",
-				UserStatus:  "active",
-				UserGroups:  []string{types.GroupAdmin},
+			ctx := &models.Context{
+				OrgID:          orgID,
+				OrgName:        org.Name,
+				OrgLicenseData: org.LicenseData,
+				UserID:         deterministicUuid.String(),
+				UserSubject:    "API_KEY",
+				UserName:       "API_KEY",
+				UserEmail:      "API_KEY",
+				UserStatus:     "active",
+				UserGroups:     []string{types.GroupAdmin},
 			}
 
 			gwctx := &GatewayContext{
-				UserContext: *ctx.ToAPIContext(),
+				UserContext: *ctx,
 				BearerToken: bearerToken,
 			}
 
-			gwctx.UserContext.ApiURL = os.Getenv("API_URL")
 			connectionName := commongrpc.MetaGet(md, "connection-name")
 			conn, err := i.getConnection(connectionName, ctx)
 			if err != nil {
@@ -195,7 +190,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
-		userCtx, err := pguserauth.New().FetchUserContext(subject)
+		userCtx, err := models.GetUserContext(subject)
 		if err != nil || userCtx.IsEmpty() {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
@@ -204,10 +199,9 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "user is not active")
 		}
 		gwctx := &GatewayContext{
-			UserContext: *userCtx.ToAPIContext(),
+			UserContext: *userCtx,
 			BearerToken: bearerToken,
 		}
-		gwctx.UserContext.ApiURL = i.idp.ApiURL
 		connectionName := commongrpc.MetaGet(md, "connection-name")
 		conn, err := i.getConnection(connectionName, userCtx)
 		if err != nil {
@@ -230,7 +224,7 @@ func (i *interceptor) validateAccessToken(bearerToken string) (subject string, e
 	return i.idp.VerifyAccessToken(bearerToken)
 }
 
-func (i *interceptor) getConnection(name string, userCtx *pguserauth.Context) (*types.ConnectionInfo, error) {
+func (i *interceptor) getConnection(name string, userCtx *models.Context) (*types.ConnectionInfo, error) {
 	conn, err := apiconnections.FetchByName(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)

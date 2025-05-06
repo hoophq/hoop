@@ -19,7 +19,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -404,7 +403,7 @@ func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
 	if !appconfig.Get().IsAskAIAvailable() {
 		return "unavailable", nil
 	}
-	isEnabled, err := pgaudit.New().IsFeatureAskAiEnabled(ctx)
+	isEnabled, err := models.IsFeatureAskAiEnabled(ctx.GetOrgID())
 	if err != nil {
 		return "", err
 	}

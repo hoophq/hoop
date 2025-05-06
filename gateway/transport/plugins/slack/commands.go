@@ -2,13 +2,13 @@ package slack
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
-	pglogin "github.com/hoophq/hoop/gateway/pgrest/login"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
 
@@ -21,12 +21,12 @@ type eventCallback struct {
 func (c *eventCallback) CommandSlackSubscribe(command, slackID string) (string, error) {
 	log.Infof("received slash command request, org=%s, command=%s, slackid=%s", c.orgID, command, slackID)
 	stateUID := uuid.NewString()
-	err := pglogin.New().Upsert(&types.Login{
-		ID:      stateUID,
-		SlackID: slackID,
-		Outcome: "",
-		// redirect to webapp
-		Redirect: fmt.Sprintf("%s/auth/callback", c.idpProvider.ApiURL),
+	err := models.CreateLogin(&models.Login{
+		ID:        stateUID,
+		SlackID:   slackID,
+		UpdatedAt: time.Now().UTC(),
+		Redirect:  fmt.Sprintf("%s/auth/callback", c.idpProvider.ApiURL),
+		Outcome:   "",
 	})
 	if err != nil {
 		return "", err

@@ -17,7 +17,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
@@ -68,65 +67,66 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license (json encoding)"})
 		return
 	}
-	orgID, err := pgorgs.New().CreateOrGetOrg(req.OrgName, licenseDataJSONBytes)
-	switch err {
-	case pgorgs.ErrOrgAlreadyExists:
-		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
-	case nil:
-		agentcontroller.Sync()
-		profileName := ctx.UserAnonProfile
-		if len(req.ProfileName) > 0 {
-			profileName = req.ProfileName
-		}
-		profilePicture := ctx.UserAnonPicture
-		if len(req.ProfilePicture) > 0 {
-			profilePicture = req.ProfilePicture
-		}
-		user := models.User{
-			ID:       uuid.NewString(),
-			OrgID:    orgID,
-			Subject:  ctx.UserAnonSubject,
-			Name:     profileName,
-			Picture:  profilePicture,
-			Email:    ctx.UserAnonEmail,
-			Verified: true,
-			Status:   "active",
-			SlackID:  "",
-			// Groups:   []string{types.GroupAdmin},
-		}
-		if err := models.UpdateUser(&user); err != nil {
-			log.Errorf("failed creating user, err=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user"})
-			return
-		}
-		adminGroup := models.UserGroup{
-			OrgID:  orgID,
-			UserID: user.ID,
-			Name:   types.GroupAdmin,
-		}
-		if err := models.InsertUserGroups([]models.UserGroup{adminGroup}); err != nil {
-			log.Errorf("failed creating user group, err=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user group"})
-			return
-		}
-		// add default system tags
-		_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(orgID))
 
-		log.With("org_name", req.OrgName, "org_id", orgID).Infof("user signup up with success")
-		identifySignup(user, req.OrgName, c.GetHeader("user-agent"), ctx.ApiURL)
-		c.JSON(http.StatusOK, openapi.SignupRequest{
-			OrgID:          orgID,
-			OrgName:        req.OrgName,
-			ProfileName:    profileName,
-			ProfilePicture: profilePicture,
-		})
-	default:
+	org, err := models.CreateOrgGetOrganization(req.OrgName, licenseDataJSONBytes)
+	if err != nil {
 		log.Errorf("failed creating organization, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating organization"})
+		return
 	}
+	if org.TotalUsers > 0 {
+		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
+		return
+	}
+
+	agentcontroller.Sync()
+	profileName := ctx.UserAnonProfile
+	if len(req.ProfileName) > 0 {
+		profileName = req.ProfileName
+	}
+	profilePicture := ctx.UserAnonPicture
+	if len(req.ProfilePicture) > 0 {
+		profilePicture = req.ProfilePicture
+	}
+	user := models.User{
+		ID:       uuid.NewString(),
+		OrgID:    org.ID,
+		Subject:  ctx.UserAnonSubject,
+		Name:     profileName,
+		Picture:  profilePicture,
+		Email:    ctx.UserAnonEmail,
+		Verified: true,
+		Status:   "active",
+		SlackID:  "",
+		// Groups:   []string{types.GroupAdmin},
+	}
+	if err := models.UpdateUser(&user); err != nil {
+		log.Errorf("failed creating user, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user"})
+		return
+	}
+	adminGroup := models.UserGroup{
+		OrgID:  org.ID,
+		UserID: user.ID,
+		Name:   types.GroupAdmin,
+	}
+	if err := models.InsertUserGroups([]models.UserGroup{adminGroup}); err != nil {
+		log.Errorf("failed creating user group, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user group"})
+		return
+	}
+	// add default system tags
+	_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
+
+	log.With("org_name", req.OrgName, "org_id", org.ID).Infof("user signup up with success")
+	identifySignup(user, req.OrgName, c.GetHeader("user-agent"), ctx.ApiURL)
+	c.JSON(http.StatusOK, openapi.SignupRequest{
+		OrgID:          org.ID,
+		OrgName:        req.OrgName,
+		ProfileName:    profileName,
+		ProfilePicture: profilePicture,
+	})
 }
 
 func identifySignup(u models.User, orgName, userAgent, apiURL string) {
