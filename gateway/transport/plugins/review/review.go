@@ -53,7 +53,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		log.With("id", otrev.Id, "sid", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
 			"status", otrev.Status).Info("one time review")
 		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
-			reviewURL := fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, otrev.Id)
+			reviewURL := fmt.Sprintf("%s/reviews/%s", p.apiURL, otrev.Id)
 			p.setSpecReview(pkt)
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
@@ -176,7 +176,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", p.apiURL, newRev.Id)),
+		Payload: fmt.Appendf(nil, "%s/reviews/%s", p.apiURL, newRev.Id),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }

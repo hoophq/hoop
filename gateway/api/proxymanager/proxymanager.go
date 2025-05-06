@@ -5,16 +5,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	pgproxymanager "github.com/hoophq/hoop/gateway/pgrest/proxymanager"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,15 +30,15 @@ import (
 //	@Router			/proxymanager/status [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.UserID))
-	if err != nil {
-		log.Error(err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
-		return
-	}
-	if obj == nil {
+	obj, err := models.GetProxyManagerStateByID(ctx.OrgID, clientstate.DeterministicClientUUID(ctx.UserID))
+	switch err {
+	case nil:
+	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
+		return
+	default:
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
 		return
 	}
 
@@ -63,7 +61,7 @@ func Get(c *gin.Context) {
 		RequestConnectionType:    conn.Type,
 		RequestConnectionSubType: conn.SubType.String,
 		RequestPort:              obj.RequestPort,
-		RequestAccessDuration:    obj.RequestAccessDuration,
+		RequestAccessDuration:    time.Duration(obj.RequestAccessDurationSec) * time.Second,
 		ClientMetadata:           obj.ClientMetadata,
 		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
@@ -114,11 +112,11 @@ func Post(c *gin.Context) {
 	hasSubscribed := false
 	for i := 1; i <= 10; i++ {
 		log.Debugf("attempt=%v - dispatching open session", i)
-		pkt, err := transport.DispatchOpenSession(&types.Client{
-			ID:                    clientstate.DeterministicClientUUID(ctx.UserID),
-			RequestConnectionName: req.ConnectionName,
-			RequestPort:           req.Port,
-			RequestAccessDuration: req.AccessDuration,
+		pkt, err := transport.DispatchOpenSession(&models.ProxyManagerState{
+			ID:                       clientstate.DeterministicClientUUID(ctx.UserID),
+			RequestConnectionName:    req.ConnectionName,
+			RequestPort:              req.Port,
+			RequestAccessDurationSec: int(req.AccessDuration.Seconds()),
 		})
 		if status, ok := status.FromError(err); ok {
 			switch status.Code() {
@@ -141,7 +139,7 @@ func Post(c *gin.Context) {
 
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			obj, err := clientstate.Update(ctx, types.ClientStatusDisconnected)
+			obj, err := clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
 			if err != nil {
 				errMsg := fmt.Sprintf("failed updating status, err=%v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
@@ -158,7 +156,7 @@ func Post(c *gin.Context) {
 				RequestConnectionSubType: conn.SubType.String,
 				RequestPort:              obj.RequestPort,
 				HasReview:                true,
-				RequestAccessDuration:    obj.RequestAccessDuration,
+				RequestAccessDuration:    time.Duration(obj.RequestAccessDurationSec) * time.Second,
 				ClientMetadata:           obj.ClientMetadata,
 				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 			})
@@ -172,7 +170,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "max attempts (10) reached trying to subscribe"})
 		return
 	}
-	obj, err := clientstate.Update(ctx, types.ClientStatusConnected,
+	obj, err := clientstate.Update(ctx, models.ProxyManagerStatusConnected,
 		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
 	if err != nil {
 		log.Errorf("fail to update status, err=%v", err)
@@ -187,7 +185,7 @@ func Post(c *gin.Context) {
 		RequestConnectionType:    conn.Type,
 		RequestConnectionSubType: conn.SubType.String,
 		RequestPort:              obj.RequestPort,
-		RequestAccessDuration:    obj.RequestAccessDuration,
+		RequestAccessDuration:    time.Duration(obj.RequestAccessDurationSec) * time.Second,
 		ClientMetadata:           obj.ClientMetadata,
 		ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 	})
@@ -204,15 +202,16 @@ func Post(c *gin.Context) {
 //	@Router			/proxymanager/disconnect [post]
 func Disconnect(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	obj, err := pgproxymanager.New().FetchOne(ctx, clientstate.DeterministicClientUUID(ctx.GetUserID()))
-	if err != nil {
-		log.Error(err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
-		return
-	}
-	if obj == nil {
+
+	obj, err := models.GetProxyManagerStateByID(ctx.GetOrgID(), clientstate.DeterministicClientUUID(ctx.GetUserID()))
+	switch err {
+	case nil:
+	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
+		return
+	default:
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
 		return
 	}
 
@@ -220,7 +219,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	obj, err = clientstate.Update(ctx, types.ClientStatusDisconnected)
+	obj, err = clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
 	if err != nil {
 		log.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "disconnected grpc client, but it fail to update the status"})
@@ -231,7 +230,7 @@ func Disconnect(c *gin.Context) {
 		Status:                openapi.ClientStatusType(obj.Status),
 		RequestConnectionName: obj.RequestConnectionName,
 		RequestPort:           obj.RequestPort,
-		RequestAccessDuration: obj.RequestAccessDuration,
+		RequestAccessDuration: time.Duration(obj.RequestAccessDurationSec) * time.Second,
 		ClientMetadata:        obj.ClientMetadata,
 		ConnectedAt:           obj.ConnectedAt.Format(time.RFC3339),
 	})

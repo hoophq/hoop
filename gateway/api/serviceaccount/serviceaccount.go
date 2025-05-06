@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	pgserviceaccounts "github.com/hoophq/hoop/gateway/pgrest/serviceaccounts"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -24,14 +23,17 @@ import (
 //	@Router			/serviceaccounts [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	serviceAccountList, err := pgserviceaccounts.New().FetchAll(ctx)
+	saItems, err := models.ListServiceAccounts(ctx.OrgID)
 	if err != nil {
-		sentry.CaptureException(err)
 		log.Errorf("failed listing service accounts, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, serviceAccountList)
+	var items []openapi.ServiceAccount
+	for _, item := range saItems {
+		items = append(items, toOpenID(item))
+	}
+	c.JSON(http.StatusOK, items)
 }
 
 // CreateServiceAccount
@@ -60,34 +62,32 @@ func Create(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("wrong status value %q", req.Status)})
 		return
 	}
-	objID := genDeterministicUUID(req.Subject)
-	svcAccount, err := pgserviceaccounts.New().FetchOne(ctx, objID)
-	if err != nil {
-		sentry.CaptureException(err)
-		log.Errorf("failed retrieving service account entity, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if svcAccount != nil {
-		c.JSON(http.StatusConflict, gin.H{"message": "service account already exists"})
-		return
-	}
 
-	obj := &openapi.ServiceAccount{
-		ID:      objID,
-		Subject: req.Subject,
+	sa := &models.ServiceAccount{
+		ID:      genDeterministicUUID(req.Subject),
 		OrgID:   ctx.OrgID,
+		Subject: req.Subject,
 		Name:    req.Name,
-		Status:  req.Status,
 		Groups:  req.Groups,
+		Status:  string(req.Status),
 	}
-	if _, err := pgserviceaccounts.New().Upsert(ctx, obj); err != nil {
-		sentry.CaptureException(err)
+	err := models.CreateServiceAccount(sa)
+	switch err {
+	case models.ErrAlreadyExists:
+		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
+	case nil:
+		c.JSON(http.StatusCreated, openapi.ServiceAccount{
+			ID:      sa.ID,
+			OrgID:   sa.OrgID,
+			Subject: sa.Subject,
+			Name:    sa.Name,
+			Groups:  sa.Groups,
+			Status:  openapi.ServiceAccountStatusType(sa.Status),
+		})
+	default:
 		log.Errorf("failed creating service account with subject %s, err=%v", req.Subject, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
 	}
-	c.JSON(http.StatusCreated, obj)
 }
 
 // UpdateServiceAccount
@@ -113,31 +113,44 @@ func Update(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("wrong status value %q", req.Status)})
 		return
 	}
-	objID := genDeterministicUUID(c.Param("subject"))
-	svcAccount, err := pgserviceaccounts.New().FetchOne(ctx, objID)
-	if err != nil {
-		sentry.CaptureException(err)
-		log.Errorf("failed retrieving service account entity, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
+	sa := &models.ServiceAccount{
+		OrgID:   ctx.OrgID,
+		ID:      genDeterministicUUID(c.Param("subject")),
+		Subject: req.Subject,
+		Name:    req.Name,
+		Groups:  req.Groups,
+		Status:  string(req.Status),
 	}
-	if svcAccount == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "service account not found"})
-		return
-	}
-
-	svcAccount.Name = req.Name
-	svcAccount.Status = req.Status
-	svcAccount.Groups = req.Groups
-	if _, err := pgserviceaccounts.New().Upsert(ctx, svcAccount); err != nil {
-		sentry.CaptureException(err)
+	err := models.UpdateServiceAccount(sa)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
+	case nil:
+		c.JSON(http.StatusOK, openapi.ServiceAccount{
+			ID:      sa.ID,
+			OrgID:   sa.OrgID,
+			Subject: sa.Subject,
+			Name:    sa.Name,
+			Groups:  sa.Groups,
+			Status:  openapi.ServiceAccountStatusType(sa.Status),
+		})
+	default:
 		log.Errorf("failed updating service account with subject %s, err=%v", req.Subject, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
 	}
-	c.JSON(http.StatusOK, svcAccount)
 }
 
 func genDeterministicUUID(subject string) string {
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("serviceaccount/%s", subject))).String()
+	return uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "serviceaccount/%s", subject)).String()
+}
+
+func toOpenID(svc models.ServiceAccount) openapi.ServiceAccount {
+	return openapi.ServiceAccount{
+		ID:      svc.ID,
+		OrgID:   svc.OrgID,
+		Subject: svc.Subject,
+		Name:    svc.Name,
+		Status:  openapi.ServiceAccountStatusType(svc.Status),
+		Groups:  svc.Groups,
+	}
 }

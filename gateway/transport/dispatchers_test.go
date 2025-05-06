@@ -3,7 +3,7 @@ package transport
 import (
 	"testing"
 
-	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 func TestDispatchOpenSession(t *testing.T) {
@@ -12,7 +12,7 @@ func TestDispatchOpenSession(t *testing.T) {
 	addDispatcherStateEntry("123", state)
 	go func() { <-state.requestCh }() // noop receiver
 	go func() { state.responseCh <- openSessionResponse{nil, nil} }()
-	pkt, err := DispatchOpenSession(&types.Client{ID: "123"})
+	pkt, err := DispatchOpenSession(&models.ProxyManagerState{ID: "123"})
 	if err != nil {
 		t.Fatal("it must not return return error")
 	}
@@ -52,14 +52,14 @@ func TestDispatchOpenSessionErr(t *testing.T) {
 				tt.noopReceiver(tt.state)
 			}
 			go func() { tt.state.responseCh <- openSessionResponse{nil, nil} }()
-			_, err := DispatchOpenSession(&types.Client{ID: tt.stateID})
+			_, err := DispatchOpenSession(&models.ProxyManagerState{ID: tt.stateID})
 			if err == nil {
 				t.Fatal("want state error, got=nil")
 			}
 			if err.Error() != tt.errMsg {
 				t.Errorf("want state error=%v, got=%v", tt.errMsg, err)
 			}
-			_ = DispatchDisconnect(&types.Client{ID: tt.stateID})
+			_ = DispatchDisconnect(&models.ProxyManagerState{ID: tt.stateID})
 			if state := getDispatcherState(tt.stateID); state != nil {
 				t.Errorf("expected empty state for=%s", tt.stateID)
 			}
