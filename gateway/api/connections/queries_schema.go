@@ -102,13 +102,16 @@ func getPostgresTablesQuery(dbName string) string {
     \c %s
     \set QUIET off
 SELECT
-    table_schema as schema_name,
+    n.nspname as schema_name,
     'table' as object_type,
-    table_name as object_name
-FROM information_schema.tables
-WHERE table_type = 'BASE TABLE'
-AND table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY table_schema, table_name;`, dbName)
+    c.relname as object_name
+FROM pg_catalog.pg_class c
+JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relkind = 'r'
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+  AND n.nspname !~ '^pg_temp_'
+  AND pg_catalog.pg_table_is_visible(c.oid)
+ORDER BY n.nspname, c.relname;`, dbName)
 }
 
 func getMSSQLTablesQuery() string {
@@ -184,23 +187,27 @@ func getPostgresColumnsQuery(dbName, tableName, schemaName string) string {
     \c %s
     \set QUIET off
 SELECT
-    c.column_name,
+    a.attname as column_name,
     CASE
-        WHEN c.data_type = 'character varying' THEN
-            c.data_type || '(' || c.character_maximum_length || ')'
-        WHEN c.data_type = 'numeric' AND c.numeric_precision IS NOT NULL THEN
-            CASE
-                WHEN c.numeric_scale = 0 THEN
-                    'numeric(' || c.numeric_precision || ')'
-                ELSE
-                    'numeric(' || c.numeric_precision || ',' || c.numeric_scale || ')'
-            END
-        ELSE c.data_type
+        WHEN t.typname = 'varchar' THEN 
+            'varchar(' || a.atttypmod - 4 || ')'
+        WHEN t.typname = 'numeric' AND pg_catalog.format_type(a.atttypid, a.atttypmod) LIKE 'numeric%%' THEN
+            pg_catalog.format_type(a.atttypid, a.atttypmod)
+        ELSE
+            pg_catalog.format_type(a.atttypid, a.atttypmod)
     END as column_type,
-    c.is_nullable = 'NO' as not_null
-FROM information_schema.columns c
-WHERE c.table_schema = '%s' AND c.table_name = '%s'
-ORDER BY c.ordinal_position;`, dbName, schemaName, tableName)
+    NOT a.attnotnull as "nullable"
+FROM
+    pg_catalog.pg_attribute a
+    JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+    JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid
+    JOIN pg_catalog.pg_type t ON a.atttypid = t.oid
+WHERE
+    c.relname = '%s'
+    AND n.nspname = '%s'
+    AND a.attnum > 0
+    AND NOT a.attisdropped
+ORDER BY a.attnum;`, dbName, tableName, schemaName)
 }
 
 func getMSSQLColumnsQuery(tableName, schemaName string) string {
