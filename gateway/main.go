@@ -9,6 +9,7 @@ import (
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/monitoring"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
@@ -17,7 +18,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
 	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
@@ -69,16 +69,16 @@ func Run() {
 	reviewService := review.Service{}
 	if !appconfig.Get().OrgMultitenant() {
 		log.Infof("provisioning default organization")
-		ctx, err := pgorgs.CreateDefaultOrganization()
+		org, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
-		_, _, err = apiorgs.ProvisionOrgAgentKey(ctx, grpcURL)
+		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, grpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}
 
-		err = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(ctx.GetOrgID()))
+		err = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
 		if err != nil {
 			log.Warnf("failed provisioning default system tags, reason=%v", err)
 		}

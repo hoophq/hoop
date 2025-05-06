@@ -10,8 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgaudit "github.com/hoophq/hoop/gateway/pgrest/audit"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -59,12 +58,12 @@ func FeatureUpdate(c *gin.Context) {
 		"user_agent":  c.Request.Header.Get("user-agent"),
 	}
 
-	eventName := pgaudit.FeatureAskAiDisabled
+	eventName := models.FeatureAskAiDisabled
 	if req.Status == openapi.FeatureStatusEnabled {
-		eventName = pgaudit.FeatureAskAiEnabled
+		eventName = models.FeatureAskAiEnabled
 	}
-	auditCtx := pgrest.NewAuditContext(ctx.GetOrgID(), eventName, ctx.UserEmail).WithMetadata(metadata)
-	if err := pgaudit.New().Create(auditCtx); err != nil {
+	err := models.CreateAudit(ctx.OrgID, eventName, ctx.UserEmail, metadata)
+	if err != nil {
 		log.Errorf("fail to update feature %v, reason=%v", req.Name, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to update feature"})
 		return

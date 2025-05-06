@@ -12,7 +12,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -33,7 +32,7 @@ var (
 //	@Router			/orgs/keys [post]
 func CreateAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	agentID, dsn, err := ProvisionOrgAgentKey(ctx, storagev2.ParseContext(c).GrpcURL)
+	agentID, dsn, err := ProvisionOrgAgentKey(ctx.OrgID, storagev2.ParseContext(c).GrpcURL)
 	switch err {
 	case ErrAlreadyExists:
 		log.Infof("agent (org token) %v already exists", agentKeyDefaultName)
@@ -115,8 +114,8 @@ func RevokeAgentKey(c *gin.Context) {
 	c.Writer.WriteHeader(204)
 }
 
-func ProvisionOrgAgentKey(ctx pgrest.OrgContext, grpcURL string) (agentID, dsn string, err error) {
-	_, err = models.GetAgentByNameOrID(ctx.GetOrgID(), agentKeyDefaultName)
+func ProvisionOrgAgentKey(orgID, grpcURL string) (agentID, dsn string, err error) {
+	_, err = models.GetAgentByNameOrID(orgID, agentKeyDefaultName)
 	switch err {
 	case models.ErrNotFound:
 	case nil:
@@ -133,7 +132,7 @@ func ProvisionOrgAgentKey(ctx pgrest.OrgContext, grpcURL string) (agentID, dsn s
 		return "", "", fmt.Errorf("failed generating agent key: %v", err)
 	}
 	err = models.CreateAgent(
-		ctx.GetOrgID(),
+		orgID,
 		agentKeyDefaultName,
 		proto.AgentModeMultiConnectionType,
 		secretKeyHash)

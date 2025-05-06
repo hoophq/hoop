@@ -79,8 +79,10 @@ func (c *Context) WithOrgLicense(orgLicense string) *Context {
 	return c
 }
 
-func (c *Context) WithOrgLicenseData(licenseData *json.RawMessage) *Context {
-	c.OrgLicenseData = licenseData
+func (c *Context) WithOrgLicenseData(licenseData json.RawMessage) *Context {
+	if len(licenseData) > 0 {
+		c.OrgLicenseData = &licenseData
+	}
 	return c
 }
 

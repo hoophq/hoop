@@ -10,7 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	pgorgs "github.com/hoophq/hoop/gateway/pgrest/orgs"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -41,7 +41,7 @@ func UpdateOrgLicense(c *gin.Context) {
 	}
 
 	licenseData, _ := json.Marshal(&req)
-	if err := pgorgs.New().UpdateOrgLicense(ctx, licenseData); err != nil {
+	if err := models.UpdateOrgLicense(ctx.OrgID, licenseData); err != nil {
 		msg := fmt.Sprintf("failed updating license, err=%v", err)
 		log.With("org", ctx.OrgName).Error(msg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": msg})

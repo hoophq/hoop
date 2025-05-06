@@ -12,7 +12,7 @@ import (
 
 type GatewayContextKey struct{}
 type GatewayContext struct {
-	UserContext types.APIContext
+	UserContext models.Context
 	Connection  types.ConnectionInfo
 	Agent       models.Agent
 

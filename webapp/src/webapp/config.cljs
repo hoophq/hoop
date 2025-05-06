@@ -41,22 +41,22 @@
    :setup {:architecture "https://hoop.dev/docs/setup/architecture"
            :deployment {:overview "https://hoop.dev/docs/setup/deployment"
                         :kubernetes "https://hoop.dev/docs/setup/deployment/kubernetes"
-                        :docker "https://hoop.dev/docs/setup/deployment/docker"
-                        :aws "https://hoop.dev/docs/setup/deployment/aws"
+                        :docker "https://hoop.dev/docs/setup/deployment/docker-compose"
+                        :aws "https://hoop.dev/docs/setup/deployment/AWS"
                         :on-premises "https://hoop.dev/docs/setup/deployment/on-premises"}
            :configuration {:overview "https://hoop.dev/docs/setup/configuration"
                            :environment-variables "https://hoop.dev/docs/setup/configuration/environment-variables"
                            :reverse-proxy "https://hoop.dev/docs/setup/configuration/reverse-proxy"
-                           :identity-providers "https://hoop.dev/docs/setup/configuration/identity-providers"
+                           :identity-providers "https://hoop.dev/docs/setup/configuration/idp/get-started"
                            :secrets-manager "https://hoop.dev/docs/setup/configuration/secrets-manager-configuration"
                            :ai-data-masking "https://hoop.dev/docs/setup/configuration/ai-data-masking"}
            :apis "https://hoop.dev/docs/setup/apis"
            :license-management "https://hoop.dev/docs/setup/license-management"}
-   :clients {:web-app "https://hoop.dev/docs/clients/web-app"
+   :clients {:web-app "https://hoop.dev/docs/clients/webapp"
              :desktop-app "https://hoop.dev/docs/clients/desktop-app"
-             :command-line "https://hoop.dev/docs/clients/command-line"}
+             :command-line "https://hoop.dev/docs/clients/cli"}
    :integrations {:slack "https://hoop.dev/docs/integrations/slack"
                   :teams "https://hoop.dev/docs/integrations/teams"
                   :jira "https://hoop.dev/docs/integrations/jira"
                   :svix "https://hoop.dev/docs/integrations/svix"
-                  :aws-connect "https://hoop.dev/docs/integrations/aws-connect"}})
+                  :aws-connect "https://hoop.dev/docs/integrations/aws"}})
