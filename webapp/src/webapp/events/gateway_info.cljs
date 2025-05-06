@@ -38,8 +38,8 @@
    {:db (assoc db :gateway->public-info {:loading false
                                          :data info})}))
 
-;; Subscription for do_not_track
+;; Subscription for analytics_tracking
 (rf/reg-sub
- :gateway->do-not-track
+ :gateway->analytics-tracking
  (fn [db _]
-   (get-in db [:gateway->info :data :do_not_track] false)))
+   (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))))

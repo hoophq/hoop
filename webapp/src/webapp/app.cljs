@@ -531,8 +531,8 @@
 (defn sentry-monitor []
   (let [sentry-dsn config/sentry-dsn
         sentry-sample-rate config/sentry-sample-rate
-        do-not-track @(rf/subscribe [:gateway->do-not-track])]
-    (when (and sentry-dsn sentry-sample-rate (not do-not-track))
+        analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+    (when (and sentry-dsn sentry-sample-rate (not analytics-tracking))
       (.init Sentry #js {:dsn sentry-dsn
                          :release config/app-version
                          :sampleRate sentry-sample-rate
@@ -559,27 +559,20 @@
   (let [active-panel (rf/subscribe [::subs/active-panel])
         gateway-public-info (rf/subscribe [:gateway->public-info])
         gateway-info (rf/subscribe [:gateway->info])
-        do-not-track (rf/subscribe [:gateway->do-not-track])]
+        analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
     (rf/dispatch [:gateway->get-public-info])
     (rf/dispatch [:gateway->get-info])
     (.registerPlugin gsap Draggable)
 
-    ;; Only initialize Sentry when gateway info is loaded and we know do_not_track status
+    ;; Only initialize Sentry when gateway info is loaded and we know analytics_tracking status
     (fn []
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
 
         :else
-        ;; Initialize Sentry only when gateway info is loaded
-        (do
-          (when (and (not (-> @gateway-info :loading))
-                     (not (-> @gateway-public-info :loading)))
-            (sentry-monitor))
-
-          (when (not (-> @gateway-public-info :loading))
-            [:> Theme {:radius "large" :panelBackground "solid"}
-             ;; Hidden element to display do_not_track value for testing
-             [:div {:style {:display "none"}}
-              [:span {:id "do-not-track-value"} (str @do-not-track)]]
-             [routes/panels @active-panel @gateway-public-info]]))))))
+        [:> Theme {:radius "large" :panelBackground "solid"}
+         ;; Hidden element to display analytics_tracking value for testing
+         [:div {:style {:display "none"}}
+          [:span {:id "analytics-tracking-value"} (str @analytics-tracking)]]
+         [routes/panels @active-panel @gateway-public-info]]))))
