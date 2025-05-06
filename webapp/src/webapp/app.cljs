@@ -566,6 +566,11 @@
 
     ;; Only initialize Sentry when gateway info is loaded and we know analytics_tracking status
     (fn []
+      ;; Initialize Sentry only when gateway info is loaded
+      (when (and (not (-> @gateway-info :loading))
+                 (not (-> @gateway-public-info :loading)))
+        (sentry-monitor))
+
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
