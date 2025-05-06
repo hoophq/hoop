@@ -160,8 +160,11 @@ func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
 	return tx.Commit().Error
 }
 
-// GetUserContext fetches the user context based on the subject, which is usually
-// the OIDC subject. In case the user doesn't exists, try to load a service account.
+// GetUserContext retrieves user context data based on the subject claim or OIDC information.
+//
+// After access token verification, it's safe to obtain user context using only the subject attribute.
+//
+// This method queries both the users and service accounts tables to retrieve the existing user context information.
 func GetUserContext(subject string) (*Context, error) {
 	var ctx Context
 	err := DB.Raw(`
