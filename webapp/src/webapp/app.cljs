@@ -556,6 +556,11 @@
     (.registerPlugin gsap Draggable)
 
     (fn []
+      ;; Initialize Sentry only when gateway info is loaded
+      (when (and (not (-> @gateway-info :loading))
+                 (not (-> @gateway-public-info :loading)))
+        (sentry-monitor))
+
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
