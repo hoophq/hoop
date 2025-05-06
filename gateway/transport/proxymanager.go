@@ -16,8 +16,8 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	"google.golang.org/grpc/codes"
@@ -46,7 +46,7 @@ func (s *Server) proxyManager(stream *streamclient.ProxyStream) error {
 
 	defer func() {
 		_ = stream.Close(err)
-		_, _ = clientstate.Update(pluginCtx, types.ClientStatusDisconnected)
+		_, _ = clientstate.Update(pluginCtx, models.ProxyManagerStatusDisconnected)
 		stateID := clientstate.DeterministicClientUUID(pluginCtx.GetUserID())
 		if len(stateID) > 0 {
 			removeDispatcherState(stateID)
@@ -56,7 +56,6 @@ func (s *Server) proxyManager(stream *streamclient.ProxyStream) error {
 	case *plugintypes.InternalError:
 		if v.HasInternalErr() {
 			log.Errorf("plugin rejected packet, %v", v.FullErr())
-			sentry.CaptureException(fmt.Errorf(v.FullErr()))
 		}
 		return status.Errorf(codes.Internal, err.Error())
 	}
@@ -123,7 +122,7 @@ func (s *Server) listenProxyManagerMessages(stream *streamclient.ProxyStream) er
 
 func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
-	newClient, err := clientstate.Update(pctx, types.ClientStatusReady,
+	newClient, err := clientstate.Update(pctx, models.ProxyManagerStatusReady,
 		clientstate.WithOption("session", pctx.SID),
 		clientstate.WithOption("version", stream.GetMeta("version")),
 		clientstate.WithOption("go-version", stream.GetMeta("go-version")),
@@ -131,7 +130,7 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 		clientstate.WithOption("hostname", stream.GetMeta("hostname")),
 	)
 	if err != nil {
-		log.Errorf("failed client state to database, err=%v", err)
+		log.Errorf("failed updating proxy manager state, reason=%v", err)
 		return err
 	}
 
@@ -214,7 +213,7 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 		onOpenSessionPkt := &pb.Packet{
 			Type: pbagent.SessionOpen,
 			Spec: map[string][]byte{
-				pb.SpecJitTimeout:        []byte(req.RequestAccessDuration.String()),
+				pb.SpecJitTimeout:        fmt.Appendf(nil, "%vs", req.RequestAccessDurationSec),
 				pb.SpecGatewaySessionID:  []byte(pctx.SID),
 				pb.SpecClientRequestPort: []byte(req.RequestPort),
 			},
