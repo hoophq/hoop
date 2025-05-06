@@ -163,12 +163,15 @@
 ;; Componente para renderizar um database individual
 (defn- database-item [db schema connection-name database-schema-status current-schema]
   (let [is-selected (= db (get-in current-schema [:open-database]))
-        is-loading-this-db (and (= :loading database-schema-status)
-                                (= db (get-in current-schema [:current-database])))
+        ;; Verificar se este database está na lista de databases em loading
+        loading-databases (get-in current-schema [:loading-databases] #{})
+        is-loading-this-db (contains? loading-databases db)
         db-schemas (or (not-empty schema) {})]
     [:div
      [:div {:class "flex items-center gap-smal mb-2"}
-      [:span {:class "hover:text-blue-500 hover:underline cursor-pointer flex items-center"
+      [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                          (when is-loading-this-db "opacity-75 ")
+                          "flex items-center")
               :on-click #(if is-selected
                            (rf/dispatch [:database-schema->clear-selected-database])
                            (rf/dispatch [:database-schema->change-database

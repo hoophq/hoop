@@ -53,9 +53,13 @@
  (fn [{:keys [db]} [_]]
    (.removeItem js/localStorage "selected-database")
    ;; Também limpar o estado do database aberto no app state
-   (let [current-connection (get-in db [:database-schema :current-connection])]
+   (let [current-connection (get-in db [:database-schema :current-connection])
+         current-database (get-in db [:database-schema :data current-connection :open-database])]
      {:db (-> db
-              (assoc-in [:database-schema :data current-connection :open-database] nil))})))
+              (assoc-in [:database-schema :data current-connection :open-database] nil)
+              ;; Também remover o database da lista de loading se estiver lá
+              (update-in [:database-schema :data current-connection :loading-databases]
+                         (fn [databases] (disj (or databases #{}) current-database))))})))
 
 (rf/reg-event-fx
  :database-schema->clear-schema
@@ -145,7 +149,10 @@
          (assoc-in [:database-schema :data (:connection-name connection) :open-database] open-db)
          (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] (process-tables response))
          (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
-         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
+         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})
+         ;; Remover o database da lista de loading
+         (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                    (fn [databases] (disj (or databases #{}) database)))))))
 
 ;; Novo evento para carregar colunas de uma tabela específica
 (rf/reg-event-fx
@@ -272,4 +279,12 @@
  :database-schema->change-database
  (fn [{:keys [db]} [_ connection database]]
    (.setItem js/localStorage "selected-database" database)
-   {:fx [[:dispatch [:database-schema->load-tables connection database]]]}))
+   ;; Marcar imediatamente que o database está em loading
+   {:db (-> db
+            (assoc-in [:database-schema :data (:connection-name connection) :open-database] database)
+            (assoc-in [:database-schema :data (:connection-name connection) :current-database] database)
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+            ;; Adicionar o database à lista de databases em loading
+            (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                       (fn [databases] (conj (or databases #{}) database))))
+    :fx [[:dispatch [:database-schema->load-tables connection database]]]}))
