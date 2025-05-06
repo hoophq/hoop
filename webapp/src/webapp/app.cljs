@@ -295,9 +295,8 @@
 
 (defmethod routes/panels :guardrails-panel []
   [layout :application-hoop
-   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [routes/wrap-admin-only
-     [guardrails/panel]]]])
+   [routes/wrap-admin-only
+    [guardrails/panel]]])
 
 (defmethod routes/panels :create-guardrail-panel []
   (rf/dispatch [:guardrails->clear-active-guardrail])
@@ -318,9 +317,8 @@
 
 (defmethod routes/panels :jira-templates-panel []
   [layout :application-hoop
-   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
-    [routes/wrap-admin-only
-     [jira-templates/panel]]]])
+   [routes/wrap-admin-only
+    [jira-templates/panel]]])
 
 (defmethod routes/panels :create-jira-template-panel []
   (rf/dispatch [:jira-templates->clear-active-template])

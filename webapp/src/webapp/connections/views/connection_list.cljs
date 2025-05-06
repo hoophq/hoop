@@ -252,7 +252,7 @@
                     (when (-> @user :data :admin?)
                       [:> DropdownMenu.Root {:dir "rtl"}
                        [:> DropdownMenu.Trigger
-                        [:> IconButton {:size 1 :variant "ghost" :color "gray"}
+                        [:> IconButton {:size "1" :variant "ghost" :color "gray"}
                          [:> EllipsisVertical {:size 16}]]]
                        [:> DropdownMenu.Content
                         (when (not (= (:managed_by connection) "hoopagent"))
