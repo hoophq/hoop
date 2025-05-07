@@ -36,6 +36,12 @@
                        :class (when @dark-mode? "dark")}
         [:> Plus {:size 16}]]))])
 
+(defn filter-connections [connections]
+  (filterv #(and (not (#{"tcp" "httpproxy"} (:subtype %)))
+                 (or (= "enabled" (:access_mode_exec %))
+                     (= "enabled" (:access_mode_runbooks %))))
+           connections))
+
 (defn filter-compatible-connections [connections main-connection selected-connections]
   (let [connection (if main-connection
                      main-connection
@@ -49,10 +55,11 @@
   (let [connections @(rf/subscribe [:connections/filtered])
         primary-connection @(rf/subscribe [:connections/selected])
         selected-connections @(rf/subscribe [:connection-selection/selected])
-        filtered-connections (filter-compatible-connections connections primary-connection selected-connections)
+        filtered-connections (filter-connections connections)
+        filtered-compatible-connections (filter-compatible-connections filtered-connections primary-connection selected-connections)
         compatible-connections (if primary-connection
-                                 filtered-connections
-                                 connections)]
+                                 filtered-compatible-connections
+                                 filtered-connections)]
     [:> Box
      ;; Conexão principal fixa
      (when primary-connection
