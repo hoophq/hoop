@@ -62,14 +62,14 @@
         [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
                :class "w-16 mx-auto py-4"}]]
 
-         ;; Title
+       ;; Title
        [:> Box
         [:> Heading {:as "h1" :align "center" :size "6" :mb "2" :weight "bold" :class "text-[--gray-12]"}
          "How do you want to get started?"]
         [:> Text {:as "p" :size "3" :align "center" :class "text-[--gray-12]"}
          "Choose the setup that works best for you."]]
 
-         ;; Cards
+       ;; Cards
        [:> Box {:class "space-y-radix-4 max-w-[600px]"}
         (for [option setup-options]
           ^{:key (:id option)}
@@ -105,9 +105,9 @@
                       agents-ready? (= (:status current-agents) :ready)
                       agents-available? (seq (:data current-agents))]
                   (if (and agents-ready? agents-available?)
-                   ;; Stop polling when agents are available
+                    ;; Stop polling when agents are available
                     (js/clearInterval @polling-interval)
-                   ;; Continue polling
+                    ;; Continue polling
                     (rf/dispatch [:agents->get-agents])))
                5000)))
 

@@ -58,5 +58,4 @@
          (set! (.. js/window -location -href) auth0-logout-url)
          {:db {}})
 
-       {:db {}
-        :navigate {:handler :logout-hoop}}))))
+       {:fx [[:dispatch [:navigate :logout-hoop]]]}))))

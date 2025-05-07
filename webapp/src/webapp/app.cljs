@@ -122,9 +122,11 @@
          #(do
             (.removeItem js/localStorage "redirect-after-auth")
             (set! (.. js/window -location -href) redirect-after-auth))
-         500)
+         1500)
 
-        (rf/dispatch [:navigate :home])))
+        (js/setTimeout
+         #(rf/dispatch [:navigate :home])
+         1500)))
 
     [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
@@ -143,7 +145,10 @@
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
     (.setItem js/localStorage "jwt-token" token)
-    (rf/dispatch [:navigate destiny])
+
+    (js/setTimeout
+     #(rf/dispatch [:navigate destiny])
+     1500)
 
     [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
@@ -457,6 +462,7 @@
     [layout :auth (rf/dispatch [:auth->get-auth-link])]))
 
 (defmethod routes/panels :idplogin-hoop-panel []
+  (println "idplogin-hoop-panel")
   [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])])
 
 (defmethod routes/panels :register-hoop-panel [_ gateway-info]
