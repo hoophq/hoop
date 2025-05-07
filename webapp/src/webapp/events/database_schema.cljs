@@ -41,6 +41,7 @@
    {:db (-> db
             (assoc-in [:database-schema :data] nil))}))
 
+;; Eventos para conexões com múltiplos databases (PostgreSQL, MongoDB)
 (rf/reg-event-fx
  :database-schema->handle-multi-database-schema
  (fn [{:keys [db]} [_ connection]]
@@ -66,6 +67,7 @@
        (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
        (assoc-in [:database-schema :data (:connection-name connection) :status] :success))))
 
+;; Eventos comuns para todos os tipos de conexão
 (rf/reg-event-fx
  :database-schema->set-schema-error-size-exceeded
  (fn [{:keys [db]} [_ connection error]]
@@ -78,6 +80,22 @@
             (assoc-in [:database-schema :data (:connection-name connection) :error]
                       (or error "Schema size too large to display.")))}))
 
+;; Eventos para carregamento de tabelas (para bancos de database único)
+(rf/reg-event-fx
+ :database-schema->handle-database-schema
+ (fn [{:keys [db]} [_ connection]]
+   {:db (-> db
+            (assoc-in [:database-schema :current-connection] (:connection-name connection))
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/tables")
+                             :on-success (fn [response]
+                                           (rf/dispatch [:database-schema->tables-loaded connection nil response]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+
+;; Eventos para carregamento de tabelas (para bancos com múltiplos databases)
 (rf/reg-event-fx
  :database-schema->load-tables
  (fn [{:keys [db]} [_ connection database]]
@@ -101,7 +119,7 @@
      (-> db
          (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
          (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :type] (:connection-type connection))
+         (assoc-in [:database-schema :data (:connection-name connection) :type] (:subtype connection))
          (assoc-in [:database-schema :data (:connection-name connection) :current-database] open-db)
          (assoc-in [:database-schema :data (:connection-name connection) :open-database] open-db)
          (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] (process-tables response))
@@ -111,19 +129,28 @@
          (update-in [:database-schema :data (:connection-name connection) :loading-databases]
                     (fn [databases] (disj (or databases #{}) database)))))))
 
+;; Eventos para carregamento progressivo de colunas
 (rf/reg-event-fx
  :database-schema->load-columns
  (fn [{:keys [db]} [_ connection-name database table-name schema-name]]
-   (let [cache-key (str schema-name "." table-name)] \
+   (let [cache-key (str schema-name "." table-name)
+         uri (if database
+               ;; Se tiver database, incluir na URI
+               (str "/connections/" connection-name
+                    "/columns?database=" database
+                    "&table=" table-name
+                    "&schema=" schema-name)
+               ;; Caso contrário, não incluir database na URI
+               (str "/connections/" connection-name
+                    "/columns?table=" table-name
+                    "&schema=" schema-name))]
+
      (if (get-in db [:database-schema :data connection-name :columns-cache cache-key])
        {}
 
        {:db (update-in db [:database-schema :data connection-name :loading-columns] conj cache-key)
         :fx [[:dispatch [:fetch {:method "GET"
-                                 :uri (str "/connections/" connection-name
-                                           "/columns?database=" database
-                                           "&table=" table-name
-                                           "&schema=" schema-name)
+                                 :uri uri
                                  :on-success (fn [response]
                                                (rf/dispatch [:database-schema->columns-loaded
                                                              connection-name database schema-name table-name response]))
@@ -150,27 +177,25 @@
          (assoc-in [:database-schema :data connection-name :columns-cache cache-key]
                    {:error (or (.-message error) "Failed to load columns")})))))
 
-(rf/reg-event-fx
- :database-schema->handle-database-schema
- (fn [{:keys [db]} [_ connection]]
-   (let [db-name (-> (get-in connection [:secrets "envvar:DB"] "")
-                     js/atob)]
-     (if (empty? db-name)
-       {:db (-> db
-                (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
-                (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :error)
-                (assoc-in [:database-schema :data (:connection-name connection) :error] "No default database configured"))}
-
-       {:fx [[:dispatch [:database-schema->load-tables connection db-name]]]}))))
-
+;; Evento para mudança de database (apenas para PostgreSQL e MongoDB)
 (rf/reg-event-fx
  :database-schema->change-database
  (fn [{:keys [db]} [_ connection database]]
-   (.setItem js/localStorage "selected-database" database)
-   {:db (-> db
-            (assoc-in [:database-schema :data (:connection-name connection) :open-database] database)
-            (assoc-in [:database-schema :data (:connection-name connection) :current-database] database)
-            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
-            (update-in [:database-schema :data (:connection-name connection) :loading-databases]
-                       (fn [databases] (conj (or databases #{}) database))))
-    :fx [[:dispatch [:database-schema->load-tables connection database]]]}))
+   (let [current-db (get-in db [:database-schema :data (:connection-name connection) :current-database])
+         loading-databases (get-in db [:database-schema :data (:connection-name connection) :loading-databases] #{})
+         already-loading? (contains? loading-databases database)]
+
+     ;; Guardar o database selecionado no localStorage
+     (.setItem js/localStorage "selected-database" database)
+
+     ;; Se já estiver carregando este database ou já for o database atual, não fazer nada
+     (if (or already-loading? (= database current-db))
+       {}
+       ;; Caso contrário, iniciar o carregamento
+       {:db (-> db
+                (assoc-in [:database-schema :data (:connection-name connection) :open-database] database)
+                (assoc-in [:database-schema :data (:connection-name connection) :current-database] database)
+                (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+                (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                           (fn [databases] (conj (or databases #{}) database))))
+        :fx [[:dispatch [:database-schema->load-tables connection database]]]}))))

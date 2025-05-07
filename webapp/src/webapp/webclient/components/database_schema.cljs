@@ -222,11 +222,11 @@
          database-schema-status
          current-schema]))]))
 
+;; Componente para bancos SQL que não têm seleção de database (Oracle, MSSQL, MySQL)
 (defn- sql-databases-tree []
-  (fn [schema has-database? current-schema database-schema-status]
+  (fn [schema current-schema database-schema-status]
     (let [connection-name (get-in current-schema [:connection-name])]
-      [:div {:class (when has-database?
-                      "pl-small")}
+      [:div
        (cond
          (and (= :error database-schema-status) (:error current-schema))
          [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
@@ -243,18 +243,17 @@
              current-schema
              database-schema-status])))])))
 
-(defn db-view [{:keys [type
-                       schema
-                       databases
-                       connection-name
-                       current-schema
-                       database-schema-status]}]
+(defn db-view [{:keys [type schema databases connection-name current-schema database-schema-status]}]
   (case type
-    "oracledb" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
-    "mssql" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
+    ;; Para MSSQL, Oracle e MySQL, mostrar direto a visualização de schemas/tabelas
+    "oracledb" [sql-databases-tree (into (sorted-map) schema) current-schema database-schema-status]
+    "mssql" [sql-databases-tree (into (sorted-map) schema) current-schema database-schema-status]
+    "mysql" [sql-databases-tree (into (sorted-map) schema) current-schema database-schema-status]
+
+    ;; Para Postgres e MongoDB, mostrar a seleção de databases
     "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
     "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
+
     [:> Text {:size "1"}
      "Couldn't load the schema"]))
 
@@ -291,9 +290,16 @@
         local-connection (r/atom (:connection-name connection))
         ;; Store the schema state locally to avoid re-renders
         ;; when there are no actual changes
-        local-schema-state (r/atom nil)]
+        local-schema-state (r/atom nil)
+        ;; Flag para controlar se já iniciamos o carregamento
+        loading-started (r/atom false)]
 
-    (when (and connection (:connection-name connection))
+    ;; Somente disparar o carregamento do schema na montagem inicial
+    ;; ou quando a conexão mudar explicitamente
+    (when (and connection
+               (:connection-name connection)
+               (not @loading-started))
+      (reset! loading-started true)
       (get-database-schema (:connection-type connection) connection))
 
     ;; Using memoization for the main component
@@ -303,10 +309,12 @@
         (when-let [schema (get-in @database-schema [:data @local-connection])]
           (reset! local-schema-state schema))
         ;; Verificar se há um database salvo no localStorage e restaurá-lo
-        (when-let [selected-db (.getItem js/localStorage "selected-database")]
+        ;; apenas para tipos de conexão que usam múltiplos databases
+        (when (and (#{:postgres :mongodb} (keyword (:connection-type connection)))
+                   (.getItem js/localStorage "selected-database"))
           (rf/dispatch [:database-schema->change-database
                         {:connection-name (:connection-name connection)}
-                        selected-db])))
+                        (.getItem js/localStorage "selected-database")])))
 
       :component-did-update
       (fn [this old-argv]
@@ -314,6 +322,7 @@
               [_ new-conn] (r/argv this)]
           (when (not= (:connection-name old-conn) (:connection-name new-conn))
             (reset! local-connection (:connection-name new-conn))
+            (reset! loading-started false) ;; Resetar o flag para permitir novo carregamento
             (get-database-schema (:connection-type new-conn) new-conn))))
 
       :should-component-update
