@@ -462,6 +462,7 @@
     [layout :auth (rf/dispatch [:auth->get-auth-link])]))
 
 (defmethod routes/panels :idplogin-hoop-panel []
+  (println "idplogin-hoop-panel")
   [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])])
 
 (defmethod routes/panels :register-hoop-panel [_ gateway-info]
