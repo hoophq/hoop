@@ -14,7 +14,7 @@ import (
 func InitConciliationProcess() {
 	log.Infof("initializing connection status conciliation process")
 	if err := models.UpdateAllAgentsToOffline(); err != nil {
-		log.Warnf("failed to updating connection and agent resources to offline status, reason=%v")
+		log.Warnf("failed updating connection and agent resources to offline status, reason=%v", err)
 	}
 	go func() {
 		for {

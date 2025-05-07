@@ -1,8 +1,11 @@
-#!/bin/bash -e
+#!/bin/bash
 
-: "${KEY_FILE:? Required environment variable not set}"
+set -eo pipefail
 
-gcloud auth activate-service-account --key-file=$KEY_FILE 2> /dev/null
+: "${GOOGLE_APPLICATION_CREDENTIALS:? Required environment variable not set}"
+export CLOUDSDK_PYTHON=${CLOUDSDK_PYTHON:-"/usr/bin/python3.9"}
+
+gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS 2> /dev/null
 touch $HOME/.bigqueryrc
 
 /usr/lib/google-cloud-sdk/bin/bq $@
