@@ -552,15 +552,9 @@
         gateway-public-info (rf/subscribe [:gateway->public-info])
         analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
     (rf/dispatch [:gateway->get-public-info])
-    (rf/dispatch [:gateway->get-info])
     (.registerPlugin gsap Draggable)
 
     (fn []
-      ;; Initialize Sentry only when gateway info is loaded
-      (when (and (not (-> @gateway-info :loading))
-                 (not (-> @gateway-public-info :loading)))
-        (sentry-monitor))
-
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
