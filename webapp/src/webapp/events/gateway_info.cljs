@@ -17,8 +17,7 @@
  (fn
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->info {:loading false
-                                  :data info})
-    :fx [[:dispatch [:tracking->initialize-if-allowed]]]}))
+                                  :data info})}))
 
 (rf/reg-event-fx
  :gateway->get-public-info
@@ -37,9 +36,3 @@
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->public-info {:loading false
                                          :data info})}))
-
-;; Subscription for analytics_tracking
-(rf/reg-sub
- :gateway->analytics-tracking
- (fn [db _]
-   (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))))

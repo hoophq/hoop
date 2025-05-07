@@ -57,7 +57,6 @@
    [webapp.events.runbooks-plugin]
    [webapp.events.segment]
    [webapp.events.slack-plugin]
-   [webapp.events.tracking]
    [webapp.events.users]
    [webapp.features.runbooks.events]
    [webapp.features.runbooks.subs]
@@ -100,8 +99,8 @@
    [webapp.features.runbooks.main :as runbooks]
    [webapp.features.runbooks.views.runbook-form :as runbook-form]))
 
-;; Tracking initialization is now handled by :tracking->initialize-if-allowed
-;; which is dispatched after gateway info is loaded and checks do_not_track
+(when (= config/release-type "hoop-ui")
+  (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
 
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -530,9 +529,8 @@
 
 (defn sentry-monitor []
   (let [sentry-dsn config/sentry-dsn
-        sentry-sample-rate config/sentry-sample-rate
-        analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
-    (when (and sentry-dsn sentry-sample-rate (not analytics-tracking))
+        sentry-sample-rate config/sentry-sample-rate]
+    (when (and sentry-dsn sentry-sample-rate)
       (.init Sentry #js {:dsn sentry-dsn
                          :release config/app-version
                          :sampleRate sentry-sample-rate
@@ -557,27 +555,15 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])
-        gateway-info (rf/subscribe [:gateway->info])
-        analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])]
     (rf/dispatch [:gateway->get-public-info])
-    (rf/dispatch [:gateway->get-info])
     (.registerPlugin gsap Draggable)
-
-    ;; Only initialize Sentry when gateway info is loaded and we know analytics_tracking status
+    (sentry-monitor)
     (fn []
-      ;; Initialize Sentry only when gateway info is loaded
-      (when (and (not (-> @gateway-info :loading))
-                 (not (-> @gateway-public-info :loading)))
-        (sentry-monitor))
-
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
 
         :else
         [:> Theme {:radius "large" :panelBackground "solid"}
-         ;; Hidden element to display analytics_tracking value for testing
-         [:div {:style {:display "none"}}
-          [:span {:id "analytics-tracking-value"} (str @analytics-tracking)]]
          [routes/panels @active-panel @gateway-public-info]]))))
