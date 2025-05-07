@@ -128,11 +128,11 @@ type ServiceAccount struct {
 	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
 	// Subject is the external identifier that maps the user from the identity provider.
 	// This field is immutable after creation
-	Subject string `json:"subject" example:"bJ8xV3ASWGTi7L9Z6zvHKqxJlnZM5TxV1bRdc0706vW"`
+	Subject string `json:"subject" binding:"required" example:"bJ8xV3ASWGTi7L9Z6zvHKqxJlnZM5TxV1bRdc0706vW"`
 	// The display name of this service account
 	Name string `json:"name" example:"system-automation"`
 	// Inactive service account will not be able to access the api
-	Status ServiceAccountStatusType `json:"status" binding:"required"`
+	Status ServiceAccountStatusType `json:"status" binding:"required" enums:"active,inactive"`
 	// The groups in which this service account belongs to
 	Groups []string `json:"groups" example:"engineering"`
 }

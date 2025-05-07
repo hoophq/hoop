@@ -3500,7 +3500,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "{\"message\": \"failed listing groups\"}",
+                        "description": "{\"message\": \"failed\tlisting\tgroups\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3538,19 +3538,19 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "{\"message\": \"error message\"}",
+                        "description": "{\"message\": \"error\t\tmessage\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "409": {
-                        "description": "{\"message\": \"group already exists\"}",
+                        "description": "{\"message\": \"group\t\talready\texists\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
-                        "description": "{\"message\": \"server error\"}",
+                        "description": "{\"message\": \"server\terror\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3582,19 +3582,19 @@ const docTemplate = `{
                         "description": "No Content"
                     },
                     "404": {
-                        "description": "{\"message\": \"group not found\"}",
+                        "description": "{\"message\": \"group\t\tnot\t\tfound\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "422": {
-                        "description": "{\"message\": \"cannot delete admin group\"}",
+                        "description": "{\"message\": \"cannot\tdelete\tadmin\tgroup\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
-                        "description": "{\"message\": \"server error\"}",
+                        "description": "{\"message\": \"server\terror\"}",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -6052,7 +6052,8 @@ const docTemplate = `{
         "openapi.ServiceAccount": {
             "type": "object",
             "required": [
-                "status"
+                "status",
+                "subject"
             ],
             "properties": {
                 "groups": {
@@ -6085,6 +6086,10 @@ const docTemplate = `{
                 },
                 "status": {
                     "description": "Inactive service account will not be able to access the api",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ],
                     "allOf": [
                         {
                             "$ref": "#/definitions/openapi.ServiceAccountStatusType"

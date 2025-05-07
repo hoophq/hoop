@@ -107,7 +107,7 @@ func (r *reviewPlugin) onReceiveOSS(pctx plugintypes.Context, pkt *pb.Packet) (*
 	}
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: []byte(fmt.Sprintf("%s/plugins/reviews/%s", r.apiURL, newRev.Id)),
+		Payload: fmt.Appendf(nil, "%s/reviews/%s", r.apiURL, newRev.Id),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 var (
@@ -25,14 +25,14 @@ type openSessionResponse struct {
 }
 
 type dispatcherState struct {
-	requestCh  chan *types.Client
+	requestCh  chan *models.ProxyManagerState
 	responseCh chan openSessionResponse
 	cancelFn   context.CancelFunc
 }
 
 func newDispatcherState(cancelFn context.CancelFunc) *dispatcherState {
 	return &dispatcherState{
-		make(chan *types.Client),
+		make(chan *models.ProxyManagerState),
 		make(chan openSessionResponse),
 		cancelFn,
 	}
@@ -75,7 +75,7 @@ func (d *dispatcherState) sendResponse(pkt *pb.Packet, err error) {
 // It will wait until it receives a response or timeout.
 //
 // A proxy manager client needs to be connected for this function to work properly
-func DispatchOpenSession(req *types.Client) (*pb.Packet, error) {
+func DispatchOpenSession(req *models.ProxyManagerState) (*pb.Packet, error) {
 	state := getDispatcherState(req.ID)
 	if state == nil {
 		return nil, fmt.Errorf("proxy manager state %s not found", req.ID)
@@ -102,7 +102,7 @@ func DispatchOpenSession(req *types.Client) (*pb.Packet, error) {
 
 // DispatchDisconnect cancel the context of the stateful connection
 // forcing the client to disconnect
-func DispatchDisconnect(req *types.Client) error {
+func DispatchDisconnect(req *models.ProxyManagerState) error {
 	state := getDispatcherState(req.ID)
 	if state == nil {
 		return fmt.Errorf("proxy manager state %s not found", req.ID)
