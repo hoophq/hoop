@@ -65,6 +65,7 @@ RUN mkdir -p /app && \
   apt-get install -y \
   python3-dev \
   python3-pip \
+  python3.9 \
   net-tools \
   iproute2 \
   xz-utils \
@@ -92,10 +93,12 @@ RUN echo 'root:1a2b3c4d' | chpasswd && \
 
 RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
   echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
+  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
   curl -sL https://packages.microsoft.com/config/ubuntu/20.04/prod.list | tee /etc/apt/sources.list.d/msprod.list && \
   curl -sL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
   curl -sL https://www.mongodb.org/static/pgp/server-5.0.asc | apt-key add - && \
-  curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
+  curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
+  curl -sL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
 
 RUN apt-get update -y && \
   apt-get install -y \
@@ -103,6 +106,7 @@ RUN apt-get update -y && \
   default-mysql-client \
   postgresql-client-15 \
   mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli \
+  google-cloud-cli \
   sqlcmd unixodbc-dev
 
 # Download and install Oracle Instant Client and SQL*Plus
@@ -157,6 +161,7 @@ RUN pip3 install -U \
   requests==2.27.1
 
 COPY rootfs/usr/local/bin/mongosh /usr/local/bin/mongosh
+COPY rootfs/usr/local/bin/bq /usr/local/bin/bq
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
   locale-gen
 ENV LANG=en_US.UTF-8
