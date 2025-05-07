@@ -117,18 +117,12 @@
  :initialize-intercom
  (fn
    [{:keys [db]} [_ user]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
-     (if (not analytics-tracking)
-       ;; If analytics tracking is disabled, don't initialize Intercom
-       {}
-       ;; Otherwise, initialize Intercom
-       (do
-         (js/window.Intercom
-          "boot"
-          (clj->js {:api_base "https://api-iam.intercom.io"
-                    :app_id "ryuapdmp"
-                    :name (:name user)
-                    :email (:email user)
-                    :user_id (:email user)
-                    :user_hash (:intercom_hmac_digest user)}))
-         {})))))
+   (js/window.Intercom
+    "boot"
+    (clj->js {:api_base "https://api-iam.intercom.io"
+              :app_id "ryuapdmp"
+              :name (:name user)
+              :email (:email user)
+              :user_id (:email user)
+              :user_hash (:intercom_hmac_digest user)}))
+   {}))

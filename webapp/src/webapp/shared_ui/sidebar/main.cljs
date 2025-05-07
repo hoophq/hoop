@@ -242,11 +242,11 @@
 
     (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:connections->get-connections])
-
-    ;; Use the tracking event to handle Canny identification
-    (when-let [user-data (:data @user)]
-      (rf/dispatch [:tracking->ensure-canny-available user-data]))
-
+    (js/Canny "identify"
+              #js{:appID config/canny-id
+                  :user #js{:email (some-> @user :data :email)
+                            :name (some-> @user :data :name)
+                            :id (some-> @user :data :id)}})
     (fn []
       (if (empty? (:data @user))
         [:<>]
