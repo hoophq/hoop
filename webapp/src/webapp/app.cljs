@@ -1,7 +1,6 @@
 (ns webapp.app
   (:require
    ["@radix-ui/themes" :refer [Theme Box Heading Spinner]]
-   ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
@@ -18,10 +17,8 @@
    [webapp.components.dialog :as dialog]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
-   [webapp.components.loaders :as loaders]
    [webapp.components.modal :as modals]
    [webapp.components.snackbar :as snackbar]
-   [webapp.config :as config]
    [webapp.connections.views.connection-list :as connections]
    [webapp.connections.views.setup.connection-update-form :as connection-update-form]
    [webapp.connections.views.setup.events.db-events]
@@ -528,16 +525,6 @@
 ;; END HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;;;;;
 
-(defn sentry-monitor []
-  (let [sentry-dsn config/sentry-dsn
-        sentry-sample-rate config/sentry-sample-rate
-        analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
-    (when (and sentry-dsn sentry-sample-rate (not analytics-tracking))
-      (.init Sentry #js {:dsn sentry-dsn
-                         :release config/app-version
-                         :sampleRate sentry-sample-rate
-                         :integrations #js [(.browserTracingIntegration Sentry)]}))))
-
 (defmethod routes/panels :default []
   (let [pathname (.. js/window -location -pathname)
         matched-route (try (bidi/match-route @routes/routes pathname) (catch js/Error _ nil))]
@@ -558,19 +545,11 @@
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
         gateway-public-info (rf/subscribe [:gateway->public-info])
-        gateway-info (rf/subscribe [:gateway->info])
         analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
     (rf/dispatch [:gateway->get-public-info])
-    (rf/dispatch [:gateway->get-info])
     (.registerPlugin gsap Draggable)
 
-    ;; Only initialize Sentry when gateway info is loaded and we know analytics_tracking status
     (fn []
-      ;; Initialize Sentry only when gateway info is loaded
-      (when (and (not (-> @gateway-info :loading))
-                 (not (-> @gateway-public-info :loading)))
-        (sentry-monitor))
-
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]

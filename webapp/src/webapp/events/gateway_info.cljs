@@ -18,7 +18,8 @@
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->info {:loading false
                                   :data info})
-    :fx [[:dispatch [:tracking->initialize-if-allowed]]]}))
+    :fx [[:dispatch [:tracking->initialize-if-allowed]]
+         [:dispatch [:initialize-monitoring]]]}))
 
 (rf/reg-event-fx
  :gateway->get-public-info
