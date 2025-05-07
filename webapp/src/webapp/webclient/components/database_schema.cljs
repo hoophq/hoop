@@ -137,7 +137,7 @@
                     [fields-tree fields]))]])))]))))
 
 ;; Componente para renderizar um schema com suas tabelas
-(defn- schema-view [schema-name tables connection-name current-schema database-schema-status]
+(defn- schema-view []
   (let [dropdown-status (r/atom :open)]
     (fn [schema-name tables connection-name current-schema database-schema-status]
       (let [current-database (get-in current-schema [:current-database])
@@ -224,31 +224,30 @@
 
 ;; Componente para bancos SQL que não têm seleção de database (Oracle, MSSQL, MySQL)
 (defn- sql-databases-tree []
-  (fn [schema current-schema database-schema-status]
-    (let [connection-name (get-in current-schema [:connection-name])]
-      [:div
-       (cond
-         (and (= :error database-schema-status) (:error current-schema))
-         [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-          (:error current-schema)]
+  (fn [schema connection-name current-schema database-schema-status]
+    [:div
+     (cond
+       (and (= :error database-schema-status) (:error current-schema))
+       [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+        (:error current-schema)]
 
-         :else
-         (doall
-          (for [[schema-name tables] schema]
-            ^{:key schema-name}
-            [schema-view
-             schema-name
-             tables
-             connection-name
-             current-schema
-             database-schema-status])))])))
+       :else
+       (doall
+        (for [[schema-name tables] schema]
+          ^{:key schema-name}
+          [schema-view
+           schema-name
+           tables
+           connection-name
+           current-schema
+           database-schema-status])))]))
 
 (defn db-view [{:keys [type schema databases connection-name current-schema database-schema-status]}]
   (case type
     ;; Para MSSQL, Oracle e MySQL, mostrar direto a visualização de schemas/tabelas
-    "oracledb" [sql-databases-tree (into (sorted-map) schema) current-schema database-schema-status]
-    "mssql" [sql-databases-tree (into (sorted-map) schema) current-schema database-schema-status]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) current-schema database-schema-status]
+    "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+    "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+    "mysql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
 
     ;; Para Postgres e MongoDB, mostrar a seleção de databases
     "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
