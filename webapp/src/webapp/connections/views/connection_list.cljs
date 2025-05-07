@@ -79,6 +79,30 @@
          (when (= selected-resource value)
            [:> Check {:size 16}])])]]]])
 
+(defn can-connect? [connection]
+  (not (and (= "disabled" (:access_mode_runbooks connection))
+            (= "disabled" (:access_mode_exec connection))
+            (= "disabled" (:access_mode_connect connection)))))
+
+(defn can-open-web-terminal? [connection]
+  (if-not (#{"tcp" "httpproxy"} (:subtype connection))
+
+    (if (or (= "enabled" (:access_mode_runbooks connection))
+            (= "enabled" (:access_mode_exec connection)))
+      true
+      false)
+
+    false))
+
+(defn can-open-native-client? [connection]
+  (if (#{"database" "application"} (:type connection))
+
+    (if (= "enabled" (:access_mode_connect connection))
+      true
+      false)
+
+    false))
+
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
@@ -230,24 +254,23 @@
                    [:div {:id "connection-info"
                           :class "flex gap-6 items-center"}
 
-                    [:> DropdownMenu.Root {:dir "rtl"}
-                     [:> DropdownMenu.Trigger
-                      [:> Button {:size 2 :variant "soft"}
-                       "Connect"
-                       [:> DropdownMenu.TriggerIcon]]]
-                     [:> DropdownMenu.Content
-                      [:> DropdownMenu.Item {:on-click
-                                             (fn []
-                                               (js/localStorage.setItem "selected-connection" connection)
-                                               (rf/dispatch [:navigate :editor-plugin-panel]))}
-                       "Open in Web Terminal"]
-                      (when (or
-                             (= "database" (:type connection))
-                             (and (= "application" (:type connection))
-                                  (= "tcp" (:subtype connection))))
-                        [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
-                                                                                      :maxWidth "446px"}])}
-                         "Open in Native Client"])]]
+                    (when (can-connect? connection)
+                      [:> DropdownMenu.Root {:dir "rtl"}
+                       [:> DropdownMenu.Trigger
+                        [:> Button {:size 2 :variant "soft"}
+                         "Connect"
+                         [:> DropdownMenu.TriggerIcon]]]
+                       [:> DropdownMenu.Content
+                        (when (can-open-web-terminal? connection)
+                          [:> DropdownMenu.Item {:on-click
+                                                 (fn []
+                                                   (js/localStorage.setItem "selected-connection" connection)
+                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
+                           "Open in Web Terminal"])
+                        (when (can-open-native-client? connection)
+                          [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
+                                                                                        :maxWidth "446px"}])}
+                           "Open in Native Client"])]])
 
                     (when (-> @user :data :admin?)
                       [:> DropdownMenu.Root {:dir "rtl"}
