@@ -1,5 +1,6 @@
 (ns webapp.events.tracking
   (:require
+   ["@sentry/browser" :as Sentry]
    [re-frame.core :as rf]
    [webapp.config :as config]))
 
@@ -136,4 +137,20 @@
              head (aget head-element 0)]
          (.appendChild head canny-script))))
 
+   {}))
+
+(rf/reg-event-fx
+ :initialize-monitoring
+ (fn [{:keys [db]} _]
+   (let [sentry-dsn config/sentry-dsn
+         sentry-sample-rate config/sentry-sample-rate
+         analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
+     (when (and sentry-dsn sentry-sample-rate (not analytics-tracking))
+       (try
+         (.init Sentry #js {:dsn sentry-dsn
+                            :release config/app-version
+                            :sampleRate sentry-sample-rate
+                            :integrations #js [(.browserTracingIntegration js/Sentry)]})
+         (catch :default e
+           (js/console.error "Failed to initialize Sentry:" e)))))
    {}))

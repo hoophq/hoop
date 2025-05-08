@@ -17,7 +17,9 @@
  (fn
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->info {:loading false
-                                  :data info})}))
+                                  :data info})
+    :fx [[:dispatch [:tracking->initialize-if-allowed]]
+         [:dispatch [:initialize-monitoring]]]}))
 
 (rf/reg-event-fx
  :gateway->get-public-info
@@ -36,3 +38,15 @@
    [{:keys [db]} [_ info]]
    {:db (assoc db :gateway->public-info {:loading false
                                          :data info})}))
+
+(rf/reg-sub
+ :gateway->analytics-tracking
+ (fn [db _]
+   (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))))
+
+(rf/reg-sub
+ :gateway->auth-method
+ (fn [db _]
+   (or
+    (get-in db [:gateway->info :data :auth_method])
+    "local")))

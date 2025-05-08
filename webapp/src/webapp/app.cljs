@@ -1,7 +1,6 @@
 (ns webapp.app
   (:require
    ["@radix-ui/themes" :refer [Theme Box Heading Spinner]]
-   ["@sentry/browser" :as Sentry]
    ["gsap/all" :refer [Draggable gsap]]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
@@ -18,10 +17,8 @@
    [webapp.components.dialog :as dialog]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
-   [webapp.components.loaders :as loaders]
    [webapp.components.modal :as modals]
    [webapp.components.snackbar :as snackbar]
-   [webapp.config :as config]
    [webapp.connections.views.connection-list :as connections]
    [webapp.connections.views.setup.connection-update-form :as connection-update-form]
    [webapp.connections.views.setup.events.db-events]
@@ -57,6 +54,7 @@
    [webapp.events.runbooks-plugin]
    [webapp.events.segment]
    [webapp.events.slack-plugin]
+   [webapp.events.tracking]
    [webapp.events.users]
    [webapp.features.runbooks.events]
    [webapp.features.runbooks.subs]
@@ -99,8 +97,8 @@
    [webapp.features.runbooks.main :as runbooks]
    [webapp.features.runbooks.views.runbook-form :as runbook-form]))
 
-(when (= config/release-type "hoop-ui")
-  (js/window.addEventListener "load" (rf/dispatch [:segment->load])))
+;; Tracking initialization is now handled by :tracking->initialize-if-allowed
+;; which is dispatched after gateway info is loaded and checks do_not_track
 
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -124,9 +122,11 @@
          #(do
             (.removeItem js/localStorage "redirect-after-auth")
             (set! (.. js/window -location -href) redirect-after-auth))
-         500)
+         1500)
 
-        (rf/dispatch [:navigate :home])))
+        (js/setTimeout
+         #(rf/dispatch [:navigate :home])
+         1500)))
 
     [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
@@ -145,7 +145,10 @@
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
     (.setItem js/localStorage "jwt-token" token)
-    (rf/dispatch [:navigate destiny])
+
+    (js/setTimeout
+     #(rf/dispatch [:navigate destiny])
+     1500)
 
     [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
@@ -527,15 +530,6 @@
 ;; END HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;;;;;
 
-(defn sentry-monitor []
-  (let [sentry-dsn config/sentry-dsn
-        sentry-sample-rate config/sentry-sample-rate]
-    (when (and sentry-dsn sentry-sample-rate)
-      (.init Sentry #js {:dsn sentry-dsn
-                         :release config/app-version
-                         :sampleRate sentry-sample-rate
-                         :integrations #js [(.browserTracingIntegration Sentry)]}))))
-
 (defmethod routes/panels :default []
   (let [pathname (.. js/window -location -pathname)
         matched-route (try (bidi/match-route @routes/routes pathname) (catch js/Error _ nil))]
@@ -555,10 +549,11 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
-    (sentry-monitor)
+
     (fn []
       (cond
         (-> @gateway-public-info :loading)
@@ -566,4 +561,7 @@
 
         :else
         [:> Theme {:radius "large" :panelBackground "solid"}
+         ;; Hidden element to display analytics_tracking value for testing
+         [:div {:style {:display "none"}}
+          [:span {:id "analytics-tracking-value"} (str @analytics-tracking)]]
          [routes/panels @active-panel @gateway-public-info]]))))
