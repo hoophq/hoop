@@ -169,10 +169,11 @@
     "No template selected"]])
 
 (defn main []
-  (fn [{:keys [runbook selected-connections preselected-connection]}]
+  (fn [{:keys [runbook selected-connections preselected-connection only-runbooks?]}]
     [:<>
-     [:div {:class "absolute right-4 top-4 transition cursor-pointer z-10"
-            :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}
-      [:> hero-micro-icon/XMarkIcon {:class "h-5 w-5 text-[--gray-12]" :aria-hidden "true"}]]
+     (when-not only-runbooks?
+       [:div {:class "absolute right-4 top-4 transition cursor-pointer z-10"
+              :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}
+        [:> hero-micro-icon/XMarkIcon {:class "h-5 w-5 text-[--gray-12]" :aria-hidden "true"}]])
      [template-view (:status runbook) runbook selected-connections preselected-connection]]))
 
