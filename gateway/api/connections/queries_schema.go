@@ -23,7 +23,7 @@ func getSchemaQuery(connType pb.ConnectionType, dbName string) string {
 	}
 }
 
-// getTablesQuery retorna a consulta para listar apenas as tabelas de um banco
+// getTablesQuery returns the query to list only the tables of a database
 func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -41,7 +41,7 @@ func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	}
 }
 
-// getColumnsQuery retorna a consulta para obter as colunas de uma tabela específica
+// getColumnsQuery returns the query to get the columns of a specific table
 func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -94,7 +94,7 @@ ORDER BY
     c.ordinal_position;`, dbName)
 }
 
-// Consultas para listar apenas tabelas
+// Queries to list only tables
 
 func getPostgresTablesQuery(dbName string) string {
 	return fmt.Sprintf(`
@@ -179,7 +179,7 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
 print(JSON.stringify(result));`, dbName)
 }
 
-// Consultas para obter colunas de uma tabela específica
+// Queries to get the columns of a specific table
 
 func getPostgresColumnsQuery(dbName, tableName, schemaName string) string {
 	return fmt.Sprintf(`
