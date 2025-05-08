@@ -694,7 +694,7 @@ func GetDatabaseSchemas(c *gin.Context) {
 	}
 }
 
-// ListTables retorna apenas as tabelas de um banco de dados sem detalhes das colunas
+// ListTables returns only the tables of a database without column details
 //
 //	@Summary		List Database Tables
 //	@Description	List tables from a database without column details
@@ -884,7 +884,7 @@ func ListTables(c *gin.Context) {
 	}
 }
 
-// GetTableColumns retorna apenas as colunas de uma tabela específica
+// GetTableColumns returns the columns of a specific table
 //
 //	@Summary		Get Table Columns
 //	@Description	Get columns from a specific table
@@ -904,7 +904,6 @@ func GetTableColumns(c *gin.Context) {
 	tableName := c.Query("table")
 	schemaName := c.Query("schema")
 
-	// Validações
 	if tableName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "table parameter is required"})
 		return
@@ -956,7 +955,7 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
-	// Se o schema não for fornecido, usa 'public' para PostgreSQL e o próprio database para outros bancos
+	// If the schema is not provided, use 'public' for PostgreSQL and the same database for other databases
 	if schemaName == "" {
 		if currentConnectionType == pb.ConnectionTypePostgres {
 			schemaName = "public"
