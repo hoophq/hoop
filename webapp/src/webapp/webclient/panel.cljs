@@ -20,7 +20,6 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [goog.object :as gobj]
    [webapp.formatters :as formatters]
    [webapp.subs :as subs]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
@@ -57,20 +56,9 @@
         object (js->clj (.parse js/JSON item))]
     (or (get object "code") "")))
 
-(defn process-schema [tree schema-key prefix]
-  (reduce
-   (fn [acc table-key]
-     (let [qualified-key (if prefix
-                           (str schema-key "." table-key)
-                           table-key)]
-       (assoc acc qualified-key (keys (get (get (:schema-tree tree) schema-key) table-key)))))
-   {}
-   (keys (get (:schema-tree tree) schema-key))))
-
 (def memoized-convert-tree
   (memoize
    (fn [tree max-tables]
-     (println "aaaaa")
      (let [is-typing (boolean (aget js/window "is_typing"))
            schema-keys (keys (:schema-tree tree))
            limit-fn (fn [coll]
@@ -100,15 +88,9 @@
                                        tables))
          :else #js{})))))
 
-(def ^:private timer (r/atom nil))
-(def ^:private typing-intensity (r/atom 0))  ;; Track typing intensity
 (def ^:private code-saved-status (r/atom :saved)) ; :edited | :saved
 (def ^:private is-typing (r/atom false))
 (def ^:private typing-timer (r/atom nil))
-
-(defn update-global-typing-state [is-typing?]
-  (reset! is-typing is-typing?)
-  (aset js/window "is_typing" is-typing?))
 
 (defn- save-code-to-localstorage [code-string]
   (let [code-tmp-db {:date (.now js/Date)
@@ -133,10 +115,8 @@
     [:span {:class "text-xs italic"}
      "Edited"]]])
 
-;; Cache to store processed schemas in JavaScript format
 (def schema-js-cache (r/atom {}))
 
-;; Function to simplify the schema only for autocomplete
 (defn simplify-schema-for-autocomplete [schema]
   (let [schema-tree (:schema-tree schema)]
     (reduce-kv
@@ -150,7 +130,7 @@
      {}
      schema-tree)))
 
-(defn process-schema-sync [schema max-tables is-typing?]
+(defn process-schema-sync [schema max-tables]
   (js/Promise.resolve (clj->js (memoized-convert-tree schema max-tables))))
 
 (defn get-optimized-schema-for-codemirror [connection-name schema is-typing?]
@@ -160,26 +140,20 @@
 
     (if (and cached-value
              (= (:schema-version cached-value) (hash (:schema-tree schema))))
-      ;; Return cached value if schema hasn't changed
       (js/Promise.resolve (:schema-js cached-value))
 
-      ;; Process synchronously
       (-> (process-schema-sync
            (simplify-schema-for-autocomplete schema)
-           max-tables
-           is-typing?)
+           max-tables)
           (.then (fn [processed-schema]
                    (let [js-schema #js{:schema processed-schema}]
-                     ;; Update cache
                      (swap! schema-js-cache assoc cache-key
                             {:schema-version (hash (:schema-tree schema))
                              :schema-js js-schema})
                      js-schema)))))))
 
-;; Atom to store current SQL parser and its information
 (def current-sql-parser (r/atom nil))
 
-;; Function to check if we need to recreate the parser
 (defn should-recreate-parser? [prev-lang current-lang prev-schema current-schema]
   (or (nil? prev-lang)
       (not= prev-lang current-lang)
@@ -187,25 +161,21 @@
       (and (= (:status current-schema) :success)
            (not= (:schema-tree prev-schema) (:schema-tree current-schema)))))
 
-;; Optimized function to create or reuse SQL parser using Web Worker
 (defn get-or-create-sql-parser [current-language current-schema is-typing? is-one-connection?]
   (let [prev-parser-info (:info @current-sql-parser)
         prev-lang (:language prev-parser-info)
         prev-schema (:schema prev-parser-info)]
 
     (if (should-recreate-parser? prev-lang current-language prev-schema current-schema)
-      ;; Only recreate parser if language or schema changed
       (let [database-schema-sanitized (if (= (:status current-schema) :success)
                                         current-schema
                                         {:status :failure :raw "" :schema-tree []})
-            ;; Create a promise to resolve the SQL parser
             parser-promise (if is-one-connection?
                              (get-optimized-schema-for-codemirror
                               (:name (:info @current-sql-parser))
                               database-schema-sanitized
                               is-typing?)
                              (js/Promise.resolve #js{}))
-            ;; Create a fallback parser to use while processing the schema
             fallback-parser (case current-language
                               "postgres" [(sql (.assign js/Object (.-dialect PostgreSQL) #js{}))]
                               "mysql" [(sql (.assign js/Object (.-dialect MySQL) #js{}))]
@@ -222,12 +192,10 @@
                               "" [(.define cm-language/StreamLanguage cm-shell/shell)]
                               [(.define cm-language/StreamLanguage cm-shell/shell)])]
 
-        ;; Use fallback parser initially
         (reset! current-sql-parser {:parser fallback-parser
                                     :info {:language current-language
                                            :schema current-schema}})
 
-        ;; Update parser when schema is processed
         (.then parser-promise
                (fn [schema]
                  (let [new-parser (case current-language
@@ -235,31 +203,24 @@
                                     "mysql" [(sql (.assign js/Object (.-dialect MySQL) schema))]
                                     "mssql" [(sql (.assign js/Object (.-dialect MSSQL) schema))]
                                     "oracledb" [(sql (.assign js/Object (.-dialect PLSQL) schema))]
-                                    ;; For other languages, keep the same parser
                                     (:parser @current-sql-parser))]
                    (reset! current-sql-parser {:parser new-parser
                                                :info {:language current-language
                                                       :schema current-schema}}))))
 
-        ;; Return the initial parser while processing in background
         fallback-parser)
 
-      ;; Reuse existing parser
       (:parser @current-sql-parser))))
 
-;; Define debounce time for operations after typing
 (def editor-debounce-time 750)
 
-;; Optimization of the typing state update function
 (defn update-global-typing-state-optimized [is-typing?]
   (when (not= @is-typing is-typing?)
     (reset! is-typing is-typing?)
     (aset js/window "is_typing" is-typing?)))
 
-;; Cache for CodeMirror extensions
 (def codemirror-extensions-cache (r/atom {}))
 
-;; Function to create CodeMirror extensions in an optimized way
 (defn create-codemirror-extensions [current-language
                                     parser
                                     keymap
@@ -275,9 +236,7 @@
                    is-one-connection-selected?
                    is-template-ready?]]
 
-    ;; Check if we already have the extensions in cache
     (or (get @codemirror-extensions-cache cache-key)
-        ;; If not, create new extensions and store in cache
         (let [extensions
               (concat
                (when (and (= feature-ai-ask "enabled")
@@ -289,7 +248,7 @@
                                           prefix
                                           suffix
                                           (:raw current-schema)))
-                       :debounceMs 1200 ;; Increased to reduce frequency
+                       :debounceMs 1200
                        :maxPrefixLength 500
                        :maxSuffixLength 500})])
                [(.of cm-view/keymap (clj->js keymap))]
@@ -298,24 +257,18 @@
                  [(.of (.-editable cm-view/EditorView) false)
                   (.of (.-readOnly cm-state/EditorState) true)]))]
 
-          ;; Store in cache and return
           (swap! codemirror-extensions-cache assoc cache-key extensions)
           extensions))))
 
-;; CodeMirror component optimized with memoization
 (def codemirror-editor
   (r/create-class
    {:display-name "OptimizedCodeMirror"
 
-    ;; shouldComponentUpdate checks if an update is necessary
     :should-component-update
-    (fn [this [_ old-props] [_ new-props]]
+    (fn [_ [_ old-props] [_ new-props]]
       (let [should-update (or
-                           ;; Editor value changed
                            (not= (:value old-props) (:value new-props))
-                           ;; Theme changed
                            (not= (:theme old-props) (:theme new-props))
-                           ;; Extensions completely changed (new reference)
                            (not= (hash (:extensions old-props)) (hash (:extensions new-props))))]
         should-update))
 
@@ -345,10 +298,6 @@
         multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
 
-        ;; Simplificando atoms
-        loading-runbook? (r/atom false)
-
-        ;; Função simplificada para verificar estado da conexão atual
         handle-connection-modes! (fn [current-connection]
                                    (when current-connection
                                      (let [runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
@@ -356,25 +305,17 @@
                                            only-runbooks? (and runbooks-enabled? (not exec-enabled?))
                                            current-panel @active-panel]
 
-                                       ;; Se temos apenas modo runbooks
                                        (when only-runbooks?
-                                         ;; Só definimos para runbooks se não for outro painel válido
-                                         ;; Respeitamos a escolha do usuário para metadata e outros painéis
                                          (when (nil? current-panel)
                                            (reset! active-panel :runbooks))
 
-                                         ;; Sempre verifica e carrega o primeiro runbook quando necessário
-                                         ;; independente do painel atual
                                          (when (and (not= :ready (:status @selected-template))
                                                     (= :ready (:status @runbooks))
                                                     (seq (:data @runbooks)))
-                                           (reset! loading-runbook? true)
                                            (rf/dispatch [:runbooks-plugin->set-active-runbook (first (:data @runbooks))])))
 
-                                       ;; Se a conexão não suporta runbooks mas o painel está aberto, feche-o
                                        (when (and exec-enabled? (not runbooks-enabled?) (= @active-panel :runbooks))
                                          (reset! active-panel nil)
-                                         (reset! loading-runbook? false)
                                          (rf/dispatch [:runbooks-plugin->clear-active-runbooks])))))
 
         vertical-pane-sizes (mapv js/parseInt
@@ -391,7 +332,6 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
-      ;; Aplicar lógica de modos de conexão diretamente
       (handle-connection-modes! @selected-connection)
 
       (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
@@ -403,12 +343,6 @@
             runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
             only-runbooks? (and runbooks-enabled? (not exec-enabled?))
-
-            ;; Verificar se o template está pronto para atualizar estado de loading
-            _ (when (and @loading-runbook?
-                         (= :ready (:status @selected-template)))
-                (reset! loading-runbook? false))
-
             reset-metadata (fn []
                              (reset! metadata [])
                              (reset! metadata-key "")
@@ -453,14 +387,12 @@
             language-info @(rf/subscribe [:editor-plugin/language])
             current-language (or (:selected language-info) (:default language-info))
 
-            ;; Obter o parser SQL otimizado
             language-parser-case (get-or-create-sql-parser
                                   current-language
                                   current-schema
                                   @is-typing
                                   is-one-connection-selected?)
 
-            ;; Criar extensões de forma otimizada
             codemirror-exts (create-codemirror-extensions
                              current-language
                              language-parser-case
@@ -471,7 +403,6 @@
                              current-schema
                              (= (:status @selected-template) :ready))
 
-            ;; Handler otimizado para onChange
             optimized-change-handler (fn [value _]
                                        (reset! script value)
                                        (reset! code-saved-status :edited)
@@ -528,34 +459,21 @@
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                              :vertical true}
-               ;; Container principal com posição relativa para o overlay funcionar corretamente
                [:div {:class "relative w-full h-full"}
-                ;; Conteúdo principal (sempre renderizado)
                 (if (= (:status @selected-template) :ready)
-                  ;; Renderiza o formulário de runbook
                   [:section {:class "h-full p-3 overflow-auto"}
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
                                         :selected-connections (conj @multi-selected-connections current-connection)
                                         :only-runbooks? only-runbooks?}]]
 
-                  ;; Renderiza o editor CodeMirror
                   [codemirror-editor
                    {:value @script
                     :theme (if @dark-mode?
                              materialDark
                              materialLight)
                     :extensions codemirror-exts
-                    :on-change optimized-change-handler}])
-
-                ;; Overlay de loading simplificado
-                (when @loading-runbook?
-                  [:div {:class (str "absolute inset-0 z-50 "
-                                     "flex items-center justify-center "
-                                     "bg-gray-900/40 backdrop-blur-[2px]")}
-                   [:> Flex {:direction "column" :align "center" :justify "center" :gap "3"}
-                    [:> Spinner {:size "3" :color "indigo"}]
-                    [:span {:class "text-sm text-white font-medium"} "Carregando runbook..."]]])]
+                    :on-change optimized-change-handler}])]
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
@@ -598,7 +516,6 @@
   (let [script-response (rf/subscribe [:editor-plugin->script])]
     (rf/dispatch [:editor-plugin->clear-script])
     (rf/dispatch [:editor-plugin->clear-connection-script])
-    (rf/dispatch [:ask-ai->clear-ai-responses])
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:audit->clear-session])
     (rf/dispatch [:plugins->get-my-plugins])
