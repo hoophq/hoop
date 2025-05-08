@@ -39,19 +39,14 @@
    {:db (assoc db :gateway->public-info {:loading false
                                          :data info})}))
 
-;; Subscription for analytics_tracking
 (rf/reg-sub
  :gateway->analytics-tracking
  (fn [db _]
    (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))))
 
-;; Subscription for auth_method
 (rf/reg-sub
  :gateway->auth-method
  (fn [db _]
-   (println "db" (get-in db [:gateway->info :data]))
    (or
-    ;; Primeiro tenta pegar do gateway-info (que vem do /serverinfo autenticado)
     (get-in db [:gateway->info :data :auth_method])
-    ;; Se não estiver disponível, assume "local" como padrão seguro
     "local")))
