@@ -18,7 +18,8 @@
 ;; HOC para adicionar o painel ao layout
 (defn with-panel [show-panel? content panel]
   [:> Flex {:class "h-[calc(100%-4rem)]"}
-   [:> Allotment {:defaultSizes [900 250]
+   [:> Allotment {:key (str "allotment-" show-panel?)
+                  :defaultSizes [750 250]
                   :horizontal true}
     [:> Box {:class "flex-grow transition-all duration-300"}
      content]

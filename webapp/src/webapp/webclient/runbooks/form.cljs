@@ -140,7 +140,12 @@
              (if (nil? (-> template :data :error))
                [:footer {:class "flex gap-regular justify-end"}
                 [:> Button {:disabled (or (= (-> template :status) :loading)
-                                          (= (-> template :form-status) :loading))
+                                          (= (-> template :form-status) :loading)
+                                          (nil? selected-connections))
+                            :class (when (or (= (-> template :status) :loading)
+                                             (= (-> template :form-status) :loading)
+                                             (nil? selected-connections))
+                                     "cursor-not-allowed")
                             :type "submit"}
                  "Execute runbook"]]
 

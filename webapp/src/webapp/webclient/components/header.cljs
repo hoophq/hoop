@@ -8,7 +8,8 @@
 (defn notification-badge [icon on-click active? has-data? disabled?]
   [:div {:class "relative"}
    [:> IconButton
-    {:class (when active? "bg-gray-8 text-gray-12")
+    {:class (str (when active? "bg-gray-8 text-gray-12 ")
+                 (when disabled? "cursor-not-allowed "))
      :size "2"
      :color "gray"
      :variant "soft"
@@ -31,10 +32,14 @@
             has-metadata? (or (seq @metadata)
                               (not (empty? @metadata-key))
                               (not (empty? @metadata-value)))
+            no-connection-selected? (and (empty? @selected-connections)
+                                         (not @primary-connection))
             has-multirun? (seq @selected-connections)
             runbooks-enabled? (= "enabled" (:access_mode_runbooks @primary-connection))
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
-            disable-run-button? (and (not exec-enabled?) runbooks-enabled?)
+            disable-run-button? (or (and (not exec-enabled?)
+                                         runbooks-enabled?)
+                                    no-connection-selected?)
             disable-runbooks-button? (and exec-enabled? (not runbooks-enabled?))
             on-click-icon-button (fn [type]
                                    (reset! active-panel (when-not (= @active-panel type) type))
@@ -105,6 +110,7 @@
            [:> Tooltip {:content "Run"}
             [:> Button
              {:disabled disable-run-button?
+              :class (when disable-run-button? "cursor-not-allowed")
               :onClick #(submit)}
              [:> Play {:size 16}]
              "Run"]]]]]))))

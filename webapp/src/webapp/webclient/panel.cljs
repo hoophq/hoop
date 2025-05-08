@@ -360,7 +360,10 @@
                   [:section {:class "h-full p-3 overflow-auto"}
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
-                                        :selected-connections (conj @multi-selected-connections current-connection)
+                                        :selected-connections (if (and (empty? @multi-selected-connections)
+                                                                       (not current-connection))
+                                                                nil
+                                                                (conj @multi-selected-connections current-connection))
                                         :only-runbooks? only-runbooks?}]]
 
                   [codemirror-editor
