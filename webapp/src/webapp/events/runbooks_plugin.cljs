@@ -131,8 +131,8 @@
                        [:show-snackbar {:level :success
                                         :text "The Runbook was run!"}])
 
-                     ;; This is not the right approach.
-                     ;; This was added until we create a better result from runbooks exec
+                      ;; This is not the right approach.
+                      ;; This was added until we create a better result from runbooks exec
                       (js/setTimeout
                        #(rf/dispatch [:audit->get-session-by-id {:id (:session_id res) :verb "exec"}]) 4000))]
      {:fx [[:dispatch [:fetch {:method "POST"

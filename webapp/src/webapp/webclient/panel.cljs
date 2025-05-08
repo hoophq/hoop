@@ -207,11 +207,44 @@
         selected-connection (rf/subscribe [:connections/selected])
         multi-selected-connections (rf/subscribe [:connection-selection/selected])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        runbooks (rf/subscribe [:runbooks-plugin->runbooks])
         multi-exec (rf/subscribe [:multi-exec/modal])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
+
+        ;; Simplificando atoms
+        loading-runbook? (r/atom false)
+
+        ;; Função simplificada para verificar estado da conexão atual
+        handle-connection-modes! (fn [current-connection]
+                                   (when current-connection
+                                     (let [runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
+                                           exec-enabled? (= "enabled" (:access_mode_exec current-connection))
+                                           only-runbooks? (and runbooks-enabled? (not exec-enabled?))
+                                           current-panel @active-panel]
+
+                                       ;; Se temos apenas modo runbooks
+                                       (when only-runbooks?
+                                         ;; Só definimos para runbooks se não for outro painel válido
+                                         ;; Respeitamos a escolha do usuário para metadata e outros painéis
+                                         (when (nil? current-panel)
+                                           (reset! active-panel :runbooks))
+
+                                         ;; Sempre verifica e carrega o primeiro runbook quando necessário
+                                         ;; independente do painel atual
+                                         (when (and (not= :ready (:status @selected-template))
+                                                    (= :ready (:status @runbooks))
+                                                    (seq (:data @runbooks)))
+                                           (reset! loading-runbook? true)
+                                           (rf/dispatch [:runbooks-plugin->set-active-runbook (first (:data @runbooks))])))
+
+                                       ;; Se a conexão não suporta runbooks mas o painel está aberto, feche-o
+                                       (when (and exec-enabled? (not runbooks-enabled?) (= @active-panel :runbooks))
+                                         (reset! active-panel nil)
+                                         (reset! loading-runbook? false)
+                                         (rf/dispatch [:runbooks-plugin->clear-active-runbooks])))))
 
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
@@ -227,11 +260,23 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
+      ;; Aplicar lógica de modos de conexão diretamente
+      (handle-connection-modes! @selected-connection)
+
       (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             current-connection @selected-connection
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
+            runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
+            exec-enabled? (= "enabled" (:access_mode_exec current-connection))
+            only-runbooks? (and runbooks-enabled? (not exec-enabled?))
+
+            ;; Verificar se o template está pronto para atualizar estado de loading
+            _ (when (and @loading-runbook?
+                         (= :ready (:status @selected-template)))
+                (reset! loading-runbook? false))
+
             reset-metadata (fn []
                              (reset! metadata [])
                              (reset! metadata-key "")
@@ -342,20 +387,34 @@
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                              :vertical true}
-               (if (= (:status @selected-template) :ready)
-                 [:section {:class "relative h-full p-3 overflow-auto"}
-                  [runbooks-form/main {:runbook @selected-template
-                                       :preselected-connection (:name current-connection)
-                                       :selected-connections (conj @multi-selected-connections current-connection)}]]
+               ;; Container principal com posição relativa para o overlay funcionar corretamente
+               [:div {:class "relative w-full h-full"}
+                ;; Conteúdo principal (sempre renderizado)
+                (if (= (:status @selected-template) :ready)
+                  ;; Renderiza o formulário de runbook
+                  [:section {:class "h-full p-3 overflow-auto"}
+                   [runbooks-form/main {:runbook @selected-template
+                                        :preselected-connection (:name current-connection)
+                                        :selected-connections (conj @multi-selected-connections current-connection)
+                                        :only-runbooks? only-runbooks?}]]
 
-                 ;; Usar o componente otimizado do CodeMirror em vez do original
-                 [codemirror-editor
-                  {:value @script
-                   :theme (if @dark-mode?
-                            materialDark
-                            materialLight)
-                   :extensions codemirror-exts
-                   :on-change optimized-change-handler}])
+                  ;; Renderiza o editor CodeMirror
+                  [codemirror-editor
+                   {:value @script
+                    :theme (if @dark-mode?
+                             materialDark
+                             materialLight)
+                    :extensions codemirror-exts
+                    :on-change optimized-change-handler}])
+
+                ;; Overlay de loading simplificado
+                (when @loading-runbook?
+                  [:div {:class (str "absolute inset-0 z-50 "
+                                     "flex items-center justify-center "
+                                     "bg-gray-900/40 backdrop-blur-[2px]")}
+                   [:> Flex {:direction "column" :align "center" :justify "center" :gap "3"}
+                    [:> Spinner {:size "3" :color "indigo"}]
+                    [:span {:class "text-sm text-white font-medium"} "Carregando runbook..."]]])]
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main

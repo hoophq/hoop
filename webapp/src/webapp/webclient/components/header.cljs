@@ -5,13 +5,14 @@
    [re-frame.core :as rf]
    [webapp.webclient.components.search :as search]))
 
-(defn notification-badge [icon on-click active? has-data?]
+(defn notification-badge [icon on-click active? has-data? disabled?]
   [:div {:class "relative"}
    [:> IconButton
     {:class (when active? "bg-gray-8 text-gray-12")
      :size "2"
      :color "gray"
      :variant "soft"
+     :disabled disabled?
      :on-click on-click}
     icon]
    (when has-data?
@@ -31,6 +32,10 @@
                               (not (empty? @metadata-key))
                               (not (empty? @metadata-value)))
             has-multirun? (seq @selected-connections)
+            runbooks-enabled? (= "enabled" (:access_mode_runbooks @primary-connection))
+            exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
+            disable-run-button? (and (not exec-enabled?) runbooks-enabled?)
+            disable-runbooks-button? (and exec-enabled? (not runbooks-enabled?))
             on-click-icon-button (fn [type]
                                    (reset! active-panel (when-not (= @active-panel type) type))
                                    (cond
@@ -74,7 +79,8 @@
               [:> BookUp2 {:size 16}]
               #(on-click-icon-button :runbooks)
               (= @active-panel :runbooks)
-              has-runbook?]]]
+              has-runbook?
+              disable-runbooks-button?]]]
 
            [:> Tooltip {:content "Metadata"}
             [:div
@@ -82,7 +88,8 @@
               [:> PackagePlus {:size 16}]
               #(on-click-icon-button :metadata)
               (= @active-panel :metadata)
-              has-metadata?]]]
+              has-metadata?
+              false]]]
 
            [:> Tooltip {:content "MultiRun"}
             [:div
@@ -92,11 +99,12 @@
                  (reset! multi-run-panel? (not @multi-run-panel?))
                  (rf/dispatch [:connection-selection/clear]))
               @multi-run-panel?
-              has-multirun?]]]
+              has-multirun?
+              false]]]
 
            [:> Tooltip {:content "Run"}
             [:> Button
-             {:disabled false
+             {:disabled disable-run-button?
               :onClick #(submit)}
              [:> Play {:size 16}]
              "Run"]]]]]))))
