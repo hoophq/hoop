@@ -790,8 +790,8 @@ func ListTables(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
-			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to list tables: %s", outcome.Output)})
+			log.Warnf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to list tables: %s", outcome.Output)})
 			return
 		}
 
@@ -879,8 +879,13 @@ func ListTables(c *gin.Context) {
 
 	case <-timeoutCtx.Done():
 		client.Close()
-		log.Infof("runexec timeout (30s), it will return async")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+		log.Warnf("timeout (30s) obtaining tables for database '%s' using connection '%s'", dbName, conn.Name)
+		c.JSON(http.StatusRequestTimeout, gin.H{
+			"message":    fmt.Sprintf("Request timed out (30s) while fetching tables for database '%s'", dbName),
+			"connection": conn.Name,
+			"database":   dbName,
+			"timeout":    "30s",
+		})
 	}
 }
 
@@ -997,7 +1002,7 @@ func GetTableColumns(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
-			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
+			log.Warnf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
 			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to get columns: %s", outcome.Output)})
 			return
 		}
@@ -1028,7 +1033,13 @@ func GetTableColumns(c *gin.Context) {
 
 	case <-timeoutCtx.Done():
 		client.Close()
-		log.Infof("runexec timeout (30s), it will return async")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+		log.Warnf("timeout (30s) obtaining columns for table '%s' in database '%s' using connection '%s'", tableName, dbName, conn.Name)
+		c.JSON(http.StatusRequestTimeout, gin.H{
+			"message":    fmt.Sprintf("Request timed out (30s) while fetching columns for table '%s'", tableName),
+			"connection": conn.Name,
+			"database":   dbName,
+			"table":      tableName,
+			"timeout":    "30s",
+		})
 	}
 }
