@@ -748,3 +748,255 @@ func TestCleanMongoOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMongoDBColumns(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []openapi.ConnectionColumn
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    []openapi.ConnectionColumn{},
+			wantErr: false,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "valid input with single column",
+			input: `[{
+				"column_name": "id",
+				"column_type": "objectId",
+				"not_null": true
+			}]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid input with multiple columns",
+			input: `[
+				{
+					"column_name": "id",
+					"column_type": "objectId",
+					"not_null": true
+				},
+				{
+					"column_name": "name",
+					"column_type": "string",
+					"not_null": false
+				},
+				{
+					"column_name": "email",
+					"column_type": "string",
+					"not_null": true
+				}
+			]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "string",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "string",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "input with extra fields",
+			input: `[{
+				"column_name": "id",
+				"column_type": "objectId",
+				"not_null": true,
+				"extra_field": "value"
+			}]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "input with text before JSON",
+			input: `WriteResult
+			[{
+				"column_name": "id",
+				"column_type": "objectId",
+				"not_null": true
+			}]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseMongoDBColumns(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMongoDBColumns() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestParseSQLColumns(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		connectionType pb.ConnectionType
+		want           []openapi.ConnectionColumn
+	}{
+		{
+			name:           "empty input",
+			input:          "",
+			connectionType: pb.ConnectionTypePostgres,
+			want:           []openapi.ConnectionColumn{},
+		},
+		{
+			name: "postgres format",
+			input: `column_name	column_type	not_null
+id	integer	t
+name	varchar(255)	f
+email	varchar(255)	t`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "integer",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "varchar(255)",
+					Nullable: false,
+				},
+			},
+		},
+		{
+			name: "mysql format",
+			input: `column_name	column_type	not_null
+id	int	1
+name	varchar(255)	0
+email	varchar(255)	1`,
+			connectionType: pb.ConnectionTypeMySQL,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "int",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "varchar(255)",
+					Nullable: false,
+				},
+			},
+		},
+		{
+			name: "mssql format with header dash line",
+			input: `column_name	column_type	not_null
+-----------	-----------	---------
+id	int	1
+name	varchar(255)	0
+email	varchar(255)	1`,
+			connectionType: pb.ConnectionTypeMSSQL,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "int",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "varchar(255)",
+					Nullable: false,
+				},
+			},
+		},
+		{
+			name: "with parenthesis end line",
+			input: `column_name	column_type	not_null
+id	int	1
+name	varchar(255)	0
+(3 rows)`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "int",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+			},
+		},
+		{
+			name: "with fewer fields than expected",
+			input: `column_name	column_type
+id	int
+name	varchar(255)`,
+			connectionType: pb.ConnectionTypePostgres,
+			want:           []openapi.ConnectionColumn{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSQLColumns(tt.input, tt.connectionType)
+			if err != nil {
+				t.Errorf("parseSQLColumns() error = %v", err)
+				return
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -509,3 +509,67 @@ func cleanMongoOutput(output string) string {
 
 	return output[startJSON:]
 }
+
+// parseMongoDBColumns parses MongoDB output and returns a slice of ConnectionColumns
+func parseMongoDBColumns(output string) ([]openapi.ConnectionColumn, error) {
+	output = cleanMongoOutput(output)
+	if output == "" {
+		return []openapi.ConnectionColumn{}, nil
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse MongoDB response: %v", err)
+	}
+
+	columns := []openapi.ConnectionColumn{}
+	for _, row := range result {
+		column := openapi.ConnectionColumn{
+			Name:     getString(row, "column_name"),
+			Type:     getString(row, "column_type"),
+			Nullable: !getBool(row, "not_null"),
+		}
+		columns = append(columns, column)
+	}
+
+	return columns, nil
+}
+
+// parseSQLColumns parses SQL output and returns a slice of ConnectionColumns
+func parseSQLColumns(output string, connectionType pb.ConnectionType) ([]openapi.ConnectionColumn, error) {
+	columns := []openapi.ConnectionColumn{}
+	lines := strings.Split(output, "\n")
+
+	// Process each line (skip header)
+	startLine := 1
+	if connectionType == pb.ConnectionTypeMSSQL {
+		// Find the line with dashes for MSSQL
+		for i, line := range lines {
+			if strings.Contains(line, "----") {
+				startLine = i + 1
+				break
+			}
+		}
+	}
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if i < startLine || line == "" || strings.HasPrefix(line, "(") {
+			continue
+		}
+
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue
+		}
+
+		column := openapi.ConnectionColumn{
+			Name:     fields[0],
+			Type:     fields[1],
+			Nullable: fields[2] != "t" && fields[2] != "1",
+		}
+		columns = append(columns, column)
+	}
+
+	return columns, nil
+}

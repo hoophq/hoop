@@ -957,10 +957,9 @@ func GetTableColumns(c *gin.Context) {
 
 	// If the schema is not provided, use 'public' for PostgreSQL and the same database for other databases
 	if schemaName == "" {
+		schemaName = dbName
 		if currentConnectionType == pb.ConnectionTypePostgres {
 			schemaName = "public"
-		} else {
-			schemaName = dbName
 		}
 	}
 
@@ -999,7 +998,7 @@ func GetTableColumns(c *gin.Context) {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
 			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to get columns: %s", outcome.Output)})
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to get columns: %s", outcome.Output)})
 			return
 		}
 
@@ -1007,58 +1006,22 @@ func GetTableColumns(c *gin.Context) {
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
-			output := cleanMongoOutput(outcome.Output)
-			if output != "" {
-				var result []map[string]interface{}
-				if err := json.Unmarshal([]byte(output), &result); err != nil {
-					log.Errorf("failed parsing mongo response: %v", err)
-					c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
-					return
-				}
-
-				for _, row := range result {
-					column := openapi.ConnectionColumn{
-						Name:     getString(row, "column_name"),
-						Type:     getString(row, "column_type"),
-						Nullable: !getBool(row, "not_null"),
-					}
-					response.Columns = append(response.Columns, column)
-				}
+			columns, err := parseMongoDBColumns(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing mongo response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+				return
 			}
+			response.Columns = columns
 		} else {
 			// Parse SQL output
-			lines := strings.Split(outcome.Output, "\n")
-
-			// Process each line (skip header)
-			startLine := 1
-			if currentConnectionType == pb.ConnectionTypeMSSQL {
-				// Find the line with dashes for MSSQL
-				for i, line := range lines {
-					if strings.Contains(line, "----") {
-						startLine = i + 1
-						break
-					}
-				}
+			columns, err := parseSQLColumns(outcome.Output, currentConnectionType)
+			if err != nil {
+				log.Errorf("failed parsing SQL response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse SQL response: %v", err)})
+				return
 			}
-
-			for i, line := range lines {
-				line = strings.TrimSpace(line)
-				if i < startLine || line == "" || strings.HasPrefix(line, "(") {
-					continue
-				}
-
-				fields := strings.Split(line, "\t")
-				if len(fields) < 3 {
-					continue
-				}
-
-				column := openapi.ConnectionColumn{
-					Name:     fields[0],
-					Type:     fields[1],
-					Nullable: fields[2] != "t" && fields[2] != "1",
-				}
-				response.Columns = append(response.Columns, column)
-			}
+			response.Columns = columns
 		}
 
 		c.JSON(http.StatusOK, response)
