@@ -33,18 +33,6 @@ type Review struct {
 	ApprovalGroups []string `json:"groups"`
 }
 
-// Estruturas para respostas dos novos endpoints
-type TablesResponse struct {
-	Schemas []struct {
-		Name   string   `json:"name"`
-		Tables []string `json:"tables"`
-	} `json:"schemas"`
-}
-
-type ColumnsResponse struct {
-	Columns []openapi.ConnectionColumn `json:"columns"`
-}
-
 // CreateConnection
 //
 //	@Summary				Create Connection
@@ -702,7 +690,7 @@ func GetDatabaseSchemas(c *gin.Context) {
 //	@Produce		json
 //	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Param			database	query		string	true	"Name of the database"
-//	@Success		200			{object}	TablesResponse
+//	@Success		200			{object}	openapi.TablesResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/tables [get]
 func ListTables(c *gin.Context) {
@@ -795,10 +783,7 @@ func ListTables(c *gin.Context) {
 			return
 		}
 
-		response := TablesResponse{Schemas: []struct {
-			Name   string   `json:"name"`
-			Tables []string `json:"tables"`
-		}{}}
+		response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
@@ -821,10 +806,7 @@ func ListTables(c *gin.Context) {
 
 				// Convert map to response structure
 				for schemaName, tables := range schemaMap {
-					response.Schemas = append(response.Schemas, struct {
-						Name   string   `json:"name"`
-						Tables []string `json:"tables"`
-					}{
+					response.Schemas = append(response.Schemas, openapi.SchemaInfo{
 						Name:   schemaName,
 						Tables: tables,
 					})
@@ -865,10 +847,7 @@ func ListTables(c *gin.Context) {
 
 			// Convert map to response structure
 			for schemaName, tables := range schemaMap {
-				response.Schemas = append(response.Schemas, struct {
-					Name   string   `json:"name"`
-					Tables []string `json:"tables"`
-				}{
+				response.Schemas = append(response.Schemas, openapi.SchemaInfo{
 					Name:   schemaName,
 					Tables: tables,
 				})
@@ -899,7 +878,7 @@ func ListTables(c *gin.Context) {
 //	@Param			database	query		string	true	"Name of the database"
 //	@Param			table		query		string	true	"Name of the table"
 //	@Param			schema		query		string	true	"Name of the schema"
-//	@Success		200			{object}	ColumnsResponse
+//	@Success		200			{object}	openapi.ColumnsResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/columns [get]
 func GetTableColumns(c *gin.Context) {
@@ -1007,7 +986,7 @@ func GetTableColumns(c *gin.Context) {
 			return
 		}
 
-		response := ColumnsResponse{Columns: []openapi.ConnectionColumn{}}
+		response := openapi.ColumnsResponse{Columns: []openapi.ConnectionColumn{}}
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
