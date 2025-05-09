@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -787,71 +786,22 @@ func ListTables(c *gin.Context) {
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
-			output := cleanMongoOutput(outcome.Output)
-			if output != "" {
-				var result []map[string]interface{}
-				if err := json.Unmarshal([]byte(output), &result); err != nil {
-					log.Errorf("failed parsing mongo response: %v", err)
-					c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
-					return
-				}
-
-				// Organize tables by schema
-				schemaMap := make(map[string][]string)
-				for _, row := range result {
-					schemaName := getString(row, "schema_name")
-					tableName := getString(row, "object_name")
-					schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
-				}
-
-				// Convert map to response structure
-				for schemaName, tables := range schemaMap {
-					response.Schemas = append(response.Schemas, openapi.SchemaInfo{
-						Name:   schemaName,
-						Tables: tables,
-					})
-				}
+			tables, err := parseMongoDBTables(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing mongo response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+				return
 			}
+			response = tables
 		} else {
 			// Parse SQL output
-			lines := strings.Split(outcome.Output, "\n")
-			schemaMap := make(map[string][]string)
-
-			// Process each line (skip header)
-			startLine := 1
-			if currentConnectionType == pb.ConnectionTypeMSSQL {
-				// Find the line with dashes for MSSQL
-				for i, line := range lines {
-					if strings.Contains(line, "----") {
-						startLine = i + 1
-						break
-					}
-				}
+			tables, err := parseSQLTables(outcome.Output, currentConnectionType)
+			if err != nil {
+				log.Errorf("failed parsing SQL response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse SQL response: %v", err)})
+				return
 			}
-
-			for i, line := range lines {
-				line = strings.TrimSpace(line)
-				if i < startLine || line == "" || strings.HasPrefix(line, "(") {
-					continue
-				}
-
-				fields := strings.Split(line, "\t")
-				if len(fields) < 3 {
-					continue
-				}
-
-				schemaName := fields[0]
-				tableName := fields[2]
-				schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
-			}
-
-			// Convert map to response structure
-			for schemaName, tables := range schemaMap {
-				response.Schemas = append(response.Schemas, openapi.SchemaInfo{
-					Name:   schemaName,
-					Tables: tables,
-				})
-			}
+			response = tables
 		}
 
 		c.JSON(http.StatusOK, response)

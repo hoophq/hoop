@@ -573,3 +573,82 @@ func parseSQLColumns(output string, connectionType pb.ConnectionType) ([]openapi
 
 	return columns, nil
 }
+
+// parseMongoDBTables parses MongoDB output and returns a TablesResponse structure
+func parseMongoDBTables(output string) (openapi.TablesResponse, error) {
+	response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
+
+	output = cleanMongoOutput(output)
+	if output == "" {
+		return response, nil
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return response, fmt.Errorf("failed to parse MongoDB response: %v", err)
+	}
+
+	// Organize tables by schema
+	schemaMap := make(map[string][]string)
+	for _, row := range result {
+		schemaName := getString(row, "schema_name")
+		tableName := getString(row, "object_name")
+		schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+	}
+
+	// Convert map to response structure
+	for schemaName, tables := range schemaMap {
+		response.Schemas = append(response.Schemas, openapi.SchemaInfo{
+			Name:   schemaName,
+			Tables: tables,
+		})
+	}
+
+	return response, nil
+}
+
+// parseSQLTables parses SQL output and returns a TablesResponse structure
+func parseSQLTables(output string, connectionType pb.ConnectionType) (openapi.TablesResponse, error) {
+	response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
+
+	lines := strings.Split(output, "\n")
+	schemaMap := make(map[string][]string)
+
+	// Process each line (skip header)
+	startLine := 1
+	if connectionType == pb.ConnectionTypeMSSQL {
+		// Find the line with dashes for MSSQL
+		for i, line := range lines {
+			if strings.Contains(line, "----") {
+				startLine = i + 1
+				break
+			}
+		}
+	}
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if i < startLine || line == "" || strings.HasPrefix(line, "(") {
+			continue
+		}
+
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue
+		}
+
+		schemaName := fields[0]
+		tableName := fields[2]
+		schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+	}
+
+	// Convert map to response structure
+	for schemaName, tables := range schemaMap {
+		response.Schemas = append(response.Schemas, openapi.SchemaInfo{
+			Name:   schemaName,
+			Tables: tables,
+		})
+	}
+
+	return response, nil
+}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 
@@ -996,6 +997,299 @@ name	varchar(255)`,
 				t.Errorf("parseSQLColumns() error = %v", err)
 				return
 			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestParseMongoDBTables(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    openapi.TablesResponse
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+			wantErr: false,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+			wantErr: true,
+		},
+		{
+			name: "single schema with single table",
+			input: `[{
+				"schema_name": "admin",
+				"object_name": "users"
+			}]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "single schema with multiple tables",
+			input: `[
+				{
+					"schema_name": "admin",
+					"object_name": "users"
+				},
+				{
+					"schema_name": "admin",
+					"object_name": "roles"
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users", "roles"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple schemas with multiple tables",
+			input: `[
+				{
+					"schema_name": "admin",
+					"object_name": "users"
+				},
+				{
+					"schema_name": "admin",
+					"object_name": "roles"
+				},
+				{
+					"schema_name": "config",
+					"object_name": "settings"
+				},
+				{
+					"schema_name": "public",
+					"object_name": "products"
+				},
+				{
+					"schema_name": "public",
+					"object_name": "orders"
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users", "roles"},
+					},
+					{
+						Name:   "config",
+						Tables: []string{"settings"},
+					},
+					{
+						Name:   "public",
+						Tables: []string{"products", "orders"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "with MongoDB output prefix",
+			input: `WriteResult
+			[
+				{
+					"schema_name": "test",
+					"object_name": "collection1"
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "test",
+						Tables: []string{"collection1"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "with additional fields",
+			input: `[
+				{
+					"schema_name": "admin",
+					"object_name": "users",
+					"extra_field": "ignored",
+					"another_field": 123
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseMongoDBTables(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMongoDBTables() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			// Para comparar, vamos ordenar os schemas e as tabelas para garantir
+			// uma comparação consistente, já que a ordem dos maps pode variar
+			sortTablesResponse(&got)
+			sortTablesResponse(&tt.want)
+
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// sortTablesResponse ordena os schemas e tabelas para garantir comparações consistentes
+func sortTablesResponse(resp *openapi.TablesResponse) {
+	// Ordena os schemas por nome
+	sort.Slice(resp.Schemas, func(i, j int) bool {
+		return resp.Schemas[i].Name < resp.Schemas[j].Name
+	})
+
+	// Ordena as tabelas de cada schema
+	for i := range resp.Schemas {
+		sort.Strings(resp.Schemas[i].Tables)
+	}
+}
+
+func TestParseSQLTables(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		connectionType pb.ConnectionType
+		want           openapi.TablesResponse
+	}{
+		{
+			name:           "empty input",
+			input:          "",
+			connectionType: pb.ConnectionTypePostgres,
+			want:           openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+		},
+		{
+			name: "postgres format",
+			input: `schema_name	object_type	object_name
+public	table	users
+public	table	profiles
+schema1	table	records
+schema2	table	settings`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "public",
+						Tables: []string{"users", "profiles"},
+					},
+					{
+						Name:   "schema1",
+						Tables: []string{"records"},
+					},
+					{
+						Name:   "schema2",
+						Tables: []string{"settings"},
+					},
+				},
+			},
+		},
+		{
+			name: "mssql format with dashes",
+			input: `schema_name	object_type	object_name
+-----------	-----------	-----------
+dbo	table	customers
+dbo	table	orders
+sales	table	products`,
+			connectionType: pb.ConnectionTypeMSSQL,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "dbo",
+						Tables: []string{"customers", "orders"},
+					},
+					{
+						Name:   "sales",
+						Tables: []string{"products"},
+					},
+				},
+			},
+		},
+		{
+			name: "mysql format",
+			input: `schema_name	object_type	object_name
+app_db	table	users
+app_db	table	roles
+log_db	table	events`,
+			connectionType: pb.ConnectionTypeMySQL,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "app_db",
+						Tables: []string{"users", "roles"},
+					},
+					{
+						Name:   "log_db",
+						Tables: []string{"events"},
+					},
+				},
+			},
+		},
+		{
+			name: "with row count at end",
+			input: `schema_name	object_type	object_name
+public	table	users
+public	table	roles
+(2 rows)`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "public",
+						Tables: []string{"users", "roles"},
+					},
+				},
+			},
+		},
+		{
+			name: "with insufficient columns",
+			input: `schema_name	object_name
+public	users
+schema1	table1`,
+			connectionType: pb.ConnectionTypePostgres,
+			want:           openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSQLTables(tt.input, tt.connectionType)
+			if err != nil {
+				t.Errorf("parseSQLTables() error = %v", err)
+				return
+			}
+
+			// Ordenar para comparação consistente
+			sortTablesResponse(&got)
+			sortTablesResponse(&tt.want)
+
 			assert.Equal(t, tt.want, got)
 		})
 	}
