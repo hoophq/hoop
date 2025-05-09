@@ -2,31 +2,31 @@ package review
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
-	"github.com/hoophq/hoop/gateway/review"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 type reviewPlugin struct {
-	apiURL    string
-	reviewSvc *review.Service
+	apiURL string
 }
 
-func New(reviewSvc *review.Service, apiURL string) *reviewPlugin {
+func New(apiURL string) *reviewPlugin {
 	return &reviewPlugin{
-		apiURL:    apiURL,
-		reviewSvc: reviewSvc,
+		apiURL: apiURL,
 	}
 }
 
@@ -43,17 +43,17 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return p.onReceiveOSS(pctx, pkt)
 	}
 
-	otrev, err := pgreview.New().FetchOneBySid(pctx, pctx.SID)
-	if err != nil {
+	otrev, err := models.GetReviewByIdOrSid(pctx.OrgID, pctx.SID)
+	if err != nil && err != models.ErrNotFound {
 		log.With("sid", pctx.SID).Error("failed fetching session, err=%v", err)
 		return nil, plugintypes.InternalErr("failed fetching review", err)
 	}
 
-	if otrev != nil && otrev.Type == review.ReviewTypeOneTime {
-		log.With("id", otrev.Id, "sid", pctx.SID, "user", otrev.ReviewOwner.Email, "org", pctx.OrgID,
+	if otrev != nil && otrev.Type == models.ReviewTypeOneTime {
+		log.With("id", otrev.ID, "sid", pctx.SID, "user", otrev.OwnerEmail, "org", pctx.OrgID,
 			"status", otrev.Status).Info("one time review")
-		if !(otrev.Status == types.ReviewStatusApproved || otrev.Status == types.ReviewStatusProcessing) {
-			reviewURL := fmt.Sprintf("%s/reviews/%s", p.apiURL, otrev.Id)
+		if !(otrev.Status == models.ReviewStatusApproved || otrev.Status == models.ReviewStatusProcessing) {
+			reviewURL := fmt.Sprintf("%s/reviews/%s", p.apiURL, otrev.ID)
 			p.setSpecReview(pkt)
 			return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
@@ -62,17 +62,16 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			}}, nil
 		}
 
-		if otrev.Status == types.ReviewStatusApproved {
-			otrev.Status = types.ReviewStatusProcessing
-			if err := p.reviewSvc.Persist(pctx, otrev); err != nil {
-				return nil, plugintypes.InternalErr("failed saving approved review", err)
+		if otrev.Status == models.ReviewStatusApproved {
+			if err := models.UpdateReviewStatus(otrev.OrgID, otrev.ID, models.ReviewStatusProcessing); err != nil {
+				return nil, plugintypes.InternalErr("failed updating approved review", err)
 			}
 		}
 		return nil, nil
 	}
 
-	jitr, err := pgreview.New().FetchJit(pctx, pctx.UserID, pctx.ConnectionID)
-	if err != nil {
+	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
+	if err != nil && err != models.ErrNotFound {
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
 	if jitr != nil {
@@ -80,10 +79,10 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		switch err {
 		case errJitExpired: // it's expired, must not proceed without creating a jit record
 		case nil: // jit is valid
-			log.With("sid", pctx.SID, "id", jitr.Id, "user", jitr.CreatedBy, "org", pctx.OrgID,
-				"revoke-at", jitr.RevokeAt.Format(time.RFC3339),
-				"duration", fmt.Sprintf("%vm", jitr.AccessDuration.Minutes())).Infof("jit access granted")
-			newCtx, _ := context.WithTimeout(pctx.Context, jitr.AccessDuration)
+			log.With("sid", pctx.SID, "id", jitr.ID, "user", jitr.OwnerEmail, "org", pctx.OrgID,
+				"revoke-at", jitr.RevokedAt.Format(time.RFC3339),
+				"duration", fmt.Sprintf("%vs", jitr.AccessDurationSec)).Infof("jit access granted")
+			newCtx, _ := context.WithTimeout(pctx.Context, time.Duration(jitr.AccessDurationSec)*time.Second)
 			return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
 		default:
 			return nil, err
@@ -93,10 +92,11 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		Infof("jit review not found")
 
 	var accessDuration time.Duration
-	reviewType := review.ReviewTypeOneTime
+	reviewType := models.ReviewTypeOneTime
 	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
 	if isJitReview {
-		reviewType = review.ReviewTypeJit
+
+		reviewType = models.ReviewTypeJit
 		accessDuration, err = time.ParseDuration(string(durationStr))
 		if err != nil {
 			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%v", string(durationStr))
@@ -111,72 +111,73 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, plugintypes.InternalErr(err.Error(), err)
 	}
 
-	reviewGroups := make([]types.ReviewGroup, 0)
-	groups := make([]string, 0)
-	for _, s := range pctx.PluginConnectionConfig {
-		groups = append(groups, s)
-		reviewGroups = append(reviewGroups, types.ReviewGroup{
-			Group:  s,
-			Status: types.ReviewStatusPending,
+	var reviewGroups []models.ReviewGroups
+	for _, approvalGroupName := range pctx.PluginConnectionConfig {
+		reviewGroups = append(reviewGroups, models.ReviewGroups{
+			ID:        uuid.NewString(),
+			OrgID:     pctx.OrgID,
+			GroupName: approvalGroupName,
+			Status:    models.ReviewStatusPending,
 		})
 	}
 
+	// these values are only used for ad-hoc executions
+	var sessionInput string
+	var inputEnvVars map[string]string
 	var inputClientArgs []string
-	if encInputClientArgs, ok := pkt.Spec[pb.SpecClientExecArgsKey]; ok {
-		if err := pb.GobDecodeInto(encInputClientArgs, &inputClientArgs); err != nil {
-			return nil, plugintypes.InternalErr("failed decoding input client args", err)
-		}
-	}
-	newRev := &types.Review{
-		Id:              uuid.NewString(),
-		Type:            reviewType,
-		OrgId:           pctx.OrgID,
-		CreatedAt:       time.Now().UTC(),
-		Session:         pctx.SID,
-		Input:           "",
-		InputEnvVars:    nil,
-		InputClientArgs: inputClientArgs,
-		ConnectionId:    pctx.ConnectionID,
-		Connection: types.ReviewConnection{
-			Id:   pctx.ConnectionID,
-			Name: pctx.ConnectionName,
-		},
-		CreatedBy: pctx.UserID,
-		ReviewOwner: types.ReviewOwner{
-			Id:      pctx.UserID,
-			Name:    pctx.UserName,
-			Email:   pctx.UserEmail,
-			SlackID: pctx.UserSlackID,
-		},
-		AccessDuration:   accessDuration,
-		Status:           types.ReviewStatusPending,
-		ReviewGroupsIds:  groups,
-		ReviewGroupsData: reviewGroups,
-	}
-
 	if !isJitReview {
-		// only onetime reviews has inputs
-		var inputEnvVars map[string]string
+		sessionInput = string(pkt.Payload)
 		if encInputEnvVars, ok := pkt.Spec[pb.SpecClientExecEnvVar]; ok {
 			if err := pb.GobDecodeInto(encInputEnvVars, &inputEnvVars); err != nil {
 				return nil, plugintypes.InternalErr("failed decoding input env vars", err)
 			}
 		}
-		newRev.Input = string(pkt.Payload)
-		newRev.InputEnvVars = inputEnvVars
+		if encInputClientArgs, ok := pkt.Spec[pb.SpecClientExecArgsKey]; ok {
+			if err := pb.GobDecodeInto(encInputClientArgs, &inputClientArgs); err != nil {
+				return nil, plugintypes.InternalErr("failed decoding input client args", err)
+			}
+		}
+	}
+
+	newRev := &models.Review{
+		ID:                uuid.NewString(),
+		OrgID:             pctx.OrgID,
+		Type:              reviewType,
+		SessionID:         pctx.SID,
+		ConnectionName:    pctx.ConnectionName,
+		ConnectionID:      sql.NullString{String: pctx.ConnectionID, Valid: true},
+		AccessDurationSec: int64(accessDuration.Seconds()),
+		InputEnvVars:      inputEnvVars,
+		InputClientArgs:   inputClientArgs,
+		OwnerID:           pctx.UserID,
+		OwnerEmail:        pctx.UserEmail,
+		OwnerName:         ptr.String(pctx.UserName),
+		OwnerSlackID:      ptr.String(pctx.UserSlackID),
+		Status:            models.ReviewStatusPending,
+		ReviewGroups:      reviewGroups,
+		CreatedAt:         time.Now().UTC(),
+		RevokedAt:         nil,
+	}
+
+	// update session input when executing ad-hoc executions via cli
+	if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClient) {
+		if err := models.UpdateSessionInput(pctx.OrgID, pctx.SID, sessionInput); err != nil {
+			return nil, plugintypes.InternalErr("failed updating session input", err)
+		}
 	}
 
 	p.setSpecReview(pkt)
-	log.With("sid", pctx.SID, "id", newRev.Id, "user", pctx.UserID, "org", pctx.OrgID,
+	log.With("sid", pctx.SID, "id", newRev.ID, "user", pctx.UserID, "org", pctx.OrgID,
 		"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
 		Infof("creating review")
-	if err := p.reviewSvc.Persist(pctx, newRev); err != nil {
+
+	if err := models.CreateReview(newRev, sessionInput); err != nil {
 		return nil, plugintypes.InternalErr("failed saving review", err)
 	}
 
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: fmt.Appendf(nil, "%s/reviews/%s", p.apiURL, newRev.Id),
+		Payload: fmt.Appendf(nil, "%s/reviews/%s", p.apiURL, newRev.ID),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }
@@ -190,14 +191,14 @@ func (p *reviewPlugin) setSpecReview(pkt *pb.Packet) { pkt.Spec[pb.SpecHasReview
 
 var errJitExpired = errors.New("jit expired")
 
-func validateJit(jit *types.Review, t time.Time) error {
-	if jit.RevokeAt == nil || jit.RevokeAt.IsZero() {
+func validateJit(jit *models.ReviewJit, t time.Time) error {
+	if jit.RevokedAt == nil || jit.RevokedAt.IsZero() {
 		return plugintypes.InternalErr("found inconsistent jit record",
-			fmt.Errorf("revoked_at attribute is empty for %s", jit.Id))
+			fmt.Errorf("revoked_at attribute is empty for %s", jit.ID))
 	}
-	revokedAt := jit.RevokeAt.Format(time.RFC3339Nano)
-	isJitExpired := jit.RevokeAt.Before(t)
-	log.With("id", jit.Id, "created-at", jit.CreatedAt.Format(time.RFC3339Nano), "expired", isJitExpired).
+	revokedAt := jit.RevokedAt.Format(time.RFC3339Nano)
+	isJitExpired := jit.RevokedAt.Before(t)
+	log.With("id", jit.ID, "created-at", jit.CreatedAt.Format(time.RFC3339Nano), "expired", isJitExpired).
 		Infof("validating jit, now=%v, revoked-at=%v",
 			t.Format(time.RFC3339Nano), revokedAt)
 	if isJitExpired {

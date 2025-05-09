@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
@@ -15,7 +16,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	svix "github.com/svix/svix-webhooks/go"
@@ -92,13 +93,21 @@ func (p *plugin) OnReceive(ctx plugintypes.Context, pkt *pb.Packet) (*plugintype
 	if p.hasLoadedApp(ctx.OrgID) {
 		switch pkt.Type {
 		case pbagent.SessionOpen:
-			rev, err := pgreview.New().FetchOneBySid(ctx, ctx.SID)
-			if err != nil {
+			rev, err := models.GetReviewByIdOrSid(ctx.OrgID, ctx.SID)
+			if err != nil && err != models.ErrNotFound {
 				log.With("sid", ctx.SID).Warnf("failed obtaining review from current session, err=%v", err)
 				return nil, nil
 			}
-			p.processSessionOpenEvent(ctx, pkt, rev)
-			p.processReviewCreateEvent(ctx, rev)
+			var reviewInput string
+			if rev != nil {
+				reviewInput, err = rev.GetBlobInput()
+				if err != nil {
+					log.With("sid", ctx.SID).Warnf("failed obtaining review input from current session, err=%v", err)
+					return nil, nil
+				}
+			}
+			p.processSessionOpenEvent(ctx, pkt, rev, reviewInput)
+			p.processReviewCreateEvent(ctx, rev, reviewInput)
 		case pbclient.SessionClose:
 			p.processSessionCloseEvent(ctx, pkt)
 		}
@@ -132,22 +141,22 @@ func parseLangCodeBlock(connType, connSubtype string) string {
 	return "PlainText"
 }
 
-func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Review) {
+func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *models.Review, reviewInput string) {
 	// process only reviewed sessions that are in the pending state
-	if rev == nil || rev.Status != types.ReviewStatusPending {
+	if rev == nil || rev.Status != models.ReviewStatusPending {
 		return
 	}
 	// it's recommended to sent events up to 20KB (Microsoft Teams)
 	// that's why we truncated the input payload
-	if len(rev.Input) > maxInputSize {
-		rev.Input = rev.Input[0:maxInputSize]
+	if len(reviewInput) > maxInputSize {
+		reviewInput = reviewInput[0:maxInputSize]
 	}
 	appID := ctx.OrgID
 	ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelFn()
 
 	eventID := uuid.NewString()
-	accessDuration := rev.AccessDuration.String()
+	accessDuration := (time.Duration(rev.AccessDurationSec) * time.Second).String()
 	if accessDuration == "0s" {
 		accessDuration = "`-`"
 	}
@@ -169,7 +178,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Re
 					},
 					{
 						"type":      "TextBlock",
-						"text":      fmt.Sprintf("[%s](%s/sessions/%s)", rev.Session, apiURL, rev.Session),
+						"text":      fmt.Sprintf("[%s](%s/sessions/%s)", rev.SessionID, apiURL, rev.SessionID),
 						"separator": false,
 					},
 					{
@@ -179,11 +188,11 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Re
 						"facts": []map[string]any{
 							{
 								"title": "Created By",
-								"value": fmt.Sprintf("%s | %s", rev.ReviewOwner.Name, rev.ReviewOwner.Email),
+								"value": fmt.Sprintf("%s | %s", ptr.ToString(rev.OwnerName), rev.OwnerEmail),
 							},
 							{
 								"title": "Approval Groups",
-								"value": fmt.Sprintf("%q", parseGroups(rev.ReviewGroupsData)),
+								"value": fmt.Sprintf("%q", parseGroups(rev.ReviewGroups)),
 							},
 							{
 								"title": "Session Time",
@@ -191,7 +200,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Re
 							},
 							{
 								"title": "Connection",
-								"value": rev.Connection.Name,
+								"value": rev.ConnectionName,
 							},
 						},
 					},
@@ -202,7 +211,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Re
 						"bleed":     false,
 						"items": []map[string]any{{
 							"type":        "CodeBlock",
-							"codeSnippet": rev.Input,
+							"codeSnippet": reviewInput,
 							"language":    parseLangCodeBlock(ctx.ConnectionType, ctx.ConnectionSubType),
 						}},
 					},
@@ -226,7 +235,7 @@ func (p *plugin) processReviewCreateEvent(ctx plugintypes.Context, rev *types.Re
 
 }
 
-func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet, rev *types.Review) {
+func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet, rev *models.Review, reviewInput string) {
 	appID := ctx.OrgID
 	ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancelFn()
@@ -235,7 +244,7 @@ func (p *plugin) processSessionOpenEvent(ctx plugintypes.Context, pkt *pb.Packet
 		EventType: eventSessionOpenType,
 		EventId:   *svix.NullableString(func() *string { v := eventID; return &v }()),
 		// TODO: use openapi schema
-		Payload: svixSessionOpenPayload(ctx, pkt, rev),
+		Payload: svixSessionOpenPayload(ctx, pkt, reviewInput, rev),
 	})
 	if err != nil {
 		log.With("appid", appID).Warnf("failed sending webhook event to remote source, err=%v", err)
@@ -321,15 +330,15 @@ func decodeClientEnvVars(pkt *pb.Packet) map[string]string {
 	return clientEnvVars
 }
 
-func parseGroups(reviewGroups []types.ReviewGroup) []string {
+func parseGroups(reviewGroups []models.ReviewGroups) []string {
 	groups := make([]string, 0)
 	for _, g := range reviewGroups {
-		groups = append(groups, g.Group)
+		groups = append(groups, g.GroupName)
 	}
 	return groups
 }
 
-func svixSessionOpenPayload(ctx plugintypes.Context, pkt *pb.Packet, rev *types.Review) map[string]any {
+func svixSessionOpenPayload(ctx plugintypes.Context, pkt *pb.Packet, reviewInput string, rev *models.Review) map[string]any {
 	clientArgs := decodeClientArgs(pkt)
 	clientEnvVars := decodeClientEnvVars(pkt)
 
@@ -355,10 +364,10 @@ func svixSessionOpenPayload(ctx plugintypes.Context, pkt *pb.Packet, rev *types.
 	hasInputArgs := len(clientArgs) > 0
 	var reviewPayload map[string]any
 	if hasReview {
-		inputSize = len(rev.Input)
-		isInputTruncated = len(rev.Input) > maxInputSize
-		truncatedStdinInput = make([]byte, len(rev.Input))
-		_ = copy(truncatedStdinInput, []byte(rev.Input))
+		inputSize = len(reviewInput)
+		isInputTruncated = len(reviewInput) > maxInputSize
+		truncatedStdinInput = make([]byte, len(reviewInput))
+		_ = copy(truncatedStdinInput, []byte(reviewInput))
 		if len(truncatedStdinInput) > maxInputSize {
 			truncatedStdinInput = truncatedStdinInput[0:maxInputSize]
 		}
@@ -371,7 +380,7 @@ func svixSessionOpenPayload(ctx plugintypes.Context, pkt *pb.Packet, rev *types.
 		reviewPayload = map[string]any{
 			"type":        rev.Type,
 			"status":      rev.Status,
-			"owner_email": rev.ReviewOwner.Email,
+			"owner_email": rev.OwnerEmail,
 		}
 	}
 	return map[string]any{

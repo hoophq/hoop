@@ -2507,38 +2507,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/reviews": {
-            "get": {
-                "description": "List review resources",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Reviews"
-                ],
-                "summary": "List Reviews",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/openapi.Review"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
         "/reviews/{id}": {
             "get": {
-                "description": "Get review resource by id",
+                "description": "Get review resource by the id or session id",
                 "produces": [
                     "application/json"
                 ],
@@ -2611,6 +2582,18 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "404": {
@@ -3293,6 +3276,18 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "404": {
@@ -5529,54 +5524,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
                 },
-                "input": {
-                    "description": "The input that was issued when the resource was created",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "SELECT NOW()"
-                },
-                "input_clientargs": {
-                    "description": "The client arguments when the resource was created",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "readOnly": true,
-                    "example": [
-                        "-x"
-                    ]
-                },
-                "org": {
-                    "description": "Organization identifier",
-                    "type": "string",
-                    "format": "uuid",
-                    "readOnly": true,
-                    "example": "A72CF2A0-12D0-4E0D-A732-E34FFA3D9417"
-                },
-                "review_connection": {
-                    "description": "The review connection information",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.ReviewConnection"
-                        }
-                    ],
-                    "readOnly": true
-                },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ReviewGroup"
                     },
-                    "readOnly": true
-                },
-                "review_owner": {
-                    "description": "Contains information about the owner of this resource",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.ReviewOwner"
-                        }
-                    ],
                     "readOnly": true
                 },
                 "revoke_at": {
@@ -5612,23 +5565,6 @@ const docTemplate = `{
                         }
                     ],
                     "readOnly": true
-                }
-            }
-        },
-        "openapi.ReviewConnection": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "description": "The resource identifier",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "20A5AABE-C35D-4F04-A5A7-C856EE6C7703"
-                },
-                "name": {
-                    "description": "The name of the connection",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "pgdemo"
                 }
             }
         },
@@ -5895,6 +5831,15 @@ const docTemplate = `{
                     "description": "The group name that has administrator permissions",
                     "type": "string",
                     "example": "admin"
+                },
+                "analytics_tracking": {
+                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)\n* disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ],
+                    "example": "enabled"
                 },
                 "api_url": {
                     "description": "API_URL advertise to clients",

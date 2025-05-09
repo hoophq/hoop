@@ -17,7 +17,6 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
@@ -40,11 +39,10 @@ type (
 	Server struct {
 		pb.UnimplementedTransportServer
 
-		TLSConfig     *tls.Config
-		ReviewService review.Service
-		IDProvider    *idp.Provider
-		ApiHostname   string
-		AppConfig     appconfig.Config
+		TLSConfig   *tls.Config
+		IDProvider  *idp.Provider
+		ApiHostname string
+		AppConfig   appconfig.Config
 	}
 )
 

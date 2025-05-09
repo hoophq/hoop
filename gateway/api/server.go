@@ -41,16 +41,15 @@ import (
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 )
 
 type Api struct {
-	ReviewHandler review.Handler
-	IDProvider    *idp.Provider
-	GrpcURL       string
-	TLSConfig     *tls.Config
-	logger        *zap.Logger
+	ReleaseConnectionFn reviewapi.TransportReleaseConnectionFunc
+	IDProvider          *idp.Provider
+	GrpcURL             string
+	TLSConfig           *tls.Config
+	logger              *zap.Logger
 }
 
 //	@title			Hoop Api
@@ -161,7 +160,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router) {
-	reviewHandler := reviewapi.NewHandler(&api.ReviewHandler)
+	reviewHandler := reviewapi.NewHandler(api.ReleaseConnectionFn)
 	loginHandler := loginapi.New(api.IDProvider)
 
 	r.GET("/healthz", apihealthz.LivenessHandler())
@@ -315,18 +314,16 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiproxymanager.Get)
 
-	r.GET("/reviews",
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventFetchReviews),
-		reviewHandler.List)
 	r.GET("/reviews/:id",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
-		reviewHandler.Get)
+		reviewHandler.GetByIdOrSid,
+	)
 	r.PUT("/reviews/:id",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
-		reviewHandler.Put)
+		reviewHandler.ReviewByIdOrSid,
+	)
 
 	r.POST("/agents",
 		apiroutes.AdminOnlyAccessRole,
@@ -420,7 +417,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		sessionapi.Kill)
 	r.PUT("/sessions/:session_id/review",
 		r.AuthMiddleware,
-		reviewHandler.ReviewBySession)
+		reviewHandler.ReviewBySid,
+	)
 	r.PATCH("/sessions/:session_id/metadata",
 		r.AuthMiddleware,
 		sessionapi.PatchMetadata)

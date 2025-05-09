@@ -61,7 +61,7 @@ func toOpenApiSessionList(s *models.SessionList) *openapi.SessionList {
 	return newObj
 }
 
-func topOpenApiReview(r *models.Review) *openapi.SessionReview {
+func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 	if r == nil {
 		return nil
 	}

@@ -1,12 +1,12 @@
 package slack
 
 import (
+	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/review"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 type event struct {
@@ -60,9 +60,9 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		ev.msg.EventKind, ev.msg.ID, ev.msg.Status, ev.msg.GroupName)
 	switch ev.msg.EventKind {
 	case slackservice.EventKindOneTime, slackservice.EventKindJit:
-		status := types.ReviewStatusRejected
+		status := models.ReviewStatusRejected
 		if ev.msg.Status == "approved" {
-			status = types.ReviewStatusApproved
+			status = models.ReviewStatusApproved
 		}
 		p.performReview(ev, userContext, status)
 	default:
@@ -70,23 +70,32 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 	}
 }
 
-func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status types.ReviewStatus) {
-	rev, err := p.reviewSvc.Review(ctx, ev.msg.ID, status)
+func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {
+	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status)
 	var msg string
 	switch err {
-	case review.ErrNotFound:
+	case reviewapi.ErrNotFound:
 		msg = err.Error()
-	case review.ErrWrongState:
+	case reviewapi.ErrWrongState:
 		msg = "The review is already approved or rejected"
-	case review.ErrSelfApproval:
+	case reviewapi.ErrSelfApproval:
 		msg = "Unable to self approval review, contact another member of you team to approve it"
-	case review.ErrNotEligible:
+	case reviewapi.ErrNotEligible:
 		msg = "You're not eligible to approve/reject this review"
 	case nil:
-		isApproved := rev.Status == types.ReviewStatusApproved
+		isApproved := rev.Status == models.ReviewStatusApproved
 		err = ev.ss.UpdateMessage(ev.msg, isApproved)
 		log.With("sid", ev.msg.SessionID).Infof("review id=%s, isapproved=%v, status=%v, update-msg-err=%v",
 			ev.msg.ID, isApproved, rev.Status, err)
+		if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
+			// release any gRPC connection waiting for a review
+			p.TransportReleaseConnection(
+				rev.OrgID,
+				rev.SessionID,
+				ptr.ToString(rev.OwnerSlackID),
+				rev.Status.Str(),
+			)
+		}
 		return
 	default:
 		log.With("sid", ev.msg.SessionID).Warnf("failed reviewing, id=%s, internal error=%v",

@@ -4,15 +4,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
 	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
-	pgreview "github.com/hoophq/hoop/gateway/pgrest/review"
-	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -27,8 +27,8 @@ const (
 
 type (
 	slackPlugin struct {
-		reviewSvc   *review.Service
-		idpProvider *idp.Provider
+		idpProvider                *idp.Provider
+		TransportReleaseConnection reviewapi.TransportReleaseConnectionFunc
 	}
 )
 
@@ -53,12 +53,12 @@ func addSlackServiceInstance(orgID string, slackSvc *slack.SlackService) {
 	instances[orgID] = slackSvc
 }
 
-func New(reviewSvc *review.Service, idpProvider *idp.Provider) *slackPlugin {
+func New(idpProvider *idp.Provider, releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
 	instances = map[string]*slack.SlackService{}
 	mu = sync.RWMutex{}
 	return &slackPlugin{
-		reviewSvc:   reviewSvc,
-		idpProvider: idpProvider,
+		idpProvider:                idpProvider,
+		TransportReleaseConnection: releaseConnFn,
 	}
 }
 
@@ -203,21 +203,26 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		SlackChannels:  pctx.PluginConnectionConfig,
 	}
 
-	rev, err := pgreview.New().FetchOneBySid(pctx, pctx.SID)
-	if err != nil {
+	rev, err := models.GetReviewByIdOrSid(pctx.OrgID, pctx.SID)
+	if err != nil && err != models.ErrNotFound {
 		return nil, plugintypes.InternalErr("internal error, failed fetching review", err)
 	}
 	if rev != nil {
-		if rev.Status != types.ReviewStatusPending {
+		if rev.Status != models.ReviewStatusPending {
 			return nil, nil
 		}
-		sreq.ID = rev.Id
-		sreq.WebappURL = fmt.Sprintf("%s/reviews/%s", p.idpProvider.ApiURL, rev.Id)
-		sreq.ApprovalGroups = parseGroups(rev.ReviewGroupsData)
-		if rev.AccessDuration > 0 {
-			sreq.SessionTime = &rev.AccessDuration
+		reviewInput, err := rev.GetBlobInput()
+		if err != nil {
+			return nil, plugintypes.InternalErr("internal error, failed fetching review input", err)
 		}
-		sreq.Script = rev.Input
+		sreq.ID = rev.ID
+		sreq.WebappURL = fmt.Sprintf("%s/reviews/%s", p.idpProvider.ApiURL, rev.ID)
+		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
+		if rev.AccessDurationSec > 0 {
+			ad := time.Duration(rev.AccessDurationSec) * time.Second
+			sreq.SessionTime = &ad
+		}
+		sreq.Script = reviewInput
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slackMaxButtons {
@@ -258,10 +263,10 @@ func parseSlackConfig(pconf *types.PluginConfig) (*slackConfig, error) {
 	return &sc, nil
 }
 
-func parseGroups(reviewGroups []types.ReviewGroup) []string {
+func parseGroups(reviewGroups []models.ReviewGroups) []string {
 	groups := make([]string, 0)
 	for _, g := range reviewGroups {
-		groups = append(groups, g.Group)
+		groups = append(groups, g.GroupName)
 	}
 	return groups
 }
