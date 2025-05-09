@@ -28,6 +28,13 @@
 (defn- field-type-tree [type]
   (memoized-field-type-tree type))
 
+;; Componente de indicador de carregamento reutilizável
+(defn- loading-indicator [message]
+  [:div {:class "flex gap-small items-center pb-small ml-small text-xs"}
+   [:span {:class "italic"} message]
+   [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+    [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
+
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
         dropdown-columns-status (r/atom :closed)]
@@ -74,117 +81,178 @@
 
 (defn- tables-tree []
   (let [dropdown-status (r/atom {})]
-    (fn [tables]
+    (fn [tables connection-name schema-name current-database loading-columns columns-cache]
       (let [current-status @dropdown-status]
         [:div {:class "pl-small"}
          (doall
           (for [[table fields] tables]
-            ^{:key table}
-            [:div
-             [:div {:class "flex items-center gap-small mb-2"}
-              [:> Table {:size 12}]
-              [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                  "flex items-center")
-                      :on-click #(swap! dropdown-status
-                                        assoc-in [table]
-                                        (if (= (get current-status table) :open) :closed :open))}
-               [:> Text {:size "1"} table]
-               (if (= (get current-status table) :open)
-                 [:> ChevronDown {:size 12}]
-                 [:> ChevronRight {:size 12}])]]
-             [:div {:class (when (not= (get current-status table) :open)
-                             "h-0 overflow-hidden")}
-              (when (= (get current-status table) :open)
-                [fields-tree (into (sorted-map) fields)])]]))]))))
-
-(defn- sql-databases-tree [_]
-  (let [dropdown-status (r/atom {})]
-    (fn [schema has-database? current-schema database-schema-status]
-      [:div {:class (when has-database?
-                      "pl-small")}
-       (cond
-         (and (= :error database-schema-status) (:error current-schema))
-         [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-          (:error current-schema)]
-
-         :else
-         (doall
-          (for [[db tables] schema]
-            ^{:key db}
-            [:div
-             [:div {:class "flex items-center gap-small mb-2"}
-              [:> Database {:size 12}]
-              [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                  "flex items-center")
-                      :on-click #(swap! dropdown-status
-                                        assoc-in [db]
-                                        (if (= (get @dropdown-status db) :closed) :open :closed))}
-               [:> Text {:size "1"} db]
-               (if (not= (get @dropdown-status db) :closed)
-                 [:> ChevronDown {:size 12}]
-                 [:> ChevronRight {:size 12}])]]
-             [:div {:class (when (= (get @dropdown-status db) :closed)
-                             "h-0 overflow-hidden")}
-              [tables-tree (into (sorted-map) tables)]]])))])))
-
-(defn- databases-tree []
-  (let [open-database (r/atom nil)]
-    (fn [databases schema connection-name database-schema-status current-schema]
-      [:div.text-xs
-       (doall
-        (for [db databases]
-          ^{:key db}
-          [:div
-           [:div {:class "flex items-center gap-smal mb-2"}
-            [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                "flex items-center ")
-                    :on-click (fn []
-                                (reset! open-database (when (not= @open-database db) db))
-                                (if @open-database
-                                  (rf/dispatch [:database-schema->change-database
-                                                {:connection-name connection-name}
-                                                db])
-
-                                  (rf/dispatch [:database-schema->clear-selected-database])))}
-             [:> Text {:size "1" :weight "bold"} db]
-             (if (= @open-database db)
-               [:> ChevronDown {:size 12}]
-               [:> ChevronRight {:size 12}])]]
-           [:div {:class (when (not= @open-database db)
-                           "h-0 overflow-hidden")}
-
-            (cond
-              (= :loading database-schema-status)
+            (let [cache-key (str schema-name "." table)
+                  is-loading (contains? loading-columns cache-key)
+                  has-columns (or (seq fields) (contains? columns-cache cache-key))]
+              ^{:key table}
               [:div
-               {:class "flex gap-small items-center pb-small ml-small text-xs"}
-               [:span {:class "italic"}
-                "Loading tables and indexes"]
-               [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-                [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+               [:div {:class "flex items-center gap-small mb-2"}
+                [:> Table {:size 12}]
+                [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                                    (when is-loading "opacity-50 ")
+                                    "flex items-center")
+                        :on-click #(do
+                                     ;; Alternar estado do dropdown
+                                     (swap! dropdown-status
+                                            assoc-in [table]
+                                            (if (= (get current-status table) :open) :closed :open))
+                                     ;; Carregar colunas se necessário e se está abrindo a tabela
+                                     (when (and (not has-columns)
+                                                (not= (get current-status table) :open)
+                                                (not is-loading))
+                                       (rf/dispatch [:database-schema->load-columns
+                                                     connection-name
+                                                     current-database
+                                                     table
+                                                     schema-name])))}
+                 [:> Text {:size "1"} table]
+                 (if (= (get current-status table) :open)
+                   [:> ChevronDown {:size 12}]
+                   [:> ChevronRight {:size 12}])]]
+               [:div {:class (when (not= (get current-status table) :open)
+                               "h-0 overflow-hidden")}
+                (when (= (get current-status table) :open)
+                  (cond
+                    ;; Caso 1: Está carregando
+                    is-loading
+                    [loading-indicator "Loading columns..."]
 
-              (and (= :error database-schema-status) (:error current-schema))
-              [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-               (:error current-schema)]
+                    ;; Caso 2: Tem erros
+                    (and (contains? columns-cache cache-key)
+                         (contains? (get columns-cache cache-key) :error))
+                    [:> Text {:as "p" :size "1" :mb "2" :ml "2" :color "red"}
+                     (get-in columns-cache [cache-key :error])]
 
-              (empty? schema)
-              [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-               "Couldn't load tables for this database"]
+                    ;; Caso 3: Tem dados no cache
+                    (contains? columns-cache cache-key)
+                    [fields-tree (get columns-cache cache-key)]
 
-              :else
-              [sql-databases-tree schema true])]]))])))
+                    ;; Caso 4: Tem dados no schema
+                    :else
+                    [fields-tree fields]))]])))]))))
 
-(defn db-view [{:keys [type
-                       schema
-                       databases
-                       connection-name
-                       current-schema
-                       database-schema-status]}]
+;; Componente para renderizar um schema com suas tabelas
+(defn- schema-view []
+  (let [dropdown-status (r/atom :open)]
+    (fn [schema-name tables connection-name current-schema database-schema-status]
+      (let [current-database (get-in current-schema [:current-database])
+            loading-columns (get-in current-schema [:loading-columns] #{})
+            columns-cache (get-in current-schema [:columns-cache] {})]
+        [:div
+         [:div {:class "flex items-center gap-small mb-2"}
+          [:> Database {:size 12}]
+          [:span {:class "hover:text-blue-500 hover:underline cursor-pointer flex items-center"
+                  :on-click #(reset! dropdown-status (if (= @dropdown-status :open) :closed :open))}
+           [:> Text {:size "1"} schema-name]
+           (if (= @dropdown-status :open)
+             [:> ChevronDown {:size 12}]
+             [:> ChevronRight {:size 12}])]]
+         [:div {:class (when (not= @dropdown-status :open) "h-0 overflow-hidden")}
+          [tables-tree (into (sorted-map) tables)
+           connection-name
+           schema-name
+           current-database
+           loading-columns
+           columns-cache]]]))))
+
+;; Componente para renderizar um database individual
+(defn- database-item [db schema connection-name database-schema-status current-schema]
+  (let [is-selected (= db (get-in current-schema [:open-database]))
+        ;; Verificar se este database está na lista de databases em loading
+        loading-databases (get-in current-schema [:loading-databases] #{})
+        is-loading-this-db (contains? loading-databases db)
+        db-schemas (or (not-empty schema) {})]
+    [:div
+     [:div {:class "flex items-center gap-smal mb-2"}
+      [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
+                          (when is-loading-this-db "opacity-75 ")
+                          "flex items-center")
+              :on-click #(if is-selected
+                           (rf/dispatch [:database-schema->clear-selected-database])
+                           (rf/dispatch [:database-schema->change-database
+                                         {:connection-name connection-name}
+                                         db]))}
+       [:> Text {:size "1" :weight "bold"} db]
+       (if is-selected
+         [:> ChevronDown {:size 12}]
+         [:> ChevronRight {:size 12}])]]
+
+     ;; Conteúdo da database (só mostra se estiver selecionada)
+     [:div {:class (when (not is-selected) "h-0 overflow-hidden")}
+      (cond
+        ;; Loading específico para esse database
+        is-loading-this-db
+        [loading-indicator "Loading tables..."]
+
+        ;; Verificar se há schemas com tabelas para este database
+        (not-empty db-schemas)
+        [:div
+         (for [[schema-name tables] db-schemas]
+           ^{:key schema-name}
+           [schema-view
+            schema-name
+            tables
+            connection-name
+            current-schema
+            database-schema-status])]
+
+        ;; Caso contrário, mostrar mensagem que não tem tabelas
+        :else
+        [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+         (if (and (= :error database-schema-status) (:error current-schema))
+           (:error current-schema)
+           "No tables found")])]]))
+
+;; Componente principal de lista de databases
+(defn- databases-tree []
+  (fn [databases schema connection-name database-schema-status current-schema]
+    [:div.text-xs
+     (doall
+      (for [db databases]
+        ^{:key db}
+        [database-item
+         db
+         schema
+         connection-name
+         database-schema-status
+         current-schema]))]))
+
+;; Componente para bancos SQL que não têm seleção de database (Oracle, MSSQL, MySQL)
+(defn- sql-databases-tree []
+  (fn [schema connection-name current-schema database-schema-status]
+    [:div
+     (cond
+       (and (= :error database-schema-status) (:error current-schema))
+       [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+        (:error current-schema)]
+
+       :else
+       (doall
+        (for [[schema-name tables] schema]
+          ^{:key schema-name}
+          [schema-view
+           schema-name
+           tables
+           connection-name
+           current-schema
+           database-schema-status])))]))
+
+(defn db-view [{:keys [type schema databases connection-name current-schema database-schema-status]}]
   (case type
-    "oracledb" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
-    "mssql" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
+    ;; Para MSSQL, Oracle e MySQL, mostrar direto a visualização de schemas/tabelas
+    "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+    "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+    "mysql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+
+    ;; Para Postgres e MongoDB, mostrar a seleção de databases
     "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) false current-schema database-schema-status]
     "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
+
     [:> Text {:size "1"}
      "Couldn't load the schema"]))
 
@@ -194,45 +262,43 @@
                                 connection
                                 current-schema
                                 database-schema-status]}]
-  (cond
-    (= status :loading)
-    [:div
-     {:class "flex gap-small items-center py-regular text-xs"}
-     [:span {:class "italic"}
-      "Loading schema"]
-     [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-      [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+  [:div {:class "text-gray-200"}
+   (cond
+     ;; Se não temos dados ainda, mostra loading geral
+     (and (= status :loading) (empty? schema) (empty? databases))
+     [loading-indicator "Loading schema"]
 
-    (= status :failure)
-    [:div
-     {:class "flex gap-small items-center py-regular text-xs"}
-     [:span
-      "Couldn't load the schema"]]
+     ;; Falha total na carga
+     (= status :failure)
+     [:div
+      {:class "flex gap-small items-center py-regular text-xs"}
+      [:span
+       "Couldn't load the schema"]]
 
-    (= status :success)
-    [db-view {:type (:connection-type connection)
-              :schema schema
-              :databases databases
-              :connection-name (:connection-name connection)
-              :database-schema-status database-schema-status
-              :current-schema current-schema}]
-
-    :else
-    [:div
-     {:class "flex gap-small items-center py-regular text-xs"}
-     [:span {:class "italic"}
-      "Loading schema"]
-     [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-      [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]))
+     ;; Temos dados ou estamos carregando dados específicos
+     :else
+     [db-view {:type (:connection-type connection)
+               :schema schema
+               :databases databases
+               :connection-name (:connection-name connection)
+               :database-schema-status database-schema-status
+               :current-schema current-schema}])])
 
 (defn main [connection]
   (let [database-schema (rf/subscribe [::subs/database-schema])
         local-connection (r/atom (:connection-name connection))
         ;; Store the schema state locally to avoid re-renders
         ;; when there are no actual changes
-        local-schema-state (r/atom nil)]
+        local-schema-state (r/atom nil)
+        ;; Flag para controlar se já iniciamos o carregamento
+        loading-started (r/atom false)]
 
-    (when (and connection (:connection-name connection))
+    ;; Somente disparar o carregamento do schema na montagem inicial
+    ;; ou quando a conexão mudar explicitamente
+    (when (and connection
+               (:connection-name connection)
+               (not @loading-started))
+      (reset! loading-started true)
       (get-database-schema (:connection-type connection) connection))
 
     ;; Using memoization for the main component
@@ -240,7 +306,14 @@
      {:component-did-mount
       (fn []
         (when-let [schema (get-in @database-schema [:data @local-connection])]
-          (reset! local-schema-state schema)))
+          (reset! local-schema-state schema))
+        ;; Verificar se há um database salvo no localStorage e restaurá-lo
+        ;; apenas para tipos de conexão que usam múltiplos databases
+        (when (and (#{:postgres :mongodb} (keyword (:connection-type connection)))
+                   (.getItem js/localStorage "selected-database"))
+          (rf/dispatch [:database-schema->change-database
+                        {:connection-name (:connection-name connection)}
+                        (.getItem js/localStorage "selected-database")])))
 
       :component-did-update
       (fn [this old-argv]
@@ -248,6 +321,7 @@
               [_ new-conn] (r/argv this)]
           (when (not= (:connection-name old-conn) (:connection-name new-conn))
             (reset! local-connection (:connection-name new-conn))
+            (reset! loading-started false) ;; Resetar o flag para permitir novo carregamento
             (get-database-schema (:connection-type new-conn) new-conn))))
 
       :should-component-update
@@ -260,6 +334,8 @@
           (or (not= (:connection-name old-conn) (:connection-name new-conn))
               (not= (:status old-schema) (:status new-schema))
               (not= (:database-schema-status old-schema) (:database-schema-status new-schema))
+              (not= (:loading-columns old-schema) (:loading-columns new-schema))
+              (not= (:columns-cache old-schema) (:columns-cache new-schema))
               (and (= (:status new-schema) :success)
                    (not= @local-schema-state new-schema)))))
 
@@ -270,11 +346,10 @@
                      (not= @local-schema-state current-schema))
             (reset! local-schema-state current-schema))
 
-          [:div {:class "text-gray-200"}
-           [tree-view-status
-            {:status (:status current-schema)
-             :databases (:databases current-schema)
-             :schema (:schema-tree current-schema)
-             :connection connection
-             :database-schema-status (:database-schema-status current-schema)
-             :current-schema current-schema}]]))})))
+          (tree-view-status
+           {:status (:status current-schema)
+            :databases (:databases current-schema)
+            :schema (:schema-tree current-schema)
+            :connection connection
+            :database-schema-status (:database-schema-status current-schema)
+            :current-schema current-schema})))})))

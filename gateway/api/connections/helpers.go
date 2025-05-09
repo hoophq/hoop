@@ -292,153 +292,6 @@ func parseDatabaseCommandOutput(output string) ([]string, error) {
 	return cleanLines, nil
 }
 
-// parseMongoDBSchema process the raw output from the command and organize it into a SchemaResponse structure
-func parseMongoDBSchema(output string) (openapi.ConnectionSchemaResponse, error) {
-	var mongoResult []map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &mongoResult); err != nil {
-		return openapi.ConnectionSchemaResponse{}, fmt.Errorf("failed to parse MongoDB output: %v", err)
-	}
-
-	response := openapi.ConnectionSchemaResponse{}
-	schemaMap := make(map[string]*openapi.ConnectionSchema)
-
-	for _, row := range mongoResult {
-		schemaName := getString(row, "schema_name")
-		objectName := getString(row, "object_name")
-
-		// Get or create schema
-		schema, exists := schemaMap[schemaName]
-		if !exists {
-			schema = &openapi.ConnectionSchema{Name: schemaName}
-			schemaMap[schemaName] = schema
-		}
-
-		// Find or create table
-		var table *openapi.ConnectionTable
-		for i := range schema.Tables {
-			if schema.Tables[i].Name == objectName {
-				table = &schema.Tables[i]
-				break
-			}
-		}
-		if table == nil {
-			schema.Tables = append(schema.Tables, openapi.ConnectionTable{Name: objectName})
-			table = &schema.Tables[len(schema.Tables)-1]
-		}
-
-		// Add column
-		column := openapi.ConnectionColumn{
-			Name:     getString(row, "column_name"),
-			Type:     getString(row, "column_type"),
-			Nullable: !getBool(row, "not_null"),
-		}
-		table.Columns = append(table.Columns, column)
-	}
-
-	// Convert map to slice
-	for _, schema := range schemaMap {
-		response.Schemas = append(response.Schemas, *schema)
-	}
-
-	// fmt.Printf("response parseMongoDBSchema", response)
-	return response, nil
-}
-
-// parseSchemaOutput process the raw output from the command and organize it into a SchemaResponse structure
-func parseSQLSchema(output string, connType pb.ConnectionType) (openapi.ConnectionSchemaResponse, error) {
-	lines := strings.Split(output, "\n")
-	var result []map[string]interface{}
-
-	// MSSQL has a different output format with header and dashes
-	startLine := 0
-	if connType == pb.ConnectionTypeMSSQL {
-		for i, line := range lines {
-			// Skip until we find the line with dashes
-			if strings.Contains(line, "----") {
-				startLine = i // Start at the next line after dashes
-				break
-			}
-		}
-	}
-
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		if i <= startLine || line == "" || strings.HasPrefix(line, "(") {
-			continue
-		}
-
-		fields := strings.Split(line, "\t")
-		if len(fields) < 6 {
-			continue
-		}
-
-		// MSSQL uses 1/0 for boolean values
-		notNull := fields[5] == "t" || fields[5] == "1"
-		if connType == pb.ConnectionTypeMSSQL {
-			notNull = fields[5] == "1"
-		}
-
-		row := map[string]interface{}{
-			"schema_name": fields[0],
-			"object_type": fields[1],
-			"object_name": fields[2],
-			"column_name": fields[3],
-			"column_type": fields[4],
-			"not_null":    notNull,
-		}
-
-		result = append(result, row)
-	}
-
-	return organizeSchemaResponse(result), nil
-}
-
-// organizeSchemaResponse organizes the raw output into a SchemaResponse structure
-func organizeSchemaResponse(rows []map[string]interface{}) openapi.ConnectionSchemaResponse {
-	response := openapi.ConnectionSchemaResponse{Schemas: []openapi.ConnectionSchema{}}
-	schemaMap := make(map[string]*openapi.ConnectionSchema)
-
-	for _, row := range rows {
-		schemaName := row["schema_name"].(string)
-		objectName := row["object_name"].(string)
-
-		// Get or create schema
-		schema, exists := schemaMap[schemaName]
-		if !exists {
-			schema = &openapi.ConnectionSchema{Name: schemaName}
-			schemaMap[schemaName] = schema
-		}
-
-		column := openapi.ConnectionColumn{
-			Name:     row["column_name"].(string),
-			Type:     row["column_type"].(string),
-			Nullable: !row["not_null"].(bool),
-		}
-
-		// Find or create table
-		var table *openapi.ConnectionTable
-		for i := range schema.Tables {
-			if schema.Tables[i].Name == objectName {
-				table = &schema.Tables[i]
-				break
-			}
-		}
-		if table == nil {
-			schema.Tables = append(schema.Tables, openapi.ConnectionTable{Name: objectName})
-			table = &schema.Tables[len(schema.Tables)-1]
-		}
-
-		table.Columns = append(table.Columns, column)
-	}
-
-	// Convert map to slice
-	for _, schema := range schemaMap {
-		response.Schemas = append(response.Schemas, *schema)
-	}
-
-	return response
-}
-
 // validateDatabaseName returns an error if the database name contains invalid characters
 func validateDatabaseName(dbName string) error {
 	// Regular expression that allows only:
@@ -508,4 +361,175 @@ func cleanMongoOutput(output string) string {
 	}
 
 	return output[startJSON:]
+}
+
+// parseMongoDBColumns parses MongoDB output and returns a slice of ConnectionColumns
+func parseMongoDBColumns(output string) ([]openapi.ConnectionColumn, error) {
+	// Verificar se o input é inválido antes de limpar
+	originalOutput := output
+
+	// Limpar o output do MongoDB
+	output = cleanMongoOutput(output)
+	if output == "" {
+		// Se o input original não estava vazio mas cleanMongoOutput retornou vazio,
+		// provavelmente o input era inválido
+		if strings.TrimSpace(originalOutput) != "" {
+			return nil, fmt.Errorf("failed to parse invalid MongoDB response")
+		}
+		return []openapi.ConnectionColumn{}, nil
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse MongoDB response: %v", err)
+	}
+
+	columns := []openapi.ConnectionColumn{}
+	for _, row := range result {
+		columnName := getString(row, "column_name")
+		columnType := getString(row, "column_type")
+
+		// Só adiciona se tivermos pelo menos o nome da coluna
+		if columnName != "" {
+			column := openapi.ConnectionColumn{
+				Name:     columnName,
+				Type:     columnType,
+				Nullable: !getBool(row, "not_null"),
+			}
+			columns = append(columns, column)
+		}
+	}
+
+	return columns, nil
+}
+
+// parseSQLColumns parses SQL output and returns a slice of ConnectionColumns
+func parseSQLColumns(output string, connectionType pb.ConnectionType) ([]openapi.ConnectionColumn, error) {
+	columns := []openapi.ConnectionColumn{}
+	lines := strings.Split(output, "\n")
+
+	// Process each line (skip header)
+	startLine := 1
+	if connectionType == pb.ConnectionTypeMSSQL {
+		// Find the line with dashes for MSSQL
+		for i, line := range lines {
+			if strings.Contains(line, "----") {
+				startLine = i + 1
+				break
+			}
+		}
+	}
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if i < startLine || line == "" || strings.HasPrefix(line, "(") {
+			continue
+		}
+
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue
+		}
+
+		column := openapi.ConnectionColumn{
+			Name:     fields[0],
+			Type:     fields[1],
+			Nullable: fields[2] != "t" && fields[2] != "1",
+		}
+		columns = append(columns, column)
+	}
+
+	return columns, nil
+}
+
+// parseMongoDBTables parses MongoDB output and returns a TablesResponse structure
+func parseMongoDBTables(output string) (openapi.TablesResponse, error) {
+	response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
+
+	// Verificar se o input é inválido antes de limpar
+	originalOutput := output
+
+	// Limpar o output do MongoDB
+	output = cleanMongoOutput(output)
+	if output == "" {
+		// Se o input original não estava vazio mas cleanMongoOutput retornou vazio,
+		// provavelmente o input era inválido
+		if strings.TrimSpace(originalOutput) != "" {
+			return response, fmt.Errorf("failed to parse invalid MongoDB response")
+		}
+		return response, nil
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return response, fmt.Errorf("failed to parse MongoDB response: %v", err)
+	}
+
+	// Organize tables by schema
+	schemaMap := make(map[string][]string)
+	for _, row := range result {
+		schemaName := getString(row, "schema_name")
+		tableName := getString(row, "object_name")
+
+		// Garantir que temos tanto o nome do schema quanto da tabela
+		if schemaName != "" && tableName != "" {
+			schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+		}
+	}
+
+	// Convert map to response structure
+	for schemaName, tables := range schemaMap {
+		response.Schemas = append(response.Schemas, openapi.SchemaInfo{
+			Name:   schemaName,
+			Tables: tables,
+		})
+	}
+
+	return response, nil
+}
+
+// parseSQLTables parses SQL output and returns a TablesResponse structure
+func parseSQLTables(output string, connectionType pb.ConnectionType) (openapi.TablesResponse, error) {
+	response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
+
+	lines := strings.Split(output, "\n")
+	schemaMap := make(map[string][]string)
+
+	// Process each line (skip header)
+	startLine := 1
+	if connectionType == pb.ConnectionTypeMSSQL {
+		// Find the line with dashes for MSSQL
+		for i, line := range lines {
+			if strings.Contains(line, "----") {
+				startLine = i + 1
+				break
+			}
+		}
+	}
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if i < startLine || line == "" || strings.HasPrefix(line, "(") {
+			continue
+		}
+
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
+			continue
+		}
+
+		schemaName := fields[0]
+		tableName := fields[2]
+		schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+	}
+
+	// Convert map to response structure
+	for schemaName, tables := range schemaMap {
+		response.Schemas = append(response.Schemas, openapi.SchemaInfo{
+			Name:   schemaName,
+			Tables: tables,
+		})
+	}
+
+	return response, nil
 }

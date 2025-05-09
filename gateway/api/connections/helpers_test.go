@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 
@@ -169,388 +170,6 @@ func TestConnectionFilterOptions(t *testing.T) {
 			}
 			assert.Equal(t, tt.want, got)
 		})
-	}
-}
-
-func TestParseMongoDBSchema(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		want    openapi.ConnectionSchemaResponse
-		wantErr bool
-	}{
-		{
-			name: "basic schema with single table and column",
-			input: `[{
-							"schema_name": "testdb",
-							"object_name": "users",
-							"column_name": "id",
-							"column_type": "objectId",
-							"not_null": true,
-							"column_default": null,
-							"is_primary_key": true,
-							"is_foreign_key": false
-					}]`,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "testdb",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "id",
-										Type:     "objectId",
-										Nullable: false,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "schema with table containing indexes",
-			input: `[{
-							"schema_name": "testdb",
-							"object_name": "users",
-							"column_name": "email",
-							"column_type": "string",
-							"not_null": true,
-							"column_default": null,
-							"is_primary_key": false,
-							"is_foreign_key": false,
-							"index_name": "email_idx",
-							"index_columns": "email",
-							"index_is_unique": true,
-							"index_is_primary": false
-					}]`,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "testdb",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "email",
-										Type:     "string",
-										Nullable: false,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "schema with multiple tables and columns",
-			input: `[
-							{
-									"schema_name": "testdb",
-									"object_name": "users",
-									"column_name": "id",
-									"column_type": "objectId",
-									"not_null": true,
-									"is_primary_key": true,
-									"is_foreign_key": false
-							},
-							{
-									"schema_name": "testdb",
-									"object_name": "users",
-									"column_name": "name",
-									"column_type": "string",
-									"not_null": false,
-									"is_primary_key": false,
-									"is_foreign_key": false
-							},
-							{
-									"schema_name": "testdb",
-									"object_name": "posts",
-									"column_name": "id",
-									"column_type": "objectId",
-									"not_null": true,
-									"is_primary_key": true,
-									"is_foreign_key": false
-							}
-					]`,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "testdb",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "id",
-										Type:     "objectId",
-										Nullable: false,
-									},
-									{
-										Name:     "name",
-										Type:     "string",
-										Nullable: true,
-									},
-								},
-							},
-							{
-								Name: "posts",
-								Columns: []openapi.ConnectionColumn{
-									{
-										Name:     "id",
-										Type:     "objectId",
-										Nullable: false,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name:    "invalid json input",
-			input:   `{invalid json`,
-			want:    openapi.ConnectionSchemaResponse{},
-			wantErr: true,
-		},
-		{
-			name:    "empty array input",
-			input:   `[]`,
-			want:    openapi.ConnectionSchemaResponse{},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseMongoDBSchema(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseMongoDBSchema() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			assert.Equal(t, got, tt.want)
-		})
-	}
-}
-
-// TestParseMongoDBSchemaWithComplexIndexes tests the handling of complex indexes
-func TestParseMongoDBSchemaWithComplexIndexes(t *testing.T) {
-	input := `[
-			{
-					"schema_name": "testdb",
-					"object_name": "users",
-					"column_name": "email",
-					"column_type": "string",
-					"not_null": true
-			},
-			{
-					"schema_name": "testdb",
-					"object_name": "users",
-					"column_name": "age",
-					"column_type": "int",
-					"not_null": false
-			}
-	]`
-
-	want := openapi.ConnectionSchemaResponse{
-		Schemas: []openapi.ConnectionSchema{
-			{
-				Name: "testdb",
-				Tables: []openapi.ConnectionTable{
-					{
-						Name: "users",
-						Columns: []openapi.ConnectionColumn{
-							{
-								Name:     "email",
-								Type:     "string",
-								Nullable: false,
-							},
-							{
-								Name:     "age",
-								Type:     "int",
-								Nullable: true,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	got, err := parseMongoDBSchema(input)
-	if err != nil {
-		t.Errorf("parseMongoDBSchema() error = %v", err)
-		return
-	}
-	assert.Equal(t, got, want)
-}
-
-func TestParseSQLSchema(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		connType pb.ConnectionType
-		want     openapi.ConnectionSchemaResponse
-	}{
-		{
-			name: "postgres simple table",
-			input: `schema_name	object_type	object_name	column_name	column_type	not_null
-public	table	users	id	integer	t
-public	table	users	email	varchar	f`,
-			connType: pb.ConnectionTypePostgres,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "public",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{Name: "id", Type: "integer", Nullable: false},
-									{Name: "email", Type: "varchar", Nullable: true},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "mysql multiple tables",
-			input: `schema_name	object_type	object_name	column_name	column_type	not_null
-app	table	users	id	int	1
-app	table	users	name	varchar	0
-app	table	products	id	int	1`,
-			connType: pb.ConnectionTypeMySQL,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "app",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "users",
-								Columns: []openapi.ConnectionColumn{
-									{Name: "id", Type: "int", Nullable: false},
-									{Name: "name", Type: "varchar", Nullable: true},
-								},
-							},
-							{
-								Name: "products",
-								Columns: []openapi.ConnectionColumn{
-									{Name: "id", Type: "int", Nullable: false},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "mssql with header dashes",
-			input: `schema_name	object_type	object_name	column_name	column_type	not_null
------------	-----------	-----------	-----------	-----------	---------
-dbo	table	customers	id	int	1
-dbo	table	customers	name	varchar	0`,
-			connType: pb.ConnectionTypeMSSQL,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{
-					{
-						Name: "dbo",
-						Tables: []openapi.ConnectionTable{
-							{
-								Name: "customers",
-								Columns: []openapi.ConnectionColumn{
-									{Name: "id", Type: "int", Nullable: false},
-									{Name: "name", Type: "varchar", Nullable: true},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		{
-			name:     "empty input",
-			input:    "",
-			connType: pb.ConnectionTypePostgres,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{},
-			},
-		},
-		{
-			name:     "invalid line format",
-			input:    "schema_name	object_type	object_name	column_name", // menos campos que o necessário
-			connType: pb.ConnectionTypePostgres,
-			want: openapi.ConnectionSchemaResponse{
-				Schemas: []openapi.ConnectionSchema{},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseSQLSchema(tt.input, tt.connType)
-			if err != nil {
-				t.Errorf("parseSQLSchema() error = %v", err)
-				return
-			}
-
-			// Helper para comparar os resultados de forma mais detalhada
-			compareSchemaResponses(t, got, tt.want)
-		})
-	}
-}
-
-// Helper function para comparar as respostas e dar mensagens de erro mais detalhadas
-func compareSchemaResponses(t *testing.T, got, want openapi.ConnectionSchemaResponse) {
-	if len(got.Schemas) != len(want.Schemas) {
-		t.Errorf("schema count mismatch: got %d schemas, want %d schemas",
-			len(got.Schemas), len(want.Schemas))
-		return
-	}
-
-	for i, wantSchema := range want.Schemas {
-		gotSchema := got.Schemas[i]
-		if gotSchema.Name != wantSchema.Name {
-			t.Errorf("schema[%d].Name: got %q, want %q",
-				i, gotSchema.Name, wantSchema.Name)
-			continue
-		}
-
-		if len(gotSchema.Tables) != len(wantSchema.Tables) {
-			t.Errorf("schema[%d] (%s) table count mismatch: got %d tables, want %d tables",
-				i, wantSchema.Name, len(gotSchema.Tables), len(wantSchema.Tables))
-			continue
-		}
-
-		for j, wantTable := range wantSchema.Tables {
-			gotTable := gotSchema.Tables[j]
-			if gotTable.Name != wantTable.Name {
-				t.Errorf("schema[%d].table[%d].Name: got %q, want %q",
-					i, j, gotTable.Name, wantTable.Name)
-				continue
-			}
-
-			if len(gotTable.Columns) != len(wantTable.Columns) {
-				t.Errorf("schema[%d].table[%d] (%s.%s) column count mismatch: got %d columns, want %d columns",
-					i, j, wantSchema.Name, wantTable.Name, len(gotTable.Columns), len(wantTable.Columns))
-				continue
-			}
-
-			for k, wantColumn := range wantTable.Columns {
-				gotColumn := gotTable.Columns[k]
-				assert.Equal(t, gotColumn, wantColumn)
-			}
-		}
 	}
 }
 
@@ -745,6 +364,587 @@ func TestCleanMongoOutput(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("\ncleanMongoOutput(%q) =\n%v\nwant:\n%v", tt.input, result, tt.expected)
 			}
+		})
+	}
+}
+
+func TestParseMongoDBTables(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    openapi.TablesResponse
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+			wantErr: false,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+			wantErr: true,
+		},
+		{
+			name: "single schema with single table",
+			input: `[{
+				"schema_name": "admin",
+				"object_name": "users"
+			}]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "single schema with multiple tables",
+			input: `[
+				{
+					"schema_name": "admin",
+					"object_name": "users"
+				},
+				{
+					"schema_name": "admin",
+					"object_name": "roles"
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users", "roles"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple schemas with multiple tables",
+			input: `[
+				{
+					"schema_name": "admin",
+					"object_name": "users"
+				},
+				{
+					"schema_name": "admin",
+					"object_name": "roles"
+				},
+				{
+					"schema_name": "config",
+					"object_name": "settings"
+				},
+				{
+					"schema_name": "public",
+					"object_name": "products"
+				},
+				{
+					"schema_name": "public",
+					"object_name": "orders"
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users", "roles"},
+					},
+					{
+						Name:   "config",
+						Tables: []string{"settings"},
+					},
+					{
+						Name:   "public",
+						Tables: []string{"products", "orders"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "with MongoDB output prefix",
+			input: `WriteResult
+			[
+				{
+					"schema_name": "test",
+					"object_name": "collection1"
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "test",
+						Tables: []string{"collection1"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "with additional fields",
+			input: `[
+				{
+					"schema_name": "admin",
+					"object_name": "users",
+					"extra_field": "ignored",
+					"another_field": 123
+				}
+			]`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "admin",
+						Tables: []string{"users"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing schema name",
+			input: `[
+				{
+					"object_name": "users",
+					"extra_field": "ignored"
+				}
+			]`,
+			want:    openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+			wantErr: false,
+		},
+		{
+			name: "missing object name",
+			input: `[
+				{
+					"schema_name": "admin",
+					"extra_field": "ignored"
+				}
+			]`,
+			want:    openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseMongoDBTables(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMongoDBTables() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				// Para comparar, vamos ordenar os schemas e as tabelas para garantir
+				// uma comparação consistente, já que a ordem dos maps pode variar
+				sortTablesResponse(&got)
+				sortTablesResponse(&tt.want)
+
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+// sortTablesResponse ordena os schemas e tabelas para garantir comparações consistentes
+func sortTablesResponse(resp *openapi.TablesResponse) {
+	// Ordena os schemas por nome
+	sort.Slice(resp.Schemas, func(i, j int) bool {
+		return resp.Schemas[i].Name < resp.Schemas[j].Name
+	})
+
+	// Ordena as tabelas de cada schema
+	for i := range resp.Schemas {
+		sort.Strings(resp.Schemas[i].Tables)
+	}
+}
+
+func TestParseSQLTables(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		connectionType pb.ConnectionType
+		want           openapi.TablesResponse
+	}{
+		{
+			name:           "empty input",
+			input:          "",
+			connectionType: pb.ConnectionTypePostgres,
+			want:           openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+		},
+		{
+			name: "postgres format",
+			input: `schema_name	object_type	object_name
+public	table	users
+public	table	profiles
+schema1	table	records
+schema2	table	settings`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "public",
+						Tables: []string{"users", "profiles"},
+					},
+					{
+						Name:   "schema1",
+						Tables: []string{"records"},
+					},
+					{
+						Name:   "schema2",
+						Tables: []string{"settings"},
+					},
+				},
+			},
+		},
+		{
+			name: "mssql format with dashes",
+			input: `schema_name	object_type	object_name
+-----------	-----------	-----------
+dbo	table	customers
+dbo	table	orders
+sales	table	products`,
+			connectionType: pb.ConnectionTypeMSSQL,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "dbo",
+						Tables: []string{"customers", "orders"},
+					},
+					{
+						Name:   "sales",
+						Tables: []string{"products"},
+					},
+				},
+			},
+		},
+		{
+			name: "mysql format",
+			input: `schema_name	object_type	object_name
+app_db	table	users
+app_db	table	roles
+log_db	table	events`,
+			connectionType: pb.ConnectionTypeMySQL,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "app_db",
+						Tables: []string{"users", "roles"},
+					},
+					{
+						Name:   "log_db",
+						Tables: []string{"events"},
+					},
+				},
+			},
+		},
+		{
+			name: "with row count at end",
+			input: `schema_name	object_type	object_name
+public	table	users
+public	table	roles
+(2 rows)`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "public",
+						Tables: []string{"users", "roles"},
+					},
+				},
+			},
+		},
+		{
+			name: "with insufficient columns",
+			input: `schema_name	object_name
+public	users
+schema1	table1`,
+			connectionType: pb.ConnectionTypePostgres,
+			want:           openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSQLTables(tt.input, tt.connectionType)
+			if err != nil {
+				t.Errorf("parseSQLTables() error = %v", err)
+				return
+			}
+
+			// Ordenar para comparação consistente
+			sortTablesResponse(&got)
+			sortTablesResponse(&tt.want)
+
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestParseMongoDBColumns(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []openapi.ConnectionColumn
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    []openapi.ConnectionColumn{},
+			wantErr: false,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "valid input with single column",
+			input: `[{
+				"column_name": "id",
+				"column_type": "objectId",
+				"not_null": true
+			}]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid input with multiple columns",
+			input: `[
+				{
+					"column_name": "id",
+					"column_type": "objectId",
+					"not_null": true
+				},
+				{
+					"column_name": "name",
+					"column_type": "string",
+					"not_null": false
+				},
+				{
+					"column_name": "email",
+					"column_type": "string",
+					"not_null": true
+				}
+			]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "string",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "string",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "input with extra fields",
+			input: `[{
+				"column_name": "id",
+				"column_type": "objectId",
+				"not_null": true,
+				"extra_field": "value"
+			}]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "input with text before JSON",
+			input: `WriteResult
+			[{
+				"column_name": "id",
+				"column_type": "objectId",
+				"not_null": true
+			}]`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "objectId",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing column name",
+			input: `[{
+				"column_type": "objectId",
+				"not_null": true
+			}]`,
+			want:    []openapi.ConnectionColumn{},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseMongoDBColumns(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseMongoDBColumns() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestParseSQLColumns(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		connectionType pb.ConnectionType
+		want           []openapi.ConnectionColumn
+	}{
+		{
+			name:           "empty input",
+			input:          "",
+			connectionType: pb.ConnectionTypePostgres,
+			want:           []openapi.ConnectionColumn{},
+		},
+		{
+			name: "postgres format",
+			input: `column_name	column_type	not_null
+id	integer	t
+name	varchar(255)	f
+email	varchar(255)	t`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "integer",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "varchar(255)",
+					Nullable: false,
+				},
+			},
+		},
+		{
+			name: "mysql format",
+			input: `column_name	column_type	not_null
+id	int	1
+name	varchar(255)	0
+email	varchar(255)	1`,
+			connectionType: pb.ConnectionTypeMySQL,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "int",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "varchar(255)",
+					Nullable: false,
+				},
+			},
+		},
+		{
+			name: "mssql format with header dash line",
+			input: `column_name	column_type	not_null
+-----------	-----------	---------
+id	int	1
+name	varchar(255)	0
+email	varchar(255)	1`,
+			connectionType: pb.ConnectionTypeMSSQL,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "int",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+				{
+					Name:     "email",
+					Type:     "varchar(255)",
+					Nullable: false,
+				},
+			},
+		},
+		{
+			name: "with parenthesis end line",
+			input: `column_name	column_type	not_null
+id	int	1
+name	varchar(255)	0
+(3 rows)`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "int",
+					Nullable: false,
+				},
+				{
+					Name:     "name",
+					Type:     "varchar(255)",
+					Nullable: true,
+				},
+			},
+		},
+		{
+			name: "with fewer fields than expected",
+			input: `column_name	column_type
+id	int
+name	varchar(255)`,
+			connectionType: pb.ConnectionTypePostgres,
+			want:           []openapi.ConnectionColumn{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseSQLColumns(tt.input, tt.connectionType)
+			if err != nil {
+				t.Errorf("parseSQLColumns() error = %v", err)
+				return
+			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
