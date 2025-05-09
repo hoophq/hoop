@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -100,7 +99,6 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 
 		if _, err := proxyStream.PluginExecOnReceive(*pctx, pkt); err != nil {
 			log.With("sid", pctx.SID).Warnf("plugin reject packet, err=%v", err)
-			sentry.CaptureException(err)
 			return status.Errorf(codes.Internal, "internal error, plugin reject packet")
 		}
 

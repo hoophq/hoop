@@ -613,20 +613,12 @@ type SessionReview struct {
 type Review struct {
 	// Resource identifier
 	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
-	// Organization identifier
-	OrgId string `json:"org" format:"uuid" readonly:"true" example:"A72CF2A0-12D0-4E0D-A732-E34FFA3D9417"`
-	// The time the resource was created
-	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The id of session
+	Session string `json:"session" format:"uuid" readonly:"true" example:"35DB0A2F-E5CE-4AD8-A308-55C3108956E5"`
 	// The type of the review
 	// * onetime - Represents a one time execution
 	// * jit - Represents a time based review
 	Type ReviewType `json:"type" enums:"onetime,jit" readonly:"true"`
-	// The id of session
-	Session string `json:"session" format:"uuid" readonly:"true" example:"35DB0A2F-E5CE-4AD8-A308-55C3108956E5"`
-	// The input that was issued when the resource was created
-	Input string `json:"input" readonly:"true" example:"SELECT NOW()"`
-	// The client arguments when the resource was created
-	InputClientArgs []string `json:"input_clientargs" readonly:"true" example:"-x"`
 	// The amount of time (nanoseconds) to allow access to the connection. It's valid only for `jit` type reviews
 	AccessDuration time.Duration `json:"access_duration" swaggertype:"integer" readonly:"true" default:"1800000000000" example:"0"`
 	// The status of the review
@@ -640,10 +632,8 @@ type Review struct {
 	Status ReviewStatusType `json:"status"`
 	// The time when this review was revoked
 	RevokeAt *time.Time `json:"revoke_at" readonly:"true" example:""`
-	// Contains information about the owner of this resource
-	ReviewOwner ReviewOwner `json:"review_owner" readonly:"true"`
-	// The review connection information
-	Connection ReviewConnection `json:"review_connection" readonly:"true"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// Contains the groups that requires to approve this review
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
 }

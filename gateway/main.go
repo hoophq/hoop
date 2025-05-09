@@ -18,7 +18,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pgrest"
-	"github.com/hoophq/hoop/gateway/review"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
@@ -66,7 +65,6 @@ func Run() {
 		log.Fatal(err)
 	}
 
-	reviewService := review.Service{}
 	if !appconfig.Get().OrgMultitenant() {
 		log.Infof("provisioning default organization")
 		org, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
@@ -84,35 +82,27 @@ func Run() {
 		}
 	}
 
-	a := &api.Api{
-		ReviewHandler: review.Handler{Service: &reviewService},
-		IDProvider:    idProvider,
-		GrpcURL:       grpcURL,
-		TLSConfig:     tlsConfig,
-	}
-
 	g := &transport.Server{
-		TLSConfig:     tlsConfig,
-		ApiHostname:   appconfig.Get().ApiHostname(),
-		ReviewService: reviewService,
-		IDProvider:    idProvider,
-		AppConfig:     appconfig.Get(),
+		TLSConfig:   tlsConfig,
+		ApiHostname: appconfig.Get().ApiHostname(),
+		IDProvider:  idProvider,
+		AppConfig:   appconfig.Get(),
+	}
+	a := &api.Api{
+		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
+		IDProvider:          idProvider,
+		GrpcURL:             grpcURL,
+		TLSConfig:           tlsConfig,
 	}
 	// order matters
 	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
-		pluginsreview.New(
-			&review.Service{TransportService: g},
-			apiURL,
-		),
+		pluginsreview.New(apiURL),
 		pluginsaudit.New(),
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginswebhooks.New(),
-		pluginsslack.New(
-			&review.Service{TransportService: g},
-			idProvider),
+		pluginsslack.New(idProvider, g.ReleaseConnectionOnReview),
 	}
-	reviewService.TransportService = g
 
 	for _, p := range plugintypes.RegisteredPlugins {
 		pluginContext := plugintypes.Context{}

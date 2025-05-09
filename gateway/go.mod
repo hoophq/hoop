@@ -45,7 +45,6 @@ require (
 	google.golang.org/grpc v1.71.1
 	gorm.io/driver/postgres v1.5.9
 	gorm.io/gorm v1.25.12
-	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3
 )
 
 require (

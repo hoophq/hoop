@@ -2,7 +2,6 @@ package types
 
 import (
 	"encoding/json"
-	"time"
 )
 
 type APIContext struct {
@@ -56,24 +55,6 @@ type PluginConnection struct {
 	Connection Connection `json:"-"`
 }
 
-type Login struct {
-	ID       string
-	Redirect string
-	Outcome  string
-	SlackID  string
-}
-
-type Client struct {
-	ID                    string
-	OrgID                 string
-	Status                ClientStatusType
-	RequestConnectionName string
-	RequestPort           string
-	RequestAccessDuration time.Duration
-	ClientMetadata        map[string]string
-	ConnectedAt           time.Time
-}
-
 type Connection struct {
 	Id                 string         `json:"id"`
 	OrgId              string         `json:"-"`
@@ -106,62 +87,4 @@ type ConnectionInfo struct {
 	AccessModeConnect                string
 	AccessSchema                     string
 	JiraTransitionNameOnSessionClose string
-}
-
-type ReviewOwner struct {
-	Id      string `json:"id,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Email   string `json:"email"`
-	SlackID string `json:"slack_id"`
-}
-
-type ReviewConnection struct {
-	Id   string `json:"id,omitempty"`
-	Name string `json:"name"`
-}
-
-type ReviewGroup struct {
-	Id         string       `json:"id"`
-	Group      string       `json:"group"`
-	Status     ReviewStatus `json:"status"`
-	ReviewedBy *ReviewOwner `json:"reviewed_by"`
-	ReviewDate *string      `json:"review_date"`
-}
-
-type Review struct {
-	Id               string
-	OrgId            string
-	CreatedAt        time.Time
-	Type             string
-	Session          string
-	Input            string
-	InputEnvVars     map[string]string
-	InputClientArgs  []string
-	AccessDuration   time.Duration
-	Status           ReviewStatus
-	RevokeAt         *time.Time
-	CreatedBy        any
-	ReviewOwner      ReviewOwner
-	ConnectionId     any
-	Connection       ReviewConnection
-	ReviewGroupsIds  []string
-	ReviewGroupsData []ReviewGroup
-}
-
-type ReviewJSON struct {
-	Id        string    `json:"id"`
-	OrgId     string    `json:"org"`
-	CreatedAt time.Time `json:"created_at"`
-	Type      string    `json:"type"`
-	Session   string    `json:"session"`
-	Input     string    `json:"input"`
-	// Redacted for now
-	// InputEnvVars     map[string]string `json:"input_envvars"`
-	InputClientArgs  []string         `json:"input_clientargs"`
-	AccessDuration   time.Duration    `json:"access_duration"`
-	Status           ReviewStatus     `json:"status"`
-	RevokeAt         *time.Time       `json:"revoke_at"`
-	ReviewOwner      ReviewOwner      `json:"review_owner"`
-	Connection       ReviewConnection `json:"review_connection"`
-	ReviewGroupsData []ReviewGroup    `json:"review_groups_data"`
 }

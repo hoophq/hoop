@@ -79,7 +79,7 @@ type Session struct {
 	UserEmail            string            `gorm:"column:user_email"`
 	Status               string            `gorm:"column:status"`
 	ExitCode             *int              `gorm:"column:exit_code"`
-	Review               *Review           `gorm:"column:review;->"`
+	Review               *SessionReview    `gorm:"column:review;->"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -118,31 +118,18 @@ type Blob struct {
 	BlobStream json.RawMessage `gorm:"column:blob_stream"`
 	Type       string          `gorm:"column:type"`
 }
-
-type ReviewGroups struct {
-	ID           string     `json:"id"`
-	ReviewID     string     `json:"review_id"`
-	GroupName    string     `json:"group_name"`
-	Status       string     `json:"status"`
-	OwnerID      *string    `json:"owner_id"`
-	OwnerEmail   *string    `json:"owner_email"`
-	OwnerName    *string    `json:"owner_name"`
-	OwnerSlackID *string    `json:"owner_slack_id"`
-	ReviewedAt   *time.Time `json:"reviewed_at"`
-}
-
-type Review struct {
+type SessionReview struct {
 	ID                string         `json:"id"`
-	SessionID         string         `gorm:"column:session_id"`
+	SessionID         string         `json:"session_id"`
 	Type              string         `json:"type"`
 	Status            string         `json:"status"`
 	CreatedAt         time.Time      `json:"created_at"`
 	RevokedAt         *time.Time     `json:"revoked_at"`
 	AccessDurationSec int64          `json:"access_duration_sec"`
-	ReviewGroups      []ReviewGroups `json:"review_groups"`
+	ReviewGroups      []ReviewGroups `json:"review_groups" gorm:"review_groups;serializer:json"`
 }
 
-func (r *Review) Scan(value any) error {
+func (r *SessionReview) Scan(value any) error {
 	if value == nil {
 		return nil
 	}
@@ -475,6 +462,28 @@ func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any
 		return ErrNotFound
 	}
 	return res.Error
+}
+
+func UpdateSessionInput(orgID, sid, blobInput string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		blobInputID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobinput:%s", sid)).String()
+		blobInput := Blob{
+			ID:         blobInputID,
+			OrgID:      orgID,
+			Type:       "session-input",
+			BlobStream: json.RawMessage(fmt.Sprintf("[%q]", blobInput)),
+		}
+		res := tx.Table("private.blobs").
+			Where("org_id = ? AND id = ?", orgID, blobInputID).
+			Updates(blobInput)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
 func GetSessionJiraIssueByID(orgID, sid string) (string, error) {

@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
@@ -14,7 +13,7 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
@@ -153,7 +152,6 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		case *plugintypes.InternalError:
 			if v.HasInternalErr() {
 				log.With("sid", pctx.SID).Errorf("plugin rejected packet, %v", v.FullErr())
-				sentry.CaptureException(fmt.Errorf(v.FullErr()))
 			}
 			return status.Errorf(codes.Internal, err.Error())
 		case nil: // noop
@@ -286,21 +284,21 @@ func handleSystemPacketRequests(pktType string) (handled bool) {
 	return
 }
 
-func (s *Server) ReviewStatusChange(rev *types.Review) {
-	if rev.Status == types.ReviewStatusApproved {
+func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, reviewStatus string) {
+	if reviewStatus == string(openapi.ReviewStatusApproved) {
 		pluginslack.SendApprovedMessage(
-			rev.OrgId,
-			rev.ReviewOwner.SlackID,
-			rev.Session,
+			orgID,
+			reviewOwnerSlackID,
+			sid,
 			s.IDProvider.ApiURL,
 		)
 	}
 
-	proxyStream := streamclient.GetProxyStream(rev.Session)
+	proxyStream := streamclient.GetProxyStream(sid)
 	if proxyStream != nil {
-		payload := []byte(rev.Input)
+		var payload []byte
 		packetType := pbclient.SessionOpenApproveOK
-		if rev.Status == types.ReviewStatusRejected {
+		if reviewStatus == string(openapi.ReviewStatusRejected) {
 			packetType = pbclient.SessionClose
 			payload = []byte(`access to connection has been denied`)
 			proxyStream.Close(fmt.Errorf("access to connection has been denied"))
@@ -308,12 +306,11 @@ func (s *Server) ReviewStatusChange(rev *types.Review) {
 		// TODO: return erroo to caller
 		_ = proxyStream.Send(&pb.Packet{
 			Type:    packetType,
-			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(rev.Session)},
+			Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)},
 			Payload: payload,
 		})
 	}
-	log.With("sid", rev.Session, "connection", rev.Connection.Name, "has-stream", proxyStream != nil).
-		Infof("review status change")
+	log.With("sid", sid, "has-stream", proxyStream != nil).Infof("review status change")
 }
 
 func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
