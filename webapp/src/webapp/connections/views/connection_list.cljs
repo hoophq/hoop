@@ -79,6 +79,30 @@
          (when (= selected-resource value)
            [:> Check {:size 16}])])]]]])
 
+(defn can-connect? [connection]
+  (not (and (= "disabled" (:access_mode_runbooks connection))
+            (= "disabled" (:access_mode_exec connection))
+            (= "disabled" (:access_mode_connect connection)))))
+
+(defn can-open-web-terminal? [connection]
+  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
+
+    (if (or (= "enabled" (:access_mode_runbooks connection))
+            (= "enabled" (:access_mode_exec connection)))
+      true
+      false)
+
+    false))
+
+(defn can-open-native-client? [connection]
+  (if (#{"database" "application"} (:type connection))
+
+    (if (= "enabled" (:access_mode_connect connection))
+      true
+      false)
+
+    false))
+
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
@@ -88,32 +112,34 @@
         connections-search-status (r/atom nil)
         selected-tag-values (r/atom {})
         tags-popover-open? (r/atom false)
-        selected-resource (r/atom nil)
-        apply-filter (fn [filter-update]
-                       ;; Clear search results when applying filters
-                       (reset! searched-connections nil)
-                       (reset! searched-criteria-connections "")
-                       ;; Apply the filter
-                       (rf/dispatch [:connections->filter-connections filter-update]))
-        clear-all-filters (fn []
-                            (reset! selected-tag-values {})
-                            (reset! selected-resource nil)
-                            (reset! searched-connections nil)
-                            (reset! searched-criteria-connections "")
-                            (set! (.-value (js/document.getElementById "connection-search")) "")
-                            (rf/dispatch [:connections->get-connections nil]))]
+        selected-resource (r/atom nil)]
     ;; Initial load with no filters
     (rf/dispatch [:connections->get-connections nil])
-    (rf/dispatch [:users->get-user])
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:jobs/start-aws-connect-polling])
     (rf/dispatch [:connections->get-connection-tags])
+
+    (when (empty? (:data @user))
+      (rf/dispatch [:users->get-user]))
 
     (fn []
       (let [connections-search-results (if (empty? @searched-connections)
                                          (:results @connections)
                                          @searched-connections)
-            any-filters? (or (not-empty @selected-tag-values) @selected-resource)]
+            any-filters? (or (not-empty @selected-tag-values) @selected-resource)
+            clear-all-filters (fn []
+                                (reset! selected-tag-values {})
+                                (reset! selected-resource nil)
+                                (reset! searched-connections nil)
+                                (reset! searched-criteria-connections "")
+                                (set! (.-value (js/document.getElementById "connection-search")) "")
+                                (rf/dispatch [:connections->get-connections nil]))
+            apply-filter (fn [filter-update]
+                           ;; Clear search results when applying filters
+                           (reset! searched-connections nil)
+                           (reset! searched-criteria-connections "")
+                           ;; Apply the filter
+                           (rf/dispatch [:connections->filter-connections filter-update]))]
 
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
@@ -215,7 +241,7 @@
                    [:div {:class "flex truncate items-center gap-regular"}
                     [:div
                      [:figure {:class "w-6"}
-                      [:img {:src  (connection-constants/get-connection-icon connection)
+                      [:img {:src (connection-constants/get-connection-icon connection)
                              :class "w-9"}]]]
                     [:div
                      [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
@@ -230,24 +256,23 @@
                    [:div {:id "connection-info"
                           :class "flex gap-6 items-center"}
 
-                    [:> DropdownMenu.Root {:dir "rtl"}
-                     [:> DropdownMenu.Trigger
-                      [:> Button {:size 2 :variant "soft"}
-                       "Connect"
-                       [:> DropdownMenu.TriggerIcon]]]
-                     [:> DropdownMenu.Content
-                      [:> DropdownMenu.Item {:on-click
-                                             (fn []
-                                               (js/localStorage.setItem "selected-connection" connection)
-                                               (rf/dispatch [:navigate :editor-plugin-panel]))}
-                       "Open in Web Terminal"]
-                      (when (or
-                             (= "database" (:type connection))
-                             (and (= "application" (:type connection))
-                                  (= "tcp" (:subtype connection))))
-                        [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
-                                                                                      :maxWidth "446px"}])}
-                         "Open in Native Client"])]]
+                    (when (can-connect? connection)
+                      [:> DropdownMenu.Root {:dir "rtl"}
+                       [:> DropdownMenu.Trigger
+                        [:> Button {:size 2 :variant "soft"}
+                         "Connect"
+                         [:> DropdownMenu.TriggerIcon]]]
+                       [:> DropdownMenu.Content
+                        (when (can-open-web-terminal? connection)
+                          [:> DropdownMenu.Item {:on-click
+                                                 (fn []
+                                                   (js/localStorage.setItem "selected-connection" connection)
+                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
+                           "Open in Web Terminal"])
+                        (when (can-open-native-client? connection)
+                          [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
+                                                                                        :maxWidth "446px"}])}
+                           "Open in Native Client"])]])
 
                     (when (-> @user :data :admin?)
                       [:> DropdownMenu.Root {:dir "rtl"}

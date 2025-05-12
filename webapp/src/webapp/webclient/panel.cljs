@@ -116,10 +116,8 @@
         ;; Return basic parser
         basic-parser)
 
-      ;; Reuse existing parser
       (:parser @current-sql-parser))))
 
-;; Define debounce time for operations after typing
 (def editor-debounce-time 750)
 
 ;; Optimization of the typing state update function
@@ -128,10 +126,8 @@
     (reset! is-typing is-typing?)
     (aset js/window "is_typing" is-typing?)))
 
-;; Cache for CodeMirror extensions
 (def codemirror-extensions-cache (r/atom {}))
 
-;; Function to create CodeMirror extensions in an optimized way
 (defn create-codemirror-extensions [current-language
                                     parser
                                     keymap
@@ -146,9 +142,7 @@
                    is-one-connection-selected?
                    is-template-ready?]]
 
-    ;; Check if we already have the extensions in cache
     (or (get @codemirror-extensions-cache cache-key)
-        ;; If not, create new extensions and store in cache
         (let [extensions
               (concat
                (when (and (= feature-ai-ask "enabled")
@@ -168,24 +162,18 @@
                  [(.of (.-editable cm-view/EditorView) false)
                   (.of (.-readOnly cm-state/EditorState) true)]))]
 
-          ;; Store in cache and return
           (swap! codemirror-extensions-cache assoc cache-key extensions)
           extensions))))
 
-;; CodeMirror component optimized with memoization
 (def codemirror-editor
   (r/create-class
    {:display-name "OptimizedCodeMirror"
 
-    ;; shouldComponentUpdate checks if an update is necessary
     :should-component-update
-    (fn [this [_ old-props] [_ new-props]]
+    (fn [_ [_ old-props] [_ new-props]]
       (let [should-update (or
-                           ;; Editor value changed
                            (not= (:value old-props) (:value new-props))
-                           ;; Theme changed
                            (not= (:theme old-props) (:theme new-props))
-                           ;; Extensions completely changed (new reference)
                            (not= (hash (:extensions old-props)) (hash (:extensions new-props))))]
         should-update))
 
@@ -207,11 +195,32 @@
         selected-connection (rf/subscribe [:connections/selected])
         multi-selected-connections (rf/subscribe [:connection-selection/selected])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        runbooks (rf/subscribe [:runbooks-plugin->runbooks])
         multi-exec (rf/subscribe [:multi-exec/modal])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
+
+        handle-connection-modes! (fn [current-connection]
+                                   (when current-connection
+                                     (let [runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
+                                           exec-enabled? (= "enabled" (:access_mode_exec current-connection))
+                                           only-runbooks? (and runbooks-enabled? (not exec-enabled?))
+                                           current-panel @active-panel]
+
+                                       (when only-runbooks?
+                                         (when (nil? current-panel)
+                                           (reset! active-panel :runbooks))
+
+                                         (when (and (not= :ready (:status @selected-template))
+                                                    (= :ready (:status @runbooks))
+                                                    (seq (:data @runbooks)))
+                                           (rf/dispatch [:runbooks-plugin->set-active-runbook (first (:data @runbooks))])))
+
+                                       (when (and exec-enabled? (not runbooks-enabled?) (= @active-panel :runbooks))
+                                         (reset! active-panel nil)
+                                         (rf/dispatch [:runbooks-plugin->clear-active-runbooks])))))
 
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
@@ -227,11 +236,16 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
+      (handle-connection-modes! @selected-connection)
+
       (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             current-connection @selected-connection
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
+            runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
+            exec-enabled? (= "enabled" (:access_mode_exec current-connection))
+            only-runbooks? (and runbooks-enabled? (not exec-enabled?))
             reset-metadata (fn []
                              (reset! metadata [])
                              (reset! metadata-key "")
@@ -285,7 +299,6 @@
                              (:subtype current-connection)
                              (= (:status @selected-template) :ready))
 
-            ;; Handler otimizado para onChange
             optimized-change-handler (fn [value _]
                                        (reset! script value)
                                        (reset! code-saved-status :edited)
@@ -342,20 +355,24 @@
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                              :vertical true}
-               (if (= (:status @selected-template) :ready)
-                 [:section {:class "relative h-full p-3 overflow-auto"}
-                  [runbooks-form/main {:runbook @selected-template
-                                       :preselected-connection (:name current-connection)
-                                       :selected-connections (conj @multi-selected-connections current-connection)}]]
+               [:div {:class "relative w-full h-full"}
+                (if (= (:status @selected-template) :ready)
+                  [:section {:class "h-full p-3 overflow-auto"}
+                   [runbooks-form/main {:runbook @selected-template
+                                        :preselected-connection (:name current-connection)
+                                        :selected-connections (if (and (empty? @multi-selected-connections)
+                                                                       (not current-connection))
+                                                                nil
+                                                                (conj @multi-selected-connections current-connection))
+                                        :only-runbooks? only-runbooks?}]]
 
-                 ;; Usar o componente otimizado do CodeMirror em vez do original
-                 [codemirror-editor
-                  {:value @script
-                   :theme (if @dark-mode?
-                            materialDark
-                            materialLight)
-                   :extensions codemirror-exts
-                   :on-change optimized-change-handler}])
+                  [codemirror-editor
+                   {:value @script
+                    :theme (if @dark-mode?
+                             materialDark
+                             materialLight)
+                    :extensions codemirror-exts
+                    :on-change optimized-change-handler}])]
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
@@ -398,7 +415,6 @@
   (let [script-response (rf/subscribe [:editor-plugin->script])]
     (rf/dispatch [:editor-plugin->clear-script])
     (rf/dispatch [:editor-plugin->clear-connection-script])
-    (rf/dispatch [:ask-ai->clear-ai-responses])
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:audit->clear-session])
     (rf/dispatch [:plugins->get-my-plugins])

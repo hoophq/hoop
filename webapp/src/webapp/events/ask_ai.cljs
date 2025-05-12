@@ -14,9 +14,3 @@
                                     (rf/dispatch [:users->get-user])
                                     (rf/dispatch [:show-snackbar {:level :success
                                                                   :text "The Ask-AI configs were updated!"}]))}]]]}))
-
-(rf/reg-event-fx
- :ask-ai->clear-ai-responses
- (fn
-   [{:keys [db]} [_]]
-   {:db (assoc db :ask-ai->question-responses [])}))

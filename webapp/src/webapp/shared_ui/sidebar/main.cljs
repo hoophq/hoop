@@ -237,6 +237,7 @@
 (defn container []
   (let [user (rf/subscribe [:users->current-user])
         my-plugins (rf/subscribe [:plugins->my-plugins])]
+
     (when (empty? (:data @user))
       (rf/dispatch [:users->get-user]))
 

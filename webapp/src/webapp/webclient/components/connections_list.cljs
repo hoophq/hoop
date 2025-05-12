@@ -90,7 +90,12 @@
 (defn connections-list [connections selected dark-mode? admin?]
   (let [available-connections (if selected
                                 (remove #(= (:name %) (:name selected)) connections)
-                                connections)]
+                                connections)
+        filtered-connections (filter #(and
+                                       (not (#{"tcp" "httpproxy" "ssh"} (:subtype %)))
+                                       (or
+                                        (= "enabled" (:access_mode_exec %))
+                                        (= "enabled" (:access_mode_runbooks %)))) available-connections)]
     [:> Box
      [:> Flex {:justify "between" :align "center" :class "py-3 px-2 bg-gray-1 border-b border-t border-gray-3"}
       [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Connections"]
@@ -104,7 +109,7 @@
          "Create"])]
 
      ;; Lista de conexões disponíveis (excluindo a selecionada)
-     (for [conn available-connections]
+     (for [conn filtered-connections]
        ^{:key (:name conn)}
        [connection-item
         (assoc conn
