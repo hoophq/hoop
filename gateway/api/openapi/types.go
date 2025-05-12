@@ -1409,3 +1409,19 @@ type DBRoleJobStatusResult struct {
 type DBRoleJobList struct {
 	Items []DBRoleJob `json:"items"`
 }
+
+// SchemaInfo represents information about a database schema and its tables
+type SchemaInfo struct {
+	Name   string   `json:"name"`   // The name of the schema
+	Tables []string `json:"tables"` // The tables in the schema
+}
+
+// TablesResponse represents the response for a tables list request
+type TablesResponse struct {
+	Schemas []SchemaInfo `json:"schemas"` // The database schemas
+}
+
+// ColumnsResponse represents the response for a table columns request
+type ColumnsResponse struct {
+	Columns []ConnectionColumn `json:"columns"` // The columns of a table
+}

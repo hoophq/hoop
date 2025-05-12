@@ -479,6 +479,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/columns": {
+            "get": {
+                "description": "Get columns from a specific table",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Get Table Columns",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name of the database",
+                        "name": "database",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name of the table",
+                        "name": "table",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name of the schema",
+                        "name": "schema",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ColumnsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/databases": {
             "get": {
                 "description": "List all available databases for a database connection",
@@ -526,16 +594,16 @@ const docTemplate = `{
                 }
             }
         },
-        "/connections/{nameOrID}/schemas": {
+        "/connections/{nameOrID}/tables": {
             "get": {
-                "description": "Get detailed schema information including tables, views, columns and indexes",
+                "description": "List tables from a database without column details",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Connections"
                 ],
-                "summary": "Get Database Schema",
+                "summary": "List Database Tables",
                 "parameters": [
                     {
                         "type": "string",
@@ -548,7 +616,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Name of the database",
                         "name": "database",
-                        "in": "path",
+                        "in": "query",
                         "required": true
                     }
                 ],
@@ -556,7 +624,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/openapi.ConnectionSchemaResponse"
+                            "$ref": "#/definitions/openapi.TablesResponse"
                         }
                     },
                     "400": {
@@ -4058,6 +4126,18 @@ const docTemplate = `{
                 "ClientStatusDisconnected"
             ]
         },
+        "openapi.ColumnsResponse": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "description": "The columns of a table",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionColumn"
+                    }
+                }
+            }
+        },
         "openapi.Connection": {
             "type": "object",
             "required": [
@@ -4257,48 +4337,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "openapi.ConnectionSchema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "tables": {
-                    "description": "The tables of the schema",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionTable"
-                    }
-                }
-            }
-        },
-        "openapi.ConnectionSchemaResponse": {
-            "type": "object",
-            "properties": {
-                "schemas": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionSchema"
-                    }
-                }
-            }
-        },
-        "openapi.ConnectionTable": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "description": "The columns of the table",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.ConnectionColumn"
-                    }
-                },
-                "name": {
-                    "description": "The name of the table",
-                    "type": "string"
                 }
             }
         },
@@ -5813,6 +5851,22 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SchemaInfo": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "The name of the schema",
+                    "type": "string"
+                },
+                "tables": {
+                    "description": "The tables in the schema",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "openapi.SecretsManagerProviderType": {
             "type": "string",
             "enum": [
@@ -6406,6 +6460,18 @@ const docTemplate = `{
                 "StatusReviewing",
                 "StatusInvited"
             ]
+        },
+        "openapi.TablesResponse": {
+            "type": "object",
+            "properties": {
+                "schemas": {
+                    "description": "The database schemas",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SchemaInfo"
+                    }
+                }
+            }
         },
         "openapi.User": {
             "type": "object",

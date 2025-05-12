@@ -545,28 +545,166 @@ print(JSON.stringify(result));`
 	}
 }
 
-// GetDatabaseSchema return detailed schema information including tables, views, columns and indexes
+// ListTables returns only the tables of a database without column details
 //
-//	@Summary		Get Database Schema
-//	@Description	Get detailed schema information including tables, views, columns and indexes
+//	@Summary		List Database Tables
+//	@Description	List tables from a database without column details
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
-//	@Param			database	path		string	true	"Name of the database"
-//	@Success		200			{object}	openapi.ConnectionSchemaResponse
+//	@Param			database	query		string	true	"Name of the database"
+//	@Success		200			{object}	openapi.TablesResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/connections/{nameOrID}/schemas [get]
-func GetDatabaseSchemas(c *gin.Context) {
+//	@Router			/connections/{nameOrID}/tables [get]
+func ListTables(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
 	dbName := c.Query("database")
 
-	// Validate database name to prevent SQL injection
-	if dbName != "" {
-		if err := validateDatabaseName(dbName); err != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	conn, err := FetchByName(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+		return
+	}
+
+	if conn.Type != "database" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
+		return
+	}
+
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+
+	if dbName == "" {
+		connEnvs := conn.Envs
+		switch currentConnectionType {
+		case pb.ConnectionTypePostgres,
+			pb.ConnectionTypeMSSQL,
+			pb.ConnectionTypeMySQL:
+			dbName = getEnvValue(connEnvs, "envvar:DB")
+		case pb.ConnectionTypeMongoDB:
+			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
+				dbName = getMongoDBFromConnectionString(connStr)
+			}
+		case pb.ConnectionTypeOracleDB:
+			dbName = getEnvValue(connEnvs, "envvar:SID")
+		}
+
+		if dbName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "database name is required but not found in connection or query parameter"})
 			return
 		}
+	}
+
+	// Validate database name to prevent SQL injection
+	if err := validateDatabaseName(dbName); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	script := getTablesQuery(currentConnectionType, dbName)
+	if script == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
+		return
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    getAccessToken(c),
+		UserAgent:      userAgent,
+		Verb:           pb.ClientVerbPlainExec,
+	})
+	if err != nil {
+		log.Error(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	respCh := make(chan *clientexec.Response)
+	go func() {
+		defer func() { close(respCh); client.Close() }()
+		select {
+		case respCh <- client.Run([]byte(script), nil):
+		default:
+		}
+	}()
+
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancelFn()
+	select {
+	case outcome := <-respCh:
+		if outcome.ExitCode != 0 {
+			log.Warnf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to list tables: %s", outcome.Output)})
+			return
+		}
+
+		response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
+
+		if currentConnectionType == pb.ConnectionTypeMongoDB {
+			// Parse MongoDB output
+			tables, err := parseMongoDBTables(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing mongo response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+				return
+			}
+			response = tables
+		} else {
+			// Parse SQL output
+			tables, err := parseSQLTables(outcome.Output, currentConnectionType)
+			if err != nil {
+				log.Errorf("failed parsing SQL response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse SQL response: %v", err)})
+				return
+			}
+			response = tables
+		}
+
+		c.JSON(http.StatusOK, response)
+
+	case <-timeoutCtx.Done():
+		client.Close()
+		log.Warnf("timeout (30s) obtaining tables for database '%s' using connection '%s'", dbName, conn.Name)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message":    fmt.Sprintf("Request timed out (30s) while fetching tables for database '%s'", dbName),
+			"connection": conn.Name,
+			"database":   dbName,
+			"timeout":    "30s",
+		})
+	}
+}
+
+// GetTableColumns returns the columns of a specific table
+//
+//	@Summary		Get Table Columns
+//	@Description	Get columns from a specific table
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
+//	@Param			database	query		string	true	"Name of the database"
+//	@Param			table		query		string	true	"Name of the table"
+//	@Param			schema		query		string	true	"Name of the schema"
+//	@Success		200			{object}	openapi.ColumnsResponse
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/columns [get]
+func GetTableColumns(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	dbName := c.Query("database")
+	tableName := c.Query("table")
+	schemaName := c.Query("schema")
+
+	if tableName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "table parameter is required"})
+		return
 	}
 
 	conn, err := FetchByName(ctx, connNameOrID)
@@ -609,7 +747,21 @@ func GetDatabaseSchemas(c *gin.Context) {
 		}
 	}
 
-	script := getSchemaQuery(currentConnectionType, dbName)
+	// Validate database name to prevent SQL injection
+	if err := validateDatabaseName(dbName); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	// If the schema is not provided, use 'public' for PostgreSQL and the same database for other databases
+	if schemaName == "" {
+		schemaName = dbName
+		if currentConnectionType == pb.ConnectionTypePostgres {
+			schemaName = "public"
+		}
+	}
+
+	script := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
 	if script == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
@@ -638,45 +790,49 @@ func GetDatabaseSchemas(c *gin.Context) {
 		}
 	}()
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*50)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancelFn()
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
-			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to get schema: %s", outcome.Output)})
+			log.Warnf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
+			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("failed to get columns: %s", outcome.Output)})
 			return
 		}
 
-		var schema openapi.ConnectionSchemaResponse
-		var err error
+		response := openapi.ColumnsResponse{Columns: []openapi.ConnectionColumn{}}
 
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
-			output := cleanMongoOutput(outcome.Output)
-			schema, err = parseMongoDBSchema(output)
-		} else {
-			schema, err = parseSQLSchema(outcome.Output, currentConnectionType)
-		}
-
-		if err != nil {
-			log.Errorf("failed parsing schema response: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse schema: %v", err)})
-			return
-		}
-
-		if c.Request.Method == "HEAD" {
-			contentLength := -1
-			if jsonBody, err := json.Marshal(schema); err == nil {
-				contentLength = len(jsonBody)
+			// Parse MongoDB output
+			columns, err := parseMongoDBColumns(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing mongo response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+				return
 			}
-			c.Writer.Header().Set("Content-Length", fmt.Sprintf("%v", contentLength))
-			return
+			response.Columns = columns
+		} else {
+			// Parse SQL output
+			columns, err := parseSQLColumns(outcome.Output, currentConnectionType)
+			if err != nil {
+				log.Errorf("failed parsing SQL response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse SQL response: %v", err)})
+				return
+			}
+			response.Columns = columns
 		}
-		c.JSON(http.StatusOK, schema)
+
+		c.JSON(http.StatusOK, response)
 
 	case <-timeoutCtx.Done():
 		client.Close()
-		log.Infof("runexec timeout (50s), it will return async")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Request timed out"})
+		log.Warnf("timeout (30s) obtaining columns for table '%s' in database '%s' using connection '%s'", tableName, dbName, conn.Name)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message":    fmt.Sprintf("Request timed out (30s) while fetching columns for table '%s'", tableName),
+			"connection": conn.Name,
+			"database":   dbName,
+			"table":      tableName,
+			"timeout":    "30s",
+		})
 	}
 }

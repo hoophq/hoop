@@ -170,7 +170,7 @@
       (do
         (let [current-url (.. js/window -location -href)]
           (.setItem js/localStorage "redirect-after-auth" current-url)
-          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
+          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
         [loading-transition])
 
       (do
@@ -183,12 +183,16 @@
           (rf/dispatch [:connections->connection-get-status])
 
           (cond
-            (and (not (:loading @user)) (empty? (:data @user)))
+            (:loading @user)
+            [loading-transition]
+
+            (and (not (:loading @user))
+                 (empty? (:data @user)))
             (do
               (let [current-url (.. js/window -location -href)]
                 (.setItem js/localStorage "redirect-after-auth" current-url)
                 (.removeItem js/localStorage "jwt-token")
-                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 500))
+                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
 
               [loading-transition])
 
