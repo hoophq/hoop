@@ -673,7 +673,7 @@ func ListTables(c *gin.Context) {
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Warnf("timeout (30s) obtaining tables for database '%s' using connection '%s'", dbName, conn.Name)
-		c.JSON(http.StatusRequestTimeout, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"message":    fmt.Sprintf("Request timed out (30s) while fetching tables for database '%s'", dbName),
 			"connection": conn.Name,
 			"database":   dbName,
@@ -827,7 +827,7 @@ func GetTableColumns(c *gin.Context) {
 	case <-timeoutCtx.Done():
 		client.Close()
 		log.Warnf("timeout (30s) obtaining columns for table '%s' in database '%s' using connection '%s'", tableName, dbName, conn.Name)
-		c.JSON(http.StatusRequestTimeout, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
 			"message":    fmt.Sprintf("Request timed out (30s) while fetching columns for table '%s'", tableName),
 			"connection": conn.Name,
 			"database":   dbName,
