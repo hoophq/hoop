@@ -23,7 +23,10 @@
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
         session-list (rf/subscribe [:audit->filtered-session-by-id])]
-    (rf/dispatch [:users->get-user])
+
+    (when (empty? (:data @user))
+      (rf/dispatch [:users->get-user]))
+
     (fn []
       [:div {:class "px-large flex flex-col bg-white rounded-lg py-regular h-full"}
        (when (and (= (:status @session-list) :loading) (empty? (:data @session-list)))

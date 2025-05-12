@@ -8,7 +8,9 @@
         check-performed? (atom false)]
 
     ;; Dispatch data loading
-    (rf/dispatch [:users->get-user])
+    (when (empty? (:data @user))
+      (rf/dispatch [:users->get-user]))
+
     (rf/dispatch [:connections->get-connections])
 
     (fn []

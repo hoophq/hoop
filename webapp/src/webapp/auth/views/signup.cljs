@@ -26,7 +26,10 @@
   (let [organization-name (r/atom "")
         user-name (r/atom "")
         userinfo (rf/subscribe [:users->current-user])]
-    (rf/dispatch [:users->get-user])
+
+    (when (empty? (:data @userinfo))
+      (rf/dispatch [:users->get-user]))
+
     (fn []
       (let [login-error (.getItem js/localStorage "login_error")
             current-user (:data @userinfo)]
