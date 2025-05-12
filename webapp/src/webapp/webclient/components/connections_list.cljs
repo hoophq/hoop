@@ -92,7 +92,7 @@
                                 (remove #(= (:name %) (:name selected)) connections)
                                 connections)
         filtered-connections (filter #(and
-                                       (not (#{"tcp" "httpproxy"} (:subtype %)))
+                                       (not (#{"tcp" "httpproxy" "ssh"} (:subtype %)))
                                        (or
                                         (= "enabled" (:access_mode_exec %))
                                         (= "enabled" (:access_mode_runbooks %)))) available-connections)]
