@@ -231,13 +231,16 @@
       [form-label label])
     (when (not (cs/blank? helper-text))
       [form-helper-text helper-text dark])]
-   [:> Select.Root {:size (or size "3")
-                    :name name
-                    :value selected
-                    :default-value default-value
-                    :on-value-change on-change
-                    :required (or required false)
-                    :disabled (or disabled false)}
+   [:> Select.Root (merge
+                    (when-not (cs/blank? default-value)
+                      {:default-value default-value})
+                    (when-not (cs/blank? selected)
+                      {:value selected})
+                    {:size (or size "3")
+                     :name name
+                     :on-value-change on-change
+                     :required (or required false)
+                     :disabled (or disabled false)})
     [:> Select.Trigger {:placeholder (or placeholder "Select one")
                         :variant (or variant "surface")
                         :color "indigo"

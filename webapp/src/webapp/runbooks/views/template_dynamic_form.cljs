@@ -14,13 +14,14 @@
                 max
                 step
                 helper-text
-                options]}]
+                options
+                default-value]}]
   [:div
    (case type
      "select" [forms/select (merge
                              {:label label
                               :on-change on-change
-                              :selected (or value "")
+                              :selected (or value default-value "")
                               :options (map #(into {} {:value % :text %}) options)
                               :helper-text helper-text}
                              (when (and
@@ -30,7 +31,7 @@
      [forms/input (merge
                    {:label label
                     :placeholder (or placeholder (str "Define a value for " label))
-                    :value value
+                    :value (or value default-value "")
                     :type type
                     :pattern pattern
                     :on-change on-change
