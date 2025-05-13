@@ -587,8 +587,6 @@ ORDER BY
 
 func getMongoDBSchemasQuery(dbName string) string {
 	return fmt.Sprintf(`
-// MongoDB não usa o conceito tradicional de schemas
-// Retornamos o próprio banco como schema único
 // Ensure verbosity is off
 if (typeof noVerbose === 'function') noVerbose();
 if (typeof config !== 'undefined') config.verbosity = 0;
