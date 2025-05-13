@@ -61,6 +61,7 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
 
 RUN mkdir -p /app && \
   mkdir -p /opt/hoop/sessions && \
+  mkdir -p /opt/hoop/bin && \
   apt-get update -y && \
   apt-get install -y \
   python3-dev \
@@ -160,8 +161,7 @@ RUN pip3 install -U \
   boto3==1.37.38 \
   requests==2.27.1
 
-COPY rootfs/usr/local/bin/mongosh /usr/local/bin/mongosh
-COPY rootfs/usr/local/bin/bq /usr/local/bin/bq
+COPY rootfs/usr/local/bin /usr/local/bin/
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
   locale-gen
 ENV LANG=en_US.UTF-8
