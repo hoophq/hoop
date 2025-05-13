@@ -513,10 +513,9 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Name of the schema",
+                        "description": "Name of the schema (optional - for PostgreSQL default is 'public', for others defaults to database name)",
                         "name": "schema",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -618,6 +617,12 @@ const docTemplate = `{
                         "name": "database",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name of the schema (optional - if not provided, returns tables from all schemas)",
+                        "name": "schema",
+                        "in": "query"
                     }
                 ],
                 "responses": {

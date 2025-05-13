@@ -103,14 +103,18 @@ func getPostgresTablesQuery(dbName string) string {
     \set QUIET off
 SELECT
     n.nspname as schema_name,
-    'table' as object_type,
+    CASE c.relkind
+        WHEN 'r' THEN 'table'
+        WHEN 'v' THEN 'view'
+        WHEN 'm' THEN 'materialized_view'
+        ELSE c.relkind::text
+    END as object_type,
     c.relname as object_name
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind = 'r'
+WHERE c.relkind IN ('r', 'v', 'm')
   AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
   AND n.nspname !~ '^pg_temp_'
-  AND pg_catalog.pg_table_is_visible(c.oid)
 ORDER BY n.nspname, c.relname;`, dbName)
 }
 
@@ -119,11 +123,15 @@ func getMSSQLTablesQuery() string {
 SET NOCOUNT ON;
 SELECT
     s.name as schema_name,
-    'table' as object_type,
+    CASE o.type
+        WHEN 'U' THEN 'table'
+        WHEN 'V' THEN 'view'
+        ELSE o.type
+    END as object_type,
     o.name as object_name
 FROM sys.schemas s
 JOIN sys.objects o ON o.schema_id = s.schema_id
-WHERE o.type = 'U'  -- U for user-defined tables only
+WHERE o.type IN ('U', 'V')  -- U for user-defined tables, V for views
 ORDER BY s.name, o.name;`
 }
 
@@ -131,11 +139,14 @@ func getMySQLTablesQuery() string {
 	return `
 SELECT
     t.TABLE_SCHEMA as schema_name,
-    'table' as object_type,
+    CASE t.TABLE_TYPE
+        WHEN 'BASE TABLE' THEN 'table'
+        WHEN 'VIEW' THEN 'view'
+        ELSE LOWER(t.TABLE_TYPE)
+    END as object_type,
     t.TABLE_NAME as object_name
 FROM INFORMATION_SCHEMA.TABLES t
 WHERE t.TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog', 'sys')
-AND t.TABLE_TYPE = 'BASE TABLE'
 ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;`
 }
 
@@ -227,7 +238,7 @@ FROM sys.schemas s
 JOIN sys.objects o ON o.schema_id = s.schema_id
 JOIN sys.columns c ON o.object_id = c.object_id
 JOIN sys.types t ON c.user_type_id = t.user_type_id
-WHERE s.name = '%s' AND o.name = '%s' AND o.type = 'U'
+WHERE s.name = '%s' AND o.name = '%s' AND o.type IN ('U', 'V')
 ORDER BY c.column_id;`, schemaName, tableName)
 }
 
@@ -270,10 +281,21 @@ var dbName = '%s';
 var collName = '%s';
 
 var coll = db.getSiblingDB(dbName).getCollection(collName);
-var sample = coll.findOne();
+var samples = coll.find().limit(10).toArray(); // Examine up to 10 documents for a better schema sample
 
-function getSchemaFromDoc(doc, prefix = '') {
-    var schema = {};
+function getMongoType(val) {
+    if (val === null) return 'null';
+    if (val instanceof ObjectId) return 'objectId';
+    if (val instanceof Date) return 'date';
+    if (val instanceof NumberLong) return 'numberLong';
+    if (val instanceof NumberInt) return 'numberInt';
+    if (val instanceof NumberDecimal) return 'decimal';
+    if (val instanceof BinData) return 'binary';
+    if (Array.isArray(val)) return 'array';
+    return typeof val;
+}
+
+function getSchemaFromDoc(doc, prefix = '', schema = {}) {
     Object.keys(doc || {}).forEach(function(key) {
         var fullKey = prefix ? prefix + '.' + key : key;
         var value = doc[key];
@@ -288,13 +310,18 @@ function getSchemaFromDoc(doc, prefix = '') {
                 type: 'array',
                 nullable: false
             };
-        } else if (typeof value === 'object' && !(value instanceof ObjectId) && !(value instanceof Date)) {
-            Object.assign(schema, getSchemaFromDoc(value, fullKey));
+            // If array has elements, check first element's type
+            if (value.length > 0) {
+                schema[fullKey].elementType = getMongoType(value[0]);
+            }
+        } else if (typeof value === 'object' && !(value instanceof ObjectId) && 
+                  !(value instanceof Date) && !(value instanceof NumberLong) && 
+                  !(value instanceof NumberInt) && !(value instanceof NumberDecimal) && 
+                  !(value instanceof BinData)) {
+            getSchemaFromDoc(value, fullKey, schema);
         } else {
             schema[fullKey] = {
-                type: value instanceof ObjectId ? 'objectId' :
-                      value instanceof Date ? 'date' :
-                      typeof value,
+                type: getMongoType(value),
                 nullable: false
             };
         }
@@ -302,7 +329,12 @@ function getSchemaFromDoc(doc, prefix = '') {
     return schema;
 }
 
-var collSchema = getSchemaFromDoc(sample);
+// Combine schema from all sample documents
+var collSchema = {};
+samples.forEach(function(sample) {
+    collSchema = getSchemaFromDoc(sample, '', collSchema);
+});
+
 Object.keys(collSchema).forEach(function(field) {
     result.push({
         column_name: field,
@@ -404,10 +436,21 @@ var dbName = '%s';
 
 db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
     var coll = db.getSiblingDB(dbName).getCollection(collName);
-    var sample = coll.findOne();
+    var samples = coll.find().limit(10).toArray(); // Examine up to 10 documents for a better schema sample
 
-    function getSchemaFromDoc(doc, prefix = '') {
-        var schema = {};
+    function getMongoType(val) {
+        if (val === null) return 'null';
+        if (val instanceof ObjectId) return 'objectId';
+        if (val instanceof Date) return 'date';
+        if (val instanceof NumberLong) return 'numberLong';
+        if (val instanceof NumberInt) return 'numberInt';
+        if (val instanceof NumberDecimal) return 'decimal';
+        if (val instanceof BinData) return 'binary';
+        if (Array.isArray(val)) return 'array';
+        return typeof val;
+    }
+
+    function getSchemaFromDoc(doc, prefix = '', schema = {}) {
         Object.keys(doc || {}).forEach(function(key) {
             var fullKey = prefix ? prefix + '.' + key : key;
             var value = doc[key];
@@ -422,13 +465,18 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
                     type: 'array',
                     nullable: false
                 };
-            } else if (typeof value === 'object' && !(value instanceof ObjectId) && !(value instanceof Date)) {
-                Object.assign(schema, getSchemaFromDoc(value, fullKey));
+                // If array has elements, check first element's type
+                if (value.length > 0) {
+                    schema[fullKey].elementType = getMongoType(value[0]);
+                }
+            } else if (typeof value === 'object' && !(value instanceof ObjectId) && 
+                      !(value instanceof Date) && !(value instanceof NumberLong) && 
+                      !(value instanceof NumberInt) && !(value instanceof NumberDecimal) && 
+                      !(value instanceof BinData)) {
+                getSchemaFromDoc(value, fullKey, schema);
             } else {
                 schema[fullKey] = {
-                    type: value instanceof ObjectId ? 'objectId' :
-                          value instanceof Date ? 'date' :
-                          typeof value,
+                    type: getMongoType(value),
                     nullable: false
                 };
             }
@@ -436,7 +484,12 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
         return schema;
     }
 
-    var collSchema = getSchemaFromDoc(sample);
+    // Combine schema from all sample documents
+    var collSchema = {};
+    samples.forEach(function(sample) {
+        collSchema = getSchemaFromDoc(sample, '', collSchema);
+    });
+
     Object.keys(collSchema).forEach(function(field) {
         result.push({
             schema_name: dbName,
@@ -449,5 +502,100 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
     });
 });
 
+print(JSON.stringify(result));`, dbName)
+}
+
+// getSchemasQuery returns the query to list schemas in a database
+func getSchemasQuery(connType pb.ConnectionType, dbName string) string {
+	switch connType {
+	case pb.ConnectionTypePostgres:
+		return getPostgresSchemasQuery(dbName)
+	case pb.ConnectionTypeMSSQL:
+		return getMSSQLSchemasQuery()
+	case pb.ConnectionTypeMySQL:
+		return getMySQLSchemasQuery()
+	case pb.ConnectionTypeOracleDB:
+		return getOracleDBSchemasQuery()
+	case pb.ConnectionTypeMongoDB:
+		return getMongoDBSchemasQuery(dbName)
+	default:
+		return ""
+	}
+}
+
+func getPostgresSchemasQuery(dbName string) string {
+	return fmt.Sprintf(`
+    \set QUIET on
+    \c %s
+    \set QUIET off
+SELECT 
+    nspname as schema_name 
+FROM 
+    pg_catalog.pg_namespace 
+WHERE 
+    nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast') 
+    AND nspname !~ '^pg_temp_'
+ORDER BY 
+    nspname;`, dbName)
+}
+
+func getMSSQLSchemasQuery() string {
+	return `
+SET NOCOUNT ON;
+SELECT 
+    name as schema_name 
+FROM 
+    sys.schemas 
+WHERE 
+    name NOT IN ('guest', 'INFORMATION_SCHEMA', 'sys')
+ORDER BY 
+    name;`
+}
+
+func getMySQLSchemasQuery() string {
+	return `
+SELECT 
+    SCHEMA_NAME as schema_name 
+FROM 
+    INFORMATION_SCHEMA.SCHEMATA 
+WHERE 
+    SCHEMA_NAME NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+ORDER BY 
+    SCHEMA_NAME;`
+}
+
+func getOracleDBSchemasQuery() string {
+	return `
+SELECT 
+    username as schema_name 
+FROM 
+    all_users 
+WHERE 
+    username NOT IN (
+        'SYS', 'SYSTEM', 'SYSMAN', 'MGMT_VIEW', 'OJVMSYS',
+        'OUTLN', 'DBSNMP', 'APPQOSSYS', 'APEX_030200', 'APEX_040000',
+        'APEX_PUBLIC_USER', 'APEX_REST_PUBLIC_USER', 'CTXSYS', 'ANONYMOUS',
+        'FLOWS_FILES', 'MDSYS', 'OLAPSYS', 'ORDDATA', 'ORDSYS', 'SI_INFORMTN_SCHEMA',
+        'WMSYS', 'XDB', 'EXFSYS', 'ORDPLUGINS', 'OWBSYS', 'OWBSYS_AUDIT',
+        'ORACLE_OCM', 'SPATIAL_CSW_ADMIN_USR', 'SPATIAL_WFS_ADMIN_USR', 'DVSYS',
+        'AUDSYS', 'GSMADMIN_INTERNAL', 'LBACSYS', 'REMOTE_SCHEDULER_AGENT',
+        'SYSBACKUP', 'SYSDG', 'SYSKM', 'GSMUSER', 'SYSRAC'
+    )
+ORDER BY 
+    username;`
+}
+
+func getMongoDBSchemasQuery(dbName string) string {
+	return fmt.Sprintf(`
+// MongoDB não usa o conceito tradicional de schemas
+// Retornamos o próprio banco como schema único
+// Ensure verbosity is off
+if (typeof noVerbose === 'function') noVerbose();
+if (typeof config !== 'undefined') config.verbosity = 0;
+
+var result = [];
+result.push({
+    "schema_name": "%s"
+});
 print(JSON.stringify(result));`, dbName)
 }

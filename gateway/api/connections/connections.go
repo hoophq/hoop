@@ -553,6 +553,7 @@ print(JSON.stringify(result));`
 //	@Produce		json
 //	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Param			database	query		string	true	"Name of the database"
+//	@Param			schema		query		string	false	"Name of the schema (optional - if not provided, returns tables from all schemas)"
 //	@Success		200			{object}	openapi.TablesResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/tables [get]
@@ -560,6 +561,7 @@ func ListTables(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
 	dbName := c.Query("database")
+	schemaName := c.Query("schema")
 
 	conn, err := FetchByName(ctx, connNameOrID)
 	if err != nil {
@@ -665,6 +667,19 @@ func ListTables(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse SQL response: %v", err)})
 				return
 			}
+
+			// If a specific schema was requested, filter the results
+			if schemaName != "" {
+				filteredSchemas := []openapi.SchemaInfo{}
+				for _, schema := range tables.Schemas {
+					if schema.Name == schemaName {
+						filteredSchemas = append(filteredSchemas, schema)
+						break
+					}
+				}
+				tables.Schemas = filteredSchemas
+			}
+
 			response = tables
 		}
 
@@ -691,7 +706,7 @@ func ListTables(c *gin.Context) {
 //	@Param			nameOrID	path		string	true	"Name or UUID of the connection"
 //	@Param			database	query		string	true	"Name of the database"
 //	@Param			table		query		string	true	"Name of the table"
-//	@Param			schema		query		string	true	"Name of the schema"
+//	@Param			schema		query		string	false	"Name of the schema (optional - for PostgreSQL default is 'public', for others defaults to database name)"
 //	@Success		200			{object}	openapi.ColumnsResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/columns [get]
@@ -753,7 +768,6 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
-	// If the schema is not provided, use 'public' for PostgreSQL and the same database for other databases
 	if schemaName == "" {
 		schemaName = dbName
 		if currentConnectionType == pb.ConnectionTypePostgres {
