@@ -43,11 +43,15 @@
 
    ;; Additional Command Section
     [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} "Additional command"]
+     [:> Heading {:size "3"} "Command Configuration"]
      [:> Text {:size "2" :color "gray"}
-      "Add an additional command that will run on your connection."
+      "Command is specified as a list of arguments."
       [:br]
-      "Environment variables loaded above can also be used here."]
+      "Each argument should be entered separately."
+      [:br]
+      "Press Enter after each argument to add it to the list."
+      [:br]
+      "Example: 'python', '-m', 'http.server', '8000'"]
      [:> Box
       [multi-select/text-input
        {:value @(rf/subscribe [:connection-setup/command-args])
