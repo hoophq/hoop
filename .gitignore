@@ -49,3 +49,6 @@ client/cmd/custom.go
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions
 deploy/docker-compose/hoopdata/zitadel-admin-sa.json
+
+**/.claude/settings.local.json
+**/.mcp.json
