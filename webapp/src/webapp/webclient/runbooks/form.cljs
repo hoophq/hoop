@@ -138,7 +138,7 @@
                                                       #(update-state param (-> % .-target .-value)))
                                          :helper-text (:description metadata)
                                          :options (:options metadata)
-                                         :default (:default metadata)}]))
+                                         :default-value (:default metadata)}]))
 
              (if (nil? (-> template :data :error))
                [:footer {:class "flex gap-regular justify-end"}
