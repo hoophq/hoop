@@ -365,14 +365,10 @@ func cleanMongoOutput(output string) string {
 
 // parseMongoDBColumns parses MongoDB output and returns a slice of ConnectionColumns
 func parseMongoDBColumns(output string) ([]openapi.ConnectionColumn, error) {
-	// Verificar se o input é inválido antes de limpar
 	originalOutput := output
 
-	// Limpar o output do MongoDB
 	output = cleanMongoOutput(output)
 	if output == "" {
-		// Se o input original não estava vazio mas cleanMongoOutput retornou vazio,
-		// provavelmente o input era inválido
 		if strings.TrimSpace(originalOutput) != "" {
 			return nil, fmt.Errorf("failed to parse invalid MongoDB response")
 		}
@@ -389,7 +385,6 @@ func parseMongoDBColumns(output string) ([]openapi.ConnectionColumn, error) {
 		columnName := getString(row, "column_name")
 		columnType := getString(row, "column_type")
 
-		// Só adiciona se tivermos pelo menos o nome da coluna
 		if columnName != "" {
 			column := openapi.ConnectionColumn{
 				Name:     columnName,
@@ -446,14 +441,10 @@ func parseSQLColumns(output string, connectionType pb.ConnectionType) ([]openapi
 func parseMongoDBTables(output string) (openapi.TablesResponse, error) {
 	response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
 
-	// Verificar se o input é inválido antes de limpar
 	originalOutput := output
 
-	// Limpar o output do MongoDB
 	output = cleanMongoOutput(output)
 	if output == "" {
-		// Se o input original não estava vazio mas cleanMongoOutput retornou vazio,
-		// provavelmente o input era inválido
 		if strings.TrimSpace(originalOutput) != "" {
 			return response, fmt.Errorf("failed to parse invalid MongoDB response")
 		}
@@ -471,7 +462,6 @@ func parseMongoDBTables(output string) (openapi.TablesResponse, error) {
 		schemaName := getString(row, "schema_name")
 		tableName := getString(row, "object_name")
 
-		// Garantir que temos tanto o nome do schema quanto da tabela
 		if schemaName != "" && tableName != "" {
 			schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
 		}
@@ -519,15 +509,16 @@ func parseSQLTables(output string, connectionType pb.ConnectionType) (openapi.Ta
 		}
 
 		schemaName := fields[0]
-		tableName := fields[2]
-		schemaMap[schemaName] = append(schemaMap[schemaName], tableName)
+		objectName := fields[2]
+
+		schemaMap[schemaName] = append(schemaMap[schemaName], objectName)
 	}
 
 	// Convert map to response structure
-	for schemaName, tables := range schemaMap {
+	for schemaName, objects := range schemaMap {
 		response.Schemas = append(response.Schemas, openapi.SchemaInfo{
 			Name:   schemaName,
-			Tables: tables,
+			Tables: objects,
 		})
 	}
 

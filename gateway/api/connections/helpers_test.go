@@ -602,6 +602,29 @@ schema2	table	settings`,
 			},
 		},
 		{
+			name: "postgres with private schema",
+			input: `schema_name	object_type	object_name
+public	table	schema_migrations
+public	view	users
+public	view	connections
+private	table	users
+private	table	connections
+private	table	orgs`,
+			connectionType: pb.ConnectionTypePostgres,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "public",
+						Tables: []string{"schema_migrations", "users", "connections"},
+					},
+					{
+						Name:   "private",
+						Tables: []string{"users", "connections", "orgs"},
+					},
+				},
+			},
+		},
+		{
 			name: "mssql format with dashes",
 			input: `schema_name	object_type	object_name
 -----------	-----------	-----------
