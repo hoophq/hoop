@@ -64,7 +64,8 @@
                                          :required (:required metadata)
                                          :on-change #(update-state param (-> % .-target .-value))
                                          :helper-text (:description metadata)
-                                         :options (:options metadata)}]))
+                                         :options (:options metadata)
+                                         :default-value (:default metadata)}]))
 
              (if (seq all-connections)
                [:footer {:class "flex gap-regular justify-end"}
