@@ -28,6 +28,7 @@
      "select" [forms/select (merge
                              {:label label
                               :full-width? true
+                              :required required
                               :on-change on-change
                               :selected (or value default-value "")
                               :options (map #(into {} {:value % :text %}) options)
