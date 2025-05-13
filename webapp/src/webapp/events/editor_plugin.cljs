@@ -112,9 +112,11 @@
 (rf/reg-event-fx
  :editor-plugin->run-runbook
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name]}]]
-   (let [payload {:file_name file-name
-                  :parameters params}
+   [{:keys [db]} [_ {:keys [file-name params connection-name jira_fields cmdb_fields]}]]
+   (let [payload (cond-> {:file_name file-name
+                          :parameters params}
+                   jira_fields (assoc :jira_fields jira_fields)
+                   cmdb_fields (assoc :cmdb_fields cmdb_fields))
          on-failure (fn [error-message error]
                       (rf/dispatch [:show-snackbar {:text error-message :level :error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))
@@ -541,3 +543,64 @@
        (assoc-in [:editor-plugin :metadata] [])
        (assoc-in [:editor-plugin :metadata-key] "")
        (assoc-in [:editor-plugin :metadata-value] ""))))
+
+;; Evento para mostrar formulário JIRA de runbooks
+(rf/reg-event-fx
+ :runbooks-plugin/show-jira-form
+ (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name]}]]
+   {:fx [[:dispatch [:modal->open
+                     {:content [loading-jira-templates/main]}]]
+         [:dispatch [:jira-templates->get-submit-template template-id]]
+         [:dispatch-later
+          {:ms 1000
+           :dispatch [:runbooks-plugin/check-template-and-show-form
+                      {:template-id template-id
+                       :file-name file-name
+                       :params params
+                       :connection-name connection-name}]}]]}))
+
+;; Verificar template e mostrar formulário se necessário
+(rf/reg-event-fx
+ :runbooks-plugin/check-template-and-show-form
+ (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name]}]]
+   (let [template (get-in db [:jira-templates->submit-template])]
+     (if (or (nil? (:data template))
+             (= :loading (:status template)))
+       ;; Template não pronto - verificar novamente em 500ms
+       {:fx [[:dispatch-later
+              {:ms 500
+               :dispatch [:runbooks-plugin/check-template-and-show-form
+                          {:template-id template-id
+                           :file-name file-name
+                           :params params
+                           :connection-name connection-name}]}]]}
+
+       ;; Template pronto - mostrar formulário se necessário
+       (if (needs-form? template)
+         {:fx [[:dispatch [:modal->open
+                           {:content [prompt-form/main
+                                      {:prompts (get-in template [:data :prompt_types :items])
+                                       :cmdb-items (get-in template [:data :cmdb_types :items])
+                                       :on-submit #(rf/dispatch
+                                                    [:runbooks-plugin/handle-template-submit
+                                                     {:form-data %
+                                                      :file-name file-name
+                                                      :params params
+                                                      :connection-name connection-name}])}]}]]]}
+         {:fx [[:dispatch [:runbooks-plugin/handle-template-submit
+                           {:form-data nil
+                            :file-name file-name
+                            :params params
+                            :connection-name connection-name}]]]})))))
+
+;; Processar submit do formulário JIRA
+(rf/reg-event-fx
+ :runbooks-plugin/handle-template-submit
+ (fn [{:keys [db]} [_ {:keys [form-data file-name params connection-name]}]]
+   {:fx [[:dispatch [:modal->close]]
+         [:dispatch [:editor-plugin->run-runbook
+                     (cond-> {:file-name file-name
+                              :params params
+                              :connection-name connection-name}
+                       (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
+                       (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]]}))

@@ -110,12 +110,41 @@
              {:on-submit (fn [e]
                            (.preventDefault e)
                            (if (> (count selected-connections) 1)
-                             (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
+                             (let [has-jira-template? (some #(not (empty? (:jira_issue_template_id %)))
+                                                            selected-connections)
+                                   jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
+                                                                    :data
+                                                                    :status)
+                                                                "enabled")]
+                               (if (and has-jira-template? jira-integration-enabled?)
+                                 ;; Mostrar alerta, não permitir executar em massa com JIRA
+                                 (rf/dispatch [:dialog->open
+                                               {:title "Execução em massa com JIRA não permitida"
+                                                :action-button? false
+                                                :text "Não é possível executar runbooks em massa quando algumas conexões têm templates JIRA. Por favor, selecione apenas uma conexão."}])
+                                 ;; Continuar normalmente com a execução em massa
+                                 (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)))
 
-                             (rf/dispatch [:editor-plugin->run-runbook
-                                           {:file-name (-> template :data :name)
-                                            :params @state
-                                            :connection-name connection-name}])))}
+                             (let [connection (first (filter #(= (:name %) connection-name)
+                                                             @(rf/subscribe [:connections->list])))
+                                   has-jira-template? (and connection
+                                                           (not (empty? (:jira_issue_template_id connection))))
+                                   jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
+                                                                    :data
+                                                                    :status)
+                                                                "enabled")]
+                               (if (and has-jira-template? jira-integration-enabled?)
+                                 ;; Mostrar formulário JIRA
+                                 (rf/dispatch [:runbooks-plugin/show-jira-form
+                                               {:template-id (:jira_issue_template_id connection)
+                                                :file-name (-> template :data :name)
+                                                :params @state
+                                                :connection-name connection-name}])
+                                 ;; Execução normal
+                                 (rf/dispatch [:editor-plugin->run-runbook
+                                               {:file-name (-> template :data :name)
+                                                :params @state
+                                                :connection-name connection-name}])))))}
              [:header {:class "mb-regular"}
               [:> Box {:class "flex items-center gap-small mb-small"}
                [:> hero-solid-icon/DocumentIcon
