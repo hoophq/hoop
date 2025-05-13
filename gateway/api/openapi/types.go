@@ -339,6 +339,8 @@ type RunbookRequest struct {
 	ClientArgs []string `json:"client_args" example:"--verbose"`
 	// Metadata attributes to add in the session
 	Metadata map[string]any `json:"metadata"`
+	// Jira fields to create a Jira issue
+	JiraFields map[string]string `json:"jira_fields"`
 }
 
 type RunbookList struct {
