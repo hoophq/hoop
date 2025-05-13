@@ -68,5 +68,19 @@ func GetUserContext(subject string) (*Context, error) {
 	if err == gorm.ErrRecordNotFound {
 		return &Context{}, nil
 	}
+	
+	if ctx.UserID != "" {
+		var pref UserPreference
+		err = DB.Where("user_id = ?", ctx.UserID).First(&pref).Error
+		if err == nil {
+			org, err := GetOrganizationByNameOrID(pref.ActiveOrgID)
+			if err == nil {
+				ctx.OrgID = org.ID
+				ctx.OrgName = org.Name
+				ctx.OrgLicenseData = org.LicenseData
+			}
+		}
+	}
+	
 	return &ctx, err
 }

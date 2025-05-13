@@ -2,7 +2,9 @@ package models
 
 import (
 	"errors"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"gorm.io/gorm"
 )
@@ -18,6 +20,21 @@ type User struct {
 	Status         string `gorm:"column:status"`
 	SlackID        string `gorm:"column:slack_id"`
 	HashedPassword string `gorm:"column:hashed_password"`
+}
+
+type UserOrganization struct {
+	ID        string    `gorm:"column:id"`
+	UserID    string    `gorm:"column:user_id"`
+	OrgID     string    `gorm:"column:org_id"`
+	Role      string    `gorm:"column:role"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+type UserPreference struct {
+	ID          string    `gorm:"column:id"`
+	UserID      string    `gorm:"column:user_id"`
+	ActiveOrgID string    `gorm:"column:active_org_id"`
+	UpdatedAt   time.Time `gorm:"column:updated_at"`
 }
 
 func ListUsers(orgID string) ([]User, error) {
@@ -132,4 +149,96 @@ func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
 	}
 
 	return tx.Commit().Error
+}
+
+// ListUserOrganizations returns all organizations for a user
+func ListUserOrganizations(userID string) ([]UserOrganization, error) {
+	var orgs []UserOrganization
+	if err := DB.Where("user_id = ?", userID).Find(&orgs).Error; err != nil {
+		log.Errorf("failed to list user organizations, reason=%v", err)
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// GetUserPreference returns the user preference including active organization
+func GetUserPreference(userID string) (*UserPreference, error) {
+	var pref UserPreference
+	if err := DB.Where("user_id = ?", userID).First(&pref).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &pref, nil
+}
+
+// SetActiveOrganization sets the active organization for a user
+func SetActiveOrganization(userID, orgID string) error {
+	// Check if the user belongs to the organization
+	var count int64
+	err := DB.Model(&UserOrganization{}).
+		Where("user_id = ? AND org_id = ?", userID, orgID).
+		Count(&count).Error
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("user does not belong to this organization")
+	}
+	
+	// Check if preference already exists
+	var pref UserPreference
+	err = DB.Where("user_id = ?", userID).First(&pref).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	
+	// Create or update the preference
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		pref = UserPreference{
+			ID:          uuid.NewString(),
+			UserID:      userID,
+			ActiveOrgID: orgID,
+			UpdatedAt:   time.Now(),
+		}
+		return DB.Create(&pref).Error
+	}
+	
+	// Update existing preference
+	pref.ActiveOrgID = orgID
+	pref.UpdatedAt = time.Now()
+	return DB.Save(&pref).Error
+}
+
+// AddUserToOrganization adds a user to an organization
+func AddUserToOrganization(userID, orgID, role string) error {
+	// Check if the relationship already exists
+	var count int64
+	err := DB.Model(&UserOrganization{}).
+		Where("user_id = ? AND org_id = ?", userID, orgID).
+		Count(&count).Error
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil // Already exists
+	}
+	
+	// Create the relationship
+	userOrg := UserOrganization{
+		ID:        uuid.NewString(),
+		UserID:    userID,
+		OrgID:     orgID,
+		Role:      role,
+		CreatedAt: time.Now(),
+	}
+	return DB.Create(&userOrg).Error
+}
+
+// RemoveUserFromOrganization removes a user from an organization
+func RemoveUserFromOrganization(userID, orgID string) error {
+	return DB.Where("user_id = ? AND org_id = ?", userID, orgID).
+		Delete(&UserOrganization{}).
+		Error
 }
