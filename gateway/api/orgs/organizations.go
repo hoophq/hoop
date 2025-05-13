@@ -1,4 +1,4 @@
-package orgs
+package apiorgs
 
 import (
 	"net/http"
