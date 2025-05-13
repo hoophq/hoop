@@ -88,10 +88,10 @@ func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (
 	case pb.ConnectionTypeMongoDB:
 		envs["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
 		envs["envvar:PORT"] = base64.StdEncoding.EncodeToString([]byte(`27017`))
-		cmd = []string{"mongo", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS", "--quiet"}
+		cmd = []string{"mongo", "--quiet", "mongodb://$USER:$PASS@$HOST:$PORT/?$OPTIONS"}
 		if useMongoConnStr {
 			envs = nil
-			cmd = []string{"mongo", "$CONNECTION_STRING", "--quiet"}
+			cmd = []string{"mongo", "--quiet", "$CONNECTION_STRING"}
 		}
 	}
 	return

@@ -6,6 +6,7 @@ ENV POSTGREST_VERSION=11.2.2
 
 RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
+    mkdir -p /opt/hoop/bin && \
     apt-get update -y && \
     apt-get install -y \
         xz-utils \
@@ -27,9 +28,6 @@ RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
     mv postgrest /usr/local/bin/postgrest && \
     chmod 0755 /usr/local/bin/postgrest && \
     postgrest --version
-
-RUN mkdir -p /app && \
-    mkdir -p /opt/hoop/sessions
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
