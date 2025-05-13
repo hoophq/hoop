@@ -22,14 +22,14 @@
                 step
                 helper-text
                 options
-                default]}]
+                default-value]}]
   [:div
    (case type
      "select" [forms/select (merge
                              {:label label
                               :full-width? true
                               :on-change on-change
-                              :selected (or value default "")
+                              :selected (or value default-value "")
                               :options (map #(into {} {:value % :text %}) options)
                               :helper-text helper-text}
                              (when (and
@@ -39,7 +39,7 @@
      "textarea" [forms/textarea (merge
                                  {:label label
                                   :placeholder (or placeholder (str "Define a value for " label))
-                                  :value (or value default "")
+                                  :value (or value default-value "")
                                   :on-change on-change
                                   :minLength minlength
                                   :maxLength maxlength
@@ -51,7 +51,7 @@
      [forms/input (merge
                    {:label label
                     :placeholder (or placeholder (str "Define a value for " label))
-                    :value (or value default "")
+                    :value (or value default-value "")
                     :type type
                     :pattern pattern
                     :on-change on-change
