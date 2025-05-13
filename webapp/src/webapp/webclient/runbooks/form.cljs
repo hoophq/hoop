@@ -21,14 +21,15 @@
                 max
                 step
                 helper-text
-                options]}]
+                options
+                default]}]
   [:div
    (case type
      "select" [forms/select (merge
                              {:label label
                               :full-width? true
                               :on-change on-change
-                              :selected (or value "")
+                              :selected (or value default "")
                               :options (map #(into {} {:value % :text %}) options)
                               :helper-text helper-text}
                              (when (and
@@ -38,7 +39,7 @@
      "textarea" [forms/textarea (merge
                                  {:label label
                                   :placeholder (or placeholder (str "Define a value for " label))
-                                  :value (or value "")
+                                  :value (or value default "")
                                   :on-change on-change
                                   :minLength minlength
                                   :maxLength maxlength
@@ -50,7 +51,7 @@
      [forms/input (merge
                    {:label label
                     :placeholder (or placeholder (str "Define a value for " label))
-                    :value (or value "")
+                    :value (or value default "")
                     :type type
                     :pattern pattern
                     :on-change on-change
@@ -95,11 +96,12 @@
             (reset! state {})
             (reset! previous-template-name (-> template :data :name)))
 
-          ;; Initialize all params with empty strings
+          ;; Initialize all params with empty strings or default values
           (when (-> template :data :params)
-            (doseq [param (-> template :data :params)]
+            (doseq [param (-> template :data :params)
+                    :let [metadata ((keyword param) (-> template :data :metadata))]]
               (when (nil? (get @state param))
-                (swap! state assoc param ""))))
+                (swap! state assoc param (or (:default metadata) "")))))
 
           [:div {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
            [:section
@@ -135,7 +137,8 @@
                                                       #(update-state param %)
                                                       #(update-state param (-> % .-target .-value)))
                                          :helper-text (:description metadata)
-                                         :options (:options metadata)}]))
+                                         :options (:options metadata)
+                                         :default (:default metadata)}]))
 
              (if (nil? (-> template :data :error))
                [:footer {:class "flex gap-regular justify-end"}
