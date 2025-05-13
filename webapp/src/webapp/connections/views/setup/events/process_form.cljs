@@ -117,6 +117,11 @@
         effective-database-schema (or (:database-schema config) default-database-schema)
 
         command-string (get-in db [:connection-setup :command])
+        command-args (get-in db [:connection-setup :command-args] [])
+        command-array (if (seq command-args)
+                        (mapv #(get % "value") command-args)
+                        (when-not (empty? command-string)
+                          (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
         payload {:type api-type
                  :subtype (when-not (= api-type "custom")
                             connection-subtype)
@@ -127,8 +132,7 @@
                  :secret secret
                  :command (if (= api-type "database")
                             []
-                            (when-not (empty? command-string)
-                              (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
+                            command-array)
                  :guardrail_rules guardrails-processed
                  :jira_issue_template_id jira-template-id-processed
                  :access_schema (or (when (= api-type "database")
@@ -297,6 +301,9 @@
      :command (if (empty? (:command connection))
                 (get constants/connection-commands (:subtype connection))
                 (str/join " " (:command connection)))
+     :command-args (if (empty? (:command connection))
+                     []
+                     (mapv #(hash-map "value" % "label" %) (:command connection)))
      :credentials {:environment-variables (cond
                                             (= (:type connection) "custom")
                                             (process-connection-envvars (:secret connection) "envvar")

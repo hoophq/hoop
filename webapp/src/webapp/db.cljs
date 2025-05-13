@@ -28,7 +28,8 @@
                       :subtype nil
                       :current-step :type
                       :credentials {}
-                      :tags {}}
+                      :tags {}
+                      :command-args []}
    :database-schema {:status :loading, :schema-tree nil, :indexes-tree nil}
    :dialog {:status :closed
             :type :info

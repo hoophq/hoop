@@ -94,6 +94,16 @@
  (fn [db [_ command]]
    (assoc-in db [:connection-setup :command] command)))
 
+(rf/reg-event-db
+ :connection-setup/set-command-args
+ (fn [db [_ args]]
+   (assoc-in db [:connection-setup :command-args] args)))
+
+(rf/reg-event-db
+ :connection-setup/set-command-current-arg
+ (fn [db [_ arg]]
+   (assoc-in db [:connection-setup :command-current-arg] arg)))
+
 ;; Review and Data Masking events
 (rf/reg-event-db
  :connection-setup/set-review-groups

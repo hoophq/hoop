@@ -45,6 +45,16 @@
  (fn [db]
    (get-in db [:connection-setup :command] "")))
 
+(rf/reg-sub
+ :connection-setup/command-args
+ (fn [db]
+   (get-in db [:connection-setup :command-args] [])))
+
+(rf/reg-sub
+ :connection-setup/command-current-arg
+ (fn [db]
+   (get-in db [:connection-setup :command-current-arg] "")))
+
 ;; Configuration and features
 (rf/reg-sub
  :connection-setup/config
