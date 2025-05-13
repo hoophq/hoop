@@ -235,7 +235,6 @@
                     (when-not (cs/blank? default-value)
                       {:default-value default-value})
                     (when-not (cs/blank? selected)
-                      (println "selected" selected)
                       {:value selected})
                     {:size (or size "3")
                      :name name
