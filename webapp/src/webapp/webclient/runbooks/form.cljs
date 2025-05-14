@@ -126,7 +126,7 @@
                                  (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)))
 
                              (let [connection (first (filter #(= (:name %) connection-name)
-                                                             @(rf/subscribe [:connections->list])))
+                                                             selected-connections))
                                    has-jira-template? (and connection
                                                            (not (empty? (:jira_issue_template_id connection))))
                                    jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
