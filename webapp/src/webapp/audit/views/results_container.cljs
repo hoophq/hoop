@@ -3,7 +3,7 @@
             [clojure.string :as string]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.components.data-grid-table :as data-grid-table]
+            [webapp.components.ag-grid-table :as ag-grid-table]
             [webapp.components.logs-container :as logs]
             [webapp.components.tabs :as tabs]))
 
@@ -26,7 +26,11 @@
                        ["Table" "Plain text"])}]
    (case @log-view
      "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard?}]
-     "Table" [data-grid-table/main results-heads results-body false false (not not-clipboard?)])])
+     "Table" [ag-grid-table/main results-heads results-body false true
+              {:height "100%"
+               :theme "alpine"
+               :pagination? (> (count results-body) 100)
+               :auto-size-columns? true}])])
 
 (defmulti results-view identity)
 (defmethod results-view :sql
