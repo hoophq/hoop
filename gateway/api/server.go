@@ -372,6 +372,18 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventOrgFeatureUpdate),
 		apifeatures.FeatureUpdate)
 
+	r.GET("/orgs/membership",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.ListUserOrganizations)
+	r.GET("/orgs/active",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.GetActiveOrganization)
+	r.POST("/orgs/active",
+		r.AuthMiddleware,
+		apiorgs.SetActiveOrganization)
+
 	r.POST("/features/ask-ai/v1/chat/completions",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFeatureAskAIChatCompletions),

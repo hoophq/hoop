@@ -1425,3 +1425,19 @@ type TablesResponse struct {
 type ColumnsResponse struct {
 	Columns []ConnectionColumn `json:"columns"` // The columns of a table
 }
+
+// Organization represents an organization in the system
+type Organization struct {
+	// Unique identifier of the organization
+	Id string `json:"id" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	// Name of the organization
+	Name string `json:"name" example:"Acme Corp"`
+	// Role of the user in this organization
+	Role string `json:"role,omitempty" enums:"admin,member" example:"admin"`
+}
+
+// SetActiveOrgRequest is the request to set active organization
+type SetActiveOrgRequest struct {
+	// Organization ID to set as active
+	OrganizationId string `json:"organization_id" binding:"required" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+}

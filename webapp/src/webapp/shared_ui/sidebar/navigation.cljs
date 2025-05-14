@@ -7,6 +7,7 @@
             [webapp.routes :as routes]
             [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
+            [webapp.components.organization-selector :refer [organization-selector initialize]]
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
 (def link-styles
@@ -23,6 +24,8 @@
   (let [open-profile-disclosure? (r/atom false)
         gateway-info (rf/subscribe [:gateway->info])
         current-route (rf/subscribe [:routes->route])]
+    ;; Initialize organization selector
+    (initialize)
     (fn [user my-plugins]
       (let [gateway-version (:version (:data @gateway-info))
             auth-method (:auth_method (:data @gateway-info))
@@ -94,6 +97,9 @@
            [:ul {:class "space-y-1"}
             [:div {:class "py-0.5 text-xs text-white mb-3 font-semibold"}
              "Organization"]
+            
+            ;; Organization selector component
+            [organization-selector]
 
             [:li
              [:a {:href "#"

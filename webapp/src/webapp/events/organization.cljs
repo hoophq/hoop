@@ -2,6 +2,14 @@
   (:require [re-frame.core :as rf]))
 
 (rf/reg-event-fx
+ :events/fetch-main-resources
+ (fn [{:keys [db]} [_ _]]
+   {:fx [[:dispatch [:connections->get-connections]]
+         [:dispatch [:users->get-user]]
+         [:dispatch [:gateway->get-info]]
+         [:dispatch [:connections->connection-get-status]]]}))
+
+(rf/reg-event-fx
  :organization->get-api-key
  (fn [{:keys [db]} [_ _]]
    {:fx [[:dispatch
