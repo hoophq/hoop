@@ -9,9 +9,13 @@
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
    (if initial-data
-     (assoc db :connection-setup (assoc initial-data :ssh-auth-method
-                                        (get initial-data :ssh-auth-method "password")))
-     (assoc db :connection-setup {:ssh-auth-method "password"}))))
+     (assoc db :connection-setup (assoc initial-data 
+                                        :ssh-auth-method (get initial-data :ssh-auth-method "password")
+                                        :command-args (get initial-data :command-args [{"value" "bash" "label" "bash"}])
+                                        :command "bash"))
+     (assoc db :connection-setup {:ssh-auth-method "password"
+                                 :command-args [{"value" "bash" "label" "bash"}]
+                                 :command "bash"}))))
 
 (defn filter-valid-tags
   [tags]

@@ -6,6 +6,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]
    [webapp.connections.constants :refer [connection-configs-required]]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
@@ -44,15 +45,20 @@
     [:> Box {:class "space-y-4"}
      [:> Heading {:size "3"} "Additional command"]
      [:> Text {:size "2" :color "gray"}
-      "Add an additional command that will run on your connection."
+      "Each argument should be entered separately."
       [:br]
-      "Environment variables loaded above can also be used here."]
-     [forms/textarea
-      {:label "Command"
-       :placeholder "$ bash"
-       :value @(rf/subscribe [:connection-setup/command])
-       :on-change #(rf/dispatch [:connection-setup/set-command
-                                 (-> % .-target .-value)])}]]
+      "Press Enter after each argument to add it to the list."]
+     [:> Box
+      [multi-select/text-input
+       {:value @(rf/subscribe [:connection-setup/command-args])
+        :input-value @(rf/subscribe [:connection-setup/command-current-arg])
+        :on-change #(rf/dispatch [:connection-setup/set-command-args %])
+        :on-input-change #(rf/dispatch [:connection-setup/set-command-current-arg %])
+        :label "Command Arguments"
+        :id "command-args"
+        :name "command-args"}]
+      [:> Text {:size "2" :color "gray" :mt "2"}
+       "Example: 'python', '-m', 'http.server', '8000'"]]]
 
    ;; Agent Section
     [agent-selector/main]]])
