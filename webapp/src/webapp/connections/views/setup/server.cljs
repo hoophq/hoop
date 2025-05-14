@@ -43,15 +43,11 @@
 
    ;; Additional Command Section
     [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} "Command Configuration"]
+     [:> Heading {:size "3"} "Additional command"]
      [:> Text {:size "2" :color "gray"}
-      "Command is specified as a list of arguments."
-      [:br]
       "Each argument should be entered separately."
       [:br]
-      "Press Enter after each argument to add it to the list."
-      [:br]
-      "Example: 'python', '-m', 'http.server', '8000'"]
+      "Press Enter after each argument to add it to the list."]
      [:> Box
       [multi-select/text-input
        {:value @(rf/subscribe [:connection-setup/command-args])
@@ -60,7 +56,9 @@
         :on-input-change #(rf/dispatch [:connection-setup/set-command-current-arg %])
         :label "Command Arguments"
         :id "command-args"
-        :name "command-args"}]]]
+        :name "command-args"}]
+      [:> Text {:size "2" :color "gray" :mt "2"}
+       "Example: 'python', '-m', 'http.server', '8000'"]]]
 
    ;; Agent Section
     [agent-selector/main]]])
