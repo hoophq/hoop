@@ -26,7 +26,7 @@ func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 	var org Organization
 	err := DB.Raw(`
 	SELECT o.id, o.name, license_data,
-	(SELECT count(*) FROM users u WHERE u.org_id = o.id) AS total_users
+	(SELECT count(*) FROM private.users u WHERE u.org_id = o.id) AS total_users
 	FROM private.orgs o
 	WHERE (o.id::TEXT = ? OR o.name = ?)`, nameOrID, nameOrID).
 		First(&org).
