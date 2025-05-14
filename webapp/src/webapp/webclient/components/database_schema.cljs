@@ -42,42 +42,41 @@
       (let [current-status @dropdown-status
             current-columns-status @dropdown-columns-status]
         [:div {:class "pl-small"}
-         [:div
-          [:div {:class "flex items-center gap-small mb-2"}
-           (if (= current-columns-status :closed)
-             [:> FolderClosed {:size 12}]
-             [:> FolderOpen {:size 12}])
-           [:> Text {:size "1"
-                     :class (str "hover:underline cursor-pointer "
-                                 "flex items-center")
-                     :on-click #(reset! dropdown-columns-status
-                                        (if (= current-columns-status :open) :closed :open))}
-            "Columns"
-            (if (= current-columns-status :open)
-              [:> ChevronDown {:size 12}]
-              [:> ChevronRight {:size 12}])]]]
-         [:div {:class (str "pl-small" (when (not= current-columns-status :open)
-                                         " h-0 overflow-hidden"))}
-          (when (= current-columns-status :open)
-            (doall
-             (for [[field field-type] fields]
-               ^{:key field}
-               [:div
-                [:div {:class "flex items-center gap-small mb-2"}
-                 [:> File {:size 12}]
-                 [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
-                                     "flex items-center")
-                         :on-click #(swap! dropdown-status
-                                           assoc-in [field]
-                                           (if (= (get current-status field) :open) :closed :open))}
-                  [:> Text {:size "1"} field]
-                  (if (= (get current-status field) :open)
-                    [:> ChevronDown {:size 12}]
-                    [:> ChevronRight {:size 12}])]]
-                [:div {:class (when (not= (get current-status field) :open)
-                                "h-0 overflow-hidden")}
-                 (when (= (get current-status field) :open)
-                   [field-type-tree (first (map key field-type))])]])))]]))))
+         ;; Cabeçalho de colunas
+         [:div {:class "flex items-center gap-small mb-2"}
+          (if (= current-columns-status :closed)
+            [:> FolderClosed {:size 12}]
+            [:> FolderOpen {:size 12}])
+          [:> Text {:size "1"
+                    :class "hover:underline cursor-pointer flex items-center"
+                    :on-click #(reset! dropdown-columns-status
+                                       (if (= current-columns-status :open) :closed :open))}
+           "Columns"
+           (if (= current-columns-status :open)
+             [:> ChevronDown {:size 12}]
+             [:> ChevronRight {:size 12}])]]
+
+         ;; Conteúdo das colunas
+         (when (= current-columns-status :open)
+           [:div {:class "pl-small"}
+            (for [[field field-type] fields]
+              ^{:key field}
+              [:div
+               ;; Cabeçalho do campo
+               [:div {:class "flex items-center gap-small mb-2"}
+                [:> File {:size 12}]
+                [:span {:class "hover:text-blue-500 hover:underline cursor-pointer flex items-center"
+                        :on-click #(swap! dropdown-status
+                                          assoc-in [field]
+                                          (if (= (get current-status field) :open) :closed :open))}
+                 [:> Text {:size "1"} field]
+                 (if (= (get current-status field) :open)
+                   [:> ChevronDown {:size 12}]
+                   [:> ChevronRight {:size 12}])]]
+
+               ;; Tipo do campo
+               (when (= (get current-status field) :open)
+                 [field-type-tree (first (map key field-type))])])])]))))
 
 (defn- tables-tree []
   (let [dropdown-status (r/atom {})]
@@ -114,9 +113,10 @@
                  (if (= (get current-status table) :open)
                    [:> ChevronDown {:size 12}]
                    [:> ChevronRight {:size 12}])]]
-               [:div {:class (when (not= (get current-status table) :open)
-                               "h-0 overflow-hidden")}
-                (when (= (get current-status table) :open)
+
+               ;; Renderização condicional do conteúdo da tabela
+               (when (= (get current-status table) :open)
+                 [:div
                   (cond
                     ;; Caso 1: Está carregando
                     is-loading
@@ -134,7 +134,7 @@
 
                     ;; Caso 4: Tem dados no schema
                     :else
-                    [fields-tree fields]))]])))]))))
+                    [fields-tree fields])])])))]))))
 
 ;; Componente para renderizar um schema com suas tabelas
 (defn- schema-view []
@@ -152,13 +152,13 @@
            (if (= @dropdown-status :open)
              [:> ChevronDown {:size 12}]
              [:> ChevronRight {:size 12}])]]
-         [:div {:class (when (not= @dropdown-status :open) "h-0 overflow-hidden")}
-          [tables-tree (into (sorted-map) tables)
-           connection-name
-           schema-name
-           current-database
-           loading-columns
-           columns-cache]]]))))
+         (when (= @dropdown-status :open)
+           [tables-tree (into (sorted-map) tables)
+            connection-name
+            schema-name
+            current-database
+            loading-columns
+            columns-cache])]))))
 
 ;; Componente para renderizar um database individual
 (defn- database-item [db schema connection-name database-schema-status current-schema]
@@ -182,31 +182,32 @@
          [:> ChevronDown {:size 12}]
          [:> ChevronRight {:size 12}])]]
 
-     ;; Conteúdo da database (só mostra se estiver selecionada)
-     [:div {:class (when (not is-selected) "h-0 overflow-hidden")}
-      (cond
-        ;; Loading específico para esse database
-        is-loading-this-db
-        [loading-indicator "Loading tables..."]
+     ;; Conteúdo da database (só renderiza se estiver selecionada)
+     (when is-selected
+       [:div
+        (cond
+          ;; Loading específico para esse database
+          is-loading-this-db
+          [loading-indicator "Loading tables..."]
 
-        ;; Verificar se há schemas com tabelas para este database
-        (not-empty db-schemas)
-        [:div
-         (for [[schema-name tables] db-schemas]
-           ^{:key schema-name}
-           [schema-view
-            schema-name
-            tables
-            connection-name
-            current-schema
-            database-schema-status])]
+          ;; Verificar se há schemas com tabelas para este database
+          (not-empty db-schemas)
+          [:div
+           (for [[schema-name tables] db-schemas]
+             ^{:key schema-name}
+             [schema-view
+              schema-name
+              tables
+              connection-name
+              current-schema
+              database-schema-status])]
 
-        ;; Caso contrário, mostrar mensagem que não tem tabelas
-        :else
-        [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-         (if (and (= :error database-schema-status) (:error current-schema))
-           (:error current-schema)
-           "No tables found")])]]))
+          ;; Caso contrário, mostrar mensagem que não tem tabelas
+          :else
+          [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+           (if (and (= :error database-schema-status) (:error current-schema))
+             (:error current-schema)
+             "No tables found")])])]))
 
 ;; Componente principal de lista de databases
 (defn- databases-tree []
