@@ -60,7 +60,7 @@
            "Terminal"]
           [:> Flex {:align "center" :gap "2"}
 
-           [:> Tooltip {:content "Search"}
+           [:> Tooltip {:content "Search (⌘K / Ctrl+K)"}
             [:div
              [search/main active-panel]]]
 
