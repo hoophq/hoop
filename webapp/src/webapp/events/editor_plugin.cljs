@@ -549,7 +549,9 @@
  :runbooks-plugin/show-jira-form
  (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name]}]]
    {:fx [[:dispatch [:modal->open
-                     {:content [loading-jira-templates/main]}]]
+                     {:maxWidth "540px"
+                      :custom-on-click-out #(.preventDefault %)
+                      :content [loading-jira-templates/main]}]]
          [:dispatch [:jira-templates->get-submit-template template-id]]
          [:dispatch-later
           {:ms 1000

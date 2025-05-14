@@ -115,7 +115,9 @@
                                    jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
                                                                     :data
                                                                     :status)
-                                                                "enabled")]
+                                                                "enabled")
+                                   _ (println "has-jira-template?" has-jira-template?
+                                              "jira-integration-enabled?" jira-integration-enabled?)]
                                (if (and has-jira-template? jira-integration-enabled?)
                                  ;; Mostrar alerta, não permitir executar em massa com JIRA
                                  (rf/dispatch [:dialog->open
