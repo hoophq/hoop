@@ -119,12 +119,10 @@
                                    _ (println "has-jira-template?" has-jira-template?
                                               "jira-integration-enabled?" jira-integration-enabled?)]
                                (if (and has-jira-template? jira-integration-enabled?)
-                                 ;; Mostrar alerta, não permitir executar em massa com JIRA
                                  (rf/dispatch [:dialog->open
-                                               {:title "Execução em massa com JIRA não permitida"
+                                               {:title "Running in multiple connections not allowed"
                                                 :action-button? false
-                                                :text "Não é possível executar runbooks em massa quando algumas conexões têm templates JIRA. Por favor, selecione apenas uma conexão."}])
-                                 ;; Continuar normalmente com a execução em massa
+                                                :text "For now, it's not possible to run commands in multiple connections with Jira Templates activated. Please select just one connection before running your command."}])
                                  (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)))
 
                              (let [connection (first (filter #(= (:name %) connection-name)
@@ -136,13 +134,11 @@
                                                                     :status)
                                                                 "enabled")]
                                (if (and has-jira-template? jira-integration-enabled?)
-                                 ;; Mostrar formulário JIRA
                                  (rf/dispatch [:runbooks-plugin/show-jira-form
                                                {:template-id (:jira_issue_template_id connection)
                                                 :file-name (-> template :data :name)
                                                 :params @state
                                                 :connection-name connection-name}])
-                                 ;; Execução normal
                                  (rf/dispatch [:editor-plugin->run-runbook
                                                {:file-name (-> template :data :name)
                                                 :params @state

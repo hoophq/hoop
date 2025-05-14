@@ -544,7 +544,6 @@
        (assoc-in [:editor-plugin :metadata-key] "")
        (assoc-in [:editor-plugin :metadata-value] ""))))
 
-;; Evento para mostrar formulário JIRA de runbooks
 (rf/reg-event-fx
  :runbooks-plugin/show-jira-form
  (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name]}]]
@@ -561,14 +560,12 @@
                        :params params
                        :connection-name connection-name}]}]]}))
 
-;; Verificar template e mostrar formulário se necessário
 (rf/reg-event-fx
  :runbooks-plugin/check-template-and-show-form
  (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name]}]]
    (let [template (get-in db [:jira-templates->submit-template])]
      (if (or (nil? (:data template))
              (= :loading (:status template)))
-       ;; Template não pronto - verificar novamente em 500ms
        {:fx [[:dispatch-later
               {:ms 500
                :dispatch [:runbooks-plugin/check-template-and-show-form
@@ -577,7 +574,6 @@
                            :params params
                            :connection-name connection-name}]}]]}
 
-       ;; Template pronto - mostrar formulário se necessário
        (if (needs-form? template)
          {:fx [[:dispatch [:modal->open
                            {:content [prompt-form/main
@@ -595,7 +591,6 @@
                             :params params
                             :connection-name connection-name}]]]})))))
 
-;; Processar submit do formulário JIRA
 (rf/reg-event-fx
  :runbooks-plugin/handle-template-submit
  (fn [{:keys [db]} [_ {:keys [form-data file-name params connection-name]}]]

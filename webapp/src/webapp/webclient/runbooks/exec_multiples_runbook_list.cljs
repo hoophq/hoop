@@ -52,31 +52,18 @@
                     :on-click (fn [] false)}]])
 
 (defn button-group-ready [exec-list-cold]
-  (let [connections @(rf/subscribe [:connections->list])
-        has-jira-template? (some #(let [conn (first (filter (fn [conn] (= (:name conn) (:connection-name %))) connections))]
-                                    (and conn (not (empty? (:jira_issue_template_id conn)))))
-                                 exec-list-cold)
-        jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
-                                         :data
-                                         :status)
-                                     "enabled")]
-    [:div {:class "mt-6 flex items-center justify-end gap-small"}
-     (when (and has-jira-template? jira-integration-enabled?)
-       [:div {:class "mr-auto text-xxs text-orange-600 flex items-center"}
-        [:> hero-outline-icon/ExclamationTriangleIcon {:class "h-4 w-4 shrink-0 mr-2"}]
-        "Não é possível executar runbooks em massa com JIRA templates. Selecione apenas uma conexão."])
-     [button/secondary {:text "Close"
-                        :type "button"
-                        :on-click #(reset! atom-exec-runbooks-list-open? false)}]
-     [button/primary {:text [:div {:class "flex items-center gap-small"}
-                             [:> hero-solid-icon/PlayIcon {:class "h-5 w-5 text-white"
-                                                           :aria-hidden "true"}]
-                             [:span "Run"]]
-                      :disabled (and has-jira-template? jira-integration-enabled?)
+  [:div {:class "mt-6 flex items-center justify-end gap-small"}
+   [button/secondary {:text "Close"
                       :type "button"
-                      :on-click (fn []
-                                  (rf/dispatch [:editor-plugin->multiple-connections-run-runbook
-                                                (map #(assoc % :status :running) exec-list-cold)]))}]]))
+                      :on-click #(reset! atom-exec-runbooks-list-open? false)}]
+   [button/primary {:text [:div {:class "flex items-center gap-small"}
+                           [:> hero-solid-icon/PlayIcon {:class "h-5 w-5 text-white"
+                                                         :aria-hidden "true"}]
+                           [:span "Run"]]
+                    :type "button"
+                    :on-click (fn []
+                                (rf/dispatch [:editor-plugin->multiple-connections-run-runbook
+                                              (map #(assoc % :status :running) exec-list-cold)]))}]])
 
 (defn button-group-completed [exec-list]
   [:div {:class "mt-6 flex items-center justify-end gap-small"}

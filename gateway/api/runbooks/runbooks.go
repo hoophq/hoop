@@ -228,7 +228,6 @@ func RunExec(c *gin.Context) {
 		EndSession:           nil,
 	}
 
-	// Processar integração com Jira se o template estiver configurado
 	if connection.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(connection.OrgID, connection.JiraIssueTemplateID.String)
 		if err != nil {
