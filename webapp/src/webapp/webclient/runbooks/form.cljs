@@ -115,9 +115,7 @@
                                    jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
                                                                     :data
                                                                     :status)
-                                                                "enabled")
-                                   _ (println "has-jira-template?" has-jira-template?
-                                              "jira-integration-enabled?" jira-integration-enabled?)]
+                                                                "enabled")]
                                (if (and has-jira-template? jira-integration-enabled?)
                                  (rf/dispatch [:dialog->open
                                                {:title "Running in multiple connections not allowed"

@@ -42,33 +42,42 @@
                      (= "enabled" (:access_mode_runbooks %))))
            connections))
 
-(defn filter-compatible-connections [connections main-connection selected-connections]
+(defn filter-compatible-connections [connections
+                                     main-connection
+                                     selected-connections
+                                     runbooks-panel-opened?]
   (let [connection (if main-connection
                      main-connection
-                     (first selected-connections))]
+                     (first selected-connections))
+        is-same-access-mode #(if runbooks-panel-opened?
+                               (= (:access_mode_runbooks %) (:access_mode_runbooks connection))
+                               (= (:access_mode_exec %) (:access_mode_exec connection)))]
     (filterv #(and (= (:type %) (:type connection))
                    (= (:subtype %) (:subtype connection))
-                   (not= (:name %) (:name connection)))
+                   (not= (:name %) (:name connection))
+                   (not= (:name %) (:name connection))
+                   (is-same-access-mode %))
              connections)))
 
-(defn connections-list [dark-mode?]
+(defn connections-list [dark-mode? runbooks-panel-opened?]
   (let [connections @(rf/subscribe [:connections/filtered])
         primary-connection @(rf/subscribe [:connections/selected])
         selected-connections @(rf/subscribe [:connection-selection/selected])
         filtered-connections (filter-connections connections)
-        filtered-compatible-connections (filter-compatible-connections filtered-connections primary-connection selected-connections)
+        filtered-compatible-connections (filter-compatible-connections filtered-connections
+                                                                       primary-connection
+                                                                       selected-connections
+                                                                       runbooks-panel-opened?)
         compatible-connections (if primary-connection
                                  filtered-compatible-connections
                                  filtered-connections)]
     [:> Box
-     ;; Conexão principal fixa
      (when primary-connection
        [connection-item
         {:connection primary-connection
          :selected? true
          :disabled? true} dark-mode?])
 
-     ;; Outras conexões compatíveis
      (for [connection compatible-connections]
        ^{:key (:name connection)}
        [connection-item
@@ -76,7 +85,7 @@
          :selected? (some #(= (:name %) (:name connection)) selected-connections)
          :on-select #(rf/dispatch [:connection-selection/toggle connection])} dark-mode?])]))
 
-(defn main [dark-mode?]
+(defn main [dark-mode? runbooks-panel-opened?]
   (let [selected-connections @(rf/subscribe [:connection-selection/selected])]
     [:> Box {:class "h-full flex flex-col"}
      [:> Flex {:justify "between"
@@ -97,4 +106,4 @@
       [:> Text {:as "p" :size "1" :class "px-2 py-3"}
        "Select similar connections to execute commands at once."]
 
-      [connections-list dark-mode?]]]))
+      [connections-list dark-mode? runbooks-panel-opened?]]]))

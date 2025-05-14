@@ -39,7 +39,8 @@
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or (and (not exec-enabled?)
                                          runbooks-enabled?)
-                                    no-connection-selected?)
+                                    no-connection-selected?
+                                    has-runbook?)
             disable-runbooks-button? (and exec-enabled? (not runbooks-enabled?))
             on-click-icon-button (fn [type]
                                    (reset! active-panel (when-not (= @active-panel type) type))
