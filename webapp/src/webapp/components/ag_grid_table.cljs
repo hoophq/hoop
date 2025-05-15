@@ -55,10 +55,8 @@
                                                  :sortable true
                                                  :filter true
                                                  :editable true})
-                        :suppressRowClickSelection true
-                        :suppressCellSelection true
                         :pagination (boolean (:pagination? merged-options))
-                        :paginationPageSize (or (:page-size merged-options) 100)
+                        :paginationPageSize (or (:page-size merged-options) 20)
                         :onGridReady (fn [params]
                                        (when (and (:auto-size-columns? merged-options)
                                                   (aget params "columnApi"))
