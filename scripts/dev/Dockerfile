@@ -3,7 +3,6 @@ FROM ubuntu:focal-20250404
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 ENV NODE_VERSION=18.17.0
-ENV POSTGREST_VERSION=11.2.2
 
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && case "${dpkgArch##*-}" in \
@@ -144,18 +143,6 @@ RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kube
   echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
   chmod 755 kubectl && \
   mv kubectl /usr/local/bin/kubectl
-
-RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
-  && case "${dpkgArch##*-}" in \
-  amd64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-linux-static-x64.tar.xz";; \
-  arm64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-ubuntu-aarch64.tar.xz";; \
-  *) echo "unsupported architecture"; exit 1 ;; \
-  esac \
-  && curl -sL $URL -o postgrest.tar.xz && \
-  tar -xf postgrest.tar.xz && rm -f postgrest.tar.xz && \
-  mv postgrest /usr/local/bin/postgrest && \
-  chmod 0755 /usr/local/bin/postgrest && \
-  postgrest --version
 
 RUN pip3 install -U \
   boto3==1.37.38 \

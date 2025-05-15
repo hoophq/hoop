@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 // LivenessHandler
@@ -24,8 +23,7 @@ import (
 func LivenessHandler() func(_ *gin.Context) {
 	return func(c *gin.Context) {
 		grpcLivenessErr := checkAddrLiveness(grpc.LocalhostAddr)
-		apiLivenessErr := pgrest.CheckLiveness()
-		if grpcLivenessErr != nil || apiLivenessErr != nil {
+		if grpcLivenessErr != nil {
 			c.JSON(http.StatusBadRequest, openapi.LivenessCheck{Liveness: "ERR"})
 			return
 		}

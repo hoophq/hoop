@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
@@ -96,13 +95,12 @@ func (s *Server) PreConnect(ctx context.Context, req *pb.PreConnectRequest) (*pb
 	if orgID == "" || agentID == "" || agentName == "" {
 		return nil, status.Errorf(codes.Internal, "missing agent context")
 	}
-	orgCtx := pgrest.NewOrgContext(orgID)
-	resp := connectionrequests.AgentPreConnect(orgCtx, agentID, req)
+	resp := connectionrequests.AgentPreConnect(orgID, agentID, req)
 	if resp.Message != "" {
 		log.Warnf("failed processing pre-connect, org=%v, agent=%v, reason=%v",
 			orgID, agentName, resp.Message)
 	}
-	connectionstatus.SetOnlinePreConnect(pgrest.NewOrgContext(orgID), streamtypes.NewStreamID(agentID, req.Name))
+	connectionstatus.SetOnlinePreConnect(orgID, streamtypes.NewStreamID(agentID, req.Name))
 	return resp, nil
 }
 

@@ -703,8 +703,8 @@ Resources:
                 SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
                 psql -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" <<EOF
                 BEGIN;
-                DELETE FROM agents WHERE name = 'system';
-                INSERT INTO agents (id, org_id, name, mode, key_hash, status)
+                DELETE FROM private.agents WHERE name = 'system';
+                INSERT INTO private.agents (id, org_id, name, mode, key_hash, status)
                     VALUES ('9A7C5A60-C910-4AD1-8A70-997E37123894', (SELECT id from private.orgs), 'system', 'standard', '$SECRET_KEY_HASH', 'DISCONNECTED')
                     ON CONFLICT DO NOTHING;
                 COMMIT;

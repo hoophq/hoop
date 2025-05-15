@@ -11,9 +11,6 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -56,12 +53,12 @@ func setChecksumCache(orgID string, req *proto.PreConnectRequest) {
 	connectionChecksumStore.Set(syncKey, checksum)
 }
 
-func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest, conn *models.Connection) error {
+func upsertConnection(orgID, agentID string, req *proto.PreConnectRequest, conn *models.Connection) error {
 	// TODO: implement logic based on license
 	if conn == nil {
 		conn = &models.Connection{
 			ID:        uuid.NewString(),
-			OrgID:     ctx.GetOrgID(),
+			OrgID:     orgID,
 			AgentID:   sql.NullString{String: agentID, Valid: true},
 			ManagedBy: sql.NullString{String: managedByAgent, Valid: true},
 		}
@@ -85,27 +82,30 @@ func upsertConnection(ctx pgrest.OrgContext, agentID string, req *proto.PreConne
 	if err := models.UpsertConnection(conn); err != nil {
 		return err
 	}
-	pgplugins.EnableDefaultPlugins(ctx, conn.ID, req.Name, defaultPlugins)
-	pgplugins.UpsertPluginConnection(ctx, plugintypes.PluginDLPName, &types.PluginConnection{
-		ID:           uuid.NewString(),
-		ConnectionID: conn.ID,
-		Name:         req.Name,
-		Config:       req.RedactTypes,
-	})
-	pgplugins.UpsertPluginConnection(ctx, plugintypes.PluginReviewName, &types.PluginConnection{
-		ID:           uuid.NewString(),
-		ConnectionID: conn.ID,
-		Name:         req.Name,
-		Config:       req.Reviewers,
-	})
+
+	// best-effort operations
+	models.ActivateDefaultPlugins(orgID, conn.ID)
+	err := models.AddPluginConnection(orgID, plugintypes.PluginDLPName, conn.ID, req.RedactTypes)
+	if err != nil {
+		log.Warnf("failed adding plugin dlp connection configuration for %v, reason=%v",
+			conn.Name, err)
+	}
+	err = models.AddPluginConnection(orgID, plugintypes.PluginReviewName, conn.ID, req.Reviewers)
+	if err != nil {
+		log.Warnf("failed adding plugin review connection configuration for %v, reason=%v",
+			conn.Name, err)
+	}
 	return nil
 }
 
-func connectionSync(ctx pgrest.OrgContext, agentID string, req *proto.PreConnectRequest) error {
-	if checksumCacheMatches(ctx.GetOrgID(), req) {
+func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {
+	if checksumCacheMatches(orgID, req) {
 		return nil
 	}
-	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), req.Name)
+	// It is an internal operation, it must be able
+	// to get the connectinon without any access control group validation
+	adminCtx := models.NewAdminContext(orgID)
+	conn, err := models.GetConnectionByNameOrID(adminCtx, req.Name)
 	if err != nil {
 		return err
 	}
@@ -120,9 +120,9 @@ func connectionSync(ctx pgrest.OrgContext, agentID string, req *proto.PreConnect
 	}
 
 	// update or create a connection with new values
-	if err := upsertConnection(ctx, agentID, req, conn); err != nil {
+	if err := upsertConnection(orgID, agentID, req, conn); err != nil {
 		return err
 	}
-	setChecksumCache(ctx.GetOrgID(), req)
+	setChecksumCache(orgID, req)
 	return nil
 }

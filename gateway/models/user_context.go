@@ -9,6 +9,21 @@ import (
 	"gorm.io/gorm"
 )
 
+type UserContext interface {
+	GetOrgID() string
+	IsAdmin() bool
+	GetUserGroups() []string
+}
+
+// NewAdminContext creates a new UserContext with admin privileges.
+// It should when a component needs to perform actions that require admin access.
+func NewAdminContext(orgID string) UserContext {
+	return &Context{
+		OrgID:      orgID,
+		UserGroups: []string{types.GroupAdmin},
+	}
+}
+
 type Context struct {
 	OrgID          string          `gorm:"column:org_id"`
 	OrgName        string          `gorm:"column:org_name"`

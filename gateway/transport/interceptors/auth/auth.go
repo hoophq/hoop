@@ -12,7 +12,6 @@ import (
 	commongrpc "github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
@@ -235,7 +234,7 @@ func (i *interceptor) validateAccessToken(bearerToken string) (subject string, e
 }
 
 func (i *interceptor) getConnection(name string, userCtx *models.Context) (*types.ConnectionInfo, error) {
-	conn, err := apiconnections.FetchByName(userCtx, name)
+	conn, err := models.GetConnectionByNameOrID(userCtx, name)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, err=%v", name, err)
 		sentry.CaptureException(err)

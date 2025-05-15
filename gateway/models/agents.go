@@ -73,6 +73,25 @@ func GetAgentByToken(token string) (*Agent, error) {
 	return &agent, err
 }
 
+func CreateAgentOrgKey(orgID, name, mode, key, secretKeyHash string) error {
+	identifier := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{"agent", orgID, name}, "/"))).String()
+	err := DB.Table("private.agents").
+		Create(map[string]any{
+			"id":       identifier,
+			"org_id":   orgID,
+			"name":     name,
+			"mode":     mode,
+			"key_hash": secretKeyHash,
+			"key":      key,
+			"status":   AgentStatusDisconnected,
+			"metadata": map[string]any{},
+		}).Error
+	if err == gorm.ErrDuplicatedKey {
+		return ErrAlreadyExists
+	}
+	return err
+}
+
 func CreateAgent(orgID, name, mode, secretKeyHash string) error {
 	identifier := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{"agent", orgID, name}, "/"))).String()
 	err := DB.Table("private.agents").

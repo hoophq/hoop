@@ -5945,10 +5945,6 @@ const docTemplate = `{
                     "description": "Report if IDP_CUSTOM_SCOPES env is set",
                     "type": "boolean"
                 },
-                "has_postgrest_role": {
-                    "description": "Report if PGREST_ROLE env is set",
-                    "type": "boolean"
-                },
                 "has_redact_credentials": {
                     "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set",
                     "type": "boolean"

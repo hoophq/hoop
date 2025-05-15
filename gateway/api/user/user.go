@@ -18,7 +18,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -399,11 +398,11 @@ func GetUserByEmailOrID(c *gin.Context) {
 	c.JSON(http.StatusOK, userResponse)
 }
 
-func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
+func getAskAIFeatureStatus(orgID string) (string, error) {
 	if !appconfig.Get().IsAskAIAvailable() {
 		return "unavailable", nil
 	}
-	isEnabled, err := models.IsFeatureAskAiEnabled(ctx.GetOrgID())
+	isEnabled, err := models.IsFeatureAskAiEnabled(orgID)
 	if err != nil {
 		return "", err
 	}
@@ -424,7 +423,7 @@ func getAskAIFeatureStatus(ctx pgrest.OrgContext) (string, error) {
 //	@Router			/userinfo [get]
 func GetUserInfo(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	askAIFeatureStatus, err := getAskAIFeatureStatus(ctx)
+	askAIFeatureStatus, err := getAskAIFeatureStatus(ctx.OrgID)
 	if err != nil {
 		log.Errorf("unable to obtain ask-ai feature status, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to obtain ask-ai feature status"})
@@ -660,13 +659,6 @@ func isValidMailAddress(email string) bool {
 }
 
 func toRole(user openapi.User) string {
-	if slices.Contains(user.Groups, types.GroupAdmin) {
-		return string(openapi.RoleAdminType)
-	}
-	return string(openapi.RoleStandardType)
-}
-
-func toRoleLegacy(user pgrest.User) string {
 	if slices.Contains(user.Groups, types.GroupAdmin) {
 		return string(openapi.RoleAdminType)
 	}

@@ -23,7 +23,6 @@ import (
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
-	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
@@ -83,7 +82,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	conn, err := apiconnections.FetchByName(ctx, req.Connection)
+	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
 	if err != nil {
 		log.Errorf("failed fetch connection %v for exec, err=%v", req.Connection, err)
 		sentry.CaptureException(err)

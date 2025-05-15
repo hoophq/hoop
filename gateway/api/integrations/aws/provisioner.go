@@ -26,7 +26,6 @@ import (
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
 	"github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
@@ -99,7 +98,7 @@ func (p *provisioner) Run(jobID string) error {
 		return fmt.Errorf("unable to create db role job, err=%v", err)
 	}
 
-	runbookConfig, err := apirunbooks.GetRunbookConfig(pgrest.NewOrgContext(p.orgID))
+	runbookConfig, err := apirunbooks.GetRunbookConfig(p.orgID)
 	if err != nil {
 		return err
 	}

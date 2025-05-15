@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -16,9 +15,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var (
@@ -26,30 +22,6 @@ var (
 	connectionTagsKeyRe, _ = regexp.Compile(`^[a-zA-Z0-9_]+(?:[-\./]?[a-zA-Z0-9_]+){0,}$`)
 	connectionTagsValRe, _ = regexp.Compile(`^[a-zA-Z0-9-_\+=@\/:\s]+$`)
 )
-
-func accessControlAllowed(ctx pgrest.Context) (func(connName string) bool, error) {
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginAccessControlName)
-	if err != nil {
-		return nil, err
-	}
-	if p == nil || ctx.IsAdmin() {
-		return func(_ string) bool { return true }, nil
-	}
-
-	return func(connName string) bool {
-		for _, c := range p.Connections {
-			if c.Name == connName {
-				for _, userGroup := range ctx.GetUserGroups() {
-					if allow := slices.Contains(c.Config, userGroup); allow {
-						return allow
-					}
-				}
-				return false
-			}
-		}
-		return false
-	}, nil
-}
 
 func setConnectionDefaults(req *openapi.Connection) {
 	if req.Secrets == nil {

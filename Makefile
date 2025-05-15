@@ -82,9 +82,6 @@ build-gateway-bundle:
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/bin
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations
 	mkdir -p ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp
-	curl -sL https://github.com/PostgREST/postgrest/releases/download/v11.2.2/postgrest-v11.2.2-${POSTREST_ARCH_SUFFIX} -o postgrest.tar.xz && \
-	tar -xf postgrest.tar.xz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && rm -f postgrest.tar.xz && \
-	chmod 0755 ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/postgrest && \
 	tar -xf ${DIST_FOLDER}/binaries/hoop_${VERSION}_Linux_${GOARCH}.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/bin/ && \
 	cp rootfs/app/migrations/*.up.sql ${DIST_FOLDER}/hoopgateway/opt/hoop/migrations/ && \
 	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 1 && \

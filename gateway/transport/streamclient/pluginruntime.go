@@ -3,7 +3,7 @@ package streamclient
 import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	"github.com/hoophq/hoop/gateway/models"
 	pluginsslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc/codes"
@@ -22,8 +22,8 @@ func loadRuntimePlugins(ctx plugintypes.Context) ([]runtimePlugin, error) {
 	}
 	var nonRegisteredPlugins []string
 	for _, p := range plugintypes.RegisteredPlugins {
-		p1, err := pgplugins.New().FetchOne(ctx, p.Name())
-		if err != nil {
+		p1, err := models.GetPluginByName(ctx.GetOrgID(), p.Name())
+		if err != nil && err != models.ErrNotFound {
 			log.Errorf("failed retrieving plugin %q, err=%v", p.Name(), err)
 			return nil, status.Errorf(codes.Internal, "failed registering plugins")
 		}
@@ -33,13 +33,13 @@ func loadRuntimePlugins(ctx plugintypes.Context) ([]runtimePlugin, error) {
 		}
 
 		if p.Name() == plugintypes.PluginSlackName {
-			if p1.Config != nil {
-				ctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.Config.EnvVars
+			if p1.EnvVars != nil {
+				ctx.ParamsData[pluginsslack.PluginConfigEnvVarsParam] = p1.EnvVars
 			}
 		}
 
 		for _, c := range p1.Connections {
-			if c.Name == ctx.ConnectionName {
+			if c.ConnectionName == ctx.ConnectionName {
 				config := removePluginConfigDuplicates(c.Config)
 				ep := runtimePlugin{
 					Plugin: p,

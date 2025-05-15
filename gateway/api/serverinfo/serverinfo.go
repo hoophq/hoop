@@ -29,7 +29,6 @@ var (
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
-		HasPostgresRole:         isEnvSet("PGREST_ROLE"),
 		DisableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
 		AnalyticsTracking:       getAnalyticsTrackingStatus(),
 	}

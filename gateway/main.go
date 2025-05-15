@@ -17,7 +17,7 @@ import (
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
+	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
@@ -52,8 +52,8 @@ func Run() {
 		log.Fatal(err)
 	}
 
-	// by default start postgrest process
-	if err := pgrest.Run(); err != nil {
+	pgURI, migrationPathFiles := appconfig.Get().PgURI(), appconfig.Get().MigrationPathFiles()
+	if err := modelsbootstrap.MigrateDB(pgURI, migrationPathFiles); err != nil {
 		log.Fatal(err)
 	}
 

@@ -16,16 +16,11 @@ import (
 
 // TODO: it should include all runtime configuration
 
-const (
-	defaultPostgRESTRole             = "hoop_apiuser"
-	defaultWebappStaticUiPath string = "/app/ui/public"
-)
+const defaultWebappStaticUiPath string = "/app/ui/public"
 
 type pgCredentials struct {
 	connectionString string
 	username         string
-	// Postgrest Role Name
-	postgrestRole string
 }
 type Config struct {
 	apiKey                          string
@@ -90,10 +85,6 @@ func Load() error {
 	pgCred, err := loadPostgresCredentials()
 	if err != nil {
 		return err
-	}
-	pgCred.postgrestRole = os.Getenv("PGREST_ROLE")
-	if pgCred.postgrestRole == "" {
-		pgCred.postgrestRole = defaultPostgRESTRole
 	}
 	migrationPathFiles := strings.TrimSuffix(os.Getenv("MIGRATION_PATH_FILES"), "/")
 	if migrationPathFiles == "" {
@@ -351,7 +342,6 @@ func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnal
 func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
 func (c Config) PgUsername() string                    { return c.pgCred.username }
 func (c Config) PgURI() string                         { return c.pgCred.connectionString }
-func (c Config) PostgRESTRole() string                 { return c.pgCred.postgrestRole }
 func (c Config) AnalyticsTracking() bool               { return c.analyticsTracking }
 func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
 func (c Config) MigrationPathFiles() string            { return c.migrationPathFiles }

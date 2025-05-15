@@ -19,7 +19,7 @@ func GetSessionReport(orgID string, opts map[string]any) (*SessionReport, error)
 	WITH info_types AS (
         SELECT id, info_type, redact_total::numeric
         FROM
-            sessions,
+            private.sessions,
             jsonb_each_text(metrics->'data_masking'->'info_types') AS kv(info_type, redact_total)
         WHERE org_id::TEXT = @org_id
         AND metrics is not null
@@ -34,7 +34,7 @@ func GetSessionReport(orgID string, opts map[string]any) (*SessionReport, error)
             i.info_type,
             SUM(i.redact_total) AS redact_total,
             SUM((metrics->'data_masking'->'transformed_bytes')::INT) AS transformed_bytes
-        FROM sessions s
+        FROM private.sessions s
         INNER JOIN info_types i ON s.id = i.id
         WHERE s.org_id::TEXT = @org_id
         AND metrics is not null
