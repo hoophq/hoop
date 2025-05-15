@@ -3,7 +3,7 @@
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
-            [webapp.components.data-grid-table :as data-grid-table]
+            [webapp.components.ag-grid-table :as ag-grid-table]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
             [webapp.webclient.log-area.logs :as logs]))
 
@@ -67,6 +67,9 @@
                  :tabs available-tabs
                  :selected-tab @selected-tab}]
           (case @selected-tab
-            "Tabular" [data-grid-table/main results-heads results-body dark-mode? tabular-loading? allow-copy?]
+            "Tabular" [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
+                       {:height "100%"
+                        :pagination? (> (count results-body) 100)
+                        :auto-size-columns? true}]
             "Logs" [logs/main :logs logs-content]
             :else [logs/main logs-content])]]))))
