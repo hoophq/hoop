@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.44.0",
+  "version": "1.43.4",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -35,8 +35,6 @@
     "@uiw/codemirror-theme-nord": "^4.21.21",
     "@uiw/codemirror-theme-sublime": "^4.21.21",
     "@uiw/react-codemirror": "^4.21.21",
-    "ag-grid-community": "^33.3.0",
-    "ag-grid-react": "^33.3.0",
     "allotment": "^1.19.3",
     "class-variance-authority": "^0.7.0",
     "clipboard": "^2.0.8",
