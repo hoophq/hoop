@@ -251,11 +251,8 @@
                              (reset! metadata-key "")
                              (reset! metadata-value ""))
             keymap [{:key "Mod-Enter"
-                     :run (fn [^cm-state/StateCommand config]
-                            (let [state (.-state config)
-                                  doc (.-doc state)]
-                              (rf/dispatch [:editor-plugin/submit-task
-                                            {:script (.sliceString ^cm-state/Text doc 0 (.-length doc))}])))
+                     :run (fn [_]
+                            (rf/dispatch [:editor-plugin/submit-task {:script @script}]))
                      :preventDefault true}
                     {:key "Mod-Shift-Enter"
                      :run (fn [^cm-state/StateCommand config]
