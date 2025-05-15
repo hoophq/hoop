@@ -300,7 +300,7 @@ func GetConnectionByNameOrID(ctx UserContext, nameOrID string) (*Connection, err
 		-- do not apply any access control if the plugin is not enabled or it is an admin user
 		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
-		ELSE acc.config <@ (@user_groups)::text[]
+		ELSE acc.config && (@user_groups)::text[]
 	END`, map[string]any{
 		"org_id":      ctx.GetOrgID(),
 		"nameOrID":    nameOrID,
@@ -427,7 +427,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		-- do not apply any access control if the plugin is not enabled or it is an admin user
 		WHEN ac.id IS NULL OR (?)::BOOL THEN true
 		-- allow if any of the input user groups are in the access control list
-		ELSE acc.config <@ (?)::text[]
+		ELSE acc.config && (?)::text[]
 	END AND
 	(
 		COALESCE(c.type::text, '') LIKE ? AND
