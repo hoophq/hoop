@@ -257,13 +257,3 @@ func ActivateDefaultPlugins(orgID, connID string) {
 		}
 	}
 }
-
-func filterPluginConnection(pluginConnList []*PluginConnection, connID string) []*PluginConnection {
-	filtered := []*PluginConnection{}
-	for _, conn := range pluginConnList {
-		if conn.ConnectionID != connID {
-			filtered = append(filtered, conn)
-		}
-	}
-	return filtered
-}
