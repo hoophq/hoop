@@ -1,6 +1,6 @@
 BEGIN;
 
-CREATE SCHEMA private;
+CREATE SCHEMA IF NOT EXISTS private;
 SET search_path TO private;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
