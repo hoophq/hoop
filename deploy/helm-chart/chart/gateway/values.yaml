@@ -17,7 +17,7 @@ defaultAgent:
   imageRepository: 'hoophq/hoopdev'
   imageTag: latest
   imagePullPolicy: Always
-  grpcHost: 127.0.0.1:8009
+  grpcHost: 127.0.0.1:8010
 
 ## Set pod annotations
 ##
