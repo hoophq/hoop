@@ -15,14 +15,11 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
-	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -39,21 +36,20 @@ import (
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
-	if err != nil {
-		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError,
-			gin.H{"message": "failed retrieving runbook plugin"})
-		return
-	}
-	if p == nil {
+	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+	switch err {
+	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin runbooks not found"})
+		return
+	case nil:
+	default:
+		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
 		return
 	}
 	var configEnvVars map[string]string
-	if p.Config != nil {
-		configEnvVars = p.Config.EnvVars
+	if p.EnvVars != nil {
+		configEnvVars = p.EnvVars
 	}
 	config, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
@@ -82,20 +78,20 @@ func List(c *gin.Context) {
 func ListByConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connectionName := c.Param("name")
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
-	if err != nil {
+	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin runbooks not found"})
+		return
+	case nil:
+	default:
 		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
 		return
 	}
-	if p == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin runbooks not found"})
-		return
-	}
 	var configEnvVars map[string]string
-	if p.Config != nil {
-		configEnvVars = p.Config.EnvVars
+	if p.EnvVars != nil {
+		configEnvVars = p.EnvVars
 	}
 	config, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
@@ -105,7 +101,7 @@ func ListByConnection(c *gin.Context) {
 	hasConnection := false
 	var pathPrefix string
 	for _, conn := range p.Connections {
-		if conn.Name == connectionName {
+		if conn.ConnectionName == connectionName {
 			if len(conn.Config) > 0 {
 				pathPrefix = conn.Config[0]
 			}
@@ -263,8 +259,8 @@ func RunExec(c *gin.Context) {
 	}
 }
 
-func getConnection(ctx pgrest.Context, c *gin.Context, connectionName string) (*models.Connection, error) {
-	conn, err := apiconnections.FetchByName(ctx, connectionName)
+func getConnection(ctx models.UserContext, c *gin.Context, connectionName string) (*models.Connection, error) {
+	conn, err := models.GetConnectionByNameOrID(ctx, connectionName)
 	if err != nil {
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving connection"})
@@ -277,15 +273,16 @@ func getConnection(ctx pgrest.Context, c *gin.Context, connectionName string) (*
 	return conn, nil
 }
 
-func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connection *models.Connection) (*templates.RunbookConfig, string, error) {
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
-		return nil, "", fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
-	}
-	if p == nil {
+func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models.Connection) (*templates.RunbookConfig, string, error) {
+	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+	switch err {
+	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
 		return nil, "", fmt.Errorf("plugin not found")
+	case nil:
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
+		return nil, "", fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
 	}
 	var repoPrefix string
 	hasConnection := false
@@ -303,8 +300,8 @@ func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connection *models.Con
 		return nil, repoPrefix, fmt.Errorf("plugin is not enabled for this connection")
 	}
 	var configEnvVars map[string]string
-	if p.Config != nil {
-		configEnvVars = p.Config.EnvVars
+	if p.EnvVars != nil {
+		configEnvVars = p.EnvVars
 	}
 	runbookConfig, err := templates.NewRunbookConfig(configEnvVars)
 	if err != nil {
@@ -315,15 +312,19 @@ func getRunbookConfig(ctx pgrest.Context, c *gin.Context, connection *models.Con
 }
 
 // GetRunbookConfig returns the runbook if the plugin is enabled and there's an existent configuration set
-func GetRunbookConfig(ctx pgrest.OrgContext) (*templates.RunbookConfig, error) {
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginRunbooksName)
-	if err != nil {
+func GetRunbookConfig(orgID string) (*templates.RunbookConfig, error) {
+	p, err := models.GetPluginByName(orgID, plugintypes.PluginRunbooksName)
+	switch err {
+	case models.ErrNotFound:
+		return nil, nil
+	case nil:
+		if len(p.EnvVars) == 0 {
+			return nil, nil
+		}
+	default:
 		return nil, fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
 	}
-	if p == nil || p.Config == nil {
-		return nil, nil
-	}
-	runbookConfig, err := templates.NewRunbookConfig(p.Config.EnvVars)
+	runbookConfig, err := templates.NewRunbookConfig(p.EnvVars)
 	if err != nil {
 		return nil, err
 	}

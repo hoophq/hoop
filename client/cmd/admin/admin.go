@@ -45,7 +45,6 @@ Configuration:
   Ask AI Credentials:      %v
   IDP Audience:            %v
   IDP Custom Scopes:       %v
-  Postgrest Role:          %v
   SSH Client Host Key      %v
 
 License:
@@ -109,7 +108,6 @@ var serverInfoCmd = &cobra.Command{
 				displayFn(resp["has_ask_ai_credentials"]),
 				displayFn(resp["has_idp_audience"]),
 				displayFn(resp["has_idp_custom_scopes"]),
-				displayFn(resp["has_postgrest_role"]),
 				displayFn(resp["has_ssh_client_host_key"]),
 				licenseInfo["key_id"],
 				licenseInfo["type"],

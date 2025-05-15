@@ -64,10 +64,16 @@ type Context struct {
 	ParamsData GenericMap
 }
 
+type PluginResource interface {
+	GetName() string
+	GetOrgID() string
+	GetEnvVars() map[string]string
+}
+
 type Plugin interface {
 	Name() string
 	OnStartup(pctx Context) error
-	OnUpdate(oldState, newState *types.Plugin) error
+	OnUpdate(oldState, newState PluginResource) error
 	OnConnect(pctx Context) error
 	OnReceive(pctx Context, pkt *pb.Packet) (*ConnectResponse, error)
 	OnDisconnect(pctx Context, errMsg error) error

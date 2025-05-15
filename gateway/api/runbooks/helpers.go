@@ -9,7 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 const maxTemplateSize = 1000000 // 1MB
@@ -53,7 +53,7 @@ func FetchRunbookFile(config *templates.RunbookConfig, fileName, refHash string,
 	return nil, fmt.Errorf("runbook %v not found for %v", fileName, c.Hash.String())
 }
 
-func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *templates.RunbookConfig) (*openapi.RunbookList, error) {
+func listRunbookFiles(pluginConnectionList []*models.PluginConnection, config *templates.RunbookConfig) (*openapi.RunbookList, error) {
 	commit, err := templates.FetchRepo(config)
 	if err != nil {
 		return nil, err
@@ -75,12 +75,12 @@ func listRunbookFiles(pluginConnectionList []*types.PluginConnection, config *te
 		var connectionList []string
 		for _, conn := range pluginConnectionList {
 			if len(conn.Config) == 0 {
-				connectionList = append(connectionList, conn.Name)
+				connectionList = append(connectionList, conn.ConnectionName)
 				continue
 			}
 			pathPrefix := conn.Config[0]
 			if pathPrefix != "" && strings.HasPrefix(f.Name, pathPrefix) {
-				connectionList = append(connectionList, conn.Name)
+				connectionList = append(connectionList, conn.ConnectionName)
 			}
 		}
 

@@ -19,7 +19,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -44,7 +43,7 @@ func (p *auditPlugin) OnStartup(pctx plugintypes.Context) error {
 	p.started = true
 	return nil
 }
-func (p *auditPlugin) OnUpdate(_, _ *types.Plugin) error { return nil }
+func (p *auditPlugin) OnUpdate(_, _ plugintypes.PluginResource) error { return nil }
 func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	log.With("sid", pctx.SID).Infof("processing on-connect")
 	if pctx.OrgID == "" || pctx.SID == "" {

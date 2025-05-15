@@ -80,7 +80,10 @@ func (s *AgentStream) validate() error {
 		if s.connectionName == "" {
 			return status.Error(codes.FailedPrecondition, "missing connection-name attribute")
 		}
-		conn, err := models.GetConnectionByNameOrID(s.GetOrgID(), s.connectionName)
+		// It is an internal operation, it must be able
+		// to get the connectinon without any access control group validation
+		adminCtx := models.NewAdminContext(s.GetOrgID())
+		conn, err := models.GetConnectionByNameOrID(adminCtx, s.connectionName)
 		if err != nil || conn == nil {
 			return status.Error(codes.Internal, fmt.Sprintf("failed validating connection, reason=%v", err))
 		}
@@ -118,7 +121,7 @@ func (s *AgentStream) Save() (err error) {
 		}
 	}()
 
-	return connectionstatus.SetOnline(s, s.StreamAgentID(), s.parseDefaultMetadata())
+	return connectionstatus.SetOnline(s.GetOrgID(), s.StreamAgentID(), s.parseDefaultMetadata())
 }
 
 func (s *AgentStream) Close(pctx plugintypes.Context, errMsg error) error {
@@ -128,7 +131,7 @@ func (s *AgentStream) Close(pctx plugintypes.Context, errMsg error) error {
 		return nil
 	}
 	agentStore.Del(streamAgentID)
-	_ = connectionstatus.SetOffline(s, s.StreamAgentID(), s.parseDefaultMetadata())
+	_ = connectionstatus.SetOffline(s.GetOrgID(), s.StreamAgentID(), s.parseDefaultMetadata())
 	disconnectProxiesByAgent(pctx, errMsg)
 	return nil
 }

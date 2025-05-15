@@ -872,8 +872,6 @@ type ServerInfo struct {
 	HasIDPAudience bool `json:"has_idp_audience"`
 	// Report if IDP_CUSTOM_SCOPES env is set
 	HasIDPCustomScopes bool `json:"has_idp_custom_scopes"`
-	// Report if PGREST_ROLE env is set
-	HasPostgresRole bool `json:"has_postgrest_role"`
 	// Report if ASK_AI_CREDENTIALS is set (openapi credentials)
 	HasAskiAICredentials bool `json:"has_ask_ai_credentials"`
 	// Report if SSH_CLIENT_HOST_KEY is set

@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -170,7 +168,7 @@ func UpsertBatchConnections(connections []*Connection) error {
 	}
 	for _, c := range connections {
 		// best-effort enabling default plugins
-		pgplugins.EnableDefaultPlugins(pgrest.NewOrgContext(c.OrgID), c.ID, c.Name, pgplugins.DefaultPluginNames)
+		ActivateDefaultPlugins(c.OrgID, c.ID)
 	}
 	return nil
 }
@@ -221,11 +219,20 @@ func dedupeResourceNames(resourceNames []string) (v []string) {
 }
 
 func DeleteConnection(orgID, name string) error {
-	return DB.Table(tableConnections).
+	res := DB.Table(tableConnections).
 		Where(`org_id = ? and name = ?`, orgID, name).
-		Delete(&Connection{}).Error
+		Delete(&Connection{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
+// GetConnectionGuardRailRules retrieves the guard rail rules associated with a connection.
+// It does not enforce access control rules
 func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules, error) {
 	var conn ConnectionGuardRailRules
 	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
@@ -251,7 +258,13 @@ func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules,
 	return &conn, nil
 }
 
-func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
+// GetConnectionByNameOrID retrieves a connection by name or ID.
+// It also checks if the user has access to the connection based on the access control plugin.
+func GetConnectionByNameOrID(ctx UserContext, nameOrID string) (*Connection, error) {
+	userGroups := pq.StringArray{}
+	for _, group := range ctx.GetUserGroups() {
+		userGroups = append(userGroups, group)
+	}
 	var conn Connection
 	err := DB.Model(&Connection{}).Raw(`
 	SELECT
@@ -265,7 +278,7 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 		 INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
 		 WHERE cta.connection_id = c.id
 		 GROUP BY cta.connection_id ) AS connection_tags,
-		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
+		( SELECT envs FROM private.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
@@ -274,18 +287,28 @@ func GetConnectionByNameOrID(orgID, nameOrID string) (*Connection, error) {
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
+	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
+	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
 	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	LEFT JOIN private.agents a ON a.id = c.agent_id AND a.org_id = @org_id
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
-	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID)`,
-		map[string]any{
-			"org_id":   orgID,
-			"nameOrID": nameOrID,
-		}).
-		First(&conn).Error
+	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
+	CASE
+		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
+		-- allow if any of the user groups are in the access control list
+		ELSE acc.config <@ (@user_groups)::text[]
+	END`, map[string]any{
+		"org_id":      ctx.GetOrgID(),
+		"nameOrID":    nameOrID,
+		"is_admin":    ctx.IsAdmin(),
+		"user_groups": userGroups,
+	}).
+		First(&conn).
+		Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -354,14 +377,21 @@ func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string
 	return string(jsonData), nil
 }
 
-func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, error) {
+// ListConnections retrieves a list of connections based on the provided filter options.
+// It applies access control rules based on the user's groups and the access control plugin.
+func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection, error) {
 	setConnectionOptionDefaults(&opts)
 	tagSelectorJsonData, err := opts.ParseTagSelectorQuery()
 	if err != nil {
 		return nil, err
 	}
+	userGroups := pq.StringArray{}
+	for _, group := range ctx.GetUserGroups() {
+		userGroups = append(userGroups, group)
+	}
 	tagsAsArray := opts.GetTagsAsArray()
 	var items []Connection
+	// TODO: try changing to @ syntax
 	err = DB.Raw(`
 	WITH tag_selector_keys(key, op, val) AS (
 		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
@@ -377,7 +407,7 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 		 INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
 		 WHERE cta.connection_id = c.id
 		 GROUP BY cta.connection_id ) AS connection_tags,
-		( SELECT envs FROM public.env_vars WHERE id = c.id ) AS envs,
+		( SELECT envs FROM private.env_vars WHERE id = c.id ) AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
@@ -386,11 +416,19 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
+	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
 	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = ?
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	WHERE c.org_id = ? AND
+	CASE
+		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		WHEN ac.id IS NULL OR (?)::BOOL THEN true
+		-- allow if any of the input user groups are in the access control list
+		ELSE acc.config <@ (?)::text[]
+	END AND
 	(
 		COALESCE(c.type::text, '') LIKE ? AND
 		COALESCE(c.subtype, '') LIKE ? AND
@@ -410,22 +448,23 @@ func ListConnections(orgID string, opts ConnectionFilterOption) ([]Connection, e
 				-- Find any tag selector that is NOT satisfied by this connection
 				SELECT 1 FROM tag_selector_keys tsk
 				WHERE NOT EXISTS (
-				SELECT 1
-				FROM private.connection_tags_association cta
-				JOIN private.connection_tags ct ON ct.id = cta.tag_id
-				WHERE cta.connection_id = c.id
-				AND ct.key = tsk.key
-				AND CASE
-					WHEN tsk.op = '=' THEN ct.value = tsk.val
-					WHEN tsk.op = '!=' THEN ct.value != tsk.val
-					ELSE false
-				END
+					SELECT 1
+					FROM private.connection_tags_association cta
+					JOIN private.connection_tags ct ON ct.id = cta.tag_id
+					WHERE cta.connection_id = c.id
+					AND ct.key = tsk.key
+					AND CASE
+						WHEN tsk.op = '=' THEN ct.value = tsk.val
+						WHEN tsk.op = '!=' THEN ct.value != tsk.val
+						ELSE false
+					END
 				)
 			)
 		)
 	) ORDER BY c.name ASC`,
 		tagSelectorJsonData,
-		orgID, orgID, orgID,
+		ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(),
+		ctx.IsAdmin(), userGroups, // access control filter
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,

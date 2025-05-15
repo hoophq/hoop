@@ -2,7 +2,6 @@ FROM ubuntu:focal-20250404
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
-ENV POSTGREST_VERSION=11.2.2
 
 RUN mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
@@ -16,18 +15,6 @@ RUN mkdir -p /app && \
         procps \
         gettext-base \
         curl
-
-RUN URL= && dpkgArch="$(dpkg --print-architecture)" \
-    && case "${dpkgArch##*-}" in \
-      amd64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-linux-static-x64.tar.xz";; \
-      arm64) URL="https://github.com/PostgREST/postgrest/releases/download/v$POSTGREST_VERSION/postgrest-v$POSTGREST_VERSION-ubuntu-aarch64.tar.xz";; \
-      *) echo "unsupported architecture"; exit 1 ;; \
-    esac \
-    && curl -sL $URL -o postgrest.tar.xz && \
-    tar -xf postgrest.tar.xz && rm -f postgrest.tar.xz && \
-    mv postgrest /usr/local/bin/postgrest && \
-    chmod 0755 /usr/local/bin/postgrest && \
-    postgrest --version
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen

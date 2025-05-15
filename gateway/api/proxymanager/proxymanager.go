@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -42,7 +41,7 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	conn, err := apiconnections.FetchByName(ctx, obj.RequestConnectionName)
+	conn, err := models.GetConnectionByNameOrID(ctx, obj.RequestConnectionName)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, reason=%v", obj.RequestConnectionName, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
@@ -93,7 +92,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	conn, err := apiconnections.FetchByName(ctx, req.ConnectionName)
+	conn, err := models.GetConnectionByNameOrID(ctx, req.ConnectionName)
 	if err != nil {
 		log.Errorf("failed retrieving connection %v, reason=%v", req.ConnectionName, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
@@ -139,7 +138,7 @@ func Post(c *gin.Context) {
 
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			obj, err := clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
+			obj, err := clientstate.Update(ctx.GetOrgID(), models.ProxyManagerStatusDisconnected)
 			if err != nil {
 				errMsg := fmt.Sprintf("failed updating status, err=%v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
@@ -170,7 +169,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "max attempts (10) reached trying to subscribe"})
 		return
 	}
-	obj, err := clientstate.Update(ctx, models.ProxyManagerStatusConnected,
+	obj, err := clientstate.Update(ctx.GetOrgID(), models.ProxyManagerStatusConnected,
 		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
 	if err != nil {
 		log.Errorf("fail to update status, err=%v", err)
@@ -219,7 +218,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	obj, err = clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
+	obj, err = clientstate.Update(ctx.GetOrgID(), models.ProxyManagerStatusDisconnected)
 	if err != nil {
 		log.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "disconnected grpc client, but it fail to update the status"})

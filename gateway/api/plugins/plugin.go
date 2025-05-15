@@ -3,33 +3,31 @@ package apiplugins
 import (
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net/http"
+	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/proto"
-	pgconnections "github.com/hoophq/hoop/gateway/pgrest/connections"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
+// TODO: move to openapi
 type PluginConnectionRequest struct {
 	Name         string   `json:"name"`
 	ConnectionID string   `json:"id"`
 	Config       []string `json:"config"`
 }
 
+// TODO: move to openapi
 type PluginRequest struct {
 	Name        string                     `json:"name"        binding:"required"`
 	Connections []*PluginConnectionRequest `json:"connections" binding:"required"`
 	Config      *types.PluginConfig        `json:"config"`
-	Source      *string                    `json:"source"`
-	Priority    int                        `json:"priority"`
 }
 
 // CreatePlugin
@@ -53,61 +51,49 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
-	if err != nil {
+	// existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
+	_, err := models.GetPluginByName(ctx.OrgID, req.Name)
+	switch err {
+	case models.ErrNotFound:
+	case nil:
+		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin already enabled"})
+		return
+	default:
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	if existingPlugin != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "plugin already enabled."})
-		return
-	}
-
-	newPlugin := types.Plugin{
-		ID:            uuid.NewString(),
-		OrgID:         ctx.OrgID,
-		Name:          req.Name,
-		Connections:   nil,
-		Config:        nil,
-		Source:        req.Source,
-		Priority:      req.Priority,
-		InstalledById: ctx.UserID,
+	pluginID := uuid.NewString()
+	newPlugin := &models.Plugin{
+		ID:          pluginID,
+		OrgID:       ctx.OrgID,
+		Name:        req.Name,
+		Connections: parsePluginConnections(c, pluginID, req),
+		EnvVars:     nil,
 	}
 	if req.Config != nil {
-		newPlugin.Config.OrgID = ctx.OrgID
-		newPlugin.ConfigID = func() *string { v := uuid.NewString(); return &v }()
-		newPlugin.Config = req.Config
 		if err := validatePluginConfig(req.Config.EnvVars); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
+		newPlugin.EnvVars = req.Config.EnvVars
 	}
 
-	pluginConnectionList, pluginConnectionIDs, err := parsePluginConnections(c, req)
-	if err != nil {
-		return
-	}
-	newPlugin.ConnectionsIDs = pluginConnectionIDs
-	newPlugin.Connections = pluginConnectionList
-
-	if err := processOnUpdatePluginPhase(nil, &newPlugin); err != nil {
+	if err := processOnUpdatePluginPhase(nil, newPlugin); err != nil {
 		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
 		log.Errorf(msg)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
 		return
 	}
-	if err := pgplugins.UpdatePlugin(ctx, &newPlugin); err != nil {
-		log.Errorf("failed enabling plugin, reason=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed enabling plugin"})
+
+	if err := models.UpsertPlugin(newPlugin); err != nil {
+		errMsg := fmt.Sprintf("failed creating plugin %v, reason=%v", req.Name, err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
-	redactPluginConfig(newPlugin.Config)
-	c.PureJSON(http.StatusCreated, &newPlugin)
+	c.JSON(http.StatusCreated, toOpenApi(newPlugin))
 }
 
 // UpdatePlugin
@@ -130,40 +116,28 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := pgplugins.New().FetchOne(ctx, req.Name)
-	if err != nil {
+	existingPlugin, err := models.GetPluginByName(ctx.OrgID, req.Name)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
+		return
+	case nil:
+	default:
 		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-
-	if existingPlugin == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-		return
-	}
-
-	pluginConnectionList, pluginConnectionIDs, err := parsePluginConnections(c, req)
-	if err != nil {
-		return
-	}
-
-	existingPlugin.Priority = req.Priority
-	existingPlugin.Source = req.Source
-	existingPlugin.Connections = pluginConnectionList
-	existingPlugin.ConnectionsIDs = pluginConnectionIDs
+	existingPlugin.Connections = parsePluginConnections(c, existingPlugin.ID, req)
 	// avoids creating another pluginconfig document
 	// this is kept for compatibility with webapp
-	pluginConfig := existingPlugin.Config
-	existingPlugin.Config = nil
-	if err := pgplugins.UpdatePlugin(ctx, existingPlugin); err != nil {
-		log.Errorf("failed updating plugin, reason=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating plugin"})
+	existingPlugin.EnvVars = nil
+	if err := models.UpsertPlugin(existingPlugin); err != nil {
+		errMsg := fmt.Sprintf("failed updating plugin, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
-	existingPlugin.Config = pluginConfig
-	c.PureJSON(http.StatusOK, existingPlugin)
+	c.JSON(http.StatusOK, toOpenApi(existingPlugin))
 }
 
 // UpdatePluginConfig
@@ -187,16 +161,15 @@ func PutConfig(c *gin.Context) {
 		return
 	}
 
-	existingPlugin, err := pgplugins.New().FetchOne(ctx, pluginName)
-	if err != nil {
-		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	existingPlugin, err := models.GetPluginByName(ctx.OrgID, pluginName)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
 		return
-	}
-
-	if existingPlugin == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+	case nil:
+	default:
+		log.Errorf("failed retrieving existing plugin, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -205,30 +178,29 @@ func PutConfig(c *gin.Context) {
 		return
 	}
 
-	pluginDocID := uuid.NewString()
-	pluginConfig := &types.PluginConfig{OrgID: ctx.OrgID, ID: pluginDocID, EnvVars: envVars}
-	if existingPlugin.Config != nil {
-		// keep the same configuration id to avoid creating a new document
-		pluginConfig.ID = *existingPlugin.ConfigID
-	}
-
-	newState := newPluginUpdateConfigState(existingPlugin, pluginConfig)
+	newState := newPluginUpdateConfigState(existingPlugin, envVars)
 	if err := processOnUpdatePluginPhase(existingPlugin, newState); err != nil {
 		msg := fmt.Sprintf("failed initializing plugin, reason=%v", err)
 		log.Errorf(msg)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
 		return
 	}
-	existingPlugin.ConfigID = &pluginConfig.ID
-	existingPlugin.Config = pluginConfig
-	if err := pgplugins.UpdatePlugin(ctx, existingPlugin); err != nil {
-		log.Errorf("failed updating plugin configuration, reason=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating plugin configuration"})
+
+	existingPlugin.EnvVars = envVars
+	err = models.UpsertEnvVar(&models.EnvVar{
+		OrgID:     existingPlugin.OrgID,
+		ID:        existingPlugin.ID,
+		Envs:      envVars,
+		UpdatedAt: time.Now().UTC(),
+	})
+
+	if err != nil {
+		errMsg := fmt.Sprintf("failed updating plugin configuration, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
-	c.PureJSON(http.StatusOK, existingPlugin)
+	c.JSON(http.StatusOK, toOpenApi(existingPlugin))
 }
 
 // GetPlugin
@@ -244,19 +216,18 @@ func PutConfig(c *gin.Context) {
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
-	obj, err := pgplugins.New().FetchOne(ctx, name)
-	if err != nil {
+	obj, err := models.GetPluginByName(ctx.OrgID, name)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
+		return
+	case nil:
+		c.JSON(http.StatusOK, toOpenApi(obj))
+	default:
 		log.Errorf("failed obtaining plugin, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	if obj == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "plugin not found"})
-		return
-	}
-	redactPluginConfig(obj.Config)
-	c.PureJSON(http.StatusOK, obj)
 }
 
 // ListPlugins
@@ -270,70 +241,51 @@ func Get(c *gin.Context) {
 //	@Router			/plugins [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	itemList, err := pgplugins.New().FetchAll(ctx)
+	itemList, err := models.ListPlugins(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed obtaining plugin, err=%v", err)
-		sentry.CaptureException(err)
+		log.Errorf("failed listing plugins, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	var out []*openapi.Plugin
 	for _, p := range itemList {
-		redactPluginConfig(p.Config)
+		plugin := toOpenApi(&p)
+		out = append(out, &plugin)
 	}
-	c.PureJSON(http.StatusOK, itemList)
+	c.PureJSON(http.StatusOK, out)
 }
 
-func parsePluginConnections(c *gin.Context, req PluginRequest) ([]*types.PluginConnection, []string, error) {
+func parsePluginConnections(c *gin.Context, pluginID string, req PluginRequest) []*models.PluginConnection {
 	ctx := storagev2.ParseContext(c)
 	// remove repeated connection request
-	dedupePluginConnectionRequest := map[string]*PluginConnectionRequest{}
+	dedupeTracking := map[string]any{}
+	var pluginConnectionList []*models.PluginConnection
 	for _, conn := range req.Connections {
-		dedupePluginConnectionRequest[conn.ConnectionID] = conn
-	}
-	var connectionIDList []string
-	for connID := range dedupePluginConnectionRequest {
-		connectionIDList = append(connectionIDList, connID)
-	}
-	connectionsMap, err := pgconnections.New().FetchByIDs(ctx, connectionIDList)
-	if err != nil {
-		log.Errorf("failed retrieving existing plugin, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return nil, nil, io.EOF
-	}
-	pluginConnectionList := []*types.PluginConnection{}
-	var connectionIDs []string
-	// validate if connection exists in the store
-	for _, reqconn := range dedupePluginConnectionRequest {
-		conn, ok := connectionsMap[reqconn.ConnectionID]
-		if !ok {
-			msg := fmt.Sprintf("connection %q doesn't exists", reqconn.ConnectionID)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": msg})
-			return nil, nil, io.EOF
+		if _, ok := dedupeTracking[conn.ConnectionID]; ok {
+			continue
 		}
-		connConfig := reqconn.Config
-		if req.Name == plugintypes.PluginDLPName && len(connConfig) == 0 {
-			connConfig = proto.DefaultInfoTypes
-		}
-		// create deterministic uuid to allow plugin connection entities
-		// to be updated instead of generating new ones
-		docUUID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s", req.Name, conn.Id)))
-		pluginConnectionList = append(pluginConnectionList, &types.PluginConnection{
-			ID:           docUUID.String(),
-			ConnectionID: conn.Id,
-			Name:         conn.Name,
-			Config:       connConfig,
+		dedupeTracking[conn.ConnectionID] = nil
+		pluginConnectionList = append(pluginConnectionList, &models.PluginConnection{
+			ID:             uuid.NewString(),
+			OrgID:          ctx.OrgID,
+			PluginID:       pluginID,
+			ConnectionID:   conn.ConnectionID,
+			ConnectionName: "",
+			Config:         conn.Config,
+			Enabled:        true,
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
 		})
-		connectionIDs = append(connectionIDs, docUUID.String())
 	}
-	return pluginConnectionList, connectionIDs, nil
+	return pluginConnectionList
 }
 
-func redactPluginConfig(c *types.PluginConfig) {
-	if c != nil {
-		for envKey := range c.EnvVars {
-			c.EnvVars[envKey] = "REDACTED"
-		}
+func redactEnvVars(envs map[string]string) {
+	if envs == nil {
+		return
+	}
+	for key := range envs {
+		envs[key] = "REDACTED"
 	}
 }
 
@@ -358,9 +310,9 @@ func validatePluginConfig(configEnvVars map[string]string) error {
 	return nil
 }
 
-func processOnUpdatePluginPhase(oldState, newState *types.Plugin) error {
+func processOnUpdatePluginPhase(oldState, newState plugintypes.PluginResource) error {
 	for _, pl := range plugintypes.RegisteredPlugins {
-		if pl.Name() != newState.Name {
+		if pl.Name() != newState.GetName() {
 			continue
 		}
 		if err := pl.OnUpdate(oldState, newState); err != nil {
@@ -370,17 +322,38 @@ func processOnUpdatePluginPhase(oldState, newState *types.Plugin) error {
 	return nil
 }
 
-func newPluginUpdateConfigState(existingPlugin *types.Plugin, newConfig *types.PluginConfig) *types.Plugin {
-	return &types.Plugin{
-		ID:             existingPlugin.ID,
-		OrgID:          existingPlugin.OrgID,
-		Name:           existingPlugin.Name,
-		ConnectionsIDs: existingPlugin.ConnectionsIDs,
-		Connections:    existingPlugin.Connections,
-		ConfigID:       &newConfig.ID,
-		Config:         newConfig,
-		Source:         existingPlugin.Source,
-		Priority:       existingPlugin.Priority,
-		InstalledById:  existingPlugin.InstalledById,
+func toOpenApi(obj *models.Plugin) openapi.Plugin {
+	connections := make([]*openapi.PluginConnection, len(obj.Connections))
+	for i, pconn := range obj.Connections {
+		connections[i] = &openapi.PluginConnection{
+			ConnectionID: pconn.ConnectionID,
+			Name:         pconn.ConnectionName,
+			Config:       pconn.Config,
+		}
+	}
+	plugin := openapi.Plugin{
+		ID:          obj.ID,
+		Name:        obj.Name,
+		Connections: connections,
+		Source:      nil, // deprecated
+		Priority:    0,   // deprecated
+		Config:      nil,
+	}
+	if len(obj.EnvVars) > 0 {
+		redactEnvVars(obj.EnvVars)
+		plugin.Config = &openapi.PluginConfig{
+			ID:      obj.ID,
+			EnvVars: obj.EnvVars}
+	}
+	return plugin
+}
+
+func newPluginUpdateConfigState(existingPlugin *models.Plugin, envVars map[string]string) *models.Plugin {
+	return &models.Plugin{
+		ID:          existingPlugin.ID,
+		OrgID:       existingPlugin.OrgID,
+		Name:        existingPlugin.Name,
+		Connections: existingPlugin.Connections,
+		EnvVars:     envVars,
 	}
 }

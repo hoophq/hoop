@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
 )
 
 type option struct {
@@ -20,9 +19,9 @@ func DeterministicClientUUID(userID string) string {
 
 // TODO: move to pgproxymanger package
 // Update creates or updates a new entity with the given status based in the user uid.
-func Update(ctx pgrest.UserContext, status models.ProxyManagerStatusType, opts ...*option) (*models.ProxyManagerState, error) {
-	docuuid := DeterministicClientUUID(ctx.GetUserID())
-	obj, err := models.GetProxyManagerStateByID(ctx.GetOrgID(), docuuid)
+func Update(orgID string, status models.ProxyManagerStatusType, opts ...*option) (*models.ProxyManagerState, error) {
+	docuuid := DeterministicClientUUID(orgID)
+	obj, err := models.GetProxyManagerStateByID(orgID, docuuid)
 	if err != nil && err != models.ErrNotFound {
 		return nil, fmt.Errorf("failed fetching auto connect entity, err=%v", err)
 	}
@@ -31,7 +30,7 @@ func Update(ctx pgrest.UserContext, status models.ProxyManagerStatusType, opts .
 	if obj == nil || status == models.ProxyManagerStatusReady {
 		obj = &models.ProxyManagerState{
 			ID:          docuuid,
-			OrgID:       ctx.GetOrgID(),
+			OrgID:       orgID,
 			ConnectedAt: time.Now().UTC(),
 		}
 	}

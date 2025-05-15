@@ -16,7 +16,6 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -30,10 +29,10 @@ func New(apiURL string) *reviewPlugin {
 	}
 }
 
-func (p *reviewPlugin) Name() string                          { return plugintypes.PluginReviewName }
-func (p *reviewPlugin) OnStartup(_ plugintypes.Context) error { return nil }
-func (p *reviewPlugin) OnUpdate(_, _ *types.Plugin) error     { return nil }
-func (p *reviewPlugin) OnConnect(_ plugintypes.Context) error { return nil }
+func (p *reviewPlugin) Name() string                                   { return plugintypes.PluginReviewName }
+func (p *reviewPlugin) OnStartup(_ plugintypes.Context) error          { return nil }
+func (p *reviewPlugin) OnUpdate(_, _ plugintypes.PluginResource) error { return nil }
+func (p *reviewPlugin) OnConnect(_ plugintypes.Context) error          { return nil }
 
 func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {

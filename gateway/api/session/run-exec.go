@@ -14,7 +14,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -99,8 +98,8 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
-	p, err := pgplugins.New().FetchOne(ctx, plugintypes.PluginReviewName)
-	if err != nil {
+	p, err := models.GetPluginByName(ctx.OrgID, plugintypes.PluginReviewName)
+	if err != nil && err != models.ErrNotFound {
 		log.Errorf("failed obtaining review plugin, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving review plugin"})
 		return
@@ -108,7 +107,7 @@ func RunReviewedExec(c *gin.Context) {
 	hasReviewPlugin := false
 	if p != nil {
 		for _, conn := range p.Connections {
-			if conn.Name == review.ConnectionName {
+			if conn.ConnectionName == review.ConnectionName {
 				hasReviewPlugin = true
 				break
 			}

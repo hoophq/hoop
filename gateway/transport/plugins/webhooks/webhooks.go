@@ -17,7 +17,6 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	svix "github.com/svix/svix-webhooks/go"
 	"google.golang.org/grpc/codes"
@@ -62,21 +61,22 @@ func (p *plugin) OnStartup(_ plugintypes.Context) error {
 }
 
 // OnUpdate will create the app on svix if it doesn't exists
-func (p *plugin) OnUpdate(old, new *types.Plugin) error {
+func (p *plugin) OnUpdate(old, new plugintypes.PluginResource) error {
 	if new != nil && p.client != nil {
-		shortOrgID := new.OrgID[0:8]
+		orgID := new.GetOrgID()
+		shortOrgID := orgID[0:8]
 		ctxtimeout, cancelFn := context.WithTimeout(context.Background(), time.Second*5)
 		defer cancelFn()
 		out, err := p.client.Application.GetOrCreate(ctxtimeout, &svix.ApplicationIn{
 			Name: shortOrgID,
-			Uid:  *svix.NullableString(&new.OrgID),
+			Uid:  *svix.NullableString(&orgID),
 		})
 		if err != nil {
 			return fmt.Errorf("fail creating webhook plugin application, reason=%v", err)
 		}
-		p.appStore.Set(new.OrgID, nil)
+		p.appStore.Set(orgID, nil)
 		log.Infof("application created with success for organization %s, id=%s, uid=%v",
-			new.OrgID, out.Id, out.Uid)
+			orgID, out.Id, out.Uid)
 	}
 	return nil
 }

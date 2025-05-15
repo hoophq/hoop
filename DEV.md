@@ -66,15 +66,6 @@ The gateway will expose the the openapi spec at `/api/openapiv2.json` and `/api/
 - https://swagger.io/tools/swagger-ui/
 - https://redocly.github.io/redoc/
 
-## Postgrest
-
-This project uses [postgrest](https://postgrest.org/en/stable/) as an interface to Postgres, it allows creating api's based on tables schema and permissions.
-The bootstrap process performs all the necessary setup to make the postgrest fully functional, it consists in three steps:
-
-- Perform the migration process using the [go-migrate library](https://github.com/golang-migrate/migrate)
-- Provisioning the roles and permissions required for postgrest to work properly. [See authentication.](https://postgrest.org/en/stable/references/auth.html)
-- Running the postgrest process in background
-
 ### Running Migrations
 
 Install the [golang migrate cli](https://github.com/golang-migrate/migrate/releases/tag/v4.16.2) in your local machine
@@ -92,8 +83,6 @@ migrate create -ext sql -dir rootfs/app/migrations -seq my_new_change
 ```sh
 migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslmode=disable' -path rootfs/app/migrations/ down 1
 ```
-
-> In case of adding new views, make sure to add the proper permissions in the bootstrap process of postgrest
 
 ### Migration Best Practices
 

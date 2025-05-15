@@ -15,7 +15,6 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
-	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/clientstate"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -46,7 +45,7 @@ func (s *Server) proxyManager(stream *streamclient.ProxyStream) error {
 
 	defer func() {
 		_ = stream.Close(err)
-		_, _ = clientstate.Update(pluginCtx, models.ProxyManagerStatusDisconnected)
+		_, _ = clientstate.Update(pluginCtx.GetOrgID(), models.ProxyManagerStatusDisconnected)
 		stateID := clientstate.DeterministicClientUUID(pluginCtx.GetUserID())
 		if len(stateID) > 0 {
 			removeDispatcherState(stateID)
@@ -122,7 +121,7 @@ func (s *Server) listenProxyManagerMessages(stream *streamclient.ProxyStream) er
 
 func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
-	newClient, err := clientstate.Update(pctx, models.ProxyManagerStatusReady,
+	newClient, err := clientstate.Update(pctx.GetOrgID(), models.ProxyManagerStatusReady,
 		clientstate.WithOption("session", pctx.SID),
 		clientstate.WithOption("version", stream.GetMeta("version")),
 		clientstate.WithOption("go-version", stream.GetMeta("go-version")),
@@ -149,7 +148,7 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 		return stream.ContextCauseError()
 	case req := <-disp.requestCh:
 		log.With("session", pctx.SID).Infof("starting connect phase for %s", req.RequestConnectionName)
-		conn, err := apiconnections.FetchByName(pctx, req.RequestConnectionName)
+		conn, err := models.GetConnectionByNameOrID(pctx, req.RequestConnectionName)
 		if err != nil {
 			log.Errorf("failed retrieving connection, reason=%v", err)
 			disp.sendResponse(nil, err)

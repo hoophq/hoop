@@ -18,10 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
-	pgplugins "github.com/hoophq/hoop/gateway/pgrest/plugins"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -54,7 +51,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	existingConn, err := models.GetConnectionByNameOrID(ctx.OrgID, req.Name)
+	existingConn, err := models.GetConnectionByNameOrID(ctx, req.Name)
 	if err != nil {
 		log.Errorf("failed fetching existing connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -96,11 +93,10 @@ func Post(c *gin.Context) {
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	pgplugins.EnableDefaultPlugins(ctx, req.ID, req.Name, pgplugins.DefaultPluginNames)
+	models.ActivateDefaultPlugins(ctx.OrgID, req.ID)
 	// configure review and dlp plugins (best-effort)
 	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
 		// skip configuring redact if the client doesn't set redact_enabled
@@ -112,12 +108,11 @@ func Post(c *gin.Context) {
 		if pluginName == plugintypes.PluginDLPName {
 			pluginConnConfig = req.RedactTypes
 		}
-		pgplugins.UpsertPluginConnection(ctx, pluginName, &types.PluginConnection{
-			ID:           uuid.NewString(),
-			ConnectionID: req.ID,
-			Name:         req.Name,
-			Config:       pluginConnConfig,
-		})
+		err = models.AddPluginConnection(ctx.OrgID, pluginName, req.ID, pluginConnConfig)
+		if err != nil {
+			log.Warnf("failed adding plugin %v connection configuration for %v, reason=%v",
+				pluginName, req.Name, err)
+		}
 	}
 	c.JSON(http.StatusCreated, req)
 }
@@ -137,7 +132,7 @@ func Post(c *gin.Context) {
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, connNameOrID)
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
@@ -198,7 +193,6 @@ func Put(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		default:
 			log.Errorf("failed updating connection, err=%v", err)
-			sentry.CaptureException(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		}
 		return
@@ -215,12 +209,11 @@ func Put(c *gin.Context) {
 		if pluginName == plugintypes.PluginDLPName {
 			pluginConnConfig = req.RedactTypes
 		}
-		pgplugins.UpsertPluginConnection(ctx, pluginName, &types.PluginConnection{
-			ID:           uuid.NewString(),
-			ConnectionID: conn.ID,
-			Name:         req.Name,
-			Config:       pluginConnConfig,
-		})
+		err = models.AddPluginConnection(ctx.OrgID, pluginName, conn.ID, pluginConnConfig)
+		if err != nil {
+			log.Warnf("failed adding plugin %v connection configuration for %v, reason=%v",
+				pluginName, req.Name, err)
+		}
 	}
 	c.JSON(http.StatusOK, req)
 }
@@ -244,7 +237,7 @@ func Delete(c *gin.Context) {
 	}
 	err := models.DeleteConnection(ctx.OrgID, connName)
 	switch err {
-	case pgrest.ErrNotFound:
+	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 	case nil:
 		connectionrequests.InvalidateSyncCache(ctx.OrgID, connName)
@@ -278,56 +271,47 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	connList, err := models.ListConnections(ctx.OrgID, filterOpts)
+	connList, err := models.ListConnections(ctx, filterOpts)
 	if err != nil {
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	allowedFn, err := accessControlAllowed(ctx)
-	if err != nil {
-		log.Errorf("failed validating connection access control, err=%v", err)
-		sentry.CaptureException(err)
+		log.Errorf("failed listing connections, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 	responseConnList := []openapi.Connection{}
 	for _, conn := range connList {
-		if allowedFn(conn.Name) {
-			var managedBy *string
-			if conn.ManagedBy.Valid {
-				managedBy = &conn.ManagedBy.String
-			}
-			defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
-			if len(defaultDB) == 0 {
-				defaultDB = []byte(``)
-			}
-			responseConnList = append(responseConnList, openapi.Connection{
-				ID:      conn.ID,
-				Name:    conn.Name,
-				Command: conn.Command,
-				Type:    conn.Type,
-				SubType: conn.SubType.String,
-				// it should return empty to avoid leaking sensitive content
-				// in the future we plan to know which entry is sensitive or not
-				Secrets:             nil,
-				DefaultDatabase:     string(defaultDB),
-				AgentId:             conn.AgentID.String,
-				Status:              conn.Status,
-				Reviewers:           conn.Reviewers,
-				RedactEnabled:       conn.RedactEnabled,
-				RedactTypes:         conn.RedactTypes,
-				ManagedBy:           managedBy,
-				Tags:                conn.Tags,
-				ConnectionTags:      conn.ConnectionTags,
-				AccessModeRunbooks:  conn.AccessModeRunbooks,
-				AccessModeExec:      conn.AccessModeExec,
-				AccessModeConnect:   conn.AccessModeConnect,
-				AccessSchema:        conn.AccessSchema,
-				GuardRailRules:      conn.GuardRailRules,
-				JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
-			})
+		var managedBy *string
+		if conn.ManagedBy.Valid {
+			managedBy = &conn.ManagedBy.String
 		}
+		defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
+		if len(defaultDB) == 0 {
+			defaultDB = []byte(``)
+		}
+		responseConnList = append(responseConnList, openapi.Connection{
+			ID:      conn.ID,
+			Name:    conn.Name,
+			Command: conn.Command,
+			Type:    conn.Type,
+			SubType: conn.SubType.String,
+			// it should return empty to avoid leaking sensitive content
+			// in the future we plan to know which entry is sensitive or not
+			Secrets:             nil,
+			DefaultDatabase:     string(defaultDB),
+			AgentId:             conn.AgentID.String,
+			Status:              conn.Status,
+			Reviewers:           conn.Reviewers,
+			RedactEnabled:       conn.RedactEnabled,
+			RedactTypes:         conn.RedactTypes,
+			ManagedBy:           managedBy,
+			Tags:                conn.Tags,
+			ConnectionTags:      conn.ConnectionTags,
+			AccessModeRunbooks:  conn.AccessModeRunbooks,
+			AccessModeExec:      conn.AccessModeExec,
+			AccessModeConnect:   conn.AccessModeConnect,
+			AccessSchema:        conn.AccessSchema,
+			GuardRailRules:      conn.GuardRailRules,
+			JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
+		})
 
 	}
 	c.JSON(http.StatusOK, responseConnList)
@@ -345,21 +329,14 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	conn, err := models.GetConnectionByNameOrID(ctx.OrgID, c.Param("nameOrID"))
+	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	allowedFn, err := accessControlAllowed(ctx)
-	if err != nil {
-		log.Errorf("failed validating connection access control, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	if conn == nil || !allowedFn(conn.Name) {
+	if conn == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
@@ -397,22 +374,6 @@ func Get(c *gin.Context) {
 	})
 }
 
-// FetchByName fetches a connection based in access control rules
-func FetchByName(ctx pgrest.Context, connectionName string) (*models.Connection, error) {
-	conn, err := models.GetConnectionByNameOrID(ctx.GetOrgID(), connectionName)
-	if err != nil {
-		return nil, err
-	}
-	allowedFn, err := accessControlAllowed(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if conn == nil || !allowedFn(conn.Name) {
-		return nil, nil
-	}
-	return conn, nil
-}
-
 // ListDatabases return a list of databases for a given connection
 //
 //	@Summary		List Databases
@@ -427,7 +388,7 @@ func ListDatabases(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
 
-	conn, err := FetchByName(ctx, connNameOrID)
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -563,7 +524,7 @@ func ListTables(c *gin.Context) {
 	dbName := c.Query("database")
 	schemaName := c.Query("schema")
 
-	conn, err := FetchByName(ctx, connNameOrID)
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -648,8 +609,7 @@ func ListTables(c *gin.Context) {
 			return
 		}
 
-		response := openapi.TablesResponse{Schemas: []openapi.SchemaInfo{}}
-
+		var response openapi.TablesResponse
 		if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
 			tables, err := parseMongoDBTables(outcome.Output)
@@ -722,7 +682,7 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
-	conn, err := FetchByName(ctx, connNameOrID)
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

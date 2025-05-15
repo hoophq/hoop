@@ -7,7 +7,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/pgrest"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 )
 
@@ -29,7 +28,7 @@ func InitConciliationProcess() {
 					continue
 				}
 				// update the state to offline, didn't received any updates in the last seconds
-				err := updateStatus(pgrest.NewOrgContext(v.orgID), v.streamID, models.ConnectionStatusOffline, nil)
+				err := updateStatus(v.orgID, v.streamID, models.ConnectionStatusOffline, nil)
 				if err != nil {
 					log.Warnf("failed updating resources to offline status, reason=%v", err)
 				} else {
@@ -59,7 +58,7 @@ func getState(id streamtypes.ID) (v *stateObject) {
 	return
 }
 
-func SetOnlinePreConnect(ctx pgrest.OrgContext, streamAgentID streamtypes.ID) {
+func SetOnlinePreConnect(orgID string, streamAgentID streamtypes.ID) {
 	state := getState(streamAgentID)
 	// noop if it's grpc connected, it will trigger the offline
 	// when it disconnects
@@ -67,23 +66,23 @@ func SetOnlinePreConnect(ctx pgrest.OrgContext, streamAgentID streamtypes.ID) {
 		return
 	}
 	if state == nil {
-		if err := updateStatus(ctx, streamAgentID, models.ConnectionStatusOnline, nil); err != nil {
+		if err := updateStatus(orgID, streamAgentID, models.ConnectionStatusOnline, nil); err != nil {
 			log.Warnf("fail to update the status of stream %v/%v, reason=%v",
 				streamAgentID.ResourceID(), streamAgentID.ResourceName(), err)
 		}
 	}
 	statusStore.Set(streamAgentID.String(), &stateObject{
-		orgID:         ctx.GetOrgID(),
+		orgID:         orgID,
 		streamID:      streamAgentID,
 		createdAt:     time.Now().UTC(),
 		grpcConnected: false,
 	})
 }
 
-func updateStatus(ctx pgrest.OrgContext, streamAgentID streamtypes.ID, status string, metadata map[string]string) (err error) {
+func updateStatus(orgID string, streamAgentID streamtypes.ID, status string, metadata map[string]string) (err error) {
 	connectionName := streamAgentID.ResourceName()
 	if connectionName != "" {
-		return models.UpdateConnectionStatusByName(ctx.GetOrgID(), connectionName, status)
+		return models.UpdateConnectionStatusByName(orgID, connectionName, status)
 	}
 	agentStatus := models.AgentStatusDisconnected
 	if status == models.ConnectionStatusOnline {
@@ -92,17 +91,17 @@ func updateStatus(ctx pgrest.OrgContext, streamAgentID streamtypes.ID, status st
 
 	// update the status of the agent all associated connections
 	agentID := streamAgentID.ResourceID()
-	if err := models.UpdateAgentStatus(ctx.GetOrgID(), agentID, agentStatus, metadata); err != nil {
+	if err := models.UpdateAgentStatus(orgID, agentID, agentStatus, metadata); err != nil {
 		return fmt.Errorf("failed to update agent status, reason=%v", err)
 	}
 	return nil
 }
 
-func SetOnline(ctx pgrest.OrgContext, streamAgentID streamtypes.ID, metadata map[string]string) error {
-	err := updateStatus(ctx, streamAgentID, models.ConnectionStatusOnline, metadata)
+func SetOnline(orgID string, streamAgentID streamtypes.ID, metadata map[string]string) error {
+	err := updateStatus(orgID, streamAgentID, models.ConnectionStatusOnline, metadata)
 	if err == nil {
 		statusStore.Set(streamAgentID.String(), &stateObject{
-			orgID:         ctx.GetOrgID(),
+			orgID:         orgID,
 			streamID:      streamAgentID,
 			createdAt:     time.Now().UTC(),
 			grpcConnected: true,
@@ -111,10 +110,10 @@ func SetOnline(ctx pgrest.OrgContext, streamAgentID streamtypes.ID, metadata map
 	return err
 }
 
-func SetOffline(ctx pgrest.OrgContext, streamAgentID streamtypes.ID, metadata map[string]string) error {
+func SetOffline(orgID string, streamAgentID streamtypes.ID, metadata map[string]string) error {
 	// if an error is found the status will remain online
 	// TODO: add attribute to advertise the state is somehow dirty
-	err := updateStatus(ctx, streamAgentID, models.ConnectionStatusOffline, metadata)
+	err := updateStatus(orgID, streamAgentID, models.ConnectionStatusOffline, metadata)
 	if err == nil {
 		statusStore.Del(streamAgentID.String())
 	}

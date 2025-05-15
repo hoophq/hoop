@@ -131,10 +131,11 @@ func ProvisionOrgAgentKey(orgID, grpcURL string) (agentID, dsn string, err error
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating agent key: %v", err)
 	}
-	err = models.CreateAgent(
+	err = models.CreateAgentOrgKey(
 		orgID,
 		agentKeyDefaultName,
 		proto.AgentModeMultiConnectionType,
+		secretKey,
 		secretKeyHash)
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating organization token: %v", err)
