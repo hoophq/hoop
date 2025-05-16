@@ -1,17 +1,11 @@
 (ns webapp.components.ag-grid-table
   (:require
    ["ag-grid-react" :refer [AgGridReact]]
-   ["ag-grid-community" :refer [AllCommunityModule
-                                ModuleRegistry
-                                iconOverrides
+   ["ag-grid-community" :refer [iconOverrides
                                 colorSchemeLightWarm
                                 colorSchemeDarkBlue
                                 themeAlpine]]
    ["lucide-react" :refer [LoaderCircle]]))
-
-;; Register the AG Grid modules
-(defonce _register-modules
-  (ModuleRegistry.registerModules #js [AllCommunityModule]))
 
 (defonce icon-overrides (iconOverrides
                          #js{:type "image"
