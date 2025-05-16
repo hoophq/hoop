@@ -2,6 +2,8 @@
   (:require
    ["@radix-ui/themes" :refer [Theme Box Heading Spinner]]
    ["gsap/all" :refer [Draggable gsap]]
+   ["ag-grid-community" :refer [AllCommunityModule
+                                ModuleRegistry]]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -557,6 +559,7 @@
         analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
+    (.registerModules ModuleRegistry #js[AllCommunityModule])
 
     (fn []
       (cond
