@@ -40,9 +40,6 @@ config:
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''
   # PLUGIN_AUDIT_PATH: ''
   # PLUGIN_INDEX_PATH: ''
-  notification: {}
-  #   slackBotToken: ''
-  #   bridgeUrl: ''
 
 mainService:
   # -- Annotations to add in the main service
