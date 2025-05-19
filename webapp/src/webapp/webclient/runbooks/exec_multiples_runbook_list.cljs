@@ -60,7 +60,6 @@
                            [:> hero-solid-icon/PlayIcon {:class "h-5 w-5 text-white"
                                                          :aria-hidden "true"}]
                            [:span "Run"]]
-                    :disabled false
                     :type "button"
                     :on-click (fn []
                                 (rf/dispatch [:editor-plugin->multiple-connections-run-runbook

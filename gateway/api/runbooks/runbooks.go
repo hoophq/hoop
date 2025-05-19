@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -125,7 +126,7 @@ func ListByConnection(c *gin.Context) {
 // RunRunbookExec
 //
 //	@Summary		Runbook Exec
-//	@Description	Start a execution using a Runbook as input
+//	@Description	Start a execution using a Runbook as input. If the connection has a JIRA issue template configured, it will create a JIRA issue.
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
@@ -221,6 +222,41 @@ func RunExec(c *gin.Context) {
 		ExitCode:             nil,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
+	}
+
+	if connection.JiraIssueTemplateID.String != "" {
+		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(connection.OrgID, connection.JiraIssueTemplateID.String)
+		if err != nil {
+			log.Errorf("failed obtaining jira issue template for %v, reason=%v", connection.Name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
+			return
+		}
+		if jiraConfig != nil && jiraConfig.IsActive() {
+			if req.JiraFields == nil {
+				req.JiraFields = map[string]string{}
+			}
+			jiraFields, err := jira.ParseIssueFields(issueTemplate, req.JiraFields, newSession)
+			switch err.(type) {
+			case *jira.ErrInvalidIssueFields:
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			case nil:
+			default:
+				log.Error(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				return
+			}
+			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
+			if err != nil {
+				log.Error(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				return
+			}
+			newSession.IntegrationsMetadata = map[string]any{
+				"jira_issue_key": resp.IssueKey,
+				"jira_issue_url": resp.Links.Agent,
+			}
+		}
 	}
 
 	if err := models.UpsertSession(newSession); err != nil {

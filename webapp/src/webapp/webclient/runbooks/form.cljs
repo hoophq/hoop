@@ -110,12 +110,37 @@
              {:on-submit (fn [e]
                            (.preventDefault e)
                            (if (> (count selected-connections) 1)
-                             (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)
+                             (let [has-jira-template? (some #(not (empty? (:jira_issue_template_id %)))
+                                                            selected-connections)
+                                   jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
+                                                                    :data
+                                                                    :status)
+                                                                "enabled")]
+                               (if (and has-jira-template? jira-integration-enabled?)
+                                 (rf/dispatch [:dialog->open
+                                               {:title "Running in multiple connections not allowed"
+                                                :action-button? false
+                                                :text "For now, it's not possible to run commands in multiple connections with Jira Templates activated. Please select just one connection before running your command."}])
+                                 (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)))
 
-                             (rf/dispatch [:editor-plugin->run-runbook
-                                           {:file-name (-> template :data :name)
-                                            :params @state
-                                            :connection-name connection-name}])))}
+                             (let [connection (first (filter #(= (:name %) connection-name)
+                                                             selected-connections))
+                                   has-jira-template? (and connection
+                                                           (not (empty? (:jira_issue_template_id connection))))
+                                   jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
+                                                                    :data
+                                                                    :status)
+                                                                "enabled")]
+                               (if (and has-jira-template? jira-integration-enabled?)
+                                 (rf/dispatch [:runbooks-plugin/show-jira-form
+                                               {:template-id (:jira_issue_template_id connection)
+                                                :file-name (-> template :data :name)
+                                                :params @state
+                                                :connection-name connection-name}])
+                                 (rf/dispatch [:editor-plugin->run-runbook
+                                               {:file-name (-> template :data :name)
+                                                :params @state
+                                                :connection-name connection-name}])))))}
              [:header {:class "mb-regular"}
               [:> Box {:class "flex items-center gap-small mb-small"}
                [:> hero-solid-icon/DocumentIcon

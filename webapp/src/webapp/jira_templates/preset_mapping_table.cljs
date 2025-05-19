@@ -91,11 +91,16 @@
                  on-toggle-all-mapping
                  on-mapping-delete
                  on-mapping-add]}]
-      (let [add-preset-rule (fn []
+      (let [tags @(rf/subscribe [:jira-templates/tags])
+            tag-options (tags-to-select-options tags)
+            first-tag-value (if (seq tag-options)
+                              (:value (first tag-options))
+                              "session.connection_tags.")
+            add-preset-rule (fn []
                               (on-mapping-add state (fn [rule]
                                                       (assoc rule
                                                              :type "preset"
-                                                             :value ""))))
+                                                             :value first-tag-value))))
             toggle-all-preset-rules (fn []
                                       (on-toggle-all-mapping state is-connection-tag?))
             delete-preset-rules (fn []
