@@ -12,11 +12,12 @@
    ["@codemirror/state" :as cm-state]
    ["@codemirror/view" :as cm-view]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
-   ["@radix-ui/themes" :refer [Box Flex Spinner]]
+   ["@radix-ui/themes" :refer [Box Flex Spinner Tooltip Text]]
    ["@uiw/codemirror-theme-material" :refer [materialDark materialLight]]
    ["@uiw/react-codemirror" :as CodeMirror]
    ["allotment" :refer [Allotment]]
    ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
+   ["lucide-react" :refer [Info]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -187,6 +188,16 @@
         :basicSetup #js{:defaultKeymap false}
         :onChange on-change
         :extensions (clj->js extensions)}])}))
+
+(defn connection-state-indicator [dark-mode? command]
+  [:> Box {:class (str "p-3 " (if dark-mode? "bg-[#2e3235]" "bg-[#FAFAFA]"))}
+
+   [:> Flex {:align "center" :gap "1"}
+    [:> Box {:class "px-2 rounded-md bg-[--gray-10]"}
+     [:> Text {:as "span" :size "1" :weight "medium" :class "text-gray-1"} "stdin → "]
+     [:> Text {:as "span" :size "1" :weight "medium" :class "text-gray-1"} (cs/join " " command)]]
+    [:> Tooltip {:content (str "Your script streams to " (cs/join " " command) " via stdin")}
+     [:> Info {:class "shrink-0 text-gray-11"}]]]])
 
 (defn editor []
   (let [user (rf/subscribe [:users->current-user])
@@ -369,13 +380,18 @@
                                                                 (conj @multi-selected-connections current-connection))
                                         :only-runbooks? only-runbooks?}]]
 
-                  [codemirror-editor
-                   {:value @script
-                    :theme (if @dark-mode?
-                             materialDark
-                             materialLight)
-                    :extensions codemirror-exts
-                    :on-change optimized-change-handler}])]
+                  [:div {:class "h-full flex flex-col"}
+                   (when (and
+                          (empty? @multi-selected-connections)
+                          (= "custom" (:type current-connection)))
+                     [connection-state-indicator @dark-mode? (:command current-connection)])
+                   [codemirror-editor
+                    {:value @script
+                     :theme (if @dark-mode?
+                              materialDark
+                              materialLight)
+                     :extensions codemirror-exts
+                     :on-change optimized-change-handler}]])]
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main
