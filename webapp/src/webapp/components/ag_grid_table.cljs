@@ -5,7 +5,7 @@
                                 colorSchemeLightWarm
                                 colorSchemeDarkBlue
                                 themeAlpine]]
-   ["lucide-react" :refer [LoaderCircle]]))
+   ["lucide-react" :refer [LoaderCircle AlertTriangle]]))
 
 (defonce icon-overrides (iconOverrides
                          #js{:type "image"
@@ -21,6 +21,37 @@
   (-> themeAlpine
       (.withPart colorSchemeDarkBlue)
       (.withPart icon-overrides)))
+
+(defn normalize-row-data
+  "Normalizes rows data to ensure consistency with the number of header columns,
+   removing empty cells when there are excess columns."
+  [headers rows]
+  (mapv (fn [row]
+          (let [header-count (count headers)
+                row-count (count row)]
+            (cond
+              ;; If there are more columns than needed, remove empty cells
+              (> row-count header-count)
+              (let [;; Filter non-empty cells
+                    non-empty-cells (filterv #(and (not (nil? %))
+                                                   (or (not (string? %))
+                                                       (not (empty? %))))
+                                             row)
+                    ;; Number of non-empty cells
+                    non-empty-count (count non-empty-cells)]
+                ;; If we have enough non-empty cells, use only them
+                ;; Otherwise, fill with empty cells up to the required number
+                (if (>= non-empty-count header-count)
+                  (subvec non-empty-cells 0 header-count)  ;; Still need to truncate if there are more non-empty cells than expected
+                  (into non-empty-cells (repeat (- header-count non-empty-count) ""))))
+
+              ;; If there are fewer columns than needed, add empty cells
+              (< row-count header-count)
+              (into row (repeat (- header-count row-count) ""))
+
+              ;; If the number of columns is exact, keep the row as is
+              :else row)))
+        rows))
 
 (defn ag-grid
   "An efficient table component using AG Grid to display SQL query results.
@@ -56,6 +87,20 @@
                                                   (aget params "columnApi"))
                                          (.autoSizeAllColumns (aget params "columnApi"))))}]])))
 
+(defn error-message
+  "Component to display error message with malformed data"
+  [message dark-mode?]
+  [:div {:class "flex flex-col items-center justify-center h-full text-red-500 p-4"}
+   [:div {:class "flex items-center mb-2"}
+    [:> AlertTriangle {:size 24
+                       :className "mr-2"
+                       :color (if dark-mode? "#ff6b6b" "#d32f2f")}]
+    [:span {:class "font-medium"} "Data Error"]]
+   [:p {:class "text-center"}
+    message]
+   [:p {:class "mt-4 text-sm text-center text-gray-500"}
+    "Check if the data contains tab characters (\\t) within values or if there are inconsistencies in the format."]])
+
 (defn main
   "Main component to display an AG Grid table with SQL query results.
 
@@ -73,27 +118,35 @@
                         :color (if dark-mode? "white" "gray")}]]]
 
     (let [empty-data? (or (nil? headers) (empty? headers) (nil? rows) (empty? rows))]
-
       (if empty-data?
         [:div {:class "flex justify-center items-center h-full text-gray-500"}
          "No results available"]
 
-        (let [columns (mapv (fn [header]
-                              (let [field-name (if (string? header) header (str header))]
-                                {:field field-name
-                                 :cellEditor "agTextCellEditor"
-                                 :headerName field-name}))
-                            headers)
-              row-data (mapv (fn [row]
-                               (reduce (fn [acc [idx val]]
-                                         (let [field-name (if (string? (nth headers idx))
-                                                            (nth headers idx)
-                                                            (str (nth headers idx)))]
-                                           (assoc acc field-name val)))
-                                       {}
-                                       (map-indexed vector row)))
-                             rows)]
-          [ag-grid {:columns columns
-                    :rows row-data
-                    :options options
-                    :dark-mode? dark-mode?}])))))
+        (try
+          ;; Process data with normalization and render the grid
+          (let [normalized-rows (normalize-row-data headers rows)
+                columns (mapv (fn [header]
+                                (let [field-name (if (string? header) header (str header))]
+                                  {:field field-name
+                                   :cellEditor "agTextCellEditor"
+                                   :headerName field-name}))
+                              headers)
+                row-data (mapv (fn [row]
+                                 (reduce (fn [acc [idx val]]
+                                           (let [field-name (if (string? (nth headers idx))
+                                                              (nth headers idx)
+                                                              (str (nth headers idx)))]
+                                             (assoc acc field-name val)))
+                                         {}
+                                         (map-indexed vector row)))
+                               normalized-rows)]
+            [ag-grid {:columns columns
+                      :rows row-data
+                      :options options
+                      :dark-mode? dark-mode?}])
+
+          ;; Catch any unexpected errors during processing
+          (catch :default e
+            (let [error-msg (str "Error processing data: " (.-message e))]
+              (.error js/console error-msg e)
+              [error-message error-msg dark-mode?])))))))
