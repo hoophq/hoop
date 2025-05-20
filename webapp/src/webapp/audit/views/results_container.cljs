@@ -1,13 +1,11 @@
 (ns webapp.audit.views.results-container
-  (:require ["papaparse" :as papa]
-            [clojure.string :as string]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.ag-grid-table :as ag-grid-table]
-            [webapp.components.logs-container :as logs]
-            [webapp.components.tabs :as tabs]))
-
-(def log-view (r/atom "Table"))
+  (:require
+   ["papaparse" :as papa]
+   [clojure.string :as string]
+   [reagent.core :as r]
+   [webapp.components.ag-grid-table :as ag-grid-table]
+   [webapp.components.logs-container :as logs]
+   [webapp.components.tabs :as tabs]))
 
 (defn- transform-results->matrix
   [results connection-type]
@@ -18,12 +16,11 @@
       (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
 (defn tab-container
-  [{:keys [results-heads results-body exceed-limit-rows? not-clipboard?]} {:keys [status results]}]
+  [{:keys [results-heads results-body not-clipboard? log-view]}
+   {:keys [status results]}]
   [:div {:class "flex flex-col h-96"}
    [tabs/tabs {:on-change #(reset! log-view %)
-               :tabs (if exceed-limit-rows?
-                       ["Plain text"]
-                       ["Table" "Plain text"])}]
+               :tabs ["Plain text" "Table"]}]
    (case @log-view
      "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard?}]
      "Table" [ag-grid-table/main results-heads results-body false true
@@ -34,12 +31,12 @@
 
 (defmulti results-view identity)
 (defmethod results-view :sql
-  [_ {:keys [results-heads results-body results status exceed-limit-rows? fixed-height? classes not-clipboard?]}]
+  [_ {:keys [results-heads results-body results status fixed-height? classes not-clipboard? log-view]}]
   [tab-container
    {:results-heads results-heads
     :results-body results-body
-    :exceed-limit-rows? exceed-limit-rows?
-    :not-clipboard? not-clipboard?}
+    :not-clipboard? not-clipboard?
+    :log-view log-view}
    {:status status :results results :fixed-height? fixed-height? :classes classes}])
 
 (defmethod results-view :not-sql
@@ -51,34 +48,27 @@
                         :classes classes
                         :not-clipboard? not-clipboard?}]])
 
-(defn main [connection-name]
-  (let [connection (rf/subscribe [:connections->connection-details])]
-    (rf/dispatch [:connections->get-connection-details connection-name])
+(defn main []
+  (let [log-view (r/atom "Plain text")]
 
-    (fn [_ {:keys [results results-status fixed-height? classes not-clipboard?]}]
-      (let [current-connection (:data @connection)
-            connection-type (cond
-                              (not (string/blank? (:subtype current-connection))) (:subtype current-connection)
-                              (not (string/blank? (:icon_name current-connection))) (:icon_name current-connection)
-                              :else (:type current-connection))
-            sanitize-results (when-not (nil? results)
-                               (string/replace results #"∞" "\t"))
-            results-transformed (transform-results->matrix sanitize-results connection-type)
+    (fn [connection-subtype {:keys [results results-status fixed-height? classes not-clipboard?]}]
+      (let [results-transformed (transform-results->matrix results connection-subtype)
             results-heads (first results-transformed)
             results-body (next results-transformed)
-            exceed-limit-rows? (> (count results-body) 55000)
             props-log-view {:results-heads results-heads
                             :results-body results-body
-                            :connection connection-type
                             :fixed-height? fixed-height?
                             :status results-status
-                            :results sanitize-results
+                            :results results
                             :classes classes
-                            :exceed-limit-rows? exceed-limit-rows?
-                            :not-clipboard? not-clipboard?}]
-        (reset! log-view (if exceed-limit-rows? "Plain text" "Table"))
+                            :not-clipboard? not-clipboard?
+                            :log-view log-view}]
+
+        (println connection-subtype)
+        (println results-status)
+
         (if (= results-status :success)
-          (case connection-type
+          (case connection-subtype
             "mysql-csv" [results-view :sql props-log-view]
             "mysql" [results-view :sql props-log-view]
             "postgres" [results-view :sql props-log-view]

@@ -219,6 +219,7 @@
             session-user-id (:user_id session)
             current-user-id (:id user)
             connection-name (:connection session)
+            connection-subtype (:connection_subtype session)
             start-date (:start_date session)
             end-date (:end_date session)
             verb (:verb session)
@@ -420,7 +421,7 @@
                  ^{:key (:id group)}
                  [review-group-item group session user]))]]]
 
-         ;; runbook params
+           ;; runbook params
            (when (and runbook-params
                       (seq runbook-params))
              [:div {:class "flex gap-regular items-center mb-regular py-small border-b border-t"}
@@ -434,9 +435,9 @@
                    [:span {:class "font-bold text-gray-500"}
                     param-key ": "]
                    [:span param-value]]))]])
-         ;; end runbook params
+           ;; end runbook params
 
-         ;; metadata
+           ;; metadata
            (when (and metadata
                       (seq metadata))
              [:div {:class " mb-regular"}
@@ -453,9 +454,9 @@
                           :class "text-blue-600 underline"}
                       metadata-value]
                      [:span metadata-value])]]))])
-         ;; end metadata
+           ;; end metadata
 
-         ;; script area
+           ;; script area
            (when (and script-data
                       (> (count script-data) 0))
              [:section {:id "session-script"}
@@ -464,15 +465,15 @@
                             "rounded-lg bg-gray-100 "
                             "text-xs text-gray-800 font-mono")}
                [:article script-data]]])
-         ;; end script area
+           ;; end script area
 
-         ;; data masking analytics
+           ;; data masking analytics
            (when-not (or has-review?
                          (= :loading (:status @session-report))
                          (not has-session-report?))
              [:div {:class "mt-6"}
               [data-masking-analytics @session-report]])
-         ;; end data masking analytics
+           ;; end data masking analytics
 
            [:section {:id "session-event-stream"
                       :class "pt-regular"}
@@ -488,7 +489,7 @@
                  [:div {:class "h-full px-small"}
                   (if (= (:verb session) "exec")
                     [results-container/main
-                     connection-name
+                     connection-subtype
                      {:results (utilities/decode-b64 (or (first (:event_stream session)) ""))
                       :results-status (:status @session-details)
                       :fixed-height? true
