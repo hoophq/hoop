@@ -149,6 +149,7 @@ RUN pip3 install -U \
   requests==2.27.1
 
 COPY rootfs/usr/local/bin /usr/local/bin/
+COPY rootfs/opt/hoop/bin /opt/hoop/bin/
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
   locale-gen
 ENV LANG=en_US.UTF-8
@@ -156,5 +157,6 @@ ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
 ENV PATH="/app:${PATH}"
+ENV PATH="${PATH}:/opt/hoop/bin"
 
 ENTRYPOINT ["tini", "--"]
