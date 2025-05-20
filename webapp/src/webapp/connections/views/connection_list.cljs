@@ -31,16 +31,6 @@
    [:div {:class "flex items-center justify-center h-full"}
     [loaders/simple-loader]]])
 
-(defn aws-connect-sync-callout []
-  (let [aws-jobs-running? @(rf/subscribe [:jobs/aws-connect-running?])]
-    (when aws-jobs-running?
-      [:> Callout.Root {:class "my-4"}
-       [:> Callout.Icon
-        [:> InfoIcon {:size 16}]]
-       [:> Callout.Text
-        [:> Text {:weight "bold" :as "span"} "AWS Connect Sync in Progress"]
-        [:> Text {:as "span"} " There is an automated process for your connections happening in your hoop.dev environment. Check it later in order to verify."]]])))
-
 (def resource-types
   [{:id "postgres" :value "postgres" :label "PostgreSQL"}
    {:id "mysql" :value "mysql" :label "MySQL"}
@@ -116,7 +106,6 @@
     ;; Initial load with no filters
     (rf/dispatch [:connections->get-connections nil])
     (rf/dispatch [:guardrails->get-all])
-    (rf/dispatch [:jobs/start-aws-connect-polling])
     (rf/dispatch [:connections->get-connection-tags])
 
     (when (empty? (:data @user))
@@ -213,9 +202,7 @@
               (reset! selected-resource resource)
               (apply-filter (cond-> {}
                               (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
-                              resource (assoc :subtype resource))))]]
-
-          [aws-connect-sync-callout]]
+                              resource (assoc :subtype resource))))]]]
 
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
