@@ -301,7 +301,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	// 	apiconnections.GetTagByID,
 	// )
 	r.GET("/connection-tags",
-		apiroutes.AdminOnlyAccessRole,
+		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.ListTags,
 	)
