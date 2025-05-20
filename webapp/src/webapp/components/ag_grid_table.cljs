@@ -53,21 +53,6 @@
               :else row)))
         rows))
 
-(defn check-data-consistency
-  "Checks for inconsistencies in data that may indicate incorrect formatting"
-  [headers rows]
-  (let [header-count (count headers)
-        rows-with-different-count (filter #(not= header-count (count %)) rows)
-        inconsistent-count (count rows-with-different-count)
-        severe-inconsistency? (> inconsistent-count (/ (count rows) 10))] ; More than 10% of rows have problems
-
-    {:consistent? (not severe-inconsistency?)
-     :inconsistent-rows inconsistent-count
-     :total-rows (count rows)
-     :message (when severe-inconsistency?
-                (str "Malformed data: " inconsistent-count " of " (count rows)
-                     " rows have inconsistent number of columns."))}))
-
 (defn ag-grid
   "An efficient table component using AG Grid to display SQL query results.
 
@@ -138,33 +123,27 @@
          "No results available"]
 
         (try
-          ;; Check for inconsistencies in the data
-          (let [consistency-check (check-data-consistency headers rows)]
-            (if-not (:consistent? consistency-check)
-              ;; If the data is too inconsistent, show error message
-              [error-message (:message consistency-check) dark-mode?]
-
-              ;; Otherwise, try to render with basic normalization
-              (let [normalized-rows (normalize-row-data headers rows)
-                    columns (mapv (fn [header]
-                                    (let [field-name (if (string? header) header (str header))]
-                                      {:field field-name
-                                       :cellEditor "agTextCellEditor"
-                                       :headerName field-name}))
-                                  headers)
-                    row-data (mapv (fn [row]
-                                     (reduce (fn [acc [idx val]]
-                                               (let [field-name (if (string? (nth headers idx))
-                                                                  (nth headers idx)
-                                                                  (str (nth headers idx)))]
-                                                 (assoc acc field-name val)))
-                                             {}
-                                             (map-indexed vector row)))
-                                   normalized-rows)]
-                [ag-grid {:columns columns
-                          :rows row-data
-                          :options options
-                          :dark-mode? dark-mode?}])))
+          ;; Process data with normalization and render the grid
+          (let [normalized-rows (normalize-row-data headers rows)
+                columns (mapv (fn [header]
+                                (let [field-name (if (string? header) header (str header))]
+                                  {:field field-name
+                                   :cellEditor "agTextCellEditor"
+                                   :headerName field-name}))
+                              headers)
+                row-data (mapv (fn [row]
+                                 (reduce (fn [acc [idx val]]
+                                           (let [field-name (if (string? (nth headers idx))
+                                                              (nth headers idx)
+                                                              (str (nth headers idx)))]
+                                             (assoc acc field-name val)))
+                                         {}
+                                         (map-indexed vector row)))
+                               normalized-rows)]
+            [ag-grid {:columns columns
+                      :rows row-data
+                      :options options
+                      :dark-mode? dark-mode?}])
 
           ;; Catch any unexpected errors during processing
           (catch :default e
