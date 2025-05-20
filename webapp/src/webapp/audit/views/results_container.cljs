@@ -64,9 +64,6 @@
                             :not-clipboard? not-clipboard?
                             :log-view log-view}]
 
-        (println connection-subtype)
-        (println results-status)
-
         (if (= results-status :success)
           (case connection-subtype
             "mysql-csv" [results-view :sql props-log-view]
