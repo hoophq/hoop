@@ -38,14 +38,6 @@
        (assoc-in [:jobs :has-running-jobs?] false))))
 
 (rf/reg-event-fx
- :jobs/start-aws-connect-polling
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:jobs :polling-active?] true)
-    :dispatch [:jobs/fetch-aws-connect-jobs]
-    :dispatch-later [{:ms 5000
-                      :dispatch [:jobs/continue-aws-connect-polling]}]}))
-
-(rf/reg-event-fx
  :jobs/continue-aws-connect-polling
  (fn [{:keys [db]} _]
    (if (get-in db [:jobs :polling-active?])
