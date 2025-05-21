@@ -1,17 +1,11 @@
 (ns webapp.features.access-control.views.group-form
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Text Button Heading Grid]]
-   ["@heroicons/react/24/outline" :as hero-outline]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.components.button :as button]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]))
-
-(defn back-button []
-  [:a {:class "inline-flex items-center text-sm text-gray-600 mb-6 hover:text-gray-900"
-       :on-click #(rf/dispatch [:navigate :access-control])}
-   [:> hero-outline/ArrowLeftIcon {:class "h-4 w-4 mr-1"}]
-   "Back"])
 
 (defn create-form []
   (let [group-name (r/atom "")
@@ -38,7 +32,7 @@
 
         [:<>
          [:> Flex {:p "5" :gap "2"}
-          [back-button]]
+          [button/HeaderBack]]
          [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
                               (when (>= @scroll-pos 30)
                                 "border-b border-[--gray-a6]"))}
@@ -143,7 +137,7 @@
 
           [:<>
            [:> Flex {:p "5" :gap "2"}
-            [back-button]]
+            [button/HeaderBack]]
            [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
                                 (when (>= @scroll-pos 30)
                                   "border-b border-[--gray-a6]"))}

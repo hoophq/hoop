@@ -67,12 +67,43 @@
                              :on-success (fn []
                                            (rf/dispatch [:show-snackbar {:level :success
                                                                          :text (str "Group '" group-name "' deleted successfully!")}])
-                                           (rf/dispatch [:users->get-user-groups]))
+                                           (rf/dispatch [:users->get-user-groups])
+
+                                           ;; Obter o plugin atualizado antes de limpar as conexões
+                                           (rf/dispatch [:plugins->get-plugin-by-name-with-callback
+                                                         "access_control"
+                                                         {:on-success (fn [plugin]
+                                                                        (rf/dispatch [:access-control/remove-group-from-connections
+                                                                                      {:group-id group-name
+                                                                                       :plugin plugin}]))}]))
                              :on-failure (fn [error]
                                            (rf/dispatch [:show-snackbar {:level :error
                                                                          :text (str "Failed to delete group: "
                                                                                     (or (get-in error [:response :message])
                                                                                         "Unknown error"))}]))}]]]}))
+
+(rf/reg-event-fx
+ :access-control/remove-group-from-connections
+ (fn [{:keys [db]} [_ {:keys [group-id plugin]}]]
+   (let [plugin-connections (or (:connections plugin) [])
+
+         ;; Remover o grupo de todas as conexões e filtrar conexões com config vazia
+         updated-connections
+         (->> plugin-connections
+              (map (fn [conn]
+                     (if (and (:config conn) (some #(= % group-id) (:config conn)))
+                       (update conn :config (fn [config] (filter #(not= % group-id) config)))
+                       conn)))
+              ;; Remover conexões com configuração vazia
+              (filter (fn [conn]
+                        (let [config (:config conn)]
+                          (or (nil? config) (seq config))))))
+
+         ;; Atualizar o plugin com as novas conexões
+         updated-plugin (assoc plugin :connections updated-connections)]
+
+     (when (and plugin (:name plugin) (= (:name plugin) "access_control"))
+       {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]}))))
 
 (rf/reg-event-fx
  :access-control/create-group-with-permissions
