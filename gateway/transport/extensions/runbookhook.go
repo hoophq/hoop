@@ -60,8 +60,8 @@ func getRunbookHookFiles(ctx Context) (*runbookWrapperFiles, error) {
 		hasConfigTTLChanged := f.cacheDuration != *config.HookCacheTTL
 
 		// clear cache if it's expired or the ttl configuration has changed
-		log.With("sid", ctx.SID).Infof("loading runbook hook from cache, cachehit=%v, config-ttl-changed=%v",
-			!isExpired, hasConfigTTLChanged)
+		log.With("sid", ctx.SID).Infof("loading runbook hook from cache, cache-ttl=%v, cachehit=%v, config-ttl-changed=%v",
+			config.HookCacheTTL.String(), !isExpired, hasConfigTTLChanged)
 		if !isExpired && !hasConfigTTLChanged {
 			return f, nil
 		}

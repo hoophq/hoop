@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,14 +148,15 @@ func parseRunbookHookCacheTTLConfig(envVars map[string]string) (*time.Duration, 
 	if !ok {
 		return nil, nil
 	}
-	configTTL, err := base64.StdEncoding.DecodeString(configTTLEnc)
+	configTTLStr, err := base64.StdEncoding.DecodeString(configTTLEnc)
 	if err != nil {
 		return nil, fmt.Errorf("failed decoding GIT_HOOK_CONFIG_TTL, %v", err)
 	}
-	d, err := time.ParseDuration(string(configTTL))
+	configTTL, err := strconv.Atoi(string(configTTLStr))
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing GIT_HOOK_CONFIG_TTL, %v", err)
 	}
+	d := time.Duration(configTTL) * time.Second
 	return &d, nil
 }
 
