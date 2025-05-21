@@ -497,9 +497,9 @@
      [group-form/main :create]]]])
 
 (defmethod routes/panels :access-control-edit-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        group-id (:group-id (:route-params current-route))]
+  (let [search (.. js/window -location -search)
+        url-params (new js/URLSearchParams search)
+        group-id (.get url-params "group")]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
      [routes/wrap-admin-only

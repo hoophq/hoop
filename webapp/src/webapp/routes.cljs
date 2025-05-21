@@ -31,7 +31,7 @@
      "/dashboard" :dashboard
      "/features" [["/access-control" :access-control]
                   ["/access-control/new" :access-control-new]
-                  [["/access-control/edit/" :group-id] :access-control-edit]
+                  ["/access-control/edit" :access-control-edit]
                   ["/runbooks" :runbooks]
                   [["/runbooks/edit/" :connection-id] :runbooks-edit]]
      "/guardrails" [["" :guardrails]

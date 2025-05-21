@@ -58,7 +58,8 @@
          [:> Button {:size "3"
                      :variant "soft"
                      :color "gray"
-                     :on-click #(rf/dispatch [:navigate :access-control-edit {} :group-id name])}
+                     :on-click (fn []
+                                 (rf/dispatch [:navigate :access-control-edit {:group name}]))}
           "Configure"]
 
          (when-not (empty? connections)
