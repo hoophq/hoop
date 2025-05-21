@@ -126,7 +126,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {
 	if strings.HasPrefix(pkt.Type, "Sys") {
 		if err := transportsystem.Send(pkt.Type, pctx.SID, pkt.Payload); err != nil {
-			log.Warnf("unable to send system packet, reason=%v", err)
+			log.With("sid", pctx.SID).Warnf("unable to send system packet, type=%v, reason=%v", pkt.Type, err)
 		}
 		return true
 	}

@@ -29,5 +29,5 @@ func Send(packetType, sid string, payload []byte) error {
 			return fmt.Errorf("failed to send payload (%v), to channel", len(payload))
 		}
 	}
-	return fmt.Errorf("unable to find channel for sid %v", sid)
+	return fmt.Errorf("unable to find channel")
 }
