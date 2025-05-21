@@ -6,14 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 )
 
-var dbProvisionerStore = memory.New()
+var dbProvisionerTimeoutRequest = time.Minute * 10
 
 func RunDBProvisioner(agentID string, req *pbsystem.DBProvisionerRequest) *pbsystem.DBProvisionerResponse {
 	st := streamclient.GetAgentStream(streamtypes.NewStreamID(agentID, ""))
@@ -22,8 +21,11 @@ func RunDBProvisioner(agentID string, req *pbsystem.DBProvisionerRequest) *pbsys
 	}
 
 	dataCh := make(chan []byte)
-	dbProvisionerStore.Set(req.SID, dataCh)
-	defer dbProvisionerStore.Del(req.SID)
+	systemStore.Set(req.SID, dataCh)
+	defer func() {
+		systemStore.Del(req.SID)
+		close(dataCh)
+	}()
 
 	payload, pbType, _ := pbsystem.NewDbProvisionerRequest(req)
 	err := st.Send(&proto.Packet{
@@ -33,11 +35,10 @@ func RunDBProvisioner(agentID string, req *pbsystem.DBProvisionerRequest) *pbsys
 	)
 
 	if err != nil {
-		close(dataCh)
 		return pbsystem.NewError(req.SID, "failed sending provision request packet, reason=%v", err)
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), time.Second*600)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), dbProvisionerTimeoutRequest)
 	defer cancelFn()
 	select {
 	case payload := <-dataCh:
@@ -48,7 +49,8 @@ func RunDBProvisioner(agentID string, req *pbsystem.DBProvisionerRequest) *pbsys
 		redactMessage(req, &resp)
 		return &resp
 	case <-timeoutCtx.Done():
-		return pbsystem.NewError(req.SID, "timeout waiting for a response from agent %v (%v)", st.AgentName(), st.AgentVersion())
+		return pbsystem.NewError(req.SID, "timeout (%v) waiting for a response from agent, name=%v, version=%v",
+			dbProvisionerTimeoutRequest.String(), st.AgentName(), st.AgentVersion())
 	}
 }
 

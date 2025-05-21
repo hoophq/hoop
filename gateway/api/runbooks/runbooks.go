@@ -14,9 +14,9 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/api/runbooks/templates"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/jira"
@@ -52,7 +52,8 @@ func List(c *gin.Context) {
 	if p.EnvVars != nil {
 		configEnvVars = p.EnvVars
 	}
-	config, err := templates.NewRunbookConfig(configEnvVars)
+
+	config, err := runbooks.NewConfig(configEnvVars)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -94,7 +95,7 @@ func ListByConnection(c *gin.Context) {
 	if p.EnvVars != nil {
 		configEnvVars = p.EnvVars
 	}
-	config, err := templates.NewRunbookConfig(configEnvVars)
+	config, err := runbooks.NewConfig(configEnvVars)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -162,7 +163,12 @@ func RunExec(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("runbook file %v not found", req.FileName)})
 		return
 	}
-	runbook, err := FetchRunbookFile(config, req.FileName, req.RefHash, req.Parameters)
+	repo, err := runbooks.FetchRepository(config)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	runbook, err := repo.ReadFile(req.FileName, req.Parameters)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -271,7 +277,7 @@ func RunExec(c *gin.Context) {
 	}
 	log := log.With("sid", sessionID)
 	log.Infof("runbook exec, commit=%s, name=%s, connection=%s, parameters=%v",
-		runbook.CommitHash[:8], req.FileName, connectionName, strings.TrimSpace(params))
+		runbook.CommitSHA[:8], req.FileName, connectionName, strings.TrimSpace(params))
 
 	respCh := make(chan *clientexec.Response)
 	go func() {
@@ -309,7 +315,7 @@ func getConnection(ctx models.UserContext, c *gin.Context, connectionName string
 	return conn, nil
 }
 
-func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models.Connection) (*templates.RunbookConfig, string, error) {
+func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models.Connection) (*runbooks.Config, string, error) {
 	p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
@@ -339,7 +345,7 @@ func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models
 	if p.EnvVars != nil {
 		configEnvVars = p.EnvVars
 	}
-	runbookConfig, err := templates.NewRunbookConfig(configEnvVars)
+	runbookConfig, err := runbooks.NewConfig(configEnvVars)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return nil, repoPrefix, err
@@ -348,7 +354,7 @@ func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models
 }
 
 // GetRunbookConfig returns the runbook if the plugin is enabled and there's an existent configuration set
-func GetRunbookConfig(orgID string) (*templates.RunbookConfig, error) {
+func GetRunbookConfig(orgID string) (*runbooks.Config, error) {
 	p, err := models.GetPluginByName(orgID, plugintypes.PluginRunbooksName)
 	switch err {
 	case models.ErrNotFound:
@@ -360,7 +366,7 @@ func GetRunbookConfig(orgID string) (*templates.RunbookConfig, error) {
 	default:
 		return nil, fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
 	}
-	runbookConfig, err := templates.NewRunbookConfig(p.EnvVars)
+	runbookConfig, err := runbooks.NewConfig(p.EnvVars)
 	if err != nil {
 		return nil, err
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
+	"github.com/hoophq/hoop/common/runbooks"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
@@ -30,7 +31,10 @@ import (
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
 
-const defaultSecurityGroupDescription = "Database ingress rule for connectivity with Hoop Agent"
+const (
+	defaultSecurityGroupDescription = "Database ingress rule for connectivity with Hoop Agent"
+	defaultRunbookName              = "hoop-hooks/aws-connect-post-exec.runbook.py"
+)
 
 type provisioner struct {
 	cancelFn    context.CancelFunc
@@ -197,17 +201,20 @@ func (p *provisioner) Run(jobID string) error {
 		}
 
 		if runbookConfig != nil {
-			runbookName := "hoop-hooks/aws-connect-post-exec.runbook.py"
-			runbook, err := apirunbooks.FetchRunbookFile(runbookConfig, runbookName, "", map[string]string{})
+			repo, err := runbooks.FetchRepository(runbookConfig)
 			if err != nil {
-				if !strings.HasPrefix(err.Error(), fmt.Sprintf("runbook %v not found", runbookName)) {
-					log.With("sid", jobID).Warnf("failed fetching runbook hook, reason=%v", err)
-				}
+				log.With("sid", jobID).Warnf("failed clonning repository, reason=%v", err)
 			}
-			if runbook != nil {
-				request.ExecHook = &pbsystem.ExecHook{
-					Command:   []string{"python3"},
-					InputFile: string(runbook.InputFile),
+			if repo != nil {
+				runbook, err := repo.ReadFile(defaultRunbookName, map[string]string{})
+				if err != nil {
+					log.With("sid", jobID).Warnf("failed reading runbook hook file %v, reason=%v", runbook.Name, err)
+				}
+				if runbook != nil {
+					request.ExecHook = &pbsystem.ExecHook{
+						Command:   []string{"python3"},
+						InputFile: string(runbook.InputFile),
+					}
 				}
 			}
 		}

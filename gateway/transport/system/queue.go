@@ -3,14 +3,17 @@ package transportsystem
 import (
 	"fmt"
 
+	"github.com/hoophq/hoop/common/memory"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 )
+
+var systemStore = memory.New()
 
 func Send(packetType, sid string, payload []byte) error {
 	var obj any
 	switch packetType {
-	case pbsystem.ProvisionDBRolesResponse:
-		obj = dbProvisionerStore.Pop(sid)
+	case pbsystem.ProvisionDBRolesResponse, pbsystem.RunbookHookResponseType:
+		obj = systemStore.Pop(sid)
 	default:
 		return fmt.Errorf("received unknown system packet: %v", packetType)
 	}
@@ -19,7 +22,6 @@ func Send(packetType, sid string, payload []byte) error {
 		if !ok {
 			return fmt.Errorf("unable to type cast channel, found=%T", obj)
 		}
-		defer close(dataCh)
 		select {
 		case dataCh <- payload:
 			return nil
@@ -27,5 +29,5 @@ func Send(packetType, sid string, payload []byte) error {
 			return fmt.Errorf("failed to send payload (%v), to channel", len(payload))
 		}
 	}
-	return fmt.Errorf("unable to find channel for sid %v", sid)
+	return fmt.Errorf("unable to find channel")
 }
