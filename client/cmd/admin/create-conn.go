@@ -41,7 +41,7 @@ func init() {
 	createConnectionCmd.Flags().StringSliceVar(&connRedactTypesFlag, "redact-types", nil, "The redact types for this connection")
 	createConnectionCmd.Flags().BoolVar(&connOverwriteFlag, "overwrite", false, "It will create or update it if a connection already exists")
 	createConnectionCmd.Flags().BoolVar(&skipStrictValidation, "skip-validation", false, "It will skip any strict validation")
-	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection, as KEY=VAL. Values could be raw values, base64://<b64-content> or file:///path/to/file ")
+	createConnectionCmd.Flags().StringSliceVarP(&connSecretFlag, "env", "e", nil, "The environment variables of the connection, as KEY=VAL. Values could be raw values, base64://<b64-content> or file:///path/to/file")
 	createConnectionCmd.Flags().StringSliceVar(&connTagsFlag, "tags", nil, "Tags to identify connections in a key=value format")
 	createConnectionCmd.Flags().StringSliceVar(&connAccessModesFlag, "access-modes", defaultAccessModes, "Access modes enabled for this connection. Accepted values: [runbooks, exec, connect]")
 	createConnectionCmd.Flags().StringVar(&connSchemaFlag, "schema", "", "Enable or disable the schema for this connection on the WebClient. Accepted values: [disabled, enabled]")

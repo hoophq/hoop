@@ -181,8 +181,13 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 	extContext := transportext.Context{
 		OrgID:                               pctx.OrgID,
 		SID:                                 pctx.SID,
+		AgentID:                             pctx.AgentID,
 		ConnectionName:                      pctx.ConnectionName,
+		ConnectionType:                      pctx.ConnectionType,
+		ConnectionSubType:                   pctx.ConnectionSubType,
+		ConnectionEnvs:                      pctx.ConnectionSecret,
 		ConnectionJiraTransitionNameOnClose: pctx.ConnectionJiraTransitionNameOnClose,
+		UserEmail:                           pctx.UserEmail,
 		Verb:                                pctx.ClientVerb,
 	}
 

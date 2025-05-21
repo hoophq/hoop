@@ -9,18 +9,18 @@ require (
 	github.com/creack/pty v1.1.21
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.6.1
-	golang.org/x/term v0.30.0
+	golang.org/x/term v0.31.0
 )
 
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/getsentry/sentry-go v0.18.0
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	github.com/lib/pq v1.10.9
-	golang.org/x/crypto v0.36.0
+	golang.org/x/crypto v0.37.0
 	google.golang.org/grpc v1.71.1
 	mvdan.cc/sh/v3 v3.8.0
 )
@@ -31,8 +31,8 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/MicahParks/keyfunc/v2 v2.1.0 // indirect
-	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/ProtonMail/go-crypto v1.1.5 // indirect
+	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.36.3 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.29.7 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.60 // indirect
@@ -56,9 +56,9 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
-	github.com/cloudflare/circl v1.3.7 // indirect
+	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/coreos/go-oidc/v3 v3.14.1 // indirect
-	github.com/cyphar/filepath-securejoin v0.3.6 // indirect
+	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/getkin/kin-openapi v0.126.0 // indirect
@@ -68,7 +68,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
-	github.com/go-git/go-git/v5 v5.13.2 // indirect
+	github.com/go-git/go-git/v5 v5.16.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -87,7 +87,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.16.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0 // indirect
@@ -128,7 +128,7 @@ require (
 	github.com/sethvargo/go-envconfig v0.9.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.8 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
-	github.com/skeema/knownhosts v1.3.0 // indirect
+	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/slack-go/slack v0.12.2 // indirect
 	github.com/svix/svix-webhooks v1.13.0 // indirect
 	github.com/swaggo/swag v1.16.3 // indirect
@@ -169,9 +169,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.5.0 // indirect
-	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/oauth2 v0.28.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
@@ -197,9 +196,9 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/muesli/termenv v0.15.1
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.37.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0
 	google.golang.org/protobuf v1.36.4 // indirect
 )
 

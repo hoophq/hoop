@@ -87,8 +87,13 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		extContext := transportext.Context{
 			OrgID:                               pctx.OrgID,
 			SID:                                 pctx.SID,
+			AgentID:                             pctx.AgentID,
 			ConnectionName:                      proxyStream.PluginContext().ConnectionName,
+			ConnectionType:                      proxyStream.PluginContext().ConnectionType,
+			ConnectionSubType:                   proxyStream.PluginContext().ConnectionSubType,
+			ConnectionEnvs:                      proxyStream.PluginContext().ConnectionSecret,
 			ConnectionJiraTransitionNameOnClose: proxyStream.PluginContext().ConnectionJiraTransitionNameOnClose,
+			UserEmail:                           proxyStream.PluginContext().UserEmail,
 			Verb:                                proxyStream.PluginContext().ClientVerb,
 		}
 

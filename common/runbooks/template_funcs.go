@@ -1,4 +1,4 @@
-package templates
+package runbooks
 
 import (
 	"encoding/base64"

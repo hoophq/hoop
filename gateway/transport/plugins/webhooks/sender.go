@@ -45,7 +45,7 @@ func SendMessage(orgID, eventType string, payload map[string]any) error {
 			return fmt.Errorf("failed creating webhook plugin application, reason=%v", err)
 		}
 		log.With("appid", orgID, "eventtype", eventType).Infof("application created with success, id=%s, uid=%v",
-			orgID, out.Id, out.Uid)
+			orgID, out.Uid)
 		orgStore.Set(orgID, nil)
 	}
 

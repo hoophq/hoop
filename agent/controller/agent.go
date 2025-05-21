@@ -15,6 +15,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
+	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/secretsmanager"
 	term "github.com/hoophq/hoop/agent/terminal"
 	"github.com/hoophq/hoop/common/log"
@@ -160,6 +161,9 @@ func (a *Agent) Run() error {
 		// system
 		case pbsystem.ProvisionDBRolesRequest:
 			dbprovisioner.ProcessDBProvisionerRequest(a.client, pkt)
+
+		case pbsystem.RunbookHookRequestType:
+			runbookhook.ProcessRequest(a.client, pkt)
 		}
 	}
 }

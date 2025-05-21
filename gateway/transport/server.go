@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
+	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	authinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/auth"
 	sessionuuidinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/sessionuuid"
 	tracinginterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/tracing"
@@ -166,7 +167,8 @@ func (s *Server) Connect(stream pb.Transport_ConnectServer) (err error) {
 		ClientVerb:   "",
 		ClientOrigin: "",
 
-		ParamsData: map[string]any{},
+		ParamsData:               map[string]any{},
+		ExtensionsOnDisconnectFn: transportext.OnDisconnect,
 	}
 
 	if err := validateConnectionAccessMode(clientVerb[0], clientOrigin[0], gwctx.Connection); err != nil {

@@ -62,6 +62,9 @@ type Context struct {
 	ClientOrigin string
 
 	ParamsData GenericMap
+
+	// hook to cleanup the transport extensions package handlers
+	ExtensionsOnDisconnectFn func(sid string)
 }
 
 type PluginResource interface {
