@@ -138,7 +138,7 @@ func Post(c *gin.Context) {
 
 		switch pkt.Type {
 		case pbclient.SessionOpenWaitingApproval:
-			obj, err := clientstate.Update(ctx.GetOrgID(), models.ProxyManagerStatusDisconnected)
+			obj, err := clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
 			if err != nil {
 				errMsg := fmt.Sprintf("failed updating status, err=%v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
@@ -169,7 +169,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "max attempts (10) reached trying to subscribe"})
 		return
 	}
-	obj, err := clientstate.Update(ctx.GetOrgID(), models.ProxyManagerStatusConnected,
+	obj, err := clientstate.Update(ctx, models.ProxyManagerStatusConnected,
 		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
 	if err != nil {
 		log.Errorf("fail to update status, err=%v", err)
@@ -218,7 +218,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	obj, err = clientstate.Update(ctx.GetOrgID(), models.ProxyManagerStatusDisconnected)
+	obj, err = clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
 	if err != nil {
 		log.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "disconnected grpc client, but it fail to update the status"})

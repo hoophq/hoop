@@ -45,7 +45,7 @@ func (s *Server) proxyManager(stream *streamclient.ProxyStream) error {
 
 	defer func() {
 		_ = stream.Close(err)
-		_, _ = clientstate.Update(pluginCtx.GetOrgID(), models.ProxyManagerStatusDisconnected)
+		_, _ = clientstate.Update(pluginCtx, models.ProxyManagerStatusDisconnected)
 		stateID := clientstate.DeterministicClientUUID(pluginCtx.GetUserID())
 		if len(stateID) > 0 {
 			removeDispatcherState(stateID)
@@ -121,7 +121,7 @@ func (s *Server) listenProxyManagerMessages(stream *streamclient.ProxyStream) er
 
 func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
-	newClient, err := clientstate.Update(pctx.GetOrgID(), models.ProxyManagerStatusReady,
+	newClient, err := clientstate.Update(pctx, models.ProxyManagerStatusReady,
 		clientstate.WithOption("session", pctx.SID),
 		clientstate.WithOption("version", stream.GetMeta("version")),
 		clientstate.WithOption("go-version", stream.GetMeta("go-version")),

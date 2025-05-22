@@ -10,6 +10,7 @@ import (
 )
 
 type UserContext interface {
+	GetUserID() string
 	GetOrgID() string
 	IsAdmin() bool
 	GetUserGroups() []string
@@ -42,6 +43,7 @@ type Context struct {
 // The user is considered empty if the OrgID and UserSubject is not set.
 func (c *Context) IsEmpty() bool           { return c.OrgID == "" && c.UserSubject == "" }
 func (c *Context) GetOrgID() string        { return c.OrgID }
+func (c *Context) GetUserID() string       { return c.UserID }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }
 func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }
 func (c *Context) IsAuditor() bool         { return slices.Contains(c.UserGroups, types.GroupAuditor) }

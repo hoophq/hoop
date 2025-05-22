@@ -19,9 +19,9 @@ func DeterministicClientUUID(userID string) string {
 
 // TODO: move to pgproxymanger package
 // Update creates or updates a new entity with the given status based in the user uid.
-func Update(orgID string, status models.ProxyManagerStatusType, opts ...*option) (*models.ProxyManagerState, error) {
-	docuuid := DeterministicClientUUID(orgID)
-	obj, err := models.GetProxyManagerStateByID(orgID, docuuid)
+func Update(ctx models.UserContext, status models.ProxyManagerStatusType, opts ...*option) (*models.ProxyManagerState, error) {
+	docuuid := DeterministicClientUUID(ctx.GetUserID())
+	obj, err := models.GetProxyManagerStateByID(ctx.GetOrgID(), docuuid)
 	if err != nil && err != models.ErrNotFound {
 		return nil, fmt.Errorf("failed fetching auto connect entity, err=%v", err)
 	}
@@ -30,7 +30,7 @@ func Update(orgID string, status models.ProxyManagerStatusType, opts ...*option)
 	if obj == nil || status == models.ProxyManagerStatusReady {
 		obj = &models.ProxyManagerState{
 			ID:          docuuid,
-			OrgID:       orgID,
+			OrgID:       ctx.GetOrgID(),
 			ConnectedAt: time.Now().UTC(),
 		}
 	}
