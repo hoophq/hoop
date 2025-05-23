@@ -136,7 +136,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			}
 			if sshHostKeySigner == nil || err != nil {
 				log.Debug("unable to parse SSH host key received from server, using random key")
-				log.Debug("parse host key error=%v", err)
+				log.Debugf("parse host key error=%v", err)
 			}
 			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			switch connnectionType {

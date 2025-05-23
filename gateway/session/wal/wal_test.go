@@ -14,11 +14,9 @@ import (
 func newFakeHeader(orgID string) *Header {
 	t := time.Now().UTC()
 	return &Header{
-		OrgID:          orgID,
-		SessionID:      uuid.NewString(),
-		ConnectionName: "fake-conn",
-		ConnectionType: "command-line",
-		StartDate:      &t,
+		OrgID:     orgID,
+		SessionID: uuid.NewString(),
+		StartDate: &t,
 	}
 }
 

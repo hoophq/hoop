@@ -399,6 +399,14 @@ type (
 	SessionOptionKey                     string
 )
 
+type SessionEventStreamType string
+
+const (
+	SessionEventStreamUTF8Type       SessionEventStreamType = "utf8"
+	SessionEventStreamBase64Type     SessionEventStreamType = "base64"
+	SessionEventStreamRawQueriesType SessionEventStreamType = "raw-queries"
+)
+
 type SessionGetByIDParams struct {
 	// The file extension to donwload the session as a file content.
 	// * `csv` - it will parse the content to format in csv format
@@ -414,8 +422,11 @@ type SessionGetByIDParams struct {
 	NewLine string `json:"new_line" enums:"0,1" example:"1" default:"0"`
 	// Construct the file content adding the event time as prefix when parsing each event
 	EventTime string `json:"event-time" enums:"0,1" example:"1" default:"0"`
-	// This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload
-	EventStream string `json:"event_stream" enums:"utf8,base64" default:""`
+	// Parse available options for the event stream
+	// * `utf8` - parse the session output (o) and error (e) events as utf-8 content in the session payload
+	// * `base64` - parse the session output (o) and error (e) events as base64 content in the session payload
+	// * `raw-queries` - encode each event stream parsing the input of queries based on the database wire protocol (available databases: postgres)
+	EventStream SessionEventStreamType `json:"event_stream" default:""`
 	// Expand the given attributes
 	Expand string `json:"expand" enums:"event_stream" example:"event_stream" default:""`
 }
@@ -506,7 +517,9 @@ type Session struct {
 	// * `<event-type>` - the event type as string (i: input, o: output e: output-error)
 	// * `<base64-content>` - the content of the session encoded as base64 string
 	EventStream json.RawMessage `json:"event_stream,omitempty" swagger:"type:string"`
-	// The stored resource size in bytes
+	// The stored resource size in bytes.
+	// When any parsing is applied to the request the value display the computed parsed size.
+	// The pre-computed size will be available in the attribute `metrics.event_size`
 	EventSize int64 `json:"event_size" example:"569"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`

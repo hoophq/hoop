@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -350,7 +349,7 @@ func List(c *gin.Context) {
 //	@Param					session_id	path	string							true	"The id of the resource"
 //	@Produce				json
 //	@Success				200		{object}	openapi.Session
-//	@Failure				404,500	{object}	openapi.HTTPError
+//	@Failure				403,404,422,500	{object}	openapi.HTTPError
 //	@Router					/sessions/{session_id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -412,30 +411,26 @@ func Get(c *gin.Context) {
 	// it will only load the blob stream if it's allowed and the client requested to expand the attribute
 	expandEventStream := slices.Contains(strings.Split(c.Query("expand"), ","), "event_stream")
 	if isAllowed && expandEventStream {
-		blobStream, err := session.GetBlobStream()
+		session.BlobStream, err = session.GetBlobStream()
 		if err != nil {
 			log.Errorf("failed fetching blob stream from session, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
 			return
 		}
-		session.BlobStream = blobStream.BlobStream
 	}
 
-	if option := c.Query("event_stream"); option != "" && expandEventStream {
-		output, err := parseBlobStream(session, sessionParseOption{events: []string{"o", "e"}})
-		if err != nil {
+	mustParseBlobStream := c.Query("event_stream") != "" && expandEventStream
+	if mustParseBlobStream {
+		err = encodeBlobStream(session, openapi.SessionEventStreamType(c.Query("event_stream")))
+		switch err {
+		case errEventStreamUnsupportedFormat:
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": errEventStreamUnsupportedFormat})
+			return
+		case nil:
+		default:
 			log.With("sid", sessionID).Error(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
 			return
-		}
-		switch option {
-		case "utf8":
-			session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
-			session.BlobStreamSize = int64(int64(utf8.RuneCountInString(string(output))))
-		case "base64":
-			encOutput := base64.StdEncoding.EncodeToString(output)
-			session.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, encOutput))
-			session.BlobStreamSize = int64(len(encOutput))
 		}
 	}
 	obj := toOpenApiSession(session)
@@ -539,13 +534,12 @@ func DownloadSession(c *gin.Context) {
 			"message": "failed fetching session"})
 		return
 	}
-	blob, err := session.GetBlobStream()
+	session.BlobStream, err = session.GetBlobStream()
 	if err != nil {
 		log.Errorf("failed fetching blob stream from session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
 		return
 	}
-	session.BlobStream = blob.BlobStream
 	output, err := parseBlobStream(session, sessionParseOption{
 		withLineBreak: withLineBreak,
 		withEventTime: withEventTime,

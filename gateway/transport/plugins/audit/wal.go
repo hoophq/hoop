@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/proto/spectypes"
@@ -104,6 +105,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		return fmt.Errorf("mismatch wal header session id, session=%v, session-header=%v",
 			pctx.SID, wh.SessionID)
 	}
+	protocolConnectionType := pctx.ProtoConnectionType()
 	var rawJSONBlobStream string
 	metrics := newSessionMetric()
 	metrics.Truncated, err = walogm.log.ReadFull(func(data []byte) error {
@@ -156,7 +158,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 
 		// truncate when event is greater than 5000 bytes for tcp type
 		// it avoids auditing blob content for TCP (files, images, etc)
-		eventStream := p.truncateTCPEventStream(ev.Payload, wh.ConnectionType)
+		eventStream := p.truncateTCPEventStream(ev.Payload, protocolConnectionType)
 		eventList := fmt.Sprintf("[%v, %q, %q],",
 			ev.EventTime.Sub(*wh.StartDate).Seconds(),
 			string(ev.EventType),
@@ -167,6 +169,15 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	})
 	if err != nil {
 		return err
+	}
+
+	var blobFormat *string
+	switch protocolConnectionType {
+	case pb.ConnectionTypePostgres:
+		// Currently limited to PostgreSQL Wire Protocol packet writing.
+		// TODO: Extend to support wire format storage for all database protocols
+		// and implement corresponding API parser mechanisms.
+		blobFormat = ptr.String(models.BlobFormatWireProtoType)
 	}
 	rawJSONBlobStream = fmt.Sprintf("[%v]", strings.TrimSuffix(rawJSONBlobStream, ","))
 	metrics.EventSize = int64(len(rawJSONBlobStream))
@@ -180,6 +191,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		OrgID:      wh.OrgID,
 		Metrics:    sessionMetrics,
 		BlobStream: json.RawMessage(rawJSONBlobStream),
+		BlobFormat: blobFormat,
 		Status:     string(openapi.SessionStatusDone),
 		ExitCode:   parseExitCodeFromErr(errMsg),
 		EndSession: &endDate,
@@ -197,8 +209,8 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	return err
 }
 
-func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, connType string) []byte {
-	if len(eventStream) > 5000 && connType == pb.ConnectionTypeTCP.String() {
+func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, protoConnType pb.ConnectionType) []byte {
+	if len(eventStream) > 5000 && protoConnType == pb.ConnectionTypeTCP {
 		return eventStream[0:5000]
 	}
 	return eventStream

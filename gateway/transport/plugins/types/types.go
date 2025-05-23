@@ -108,6 +108,10 @@ func (c *Context) Validate() error {
 	return nil
 }
 
+func (c Context) ProtoConnectionType() pb.ConnectionType {
+	return pb.ToConnectionType(c.ConnectionType, c.ConnectionSubType)
+}
+
 func (m GenericMap) Get(key string) any { return m[key] }
 func (m GenericMap) GetString(key string) string {
 	val, ok := m[key]
