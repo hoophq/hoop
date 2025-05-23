@@ -2,6 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hoopgateway
+  {{- if .Values.deploymentAnnotations }}
+  annotations:
+  {{- with .Values.deploymentAnnotations }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
 spec:
   selector:
     matchLabels:
