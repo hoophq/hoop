@@ -1,7 +1,6 @@
 package pgtypes
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
@@ -13,6 +12,11 @@ type Packet struct {
 	typ    *byte
 	header [4]byte
 	frame  []byte
+}
+
+type BackendKeyData struct {
+	Pid       uint32
+	SecretKey uint32
 }
 
 func (p *Packet) Encode() []byte {
@@ -90,32 +94,35 @@ func Decode(data io.Reader) (*Packet, error) {
 	return pkt, nil
 }
 
-func SimpleQueryContent(payload []byte) (bool, []byte, error) {
-	r := bufio.NewReaderSize(bytes.NewBuffer(payload), DefaultBufferSize)
-	typ, err := r.ReadByte()
-	if err != nil {
-		return false, nil, fmt.Errorf("failed reading first byte: %v", err)
-	}
-	if PacketType(typ) != ClientSimpleQuery {
-		return false, nil, nil
-	}
+// It parses simple query or extended query format, returns nil in case
+// the packet type is not a Query (F) or Parse (F)
+func ParseQuery(payload []byte) []byte {
+	switch PacketType(payload[0]) {
+	case ClientSimpleQuery:
+		pktLen := binary.BigEndian.Uint32(payload[1:5])
+		return payload[5:pktLen]
+	case ClientParse:
+		// type (1) + header (4)
+		isUnnamedPreparedStmt := payload[5] == 0
+		payload := payload[5:]
+		if isUnnamedPreparedStmt {
+			payload = payload[1:] // remove byte 00
+		} else {
+			// re-slice to remove the named prepared statement
+			idx := bytes.IndexByte(payload, 0x00)
+			if idx == -1 {
+				return nil
+			}
+			payload = payload[idx+1:]
 
-	header := [4]byte{}
-	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return true, nil, fmt.Errorf("failed reading header, err=%v", err)
+		}
+		// obtain only the query string statement
+		idx := bytes.IndexByte(payload, 0x00)
+		if idx == -1 {
+			return nil
+		}
+		return payload[:idx]
+	default:
+		return nil
 	}
-	pktLen := binary.BigEndian.Uint32(header[:]) - 4 // don't include header size (4)
-	if uint32(len(payload[5:])) != pktLen {
-		return true, nil, fmt.Errorf("unexpected packet payload, received %v/%v", len(payload[5:]), pktLen)
-	}
-	queryFrame := make([]byte, pktLen)
-	if _, err := io.ReadFull(r, queryFrame); err != nil {
-		return true, nil, fmt.Errorf("failed reading query, err=%v", err)
-	}
-	return true, queryFrame, nil
-}
-
-type BackendKeyData struct {
-	Pid       uint32
-	SecretKey uint32
 }

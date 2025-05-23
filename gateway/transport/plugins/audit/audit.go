@@ -11,7 +11,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	mssqltypes "github.com/hoophq/hoop/common/mssqltypes"
-	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -113,15 +112,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, p.writeOnReceive(pctx.SID, eventlogv1.OutputType, nil, eventMetadata)
 		}
 	case pbagent.PGConnectionWrite:
-		isSimpleQuery, queryBytes, err := pgtypes.SimpleQueryContent(pkt.Payload)
-		if !isSimpleQuery {
-			break
-		}
-		if err != nil {
-			log.With("sid", pctx.SID).Errorf("failed parsing simple query data, err=%v", err)
-			return nil, fmt.Errorf("failed obtaining simple query data, reason=%v", err)
-		}
-		return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, queryBytes, eventMetadata)
+		return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, pkt.Payload, eventMetadata)
 	case pbagent.MySQLConnectionWrite:
 		if queryBytes := decodeMySQLCommandQuery(pkt.Payload); queryBytes != nil {
 			return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, queryBytes, eventMetadata)

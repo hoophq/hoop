@@ -399,6 +399,18 @@ type (
 	SessionOptionKey                     string
 )
 
+// Parse available options for the event stream
+// * utf8 - parse the session output (o) and error (e) events as utf-8 content in the session payload
+// * base64 - parse the session output (o) and error (e) events as base64 content in the session payload
+// * raw-queries - encode each event stream parsing the input of queries based on the database wire protocol (available databases: postgres)
+type SessionEventStreamType string
+
+const (
+	SessionEventStreamUTF8Type       SessionEventStreamType = "utf8"
+	SessionEventStreamBase64Type     SessionEventStreamType = "base64"
+	SessionEventStreamRawQueriesType SessionEventStreamType = "raw-queries"
+)
+
 type SessionGetByIDParams struct {
 	// The file extension to donwload the session as a file content.
 	// * `csv` - it will parse the content to format in csv format
@@ -413,9 +425,8 @@ type SessionGetByIDParams struct {
 	// Construct the file content adding a break line when parsing each event
 	NewLine string `json:"new_line" enums:"0,1" example:"1" default:"0"`
 	// Construct the file content adding the event time as prefix when parsing each event
-	EventTime string `json:"event-time" enums:"0,1" example:"1" default:"0"`
-	// This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload
-	EventStream string `json:"event_stream" enums:"utf8,base64" default:""`
+	EventTime   string                 `json:"event-time" enums:"0,1" example:"1" default:"0"`
+	EventStream SessionEventStreamType `json:"event_stream" default:""`
 	// Expand the given attributes
 	Expand string `json:"expand" enums:"event_stream" example:"event_stream" default:""`
 }

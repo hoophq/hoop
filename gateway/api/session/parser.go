@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/hoophq/hoop/common/pgtypes"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 )
+
+var errEventStreamUnsupportedFormat = errors.New("event_stream attribute has an unknown type format")
 
 type sessionParseOption struct {
 	withLineBreak bool
@@ -22,6 +28,10 @@ type sessionParseOption struct {
 }
 
 func toOpenApiSession(s *models.Session) *openapi.Session {
+	var blobStream json.RawMessage
+	if s.BlobStream != nil {
+		blobStream = s.BlobStream.BlobStream
+	}
 	return &openapi.Session{
 		ID:                   s.ID,
 		OrgID:                s.OrgID,
@@ -41,7 +51,7 @@ func toOpenApiSession(s *models.Session) *openapi.Session {
 		Verb:                 s.Verb,
 		Status:               openapi.SessionStatusType(s.Status),
 		ExitCode:             s.ExitCode,
-		EventStream:          s.BlobStream,
+		EventStream:          blobStream,
 		EventSize:            s.BlobStreamSize,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
@@ -97,13 +107,49 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 	}
 }
 
+// encode the blob stream based on the format type
+func encodeBlobStream(s *models.Session, format openapi.SessionEventStreamType) error {
+	switch format {
+	case openapi.SessionEventStreamUTF8Type, openapi.SessionEventStreamBase64Type:
+		output, err := parseBlobStream(s, sessionParseOption{events: []string{"o", "e"}})
+		if err != nil {
+			return err
+		}
+		s.BlobStream.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, string(output)))
+		s.BlobStreamSize = int64(utf8.RuneCountInString(string(output)))
+		if format == "base64" {
+			encOutput := base64.StdEncoding.EncodeToString(output)
+			s.BlobStream.BlobStream = json.RawMessage(fmt.Sprintf(`[%q]`, encOutput))
+			s.BlobStreamSize = int64(len(encOutput))
+		}
+	case openapi.SessionEventStreamRawQueriesType:
+		// It maintains compatibility with older sessions
+		// that are not stored in wire protocol format.
+		if !s.BlobStream.IsWireProtocol() {
+			return nil
+		}
+		blobStream, blobSize, err := parseRawQueries(
+			s.BlobStream.BlobStream,
+			proto.ToConnectionType(s.ConnectionType, s.ConnectionSubtype),
+		)
+		if err != nil {
+			return err
+		}
+		s.BlobStream.BlobStream = blobStream
+		s.BlobStreamSize = blobSize
+	default:
+		return errEventStreamUnsupportedFormat
+	}
+	return nil
+}
+
 func parseBlobStream(s *models.Session, opts sessionParseOption) (output []byte, err error) {
-	if len(s.BlobStream) == 0 {
+	if s.BlobStream == nil {
 		return
 	}
 
 	var eventStream []any
-	if err := json.Unmarshal(s.BlobStream, &eventStream); err != nil {
+	if err := json.Unmarshal(s.BlobStream.BlobStream, &eventStream); err != nil {
 		return nil, fmt.Errorf("failed decoding blob stream: %v", err)
 	}
 
@@ -146,4 +192,38 @@ func parseBlobStream(s *models.Session, opts sessionParseOption) (output []byte,
 		output, _ = json.Marshal(jsonEventStreamList)
 	}
 	return
+}
+
+func parseRawQueries(blobStream json.RawMessage, connProtoType proto.ConnectionType) (json.RawMessage, int64, error) {
+	if connProtoType != proto.ConnectionTypePostgres {
+		return nil, 0, nil
+	}
+	// models.Blob
+	if len(blobStream) == 0 {
+		return nil, 0, nil
+	}
+	var in []any
+	if err := json.Unmarshal(blobStream, &in); err != nil {
+		return nil, 0, fmt.Errorf("failed decoding blob stream: %v", err)
+	}
+
+	var blobSize int64
+	var out []any
+	for _, eventList := range in {
+		event := eventList.([]any)
+		eventTime, _ := event[0].(float64)
+		eventType, _ := event[1].(string)
+		if eventType != "i" {
+			continue
+		}
+		eventData, _ := base64.StdEncoding.DecodeString(event[2].(string))
+		queryBytes := pgtypes.ParseQuery(eventData)
+		if len(queryBytes) == 0 {
+			continue
+		}
+		blobSize += int64(len(queryBytes))
+		out = append(out, []any{eventTime, eventType, base64.StdEncoding.EncodeToString(queryBytes)})
+	}
+	rawQueries, err := json.Marshal(out)
+	return rawQueries, blobSize, err
 }

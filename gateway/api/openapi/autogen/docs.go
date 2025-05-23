@@ -1986,7 +1986,7 @@ const docTemplate = `{
         },
         "/plugins/runbooks/connections/{name}/exec": {
             "post": {
-                "description": "Start a execution using a Runbook as input",
+                "description": "Start a execution using a Runbook as input. If the connection has a JIRA issue template configured, it will create a JIRA issue.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3026,10 +3026,15 @@ const docTemplate = `{
                     {
                         "enum": [
                             "utf8",
-                            "base64"
+                            "base64",
+                            "raw-queries"
                         ],
                         "type": "string",
-                        "description": "This option will parse the session output (o) and error (e) events as an utf-8 content in the session payload",
+                        "x-enum-varnames": [
+                            "SessionEventStreamUTF8Type",
+                            "SessionEventStreamBase64Type",
+                            "SessionEventStreamRawQueriesType"
+                        ],
                         "name": "event_stream",
                         "in": "query"
                     },
@@ -3092,8 +3097,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.Session"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -5833,6 +5850,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "myrunbooks/run-backup.runbook.sql"
                 },
+                "jira_fields": {
+                    "description": "Jira fields to create a Jira issue",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "metadata": {
                     "description": "Metadata attributes to add in the session",
                     "type": "object",
@@ -6252,6 +6276,19 @@ const docTemplate = `{
                     ]
                 }
             }
+        },
+        "openapi.SessionEventStreamType": {
+            "type": "string",
+            "enum": [
+                "utf8",
+                "base64",
+                "raw-queries"
+            ],
+            "x-enum-varnames": [
+                "SessionEventStreamUTF8Type",
+                "SessionEventStreamBase64Type",
+                "SessionEventStreamRawQueriesType"
+            ]
         },
         "openapi.SessionLabelsType": {
             "type": "object",
