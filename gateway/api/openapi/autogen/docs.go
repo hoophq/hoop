@@ -3002,7 +3002,7 @@ const docTemplate = `{
         },
         "/sessions/{session_id}": {
             "get": {
-                "description": "Get a session by id. This endpoint returns a conditional response\n\n- When the query string ` + "`" + `extension` + "`" + ` is present it will return a payload containing a link to download the session\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"download_url\": \"http://127.0.0.1:8009/api/sessions/\u003cid\u003e/download?token=\u003ctoken\u003e\u0026extension=csv\u0026newline=1\u0026event-time=0\u0026events=o,e\",\n  \"expire_at\": \"2024-07-25T15:56:35.317601Z\",\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n- Fetching the endpoint without any query string returns the payload documented for this endpoint\n- The attribute ` + "`" + `event_stream` + "`" + ` will be rendered differently if the request contains the query string ` + "`" + `event_stream=utf8` + "`" + `\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  (...)\n  \"event_stream\": [\"hello world\"]\n  (...)\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nThe attribute ` + "`" + `metrics` + "`" + ` contains the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"data_masking\": {\n    \"err_count\": 0,\n    \"info_types\": {\n      \"EMAIL_ADDRESS\": 1\n    },\n    \"total_redact_count\": 1,\n    \"transformed_bytes\": 31\n  },\n  \"event_size\": 356\n}\n` + "`" + `` + "`" + `` + "`" + `\n",
+                "description": "Get a session by id. This endpoint returns a conditional response\n\n- When the query string ` + "`" + `extension` + "`" + ` is present it will return a payload containing a link to download the session\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"download_url\": \"http://127.0.0.1:8009/api/sessions/\u003cid\u003e/download?token=\u003ctoken\u003e\u0026extension=csv\u0026newline=1\u0026event-time=0\u0026events=o,e\",\n  \"expire_at\": \"2024-07-25T15:56:35.317601Z\",\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n- Fetching the endpoint without any query string returns the payload documented for this endpoint\n- The attribute ` + "`" + `event_stream` + "`" + ` will be rendered differently if the request contains the query string ` + "`" + `event_stream` + "`" + ` with the values ` + "`" + `utf8` + "`" + ` or ` + "`" + `base64` + "`" + `.\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  (...)\n  \"event_stream\": [\"hello world\"]\n  (...)\n}\n` + "`" + `` + "`" + `` + "`" + `\n\nThe attribute ` + "`" + `metrics` + "`" + ` contains the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n  \"data_masking\": {\n    \"err_count\": 0,\n    \"info_types\": {\n      \"EMAIL_ADDRESS\": 1\n    },\n    \"total_redact_count\": 1,\n    \"transformed_bytes\": 31\n  },\n  \"event_size\": 356\n}\n` + "`" + `` + "`" + `` + "`" + `\n",
                 "produces": [
                     "application/json"
                 ],
@@ -3035,6 +3035,7 @@ const docTemplate = `{
                             "SessionEventStreamBase64Type",
                             "SessionEventStreamRawQueriesType"
                         ],
+                        "description": "Parse available options for the event stream\n* ` + "`" + `utf8` + "`" + ` - parse the session output (o) and error (e) events as utf-8 content in the session payload\n* ` + "`" + `base64` + "`" + ` - parse the session output (o) and error (e) events as base64 content in the session payload\n* ` + "`" + `raw-queries` + "`" + ` - encode each event stream parsing the input of queries based on the database wire protocol (available databases: postgres)",
                         "name": "event_stream",
                         "in": "query"
                     },
@@ -6167,7 +6168,7 @@ const docTemplate = `{
                     "example": "2024-07-25T15:56:35.361101Z"
                 },
                 "event_size": {
-                    "description": "The stored resource size in bytes",
+                    "description": "The stored resource size in bytes.\nWhen any parsing is applied to the request the value display the computed parsed size.\nThe pre-computed size will be available in the attribute ` + "`" + `metrics.event_size` + "`" + `",
                     "type": "integer",
                     "example": 569
                 },

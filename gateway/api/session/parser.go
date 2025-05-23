@@ -198,7 +198,6 @@ func parseRawQueries(blobStream json.RawMessage, connProtoType proto.ConnectionT
 	if connProtoType != proto.ConnectionTypePostgres {
 		return nil, 0, nil
 	}
-	// models.Blob
 	if len(blobStream) == 0 {
 		return nil, 0, nil
 	}

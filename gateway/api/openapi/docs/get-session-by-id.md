@@ -10,7 +10,7 @@ Get a session by id. This endpoint returns a conditional response
 ```
 
 - Fetching the endpoint without any query string returns the payload documented for this endpoint
-- The attribute `event_stream` will be rendered differently if the request contains the query string `event_stream=utf8`
+- The attribute `event_stream` will be rendered differently if the request contains the query string `event_stream` with the values `utf8` or `base64`.
 
 ```json
 {

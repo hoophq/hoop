@@ -180,7 +180,7 @@ func (s *Session) GetBlobStream() (*Blob, error) {
 }
 
 // Report if the blob is stored as database wire protocol format
-func (b Blob) IsWireProtocol() bool { return b.BlobFormat == ptr.String(BlobFormatWireProtoType) }
+func (b Blob) IsWireProtocol() bool { return ptr.ToString(b.BlobFormat) == BlobFormatWireProtoType }
 
 func GetSessionByID(orgID, sid string) (*Session, error) {
 	session := &Session{}
