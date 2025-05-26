@@ -23,9 +23,6 @@
         paths-by-connection (rf/subscribe [:runbooks/paths-by-connection])]
 
     (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
-    (when connection-id
-      (rf/dispatch [:connections->get-connection-details connection-id]))
-
     (fn []
       (let [adding-new-path? (and connection-id (not path-id))
             is-existing-path? (boolean path-id)
