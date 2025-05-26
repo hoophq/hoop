@@ -14,7 +14,7 @@
 (defmethod get-database-schema "postgres" [_ connection]
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 (defmethod get-database-schema "mysql" [_ connection]
-  (rf/dispatch [:database-schema->handle-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 (defmethod get-database-schema "mongodb" [_ connection]
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 
@@ -162,9 +162,11 @@
       [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
                           (when is-loading-this-db "opacity-75 ")
                           "flex items-center")
-              :on-click #(rf/dispatch [:database-schema->change-database
-                                       {:connection-name connection-name}
-                                       (when (not is-selected) db)])}
+              :on-click #(if is-selected
+                           (rf/dispatch [:database-schema->close-database {:connection-name connection-name}])
+                           (rf/dispatch [:database-schema->change-database
+                                         {:connection-name connection-name}
+                                         db]))}
        [:> Text {:size "1" :weight "bold"} db]
        (if is-selected
          [:> ChevronDown {:size 12}]
@@ -236,8 +238,8 @@
   (case type
     "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
     "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
 
+    "mysql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
     "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
     "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
 
