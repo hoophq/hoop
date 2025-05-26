@@ -7,22 +7,23 @@
  (fn [{:keys [db]} [_ {:keys [path connection-id]}]]
    (let [plugin (get-in db [:plugins->plugin-details :plugin])
          connections (or (:connections plugin) [])
-         updated-connections (map (fn [conn]
-                                    (if (= (:id conn) connection-id)
-                                      (if (or (nil? path) (empty? path))
-                                        (assoc conn :config nil)
-                                        (update conn :config (fn [_] [path])))
-                                      conn))
-                                  connections)
+         connection-exists? (some #(= (:id %) connection-id) connections)
+         updated-connections (if connection-exists?
+                               ;; Update existing connection
+                               (map (fn [conn]
+                                      (if (= (:id conn) connection-id)
+                                        (if (or (nil? path) (empty? path))
+                                          (assoc conn :config nil)
+                                          (update conn :config (fn [_] [path])))
+                                        conn))
+                                    connections)
+                               ;; Add new connection to existing list
+                               (conj connections {:id connection-id
+                                                  :config (if (or (nil? path) (empty? path))
+                                                            nil
+                                                            [path])}))
          updated-plugin (assoc plugin :connections (vec updated-connections))]
-     (if (empty? connections)
-       {:fx [[:dispatch [:plugins->update-plugin
-                         (assoc plugin :connections
-                                [{:id connection-id
-                                  :config (if (or (nil? path) (empty? path))
-                                            nil
-                                            [path])}])]]]}
-       {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]}))))
+     {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]})))
 
 (rf/reg-event-fx
  :runbooks/delete-path
