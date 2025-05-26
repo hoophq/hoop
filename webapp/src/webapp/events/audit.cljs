@@ -95,7 +95,9 @@
    (let [state {:status :loading
                 :session session
                 :session-logs {:status :loading}}
-         event-stream (if (= "exec" (:verb session)) "?event_stream=base64" "")]
+         event-stream (if (= "exec" (:verb session))
+                        "?event_stream=base64"
+                        "")]
      {:db (assoc db :audit->session-details state)
       :fx [[:dispatch [:fetch
                        {:method "GET"
@@ -109,7 +111,11 @@
  (fn
    [{:keys [db]} [_ session]]
    (let [event-size (:event_size session)
-         event-stream (if (= "exec" (:verb session)) "event_stream=base64" "")]
+         event-stream (if (= "exec" (:verb session))
+                        "event_stream=base64"
+                        (if (= "postgres" (:connection_subtype session))
+                          "event_stream=raw-queries"
+                          ""))]
      (if (and event-size (> event-size size-threshold))
        {:db (assoc db
                    :audit->session-details
