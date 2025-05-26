@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/gin-gonic/gin"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -277,25 +276,6 @@ func validateDatabaseName(dbName string) error {
 
 	if !re.MatchString(dbName) {
 		return fmt.Errorf("invalid database name. Only alphanumeric characters, underscore, hyphen and dot are allowed with length between 1 and 128 characters")
-	}
-
-	// Some databases don't allow names starting with numbers
-	if unicode.IsDigit(rune(dbName[0])) {
-		return fmt.Errorf("database name cannot start with a number")
-	}
-
-	// Check common reserved words
-	reservedWords := []string{
-		"master", "tempdb", "model", "msdb", // SQL Server
-		"postgres", "template0", "template1", // PostgreSQL
-		"mysql", "information_schema", "performance_schema", // MySQL
-	}
-
-	dbNameLower := strings.ToLower(dbName)
-	for _, word := range reservedWords {
-		if dbNameLower == word {
-			return fmt.Errorf("database name cannot be a reserved word: %s", word)
-		}
 	}
 
 	return nil

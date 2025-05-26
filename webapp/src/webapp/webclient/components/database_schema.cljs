@@ -14,7 +14,7 @@
 (defmethod get-database-schema "postgres" [_ connection]
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 (defmethod get-database-schema "mysql" [_ connection]
-  (rf/dispatch [:database-schema->handle-database-schema connection]))
+  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 (defmethod get-database-schema "mongodb" [_ connection]
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 
@@ -152,7 +152,7 @@
             loading-columns
             columns-cache])]))))
 
-(defn- database-item [db schema connection-name database-schema-status current-schema]
+(defn- database-item [db schema connection-name database-schema-status current-schema type]
   (let [is-selected (= db (get-in current-schema [:open-database]))
         loading-databases (get-in current-schema [:loading-databases] #{})
         is-loading-this-db (contains? loading-databases db)
@@ -162,9 +162,11 @@
       [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
                           (when is-loading-this-db "opacity-75 ")
                           "flex items-center")
-              :on-click #(rf/dispatch [:database-schema->change-database
-                                       {:connection-name connection-name}
-                                       (when (not is-selected) db)])}
+              :on-click #(if is-selected
+                           (rf/dispatch [:database-schema->close-database {:connection-name connection-name}])
+                           (rf/dispatch [:database-schema->change-database
+                                         {:connection-name connection-name}
+                                         db]))}
        [:> Text {:size "1" :weight "bold"} db]
        (if is-selected
          [:> ChevronDown {:size 12}]
@@ -175,6 +177,20 @@
         (cond
           is-loading-this-db
           [loading-indicator "Loading tables..."]
+
+          (= "mysql" type)
+          (let [schema-name (first (keys db-schemas))
+                tables (first (vals db-schemas))
+                current-database (get-in current-schema [:current-database])
+                loading-columns (get-in current-schema [:loading-columns] #{})
+                columns-cache (get-in current-schema [:columns-cache] {})]
+            [:div
+             [tables-tree (into (sorted-map) tables)
+              connection-name
+              schema-name
+              current-database
+              loading-columns
+              columns-cache]])
 
           (not-empty db-schemas)
           [:div
@@ -198,7 +214,7 @@
              "No tables found")])])]))
 
 (defn- databases-tree []
-  (fn [databases schema connection-name database-schema-status current-schema]
+  (fn [databases schema connection-name database-schema-status current-schema type]
     [:div.text-xs
      (doall
       (for [db databases]
@@ -208,7 +224,8 @@
          schema
          connection-name
          database-schema-status
-         current-schema]))]))
+         current-schema
+         type]))]))
 
 (defn- sql-databases-tree []
   (fn [schema connection-name current-schema database-schema-status]
@@ -236,10 +253,10 @@
   (case type
     "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
     "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
-    "mysql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
 
-    "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
-    "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema]
+    "mysql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+    "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+    "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
     [:> Text {:size "1"}
      "Couldn't load the schema"]))

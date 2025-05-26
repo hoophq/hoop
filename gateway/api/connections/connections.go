@@ -430,6 +430,12 @@ dbs.databases.forEach(function(database) {
 });
 print(JSON.stringify(result));`
 
+	case pb.ConnectionTypeMySQL:
+		script = `
+SELECT schema_name AS database_name
+FROM information_schema.schemata
+ORDER BY schema_name;`
+
 	default:
 		log.Warnf("unsupported database type: %v", currentConnectionType)
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
@@ -543,31 +549,24 @@ func ListTables(c *gin.Context) {
 
 	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
 
-	if dbName == "" {
-		connEnvs := conn.Envs
-		switch currentConnectionType {
-		case pb.ConnectionTypePostgres,
-			pb.ConnectionTypeMSSQL,
-			pb.ConnectionTypeMySQL:
-			dbName = getEnvValue(connEnvs, "envvar:DB")
-		case pb.ConnectionTypeMongoDB:
-			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
-				dbName = getMongoDBFromConnectionString(connStr)
-			}
-		case pb.ConnectionTypeOracleDB:
-			dbName = getEnvValue(connEnvs, "envvar:SID")
-		}
+	// Verify if dbName is needed (only PostgreSQL, MySQL and MongoDB)
+	needsDbName := currentConnectionType == pb.ConnectionTypePostgres ||
+		currentConnectionType == pb.ConnectionTypeMySQL ||
+		currentConnectionType == pb.ConnectionTypeMongoDB
 
+	// For database types that require dbName
+	if needsDbName {
+		// Check if provided
 		if dbName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "database name is required but not found in connection or query parameter"})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "database parameter is required for this database type"})
 			return
 		}
-	}
 
-	// Validate database name to prevent SQL injection
-	if err := validateDatabaseName(dbName); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
+		// Validate format
+		if err := validateDatabaseName(dbName); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	script := getTablesQuery(currentConnectionType, dbName)
@@ -701,31 +700,24 @@ func GetTableColumns(c *gin.Context) {
 
 	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
 
-	if dbName == "" {
-		connEnvs := conn.Envs
-		switch currentConnectionType {
-		case pb.ConnectionTypePostgres,
-			pb.ConnectionTypeMSSQL,
-			pb.ConnectionTypeMySQL:
-			dbName = getEnvValue(connEnvs, "envvar:DB")
-		case pb.ConnectionTypeMongoDB:
-			if connStr := connEnvs["envvar:CONNECTION_STRING"]; connStr != "" {
-				dbName = getMongoDBFromConnectionString(connStr)
-			}
-		case pb.ConnectionTypeOracleDB:
-			dbName = getEnvValue(connEnvs, "envvar:SID")
-		}
+	// Verify if dbName is needed (only PostgreSQL, MySQL and MongoDB)
+	needsDbName := currentConnectionType == pb.ConnectionTypePostgres ||
+		currentConnectionType == pb.ConnectionTypeMySQL ||
+		currentConnectionType == pb.ConnectionTypeMongoDB
 
+	// For database types that require dbName
+	if needsDbName {
+		// Check if provided
 		if dbName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "database name is required but not found in connection or query parameter"})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "database parameter is required for this database type"})
 			return
 		}
-	}
 
-	// Validate database name to prevent SQL injection
-	if err := validateDatabaseName(dbName); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
+		// Validate format
+		if err := validateDatabaseName(dbName); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	if schemaName == "" {

@@ -112,24 +112,19 @@ func TestValidateDatabaseName(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "starts with number",
-			dbName:  "1database",
-			wantErr: true,
-		},
-		{
 			name:    "reserved word postgres",
 			dbName:  "postgres",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "reserved word master",
 			dbName:  "master",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "reserved word information_schema",
 			dbName:  "information_schema",
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "unicode characters",
@@ -139,7 +134,7 @@ func TestValidateDatabaseName(t *testing.T) {
 		{
 			name:    "case insensitive reserved word",
 			dbName:  "MASTER",
-			wantErr: true,
+			wantErr: false,
 		},
 	}
 

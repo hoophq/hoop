@@ -413,6 +413,9 @@
                                                                "\\set QUIET off\n"
                                                                script)
                         (and selected-db
+                             (= connection-type "mysql")
+                             (not multiple-connections?)) (str "use " selected-db ";\n" script)
+                        (and selected-db
                              (= connection-type "mongodb")
                              (not multiple-connections?)) (str "use " selected-db ";\n" script)
                         :else script)]
