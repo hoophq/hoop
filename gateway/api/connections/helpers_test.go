@@ -112,11 +112,6 @@ func TestValidateDatabaseName(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "starts with number",
-			dbName:  "1database",
-			wantErr: true,
-		},
-		{
 			name:    "reserved word postgres",
 			dbName:  "postgres",
 			wantErr: false,

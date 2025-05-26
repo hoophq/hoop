@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/gin-gonic/gin"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -277,11 +276,6 @@ func validateDatabaseName(dbName string) error {
 
 	if !re.MatchString(dbName) {
 		return fmt.Errorf("invalid database name. Only alphanumeric characters, underscore, hyphen and dot are allowed with length between 1 and 128 characters")
-	}
-
-	// Some databases don't allow names starting with numbers
-	if unicode.IsDigit(rune(dbName[0])) {
-		return fmt.Errorf("database name cannot start with a number")
 	}
 
 	return nil
