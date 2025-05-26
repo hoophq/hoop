@@ -14,7 +14,7 @@ func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	case pb.ConnectionTypeMSSQL:
 		return getMSSQLTablesQuery()
 	case pb.ConnectionTypeMySQL:
-		return getMySQLTablesQuery()
+		return getMySQLTablesQuery(dbName)
 	case pb.ConnectionTypeOracleDB:
 		return getOracleDBTablesQuery()
 	case pb.ConnectionTypeMongoDB:
@@ -32,7 +32,7 @@ func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName s
 	case pb.ConnectionTypeMSSQL:
 		return getMSSQLColumnsQuery(tableName, schemaName)
 	case pb.ConnectionTypeMySQL:
-		return getMySQLColumnsQuery(tableName, schemaName)
+		return getMySQLColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeOracleDB:
 		return getOracleDBColumnsQuery(tableName, schemaName)
 	case pb.ConnectionTypeMongoDB:
@@ -83,8 +83,8 @@ WHERE o.type IN ('U', 'V')  -- U for user-defined tables, V for views
 ORDER BY s.name, o.name;`
 }
 
-func getMySQLTablesQuery() string {
-	return `
+func getMySQLTablesQuery(dbName string) string {
+	return fmt.Sprintf(`
 SELECT
     t.TABLE_SCHEMA as schema_name,
     CASE t.TABLE_TYPE
@@ -94,8 +94,8 @@ SELECT
     END as object_type,
     t.TABLE_NAME as object_name
 FROM INFORMATION_SCHEMA.TABLES t
-WHERE t.TABLE_SCHEMA NOT IN ('information_schema', 'performance_schema', 'mysql', 'pg_catalog', 'sys')
-ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;`
+WHERE t.TABLE_SCHEMA = '%s'
+ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME;`, dbName)
 }
 
 func getOracleDBTablesQuery() string {
@@ -190,8 +190,9 @@ WHERE s.name = '%s' AND o.name = '%s' AND o.type IN ('U', 'V')
 ORDER BY c.column_id;`, schemaName, tableName)
 }
 
-func getMySQLColumnsQuery(tableName, schemaName string) string {
+func getMySQLColumnsQuery(dbName, tableName, schemaName string) string {
 	return fmt.Sprintf(`
+USE %s;
 SELECT
     c.COLUMN_NAME as column_name,
     CASE
@@ -204,7 +205,7 @@ SELECT
     c.IS_NULLABLE = 'NO' as not_null
 FROM INFORMATION_SCHEMA.COLUMNS c
 WHERE c.TABLE_SCHEMA = '%s' AND c.TABLE_NAME = '%s'
-ORDER BY c.ORDINAL_POSITION;`, schemaName, tableName)
+ORDER BY c.ORDINAL_POSITION;`, dbName, schemaName, tableName)
 }
 
 func getOracleDBColumnsQuery(tableName, schemaName string) string {
