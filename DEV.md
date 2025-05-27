@@ -36,10 +36,10 @@ make run-dev
 
 #### Webapp Setup
 
-To build the webapp into the gateway
+To build the Webapp into the gateway
 
 ```sh
-WEBAPP_BUILD=1 make run-dev
+make build-dev-webapp
 ```
 
 ### Build Dev Client

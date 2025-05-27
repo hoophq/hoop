@@ -109,6 +109,9 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 
 // encode the blob stream based on the format type
 func encodeBlobStream(s *models.Session, format openapi.SessionEventStreamType) error {
+	if s.BlobStream == nil {
+		return nil
+	}
 	switch format {
 	case openapi.SessionEventStreamUTF8Type, openapi.SessionEventStreamBase64Type:
 		output, err := parseBlobStream(s, sessionParseOption{events: []string{"o", "e"}})
@@ -144,7 +147,7 @@ func encodeBlobStream(s *models.Session, format openapi.SessionEventStreamType) 
 }
 
 func parseBlobStream(s *models.Session, opts sessionParseOption) (output []byte, err error) {
-	if s.BlobStream == nil {
+	if s.BlobStream == nil || len(s.BlobStream.BlobStream) == 0 {
 		return
 	}
 
@@ -195,10 +198,7 @@ func parseBlobStream(s *models.Session, opts sessionParseOption) (output []byte,
 }
 
 func parseRawQueries(blobStream json.RawMessage, connProtoType proto.ConnectionType) (json.RawMessage, int64, error) {
-	if connProtoType != proto.ConnectionTypePostgres {
-		return nil, 0, nil
-	}
-	if len(blobStream) == 0 {
+	if connProtoType != proto.ConnectionTypePostgres || len(blobStream) == 0 {
 		return nil, 0, nil
 	}
 	var in []any
