@@ -115,6 +115,8 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 		( SELECT jsonb_agg(
 				jsonb_build_object(
 					'id', rg.id,
+					'org_id', rg.org_id,
+					'review_id', rg.review_id,
 					'group_name', rg.group_name,
 					'status', rg.status,
 					'owner_id', rg.owner_id,
@@ -212,8 +214,8 @@ func GetApprovedReviewJit(orgID, ownerUserID, connectionID string) (*ReviewJit, 
 	return &jit, err
 }
 
-// update the review resource, when the status is approved it updates the status
-// of the session to ready as well
+// update the review resource,
+// it updates the session status when the review status is approved, rejected or revoked
 func UpdateReview(rev *Review) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.reviews").
@@ -229,7 +231,7 @@ func UpdateReview(rev *Review) error {
 		for _, rg := range rev.ReviewGroups {
 			res = tx.Table("private.review_groups").
 				Where("org_id = ? AND review_id = ?", rev.OrgID, rev.ID).
-				Updates(rg)
+				Save(rg)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -241,10 +243,19 @@ func UpdateReview(rev *Review) error {
 		if len(errs) > 0 {
 			return fmt.Errorf("%v", errs)
 		}
-		if rev.Status == "APPROVED" {
+
+		var sessionStatus string
+		switch rev.Status {
+		case ReviewStatusApproved:
+			sessionStatus = "ready"
+		case ReviewStatusRejected, ReviewStatusRevoked:
+			sessionStatus = "done"
+		}
+
+		if sessionStatus != "" {
 			return tx.Table("private.sessions").
 				Where("org_id = ? AND id = ?", rev.OrgID, rev.SessionID).
-				UpdateColumn("status", "ready").
+				UpdateColumn("status", sessionStatus).
 				Error
 		}
 		return nil

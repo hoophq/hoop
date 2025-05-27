@@ -348,7 +348,7 @@ func List(c *gin.Context) {
 //	@Param					extension	query	openapi.SessionGetByIDParams	false	"-"
 //	@Param					session_id	path	string							true	"The id of the resource"
 //	@Produce				json
-//	@Success				200		{object}	openapi.Session
+//	@Success				200				{object}	openapi.Session
 //	@Failure				403,404,422,500	{object}	openapi.HTTPError
 //	@Router					/sessions/{session_id} [get]
 func Get(c *gin.Context) {

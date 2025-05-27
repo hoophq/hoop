@@ -152,9 +152,12 @@ func (s *Session) getBlobInput() (string, error) {
 	err := DB.Raw(`
 	SELECT b.id, b.org_id, b.blob_stream, b.type, b.format
 	FROM private.sessions s
-	LEFT JOIN private.blobs AS b ON b.type = 'session-input' AND  b.id = s.blob_input_id
+	INNER JOIN private.blobs AS b ON b.type = 'session-input' AND  b.id = s.blob_input_id
 	WHERE s.org_id = ? AND s.id = ?`, s.OrgID, s.ID).
 		First(&blob).Error
+	if err == gorm.ErrRecordNotFound {
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}
@@ -169,14 +172,20 @@ func (s *Session) getBlobInput() (string, error) {
 	return result[0], nil
 }
 
+// GetBlobStream retrieves the blob stream associated with the session
+// It returns nil if the session does not have a blob stream associated with it.
 func (s *Session) GetBlobStream() (*Blob, error) {
 	var blob Blob
-	return &blob, DB.Raw(`
+	err := DB.Raw(`
 	SELECT b.id, b.org_id, b.blob_stream, b.type, b.format
 	FROM private.sessions s
-	LEFT JOIN private.blobs AS b ON b.type = 'session-stream' AND  b.id = s.blob_stream_id
+	INNER JOIN private.blobs AS b ON b.type = 'session-stream' AND  b.id = s.blob_stream_id
 	WHERE s.org_id = ? AND s.id = ?`, s.OrgID, s.ID).
 		First(&blob).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return &blob, err
 }
 
 // Report if the blob is stored as database wire protocol format
