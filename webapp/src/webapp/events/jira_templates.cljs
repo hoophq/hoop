@@ -1,7 +1,9 @@
 (ns webapp.events.jira-templates
   (:require
    [re-frame.core :as rf]
-   [webapp.jira-templates.prompt-form :as prompt-form]))
+   [webapp.jira-templates.prompt-form :as prompt-form]
+   [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
+   [webapp.jira-templates.cmdb-error :as cmdb-error]))
 
 ;; CMDB
 
@@ -21,17 +23,94 @@
  :jira-templates->merge-cmdb-values
  (fn [{:keys [db]} [_ cmdb-item value]]
    (let [current-template (get-in db [:jira-templates->submit-template :data])
+         cmdb-items (get-in current-template [:cmdb_types :items])
+         ;; Track if this was a failed request
+         failed-request? (nil? value)
+         ;; Update items
          updated-cmdb-items (map (fn [item]
                                    (if (= (:jira_object_type item) (:jira_object_type cmdb-item))
-                                     (merge item value)
+                                     (-> item
+                                         (merge value)
+                                         (assoc :request-failed failed-request?))
                                      item))
-                                 (get-in current-template [:cmdb_types :items]))
+                                 cmdb-items)
          updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)
-         all-values-loaded? (every? #(contains? % :jira_values)
-                                    (get-in updated-template [:cmdb_types :items]))]
+         ;; Check if all requests completed (success or failure)
+         all-requests-completed? (every? #(or (contains? % :jira_values)
+                                              (:request-failed %))
+                                         updated-cmdb-items)
+         ;; Check if any requests failed
+         any-requests-failed? (some :request-failed updated-cmdb-items)
+         ;; Check if this is a retry attempt
+         is-retry? (get-in db [:jira-templates :is-retry?])]
+     (cond-> {:db (-> db
+                      (assoc-in [:jira-templates->submit-template :data] updated-template)
+                      (assoc-in [:jira-templates->submit-template :status]
+                                (if all-requests-completed? :ready :loading)))}
+       ;; If all completed and some failed, dispatch error handling
+       (and all-requests-completed? any-requests-failed?)
+       (assoc :fx [[:dispatch [:jira-templates->handle-cmdb-error]]])
+
+       ;; If all completed successfully after a retry, close the loading modal and continue the flow
+       (and all-requests-completed? (not any-requests-failed?) is-retry?)
+       (assoc :fx [[:dispatch [:modal->close]]
+                   [:dispatch [:jira-templates->continue-after-retry]]])))))
+
+;; Add CMDB error handling events
+(rf/reg-event-fx
+ :jira-templates->handle-cmdb-error
+ (fn [{:keys [db]} [_ context]]
+   ;; Store context for retry if provided
+   (let [updated-db (if context
+                      (assoc-in db [:jira-templates :retry-context] context)
+                      db)]
+     {:db updated-db
+      :dispatch [:modal->open
+                 {:maxWidth "540px"
+                  :content [cmdb-error/main
+                            {:on-retry #(do
+                                          (rf/dispatch [:modal->close])
+                                          (rf/dispatch [:jira-templates->retry-cmdb-loading]))
+                             :on-cancel #(rf/dispatch [:modal->close])}]}]})))
+
+(rf/reg-event-fx
+ :jira-templates->retry-cmdb-loading
+ (fn [{:keys [db]} _]
+   (let [template-id (get-in db [:jira-templates->submit-template :data :id])
+         cmdb-items (get-in db [:jira-templates->submit-template :data :cmdb_types :items])]
+     {:db (assoc-in db [:jira-templates :is-retry?] true)
+      :fx [[:dispatch [:modal->open
+                       {:maxWidth "540px"
+                        :custom-on-click-out #(.preventDefault %)
+                        :content [loading-jira-templates/main]}]]
+           ;; Reset request-failed flags and retry all CMDB requests
+           [:dispatch-n (for [cmdb-item cmdb-items]
+                          [:jira-templates->get-cmdb-values template-id cmdb-item])]]})))
+
+;; Add new event to continue the flow after a successful retry
+(rf/reg-event-fx
+ :jira-templates->continue-after-retry
+ (fn [{:keys [db]} _]
+   (let [template (get-in db [:jira-templates->submit-template])
+         template-id (get-in template [:data :id])
+         ;; Determine which flow we're in based on stored context
+         context (get-in db [:jira-templates :retry-context])]
      {:db (-> db
-              (assoc-in [:jira-templates->submit-template :data] updated-template)
-              (assoc-in [:jira-templates->submit-template :status] (if all-values-loaded? :ready :loading)))})))
+              (assoc-in [:jira-templates :is-retry?] false)
+              (update-in [:jira-templates] dissoc :retry-context))
+      :fx [(if (= (:flow context) :editor)
+             ;; Editor plugin flow
+             [:dispatch [:editor-plugin/check-template-and-show-form
+                         {:template-id template-id
+                          :script (:script context)
+                          :metadata (:metadata context)
+                          :keep-metadata? (:keep-metadata? context)}]]
+             ;; Runbooks plugin flow
+             [:dispatch [:runbooks-plugin/check-template-and-show-form
+                         {:template-id template-id
+                          :file-name (:file-name context)
+                          :params (:params context)
+                          :connection-name (:connection-name context)}]])]})))
 
 ;; JIRA
 

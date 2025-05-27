@@ -5,9 +5,7 @@
 (defn main []
   [:> Box
    [:> Heading {:size "6" :mb "2" :class "text-[--gray-12]"}
-    "Verifying Jira Templates"]
+    "Loading Jira Template"]
    [:> Text {:as "p" :size "3" :mb "7" :class "text-[--gray-11]"}
-    (str "This connection has additional verification for Jira Templates "
-         "and might take a few seconds before proceeding. Please wait until "
-         "the verification is processed without closing this tab.")]
+    "Loading template data from Jira. If your template includes CMDB fields, this may take longer as we need to fetch additional data from your Jira server."]
    [:> Spinner {:size "3" :class "justify-self-end"}]])
