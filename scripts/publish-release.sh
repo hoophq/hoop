@@ -15,7 +15,7 @@ gh release list -L 10
 
 read -rep $'\nWhich version do you like to release?\n=> ' GIT_TAG
 NOTE_FILE="$(mktemp).md"
-GIT_COMMIT=$(git log $LATEST_TAG..HEAD --oneline)
+GIT_COMMIT=$(git log $LATEST_TAG..HEAD --pretty=format:"%h %s%n%n%b")
 cat - >$NOTE_FILE <<EOF
 # Changelog
 
