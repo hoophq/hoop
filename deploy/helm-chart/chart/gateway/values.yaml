@@ -23,6 +23,10 @@ defaultAgent:
 ##
 podAnnotations: {}
 
+## Set deployment annotations
+##
+deploymentAnnotations: {}
+
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:
   POSTGRES_DB_URI: ''
