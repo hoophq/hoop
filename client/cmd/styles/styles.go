@@ -19,6 +19,8 @@ var (
 	Keyword = termenv.Style{}.
 		Foreground(color("204")).
 		Background(color("235")).Styled
+
+	KeywordHighlight = termenv.Style{}.Foreground(color("204")).Styled
 )
 
 func PrintErrorAndExit(format string, v ...any) {
