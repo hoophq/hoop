@@ -6,6 +6,7 @@ import (
 
 	"github.com/hoophq/hoop/client/cmd/admin"
 	"github.com/hoophq/hoop/client/cmd/config"
+	"github.com/hoophq/hoop/client/cmd/runbooks"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
@@ -49,6 +50,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugGrpcFlag, "debug-grpc", grpc.ShouldDebugGrpc(), "Turn on debugging of gRPC (http2) if applicable")
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Turn on debugging")
 
+	rootCmd.AddCommand(runbooks.MainCmd)
 	rootCmd.AddCommand(config.MainCmd)
 	rootCmd.AddCommand(admin.MainCmd)
 }

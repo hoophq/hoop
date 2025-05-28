@@ -54,8 +54,8 @@ func IAMUpdateAccessKey(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "the attribute 'secret_access_key' is required when 'access_key_id' is set"})
 			return
 		}
-		iamStore.Set(ctx.OrgID, &req)
 	}
+	iamStore.Set(ctx.OrgID, &req)
 	c.JSON(http.StatusNoContent, nil)
 }
 
