@@ -492,11 +492,12 @@
 ;; Helper event for template checking
 (rf/reg-event-fx
  :editor-plugin/check-template-and-show-form
- (fn [{:keys [db]} [_ {:keys [template-id script metadata keep-metadata?]}]]
+ (fn [{:keys [db]} [_ {:keys [template-id script metadata keep-metadata?] :as context}]]
    (let [template (get-in db [:jira-templates->submit-template])]
-     (if (or (nil? (:data template))
-             (= :loading (:status template)))
-       ;; Template not ready - check again in 500ms
+     (cond
+       ;; Still loading
+       (or (nil? (:data template))
+           (= :loading (:status template)))
        {:fx [[:dispatch-later
               {:ms 500
                :dispatch [:editor-plugin/check-template-and-show-form
@@ -505,23 +506,32 @@
                            :metadata metadata
                            :keep-metadata? keep-metadata?}]}]]}
 
-       ;; Template ready - show form if needed
-       (if (needs-form? template)
-         {:fx [[:dispatch [:modal->open
-                           {:content [prompt-form/main
-                                      {:prompts (get-in template [:data :prompt_types :items])
-                                       :cmdb-items (get-in template [:data :cmdb_types :items])
-                                       :on-submit #(rf/dispatch
-                                                    [:editor-plugin/handle-template-submit
-                                                     {:form-data %
-                                                      :script script
-                                                      :metadata metadata
-                                                      :keep-metadata? keep-metadata?}])}]}]]]}
-         {:fx [[:dispatch [:editor-plugin/handle-template-submit
-                           {:form-data nil
-                            :script script
-                            :metadata metadata
-                            :keep-metadata? keep-metadata?}]]]})))))
+       ;; Ready but with failed CMDB requests
+       (and (= :ready (:status template))
+            (some :request-failed (get-in template [:data :cmdb_types :items])))
+       {:fx [[:dispatch [:jira-templates->handle-cmdb-error
+                         (assoc context :flow :editor)]]]}
+
+       ;; Ready and needs form
+       (needs-form? template)
+       {:fx [[:dispatch [:modal->open
+                         {:content [prompt-form/main
+                                    {:prompts (get-in template [:data :prompt_types :items])
+                                     :cmdb-items (get-in template [:data :cmdb_types :items])
+                                     :on-submit #(rf/dispatch
+                                                  [:editor-plugin/handle-template-submit
+                                                   {:form-data %
+                                                    :script script
+                                                    :metadata metadata
+                                                    :keep-metadata? keep-metadata?}])}]}]]]}
+
+       ;; Ready and doesn't need form
+       :else
+       {:fx [[:dispatch [:editor-plugin/handle-template-submit
+                         {:form-data nil
+                          :script script
+                          :metadata metadata
+                          :keep-metadata? keep-metadata?}]]]}))))
 
 ;; Helper event for template submission
 (rf/reg-event-fx
@@ -565,10 +575,12 @@
 
 (rf/reg-event-fx
  :runbooks-plugin/check-template-and-show-form
- (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name]}]]
+ (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name] :as context}]]
    (let [template (get-in db [:jira-templates->submit-template])]
-     (if (or (nil? (:data template))
-             (= :loading (:status template)))
+     (cond
+       ;; Still loading
+       (or (nil? (:data template))
+           (= :loading (:status template)))
        {:fx [[:dispatch-later
               {:ms 500
                :dispatch [:runbooks-plugin/check-template-and-show-form
@@ -577,22 +589,32 @@
                            :params params
                            :connection-name connection-name}]}]]}
 
-       (if (needs-form? template)
-         {:fx [[:dispatch [:modal->open
-                           {:content [prompt-form/main
-                                      {:prompts (get-in template [:data :prompt_types :items])
-                                       :cmdb-items (get-in template [:data :cmdb_types :items])
-                                       :on-submit #(rf/dispatch
-                                                    [:runbooks-plugin/handle-template-submit
-                                                     {:form-data %
-                                                      :file-name file-name
-                                                      :params params
-                                                      :connection-name connection-name}])}]}]]]}
-         {:fx [[:dispatch [:runbooks-plugin/handle-template-submit
-                           {:form-data nil
-                            :file-name file-name
-                            :params params
-                            :connection-name connection-name}]]]})))))
+       ;; Ready but with failed CMDB requests
+       (and (= :ready (:status template))
+            (some :request-failed (get-in template [:data :cmdb_types :items])))
+       {:fx [[:dispatch [:jira-templates->handle-cmdb-error
+                         (assoc context :flow :runbooks)]]]}
+
+       ;; Ready and needs form
+       (needs-form? template)
+       {:fx [[:dispatch [:modal->open
+                         {:content [prompt-form/main
+                                    {:prompts (get-in template [:data :prompt_types :items])
+                                     :cmdb-items (get-in template [:data :cmdb_types :items])
+                                     :on-submit #(rf/dispatch
+                                                  [:runbooks-plugin/handle-template-submit
+                                                   {:form-data %
+                                                    :file-name file-name
+                                                    :params params
+                                                    :connection-name connection-name}])}]}]]]}
+
+       ;; Ready and doesn't need form
+       :else
+       {:fx [[:dispatch [:runbooks-plugin/handle-template-submit
+                         {:form-data nil
+                          :file-name file-name
+                          :params params
+                          :connection-name connection-name}]]]}))))
 
 (rf/reg-event-fx
  :runbooks-plugin/handle-template-submit
