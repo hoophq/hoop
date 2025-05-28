@@ -54,7 +54,8 @@
      "/onboarding" [["" :onboarding]
                     ["/aws-connect" :onboarding-aws-connect]
                     ["/setup" :onboarding-setup]
-                    ["/setup/resource" :onboarding-setup-resource]]
+                    ["/setup/resource" :onboarding-setup-resource]
+                    ["/resource-providers" :onboarding-resource-providers]]
      "/register" :register-hoop
      "/reviews" [["" :reviews-plugin]
                  [["/" :review-id] :review-details]]

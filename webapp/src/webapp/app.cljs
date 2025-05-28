@@ -74,6 +74,7 @@
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
+   [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.organization.users.main :as org-users]
@@ -259,6 +260,9 @@
 
 (defmethod routes/panels :onboarding-setup-resource-panel []
   [layout :auth [onboarding-setup-resource/main]])
+
+(defmethod routes/panels :onboarding-resource-providers-panel []
+  [layout :auth [onboarding-resource-providers/main]])
 
 (defmethod routes/panels :integrations-aws-connect-panel []
   [layout :application-hoop

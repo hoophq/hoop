@@ -1,7 +1,7 @@
 (ns webapp.onboarding.setup
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Spinner Text]]
-   ["lucide-react" :refer [Database Settings Cloud]]
+   ["lucide-react" :refer [DatabaseZap PackageSearch PackagePlus]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -9,25 +9,22 @@
 (def setup-options
   [{:id "demo"
     :icon (r/as-element
-           [:> Database {:size 18 :class "group-hover:text-[--gray-1]"}])
+           [:> DatabaseZap {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Explore with a demo database"
     :description "Access a preloaded database to it in action."
     :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])}
    {:id "setup"
     :icon (r/as-element
-           [:> Settings {:size 18 :class "group-hover:text-[--gray-1]"}])
+           [:> PackagePlus {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Setup a connection"
     :description "Add your own services or databases."
     :action #(rf/dispatch [:navigate :onboarding-setup-resource])}
    {:id "aws-connect"
     :icon (r/as-element
-           [:> Cloud {:size 18 :class "group-hover:text-[--gray-1]"}])
-    :title "AWS Connect"
-    :description "Access AWS to retrieve and connect your resources."
-    :action #(do
-               (rf/dispatch [:aws-connect/initialize-state])
-               (rf/dispatch [:connection-setup/set-type :aws-connect])
-               (rf/dispatch [:navigate :onboarding-aws-connect]))}])
+           [:> PackageSearch {:size 18 :class "group-hover:text-[--gray-1]"}])
+    :title "Automatic resource discovery"
+    :description "Access your resources through your infrastructure providers."
+    :action #(rf/dispatch [:navigate :onboarding-resource-providers])}])
 
 (defn setup-card [{:keys [icon title description action]}]
   [:> Card {:size "1"
