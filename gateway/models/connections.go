@@ -116,7 +116,7 @@ func UpsertConnection(c *Connection) error {
 			return fmt.Errorf("failed saving connections, reason=%v", err)
 		}
 
-		err = tx.Table(tableEnvVars).Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
+		err = tx.Table("private.env_vars").Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
 		if err != nil {
 			return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
 		}
@@ -152,7 +152,7 @@ func UpsertBatchConnections(connections []*Connection) error {
 				return fmt.Errorf("failed saving connection, reason=%v", err)
 			}
 
-			err = tx.Table(tableEnvVars).Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
+			err = tx.Table("private.env_vars").Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
 			if err != nil {
 				return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
 			}

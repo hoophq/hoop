@@ -126,8 +126,11 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		userCtx, err := models.GetUserContext(subject)
-		if err != nil || userCtx.IsEmpty() {
+		if err != nil {
 			log.Errorf("failed fetching user context, reason=%v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+		}
+		if userCtx.IsEmpty() {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		if userCtx.UserStatus != string(types.UserStatusActive) {

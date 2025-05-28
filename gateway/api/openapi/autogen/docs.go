@@ -1115,7 +1115,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Remove IAM Access Key from storage",
+                "description": "Remove IAM Access Key from memory",
                 "produces": [
                     "application/json"
                 ],
@@ -1126,12 +1126,6 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
                     }
                 }
             }
@@ -1151,32 +1145,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.IAMUserInfo"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/integrations/aws/iam/verify": {
-            "post": {
-                "description": "Verify if the IAM permissions are configured properly",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "AWS"
-                ],
-                "summary": "Verify IAM permissions",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.IAMVerifyPermission"
                         }
                     },
                     "400": {
@@ -4950,52 +4918,6 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.IAMEvaluationDetail": {
-            "type": "object",
-            "properties": {
-                "action_name": {
-                    "description": "ActionName is the AWS service action being evaluated",
-                    "type": "string",
-                    "example": "ec2:DescribeInstances"
-                },
-                "decision": {
-                    "description": "Decision indicates whether the action is allowed or denied",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.PolicyEvaluationDecisionType"
-                        }
-                    ],
-                    "example": "allowed"
-                },
-                "matched_statements": {
-                    "description": "MatchedStatements lists the policy statements that matched during evaluation",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.IAMEvaluationDetailStatement"
-                    }
-                },
-                "resource_name": {
-                    "description": "ResourceName is the ARN of the resource being accessed",
-                    "type": "string",
-                    "example": "arn:aws:ec2:us-west-2:123456789012:instance/i-0123456789abcdef0"
-                }
-            }
-        },
-        "openapi.IAMEvaluationDetailStatement": {
-            "type": "object",
-            "properties": {
-                "source_policy_id": {
-                    "description": "SourcePolicyID is the unique identifier for the policy",
-                    "type": "string",
-                    "example": "ANPAI3R4QMYGV2EXAMPL4"
-                },
-                "source_policy_type": {
-                    "description": "SourcePolicyType indicates the type of policy (managed, inline, etc.)",
-                    "type": "string",
-                    "example": "managed"
-                }
-            }
-        },
         "openapi.IAMUserInfo": {
             "type": "object",
             "properties": {
@@ -5018,31 +4940,6 @@ const docTemplate = `{
                     "description": "Region is the AWS region where the IAM user is operating",
                     "type": "string",
                     "example": "us-west-2"
-                }
-            }
-        },
-        "openapi.IAMVerifyPermission": {
-            "type": "object",
-            "properties": {
-                "evaluation_details": {
-                    "description": "EvaluationDetails contains the details of each permission evaluation",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.IAMEvaluationDetail"
-                    }
-                },
-                "identity": {
-                    "description": "Identity contains information about the IAM user being evaluated",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.IAMUserInfo"
-                        }
-                    ]
-                },
-                "status": {
-                    "description": "Status indicates the overall result of the permission verification",
-                    "type": "string",
-                    "example": "allowed"
                 }
             }
         },
@@ -6770,19 +6667,6 @@ const docTemplate = `{
                 "AccountStatusActive",
                 "AccountStatusSuspended",
                 "AccountStatusPendingClosure"
-            ]
-        },
-        "types.PolicyEvaluationDecisionType": {
-            "type": "string",
-            "enum": [
-                "allowed",
-                "explicitDeny",
-                "implicitDeny"
-            ],
-            "x-enum-varnames": [
-                "PolicyEvaluationDecisionTypeAllowed",
-                "PolicyEvaluationDecisionTypeExplicitDeny",
-                "PolicyEvaluationDecisionTypeImplicitDeny"
             ]
         }
     },

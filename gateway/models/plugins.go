@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/proto"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -203,28 +202,28 @@ func ActivateDefaultPlugins(orgID, connID string) {
 		if err != nil && err != ErrNotFound {
 			log.Warnf("failed fetching plugin %v, reason=%v", name, err)
 		}
-		var connConfig []string
-		if name == plugintypes.PluginDLPName {
-			connConfig = proto.DefaultInfoTypes
-		}
+		isReviewPlugin := name == plugintypes.PluginReviewName
 		if pl == nil {
 			pluginID := uuid.NewString()
 			newPlugin := &Plugin{
-				ID:    pluginID,
-				OrgID: orgID,
-				Name:  name,
-				Connections: []*PluginConnection{{
+				ID:          pluginID,
+				OrgID:       orgID,
+				Name:        name,
+				Connections: []*PluginConnection{},
+				EnvVars:     nil,
+			}
+			if isReviewPlugin {
+				newPlugin.Connections = append(newPlugin.Connections, &PluginConnection{
 					ID:             uuid.NewString(),
 					OrgID:          orgID,
 					PluginID:       pluginID,
 					ConnectionID:   connID,
 					ConnectionName: "", // read only
 					Enabled:        true,
-					Config:         connConfig,
+					Config:         nil,
 					CreatedAt:      time.Now().UTC(),
 					UpdatedAt:      time.Now().UTC(),
-				}},
-				EnvVars: nil,
+				})
 			}
 			if err := upsertPlugin(newPlugin); err != nil {
 				log.Warnf("failed creating plugin %v, reason=%v", name, err)
@@ -239,7 +238,7 @@ func ActivateDefaultPlugins(orgID, connID string) {
 				break
 			}
 		}
-		if !enabled {
+		if !enabled && !isReviewPlugin {
 			pl.Connections = append(pl.Connections, &PluginConnection{
 				ID:             uuid.NewString(),
 				OrgID:          pl.OrgID,
@@ -247,7 +246,7 @@ func ActivateDefaultPlugins(orgID, connID string) {
 				ConnectionID:   connID,
 				ConnectionName: "", // read only
 				Enabled:        true,
-				Config:         connConfig,
+				Config:         nil,
 				CreatedAt:      time.Now().UTC(),
 				UpdatedAt:      time.Now().UTC(),
 			})

@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"
@@ -21,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -28,6 +28,8 @@ import (
 )
 
 const staticCrossAccountRoleArn = "arn:aws:iam::%s:role/HoopOrganizationAccountAccessRole"
+
+var iamStore = memory.New()
 
 // IAMUpdateAccessKey
 //
@@ -47,21 +49,12 @@ func IAMUpdateAccessKey(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	env := &models.EnvVar{OrgID: ctx.OrgID, ID: ctx.OrgID}
 	if req.AccessKeyID != "" {
 		if req.SecretAccessKey == "" {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "the attribute 'secret_access_key' is required when 'access_key_id' is set"})
 			return
 		}
-		env.SetEnv("INTEGRATION_AWS_ACCESS_KEY_ID", req.AccessKeyID)
-		env.SetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY", req.SecretAccessKey)
-		env.SetEnv("INTEGRATION_AWS_SESSION_TOKEN", req.SessionToken)
-	}
-	env.SetEnv("INTEGRATION_AWS_REGION", req.Region)
-	if err := models.UpsertEnvVar(env); err != nil {
-		log.Errorf("failed updating iam access key, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
+		iamStore.Set(ctx.OrgID, &req)
 	}
 	c.JSON(http.StatusNoContent, nil)
 }
@@ -69,20 +62,13 @@ func IAMUpdateAccessKey(c *gin.Context) {
 // IAMDeleteAccessKey
 //
 //	@Summary		Delete IAM Access Key
-//	@Description	Remove IAM Access Key from storage
+//	@Description	Remove IAM Access Key from memory
 //	@Tags			AWS
 //	@Produce		json
 //	@Success		204
-//	@Failure		400	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/iam/accesskeys [delete]
 func IAMDeleteAccessKey(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	env := &models.EnvVar{OrgID: ctx.OrgID, ID: ctx.OrgID}
-	if err := models.UpsertEnvVar(env); err != nil {
-		log.Errorf("failed clearing iam access key, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
+	iamStore.Del(storagev2.ParseContext(c).OrgID)
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -107,77 +93,6 @@ func IAMGetUserInfo(c *gin.Context) {
 		ARN:       ptr.ToString(i.Arn),
 		UserID:    ptr.ToString(i.UserId),
 		Region:    cfg.Region,
-	})
-}
-
-// IAMVerifyPermissions
-//
-//	@Summary		Verify IAM permissions
-//	@Description	Verify if the IAM permissions are configured properly
-//	@Tags			AWS
-//	@Produce		json
-//	@Success		200	{object}	openapi.IAMVerifyPermission
-//	@Failure		400	{object}	openapi.HTTPError
-//	@Router			/integrations/aws/iam/verify [post]
-func IAMVerifyPermissions(c *gin.Context) {
-	cfg, identity, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	iamClient := iam.NewFromConfig(cfg)
-	resp, err := iamClient.SimulatePrincipalPolicy(context.Background(), &iam.SimulatePrincipalPolicyInput{
-		PolicySourceArn: identity.Arn,
-		ActionNames: []string{
-			"organizations:ListAccounts",
-			"rds:ModifyDBInstance",
-			"rds:ModifyDBCluster", // aurora
-			"rds:DescribeDBInstances",
-			"ec2:DescribeSecurityGroups",
-			"ec2:AuthorizeSecurityGroupIngress",
-			"ec2:CreateSecurityGroup",
-			"ec2:CreateTags",
-			"sts:AssumeRole",
-		},
-		ResourceArns: []string{"*"},
-	})
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	status := "allowed"
-	evaluation := []openapi.IAMEvaluationDetail{}
-	for _, r := range resp.EvaluationResults {
-		if r.EvalDecision != "allowed" {
-			status = "denied"
-		}
-		statements := []openapi.IAMEvaluationDetailStatement{}
-		for _, st := range r.MatchedStatements {
-			statements = append(statements, openapi.IAMEvaluationDetailStatement{
-				SourcePolicyID:   ptr.ToString(st.SourcePolicyId),
-				SourcePolicyType: string(st.SourcePolicyType),
-			})
-		}
-
-		evaluation = append(evaluation, openapi.IAMEvaluationDetail{
-			ActionName:        ptr.ToString(r.EvalActionName),
-			Decision:          r.EvalDecision,
-			ResourceName:      ptr.ToString(r.EvalResourceName),
-			MatchedStatements: statements,
-		})
-	}
-
-	c.JSON(http.StatusOK, openapi.IAMVerifyPermission{
-		Status: status,
-		Identity: openapi.IAMUserInfo{
-			AccountID: ptr.ToString(identity.Account),
-			ARN:       ptr.ToString(identity.Arn),
-			UserID:    ptr.ToString(identity.UserId),
-			Region:    cfg.Region,
-		},
-		EvaluationDetails: evaluation,
 	})
 }
 
@@ -469,13 +384,10 @@ func loadRDSClientForAccount(ctx context.Context, cfg aws.Config, accountID stri
 }
 
 func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentityOutput, err error) {
-	env, err := models.GetEnvVarByID(orgID, orgID)
-	if err != nil && err != models.ErrNotFound {
-		return cfg, nil, err
-	}
+	iamKey, hasCredentials := iamStore.Get(orgID).(*openapi.IAMAccessKeyRequest)
 	awsRegion, hasAccessKey := "", false
-	if env != nil {
-		hasAccessKey, awsRegion = env.HasKey("INTEGRATION_AWS_ACCESS_KEY_ID"), env.GetEnv("INTEGRATION_AWS_REGION")
+	if hasCredentials {
+		hasAccessKey, awsRegion = iamKey.AccessKeyID != "", iamKey.Region
 	}
 
 	if awsRegion == "" {
@@ -483,12 +395,12 @@ func loadAWSConfig(orgID string) (cfg aws.Config, identity *sts.GetCallerIdentit
 	}
 
 	if hasAccessKey {
-		log.Debugf("using aws static credentials with region=%v", env.GetEnv("INTEGRATION_AWS_REGION"))
+		log.Debugf("using aws static credentials with region=%v", iamKey.Region)
 		staticCfg := aws.NewConfig()
 		staticCfg.Credentials = credentials.NewStaticCredentialsProvider(
-			env.GetEnv("INTEGRATION_AWS_ACCESS_KEY_ID"),
-			env.GetEnv("INTEGRATION_AWS_SECRET_ACCESS_KEY"),
-			env.GetEnv("INTEGRATION_AWS_SESSION_TOKEN"))
+			iamKey.AccessKeyID,
+			iamKey.SecretAccessKey,
+			iamKey.SessionToken)
 		staticCfg.Region = awsRegion
 		cfg = staticCfg.Copy()
 	}
