@@ -58,6 +58,8 @@
    {:value "us-gov-east-1" :text "us-gov-east-1"}
    {:value "us-gov-west-1" :text "us-gov-west-1"}])
 
+(def validation-error (r/atom nil))
+
 (defn- step-number [{:keys [number active? completed?]}]
   [:> Badge
    {:size "1"
@@ -384,6 +386,13 @@
 
      [create-connection-config]
 
+     ;; Error message for missing agent assignments (movido para antes da tabela)
+     (when-let [error @validation-error]
+       [:> Card {:variant "surface" :color "red" :mb "4" :class "max-w-[600px]"}
+        [:> Flex {:gap "2" :align "center"}
+         [:> Text {:size "2" :color "red"}
+          error]]])
+
      [:> Box {:class "w-full"}
       [data-table-simple
        {:columns [{:id :name
@@ -428,8 +437,10 @@
                                    {:selected @agent-id
                                     :not-margin-bottom? true
                                     :style {:width "120px"}
-                                    :on-change #(do (reset! agent-id %)
-                                                    (rf/dispatch [:aws-connect/set-agent-assignment resource-id %]))
+                                    :on-change #(do
+                                                  (reset! validation-error nil)
+                                                  (reset! agent-id %)
+                                                  (rf/dispatch [:aws-connect/set-agent-assignment resource-id %]))
                                     :options (if (seq agents)
                                                (map (fn [agent]
                                                       {:value (:id agent)
@@ -553,7 +564,28 @@
   (r/with-let [show-confirm-dialog (r/atom false)]
     (fn [form-type]
       (let [current-step @(rf/subscribe [:aws-connect/current-step])
-            loading @(rf/subscribe [:aws-connect/loading])]
+            loading @(rf/subscribe [:aws-connect/loading])
+            agent-assignments @(rf/subscribe [:aws-connect/agent-assignments])
+            selected-resources @(rf/subscribe [:aws-connect/selected-resources])
+
+            validate-agents (fn []
+                              (if (and (= current-step :review)
+                                       (some #(empty? (get agent-assignments % "")) selected-resources))
+                                (do
+                                  (reset! validation-error "Please assign an agent to all selected resources before proceeding.")
+                                  false)
+                                (do
+                                  (reset! validation-error nil)
+                                  true)))
+
+            handle-next-click (fn []
+                                (case current-step
+                                  :credentials (rf/dispatch [:aws-connect/validate-credentials])
+                                  :accounts (rf/dispatch [:aws-connect/fetch-rds-instances])
+                                  :resources (rf/dispatch [:aws-connect/set-current-step :review])
+                                  :review (when (validate-agents)
+                                            (reset! show-confirm-dialog true))
+                                  :creation-status (rf/dispatch [:navigate :integrations-aws-connect])))]
 
         [page-wrapper/main
          {:children
@@ -618,12 +650,7 @@
                        :resources (rf/dispatch [:aws-connect/set-current-step :accounts])
                        :review (rf/dispatch [:aws-connect/set-current-step :resources])
                        :creation-status nil)
-           :on-next #(case current-step
-                       :credentials (rf/dispatch [:aws-connect/validate-credentials])
-                       :accounts (rf/dispatch [:aws-connect/fetch-rds-instances])
-                       :resources (rf/dispatch [:aws-connect/set-current-step :review])
-                       :review (reset! show-confirm-dialog true)
-                       :creation-status (rf/dispatch [:navigate :integrations-aws-connect]))
+           :on-next handle-next-click
            :back-hidden? (case current-step
                            :credentials false
                            :accounts false
@@ -634,7 +661,7 @@
                              :credentials (:active? loading)
                              :accounts (empty? @(rf/subscribe [:aws-connect/selected-accounts]))
                              :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
-                             :review (some empty? (vals @(rf/subscribe [:aws-connect/agent-assignments])))
+                             :review false
                              :creation-status false)}}]))))
 
 
