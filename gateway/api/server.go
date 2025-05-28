@@ -601,11 +601,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		// api.TrackRequest,
 		awsintegration.ListOrganizations)
 
-	r.POST("/integrations/aws/iam/verify",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		awsintegration.IAMVerifyPermissions)
-
 	r.POST("/integrations/aws/rds/describe-db-instances",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

@@ -18,7 +18,6 @@ import (
 	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/ptr"
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"github.com/hoophq/hoop/common/runbooks"
@@ -126,13 +125,6 @@ func (p *provisioner) Run(jobID string) error {
 			}
 		}
 
-		dbEnvID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s", p.orgID, dbArn))).String()
-		env, err := models.GetEnvVarByID(p.orgID, dbEnvID)
-		if err != nil && err != models.ErrNotFound {
-			p.updateJob(pbsystem.NewError(jobID, "failed obtaining master user password: %v", err))
-			return
-		}
-
 		instInput := &modifyInstanceInput{
 			instanceIdentifier:       ptr.ToString(db.DBInstanceIdentifier),
 			instanceCusterIdentifier: ptr.ToString(db.DBClusterIdentifier),
@@ -150,53 +142,28 @@ func (p *provisioner) Run(jobID string) error {
 			instInput.vpcSecurityGroupIds = securityGroupIDs
 		}
 
-		switch err {
-		case models.ErrNotFound:
-			log.With("sid", jobID).Infof("master user password not found, modifying the instance %v", dbArn)
-			randomPasswd, err := generateRandomPassword()
-			if err != nil {
-				p.updateJob(pbsystem.NewError(jobID, "failed generating master user password: %v", err))
-				return
-			}
-			instInput.masterUserPassword = &randomPasswd
-			err = p.modifyRDSInstance(jobID, instInput, func() error {
-				env = &models.EnvVar{
-					OrgID:     p.orgID,
-					ID:        dbEnvID,
-					UpdatedAt: time.Now().UTC(),
-				}
-				env.SetEnv("DATABASE_TYPE", ptr.ToString(db.Engine))
-				env.SetEnv("DATABASE_HOSTNAME", ptr.ToString(db.Endpoint.Address))
-				env.SetEnv("DATABASE_PORT", ptr.ToInt32(db.Endpoint.Port))
-				env.SetEnv("MASTER_USERNAME", ptr.ToString(db.MasterUsername))
-				env.SetEnv("MASTER_PASSWORD", randomPasswd)
-				if err := models.UpsertEnvVar(env); err != nil {
-					return fmt.Errorf("failed updating master credentials: %v", err)
-				}
-				return nil
-			})
-			if err != nil {
-				p.updateJob(pbsystem.NewError(jobID, "failed modifying db instance: %v", err))
-				return
-			}
-		case nil:
-			if err := p.modifyRDSInstance(jobID, instInput, func() error { return nil }); err != nil {
-				p.updateJob(pbsystem.NewError(jobID, "failed modifying db instance: %v", err))
-				return
-			}
-		default:
-			p.updateJob(pbsystem.NewError(jobID, "failed obtaining master user password: %v", err))
+		log.With("sid", jobID).Infof("master user password not found, modifying the instance %v", dbArn)
+		randomPasswd, err := generateRandomPassword()
+		if err != nil {
+			p.updateJob(pbsystem.NewError(jobID, "failed generating master user password: %v", err))
 			return
 		}
+		instInput.masterUserPassword = &randomPasswd
+		err = p.modifyRDSInstance(jobID, instInput, func() error { return nil })
+		if err != nil {
+			p.updateJob(pbsystem.NewError(jobID, "failed modifying db instance: %v", err))
+			return
+		}
+
 		request := pbsystem.DBProvisionerRequest{
-			OrgID:            env.OrgID,
+			OrgID:            p.orgID,
 			ResourceID:       dbArn,
 			SID:              jobID,
-			DatabaseHostname: env.GetEnv("DATABASE_HOSTNAME"),
-			DatabasePort:     env.GetEnv("DATABASE_PORT"),
-			MasterUsername:   env.GetEnv("MASTER_USERNAME"),
-			MasterPassword:   env.GetEnv("MASTER_PASSWORD"),
-			DatabaseType:     env.GetEnv("DATABASE_TYPE"),
+			DatabaseHostname: ptr.ToString(db.Endpoint.Address),
+			DatabasePort:     fmt.Sprintf("%v", ptr.ToInt32(db.Endpoint.Port)),
+			MasterUsername:   ptr.ToString(db.MasterUsername),
+			MasterPassword:   randomPasswd,
+			DatabaseType:     ptr.ToString(db.Engine),
 			DatabaseTags:     databaseTags,
 		}
 

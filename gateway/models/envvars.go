@@ -9,8 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const tableEnvVars = "private.env_vars"
-
 type EnvVar struct {
 	OrgID     string            `gorm:"column:org_id"`
 	ID        string            `gorm:"column:id"`
@@ -53,7 +51,7 @@ func (e *EnvVar) HasKey(key string) (v bool) {
 
 func GetEnvVarByID(orgID, id string) (*EnvVar, error) {
 	var env EnvVar
-	if err := DB.Table(tableEnvVars).Where("org_id = ? AND id = ?", orgID, id).
+	if err := DB.Table("private.env_vars").Where("org_id = ? AND id = ?", orgID, id).
 		First(&env).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
@@ -64,7 +62,7 @@ func GetEnvVarByID(orgID, id string) (*EnvVar, error) {
 }
 
 func UpsertEnvVar(env *EnvVar) error {
-	return DB.Table(tableEnvVars).
+	return DB.Table("private.env_vars").
 		Model(env).
 		Save(env).Error
 }
