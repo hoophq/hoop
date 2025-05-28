@@ -77,8 +77,30 @@ var lintCmd = &cobra.Command{
 			printErrContext(content, err)
 			os.Exit(1)
 		}
+
+		// add a default value to input parameters if the attribute is required
+		// and it contains a default value. The template engine requires the key attribute
+		// is set to not fail
+		inputParams := parseParameters()
+		for key, config := range tmpl.Attributes() {
+			if configParams, ok := config.(map[string]any); ok {
+				var isRequired bool
+				if requiredObj, ok := configParams["required"]; ok {
+					isRequired, _ = requiredObj.(bool)
+				}
+				if defaultObj, ok := configParams["default"]; ok {
+					defaultVal, _ := defaultObj.(string)
+					if isRequired {
+						if _, ok := inputParams[key]; !ok {
+							inputParams[key] = defaultVal
+						}
+					}
+				}
+			}
+		}
+
 		out := bytes.NewBuffer([]byte{})
-		if err := tmpl.Execute(out, parseParameters()); err != nil {
+		if err := tmpl.Execute(out, inputParams); err != nil {
 			fmt.Fprintf(os.Stderr, "failed parsing template parameters, reason=%v\n", err)
 			printErrContext(content, err)
 			os.Exit(1)
