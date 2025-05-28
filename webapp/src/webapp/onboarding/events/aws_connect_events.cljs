@@ -9,6 +9,7 @@
                                 :loading {:active? false
                                           :message nil}
                                 :error nil
+                                :auth-method "aws-credentials"
                                 :credentials nil
                                 :accounts {:data nil
                                            :status nil
@@ -57,11 +58,16 @@
 (rf/reg-event-fx
  :aws-connect/validate-credentials
  (fn [{:keys [db]} _]
-   (let [credentials (get-in db [:aws-connect :credentials])
-         aws-credentials {:access_key_id (get-in credentials [:iam-user :access-key-id])
-                          :secret_access_key (get-in credentials [:iam-user :secret-access-key])
-                          :region (get-in credentials [:iam-user :region])
-                          :session_token (get-in credentials [:iam-user :session-token])}]
+   (let [auth-method (get-in db [:aws-connect :auth-method])
+         credentials (get-in db [:aws-connect :credentials])
+         aws-credentials (if (= auth-method "gateway-profile")
+                           ;; Gateway profile só precisa da região
+                           {:region (get-in credentials [:iam-user :region])}
+                           ;; Credenciais completas
+                           {:access_key_id (get-in credentials [:iam-user :access-key-id])
+                            :secret_access_key (get-in credentials [:iam-user :secret-access-key])
+                            :region (get-in credentials [:iam-user :region])
+                            :session_token (get-in credentials [:iam-user :session-token])})]
      {:db (-> db
               (assoc-in [:aws-connect :status] :validating)
               (assoc-in [:aws-connect :loading :active?] true)
@@ -490,3 +496,13 @@
  :aws-connect/secrets-path
  (fn [db _]
    (get-in db [:aws-connect :secrets-path] "")))
+
+(rf/reg-event-db
+ :aws-connect/set-auth-method
+ (fn [db [_ method]]
+   (assoc-in db [:aws-connect :auth-method] method)))
+
+(rf/reg-sub
+ :aws-connect/auth-method
+ (fn [db _]
+   (get-in db [:aws-connect :auth-method])))

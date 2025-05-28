@@ -1,6 +1,6 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch AlertDialog]]
+            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch AlertDialog RadioGroup]]
             [webapp.components.forms :as forms]
             ["lucide-react" :refer [Check Info ArrowUpRight X]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
@@ -103,44 +103,95 @@
 (defn credentials-step []
   (let [credentials @(rf/subscribe [:aws-connect/credentials])
         error @(rf/subscribe [:aws-connect/error])
-        account-error @(rf/subscribe [:aws-connect/accounts-error])]
+        account-error @(rf/subscribe [:aws-connect/accounts-error])
+        auth-method @(rf/subscribe [:aws-connect/auth-method])]
     [:> Box {:class "space-y-7 max-w-[600px] relative"}
      [loading-screen]
 
      [:> Box
       [:> Box {:class "space-y-3"}
        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-        "IAM User Credentials"]
+        "Authentication Method"]
        [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
-        "These keys provide secure programmatic access to your AWS environment and will be used only for discovering and managing your selected resources."]]]
+        "Choose how access your AWS resources:"]]]
+
+     ;; Authentication Method Radio Buttons
+     [:> Box {:class "space-y-5 mb-7"}
+      [:> RadioGroup.Root {:size "3"
+                           :value (or auth-method "aws-credentials")
+                           :on-value-change #(rf/dispatch [:aws-connect/set-auth-method %])}
+       [:> Flex {:direction "column" :gap "3"}
+        [:> Flex {:gap "3" :align "start"}
+         [:> RadioGroup.Item {:value "gateway-profile" :id "gateway-profile"}]
+         [:> Box
+          [:> Text {:as "label" :size "3" :weight "medium" :htmlFor "gateway-profile" :class "text-[--gray-12] block"}
+           "Gateway Instance Profile"]
+          [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
+           "Automatically uses the IAM role attached to the Hoop.dev gateway. No credential entry required - the system handles authentication seamlessly."]]]
+
+        [:> Flex {:gap "3" :align "start"}
+         [:> RadioGroup.Item {:value "aws-credentials" :id "aws-credentials"}]
+         [:> Box
+          [:> Text {:as "label" :size "3" :weight "medium" :htmlFor "aws-credentials" :class "text-[--gray-12] block"}
+           "AWS Credentials"]
+          [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
+           "Manually provide your AWS access keys and configuration in the fields below. Use this option when specific credentials are needed or when Gateway Instance Profile isn't suitable."]]]]]]
+
+     (when (= auth-method "gateway-profile")
+       [:> Box
+        [:> Box {:class "space-y-3"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "AWS Authentication"]
+         [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
+          "Please provide the information below to proceed with your AWS authentication."]]])
+
+     (when (= auth-method "aws-credentials")
+       [:> Box
+        [:> Box {:class "space-y-3"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "IAM User Credentials"]
+         [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
+          "These keys provide secure programmatic access to your AWS environment and will be used only for discovering and managing your selected resources."]]])
 
      ;; IAM User Credentials
      [:> Box {:class "space-y-5"}
-      [forms/input
-       {:placeholder "e.g. AKIAIOSFODNN7EXAMPLE"
-        :label "Access Key ID"
-        :value (get-in credentials [:iam-user :access-key-id])
-        :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :access-key-id (-> % .-target .-value)])}]
+      (when (= auth-method "aws-credentials")
+        [:<>
+         [forms/input
+          {:placeholder "e.g. AKIAIOSFODNN7EXAMPLE"
+           :label "Access Key ID"
+           :value (get-in credentials [:iam-user :access-key-id])
+           :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :access-key-id (-> % .-target .-value)])}]
 
-      [forms/input
-       {:type "password"
-        :placeholder "e.g. wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-        :label "Secret Access Key"
-        :value (get-in credentials [:iam-user :secret-access-key])
-        :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :secret-access-key (-> % .-target .-value)])}]
+         [forms/input
+          {:type "password"
+           :placeholder "e.g. wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+           :label "Secret Access Key"
+           :value (get-in credentials [:iam-user :secret-access-key])
+           :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :secret-access-key (-> % .-target .-value)])}]
 
+         [forms/textarea
+          {:label "Session Token (Optional)"
+           :placeholder "e.g. FOoGZXlvYXdzE0z/EaDFQNA2EY59z3tKrAdJB"
+           :value (get-in credentials [:iam-user :session-token])
+           :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :session-token (-> % .-target .-value)])}]])
+
+      ;; Region selector (shown for both authentication methods)
       [forms/select
        {:label "Region"
         :full-width? true
         :selected (or (get-in credentials [:iam-user :region]) "")
         :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :region %])
-        :options aws-regions}]
+        :options aws-regions}]]
 
-      [forms/textarea
-       {:label "Session Token (Optional)"
-        :placeholder "e.g. FOoGZXlvYXdzE0z/EaDFQNA2EY59z3tKrAdJB"
-        :value (get-in credentials [:iam-user :session-token])
-        :on-change #(rf/dispatch [:aws-connect/set-iam-user-credentials :session-token (-> % .-target .-value)])}]]
+     ;; Security message for both authentication methods
+     [:> Callout.Root {:size "2" :mt "4" :mb "4"}
+      [:> Callout.Icon {:class "self-center"}
+       [:> Info {:size 16}]]
+      [:> Callout.Text
+       (str "Before finishing the setup on the Review and Create step, "
+            "the root passwords for your selected database resources will be automatically "
+            "reset for security purposes. This action can't be undone.")]]
 
      ;; Error message (if any)
      (when (or error account-error)
