@@ -23,10 +23,11 @@
     :icon (r/as-element
            [:> PackageSearch {:size 18 :class "group-hover:text-[--gray-1]"}])
     :title "Automatic resource discovery"
+    :badge "BETA"
     :description "Access your resources through your infrastructure providers."
     :action #(rf/dispatch [:navigate :onboarding-resource-providers])}])
 
-(defn setup-card [{:keys [icon title description action]}]
+(defn setup-card [{:keys [icon title description action badge]}]
   [:> Card {:size "1"
             :variant "surface"
             :class "w-full cursor-pointer hover:before:bg-primary-12 group"
@@ -38,7 +39,11 @@
                 :color "gray"
                 :fallback icon}]
     [:> Flex {:direction "column"}
-     [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
+     [:> Flex {:align "center" :gap "2"}
+      [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
+      (when badge
+        [:> Box {:class "text-xs font-medium px-2 py-0.5 rounded-full bg-success-9 text-white"}
+         badge])]
      [:> Text {:size "2" :color "gray-11"} description]]]])
 
 (defn setup-content []
