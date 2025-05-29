@@ -144,9 +144,10 @@ func ListOrganizations(c *gin.Context) {
 //	@Produce		json
 //	@Param			request	body		openapi.ListAWSDBInstancesRequest	true	"The request body resource"
 //	@Success		200		{object}	openapi.ListAWSDBInstances
-//	@Failure		400		{object}	openapi.HTTPError
+//	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/integrations/aws/rds/describe-db-instances [post]
 func DescribeRDSDBInstances(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
 	var req openapi.ListAWSDBInstancesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -160,9 +161,16 @@ func DescribeRDSDBInstances(c *gin.Context) {
 		requestAccountIDs[acct] = nil
 	}
 
-	cfg, identity, err := loadAWSConfig(storagev2.ParseContext(c).OrgID)
+	cfg, identity, err := loadAWSConfig(ctx.OrgID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	getProvisionedConnectionsFn, err := listConnections(ctx)
+	if err != nil {
+		log.Errorf("failed listing connection resources, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -170,9 +178,8 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	instances := []openapi.AWSDBInstance{}
 	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
 
-	ctx := context.Background()
 	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
+		page, err := paginator.NextPage(context.Background())
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Errorf("failed to get AWS accounts: %v", err).Error()})
 			return
@@ -183,8 +190,9 @@ func DescribeRDSDBInstances(c *gin.Context) {
 			if _, ok := requestAccountIDs[ptr.ToString(acct.Id)]; !ok {
 				continue
 			}
+
 			isAccountOwner := ptr.ToString(acct.Id) == ptr.ToString(identity.Account)
-			items, err := listRDSInstances(ctx, cfg, ptr.ToString(acct.Id), isAccountOwner)
+			items, err := listRDSInstances(context.Background(), cfg, ptr.ToString(acct.Id), isAccountOwner)
 			if err != nil {
 				log.Debugf("failed listing rds instances, is-account-owner=%v, region=%v, reason=%v", isAccountOwner, cfg.Region, err)
 				instances = append(instances, openapi.AWSDBInstance{
@@ -195,14 +203,16 @@ func DescribeRDSDBInstances(c *gin.Context) {
 			}
 
 			for _, inst := range items {
+				connections := getProvisionedConnectionsFn(ptr.ToString(inst.DBInstanceArn))
 				instances = append(instances, openapi.AWSDBInstance{
-					AccountID:        ptr.ToString(acct.Id),
-					Name:             ptr.ToString(inst.DBInstanceIdentifier),
-					AvailabilityZone: ptr.ToString(inst.AvailabilityZone),
-					VpcID:            ptr.ToString(inst.DBSubnetGroup.VpcId),
-					ARN:              ptr.ToString(inst.DBInstanceArn),
-					Engine:           ptr.ToString(inst.Engine),
-					Status:           ptr.ToString(inst.DBInstanceStatus),
+					AccountID:           ptr.ToString(acct.Id),
+					Name:                ptr.ToString(inst.DBInstanceIdentifier),
+					AvailabilityZone:    ptr.ToString(inst.AvailabilityZone),
+					VpcID:               ptr.ToString(inst.DBSubnetGroup.VpcId),
+					ARN:                 ptr.ToString(inst.DBInstanceArn),
+					Engine:              ptr.ToString(inst.Engine),
+					Status:              ptr.ToString(inst.DBInstanceStatus),
+					ConnectionResources: connections,
 				})
 			}
 		}
@@ -332,6 +342,33 @@ func ListDBRoleJobs(c *gin.Context) {
 		obj.Items = append(obj.Items, *toDBRoleOpenAPI(item))
 	}
 	c.JSON(http.StatusOK, obj)
+}
+
+func listConnections(ctx *storagev2.Context) (func(dbArn string) []string, error) {
+	connections, err := models.ListConnections(ctx, models.ConnectionFilterOption{Type: "database"})
+	if err != nil {
+		return nil, err
+	}
+	arnMap := map[string][]string{}
+
+	for _, conn := range connections {
+		dbArn, ok := conn.ConnectionTags[defaultConnectionTagDbArn]
+		if !ok {
+			continue
+		}
+		if _, ok := arnMap[dbArn]; ok {
+			arnMap[dbArn] = append(arnMap[dbArn], conn.Name)
+			continue
+		}
+		arnMap[dbArn] = []string{conn.Name}
+	}
+	return func(dbArn string) []string {
+		items, ok := arnMap[dbArn]
+		if ok {
+			return items
+		}
+		return []string{}
+	}, nil
 }
 
 func listRDSInstances(ctx context.Context, cfg aws.Config, accountID string, isAccountOwner bool) ([]types.DBInstance, error) {

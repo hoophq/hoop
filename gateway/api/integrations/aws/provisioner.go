@@ -33,6 +33,7 @@ import (
 const (
 	defaultSecurityGroupDescription = "Database ingress rule for connectivity with Hoop Agent"
 	defaultRunbookName              = "hoop-hooks/aws-connect-post-exec.runbook.py"
+	defaultConnectionTagDbArn       = "hoop.dev/aws-connect.dbarn"
 )
 
 type provisioner struct {
@@ -198,7 +199,7 @@ func (p *provisioner) Run(jobID string) error {
 
 		resp := transportsystem.RunDBProvisioner(p.apiRequest.AgentID, &request)
 		if resp.Status == pbsystem.StatusCompletedType && p.hasStep(openapi.DBRoleJobStepCreateConnections) {
-			if err := p.handleConnectionProvision(request.DatabaseType, resp); err != nil {
+			if err := p.handleConnectionProvision(request, resp); err != nil {
 				log.With("sid", jobID).Errorf("failed provisioning connections: %v", err)
 				resp.Status = pbsystem.StatusFailedType
 				resp.Message = fmt.Sprintf("Failed provisioning connections: %v", err)
@@ -292,10 +293,10 @@ func (p *provisioner) updateJob(resp *pbsystem.DBProvisionerResponse) *models.DB
 	return job
 }
 
-func (p *provisioner) handleConnectionProvision(databaseType string, resp *pbsystem.DBProvisionerResponse) error {
+func (p *provisioner) handleConnectionProvision(req pbsystem.DBProvisionerRequest, resp *pbsystem.DBProvisionerResponse) error {
 	var connections []*models.Connection
 	for _, result := range resp.Result {
-		connSubtype := coerceToSubtype(databaseType)
+		connSubtype := coerceToSubtype(req.DatabaseType)
 		defaultCmd, _ := apiconnections.GetConnectionDefaults("database", connSubtype, true)
 		connections = append(connections, &models.Connection{
 			OrgID:              p.orgID,
@@ -310,6 +311,9 @@ func (p *provisioner) handleConnectionProvision(databaseType string, resp *pbsys
 			AccessModeConnect:  "enabled",
 			AccessSchema:       "enabled",
 			Envs:               parseEnvVars(result.Credentials),
+			ConnectionTags: map[string]string{
+				defaultConnectionTagDbArn: req.ResourceID,
+			},
 		})
 	}
 	return models.UpsertBatchConnections(connections)

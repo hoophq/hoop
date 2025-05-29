@@ -1287,6 +1287,9 @@ type AWSDBInstance struct {
 	Engine string `json:"engine" example:"postgres"`
 	// Status indicates the current state of the database instance
 	Status string `json:"status" example:"available"`
+	// Contains the connection resources that were already provisioned.
+	// The resources are marked with a specific tag after completion.
+	ConnectionResources []string `json:"connection_resources" example:"pgtest1,pgtest2"`
 	// Contains an error in case it was not able to list the db instances from the account id
 	Error *string `json:"error" example:"IAM account does not have permission to list db instances in this account"`
 }
