@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -eo pipefail
+
 cd /app/
 
 echo "--> STARTING GATEWAY ..."
@@ -15,6 +17,22 @@ echo "--> GATEWAY IS UP"
 if [ "$ORG_MULTI_TENANT" == "true" ]; then
   sleep infinity
   exit $?
+fi
+
+# add ec2 metadata mock server
+# https://github.com/aws/amazon-ec2-metadata-mock
+if [ -n "$AWS_SESSION_TOKEN_JSON" ]; then
+  echo "--> ADDING EC2 METADATA MOCK SERVER ..."
+  ip addr add 169.254.169.254/32 dev eth0
+
+  echo -e "$AWS_SESSION_TOKEN_JSON" | sed 's|SessionToken|Token|g' | jq '{
+  "metadata": {
+    "values": {
+      "iam-security-credentials": .Credentials
+    }
+  }
+}' > /tmp/metadata-mock-config.json
+  ec2-metadata-mock --hostname 169.254.169.254 --port 80 -c /tmp/metadata-mock-config.json &
 fi
 
 psql $POSTGRES_DB_URI <<EOT
