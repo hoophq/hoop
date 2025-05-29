@@ -1215,6 +1215,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
                     }
                 }
             }
@@ -3930,6 +3936,17 @@ const docTemplate = `{
                     "description": "AvailabilityZone is the AWS availability zone where the database is deployed",
                     "type": "string",
                     "example": "us-west-2a"
+                },
+                "connection_resources": {
+                    "description": "Contains the connection resources that were already provisioned.\nThe resources are marked with a specific tag after completion.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgtest1",
+                        "pgtest2"
+                    ]
                 },
                 "engine": {
                     "description": "Engine is the database engine type (e.g., MySQL, PostgreSQL)",
