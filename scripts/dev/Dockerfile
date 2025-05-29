@@ -135,6 +135,10 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
   echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> instantclient_19_24/glogin.sql && \
   cd /
 
+RUN curl -Lo ec2-metadata-mock "https://github.com/aws/amazon-ec2-metadata-mock/releases/download/v1.13.0/ec2-metadata-mock-linux-$(dpkg --print-architecture)" && \
+  chmod +x ec2-metadata-mock && \
+  mv ec2-metadata-mock /usr/local/bin/ec2-metadata-mock
+
 # Configure environment variables
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
 ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24"
