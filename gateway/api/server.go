@@ -569,15 +569,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apijiraintegration.GetIssueTemplatesByID,
 	)
-	r.GET("/integrations/jira/issuetemplates/:id/objecttype-values",
-		r.AuthMiddleware,
-		apijiraintegration.GetIssueTemplateObjectTypeValues)
-
 	r.DELETE("/integrations/jira/issuetemplates/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apijiraintegration.DeleteIssueTemplates,
 	)
+
+	r.GET("/integrations/jira/assets/objects",
+		r.AuthMiddleware,
+		apijiraintegration.GetAssetObjects)
 
 	// AWS routes
 	r.GET("/integrations/aws/iam/userinfo",

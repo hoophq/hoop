@@ -3,6 +3,7 @@ package apijiraintegration
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -64,17 +65,11 @@ func ListIssueTemplates(c *gin.Context) {
 //	@Router			/integrations/jira/issuetemplates/{id} [get]
 func GetIssueTemplatesByID(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	issue, config, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
+	issue, _, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		cmdbTypes, err := cmdbTypesWithExternalObjects(c, config, issue.CmdbTypes)
-		if err != nil {
-			log.Errorf("failed listing objects from Jira assets api, reason=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing objects from Jira assets api"})
-			return
-		}
 		c.JSON(http.StatusOK, &openapi.JiraIssueTemplate{
 			ID:                         issue.ID,
 			Name:                       issue.Name,
@@ -84,7 +79,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 			IssueTransitionNameOnClose: issue.IssueTransitionNameOnClose,
 			MappingTypes:               issue.MappingTypes,
 			PromptTypes:                issue.PromptTypes,
-			CmdbTypes:                  cmdbTypes,
+			CmdbTypes:                  issue.CmdbTypes,
 			ConnectionIDs:              issue.ConnectionIDs,
 			CreatedAt:                  issue.CreatedAt,
 			UpdatedAt:                  issue.UpdatedAt,
@@ -95,111 +90,73 @@ func GetIssueTemplatesByID(c *gin.Context) {
 	}
 }
 
-// GetIssueTemplateObjectTypeValues
+// GetAssetObjects
 //
-//	@Summary		Get Object Type Values for Issue Template
-//	@Description	Get values for a specific Jira object type in an Issue Template
+//	@Summary		Get Asset Objects
+//	@Description	Get objects from the Jira Service Management (JSM) Assets API
 //	@Tags			Jira
 //	@Produce		json
-//	@Param			id			path		string	true	"The id of the template"
-//	@Param			object_type	query		string	true	"The Jira object type to fetch values for"
-//	@Success		200			{object}	map[string]interface{}
-//	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/integrations/jira/issuetemplates/{id}/objects [get]
-func GetIssueTemplateObjectTypeValues(c *gin.Context) {
+//	@Param			object_type_id		query		string	true	"The Jira object type to filter values for"
+//	@Param			object_schema_id	query		string	false	"The Jira object schema id to fetch values for"
+//	@Param			name				query		string	false	"Specify a name to filter"
+//	@Success		200					{object} openapi.JiraAssetObjects
+//	@Failure		400,404,500			{object}	openapi.HTTPError
+//	@Router			/integrations/jira/assets/objects [get]
+func GetAssetObjects(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	objectType := c.Query("object_type")
-	if objectType == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "object_type query parameter is required"})
+	objectTypeID, objectSchemaID, limit, offset, err := parseObjectValuesOptions(c)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-
-	issue, config, err := models.GetJiraIssueTemplatesByID(ctx.GetOrgID(), c.Param("id"))
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+	config, err := models.GetJiraIntegration(ctx.OrgID)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed obtaining jira integration configuration, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
-	case nil:
-		// Continue processing
-	default:
-		log.Errorf("failed fetching issue template, reason=%v", err)
+	}
+	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, c.Query("name"))
+	if objectSchemaID != "" {
+		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
+			objectTypeID, objectSchemaID, c.Query("name"))
+	}
+
+	resp, err := jira.FetchObjectsByAQL(config, limit, offset, query)
+	if err != nil {
+		log.Errorf("failed fetching object type values from Jira, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	log.Infof("jira assets api response, query=%q, islast=%v, total=%v/%v",
+		query, resp.Last, resp.TotalCount, resp.Total)
 
-	if config == nil || !config.IsActive() {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "jira integration is not active"})
-		return
+	objectValues := []openapi.JiraAssetObjectValue{}
+	for _, val := range resp.Values {
+		objectValues = append(objectValues, openapi.JiraAssetObjectValue{
+			ID:   val.GlobalID,
+			Name: val.Name,
+		})
 	}
+	c.JSON(http.StatusOK, openapi.JiraAssetObjects{
+		Total:       resp.TotalCount,
+		HasNextPage: !resp.Last,
+		Values:      objectValues,
+	})
+}
 
-	// Get items from the template
-	items, ok := issue.CmdbTypes["items"].([]any)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid items format in template"})
-		return
+func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID string, limit, offset int, err error) {
+	objectTypeID = c.Query("object_type_id")
+	if objectTypeID == "" {
+		return "", "", 0, 0, fmt.Errorf("object_type_id query string is required")
 	}
-
-	// Find the requested object type
-	var targetItem map[string]any
-	for _, item := range items {
-		itemMap, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if typeVal, exists := itemMap["jira_object_type"]; exists && fmt.Sprintf("%v", typeVal) == objectType {
-			targetItem = itemMap
-			break
-		}
+	objectSchemaID = c.Query("object_schema_id")
+	limit, _ = strconv.Atoi(c.Query("limit"))
+	if limit == 0 {
+		return "", "", 0, 0, fmt.Errorf("limit query string is required and must not be 0")
 	}
-
-	if targetItem == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "specified object type not found in template"})
-		return
-	}
-
-	objectTypeId := fmt.Sprintf("%v", targetItem["jira_object_type"])
-	objectSchemaId := fmt.Sprintf("%v", targetItem["jira_object_schema_id"])
-
-	var query string
-	var queryParams []interface{}
-
-	if objectSchemaId == "" {
-		query = `objectTypeId = %q`
-		queryParams = []interface{}{objectTypeId}
-	} else {
-		query = `objectSchemaId = %q AND objectTypeId = %q`
-		queryParams = []interface{}{objectSchemaId, objectTypeId}
-	}
-
-	responseItems, err := jira.FetchObjectsByAQL(config, query, queryParams...)
-	if err != nil {
-		log.Errorf("failed fetching object type values from Jira, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching object type values from Jira"})
-		return
-	}
-
-	jiraValues := []map[string]any{}
-	for _, response := range responseItems {
-		for _, val := range response.Values {
-			jiraValues = append(jiraValues, map[string]any{
-				"id":   val.GlobalID,
-				"name": val.Name,
-			})
-		}
-	}
-
-	result := map[string]any{
-		"description":           targetItem["description"],
-		"label":                 targetItem["label"],
-		"required":              targetItem["required"],
-		"value":                 targetItem["value"],
-		"jira_field":            targetItem["jira_field"],
-		"jira_object_type":      targetItem["jira_object_type"],
-		"jira_object_schema_id": targetItem["jira_object_schema_id"],
-		"jira_values":           jiraValues,
-	}
-
-	c.JSON(http.StatusOK, result)
+	offset, _ = strconv.Atoi(c.Query("offset"))
+	return
 }
 
 // CreateIssueTemplates
@@ -356,53 +313,4 @@ func parseRequestPayload(c *gin.Context) *openapi.JiraIssueTemplateRequest {
 		req.IssueTransitionNameOnClose = "done"
 	}
 	return &req
-}
-
-func cmdbTypesWithExternalObjects(ctx *gin.Context, config *models.JiraIntegration, cmdbTypes map[string]any) (map[string]any, error) {
-	if len(cmdbTypes) == 0 || config == nil || !config.IsActive() || ctx.Query("expand") != "cmdbtype-values" {
-		return cmdbTypes, nil
-	}
-
-	itemList, ok := cmdbTypes["items"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("unable to decode cmdb items attribute, type=%T", cmdbTypes["items"])
-	}
-	for i, obj := range itemList {
-		item, ok := obj.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("unable to decode cmdb item, type=%T", item)
-		}
-		if item["jira_object_type"] == nil {
-			return nil, fmt.Errorf("jira_object_type is missing, record=%v, item=%#v", i, item)
-		}
-		objectType := fmt.Sprintf("%v", item["jira_object_type"])
-		objectSchemaId := fmt.Sprintf("%v", item["jira_object_schema_id"])
-
-		var query string
-		var queryParams []interface{}
-
-		if objectSchemaId == "" {
-			query = `objectTypeId = %q`
-			queryParams = []interface{}{objectType}
-		} else {
-			query = `objectSchemaId = %q AND objectTypeId = %q`
-			queryParams = []interface{}{objectSchemaId, objectType}
-		}
-
-		responseItems, err := jira.FetchObjectsByAQL(config, query, queryParams...)
-		if err != nil {
-			return nil, fmt.Errorf("record=%v, %v", i, err)
-		}
-		log.Infof("jira assets api response, object-type=%v, total-requests=%v",
-			objectType, len(responseItems))
-
-		jiraValues := []map[string]any{}
-		for _, response := range responseItems {
-			for _, val := range response.Values {
-				jiraValues = append(jiraValues, map[string]any{"id": val.GlobalID, "name": val.Name})
-			}
-		}
-		item["jira_values"] = jiraValues
-	}
-	return cmdbTypes, nil
 }

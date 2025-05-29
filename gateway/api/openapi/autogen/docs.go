@@ -1357,6 +1357,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/jira/assets/objects": {
+            "get": {
+                "description": "Get objects from the Jira Service Management (JSM) Assets API",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Asset Objects",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The Jira object type to filter values for",
+                        "name": "object_type_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The Jira object schema id to fetch values for",
+                        "name": "object_schema_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Specify a name to filter",
+                        "name": "name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraAssetObjects"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/integrations/jira/issuetemplates": {
             "get": {
                 "description": "List Issue Templates",
@@ -1560,61 +1619,6 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/integrations/jira/issuetemplates/{id}/objects": {
-            "get": {
-                "description": "Get values for a specific Jira object type in an Issue Template",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jira"
-                ],
-                "summary": "Get Object Type Values for Issue Template",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The id of the template",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "The Jira object type to fetch values for",
-                        "name": "object_type",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
                     },
                     "404": {
                         "description": "Not Found",
@@ -4957,6 +4961,42 @@ const docTemplate = `{
                     "description": "Region is the AWS region where the IAM user is operating",
                     "type": "string",
                     "example": "us-west-2"
+                }
+            }
+        },
+        "openapi.JiraAssetObjectValue": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "The object identifier",
+                    "type": "string",
+                    "example": "c1ee84ab-76c8-40d9-a956-13a705d4e605:11013"
+                },
+                "name": {
+                    "description": "Name of the object value",
+                    "type": "string",
+                    "example": "mycomputer-asset"
+                }
+            }
+        },
+        "openapi.JiraAssetObjects": {
+            "type": "object",
+            "properties": {
+                "has_next_page": {
+                    "description": "Indicate if it has more items",
+                    "type": "boolean"
+                },
+                "total": {
+                    "description": "Total amount of records found",
+                    "type": "integer",
+                    "example": 22
+                },
+                "values": {
+                    "description": "The object values found",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.JiraAssetObjectValue"
+                    }
                 }
             }
         },
