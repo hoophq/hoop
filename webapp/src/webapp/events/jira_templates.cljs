@@ -7,17 +7,79 @@
 
 ;; CMDB
 
+;; Estado adicional para paginação e busca de CMDB
+(rf/reg-event-db
+ :jira-templates->set-cmdb-pagination
+ (fn [db [_ cmdb-item pagination]]
+   (assoc-in db [:jira-templates :cmdb-pagination (:jira_object_type cmdb-item)] pagination)))
+
+(rf/reg-event-db
+ :jira-templates->set-cmdb-search
+ (fn [db [_ cmdb-item search-term]]
+   (assoc-in db [:jira-templates :cmdb-search (:jira_object_type cmdb-item)] search-term)))
+
+(rf/reg-sub
+ :jira-templates->cmdb-pagination
+ (fn [db [_ object-type]]
+   (get-in db [:jira-templates :cmdb-pagination object-type]
+           {:page 1 :per-page 50 :total-items 0})))
+
+(rf/reg-sub
+ :jira-templates->cmdb-search
+ (fn [db [_ object-type]]
+   (get-in db [:jira-templates :cmdb-search object-type] "")))
+
+(rf/reg-sub
+ :jira-templates->cmdb-loading?
+ (fn [db [_ object-type]]
+   (get-in db [:jira-templates :cmdb-loading object-type] false)))
+
+(rf/reg-event-db
+ :jira-templates->set-cmdb-loading
+ (fn [db [_ object-type loading?]]
+   (assoc-in db [:jira-templates :cmdb-loading object-type] loading?)))
+
+(rf/reg-event-db
+ :jira-templates->update-cmdb-value
+ (fn [db [_ cmdb-item value]]
+   (let [current-template (get-in db [:jira-templates->submit-template :data])
+         cmdb-items (get-in current-template [:cmdb_types :items])
+         updated-cmdb-items (map (fn [item]
+                                   (if (= (:jira_object_type item) (:jira_object_type cmdb-item))
+                                     (assoc item :value value)
+                                     item))
+                                 cmdb-items)
+         updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)]
+     (assoc-in db [:jira-templates->submit-template :data] updated-template))))
+
 (rf/reg-event-fx
  :jira-templates->get-cmdb-values
- (fn [{:keys [db]} [_ template-id cmdb-item]]
-   {:fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri (str "/integrations/jira/issuetemplates/"
-                             template-id
-                             "/objecttype-values?object_type="
-                             (:jira_object_type cmdb-item))
-                   :on-success #(rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item %])
-                   :on-failure #(rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item nil])}]]]}))
+ (fn [{:keys [db]} [_ template-id cmdb-item & [page search-term]]]
+   (let [page (- (or page 1) 1)
+         search-term (or search-term "")
+         pagination (get-in db [:jira-templates :cmdb-pagination (:jira_object_type cmdb-item)]
+                            {:page page :per-page 50})]
+     {:fx [[:dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true]]
+           [:dispatch
+            [:fetch {:method "GET"
+                     :uri (str "/integrations/jira/assets/objects?"
+                               "object_type_id=" (:jira_object_type cmdb-item)
+                               "&object_schema_id=" (:jira_object_schema_id cmdb-item)
+                               "&offset=" (* page (:per-page pagination))
+                               "&limit=" (:per-page pagination)
+                               (when-not (empty? search-term)
+                                 (str "&name=" (js/encodeURIComponent search-term))))
+                     :on-success (fn [response]
+                                   (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) false])
+                                   (rf/dispatch [:jira-templates->set-cmdb-pagination
+                                                 cmdb-item
+                                                 {:page page
+                                                  :per-page (:per-page pagination)
+                                                  :total-items (:total response)}])
+                                   (rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item response]))
+                     :on-failure (fn [error]
+                                   (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) false])
+                                   (rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item nil]))}]]]})))
 
 (rf/reg-event-fx
  :jira-templates->merge-cmdb-values
@@ -147,7 +209,8 @@
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template template])
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
-                                              (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
+                                              (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true])
+                                              (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item 1 ""])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
 
 (rf/reg-event-fx
@@ -162,7 +225,8 @@
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template-re-run template])
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
-                                              (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item])))
+                                              (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true])
+                                              (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item 1 ""])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template-re-run nil])}]}]]}))
 
 (rf/reg-event-db
@@ -302,9 +366,19 @@
    (:jira-templates->active-template db)))
 
 (rf/reg-sub
+ :jira-templates->active-template-id
+ (fn [db _]
+   (get-in db [:jira-templates->active-template :data :id])))
+
+(rf/reg-sub
  :jira-templates->submit-template
  (fn [db _]
    (:jira-templates->submit-template db)))
+
+(rf/reg-sub
+ :jira-templates->submit-template-id
+ (fn [db _]
+   (get-in db [:jira-templates->submit-template :data :id])))
 
 (rf/reg-sub
  :jira-templates->submitting?

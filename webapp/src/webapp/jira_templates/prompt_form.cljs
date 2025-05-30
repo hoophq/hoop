@@ -4,11 +4,14 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
-   [webapp.components.multiselect :as multi-select]))
+   [webapp.components.multiselect :as multi-select]
+   [webapp.components.paginated-dropdown :as paginated-dropdown]))
 
 (defn- create-cmdb-select-options [jira-values]
-  (mapv (fn [{:keys [id name]}]
-          {"value" id "label" name})
+  (mapv (fn [{:keys [id name type]}]
+          {:value id
+           :label name
+           :description type})
         jira-values))
 
 (defn- get-value-id [jira_values value]
@@ -53,8 +56,37 @@
                   :value (get-in @form-data [:jira_fields jira_field] "")
                   :on-change on-change}]))
 
+(defn- cmdb-field [cmdb-item template-id]
+  (let [object-type (:jira_object_type cmdb-item)
+        pagination (rf/subscribe [:jira-templates->cmdb-pagination object-type])
+        search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
+        loading? (rf/subscribe [:jira-templates->cmdb-loading? object-type])
+        options (create-cmdb-select-options (:jira_values cmdb-item))]
+    [:div.mb-4
+     [:label.block.text-xs.font-semibold.text-gray-800.mb-1
+      (:label cmdb-item)
+      (when (:required cmdb-item)
+        [:span.text-red-500 " *"])]
+     [paginated-dropdown/paginated-dropdown
+      {:options options
+       :loading? @loading?
+       :selected-value (:value cmdb-item)
+       :placeholder (str "Select " (:label cmdb-item))
+       :total-items (:total-items @pagination)
+       :current-page (:page @pagination)
+       :items-per-page (:per-page @pagination)
+       :on-search (fn [term]
+                    (rf/dispatch [:jira-templates->set-cmdb-search cmdb-item term])
+                    (rf/dispatch [:jira-templates->get-cmdb-values template-id cmdb-item 1 term]))
+       :on-page-change (fn [page]
+                         (rf/dispatch [:jira-templates->get-cmdb-values
+                                       template-id cmdb-item page @search-term]))
+       :on-select (fn [value]
+                    (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value]))}]]))
+
 (defn main [{:keys [prompts cmdb-items on-submit]}]
-  (let [form-data (r/atom (init-form-data cmdb-items))]
+  (let [form-data (r/atom (init-form-data cmdb-items))
+        template-id (rf/subscribe [:jira-templates->submit-template-id])]
     (fn []
       [:> Box {:class "p-6"}
        [:> Text {:as "h3" :size "5" :weight "bold" :mb "4"}
@@ -92,26 +124,13 @@
                 :form-data form-data
                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
 
-         ;; CMDB Fields - Apenas mostrar campos que precisam de seleção
-         (when-let [cmdb-fields-to-show (seq (filter (fn [{:keys [value jira_values]}]
-                                                       (and jira_values
-                                                            (not (some #(= (:name %) value) jira_values))))
-                                                     cmdb-items))]
+         ;; CMDB Fields - Mostrar todos os campos CMDB com o novo dropdown paginado
+         (when (seq cmdb-items)
            [:> Box {:class "space-y-4"}
             (doall
-             (for [{:keys [label jira_field jira_values required]} cmdb-fields-to-show]
-               ^{:key jira_field}
-               [multi-select/single
-                {:label label
-                 :required required
-                 :placeholder "Select one"
-                 :id (str "cmdb-select-" label)
-                 :name (str "cmdb-select-" label)
-                 :clearable? true
-                 :searchble? true
-                 :default-value (or (get-in @form-data [:jira_fields jira_field]) nil)
-                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (js->clj %))
-                 :options (create-cmdb-select-options jira_values)}]))])]
+             (for [item cmdb-items]
+               ^{:key (:jira_field item)}
+               [cmdb-field item @template-id]))])]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
          [:> Button {:variant "soft"
