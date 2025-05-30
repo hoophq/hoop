@@ -10,7 +10,6 @@ import (
 
 var (
 	color             = termenv.EnvColorProfile().Color
-	Fainted           = lipgloss.NewStyle().Faint(true)
 	Default           = lipgloss.NewStyle()
 	ClientErrorSimple = termenv.Style{}.Foreground(color("#DBAB79")).Styled
 	ClientError       = termenv.Style{}.
@@ -27,4 +26,8 @@ func PrintErrorAndExit(format string, v ...any) {
 	errOutput := ClientError(fmt.Sprintf(format, v...))
 	fmt.Println(errOutput)
 	os.Exit(1)
+}
+
+func Fainted(format string, a ...any) string {
+	return lipgloss.NewStyle().Faint(true).Render(fmt.Sprintf(format, a...))
 }

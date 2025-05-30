@@ -27,7 +27,6 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -40,10 +39,17 @@ type ConnectFlags struct {
 var connectFlags = ConnectFlags{}
 var inputEnvVars []string
 
+var connectExampleDesc = `hoop connect bash
+hoop connect bash -e MYENV=value -- --posix
+hoop connect postgres-srv --port 5432
+hoop connect postgres-srv -d 5m
+`
+
 var (
 	connectCmd = &cobra.Command{
-		Use:   "connect CONNECTION",
-		Short: "Connect to a remote resource",
+		Use:     "connect CONNECTION",
+		Short:   "Connect to a remote resource",
+		Example: connectExampleDesc,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return fmt.Errorf("missing connection name")
@@ -73,6 +79,7 @@ func init() {
 	connectCmd.Flags().StringVarP(&connectFlags.proxyPort, "port", "p", "", "The port to listen the proxy")
 	connectCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	connectCmd.Flags().StringVarP(&connectFlags.duration, "duration", "d", "30m", "The amount of time that the session will last. Valid time units are 's', 'm', 'h'")
+	connectCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
 	rootCmd.AddCommand(connectCmd)
 }
 
@@ -108,7 +115,6 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 		}
 	}
 
-	var sshHostKeySigner ssh.Signer
 	sendOpenSessionPktFn()
 	agentOfflineRetryCounter := 1
 	for {
@@ -130,16 +136,9 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 			if !ok || sessionID == nil {
 				c.processGracefulExit(fmt.Errorf("internal error, session not found"))
 			}
-			sshHostKeyEnc := pkt.Spec[pb.SpecClientSSHHostKey]
-			if len(sshHostKeyEnc) > 0 {
-				sshHostKeySigner, err = parseHostKey(sshHostKeyEnc)
-			}
-			if sshHostKeySigner == nil || err != nil {
-				log.Debug("unable to parse SSH host key received from server, using random key")
-				log.Debugf("parse host key error=%v", err)
-			}
-			connnectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
-			switch connnectionType {
+
+			connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
+			switch connectionType {
 			case pb.ConnectionTypePostgres:
 				srv := proxy.NewPGServer(c.proxyPort, c.client)
 				if err := srv.Serve(string(sessionID)); err != nil {
@@ -148,7 +147,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("--------------------postgres-credentials--------------------")
 				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
@@ -162,7 +161,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("---------------------mysql-credentials----------------------")
 				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
@@ -176,7 +175,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("---------------------mssql-credentials----------------------")
 				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
@@ -190,7 +189,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("---------------------mongo-credentials----------------------")
 				fmt.Printf(" mongodb://noop:noop@%s:%s/?directConnection=true\n", srv.Host().Host, srv.Host().Port)
@@ -204,7 +203,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), tcp)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("--------------------tcp-connection--------------------")
 				fmt.Printf("               host=%s port=%s\n", tcp.Host().Host, tcp.Host().Port)
@@ -212,6 +211,14 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Println("ready to accept connections!")
 			case pb.ConnectionTypeSSH:
 				c.loader.Stop()
+				var sshHostKeySigner ssh.Signer
+				if sshHostKeyEnc, ok := pkt.Spec[pb.SpecClientSSHHostKey]; ok && len(sshHostKeyEnc) > 0 {
+					sshHostKeySigner, err = parseHostKey(sshHostKeyEnc)
+				}
+				if sshHostKeySigner == nil || err != nil && log.IsDebugLevel {
+					fmt.Fprintln(os.Stderr, styles.Fainted("unable to parse SSH host key received from server, using random key"))
+					fmt.Fprintln(os.Stderr, styles.Fainted("parse host key error=%v", err))
+				}
 				srv := proxy.NewSSHServer(c.proxyPort, c.client, sshHostKeySigner)
 				if err := srv.Serve(string(sessionID)); err != nil {
 					c.processGracefulExit(err)
@@ -219,7 +226,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("--------------------ssh-connection--------------------")
 				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
@@ -237,7 +244,7 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				fmt.Println()
 				fmt.Println("--------------------http-connection-------------------")
 				fmt.Printf("               host=%s port=%s\n", srv.Host().Host, srv.Host().Port)
@@ -255,14 +262,14 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				}
 				c.client.StartKeepAlive()
 				term := proxy.NewTerminal(c.client)
-				c.printHeader(string(sessionID))
+				c.printHeader(connectionType, pkt)
 				c.connStore.Set(string(sessionID), term)
 				if err := term.ConnectWithTTY(); err != nil {
 					c.processGracefulExit(err)
 				}
 				ossig.shutdownFn = func() { loader.Stop(); term.Close() }
 			default:
-				errMsg := fmt.Errorf(`connection type %q not implemented`, connnectionType.String())
+				errMsg := fmt.Errorf(`connection type %q not implemented`, connectionType.String())
 				c.processGracefulExit(errMsg)
 			}
 		case pbclient.SessionOpenApproveOK:
@@ -426,11 +433,22 @@ func (c *connect) processGracefulExit(err error) {
 	c.printErrorAndExit(err.Error())
 }
 
-func (c *connect) printHeader(sessionID string) {
-	// termenv.NewOutput(os.Stdout).ClearScreen()
-	s := termenv.String("connection: %s | session: %s").Faint()
-	fmt.Printf(s.String(), c.connectionName, string(sessionID))
-	fmt.Println()
+func (c *connect) printHeader(connectionType pb.ConnectionType, pkt *pb.Packet) {
+	if silentMode {
+		return
+	}
+	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+	switch connectionType {
+	case pb.ConnectionTypeCommandLine:
+		cmd := string(pkt.Spec[pb.SpecClientExecCommandKey])
+		s := styles.Fainted("%s (stdin and tty allocated)", cmd)
+		if debugFlag && cmd != "" {
+			s = styles.Fainted("%s (stdin and tty allocated) | session: %v", cmd, sid)
+		}
+		fmt.Fprintln(os.Stderr, s)
+	default:
+		fmt.Fprintln(os.Stderr, styles.Fainted("connection: %s | session: %s", c.connectionName, sid))
+	}
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {

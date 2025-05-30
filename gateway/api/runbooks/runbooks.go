@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
@@ -151,7 +150,7 @@ func RunExec(c *gin.Context) {
 	connectionName := c.Param("name")
 	connection, err := getConnection(ctx, c, connectionName)
 	if err != nil {
-		log.Error(err)
+		log.Warn(err)
 		return
 	}
 	config, pathPrefix, err := getRunbookConfig(ctx, c, connection)
@@ -213,7 +212,7 @@ func RunExec(c *gin.Context) {
 		ID:                   sessionID,
 		OrgID:                ctx.GetOrgID(),
 		Connection:           connectionName,
-		ConnectionType:       string(proto.ConnectionTypeCustom),
+		ConnectionType:       connection.Type,
 		ConnectionSubtype:    connection.SubType.String,
 		Verb:                 proto.ClientVerbExec,
 		Labels:               sessionLabels,
@@ -304,7 +303,6 @@ func RunExec(c *gin.Context) {
 func getConnection(ctx models.UserContext, c *gin.Context, connectionName string) (*models.Connection, error) {
 	conn, err := models.GetConnectionByNameOrID(ctx, connectionName)
 	if err != nil {
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving connection"})
 		return nil, err
 	}
