@@ -110,6 +110,7 @@ type AqlResponse struct {
 	Total          int  `json:"total"`
 	Last           bool `json:"last"`
 	HasMoreResults bool `json:"hasMoreResults"`
+	TotalCount     int64
 
 	Values []AqlResponseValue `json:"values"`
 }
