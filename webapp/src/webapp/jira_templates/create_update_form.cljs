@@ -49,7 +49,6 @@
           {:status (:issue_transition_name_on_close state)
            :on-status-change #(reset! (:issue_transition_name_on_close state) %)}]
 
-         (println "connection_ids" (:connection_ids state))
          ;; Connections section
          [connections-section/main
           {:connection-ids (:connection_ids state)

@@ -251,7 +251,7 @@
         ;; Extrair tags no formato correto
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
-                           ;; Se for um mapa, converte para array de {:key k :value v}
+                            ;; Se for um mapa, converte para array de {:key k :value v}
                             (map? tags)
                             (mapv (fn [[k v]]
                                     (let [key (str (namespace k) "/" (name k))
@@ -261,13 +261,13 @@
                                                        key)]
                                       {:key parsed-key :value v :label (tags-utils/extract-label parsed-key)})) tags)
 
-                           ;; Se for array simples, converte cada item para {:key item :value ""}
+                            ;; Se for array simples, converte cada item para {:key item :value ""}
                             (sequential? tags)
                             (mapv (fn [tag]
                                     (if (map? tag)
-                                    ;; Se já for no formato {:key k :value v}, usa diretamente
+                                      ;; Se já for no formato {:key k :value v}, usa diretamente
                                       tag
-                                    ;; Senão, é um valor simples que vira chave
+                                      ;; Senão, é um valor simples que vira chave
                                       {:key tag :value ""}))
                                   tags)
 
@@ -280,7 +280,6 @@
         http-env-vars (when (and (= (:type connection) "application")
                                  (= (:subtype connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
-                              _ (println "headers" headers)
                               remote-url? #(= (:key %) "REMOTE_URL")
                               header? #(str/starts-with? % "HEADER_")
                               processed-headers (map (fn [{:keys [key value]}]

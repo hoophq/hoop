@@ -231,9 +231,7 @@
 (rf/reg-event-db
  :connection-setup/add-tag
  (fn [db [_ full-key value]]
-   (let [_ (println "full-key" full-key)
-         label (tags-utils/extract-label full-key)
-         _ (println "label" label)]
+   (let [label (tags-utils/extract-label full-key)]
      (if (and full-key
               (not (str/blank? full-key))
               value

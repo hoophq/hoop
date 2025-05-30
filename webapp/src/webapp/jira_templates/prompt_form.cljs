@@ -4,7 +4,6 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
-   [webapp.components.multiselect :as multi-select]
    [webapp.components.paginated-dropdown :as paginated-dropdown]))
 
 (defn- create-cmdb-select-options [jira-values]
@@ -56,7 +55,7 @@
                   :value (get-in @form-data [:jira_fields jira_field] "")
                   :on-change on-change}]))
 
-(defn- cmdb-field [cmdb-item template-id]
+(defn- cmdb-field [cmdb-item template-id form-data]
   (let [object-type (:jira_object_type cmdb-item)
         pagination (rf/subscribe [:jira-templates->cmdb-pagination object-type])
         search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
@@ -72,7 +71,7 @@
       {:options options
        :loading? @loading?
        :selected-value (:value cmdb-item)
-       :placeholder (str "Select " (:label cmdb-item))
+       :placeholder "Select an option"
        :total-items (:total-items @pagination)
        :current-page (:page @pagination)
        :items-per-page (:per-page @pagination)
@@ -83,12 +82,13 @@
                          (rf/dispatch [:jira-templates->get-cmdb-values
                                        template-id cmdb-item page @search-term]))
        :on-select (fn [value]
-                    (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value]))}]]))
+                    (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value])
+                    (swap! form-data assoc-in [:jira_fields (:jira_field cmdb-item)] value))}]]))
 
 (defn main [{:keys [prompts on-submit]}]
   (let [cmdb-items (rf/subscribe [:jira-templates->submit-template-cmdb-items])
-        form-data (r/atom (init-form-data @cmdb-items))
-        template-id (rf/subscribe [:jira-templates->submit-template-id])]
+        template-id (rf/subscribe [:jira-templates->submit-template-id])
+        form-data (r/atom (init-form-data @cmdb-items))]
     (fn []
       [:> Box {:class "p-6"}
        [:> Text {:as "h3" :size "5" :weight "bold" :mb "4"}
@@ -112,28 +112,24 @@
                               (on-submit processed-data)))}
 
         [:> Flex {:direction "column" :gap "4"}
-         ;; Prompt Fields
          (when (seq prompts)
-           [:> Box {:class "space-y-4"}
-            (for [{:keys [label required jira_field field_type field_options]} prompts]
-              ^{:key jira_field}
-              [render-field
-               {:label label
-                :required required
-                :jira_field jira_field
-                :field_type field_type
-                :field_options field_options
-                :form-data form-data
-                :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
+           (for [{:keys [label required jira_field field_type field_options]} prompts]
+             ^{:key jira_field}
+             [render-field
+              {:label label
+               :required required
+               :jira_field jira_field
+               :field_type field_type
+               :field_options field_options
+               :form-data form-data
+               :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}]))
 
          ;; CMDB Fields - Mostrar todos os campos CMDB com o novo dropdown paginado
-         (println "cmdb-items" @cmdb-items)
          (when (seq @cmdb-items)
-           [:> Box {:class "space-y-4"}
-            (doall
-             (for [item @cmdb-items]
-               ^{:key (:jira_field item)}
-               [cmdb-field item @template-id]))])]
+           (doall
+            (for [item @cmdb-items]
+              ^{:key (:jira_field item)}
+              [cmdb-field item @template-id form-data])))]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
          [:> Button {:variant "soft"

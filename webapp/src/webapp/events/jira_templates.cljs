@@ -45,7 +45,7 @@
    (let [current-template (get-in db [:jira-templates->submit-template :data])
          cmdb-items (get-in current-template [:cmdb_types :items])
          updated-cmdb-items (map (fn [item]
-                                   (if (= (:jira_object_type item) (:jira_object_type cmdb-item))
+                                   (if (= (:jira_field item) (:jira_field cmdb-item))
                                      (assoc item :value value)
                                      item))
                                  cmdb-items)
