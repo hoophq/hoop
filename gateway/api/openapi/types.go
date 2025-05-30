@@ -1049,6 +1049,22 @@ type JiraIssueTemplateRequest struct {
 	ConnectionIDs []string `json:"connection_ids"`
 }
 
+type JiraAssetObjectValue struct {
+	// The object identifier
+	ID string `json:"id" example:"c1ee84ab-76c8-40d9-a956-13a705d4e605:11013"`
+	// Name of the object value
+	Name string `json:"name" example:"mycomputer-asset"`
+}
+
+type JiraAssetObjects struct {
+	// The object values found
+	Values []JiraAssetObjectValue `json:"values"`
+	// Total amount of records found
+	Total int64 `json:"total" example:"22"`
+	// Indicate if it has more items
+	HasNextPage bool `json:"has_next_page"`
+}
+
 type GuardRailRuleRequest struct {
 	// Unique name for the rule
 	Name string `json:"name" binding:"required" example:"my-strict-rule"`

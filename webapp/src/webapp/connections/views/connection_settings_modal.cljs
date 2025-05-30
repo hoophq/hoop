@@ -9,7 +9,6 @@
 
 ;; Duration in minutes to nanoseconds conversion
 (defn minutes-to-ns [minutes]
-  (println "minutes" (type minutes))
   (* minutes 60 1000 1000 1000))
 
 (defn main [connection-name]
