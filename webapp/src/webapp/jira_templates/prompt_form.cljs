@@ -62,6 +62,7 @@
         search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
         loading? (rf/subscribe [:jira-templates->cmdb-loading? object-type])
         options (create-cmdb-select-options (:jira_values cmdb-item))]
+
     [:div.mb-4
      [:label.block.text-xs.font-semibold.text-gray-800.mb-1
       (:label cmdb-item)
@@ -84,8 +85,9 @@
        :on-select (fn [value]
                     (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value]))}]]))
 
-(defn main [{:keys [prompts cmdb-items on-submit]}]
-  (let [form-data (r/atom (init-form-data cmdb-items))
+(defn main [{:keys [prompts on-submit]}]
+  (let [cmdb-items (rf/subscribe [:jira-templates->submit-template-cmdb-items])
+        form-data (r/atom (init-form-data @cmdb-items))
         template-id (rf/subscribe [:jira-templates->submit-template-id])]
     (fn []
       [:> Box {:class "p-6"}
@@ -125,10 +127,11 @@
                 :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}])])
 
          ;; CMDB Fields - Mostrar todos os campos CMDB com o novo dropdown paginado
-         (when (seq cmdb-items)
+         (println "cmdb-items" @cmdb-items)
+         (when (seq @cmdb-items)
            [:> Box {:class "space-y-4"}
             (doall
-             (for [item cmdb-items]
+             (for [item @cmdb-items]
                ^{:key (:jira_field item)}
                [cmdb-field item @template-id]))])]
 

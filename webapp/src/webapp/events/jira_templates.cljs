@@ -55,7 +55,7 @@
 (rf/reg-event-fx
  :jira-templates->get-cmdb-values
  (fn [{:keys [db]} [_ template-id cmdb-item & [page search-term]]]
-   (let [page (- (or page 1) 1)
+   (let [page (or page 1)
          search-term (or search-term "")
          pagination (get-in db [:jira-templates :cmdb-pagination (:jira_object_type cmdb-item)]
                             {:page page :per-page 50})]
@@ -65,7 +65,7 @@
                      :uri (str "/integrations/jira/assets/objects?"
                                "object_type_id=" (:jira_object_type cmdb-item)
                                "&object_schema_id=" (:jira_object_schema_id cmdb-item)
-                               "&offset=" (* page (:per-page pagination))
+                               "&offset=" (* (- page 1) (:per-page pagination))
                                "&limit=" (:per-page pagination)
                                (when-not (empty? search-term)
                                  (str "&name=" (js/encodeURIComponent search-term))))
@@ -76,7 +76,7 @@
                                                  {:page page
                                                   :per-page (:per-page pagination)
                                                   :total-items (:total response)}])
-                                   (rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item response]))
+                                   (rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item (:values response)]))
                      :on-failure (fn [error]
                                    (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) false])
                                    (rf/dispatch [:jira-templates->merge-cmdb-values cmdb-item nil]))}]]]})))
@@ -92,8 +92,8 @@
          updated-cmdb-items (map (fn [item]
                                    (if (= (:jira_object_type item) (:jira_object_type cmdb-item))
                                      (-> item
-                                         (merge value)
-                                         (assoc :request-failed failed-request?))
+                                         (assoc :request-failed failed-request?)
+                                         (assoc :jira_values (merge value)))
                                      item))
                                  cmdb-items)
          updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)
@@ -374,6 +374,11 @@
  :jira-templates->submit-template
  (fn [db _]
    (:jira-templates->submit-template db)))
+
+(rf/reg-sub
+ :jira-templates->submit-template-cmdb-items
+ (fn [db _]
+   (get-in db [:jira-templates->submit-template :data :cmdb_types :items])))
 
 (rf/reg-sub
  :jira-templates->submit-template-id

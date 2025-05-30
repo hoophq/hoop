@@ -108,14 +108,16 @@
                  " of " total-items)]
            [:div.flex.space-x-2
             [:button.px-2.py-1.border.rounded
-             {:disabled (= current-page 1)
+             {:type "button"
+              :disabled (= current-page 1)
               :class (if (= current-page 1) "opacity-50 cursor-not-allowed" "hover:bg-gray-100")
               :on-click #(when (> current-page 1)
                            (on-page-change (dec current-page)))}
              "←"]
             [:div (str current-page "/" (js/Math.ceil (/ total-items items-per-page)))]
             [:button.px-2.py-1.border.rounded
-             {:disabled (>= (* current-page items-per-page) total-items)
+             {:type "button"
+              :disabled (>= (* current-page items-per-page) total-items)
               :class (if (>= (* current-page items-per-page) total-items) "opacity-50 cursor-not-allowed" "hover:bg-gray-100")
               :on-click #(when (< (* current-page items-per-page) total-items)
                            (on-page-change (inc current-page)))}
