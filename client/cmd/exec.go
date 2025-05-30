@@ -19,19 +19,24 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 )
 
 var inputFilepath string
 var inputStdin string
 var autoExec bool
-var verboseMode bool
+var silentMode bool
+
+var execExampleDesc = `hoop exec bash -i 'env'
+hoop exec bash -e MYENV=val --input 'env' -- --verbose
+hoop exec bash <<< 'env'
+`
 
 // execCmd represents the exec command
 var execCmd = &cobra.Command{
-	Use:   "exec CONNECTION",
-	Short: "Execute a given input in a remote resource",
+	Use:     "exec CONNECTION",
+	Short:   "Execute a given input in a remote resource",
+	Example: execExampleDesc,
 	PreRun: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			cmd.Usage()
@@ -53,7 +58,7 @@ func init() {
 	execCmd.Flags().StringVarP(&inputStdin, "input", "i", "", "The input to be executed remotely")
 	execCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	execCmd.Flags().BoolVar(&autoExec, "auto-approve", false, "Automatically run after a command is approved")
-	execCmd.Flags().BoolVarP(&verboseMode, "verbose", "v", false, "Verbose mode")
+	execCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -191,12 +196,19 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				Payload: execInputPayload,
 				Spec:    execSpec,
 			}
-			if verboseMode {
+			if !silentMode {
 				c.loader.Stop()
-				out := fmt.Sprintf("session: %s", string(pkt.Spec[pb.SpecGatewaySessionID]))
-				out = termenv.String(out).Faint().String()
-				os.Stderr.Write([]byte(out))
-				fmt.Println()
+				cmd := string(pkt.Spec[pb.SpecClientExecCommandKey])
+				sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+				out := styles.Fainted("<stdin-input> | %s (the input is piped to this command)", cmd)
+				if debugFlag {
+					out = styles.Fainted("<stdin-input> | %s (the input is piped to this command) | session: %s", cmd, sid)
+				}
+				// if it is not set, fallback to previous version
+				if cmd == "" {
+					out = styles.Fainted("session: %s", sid)
+				}
+				fmt.Fprintln(os.Stderr, out)
 				c.loader.Start()
 			}
 			if err := c.client.Send(stdinPkt); err != nil {

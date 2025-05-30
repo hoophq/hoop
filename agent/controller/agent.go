@@ -220,13 +220,17 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 				},
 			})
 		}
+
+		requestCommand := connParams.CmdList
+		requestCommand = append(requestCommand, connParams.ClientArgs...)
 		a.connStore.Set(string(sessionID), connParams)
 		_ = a.client.Send(&pb.Packet{
 			Type: pbclient.SessionOpenOK,
 			Spec: map[string][]byte{
-				pb.SpecGatewaySessionID:  sessionID,
-				pb.SpecConnectionType:    pkt.Spec[pb.SpecConnectionType],
-				pb.SpecClientRequestPort: pkt.Spec[pb.SpecClientRequestPort],
+				pb.SpecGatewaySessionID:     sessionID,
+				pb.SpecConnectionType:       pkt.Spec[pb.SpecConnectionType],
+				pb.SpecClientRequestPort:    pkt.Spec[pb.SpecClientRequestPort],
+				pb.SpecClientExecCommandKey: []byte(strings.Join(requestCommand, " ")),
 			}})
 		log.Infof("session=%v - sent gateway connect ok", string(sessionID))
 	}()
