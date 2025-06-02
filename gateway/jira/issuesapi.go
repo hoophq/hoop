@@ -14,6 +14,10 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 )
 
+// The maximum size of a text are field is 32767 characters
+// it should truncate the script above this size
+const defaultScriptCharMaxSize int = 32700
+
 type ErrInvalidIssueFields struct {
 	isRequiredErr bool
 	resources     []string
@@ -180,8 +184,8 @@ func ParseIssueFields(tmpl *models.JiraIssueTemplate, input map[string]string, s
 
 func loadDefaultPresetFields(s models.Session) map[string]string {
 	script := string(s.BlobInput)
-	if len(script) > 5000 {
-		script = script[0:5000] + fmt.Sprintf(" ...[TRUNCATED %v]", len(script[5000:]))
+	if len(script) > defaultScriptCharMaxSize {
+		script = script[0:defaultScriptCharMaxSize] + fmt.Sprintf(" ...[TRUNCATED %v]", len(script[defaultScriptCharMaxSize:]))
 	}
 	presetFields := map[string]string{
 		"session.id":          s.ID,
