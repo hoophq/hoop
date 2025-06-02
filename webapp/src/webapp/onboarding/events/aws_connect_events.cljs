@@ -20,12 +20,14 @@
                                             :errors nil
                                             :status nil
                                             :connection-names {}
-                                            :security-groups {}}
+                                            :security-groups {}
+                                            :connected []}
                                 :agents {:data nil
                                          :assignments nil}
                                 :create-connection true
                                 :enable-secrets-manager false
-                                :secrets-path ""})
+                                :secrets-path ""
+                                :skip-connected-resources true})
     :dispatch [:aws-connect/fetch-agents]}))
 
 (rf/reg-event-db
@@ -124,12 +126,20 @@
    (let [rds-instances (get response :items [])
          accounts (get-in db [:aws-connect :accounts :data] [])
 
+         resources-by-connection (group-by #(if (seq (:connection_resources %)) :connected :not-connected) rds-instances)
+         connected-resources (get resources-by-connection :connected [])
+         resources-without-connections (get resources-by-connection :not-connected [])
+
+         connected-resources (filter #(nil? (:error %)) connected-resources)
+
          ;; Group resources by account_id for hierarchical structure
          resources-by-account (reduce (fn [acc instance]
                                         (let [account-id (:account_id instance)]
                                           (update acc account-id (fnil conj []) instance)))
                                       {}
-                                      rds-instances)
+                                      (if (get-in db [:aws-connect :skip-connected-resources] true)
+                                        resources-without-connections
+                                        rds-instances))
 
          ;; Format resources
          formatted-resources (mapv (fn [account]
@@ -162,15 +172,20 @@
                                         :error error
                                         :children (when-not error
                                                     formatted-children)}))
-                                   accounts)]
+                                   accounts)
+
+         filtered-resources (if (get-in db [:aws-connect :skip-connected-resources] true)
+                              (filterv #(or (:error %) (seq (:children %))) formatted-resources)
+                              formatted-resources)]
 
      {:db (-> db
               (assoc-in [:aws-connect :status] :credentials-valid)
               (assoc-in [:aws-connect :loading :active?] false)
               (assoc-in [:aws-connect :loading :message] nil)
-              (assoc-in [:aws-connect :resources :data] formatted-resources)
+              (assoc-in [:aws-connect :resources :data] filtered-resources)
               (assoc-in [:aws-connect :resources :status] :loaded)
-              (assoc-in [:aws-connect :resources :api-error] nil))
+              (assoc-in [:aws-connect :resources :api-error] nil)
+              (assoc-in [:aws-connect :resources :connected] connected-resources))
       :dispatch [:aws-connect/set-current-step :resources]})))
 
 (rf/reg-event-fx
@@ -506,3 +521,18 @@
  :aws-connect/auth-method
  (fn [db _]
    (get-in db [:aws-connect :auth-method])))
+
+(rf/reg-event-db
+ :aws-connect/toggle-skip-connected-resources
+ (fn [db [_ value]]
+   (assoc-in db [:aws-connect :skip-connected-resources] value)))
+
+(rf/reg-sub
+ :aws-connect/skip-connected-resources
+ (fn [db _]
+   (get-in db [:aws-connect :skip-connected-resources] true)))
+
+(rf/reg-sub
+ :aws-connect/connected-resources
+ (fn [db _]
+   (get-in db [:aws-connect :resources :connected] [])))

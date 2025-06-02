@@ -2,7 +2,7 @@
   (:require [re-frame.core :as rf]
             ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch AlertDialog RadioGroup]]
             [webapp.components.forms :as forms]
-            ["lucide-react" :refer [Check Info ArrowUpRight X]]
+            ["lucide-react" :refer [Check Info ArrowUpRight ChevronUp ChevronDown X]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-simple :refer [data-table-simple]]
@@ -261,11 +261,68 @@
           :sticky-header? true
           :empty-state "No AWS accounts found. Please check your credentials and try again."}]]
 
+       [:> Box {:class "max-w-[600px] space-y-3"}
+        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+         "Additional Configuration"]
+
+        [:> Flex {:align "center" :gap "4" :class "text-[--accent-a11] cursor-pointer"}
+         [:> Switch {:checked @(rf/subscribe [:aws-connect/skip-connected-resources])
+                     :on-checked-change #(rf/dispatch [:aws-connect/toggle-skip-connected-resources %])}]
+
+         [:> Box
+          [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
+           "Skip Connected Resources"]
+          [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
+           "Automatically ignore resources already used in existing connections."]]]]
+
        ;; Error message (if any)
        (when @error
          [:> Card {:variant "surface" :color "red" :mt "4" :class "max-w-[600px]"}
           [:> Flex {:gap "2" :align "center"}
            [:> Text {:size "2" :color "red"} @error]]])])))
+
+(defn skipped-resources-section []
+  (r/with-let [show-skipped (r/atom false)]
+    (let [connected-resources @(rf/subscribe [:aws-connect/connected-resources])
+          skip-enabled? @(rf/subscribe [:aws-connect/skip-connected-resources])]
+      (when (and skip-enabled? (seq connected-resources))
+
+        [:<>
+         [:> Box {:class "max-w-[600px] space-y-3"}
+          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+           "Skipped Resources"]
+          [:> Text {:as "p" :size "2" :class "text-[--gray-11]" :mb "5"}
+           "Additional resources found in already created connections."]
+
+          [:> Button {:variant "soft"
+                      :on-click #(swap! show-skipped not)}
+           (if @show-skipped "Hide" "Show")
+           (if @show-skipped
+             [:> ChevronUp {:size 16}]
+             [:> ChevronDown {:size 16}])]]
+
+         (when @show-skipped
+           [:> Box {:class "w-full"}
+            [data-table-simple
+             {:columns [{:id :name
+                         :header "Resources"
+                         :width "50%"}
+                        {:id :status
+                         :header "Status"
+                         :width "50%"
+                         :render (fn [value _]
+                                   [:> Badge {:color (cond
+                                                       (= value "available") "green"
+                                                       (= value "creating") "blue"
+                                                       :else "gray")
+                                              :variant "soft"}
+                                    value])}]
+              :data (map #(hash-map :id (:arn %)
+                                    :name (:name %)
+                                    :status (:status %))
+                         connected-resources)
+              :key-fn :id
+              :empty-state "No skipped resources found."}]])]))))
 
 (defn resources-step []
   (let [errors @(rf/subscribe [:aws-connect/resources-errors])]
@@ -284,6 +341,8 @@
 
      [:> Box {:class "w-full"}
       [aws-resources-data-table]]
+
+     [skipped-resources-section]
 
      (when (seq errors)
        [:> Card {:variant "surface" :color "red" :mt "4"}
