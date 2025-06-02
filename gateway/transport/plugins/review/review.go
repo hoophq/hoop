@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,10 +100,11 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		reviewType = models.ReviewTypeJit
 		accessDuration, err = time.ParseDuration(string(durationStr))
 		if err != nil {
-			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%v", string(durationStr))
+			return nil, plugintypes.InvalidArgument("invalid access session duration, got=%v", string(durationStr))
 		}
-		if accessDuration.Hours() > 48 {
-			return nil, plugintypes.InvalidArgument("jit access input must not be greater than 48 hours")
+		maxAccessDurationHours := getMaxAccessDurationHours()
+		if accessDuration.Hours() > float64(maxAccessDurationHours) {
+			return nil, plugintypes.InvalidArgument("access session duration must not be greater than %d hours", maxAccessDurationHours)
 		}
 	}
 
@@ -204,4 +207,13 @@ func validateJit(jit *models.ReviewJit, t time.Time) error {
 		return errJitExpired
 	}
 	return nil
+}
+
+func getMaxAccessDurationHours() int64 {
+	if v := os.Getenv("MAX_ACCESS_DURATION_HOURS"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 48
 }
