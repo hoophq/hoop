@@ -61,8 +61,8 @@
                         :body body
                         :on-success (fn [connection]
                                       (rf/dispatch [:close-modal])
-                                    ;; plugins might be updated in the connection
-                                    ;; creation action, so we get them again here
+                                      ;; plugins might be updated in the connection
+                                      ;; creation action, so we get them again here
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections->get-connections])
                                       (rf/dispatch [:show-snackbar {:level :success
@@ -109,9 +109,8 @@
                                                                   :maxWidth "446px"
                                                                   :custom-on-click-out connection-connect/minimize-modal}]))
                         :on-success (fn [res]
-                                      (println :success :connections->connection-connect res)
                                       (cond
-                                       ;; Case 1: Review required
+                                        ;; Case 1: Review required
                                         (and (= (:status res) "disconnected")
                                              (:has_review res))
                                         (do
@@ -121,7 +120,7 @@
                                             (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
                                                                         :maxWidth "446px"}])))
 
-                                       ;; Case 2: Connection failure
+                                        ;; Case 2: Connection failure
                                         (= (:status res) "disconnected")
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :error
@@ -129,7 +128,7 @@
                                                                                    "to be connected, please contact your admin.")}])
                                           (rf/dispatch [:modal->close]))
 
-                                       ;; Case 3: Connection success
+                                        ;; Case 3: Connection success
                                         :else
                                         (do
                                           (rf/dispatch [:show-snackbar {:level :success
@@ -281,7 +280,7 @@ ORDER BY total_amount DESC;")
                                     (when connecting-status
                                       (rf/dispatch [:reset-connecting-status connecting-status]))
                                     (cond
-                                    ;; Case 1: Review required
+                                      ;; Case 1: Review required
                                       (and (= (:status res) "disconnected")
                                            (:has_review res))
                                       (do
@@ -290,13 +289,13 @@ ORDER BY total_amount DESC;")
                                         (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
                                                                     :maxWidth "446px"}]))
 
-                                    ;; Case 2: Connection failure
+                                      ;; Case 2: Connection failure
                                       (= (:status res) "disconnected")
                                       (rf/dispatch [:show-snackbar {:level :error
                                                                     :text (str "The connection " (:connection_name connection) " is not able "
                                                                                "to be connected, please contact your admin.")}])
 
-                                    ;; Case 3: Connection success
+                                      ;; Case 3: Connection success
                                       :else
                                       (do
                                         (rf/dispatch [:show-snackbar {:level :success
