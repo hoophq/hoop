@@ -15,7 +15,7 @@ import (
 )
 
 // The maximum size of a text are field is 32767 characters
-// it should truncate the script below this size
+// it should truncate the script above this size
 const defaultScriptCharMaxSize int = 32700
 
 type ErrInvalidIssueFields struct {
