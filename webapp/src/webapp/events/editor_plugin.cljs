@@ -214,9 +214,9 @@
 (rf/reg-event-fx
  :editor-plugin->exec-script
  (fn
-   [{:keys [db]} [_ {:keys [script client_args connection-name metadata jira_fields]}]]
+   [{:keys [db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
    (let [payload {:script script
-                  :client_args client_args
+                  :env_vars env_vars
                   :connection connection-name
                   :metadata metadata
                   :jira_fields jira_fields}
@@ -402,8 +402,8 @@
                                  (< (count script) 1))
          selected-db (.getItem js/localStorage "selected-database")
          is-dynamodb? (= (:subtype primary-connection) "dynamodb")
-         client-args (when (and is-dynamodb? selected-db)
-                       ["TABLE_NAME=" selected-db])
+         env-vars (when (and is-dynamodb? selected-db)
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)})
          keep-metadata? (get-in db [:editor-plugin :keep-metadata?])
          current-metadatas (get-in db [:editor-plugin :metadata])
          current-metadata-key (get-in db [:editor-plugin :metadata-key])
@@ -447,8 +447,8 @@
                                 :connection-name (:name %)
                                 :script final-script
                                 :metadata (metadata->json-stringify metadata)
-                                :client_args (when (and (= (:subtype %) "dynamodb") selected-db)
-                                               ["TABLE_NAME=" selected-db])
+                                :env_vars (when (and (= (:subtype %) "dynamodb") selected-db)
+                                            {"envvar:TABLE_NAME" (js/btoa selected-db)})
                                 :type (:type %)
                                 :subtype (:subtype %)
                                 :session-id nil
@@ -469,7 +469,7 @@
                           {:template-id (:jira_issue_template_id primary-connection)
                            :script final-script
                            :metadata metadata
-                           :client_args client-args
+                           :env_vars env-vars
                            :keep-metadata? keep-metadata?}]}]]}
 
        ;; Single connection direct execution
@@ -478,10 +478,10 @@
         {:fx [(when change-to-tabular?
                 [:dispatch [:set-tab-tabular]])
               [:dispatch [:editor-plugin->exec-script
-                          (cond-> {:script final-script
-                                   :connection-name (:name primary-connection)
-                                   :client_args client-args
-                                   :metadata (metadata->json-stringify metadata)})]]]}
+                          {:script final-script
+                           :connection-name (:name primary-connection)
+                           :metadata (metadata->json-stringify metadata)
+                           :env_vars env-vars}]]]}
         (when-not keep-metadata?
           {:db (-> db
                    (assoc-in [:editor-plugin :metadata] [])
@@ -500,7 +500,7 @@
 ;; Helper event for template checking
 (rf/reg-event-fx
  :editor-plugin/check-template-and-show-form
- (fn [{:keys [db]} [_ {:keys [template-id script metadata client_args keep-metadata?] :as context}]]
+ (fn [{:keys [db]} [_ {:keys [template-id script metadata env_vars keep-metadata?] :as context}]]
    (let [template (get-in db [:jira-templates->submit-template])]
      (cond
        ;; Still loading
@@ -512,7 +512,7 @@
                           {:template-id template-id
                            :script script
                            :metadata metadata
-                           :client_args client_args
+                           :env_vars env_vars
                            :keep-metadata? keep-metadata?}]}]]}
 
        ;; Ready but with failed CMDB requests
@@ -532,7 +532,7 @@
                                                    {:form-data %
                                                     :script script
                                                     :metadata metadata
-                                                    :client_args client_args
+                                                    :env_vars env_vars
                                                     :keep-metadata? keep-metadata?}])}]}]]]}
 
        ;; Ready and doesn't need form
@@ -541,20 +541,20 @@
                          {:form-data nil
                           :script script
                           :metadata metadata
-                          :client_args client_args
+                          :env_vars env_vars
                           :keep-metadata? keep-metadata?}]]]}))))
 
 ;; Helper event for template submission
 (rf/reg-event-fx
  :editor-plugin/handle-template-submit
- (fn [{:keys [db]} [_ {:keys [form-data script metadata client_args keep-metadata?]}]]
+ (fn [{:keys [db]} [_ {:keys [form-data script metadata env_vars keep-metadata?]}]]
    (let [connection (get-in db [:editor :connections :selected])]
      {:fx [[:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->exec-script
                        (cond-> {:script script
                                 :connection-name (:name connection)
-                                :client_args client_args
-                                :metadata (metadata->json-stringify metadata)}
+                                :metadata (metadata->json-stringify metadata)
+                                :env_vars env_vars}
                          (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                          (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]
            (when-not keep-metadata?
@@ -635,13 +635,13 @@
                                    (get-in db [:editor-plugin->run-connection-list :data])))
          is-dynamodb? (= (:subtype connection) "dynamodb")
          selected-db (.getItem js/localStorage "selected-database")
-         client-args (when (and is-dynamodb? selected-db)
-                       ["TABLE_NAME=" selected-db])]
+         env-vars (when (and is-dynamodb? selected-db)
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)})]
      {:fx [[:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->run-runbook
                        (cond-> {:file-name file-name
                                 :params params
-                                :client_args client-args
                                 :connection-name connection-name}
+                         env-vars (assoc :env_vars env-vars)
                          (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                          (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]]})))
