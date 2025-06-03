@@ -72,7 +72,8 @@
 
        ;; Tree view of database schema with lazy loading
        (when (and @show-schema?
-                  (= (:type connection) "database")
+                  (or (= (:type connection) "database")
+                      (= (:subtype connection) "dynamodb"))
                   (not= (:access_schema connection) "disabled"))
          [:> Box {:class "bg-[--gray-a4] px-2 py-3"}
           ;; Lazy loading of the schema component

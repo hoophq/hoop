@@ -159,7 +159,8 @@
 
                    [:> Tabs.Content {:value "configuration"}
                     [additional-configuration/main
-                     {:show-database-schema? (= (:type (:data @connection)) "database")
+                     {:show-database-schema? (or (= (:type (:data @connection)) "database")
+                                                 (= (:subtype (:data @connection)) "dynamodb"))
                       :selected-type (:subtype (:data @connection))
                       :form-type :update}]]]]]
 

@@ -71,7 +71,7 @@
    (let [current-value (get-in db [:connection-setup :config :database-schema])
          effective-value (if (nil? current-value)
                            true
-                           (not current-value))]
+                           current-value)]
      (assoc-in db [:connection-setup :config :database-schema] (not effective-value)))))
 
 (rf/reg-event-db
