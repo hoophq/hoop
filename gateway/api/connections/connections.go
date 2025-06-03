@@ -400,18 +400,8 @@ func ListDatabases(c *gin.Context) {
 		return
 	}
 
-	// Verificação de tipo com adição de DynamoDB
-	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
-	if !isDatabaseConnection {
+	if conn.Type != "database" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
-		return
-	}
-
-	// Para DynamoDB, não temos o conceito de database
-	if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
-		c.JSON(http.StatusOK, openapi.ConnectionDatabaseListResponse{
-			Databases: []string{},
-		})
 		return
 	}
 
@@ -552,7 +542,6 @@ func ListTables(c *gin.Context) {
 		return
 	}
 
-	// Verificação de tipo com adição de DynamoDB
 	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
 	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
@@ -860,81 +849,4 @@ func GetTableColumns(c *gin.Context) {
 			"timeout":    "30s",
 		})
 	}
-}
-
-// Parse DynamoDB list-tables output
-func parseDynamoDBTables(output string) (openapi.TablesResponse, error) {
-	var result struct {
-		TableNames []string `json:"TableNames"`
-	}
-
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		return openapi.TablesResponse{}, err
-	}
-
-	// Create response in expected format
-	response := openapi.TablesResponse{
-		Schemas: []openapi.SchemaInfo{
-			{
-				Name:   "default",
-				Tables: []string{},
-			},
-		},
-	}
-
-	// Add tables
-	for _, tableName := range result.TableNames {
-		response.Schemas[0].Tables = append(response.Schemas[0].Tables, tableName)
-	}
-
-	return response, nil
-}
-
-// Parse DynamoDB describe-table output to extract column information
-func parseDynamoDBColumns(output string) ([]openapi.ConnectionColumn, error) {
-	var result struct {
-		Table struct {
-			AttributeDefinitions []struct {
-				AttributeName string `json:"AttributeName"`
-				AttributeType string `json:"AttributeType"` // S, N, B (string, number, binary)
-			} `json:"AttributeDefinitions"`
-			KeySchema []struct {
-				AttributeName string `json:"AttributeName"`
-				KeyType       string `json:"KeyType"` // HASH ou RANGE
-			} `json:"KeySchema"`
-		} `json:"Table"`
-	}
-
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		return nil, err
-	}
-
-	var columns []openapi.ConnectionColumn
-
-	// Convert AttributeDefinitions to expected format
-	for _, attr := range result.Table.AttributeDefinitions {
-		dataType := "string"
-		if attr.AttributeType == "N" {
-			dataType = "number"
-		} else if attr.AttributeType == "B" {
-			dataType = "binary"
-		}
-
-		// Check if it's a primary key but we don't need to store the result
-		// since we're always setting Nullable to false for key attributes
-		for _, key := range result.Table.KeySchema {
-			if key.AttributeName == attr.AttributeName {
-				// Found a key match - no need to store this information currently
-				break
-			}
-		}
-
-		columns = append(columns, openapi.ConnectionColumn{
-			Name:     attr.AttributeName,
-			Type:     dataType,
-			Nullable: false, // Key attributes are always not null
-		})
-	}
-
-	return columns, nil
 }

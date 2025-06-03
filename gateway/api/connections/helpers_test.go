@@ -858,3 +858,305 @@ name	varchar(255)`,
 		})
 	}
 }
+
+func TestParseDynamoDBTables(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    openapi.TablesResponse
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    openapi.TablesResponse{},
+			wantErr: true,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    openapi.TablesResponse{},
+			wantErr: true,
+		},
+		{
+			name:  "no tables",
+			input: `{"TableNames": []}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "default",
+						Tables: []string{},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "single table",
+			input: `{"TableNames": ["CustomerBookmark"]}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "default",
+						Tables: []string{"CustomerBookmark"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "multiple tables",
+			input: `{"TableNames": ["CustomerBookmark", "Orders", "Products"]}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "default",
+						Tables: []string{"CustomerBookmark", "Orders", "Products"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "with extra fields",
+			input: `{"TableNames": ["CustomerBookmark"], "Count": 1, "ScannedCount": 1}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "default",
+						Tables: []string{"CustomerBookmark"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDynamoDBTables(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseDynamoDBTables() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+func TestParseDynamoDBColumns(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    []openapi.ConnectionColumn
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "simple hash key table",
+			input: `{
+				"Table": {
+					"AttributeDefinitions": [
+						{
+							"AttributeName": "id",
+							"AttributeType": "S"
+						}
+					],
+					"KeySchema": [
+						{
+							"AttributeName": "id",
+							"KeyType": "HASH"
+						}
+					]
+				}
+			}`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "string",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "composite key table",
+			input: `{
+				"Table": {
+					"AttributeDefinitions": [
+						{
+							"AttributeName": "customerId",
+							"AttributeType": "S"
+						},
+						{
+							"AttributeName": "sk",
+							"AttributeType": "S"
+						}
+					],
+					"KeySchema": [
+						{
+							"AttributeName": "customerId",
+							"KeyType": "HASH"
+						},
+						{
+							"AttributeName": "sk",
+							"KeyType": "RANGE"
+						}
+					]
+				}
+			}`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "customerId",
+					Type:     "string",
+					Nullable: false,
+				},
+				{
+					Name:     "sk",
+					Type:     "string",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "different attribute types",
+			input: `{
+				"Table": {
+					"AttributeDefinitions": [
+						{
+							"AttributeName": "id",
+							"AttributeType": "S"
+						},
+						{
+							"AttributeName": "age",
+							"AttributeType": "N"
+						},
+						{
+							"AttributeName": "data",
+							"AttributeType": "B"
+						}
+					],
+					"KeySchema": [
+						{
+							"AttributeName": "id",
+							"KeyType": "HASH"
+						}
+					]
+				}
+			}`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "id",
+					Type:     "string",
+					Nullable: false,
+				},
+				{
+					Name:     "age",
+					Type:     "number",
+					Nullable: false,
+				},
+				{
+					Name:     "data",
+					Type:     "binary",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "full table description",
+			input: `{
+				"Table": {
+					"AttributeDefinitions": [
+						{
+							"AttributeName": "customerId",
+							"AttributeType": "S"
+						},
+						{
+							"AttributeName": "sk",
+							"AttributeType": "S"
+						}
+					],
+					"TableName": "CustomerBookmark",
+					"KeySchema": [
+						{
+							"AttributeName": "customerId",
+							"KeyType": "HASH"
+						},
+						{
+							"AttributeName": "sk",
+							"KeyType": "RANGE"
+						}
+					],
+					"TableStatus": "ACTIVE",
+					"CreationDateTime": "2025-06-03T18:26:55.094000+00:00",
+					"ProvisionedThroughput": {
+						"NumberOfDecreasesToday": 0,
+						"ReadCapacityUnits": 1,
+						"WriteCapacityUnits": 1
+					},
+					"TableSizeBytes": 0,
+					"ItemCount": 0,
+					"TableArn": "arn:aws:dynamodb:us-east-1:123456789012:table/CustomerBookmark",
+					"TableId": "6948fd33-0433-428c-8a83-0d18d8d0b34c",
+					"GlobalSecondaryIndexes": [
+						{
+							"IndexName": "ByEmail",
+							"KeySchema": [
+								{
+									"AttributeName": "email",
+									"KeyType": "HASH"
+								}
+							],
+							"Projection": {
+								"ProjectionType": "ALL"
+							}
+						}
+					]
+				}
+			}`,
+			want: []openapi.ConnectionColumn{
+				{
+					Name:     "customerId",
+					Type:     "string",
+					Nullable: false,
+				},
+				{
+					Name:     "sk",
+					Type:     "string",
+					Nullable: false,
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseDynamoDBColumns(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseDynamoDBColumns() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
