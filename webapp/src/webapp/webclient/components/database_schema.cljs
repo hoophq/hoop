@@ -197,7 +197,7 @@
               loading-columns
               columns-cache]])
 
-          ;; Caso especial para DynamoDB quando as colunas foram carregadas
+          ;; Special case for DynamoDB when columns were loaded
           (and (= type "dynamodb") (get-in current-schema [:columns-cache db]))
           (let [columns-map (get-in current-schema [:columns-cache db])]
             [:div
@@ -269,7 +269,7 @@
     "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
     "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
-    ;; Modificado para DynamoDB - usar databases-tree como os bancos multi-database
+    ;; Modified for DynamoDB - use databases-tree as multi-database banks
     "dynamodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
     [:> Text {:size "1"}
