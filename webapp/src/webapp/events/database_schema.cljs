@@ -81,6 +81,39 @@
                              :on-failure (fn [error]
                                            (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
 
+;; Events for loading tables directly for DynamoDB
+(rf/reg-event-fx
+ :database-schema->handle-dynamodb-schema
+ (fn [{:keys [db]} [_ connection]]
+   {:db (-> db
+            (assoc-in [:database-schema :current-connection] (:connection-name connection))
+            ;; Ensure the status remains loading during the search
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/tables")
+                             :on-success (fn [response]
+                                           (rf/dispatch [:database-schema->dynamodb-tables-loaded connection response]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+
+;; Handle DynamoDB tables
+(rf/reg-event-db
+ :database-schema->dynamodb-tables-loaded
+ (fn [db [_ connection response]]
+   (let [tables (get-in response [:schemas 0 :tables] [])
+         ;; We treat tables as databases for DynamoDB
+         databases tables]
+     (-> db
+         (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
+         (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
+         (assoc-in [:database-schema :data (:connection-name connection) :type] "dynamodb")
+         ;; Instead of populating schema-tree, we populate the list of databases
+         (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
+         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] {})
+         (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
+         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
+
 ;; Events for loading tables (for multi-database banks)
 (rf/reg-event-fx
  :database-schema->load-tables
@@ -169,10 +202,10 @@
    (let [current-db (get-in db [:database-schema :data (:connection-name connection) :current-database])
          open-db (get-in db [:database-schema :data (:connection-name connection) :open-database])
          loading-databases (get-in db [:database-schema :data (:connection-name connection) :loading-databases] #{})
-         already-loading? (contains? loading-databases database)]
+         already-loading? (contains? loading-databases database)
+         connection-type (get-in db [:database-schema :data (:connection-name connection) :type])]
 
      (.setItem js/localStorage "selected-database" database)
-
 
      ;; If the database is already loading or if it's the current database and it's already open, do nothing
      (if (or already-loading?
@@ -193,7 +226,11 @@
                              (fn [databases] (conj (or databases #{}) database)))))
         ;; Only dispatch loading if it's not the current database
         :fx (when (not= database current-db)
-              [[:dispatch [:database-schema->load-tables connection database]]])}))))
+              (if (= connection-type "dynamodb")
+                ;; For DynamoDB, we load the table columns directly
+                [[:dispatch [:database-schema->load-dynamodb-table connection database]]]
+                ;; For other databases, we use the existing load-tables event
+                [[:dispatch [:database-schema->load-tables connection database]]]))}))))
 
 ;; Event to close the selected database
 (rf/reg-event-db
@@ -202,3 +239,47 @@
    (-> db
        ;; Only clear the open-database, keeping the current-database for cache
        (assoc-in [:database-schema :data (:connection-name connection) :open-database] nil))))
+
+;; Event to set loading status
+(rf/reg-event-db
+ :database-schema->set-loading-status
+ (fn [db [_ connection]]
+   (-> db
+       (assoc-in [:database-schema :current-connection] (:connection-name connection))
+       (assoc-in [:database-schema :data (:connection-name connection) :status] :loading))))
+
+;; Events to load specific DynamoDB tables when the user selects a "database"
+(rf/reg-event-fx
+ :database-schema->load-dynamodb-table
+ (fn [{:keys [db]} [_ connection table-name]]
+   {:db (-> db
+            (assoc-in [:database-schema :current-connection] (:connection-name connection))
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
+            ;; Use database-schema-status instead of table-columns-status to maintain consistency
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
+            (assoc-in [:database-schema :data (:connection-name connection) :current-table] table-name)
+            ;; Add to the list of databases in loading for visual control
+            (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                       (fn [databases] (conj (or databases #{}) table-name))))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/columns?table=" table-name)
+                             :on-success (fn [response]
+                                           (rf/dispatch [:database-schema->dynamodb-columns-loaded connection table-name response]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+
+;; Handler to process DynamoDB columns
+(rf/reg-event-db
+ :database-schema->dynamodb-columns-loaded
+ (fn [db [_ connection table-name response]]
+   (let [columns-map (process-columns response)]
+     (-> db
+         (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
+         ;; Use database-schema-status instead of table-columns-status
+         (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
+         (assoc-in [:database-schema :data (:connection-name connection) :current-table] table-name)
+         (assoc-in [:database-schema :data (:connection-name connection) :columns-cache table-name] columns-map)
+         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree "default" table-name] columns-map)
+         ;; Remove from the list of databases in loading
+         (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                    (fn [databases] (disj (or databases #{}) table-name)))))))

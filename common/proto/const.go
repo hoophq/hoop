@@ -39,6 +39,7 @@ const (
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
+	ConnectionTypeDynamoDB    ConnectionType = "dynamodb"
 	ConnectionTypePostgres    ConnectionType = "postgres"
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"

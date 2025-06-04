@@ -174,7 +174,12 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
 	case "custom":
-		return ConnectionType(ConnectionTypeCommandLine)
+		switch subtype {
+		case "dynamodb":
+			return ConnectionType(ConnectionTypeDynamoDB)
+		default:
+			return ConnectionType(ConnectionTypeCommandLine)
+		}
 	case "database":
 		switch subtype {
 		case "postgres":

@@ -542,17 +542,23 @@ func ListTables(c *gin.Context) {
 		return
 	}
 
-	if conn.Type != "database" {
+	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
+	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
 		return
 	}
 
 	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
 
-	// Verify if dbName is needed (only PostgreSQL, MySQL and MongoDB)
+	// Verify if dbName is needed (except for DynamoDB)
 	needsDbName := currentConnectionType == pb.ConnectionTypePostgres ||
 		currentConnectionType == pb.ConnectionTypeMySQL ||
 		currentConnectionType == pb.ConnectionTypeMongoDB
+
+	// DynamoDB doesn't need dbName
+	if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+		needsDbName = false
+	}
 
 	// For database types that require dbName
 	if needsDbName {
@@ -570,6 +576,13 @@ func ListTables(c *gin.Context) {
 	}
 
 	script := getTablesQuery(currentConnectionType, dbName)
+	if script == "" {
+		// Check for DynamoDB
+		if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+			script = `aws dynamodb list-tables --output json`
+		}
+	}
+
 	if script == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
@@ -609,7 +622,18 @@ func ListTables(c *gin.Context) {
 		}
 
 		var response openapi.TablesResponse
-		if currentConnectionType == pb.ConnectionTypeMongoDB {
+
+		// Check for DynamoDB
+		if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+			// Special parsing for DynamoDB
+			tables, err := parseDynamoDBTables(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing DynamoDB response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse DynamoDB response: %v", err)})
+				return
+			}
+			response = tables
+		} else if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
 			tables, err := parseMongoDBTables(outcome.Output)
 			if err != nil {
@@ -693,17 +717,23 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
-	if conn.Type != "database" {
+	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
+	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
 		return
 	}
 
 	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
 
-	// Verify if dbName is needed (only PostgreSQL, MySQL and MongoDB)
+	// Verify if dbName is needed (except for DynamoDB)
 	needsDbName := currentConnectionType == pb.ConnectionTypePostgres ||
 		currentConnectionType == pb.ConnectionTypeMySQL ||
 		currentConnectionType == pb.ConnectionTypeMongoDB
+
+	// DynamoDB doesn't need dbName
+	if currentConnectionType == pb.ConnectionTypeDynamoDB {
+		needsDbName = false
+	}
 
 	// For database types that require dbName
 	if needsDbName {
@@ -728,6 +758,13 @@ func GetTableColumns(c *gin.Context) {
 	}
 
 	script := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
+	if script == "" {
+		// Check for DynamoDB
+		if currentConnectionType == pb.ConnectionTypeDynamoDB {
+			script = fmt.Sprintf(`aws dynamodb describe-table --table-name %s --output json`, tableName)
+		}
+	}
+
 	if script == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "unsupported database type"})
 		return
@@ -768,7 +805,17 @@ func GetTableColumns(c *gin.Context) {
 
 		response := openapi.ColumnsResponse{Columns: []openapi.ConnectionColumn{}}
 
-		if currentConnectionType == pb.ConnectionTypeMongoDB {
+		// Check for DynamoDB
+		if currentConnectionType == pb.ConnectionTypeDynamoDB {
+			// Special parsing for DynamoDB
+			columns, err := parseDynamoDBColumns(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing DynamoDB response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse DynamoDB response: %v", err)})
+				return
+			}
+			response.Columns = columns
+		} else if currentConnectionType == pb.ConnectionTypeMongoDB {
 			// Parse MongoDB output
 			columns, err := parseMongoDBColumns(outcome.Output)
 			if err != nil {

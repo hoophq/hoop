@@ -17,6 +17,9 @@
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
 (defmethod get-database-schema "mongodb" [_ connection]
   (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
+(defmethod get-database-schema "dynamodb" [_ connection]
+  (rf/dispatch [:database-schema->handle-dynamodb-schema connection])
+  (rf/dispatch [:database-schema->set-loading-status connection]))
 
 ;; Adding memoization for components that are rendered frequently
 (def memoized-field-type-tree
@@ -176,7 +179,9 @@
        [:div
         (cond
           is-loading-this-db
-          [loading-indicator "Loading tables..."]
+          [loading-indicator (if (= type "dynamodb")
+                               "Loading columns..."
+                               "Loading tables...")]
 
           (= "mysql" type)
           (let [schema-name (first (keys db-schemas))
@@ -191,6 +196,12 @@
               current-database
               loading-columns
               columns-cache]])
+
+          ;; Special case for DynamoDB when columns were loaded
+          (and (= type "dynamodb") (get-in current-schema [:columns-cache db]))
+          (let [columns-map (get-in current-schema [:columns-cache db])]
+            [:div
+             [fields-tree columns-map]])
 
           (not-empty db-schemas)
           [:div
@@ -257,6 +268,9 @@
     "mysql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
     "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
     "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+
+    ;; Modified for DynamoDB - use databases-tree as multi-database banks
+    "dynamodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
     [:> Text {:size "1"}
      "Couldn't load the schema"]))

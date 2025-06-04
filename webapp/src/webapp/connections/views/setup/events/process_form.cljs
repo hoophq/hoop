@@ -123,8 +123,7 @@
                         (when-not (empty? command-string)
                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
         payload {:type api-type
-                 :subtype (when-not (= api-type "custom")
-                            connection-subtype)
+                 :subtype connection-subtype
                  :name connection-name
                  :agent_id agent-id
                  :connection_tags tags
@@ -135,7 +134,8 @@
                             command-array)
                  :guardrail_rules guardrails-processed
                  :jira_issue_template_id jira-template-id-processed
-                 :access_schema (or (when (= api-type "database")
+                 :access_schema (or (when (or (= api-type "database")
+                                              (= connection-subtype "dynamodb"))
                                       (if effective-database-schema
                                         "enabled"
                                         "disabled"))

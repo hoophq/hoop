@@ -9,6 +9,8 @@ import (
 // getTablesQuery returns the query to list only the tables of a database
 func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	switch connType {
+	case pb.ConnectionTypeDynamoDB:
+		return getDynamoDBTablesQuery() // DynamoDB tables are listed as databases
 	case pb.ConnectionTypePostgres:
 		return getPostgresTablesQuery(dbName)
 	case pb.ConnectionTypeMSSQL:
@@ -27,6 +29,8 @@ func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 // getColumnsQuery returns the query to get the columns of a specific table
 func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
 	switch connType {
+	case pb.ConnectionTypeDynamoDB:
+		return getDynamoDBColumnsQuery(tableName)
 	case pb.ConnectionTypePostgres:
 		return getPostgresColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeMSSQL:
@@ -136,6 +140,16 @@ db.getSiblingDB(dbName).getCollectionNames().forEach(function(collName) {
 });
 
 print(JSON.stringify(result));`, dbName)
+}
+
+// Query for DynamoDB tables
+func getDynamoDBTablesQuery() string {
+	return `aws dynamodb list-tables --output json`
+}
+
+// Query for DynamoDB table columns/attributes
+func getDynamoDBColumnsQuery(tableName string) string {
+	return fmt.Sprintf(`aws dynamodb describe-table --table-name %s --output json`, tableName)
 }
 
 // Queries to get the columns of a specific table

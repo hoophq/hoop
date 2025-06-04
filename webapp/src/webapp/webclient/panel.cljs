@@ -334,7 +334,8 @@
                              (= (:type connection) "sql-server-csv")
                              (= (:type connection) "mssql")
                              (= (:type connection) "oracledb")
-                             (= (:type connection) "database")))
+                             (= (:type connection) "database")
+                             (= (:subtype connection) "dynamodb")))
             panel-content (case @active-panel
                             :runbooks (runbooks-panel/main)
                             :metadata (metadata-panel/main {:metadata metadata

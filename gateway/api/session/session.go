@@ -42,6 +42,7 @@ var (
 type SessionPostBody struct {
 	Script     string                    `json:"script"`
 	Connection string                    `json:"connection"`
+	EnvVars    map[string]string         `json:"env_vars"`
 	Labels     openapi.SessionLabelsType `json:"labels"`
 	Metadata   map[string]any            `json:"metadata"`
 	ClientArgs []string                  `json:"client_args"`
@@ -91,6 +92,12 @@ func Post(c *gin.Context) {
 	if conn == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("connection %v not found", req.Connection)})
 		return
+	}
+
+	for key := range req.EnvVars {
+		if _, ok := conn.Envs[key]; ok {
+			delete(req.EnvVars, key)
+		}
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
@@ -220,7 +227,7 @@ func Post(c *gin.Context) {
 	go func() {
 		defer func() { close(respCh); client.Close() }()
 		select {
-		case respCh <- client.Run([]byte(req.Script), nil, req.ClientArgs...):
+		case respCh <- client.Run([]byte(req.Script), req.EnvVars, req.ClientArgs...):
 		default:
 		}
 	}()
