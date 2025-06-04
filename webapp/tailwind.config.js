@@ -167,7 +167,7 @@ module.exports = {
         'terminal-content': 'calc(100vh - 62px)'
       },
       width: {
-        'side-menu': '296px',
+        'side-menu': '308px',
         'side-menu-sm': '72px', // Width for collapsed sidebar
         'floating-search-webclient': 'calc(100% - 50px)'
       },

@@ -114,11 +114,13 @@
                     :on-click #(rf/dispatch [:navigate :home])}]]]
            [:nav {:class "flex flex-1 flex-col"}
             [:ul {:role "list"
-                  :class "flex flex-1 items-center flex-col gap-y-6"}
+                  :class "flex flex-1 items-center flex-col gap-y-16"}
+
+             ;; Main Routes (collapsed)
              [:li
               [:ul {:role "list"
                     :class "flex flex-col items-center space-y-1"}
-               (for [route constants/routes]
+               (for [route constants/main-routes]
                  ^{:key (:name route)}
                  [:li {:class (str (when
                                     (and (:admin-only? route) (not admin?)) "hidden"))}
@@ -139,66 +141,61 @@
                    [:span {:class "sr-only"}
                     (:name route)]]])]]
 
-             [:ul {:class "flex flex-col items-center space-y-1 mt-6"}
-              [:li
-               [:a {:href (routes/url-for :connections)
-                    :class (str (styles/hover-side-menu-link "/connections" current-route)
-                                "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                [:div {:class "flex gap-3 items-center"}
-                 [:> hero-outline-icon/ArrowsRightLeftIcon {:class (:standard styles/icon-styles)
-                                                            :aria-hidden "true"}]
-                 [:span {:class "sr-only"}
-                  "Connections"]]]]
-
-              (when admin?
-                [:<>
+             ;; Discover Section (collapsed)
+             [:li
+              [:ul {:role "list"
+                    :class "flex flex-col items-center space-y-1"}
+               (for [route constants/discover-routes
+                     :when (not (and (:admin-only? route) (not admin?)))]
+                 ^{:key (:name route)}
                  [:li
-                  [:a {:href (routes/url-for :users)
-                       :class (str (styles/hover-side-menu-link "/organization/users" current-route)
-                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:> hero-outline-icon/UserGroupIcon {:class (:standard styles/icon-styles)
-                                                        :aria-hidden "true"}]
+                  [:a {:href (if (and free-license? (not (:free-feature? route)))
+                               "#"
+                               (:uri route))
+                       :on-click (fn []
+                                   (when (and free-license? (not (:free-feature? route)))
+                                     (rf/dispatch [:navigate :upgrade-plan])))
+                       :class (str (styles/hover-side-menu-link (:uri route) current-route)
+                                   "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
+                                   (when (and free-license? (not (:free-feature? route)))
+                                     " text-opacity-30"))}
+                   [(:icon route) {:class (str (:standard styles/icon-styles)
+                                               (when (and free-license? (not (:free-feature? route)))
+                                                 " opacity-30"))
+                                   :aria-hidden "true"}]
                    [:span {:class "sr-only"}
-                    "Users"]]]
+                    (:label route)]
+                   (when (:badge route)
+                     [:span {:class "absolute right-0 top-0 text-xxs bg-indigo-600 text-white px-1 rounded"}
+                      (:badge route)])]])]]
 
+             ;; Settings Section (collapsed)
+             [:li
+              [:ul {:role "list"
+                    :class "flex flex-col items-center space-y-1"}
+               (for [route constants/settings-routes
+                     :when (not (and (:admin-only? route) (not admin?)))]
+                 ^{:key (:name route)}
                  [:li
-                  [:a {:href (routes/url-for :guardrails)
-                       :class (str (styles/hover-side-menu-link "/guardrails" current-route)
-                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:> hero-outline-icon/ShieldCheckIcon {:class (:standard styles/icon-styles)
-                                                          :aria-hidden "true"}]
+                  [:a {:href (if (and free-license? (not (:free-feature? route)))
+                               "#"
+                               (:uri route))
+                       :on-click (fn []
+                                   (when (and free-license? (not (:free-feature? route)))
+                                     (rf/dispatch [:navigate :upgrade-plan])))
+                       :class (str (styles/hover-side-menu-link (:uri route) current-route)
+                                   "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
+                                   (when (and free-license? (not (:free-feature? route)))
+                                     " text-opacity-30"))}
+                   [(:icon route) {:class (str (:standard styles/icon-styles)
+                                               (when (and free-license? (not (:free-feature? route)))
+                                                 " opacity-30"))
+                                   :aria-hidden "true"}]
                    [:span {:class "sr-only"}
-                    "Guardrails"]]]
-                 [:li
-                  [:a {:href (routes/url-for :agents)
-                       :class (str (styles/hover-side-menu-link "/agents" current-route)
-                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:> hero-outline-icon/ServerStackIcon {:class (:standard styles/icon-styles)
-                                                          :aria-hidden "true"}]
-                   [:span {:class "sr-only"}
-                    "Agents"]]]
+                    (:label route)]]])
 
-                 [:li
-                  [:a {:href (routes/url-for :jira-templates)
-                       :class (str (styles/hover-side-menu-link "/jira-templates" current-route)
-                                   "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:div
-                    [:figure {:class "flex-shrink-0 w-6"}
-                     [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]]
-                   [:span {:class "sr-only"}
-                    "Jira templates"]]]])
-
-              (when admin?
-                [:<>
-                 [:li
-                  [:a {:href "#"
-                       :on-click #(rf/dispatch [:sidebar-desktop->open])
-                       :class "text-gray-400 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [:> hero-outline-icon/Cog8ToothIcon {:class (:standard styles/icon-styles)
-                                                        :aria-hidden "true"}]
-                   [:span {:class "sr-only"}
-                    "Settings"]]]
-
+               ;; Integrations (com ícone especial)
+               (when admin?
                  [:li
                   [:a {:href "#"
                        :on-click #(rf/dispatch [:sidebar-desktop->open])
@@ -206,8 +203,9 @@
                    [:> hero-outline-icon/PuzzlePieceIcon {:class (:standard styles/icon-styles)
                                                           :aria-hidden "true"}]
                    [:span {:class "sr-only"}
-                    "Integrations"]]]])]
+                    "Integrations"]]])]]
 
+             ;; User profile (always at bottom)
              [:li {:class "mt-auto mb-3"}
               [:a {:href "#"
                    :onClick #(rf/dispatch [:sidebar-desktop->open])

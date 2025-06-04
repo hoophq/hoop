@@ -70,8 +70,8 @@
     :admin-only? false}
    {:name "JiraTemplates"
     :label "Jira Templates"
-    :icon (fn [props]
-            [:> hero-outline-icon/DocumentDuplicateIcon props])
+    :icon (fn []
+            [:> AlarmClockCheck {:size 24}])
     :uri (routes/url-for :jira-templates)
     :navigate :jira-templates
     :free-feature? false
