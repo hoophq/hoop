@@ -46,7 +46,7 @@
                                          (:results @connections)
                                          @searched-connections)
             users-search-results (if (empty? @searched-users)
-                                   (users-options @users)
+                                   (users-options (sort-by :name @users))
                                    @searched-users)
             connection-types-search-options (if (empty? @searched-connections-types)
                                               connection-types-options
@@ -79,7 +79,7 @@
                [:div
                 [:div {:class "mb-2"}
                  [searchbox/main
-                  {:options (users-options @users)
+                  {:options (users-options (sort-by :name @users))
                    :display-key :text
                    :variant :small
                    :searchable-keys [:value :text]
