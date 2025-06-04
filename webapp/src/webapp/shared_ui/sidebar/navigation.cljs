@@ -57,7 +57,8 @@
                 [:a {:href (if (and free-license? (not (:free-feature? route)))
                              "#"
                              (:uri route))
-                     :on-click (fn []
+                     :on-click (fn [e]
+                                 (.preventDefault e)
                                  (when (and free-license? (not (:free-feature? route)))
                                    (rf/dispatch [:navigate :upgrade-plan]))
                                  (when (:navigate route)
@@ -87,7 +88,8 @@
                 [:a {:href (if (and free-license? (not (:free-feature? route)))
                              "#"
                              (:uri route))
-                     :on-click (fn []
+                     :on-click (fn [e]
+                                 (.preventDefault e)
                                  (when (and free-license? (not (:free-feature? route)))
                                    (rf/dispatch [:navigate :upgrade-plan]))
                                  (when (:navigate route)
@@ -119,7 +121,8 @@
                  (for [plugin sidebar-constants/integrations-management]
                    ^{:key (:name plugin)}
                    [:li
-                    [:a {:on-click (fn []
+                    [:a {:on-click (fn [e]
+                                     (.preventDefault e)
                                      (if (and free-license? (not (:free-feature? plugin)))
                                        (rf/dispatch [:navigate :upgrade-plan])
                                        (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
