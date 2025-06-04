@@ -112,7 +112,7 @@
     :icon (fn []
             [:> PackageSearch {:size 24}])
     :uri (routes/url-for :integrations-aws-connect)
-    :navigate :resource-discovery
+    :navigate :integrations-aws-connect
     :free-feature? false
     :admin-only? false
     :badge "BETA"}])

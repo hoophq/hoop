@@ -1,6 +1,7 @@
 (ns webapp.shared-ui.sidebar.main
   (:require ["@headlessui/react" :as ui]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["lucide-react" :refer [ChevronsRight ChevronsLeft]]
             ["react" :as react]
             [re-frame.core :as rf]
             [webapp.components.user-icon :as user-icon]
@@ -93,8 +94,9 @@
           [:div {:class (:desktop styles/sidebar-container)}
            [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-end"
                   :onClick #(rf/dispatch [:sidebar-desktop->close])}
-            [:> hero-outline-icon/ChevronDoubleLeftIcon {:class (:standard styles/icon-styles)
-                                                         :aria-hidden "true"}]]
+            [:> ChevronsLeft {:size 24
+                              :color "white"
+                              :aria-hidden "true"}]]
            [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
             [navigation/main user my-plugins]]]]
          ;; end sidebar opened
@@ -103,8 +105,9 @@
          [:div {:class (:collapsed styles/sidebar-container)}
           [:div {:class "border-t bg-[#182449] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
-           [:> hero-outline-icon/ChevronDoubleRightIcon {:class (:standard styles/icon-styles)
-                                                         :aria-hidden "true"}]]
+           [:> ChevronsRight {:size 24
+                              :color "white"
+                              :aria-hidden "true"}]]
           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
            [:div {:class "flex my-8 shrink-0 items-center justify-center"}
             [:figure {:class "cursor-pointer"}
