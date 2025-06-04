@@ -13,9 +13,7 @@
 (defn mobile-sidebar [_ _ _]
   (let [sidebar-mobile (rf/subscribe [:sidebar-mobile])]
     (fn [user my-plugins]
-      (let [user-data (:data user)
-            admin? (:admin? user-data)
-            sidebar-open? (if (= :opened (:status @sidebar-mobile))
+      (let [sidebar-open? (if (= :opened (:status @sidebar-mobile))
                             true
                             false)]
         [:<>

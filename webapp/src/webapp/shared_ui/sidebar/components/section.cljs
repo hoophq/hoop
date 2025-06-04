@@ -1,7 +1,6 @@
 (ns webapp.shared-ui.sidebar.components.section
   (:require ["@headlessui/react" :as ui]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
-            [react :as react]))
+            ["@heroicons/react/20/solid" :as hero-solid-icon]))
 
 (defn section-title
   "Título da seção da sidebar"

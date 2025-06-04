@@ -1,11 +1,7 @@
 (ns webapp.shared-ui.sidebar.navigation
-  (:require ["@headlessui/react" :as ui]
-            ["@heroicons/react/20/solid" :as hero-solid-icon]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
+  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
             [re-frame.core :as rf]
-            [reagent.core :as r]
             [webapp.routes :as routes]
-            [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]
             [webapp.shared-ui.sidebar.styles :as styles]
@@ -13,14 +9,8 @@
             [webapp.shared-ui.sidebar.components.section :refer [section-title disclosure-section]]
             [webapp.shared-ui.sidebar.components.profile :refer [profile-dropdown]]))
 
-(def link-styles
-  {:enabled "flex justify-between items-center group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
-   :disabled (str "flex justify-between items-center text-gray-300 cursor-not-allowed text-opacity-30 "
-                  "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")})
-
 (defn main [_ _]
-  (let [open-profile-disclosure? (r/atom false)
-        gateway-info (rf/subscribe [:gateway->info])
+  (let [gateway-info (rf/subscribe [:gateway->info])
         current-route (rf/subscribe [:routes->route])]
     (fn [user my-plugins]
       (let [gateway-version (:version (:data @gateway-info))
