@@ -1,7 +1,10 @@
 (ns webapp.shared-ui.sidebar.navigation
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
+            ["@heroicons/react/20/solid" :as hero-solid-icon]
+            ["@headlessui/react" :as ui]
             ["lucide-react" :refer [ChevronRight]]
             [re-frame.core :as rf]
+            [webapp.routes :as routes]
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as sidebar-constants]
             [webapp.shared-ui.sidebar.styles :as styles]
@@ -102,16 +105,33 @@
                     "Upgrade"])]])
 
              (when admin?
-               [:li
-                [:a {:href "#"
-                     :on-click #(rf/dispatch [:navigate :integrations])
-                     :class (str (styles/hover-side-menu-link "/integrations" current-route)
-                                 (:enabled styles/link-styles))}
-                 [:div {:class "flex gap-3 items-center"}
+               [:> ui/Disclosure {:as "li"
+                                  :class "text-xs font-semibold leading-6 text-gray-400"}
+                [:> (.-Button ui/Disclosure) {:class "w-full group flex items-center justify-between rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
+                 [:div {:class "flex gap-3 justify-start items-center"}
                   [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
                                                          :aria-hidden "true"}]
                   "Integrations"]
-                 [:> ChevronRight {:size 16 :class "text-white"}]]])]]
+                 [:> hero-solid-icon/ChevronDownIcon {:class "text-white h-5 w-5 shrink-0"
+                                                      :aria-hidden "true"}]]
+                [:> (.-Panel ui/Disclosure) {:as "ul"
+                                             :class "mt-1 px-2"}
+                 (for [plugin sidebar-constants/integrations-management]
+                   ^{:key (:name plugin)}
+                   [:li
+                    [:a {:on-click (fn []
+                                     (if (and free-license? (not (:free-feature? plugin)))
+                                       (rf/dispatch [:navigate :upgrade-plan])
+                                       (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])))
+                         :href "#"
+                         :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                     "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                     (when (and free-license? (not (:free-feature? plugin)))
+                                       " text-opacity-30"))}
+                     (:label plugin)
+                     (when (and free-license? (not (:free-feature? plugin)))
+                       [:div {:class styles/badge-upgrade}
+                        "Upgrade"])]])]])]]
 
            [:li {:class "mt-auto mb-3"}
             [profile-dropdown {:user-data user-data

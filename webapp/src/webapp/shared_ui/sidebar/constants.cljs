@@ -1,6 +1,5 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
-   ["@heroicons/react/24/outline" :as hero-outline-icon]
    ["lucide-react" :refer [LayoutDashboard Rotate3d SquareCode GalleryVerticalEnd
                            Inbox BookMarked ShieldCheck Sparkles VenetianMask
                            UserRoundCheck AlarmClockCheck PackageSearch UserRound
@@ -112,7 +111,7 @@
     :label "Resource Discovery"
     :icon (fn []
             [:> PackageSearch {:size 24}])
-    :uri (routes/url-for :resource-discovery)
+    :uri (routes/url-for :integrations-aws-connect)
     :navigate :resource-discovery
     :free-feature? false
     :admin-only? false

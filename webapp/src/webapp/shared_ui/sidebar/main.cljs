@@ -7,8 +7,7 @@
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as constants]
             [webapp.shared-ui.sidebar.navigation :as navigation]
-            [webapp.shared-ui.sidebar.styles :as styles]
-            [webapp.routes :as routes]))
+            [webapp.shared-ui.sidebar.styles :as styles]))
 
 (defn mobile-sidebar [_ _ _]
   (let [sidebar-mobile (rf/subscribe [:sidebar-mobile])]
@@ -164,10 +163,7 @@
                                                  " opacity-30"))
                                    :aria-hidden "true"}]
                    [:span {:class "sr-only"}
-                    (:label route)]
-                   (when (:badge route)
-                     [:span {:class "absolute right-0 top-0 text-xxs bg-indigo-600 text-white px-1 rounded"}
-                      (:badge route)])]])]]
+                    (:label route)]]])]]
 
              ;; Settings Section (collapsed)
              [:li
