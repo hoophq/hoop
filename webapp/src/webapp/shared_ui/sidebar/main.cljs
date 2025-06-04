@@ -7,6 +7,7 @@
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as constants]
             [webapp.shared-ui.sidebar.navigation :as navigation]
+            [webapp.shared-ui.sidebar.styles :as styles]
             [webapp.routes :as routes]))
 
 (defn mobile-sidebar [_ _ _]
@@ -25,22 +26,22 @@
                          :class "relative z-40 lg:hidden"
                          :onClose #(rf/dispatch [:sidebar-mobile->close])}
            [:> (.-Child ui/Transition) {:as react/Fragment
-                                        :enter "transition-opacity ease-linear duration-500"
-                                        :enterFrom "opacity-0"
-                                        :enterTo "opacity-100"
-                                        :leave "transition-opacity ease-linear duration-500"
-                                        :leaveFrom "opacity-100"
-                                        :leaveTo "opacity-0"}
+                                        :enter (:mobile-enter styles/transitions)
+                                        :enterFrom (:mobile-enter-from styles/transitions)
+                                        :enterTo (:mobile-enter-to styles/transitions)
+                                        :leave (:mobile-leave styles/transitions)
+                                        :leaveFrom (:mobile-leave-from styles/transitions)
+                                        :leaveTo (:mobile-leave-to styles/transitions)}
             [:div {:class "fixed inset-0 bg-[#182449] bg-opacity-80"}]]
 
-           [:div {:class "fixed inset-0 flex"}
+           [:div {:class (:mobile styles/sidebar-container)}
             [:> (.-Child ui/Transition) {:as react/Fragment
-                                         :enter "transition ease-in-out duration-700 transform"
-                                         :enterFrom "-translate-x-full"
-                                         :enterTo "translate-x-0"
-                                         :leave "transition ease-in-out duration-700 transform"
-                                         :leaveFrom "translate-x-0"
-                                         :leaveTo "-translate-x-full"}
+                                         :enter (:slide-enter styles/transitions)
+                                         :enterFrom (:slide-enter-from styles/transitions)
+                                         :enterTo (:slide-enter-to styles/transitions)
+                                         :leave (:slide-leave styles/transitions)
+                                         :leaveFrom (:slide-leave-from styles/transitions)
+                                         :leaveTo (:slide-leave-to styles/transitions)}
              [:> (.-Panel ui/Dialog) {:class "relative mr-16 flex w-full max-w-xs flex-1"}
               [:> (.-Child ui/Transition) {:as react/Fragment
                                            :enter "transition ease-in-out duration-700 transform"
@@ -66,15 +67,10 @@
                     :class "-m-2.5 p-2.5 text-gray-700 lg:hidden"
                     :onClick #(rf/dispatch [:sidebar-mobile->open])}
            [:span {:class "sr-only"} "Open sidebar"]
-           [:> hero-outline-icon/Bars3Icon {:class "h-6 w-6 shrink-0 text-white"
+           [:> hero-outline-icon/Bars3Icon {:class (:standard styles/icon-styles)
                                             :aria-hidden "true"}]]]
          ;; sidebar closed
          ]))))
-
-(defn hover-side-menu-link? [uri-item current-route]
-  (if (= uri-item current-route)
-    "bg-white/5 text-white "
-    "hover:bg-white/5 hover:text-white text-gray-300 "))
 
 (defn desktop-sidebar [_ _]
   (let [sidebar-desktop (rf/subscribe [:sidebar-desktop])
@@ -93,26 +89,26 @@
          ;; sidebar opened
          [:> ui/Transition {:show sidebar-open?
                             :as react/Fragment
-                            :enter "transition-opacity duration-400 ease-in-out transform"
-                            :enterFrom "opacity-0"
-                            :enterTo "opacity-100"
-                            :leave "transition-opacity duration-400 ease-in-out transform"
-                            :leaveFrom "opacity-100"
-                            :leaveTo "opacity-0"}
-          [:div {:class "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#182449]"}
+                            :enter (:fade-enter styles/transitions)
+                            :enterFrom (:fade-enter-from styles/transitions)
+                            :enterTo (:fade-enter-to styles/transitions)
+                            :leave (:fade-leave styles/transitions)
+                            :leaveFrom (:fade-leave-from styles/transitions)
+                            :leaveTo (:fade-leave-to styles/transitions)}
+          [:div {:class (:desktop styles/sidebar-container)}
            [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-end"
                   :onClick #(rf/dispatch [:sidebar-desktop->close])}
-            [:> hero-outline-icon/ChevronDoubleLeftIcon {:class "h-6 w-6 shrink-0 text-white"
+            [:> hero-outline-icon/ChevronDoubleLeftIcon {:class (:standard styles/icon-styles)
                                                          :aria-hidden "true"}]]
            [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
             [navigation/main user my-plugins]]]]
          ;; end sidebar opened
 
          ;; sidebar closed
-         [:div {:class "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:bg-[#182449]"}
+         [:div {:class (:collapsed styles/sidebar-container)}
           [:div {:class "border-t bg-[#182449] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
-           [:> hero-outline-icon/ChevronDoubleRightIcon {:class "h-6 w-6 shrink-0 text-white"
+           [:> hero-outline-icon/ChevronDoubleRightIcon {:class (:standard styles/icon-styles)
                                                          :aria-hidden "true"}]]
           [:div {:class "h-full flex grow flex-col gap-y-2 overflow-y-auto bg-[#182449] px-4 pb-10"}
            [:div {:class "flex my-8 shrink-0 items-center justify-center"}
@@ -136,11 +132,11 @@
                        :on-click (fn []
                                    (when (and free-license? (not (:free-feature? route)))
                                      (rf/dispatch [:navigate :upgrade-plan])))
-                       :class (str (hover-side-menu-link? (:uri route) current-route)
+                       :class (str (styles/hover-side-menu-link (:uri route) current-route)
                                    "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
                                    (when (and free-license? (not (:free-feature? route)))
                                      " text-opacity-30"))}
-                   [(:icon route) {:class (str "h-6 w-6 shrink-0 text-white"
+                   [(:icon route) {:class (str (:standard styles/icon-styles)
                                                (when (and free-license? (not (:free-feature? route)))
                                                  " opacity-30"))
                                    :aria-hidden "true"}]
@@ -152,7 +148,7 @@
                  [:li
                   [:a {:href (:uri plugin)
                        :class "text-gray-400 hover:text-white hover:bg-white/5 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [(:icon plugin) {:class "h-6 w-6 shrink-0 text-white"
+                   [(:icon plugin) {:class (:standard styles/icon-styles)
                                     :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     (:label plugin)]]])]]
@@ -160,10 +156,10 @@
              [:ul {:class "flex flex-col items-center space-y-1 mt-6"}
               [:li
                [:a {:href (routes/url-for :connections)
-                    :class (str (hover-side-menu-link? "/connections" current-route)
+                    :class (str (styles/hover-side-menu-link "/connections" current-route)
                                 "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
                 [:div {:class "flex gap-3 items-center"}
-                 [:> hero-outline-icon/ArrowsRightLeftIcon {:class "h-6 w-6 shrink-0 text-white"
+                 [:> hero-outline-icon/ArrowsRightLeftIcon {:class (:standard styles/icon-styles)
                                                             :aria-hidden "true"}]
                  [:span {:class "sr-only"}
                   "Connections"]]]]
@@ -172,33 +168,33 @@
                 [:<>
                  [:li
                   [:a {:href (routes/url-for :users)
-                       :class (str (hover-side-menu-link? "/organization/users" current-route)
+                       :class (str (styles/hover-side-menu-link "/organization/users" current-route)
                                    "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:> hero-outline-icon/UserGroupIcon {:class "h-6 w-6 shrink-0 text-white"
+                   [:> hero-outline-icon/UserGroupIcon {:class (:standard styles/icon-styles)
                                                         :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     "Users"]]]
 
                  [:li
                   [:a {:href (routes/url-for :guardrails)
-                       :class (str (hover-side-menu-link? "/guardrails" current-route)
+                       :class (str (styles/hover-side-menu-link "/guardrails" current-route)
                                    "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:> hero-outline-icon/ShieldCheckIcon {:class "h-6 w-6 shrink-0 text-white"
+                   [:> hero-outline-icon/ShieldCheckIcon {:class (:standard styles/icon-styles)
                                                           :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     "Guardrails"]]]
                  [:li
                   [:a {:href (routes/url-for :agents)
-                       :class (str (hover-side-menu-link? "/agents" current-route)
+                       :class (str (styles/hover-side-menu-link "/agents" current-route)
                                    "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
-                   [:> hero-outline-icon/ServerStackIcon {:class "h-6 w-6 shrink-0 text-white"
+                   [:> hero-outline-icon/ServerStackIcon {:class (:standard styles/icon-styles)
                                                           :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     "Agents"]]]
 
                  [:li
                   [:a {:href (routes/url-for :jira-templates)
-                       :class (str (hover-side-menu-link? "/jira-templates" current-route)
+                       :class (str (styles/hover-side-menu-link "/jira-templates" current-route)
                                    "group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold")}
                    [:div
                     [:figure {:class "flex-shrink-0 w-6"}
@@ -212,7 +208,7 @@
                   [:a {:href "#"
                        :on-click #(rf/dispatch [:sidebar-desktop->open])
                        :class "text-gray-400 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [:> hero-outline-icon/Cog8ToothIcon {:class "h-6 w-6 shrink-0 text-white"
+                   [:> hero-outline-icon/Cog8ToothIcon {:class (:standard styles/icon-styles)
                                                         :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     "Settings"]]]
@@ -221,7 +217,7 @@
                   [:a {:href "#"
                        :on-click #(rf/dispatch [:sidebar-desktop->open])
                        :class "text-gray-400 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [:> hero-outline-icon/PuzzlePieceIcon {:class "h-6 w-6 shrink-0 text-white"
+                   [:> hero-outline-icon/PuzzlePieceIcon {:class (:standard styles/icon-styles)
                                                           :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     "Integrations"]]]])]
