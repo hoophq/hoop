@@ -92,7 +92,7 @@
                             :leaveFrom (:fade-leave-from styles/transitions)
                             :leaveTo (:fade-leave-to styles/transitions)}
           [:div {:class (:desktop styles/sidebar-container)}
-           [:div {:class "border-t border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-end"
+           [:div {:class "w-full py-2 px-2 absolute bottom-0 bg-[#182449] dark border-t border-primary-5 hover:bg-primary-5 hover:text-white cursor-pointer flex justify-end"
                   :onClick #(rf/dispatch [:sidebar-desktop->close])}
             [:> ChevronsLeft {:size 24
                               :color "white"
@@ -103,7 +103,7 @@
 
          ;; sidebar closed
          [:div {:class (:collapsed styles/sidebar-container)}
-          [:div {:class "border-t bg-[#182449] border-gray-800 w-full py-2 px-2 absolute bottom-0 bg-[#182449] hover:bg-white/5 hover:text-white cursor-pointer flex justify-center"
+          [:div {:class "w-full py-2 px-2 absolute bottom-0 bg-[#182449] dark border-t border-primary-5 hover:bg-primary-5 hover:text-white cursor-pointer flex justify-center"
                  :onClick #(rf/dispatch [:sidebar-desktop->open])}
            [:> ChevronsRight {:size 24
                               :color "white"

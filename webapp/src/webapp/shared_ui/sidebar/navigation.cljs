@@ -59,7 +59,7 @@
                              (:uri route))
                      :on-click (fn [e]
                                  (.preventDefault e)
-                                 (when (and free-license? (not (:free-feature? route)))
+                                 (if (and free-license? (not (:free-feature? route)))
                                    (rf/dispatch [:navigate :upgrade-plan]))
                                  (when (:navigate route)
                                    (rf/dispatch [:navigate (:navigate route)])))
