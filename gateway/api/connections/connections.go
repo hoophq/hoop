@@ -717,7 +717,6 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
-	// Verificação de tipo com adição de DynamoDB
 	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
 	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
