@@ -8,12 +8,9 @@ import (
 
 // getTablesQuery returns the query to list only the tables of a database
 func getTablesQuery(connType pb.ConnectionType, dbName string) string {
-	// Check for DynamoDB (custom type with dynamodb subtype)
-	if string(connType) == "custom" && connType.String() == "custom/dynamodb" {
-		return getDynamoDBTablesQuery()
-	}
-
 	switch connType {
+	case pb.ConnectionTypeDynamoDB:
+		return getDynamoDBTablesQuery() // DynamoDB tables are listed as databases
 	case pb.ConnectionTypePostgres:
 		return getPostgresTablesQuery(dbName)
 	case pb.ConnectionTypeMSSQL:
@@ -31,12 +28,9 @@ func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 
 // getColumnsQuery returns the query to get the columns of a specific table
 func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
-	// Check for DynamoDB (custom type with dynamodb subtype)
-	if string(connType) == "custom" && connType.String() == "custom/dynamodb" {
-		return getDynamoDBColumnsQuery(tableName)
-	}
-
 	switch connType {
+	case pb.ConnectionTypeDynamoDB:
+		return getDynamoDBColumnsQuery(tableName)
 	case pb.ConnectionTypePostgres:
 		return getPostgresColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeMSSQL:

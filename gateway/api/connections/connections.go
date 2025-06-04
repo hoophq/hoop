@@ -732,7 +732,7 @@ func GetTableColumns(c *gin.Context) {
 		currentConnectionType == pb.ConnectionTypeMongoDB
 
 	// DynamoDB doesn't need dbName
-	if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+	if currentConnectionType == pb.ConnectionTypeDynamoDB {
 		needsDbName = false
 	}
 
@@ -761,7 +761,7 @@ func GetTableColumns(c *gin.Context) {
 	script := getColumnsQuery(currentConnectionType, dbName, tableName, schemaName)
 	if script == "" {
 		// Check for DynamoDB
-		if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+		if currentConnectionType == pb.ConnectionTypeDynamoDB {
 			script = fmt.Sprintf(`aws dynamodb describe-table --table-name %s --output json`, tableName)
 		}
 	}
@@ -807,7 +807,7 @@ func GetTableColumns(c *gin.Context) {
 		response := openapi.ColumnsResponse{Columns: []openapi.ConnectionColumn{}}
 
 		// Check for DynamoDB
-		if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+		if currentConnectionType == pb.ConnectionTypeDynamoDB {
 			// Special parsing for DynamoDB
 			columns, err := parseDynamoDBColumns(outcome.Output)
 			if err != nil {
