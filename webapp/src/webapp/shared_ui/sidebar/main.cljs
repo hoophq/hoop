@@ -75,8 +75,6 @@
         current-route (rf/subscribe [:routes->route])]
     (fn [user my-plugins]
       (let [user-data (:data user)
-            plugins-enabled (filterv (fn [plugin]
-                                       (some #(= (:name plugin) (:name %)) my-plugins)) constants/plugins-routes)
             admin? (:admin? user-data)
             free-license? (:free-license? user-data)
             sidebar-open? (if (= :opened (:status @sidebar-desktop))
@@ -139,17 +137,7 @@
                                                  " opacity-30"))
                                    :aria-hidden "true"}]
                    [:span {:class "sr-only"}
-                    (:name route)]]])
-
-               (for [plugin plugins-enabled]
-                 ^{:key (:name plugin)}
-                 [:li
-                  [:a {:href (:uri plugin)
-                       :class "text-gray-400 hover:text-white hover:bg-white/5 group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [(:icon plugin) {:class (:standard styles/icon-styles)
-                                    :aria-hidden "true"}]
-                   [:span {:class "sr-only"}
-                    (:label plugin)]]])]]
+                    (:name route)]]])]]
 
              [:ul {:class "flex flex-col items-center space-y-1 mt-6"}
               [:li

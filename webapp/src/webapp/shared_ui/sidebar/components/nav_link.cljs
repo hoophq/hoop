@@ -31,10 +31,7 @@
                       (when (and free-license? (not free-feature?))
                         " text-opacity-30"))}
       [:div {:class "flex gap-3 items-center"}
-       [icon {:class (str (:standard styles/icon-styles)
-                          (when (and free-license? (not free-feature?))
-                            " opacity-30"))
-              :aria-hidden "true"}]
+       [icon]
        label]
       (when (and free-license? (not free-feature?))
         [:div {:class styles/badge-upgrade}

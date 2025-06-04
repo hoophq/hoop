@@ -16,9 +16,6 @@
       (let [gateway-version (:version (:data @gateway-info))
             auth-method (:auth_method (:data @gateway-info))
             user-data (:data user)
-            plugins-routes-enabled (filterv (fn [plugin]
-                                              (some #(= (:name plugin) (:name %)) my-plugins))
-                                            sidebar-constants/plugins-routes)
             admin? (:admin? user-data)
             free-license? (:free-license? user-data)
             current-route @current-route]
@@ -45,20 +42,7 @@
                           :admin? admin?
                           :current-route current-route
                           :free-license? free-license?
-                          :navigate (:navigate route)}])
-
-             (for [plugin plugins-routes-enabled]
-               ^{:key (:name plugin)}
-               [nav-link {:uri (if (and free-license? (not (:free-feature? plugin)))
-                                 "#"
-                                 (:uri plugin))
-                          :icon (:icon plugin)
-                          :label (:label plugin)
-                          :free-feature? (:free-feature? plugin)
-                          :admin? admin?
-                          :current-route current-route
-                          :free-license? free-license?
-                          :navigate (:navigate plugin)}])]]
+                          :navigate (:navigate route)}])]]
 
            [:ul {:class "space-y-1"}
             [section-title "Organization"]
@@ -115,47 +99,48 @@
                   "Jira Templates"]]]])
 
             (when admin?
-              [disclosure-section {:title "Settings"
-                                   :icon (fn [props]
-                                           [:> hero-outline-icon/Cog8ToothIcon props])
-                                   :children
-                                   [:<>
-                                    [:li
-                                     [:a
-                                      {:on-click (fn []
-                                                   (if free-license?
-                                                     (rf/dispatch [:navigate :upgrade-plan])
-                                                     (rf/dispatch [:navigate :manage-ask-ai])))
-                                       :href "#"
-                                       :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                                   "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                                   (when free-license?
-                                                     " text-opacity-30"))}
-                                      "AI Query Builder"
-                                      (when free-license?
-                                        [:div {:class styles/badge-upgrade}
-                                         "Upgrade"])]]
+              [disclosure-section
+               {:title "Settings"
+                :icon (fn [props]
+                        [:> hero-outline-icon/Cog8ToothIcon props])
+                :children
+                [:<>
+                 [:li
+                  [:a
+                   {:on-click (fn []
+                                (if free-license?
+                                  (rf/dispatch [:navigate :upgrade-plan])
+                                  (rf/dispatch [:navigate :manage-ask-ai])))
+                    :href "#"
+                    :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                (when free-license?
+                                  " text-opacity-30"))}
+                   "AI Query Builder"
+                   (when free-license?
+                     [:div {:class styles/badge-upgrade}
+                      "Upgrade"])]]
 
-                                    [:li
-                                     [:a
-                                      {:href (routes/url-for :access-control)
-                                       :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                                   "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
-                                      "Access Control"]]
+                 [:li
+                  [:a
+                   {:href (routes/url-for :access-control)
+                    :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                   "Access Control"]]
 
-                                    [:li
-                                     [:a
-                                      {:href (routes/url-for :runbooks)
-                                       :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                                   "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
-                                      "Runbooks"]]
+                 [:li
+                  [:a
+                   {:href (routes/url-for :runbooks)
+                    :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                   "Runbooks"]]
 
-                                    [:li
-                                     [:a
-                                      {:href (routes/url-for :license-management)
-                                       :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                                   "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
-                                      "License"]]]}])
+                 [:li
+                  [:a
+                   {:href (routes/url-for :license-management)
+                    :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                "block rounded-md py-2 pr-2 pl-9 text-sm leading-6")}
+                   "License"]]]}])
 
             (when admin?
               [disclosure-section {:title "Integrations"
