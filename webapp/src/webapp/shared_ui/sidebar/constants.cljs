@@ -1,9 +1,10 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
-   ["lucide-react" :refer [LayoutDashboard Rotate3d SquareCode GalleryVerticalEnd
-                           Inbox BookMarked ShieldCheck Sparkles BrainCog
-                           UserRoundCheck AlarmClockCheck PackageSearch UserRound
-                           BadgeCheck]]
+   ["lucide-react" :refer [BadgeCheck BookMarked BrainCog GalleryVerticalEnd
+                           Inbox LayoutDashboard PackageSearch Rotate3d
+                           ShieldCheck Sparkles SquareCode UserRound
+                           UserRoundCheck]]
+   [webapp.config :as config]
    [webapp.routes :as routes]))
 
 ;; Menu principal
@@ -71,7 +72,9 @@
    {:name "JiraTemplates"
     :label "Jira Templates"
     :icon (fn []
-            [:> AlarmClockCheck {:size 24}])
+            [:div
+             [:figure {:class "flex-shrink-0 w-6"}
+              [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]])
     :uri (routes/url-for :jira-templates)
     :navigate :jira-templates
     :free-feature? false
