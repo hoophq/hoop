@@ -2,7 +2,7 @@
   (:require
    ["lucide-react" :refer [BadgeCheck BookMarked BrainCog GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Rotate3d
-                           ShieldCheck Sparkles SquareCode UserRound
+                           ShieldCheck Sparkles SquareCode UsersRound
                            UserRoundCheck]]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -132,7 +132,7 @@
   [{:name "Users"
     :label "Users"
     :icon (fn []
-            [:> UserRound {:size 24}])
+            [:> UsersRound {:size 24}])
     :uri (routes/url-for :users)
     :navigate :users
     :free-feature? true
