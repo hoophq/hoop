@@ -1,22 +1,14 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["lucide-react" :refer [LayoutDashboard Rotate3d SquareCode GalleryVerticalEnd
-                           Inbox BookMarked ShieldCheck Sparkles VenetianMask
+                           Inbox BookMarked ShieldCheck Sparkles BrainCog
                            UserRoundCheck AlarmClockCheck PackageSearch UserRound
-                           BrainCog Puzzle BadgeCheck]]
+                           BadgeCheck]]
    [webapp.routes :as routes]))
 
 ;; Menu principal
 (def main-routes
-  [{:name "Dashboard"
-    :label "Dashboard"
-    :icon (fn []
-            [:> LayoutDashboard {:size 24}])
-    :uri (routes/url-for :dashboard)
-    :navigate :dashboard
-    :free-feature? false
-    :admin-only? false}
-   {:name "Connections"
+  [{:name "Connections"
     :label "Connections"
     :icon (fn []
             [:> Rotate3d {:size 24}])
@@ -24,6 +16,15 @@
     :navigate :connections
     :free-feature? true
     :admin-only? false}
+   {:name "Dashboard"
+    :label "Dashboard"
+    :icon (fn []
+            [:> LayoutDashboard {:size 24}])
+    :uri (routes/url-for :dashboard)
+    :navigate :dashboard
+    :free-feature? false
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true}
    {:name "Terminal"
     :label "Terminal"
     :icon (fn []
@@ -40,7 +41,7 @@
     :navigate :sessions
     :free-feature? true
     :admin-only? false}
-   {:name "review"
+   {:name "Reviews"
     :label "Reviews"
     :icon (fn []
             [:> Inbox {:size 24}])
@@ -58,7 +59,7 @@
     :uri (routes/url-for :runbooks)
     :navigate :runbooks
     :free-feature? true
-    :admin-only? false}
+    :admin-only? true}
    {:name "Guardrails"
     :label "Guardrails"
     :icon (fn []
@@ -66,7 +67,7 @@
     :uri (routes/url-for :guardrails)
     :navigate :guardrails
     :free-feature? true
-    :admin-only? false}
+    :admin-only? true}
    {:name "JiraTemplates"
     :label "Jira Templates"
     :icon (fn []
@@ -74,6 +75,7 @@
     :uri (routes/url-for :jira-templates)
     :navigate :jira-templates
     :free-feature? false
+    :upgrade-plan-route :jira-templates
     :admin-only? true}
    {:name "AIQueryBuilder"
     :label "AI Query Builder"
@@ -82,7 +84,8 @@
     :uri (routes/url-for :manage-ask-ai)
     :navigate :manage-ask-ai
     :free-feature? false
-    :admin-only? false}
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true}
    #_{:name "AIDataMasking"
       :label "AI Data Masking"
       :icon (fn []
@@ -90,7 +93,8 @@
       :uri (routes/url-for :ai-data-masking)
       :navigate :ai-data-masking
       :free-feature? false
-      :admin-only? false}
+      :upgrade-plan-route :upgrade-plan
+      :admin-only? true}
    {:name "AccessControl"
     :label "Access Control"
     :icon (fn []
@@ -98,7 +102,8 @@
     :uri (routes/url-for :access-control)
     :navigate :access-control
     :free-feature? false
-    :admin-only? false}
+    :upgrade-plan-route :access-control
+    :admin-only? true}
    #_{:name "JustInTimeAccess"
       :label "Just-in-Time Access"
       :icon (fn []
@@ -106,7 +111,8 @@
       :uri (routes/url-for :just-in-time)
       :navigate :just-in-time
       :free-feature? false
-      :admin-only? false}
+      :upgrade-plan-route :upgrade-plan
+      :admin-only? true}
    {:name "ResourceDiscovery"
     :label "Resource Discovery"
     :icon (fn []
@@ -114,7 +120,8 @@
     :uri (routes/url-for :integrations-aws-connect)
     :navigate :integrations-aws-connect
     :free-feature? false
-    :admin-only? false
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true
     :badge "BETA"}])
 
 ;; Seção Settings
