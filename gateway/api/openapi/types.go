@@ -701,7 +701,7 @@ type Plugin struct {
 	// * webhooks - Send events via webhooks
 	Name string `json:"name" binding:"required" enums:"audit,access_control,dlp,indexer,review,runbooks,slack,webhooks" example:"slack"`
 	// The list of connections configured for a specific plugin
-	Connections []*PluginConnection `json:"connections" binding:"required"`
+	Connections []*PluginResourceConnection `json:"connections" binding:"required"`
 	// The top level plugin configuration. This value is immutable after creation
 	Config *PluginConfig `json:"config"`
 	// DEPRECATED, should be always null
@@ -717,14 +717,35 @@ type PluginConfig struct {
 	EnvVars map[string]string `json:"envvars" example:"SLACK_BOT_TOKEN:eG94Yi10b2tlbg==,SLACK_APP_TOKEN:eC1hcHAtdG9rZW4="`
 }
 
-type PluginConnection struct {
+type PluginResourceConnection struct {
 	// The connection ID reference
 	ConnectionID string `json:"id" format:"uuid" example:"B702C63C-E6EB-46BB-9D1E-90EA077E4582"`
 	// The name of the connection
 	Name string `json:"name" example:"pgdemo"`
-	// The configuration for this plugin. Each plugin could have distinct set of configurations.
-	// Refer to Hoop's documentation for more information.
+	// The configuration of the plugin connection, the content depends on the plugin type
 	Config []string `json:"config" example:"EMAIL_ADDRESS,URL"`
+}
+
+type PluginConnectionRequest struct {
+	// The ID of the plugin to create associations
+	PluginID string `json:"plugin_id" format:"uuid"`
+	// The connection ID reference
+	ConnectionID string `json:"connection_id" format:"uuid" example:"79A5E90B-8147-475E-87F0-422881B62130"`
+	// The configuration of the plugin connection, the content depends on the plugin type
+	Config []string `json:"config" example:"sre,devops"`
+}
+
+type PluginConnection struct {
+	// The resource ID
+	ID string `json:"id" format:"uuid" example:"B39D74FA-EF2E-4B0C-A28A-D382B18043C6"`
+	// The plugin id to create associations
+	PluginID string `json:"plugin_id" example:"review"`
+	// The connection ID reference
+	ConnectionID string `json:"connection_id" format:"uuid" example:"B702C63C-E6EB-46BB-9D1E-90EA077E4582"`
+	// The configuration of the plugin connection, the content depends on the plugin type
+	Config []string `json:"config" example:"EMAIL_ADDRESS,URL"`
+	// The time when this resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T19:36:41Z"`
 }
 
 type ProxyManagerRequest struct {

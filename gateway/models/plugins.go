@@ -2,14 +2,19 @@ package models
 
 import (
 	"fmt"
-	"time"
 
-	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
+
+var defaultPluginNames = []string{
+	plugintypes.PluginAuditName,
+	plugintypes.PluginEditorName,
+	plugintypes.PluginSlackName,
+	plugintypes.PluginRunbooksName,
+	plugintypes.PluginDLPName,
+	plugintypes.PluginReviewName,
+}
 
 type Plugin struct {
 	ID          string              `gorm:"column:id"`
@@ -17,18 +22,6 @@ type Plugin struct {
 	Name        string              `gorm:"column:name"`
 	Connections []*PluginConnection `gorm:"column:plugin_connections;serializer:json;->"`
 	EnvVars     map[string]string   `gorm:"column:envvars;serializer:json;->"`
-}
-
-type PluginConnection struct {
-	ID             string         `gorm:"column:id" json:"id"`
-	OrgID          string         `gorm:"column:org_id" json:"org_id"`
-	PluginID       string         `gorm:"column:plugin_id" json:"plugin_id"`
-	ConnectionID   string         `gorm:"column:connection_id" json:"connection_id"`
-	ConnectionName string         `gorm:"column:connection_name;->" json:"connection_name"`
-	Enabled        bool           `gorm:"column:enabled" json:"enabled"`
-	Config         pq.StringArray `gorm:"column:config;type:text[]" json:"config"`
-	CreatedAt      time.Time      `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt      time.Time      `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (p *Plugin) GetName() string               { return p.Name }
@@ -149,110 +142,101 @@ func upsertPlugin(plugin *Plugin) error {
 // AddPluginConnection will add or remove a plugin based on the plugin connection config.
 // In case it doesn't include any configuration, the plugin connection will be removed
 // otherwise it will be created
-func AddPluginConnection(orgID, pluginName, connID string, connConfig []string) error {
-	existentPlugin, err := GetPluginByName(orgID, pluginName)
-	if err != nil {
-		return err
-	}
+// func AddPluginConnection(orgID, pluginName, connID string, connConfig []string) error {
+// 	existentPlugin, err := GetPluginByName(orgID, pluginName)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	var pluginConnections []*PluginConnection
-	var exists bool
-	for _, conn := range existentPlugin.Connections {
-		if conn.ConnectionID == connID {
-			// remove the plugin connection in case
-			// the connection config is empty
-			exists = true
-			if len(connConfig) == 0 {
-				continue
-			}
-			// mutate the config field if the plugin connection exits
-			conn.Config = connConfig
-		}
-		pluginConnections = append(pluginConnections, conn)
-	}
-	existentPlugin.Connections = pluginConnections
-	if !exists && len(connConfig) > 0 {
-		existentPlugin.Connections = append(existentPlugin.Connections, &PluginConnection{
-			ID:             uuid.NewString(),
-			OrgID:          existentPlugin.OrgID,
-			PluginID:       existentPlugin.ID,
-			ConnectionID:   connID,
-			ConnectionName: "", // read only
-			Enabled:        true,
-			Config:         connConfig,
-			CreatedAt:      time.Now().UTC(),
-			UpdatedAt:      time.Now().UTC(),
-		})
-	}
-	return upsertPlugin(existentPlugin)
-}
+// 	var pluginConnections []*PluginConnection
+// 	var exists bool
+// 	for _, conn := range existentPlugin.Connections {
+// 		if conn.ConnectionID == connID {
+// 			// remove the plugin connection in case
+// 			// the connection config is empty
+// 			exists = true
+// 			if len(connConfig) == 0 {
+// 				continue
+// 			}
+// 			// mutate the config field if the plugin connection exits
+// 			conn.Config = connConfig
+// 		}
+// 		pluginConnections = append(pluginConnections, conn)
+// 	}
+// 	existentPlugin.Connections = pluginConnections
+// 	if !exists && len(connConfig) > 0 {
+// 		existentPlugin.Connections = append(existentPlugin.Connections, &PluginConnection{
+// 			ID:             uuid.NewString(),
+// 			OrgID:          existentPlugin.OrgID,
+// 			PluginID:       existentPlugin.ID,
+// 			ConnectionID:   connID,
+// 			ConnectionName: "", // read only
+// 			Enabled:        true,
+// 			Config:         connConfig,
+// 			CreatedAt:      time.Now().UTC(),
+// 			UpdatedAt:      time.Now().UTC(),
+// 		})
+// 	}
+// 	return upsertPlugin(existentPlugin)
+// }
 
-var defaultPluginNames = []string{
-	plugintypes.PluginAuditName,
-	plugintypes.PluginEditorName,
-	plugintypes.PluginSlackName,
-	plugintypes.PluginRunbooksName,
-	plugintypes.PluginDLPName,
-	plugintypes.PluginReviewName,
-}
+// func ActivateDefaultPlugins(orgID, connID string) {
+// 	for _, name := range defaultPluginNames {
+// 		pl, err := GetPluginByName(orgID, name)
+// 		if err != nil && err != ErrNotFound {
+// 			log.Warnf("failed fetching plugin %v, reason=%v", name, err)
+// 		}
+// 		isReviewPlugin := name == plugintypes.PluginReviewName
+// 		if pl == nil {
+// 			pluginID := uuid.NewString()
+// 			newPlugin := &Plugin{
+// 				ID:          pluginID,
+// 				OrgID:       orgID,
+// 				Name:        name,
+// 				Connections: []*PluginConnection{},
+// 				EnvVars:     nil,
+// 			}
+// 			if isReviewPlugin {
+// 				newPlugin.Connections = append(newPlugin.Connections, &PluginConnection{
+// 					ID:             uuid.NewString(),
+// 					OrgID:          orgID,
+// 					PluginID:       pluginID,
+// 					ConnectionID:   connID,
+// 					ConnectionName: "", // read only
+// 					Enabled:        true,
+// 					Config:         nil,
+// 					CreatedAt:      time.Now().UTC(),
+// 					UpdatedAt:      time.Now().UTC(),
+// 				})
+// 			}
+// 			if err := upsertPlugin(newPlugin); err != nil {
+// 				log.Warnf("failed creating plugin %v, reason=%v", name, err)
+// 			}
+// 			continue
+// 		}
 
-func ActivateDefaultPlugins(orgID, connID string) {
-	for _, name := range defaultPluginNames {
-		pl, err := GetPluginByName(orgID, name)
-		if err != nil && err != ErrNotFound {
-			log.Warnf("failed fetching plugin %v, reason=%v", name, err)
-		}
-		isReviewPlugin := name == plugintypes.PluginReviewName
-		if pl == nil {
-			pluginID := uuid.NewString()
-			newPlugin := &Plugin{
-				ID:          pluginID,
-				OrgID:       orgID,
-				Name:        name,
-				Connections: []*PluginConnection{},
-				EnvVars:     nil,
-			}
-			if isReviewPlugin {
-				newPlugin.Connections = append(newPlugin.Connections, &PluginConnection{
-					ID:             uuid.NewString(),
-					OrgID:          orgID,
-					PluginID:       pluginID,
-					ConnectionID:   connID,
-					ConnectionName: "", // read only
-					Enabled:        true,
-					Config:         nil,
-					CreatedAt:      time.Now().UTC(),
-					UpdatedAt:      time.Now().UTC(),
-				})
-			}
-			if err := upsertPlugin(newPlugin); err != nil {
-				log.Warnf("failed creating plugin %v, reason=%v", name, err)
-			}
-			continue
-		}
-
-		var enabled bool
-		for _, conn := range pl.Connections {
-			if conn.ConnectionID == connID {
-				enabled = true
-				break
-			}
-		}
-		if !enabled && !isReviewPlugin {
-			pl.Connections = append(pl.Connections, &PluginConnection{
-				ID:             uuid.NewString(),
-				OrgID:          pl.OrgID,
-				PluginID:       pl.ID,
-				ConnectionID:   connID,
-				ConnectionName: "", // read only
-				Enabled:        true,
-				Config:         nil,
-				CreatedAt:      time.Now().UTC(),
-				UpdatedAt:      time.Now().UTC(),
-			})
-			if err := upsertPlugin(pl); err != nil {
-				log.Warnf("failed enabling plugin %v, reason=%v", pl.Name, err)
-			}
-		}
-	}
-}
+// 		var enabled bool
+// 		for _, conn := range pl.Connections {
+// 			if conn.ConnectionID == connID {
+// 				enabled = true
+// 				break
+// 			}
+// 		}
+// 		if !enabled && !isReviewPlugin {
+// 			pl.Connections = append(pl.Connections, &PluginConnection{
+// 				ID:             uuid.NewString(),
+// 				OrgID:          pl.OrgID,
+// 				PluginID:       pl.ID,
+// 				ConnectionID:   connID,
+// 				ConnectionName: "", // read only
+// 				Enabled:        true,
+// 				Config:         nil,
+// 				CreatedAt:      time.Now().UTC(),
+// 				UpdatedAt:      time.Now().UTC(),
+// 			})
+// 			if err := upsertPlugin(pl); err != nil {
+// 				log.Warnf("failed enabling plugin %v, reason=%v", pl.Name, err)
+// 			}
+// 		}
+// 	}
+// }

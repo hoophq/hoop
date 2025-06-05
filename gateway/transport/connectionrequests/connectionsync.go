@@ -6,24 +6,18 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"maps"
+
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
 var (
 	connectionChecksumStore = memory.New()
 	managedByAgent          = "hoopagent"
-	defaultPlugins          = []string{
-		plugintypes.PluginAuditName,
-		plugintypes.PluginIndexName,
-		plugintypes.PluginEditorName,
-		plugintypes.PluginSlackName,
-		plugintypes.PluginRunbooksName,
-	}
 )
 
 // InvalidateSyncCache remove the connection cache sync state
@@ -71,31 +65,15 @@ func upsertConnection(orgID, agentID string, req *proto.PreConnectRequest, conn 
 	conn.Type = req.Type
 	conn.SubType = sql.NullString{String: req.Subtype, Valid: true}
 	conn.Status = models.ConnectionStatusOnline
+	conn.RedactTypes = req.RedactTypes
+	conn.Reviewers = req.Reviewers
 	conn.AccessModeConnect = "enabled"
 	conn.AccessModeExec = "enabled"
 	conn.AccessModeRunbooks = "enabled"
 	conn.AccessSchema = "enabled"
-	for key, val := range req.Envs {
-		conn.Envs[key] = val
-	}
-
-	if err := models.UpsertConnection(conn); err != nil {
-		return err
-	}
-
-	// best-effort operations
-	models.ActivateDefaultPlugins(orgID, conn.ID)
-	err := models.AddPluginConnection(orgID, plugintypes.PluginDLPName, conn.ID, req.RedactTypes)
-	if err != nil {
-		log.Warnf("failed adding plugin dlp connection configuration for %v, reason=%v",
-			conn.Name, err)
-	}
-	err = models.AddPluginConnection(orgID, plugintypes.PluginReviewName, conn.ID, req.Reviewers)
-	if err != nil {
-		log.Warnf("failed adding plugin review connection configuration for %v, reason=%v",
-			conn.Name, err)
-	}
-	return nil
+	maps.Copy(conn.Envs, req.Envs)
+	_, err := models.UpsertConnection(models.NewAdminContext(orgID), conn)
+	return err
 }
 
 func connectionSync(orgID, agentID string, req *proto.PreConnectRequest) error {

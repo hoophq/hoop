@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -92,7 +94,7 @@ type ConnectionJiraIssueTemplateTypes struct {
 	IssueTemplatesPromptTypes  []byte `gorm:"column:prompt_types;->"`
 }
 
-func UpsertConnection(c *Connection) error {
+func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 	if c.JiraIssueTemplateID.String == "" {
 		c.JiraIssueTemplateID.Valid = false
 	}
@@ -107,8 +109,9 @@ func UpsertConnection(c *Connection) error {
 		}
 	}
 
+	var newConnection *Connection
 	sess := &gorm.Session{FullSaveAssociations: true}
-	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+	return newConnection, DB.Session(sess).Transaction(func(tx *gorm.DB) error {
 		err := tx.Table(tableConnections).
 			Save(c).
 			Error
@@ -124,15 +127,81 @@ func UpsertConnection(c *Connection) error {
 		if err := updateGuardRailRules(tx, c); err != nil {
 			return err
 		}
-		return updateBatchConnectionTags(tx, c.OrgID, c.ID, c.ConnectionTags)
+		if err := updateBatchConnectionTags(tx, c.OrgID, c.ID, c.ConnectionTags); err != nil {
+			return err
+		}
+
+		// enforce review and dlp plugins are enabled
+		err = tx.Exec(`
+		INSERT INTO private.plugins (org_id, name)
+		VALUES (?, 'review') ON CONFLICT DO NOTHING`, c.OrgID).Error
+		if err != nil {
+			return fmt.Errorf("failed to create review plugin, reason: %v", err)
+		}
+		err = tx.Exec(`
+		INSERT INTO private.plugins (org_id, name)
+		VALUES (?, 'dlp') ON CONFLICT DO NOTHING`, c.OrgID).Error
+		if err != nil {
+			return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
+		}
+
+		// add plugin connection to all default plugins
+		for _, pluginName := range defaultPluginNames {
+			var config pq.StringArray
+			switch pluginName {
+			case plugintypes.PluginReviewName:
+				config = c.Reviewers
+			case plugintypes.PluginDLPName:
+				config = c.RedactTypes
+			}
+			err := addPluginConnection(c.OrgID, c.ID, pluginName, config, tx)
+			if err != nil {
+				return fmt.Errorf("failed to create plugin connection for %v, reason: %v",
+					pluginName, err)
+			}
+		}
+		newConnection, err = getConnectionByNameOrID(ctx, c.ID, tx)
+		return err
 	})
+}
+
+func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray, tx *gorm.DB) error {
+	err := tx.Exec(`
+		INSERT INTO private.plugins (org_id, name)
+		VALUES (?, 'review') ON CONFLICT DO NOTHING`, orgID).Error
+	if err != nil {
+		return fmt.Errorf("failed to create review plugin, reason: %v", err)
+	}
+	err = tx.Exec(`
+		INSERT INTO private.plugins (org_id, name)
+		VALUES (?, 'dlp') ON CONFLICT DO NOTHING`, orgID).Error
+	if err != nil {
+		return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
+	}
+	if pluginName == plugintypes.PluginReviewName && len(config) == 0 {
+		// if the plugin is review and no config is provided, remove the plugin connection
+		return tx.Exec(`
+		DELETE FROM private.plugin_connections
+		WHERE plugin_id = (SELECT id FROM private.plugins WHERE name = ?)
+		AND org_id = ? AND connection_id = ?`, pluginName, orgID, connID).
+			Error
+	}
+	err = tx.Exec(`
+		INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
+		VALUES ((SELECT id FROM private.plugins WHERE name = ?), ?, ?, ?)
+		ON CONFLICT (plugin_id, connection_id) DO UPDATE SET config = ?, updated_at = ?
+		`, pluginName, orgID, connID, config, config, time.Now().UTC()).Error
+	if err != nil {
+		return fmt.Errorf("failed to create review plugin connection, reason: %v", err)
+	}
+	return nil
 }
 
 // UpsertBatchConnections updates or creates multiple connections and enable
 // the default plugins for each connection
 func UpsertBatchConnections(connections []*Connection) error {
 	sess := &gorm.Session{FullSaveAssociations: true}
-	err := DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
 		for i, c := range connections {
 			var connID string
 			err := tx.Raw(`SELECT id FROM private.connections WHERE org_id = ? AND name = ?`, c.OrgID, c.Name).
@@ -160,17 +229,39 @@ func UpsertBatchConnections(connections []*Connection) error {
 			if err := updateBatchConnectionTags(tx, c.OrgID, c.ID, c.ConnectionTags); err != nil {
 				return fmt.Errorf("failed updating connection tags, reason=%v", err)
 			}
+
+			// enforce review and dlp plugins are enabled
+			err = tx.Exec(`
+			INSERT INTO private.plugins (org_id, name)
+			VALUES (?, 'review') ON CONFLICT DO NOTHING`, c.OrgID).Error
+			if err != nil {
+				return fmt.Errorf("failed to create review plugin, reason: %v", err)
+			}
+			err = tx.Exec(`
+			INSERT INTO private.plugins (org_id, name)
+			VALUES (?, 'dlp') ON CONFLICT DO NOTHING`, c.OrgID).Error
+			if err != nil {
+				return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
+			}
+
+			// add plugin connection to all default plugins
+			for _, pluginName := range defaultPluginNames {
+				var config pq.StringArray
+				switch pluginName {
+				case plugintypes.PluginReviewName:
+					config = c.Reviewers
+				case plugintypes.PluginDLPName:
+					config = c.RedactTypes
+				}
+				err := addPluginConnection(c.OrgID, c.ID, pluginName, config, tx)
+				if err != nil {
+					return fmt.Errorf("failed to create plugin connection for %v, reason: %v",
+						pluginName, err)
+				}
+			}
 		}
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	for _, c := range connections {
-		// best-effort enabling default plugins
-		ActivateDefaultPlugins(c.OrgID, c.ID)
-	}
-	return nil
 }
 
 func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
@@ -261,24 +352,30 @@ func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules,
 // GetConnectionByNameOrID retrieves a connection by name or ID.
 // It also checks if the user has access to the connection based on the access control plugin.
 func GetConnectionByNameOrID(ctx UserContext, nameOrID string) (*Connection, error) {
+	return getConnectionByNameOrID(ctx, nameOrID, DB)
+}
+
+func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Connection, error) {
 	userGroups := pq.StringArray{}
 	for _, group := range ctx.GetUserGroups() {
 		userGroups = append(userGroups, group)
 	}
 	var conn Connection
-	err := DB.Model(&Connection{}).Raw(`
+	err := tx.Raw(`
 	SELECT
 		c.id, c.org_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
-		( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
-		 FROM private.connection_tags_association cta
-		 INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
-		 WHERE cta.connection_id = c.id
-		 GROUP BY cta.connection_id ) AS connection_tags,
-		( SELECT envs FROM private.env_vars WHERE id = c.id ) AS envs,
+		COALESCE (
+			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
+			FROM private.connection_tags_association cta
+			INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
+			WHERE cta.connection_id = c.id
+			GROUP BY cta.connection_id ), '{}'
+		) AS connection_tags,
+		COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
@@ -402,12 +499,14 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		c.jira_issue_template_id,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
-		( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
-		 FROM private.connection_tags_association cta
-		 INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
-		 WHERE cta.connection_id = c.id
-		 GROUP BY cta.connection_id ) AS connection_tags,
-		( SELECT envs FROM private.env_vars WHERE id = c.id ) AS envs,
+		COALESCE (
+			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
+			FROM private.connection_tags_association cta
+			INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
+			WHERE cta.connection_id = c.id
+			GROUP BY cta.connection_id ), '{}'
+		) AS connection_tags,
+		COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
