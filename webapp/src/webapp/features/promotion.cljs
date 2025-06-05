@@ -1,7 +1,7 @@
 (ns webapp.features.promotion
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Flex Heading Text]]
-   ["lucide-react" :refer [ListCheck ShieldCheck TextSearch Settings2 FileLock2 UserRoundCheck]]
+   ["lucide-react" :refer [ListCheck ListTodo ShieldCheck TextSearch Settings2 FileLock2 UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]))
 
@@ -188,3 +188,23 @@
     :primary-text (if (= mode :empty-state)
                     "Configure Runbooks"
                     "Request demo")}])
+
+(defn users-promotion
+  "Componente específico para User Access"
+  [{:keys [mode]}]
+  [feature-promotion
+   {:feature-name "User Access"
+    :mode mode
+    :image "user-manage-promotion.png"
+    :description "Set up team-based permissions and approval workflows for secure resource access."
+    :feature-items [{:icon [:> ShieldCheck {:size 20}]
+                     :title "Identity Providers Integration"
+                     :description "Connect your existing identity solution (like Auth0, Okta, Google, Azure and more) to sync users and groups automatically."}
+                    {:icon [:> UserRoundCheck {:size 20}]
+                     :title "Access Control"
+                     :description "Define precise boundaries around your infrastructure with flexible rules that protect sensitive resources and scale effortlessly."}
+                    {:icon [:> ListTodo {:size 20}]
+                     :title "Approval Workflows"
+                     :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
+    :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
+    :primary-text "Get Started"}])
