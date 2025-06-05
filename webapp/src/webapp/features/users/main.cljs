@@ -4,10 +4,11 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
+   [webapp.config :as config]
+   [webapp.features.promotion :as promotion]
    [webapp.features.users.views.empty-state :as empty-state]
-   [webapp.features.users.views.user-list :as user-list]
    [webapp.features.users.views.user-form :as user-form]
-   [webapp.features.promotion :as promotion]))
+   [webapp.features.users.views.user-list :as user-list]))
 
 (defn main []
   (let [users (rf/subscribe [:users])
@@ -81,7 +82,7 @@
 
                  [:> Text {:as "p" :size "2" :class "text-gray-11 text-center"}
                   "Need more information? Check out "
-                  [:a {:href "#" :class "text-blue-600 hover:underline"}
+                  [:a {:href (config/docs-url :clients :web-app :managing-accesss) :class "text-blue-600 hover:underline"}
                    "User Management documentation"]
                   "."]]
 
