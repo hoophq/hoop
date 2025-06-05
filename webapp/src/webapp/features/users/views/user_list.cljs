@@ -48,6 +48,6 @@
 
        [:> Table.Body
         (doall
-         (for [user (sort-by :name @users)]
+         (for [user (sort-by #(string/lower-case (:name %)) @users)]
            ^{:key (:id user)}
            [user-row user @user-groups]))]])))
