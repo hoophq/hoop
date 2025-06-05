@@ -82,7 +82,7 @@
 
                  [:> Text {:as "p" :size "2" :class "text-gray-11 text-center"}
                   "Need more information? Check out "
-                  [:a {:href (config/docs-url :clients :web-app :managing-accesss) :class "text-blue-600 hover:underline"}
+                  [:a {:href (-> config/docs-url :clients :web-app :managing-accesss) :class "text-blue-600 hover:underline"}
                    "User Management documentation"]
                   "."]]
 
