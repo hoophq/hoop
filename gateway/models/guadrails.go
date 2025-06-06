@@ -119,7 +119,6 @@ func UpdateGuardRailRules(r *GuardRailRules) error {
 		Model(r).
 		Clauses(clause.Returning{}).
 		Updates(GuardRailRules{
-			Name:        r.Name,
 			Description: r.Description,
 			Input:       r.Input,
 			Output:      r.Output,

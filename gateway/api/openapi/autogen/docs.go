@@ -691,6 +691,224 @@ const docTemplate = `{
                 }
             }
         },
+        "/datamasking-rules": {
+            "get": {
+                "description": "List Data Masking Rules",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "List Data Masking Rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DataMaskingRule"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create Data Masking Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Create Data Masking Rule",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/datamasking-rules/{id}": {
+            "get": {
+                "description": "Get Data Masking Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Get Data Masking Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update Data Masking Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Update Data Masking Rule",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a Data Masking Rule resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Delete Data Masking Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/dbroles/jobs": {
             "get": {
                 "description": "List all db role jobs",
@@ -4476,6 +4694,43 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.CustomEntityTypesEntry": {
+            "type": "object",
+            "required": [
+                "name",
+                "regex",
+                "score"
+            ],
+            "properties": {
+                "deny_list": {
+                    "description": "List of words to be returned as PII if found.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "Mr",
+                        "Mr.",
+                        "Mister"
+                    ]
+                },
+                "name": {
+                    "description": "The name of the custom entity type as uppercase",
+                    "type": "string",
+                    "example": "ZIP_CODE"
+                },
+                "regex": {
+                    "description": "The regex pattern to match (python) the custom entity type",
+                    "type": "string",
+                    "example": "\\b\\d{5}(?:-\\d{4})?\\b"
+                },
+                "score": {
+                    "description": "Detection confidence of this pattern (0.01 if very noisy, 0.6-1.0 if very specific)",
+                    "type": "number",
+                    "example": 0.01
+                }
+            }
+        },
         "openapi.DBRoleJob": {
             "type": "object",
             "properties": {
@@ -4688,6 +4943,108 @@ const docTemplate = `{
                 "value": {
                     "type": "string",
                     "example": "banking"
+                }
+            }
+        },
+        "openapi.DataMaskingRule": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "connection_ids": {
+                    "description": "The connections that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"
+                    ]
+                },
+                "custom_entity_types": {
+                    "description": "The custom entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.CustomEntityTypesEntry"
+                    }
+                },
+                "description": {
+                    "description": "The description of the data masking rule",
+                    "type": "string",
+                    "example": "Mask email addresses in the data"
+                },
+                "id": {
+                    "description": "The unique identifier of the data masking rule",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "description": "The unique name of the data masking rule",
+                    "type": "string",
+                    "example": "mask-email"
+                },
+                "supported_entity_types": {
+                    "description": "The registered entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SupportedEntityTypesEntry"
+                    }
+                },
+                "updated_at": {
+                    "description": "UpdatedAt is the timestamp when the resource was last updated",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                }
+            }
+        },
+        "openapi.DataMaskingRuleRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "connection_ids": {
+                    "description": "The connections that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"
+                    ]
+                },
+                "custom_entity_types": {
+                    "description": "The custom entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.CustomEntityTypesEntry"
+                    }
+                },
+                "description": {
+                    "description": "The description of the data masking rule",
+                    "type": "string",
+                    "example": "Mask email addresses in the data"
+                },
+                "name": {
+                    "description": "The unique name of the data masking rule",
+                    "type": "string",
+                    "example": "mask-email"
+                },
+                "supported_entity_types": {
+                    "description": "The registered entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SupportedEntityTypesEntry"
+                    }
+                },
+                "updated_at": {
+                    "description": "UpdatedAt is the timestamp when the resource was last updated",
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
                 }
             }
         },
@@ -6453,6 +6810,22 @@ const docTemplate = `{
                 "StatusReviewing",
                 "StatusInvited"
             ]
+        },
+        "openapi.SupportedEntityTypesEntry": {
+            "type": "object",
+            "properties": {
+                "entity_types": {
+                    "description": "The registered entity types in the redact provider",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "The name of the entity type as uppercase",
+                    "type": "string"
+                }
+            }
         },
         "openapi.TablesResponse": {
             "type": "object",

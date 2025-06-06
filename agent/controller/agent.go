@@ -171,7 +171,7 @@ func (a *Agent) Run() error {
 func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	sessionIDKey := string(sessionID)
-	log.Infof("session=%s - received connect request", sessionIDKey)
+	log.With("sid", sessionIDKey).Infof("received connect request")
 
 	connParams, err := a.buildConnectionParams(pkt)
 	if err != nil {
@@ -232,7 +232,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 				pb.SpecClientRequestPort:    pkt.Spec[pb.SpecClientRequestPort],
 				pb.SpecClientExecCommandKey: []byte(strings.Join(requestCommand, " ")),
 			}})
-		log.Infof("session=%v - sent gateway connect ok", string(sessionID))
+		log.With("sid", sessionIDKey).Infof("sent gateway connect ok")
 	}()
 }
 
@@ -240,7 +240,7 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	sessionID := pkt.Spec[pb.SpecGatewaySessionID]
 	clientConnID := pkt.Spec[pb.SpecClientConnectionID]
 	filterKey := fmt.Sprintf("%s:%s", string(sessionID), string(clientConnID))
-	log.Infof("closing tcp session, connid=%s, filter-by=%s", clientConnID, filterKey)
+	log.With("sid", sessionID).Infof("closing tcp session, connid=%s, filter-by=%s", clientConnID, filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if client, _ := obj.(io.Closer); client != nil {
@@ -264,13 +264,13 @@ func (a *Agent) processSessionClose(pkt *pb.Packet) {
 }
 
 func (a *Agent) sessionCleanup(sessionID string) {
-	log.Infof("session=%s - cleaning up session", sessionID)
+	log.With("sid", sessionID).Infof("cleaning up session")
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if v, ok := obj.(io.Closer); ok {
 			go func() {
 				if err := v.Close(); err != nil {
-					log.Printf("failed closing connection, err=%v", err)
+					log.With("sid", sessionID).Warnf("failed closing connection, err=%v", err)
 				}
 			}()
 			a.connStore.Del(key)
@@ -336,9 +336,6 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		connParams.EnvVars[key] = val
 	}
 
-	log.Infof("session=%s - connection params decoded with success, dlp-info-types=%d",
-		sessionIDKey, len(connParams.DLPInfoTypes))
-
 	connType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 	for key, b64EncVal := range connParams.EnvVars {
 		if !strings.HasPrefix(key, "envvar:") {
@@ -384,7 +381,7 @@ func (a *Agent) checkTCPLiveness(pkt *pb.Packet, envVars map[string]any) error {
 		if err := isPortActive(connEnvVars); err != nil {
 			msg := fmt.Sprintf("failed connecting to remote host=%s, port=%s, reason=%v",
 				connEnvVars.host, connEnvVars.port, err)
-			log.Warnf("session=%v - %v", sessionID, msg)
+			log.With("sid", sessionID).Warn(msg)
 			return fmt.Errorf("%s", msg)
 		}
 	}

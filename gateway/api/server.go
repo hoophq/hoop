@@ -19,6 +19,7 @@ import (
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
@@ -647,4 +648,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventDeleteGuardRailRules),
 		apiguardrails.Delete)
+
+	r.POST("/datamasking-rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apidatamasking.Post)
+	r.PUT("/datamasking-rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apidatamasking.Put)
+	r.GET("/datamasking-rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apidatamasking.List)
+	r.GET("/datamasking-rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apidatamasking.Get)
+	r.DELETE("/datamasking-rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apidatamasking.Delete)
 }
