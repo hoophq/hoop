@@ -7119,10 +7119,6 @@ const docTemplate = `{
             "name": "Authentication"
         },
         {
-            "description": "Core resources",
-            "name": "Core"
-        },
-        {
             "description": "Users are active and assigned to the default organization when they signup. A user could be set to an inactive state preventing it from accessing the platform, however it’s recommended to manage the state of users in the identity provider.\n\n- The ` + "`" + `sub` + "`" + ` claim is used as the main identifier of the user in the platform.\n- The profile of the user is derived from the id_token claims ` + "`" + `email` + "`" + ` and ` + "`" + `name` + "`" + `.\n\nWhen a user authenticates for the first time, it performs an automatic signup that persist the profile claims along with it’s unique identifier.\n​\n### Groups\n\nGroups allows defining who may access or interact with certain resources.\n\n- For connection resources it’s possible to define which groups has access to a specific connection, this is enforced when the Access Control feature is enabled.\n- For review resources, it’s possible to define which groups are allowed to approve an execution, this is enforced when the Review feature is enabled.\n\n\u003e This resource could be managed manually via Webapp or propagated by the identity provider via ID Token. In this mode, groups are sync when a user performs a login.\n\n### Roles\n\n- The ` + "`" + `admin` + "`" + ` group is a special role that grants full access to all resources\n\nThis role should be granted to users that are responsible for managing the Gateway. All other users are regular, meaning that they can access their own resources and interact with connections.\n",
             "name": "User Management"
         },

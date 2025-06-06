@@ -69,9 +69,6 @@ type Api struct {
 //	@tag.name	Authentication
 //	@tag.description.markdown
 
-//	@tag.name	Core
-//	@tag.description.markdown
-
 //	@tag.name	User Management
 //	@tag.description.markdown
 
