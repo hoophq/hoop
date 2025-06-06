@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,9 +56,26 @@ func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, err
 		LicenseData: licenseDataJSON,
 		TotalUsers:  0,
 	}
-	return &org, DB.Table("private.orgs").
-		Create(&org).
-		Error
+
+	return &org, DB.Debug().Transaction(func(tx *gorm.DB) error {
+		err := tx.Table("private.orgs").Create(&org).Error
+		if err != nil {
+			return err
+		}
+		// activate the default plugins when any organization is created
+		for _, pluginName := range defaultPluginNames {
+			err := tx.Exec(`
+			INSERT INTO private.plugins (org_id, name)
+			VALUES (?, ?)
+			ON CONFLICT (org_id, name) DO NOTHING`, org.ID, pluginName).
+				Error
+			if err != nil {
+				return fmt.Errorf("failed to create default plugin %s for org %s, reason: %v",
+					pluginName, org.ID, err)
+			}
+		}
+		return nil
+	})
 }
 
 func UpdateOrgLicense(orgID string, licenseDataJSON []byte) error {

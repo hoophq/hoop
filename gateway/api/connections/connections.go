@@ -20,7 +20,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 )
@@ -71,7 +70,7 @@ func Post(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
-	err = models.UpsertConnection(&models.Connection{
+	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  req.ID,
 		OrgID:               ctx.OrgID,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
@@ -87,6 +86,8 @@ func Post(c *gin.Context) {
 		AccessModeExec:      req.AccessModeExec,
 		AccessModeConnect:   req.AccessModeConnect,
 		AccessSchema:        req.AccessSchema,
+		Reviewers:           req.Reviewers,
+		RedactTypes:         req.RedactTypes,
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
@@ -96,25 +97,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	models.ActivateDefaultPlugins(ctx.OrgID, req.ID)
-	// configure review and dlp plugins (best-effort)
-	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
-		// skip configuring redact if the client doesn't set redact_enabled
-		// it maintain compatibility with old clients since we enable dlp with default redact types
-		if pluginName == plugintypes.PluginDLPName && !req.RedactEnabled {
-			continue
-		}
-		pluginConnConfig := req.Reviewers
-		if pluginName == plugintypes.PluginDLPName {
-			pluginConnConfig = req.RedactTypes
-		}
-		err = models.AddPluginConnection(ctx.OrgID, pluginName, req.ID, pluginConnConfig)
-		if err != nil {
-			log.Warnf("failed adding plugin %v connection configuration for %v, reason=%v",
-				pluginName, req.Name, err)
-		}
-	}
-	c.JSON(http.StatusCreated, req)
+	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
 // UpdateConnection
@@ -135,7 +118,6 @@ func Put(c *gin.Context) {
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -167,7 +149,7 @@ func Put(c *gin.Context) {
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = models.ConnectionStatusOnline
 	}
-	err = models.UpsertConnection(&models.Connection{
+	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
@@ -183,6 +165,8 @@ func Put(c *gin.Context) {
 		AccessModeExec:      req.AccessModeExec,
 		AccessModeConnect:   req.AccessModeConnect,
 		AccessSchema:        req.AccessSchema,
+		Reviewers:           req.Reviewers,
+		RedactTypes:         req.RedactTypes,
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
@@ -197,25 +181,7 @@ func Put(c *gin.Context) {
 		}
 		return
 	}
-	connectionrequests.InvalidateSyncCache(ctx.OrgID, conn.Name)
-	// configure review and dlp plugins (best-effort)
-	for _, pluginName := range []string{plugintypes.PluginReviewName, plugintypes.PluginDLPName} {
-		// skip configuring redact if the client doesn't set redact_enabled
-		// it maintain compatibility with old clients since we enable dlp with default redact types
-		if pluginName == plugintypes.PluginDLPName && !req.RedactEnabled {
-			continue
-		}
-		pluginConnConfig := req.Reviewers
-		if pluginName == plugintypes.PluginDLPName {
-			pluginConnConfig = req.RedactTypes
-		}
-		err = models.AddPluginConnection(ctx.OrgID, pluginName, conn.ID, pluginConnConfig)
-		if err != nil {
-			log.Warnf("failed adding plugin %v connection configuration for %v, reason=%v",
-				pluginName, req.Name, err)
-		}
-	}
-	c.JSON(http.StatusOK, req)
+	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
 // DeleteConnection
@@ -279,39 +245,10 @@ func List(c *gin.Context) {
 	}
 	responseConnList := []openapi.Connection{}
 	for _, conn := range connList {
-		var managedBy *string
-		if conn.ManagedBy.Valid {
-			managedBy = &conn.ManagedBy.String
-		}
-		defaultDB, _ := base64.StdEncoding.DecodeString(conn.Envs["envvar:DB"])
-		if len(defaultDB) == 0 {
-			defaultDB = []byte(``)
-		}
-		responseConnList = append(responseConnList, openapi.Connection{
-			ID:      conn.ID,
-			Name:    conn.Name,
-			Command: conn.Command,
-			Type:    conn.Type,
-			SubType: conn.SubType.String,
-			// it should return empty to avoid leaking sensitive content
-			// in the future we plan to know which entry is sensitive or not
-			Secrets:             nil,
-			DefaultDatabase:     string(defaultDB),
-			AgentId:             conn.AgentID.String,
-			Status:              conn.Status,
-			Reviewers:           conn.Reviewers,
-			RedactEnabled:       conn.RedactEnabled,
-			RedactTypes:         conn.RedactTypes,
-			ManagedBy:           managedBy,
-			Tags:                conn.Tags,
-			ConnectionTags:      conn.ConnectionTags,
-			AccessModeRunbooks:  conn.AccessModeRunbooks,
-			AccessModeExec:      conn.AccessModeExec,
-			AccessModeConnect:   conn.AccessModeConnect,
-			AccessSchema:        conn.AccessSchema,
-			GuardRailRules:      conn.GuardRailRules,
-			JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
-		})
+		// it should return empty to avoid leaking sensitive content
+		// in the future we plan to know which entry is sensitive or not
+		conn.Envs = map[string]string{}
+		responseConnList = append(responseConnList, toOpenApi(&conn))
 
 	}
 	c.JSON(http.StatusOK, responseConnList)
@@ -332,7 +269,6 @@ func Get(c *gin.Context) {
 	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
-		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -340,7 +276,10 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
+	c.JSON(http.StatusOK, toOpenApi(conn))
+}
 
+func toOpenApi(conn *models.Connection) openapi.Connection {
 	var managedBy *string
 	if conn.ManagedBy.Valid {
 		managedBy = &conn.ManagedBy.String
@@ -349,7 +288,7 @@ func Get(c *gin.Context) {
 	if len(defaultDB) == 0 {
 		defaultDB = []byte(``)
 	}
-	c.JSON(http.StatusOK, openapi.Connection{
+	return openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
 		Command:             conn.Command,
@@ -371,7 +310,7 @@ func Get(c *gin.Context) {
 		AccessSchema:        conn.AccessSchema,
 		GuardRailRules:      conn.GuardRailRules,
 		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
-	})
+	}
 }
 
 // ListDatabases return a list of databases for a given connection

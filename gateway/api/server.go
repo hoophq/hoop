@@ -28,6 +28,7 @@ import (
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
+	apipluginconnections "github.com/hoophq/hoop/gateway/api/pluginconnections"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
@@ -283,6 +284,23 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.GetTableColumns)
+
+	r.POST("/pluginconnections",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.CreatePluginConnection)
+	r.PUT("/pluginconnections/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.UpdatePluginConnection)
+	r.GET("/pluginconnections/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.GetPluginConnection)
+	r.DELETE("/pluginconnections/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.DeletePluginConnection)
 
 	// TODO(san): needs more testing, will add these endpoints later on
 	// r.POST("/connection-tags",
