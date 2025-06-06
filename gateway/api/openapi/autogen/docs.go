@@ -3387,7 +3387,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Session"
                 ],
                 "summary": "Reviewed Exec",
                 "parameters": [
