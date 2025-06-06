@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"io"
 	reflect "reflect"
@@ -47,6 +48,8 @@ type (
 		DlpGcpRawCredentialsJSON string
 		DlpPresidioAnalyzerURL   string
 		DlpPresidioAnonymizerURL string
+
+		DataMaskingEntityTypesData json.RawMessage
 	}
 
 	// TODO: remove it later, kept for compatibility issues

@@ -36,6 +36,11 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 
 	spec := map[string][]byte{pb.SpecGatewaySessionID: []byte(sid)}
 	stdoutWriter := pb.NewStreamWriter(a.client, pbclient.WriteStdout, spec)
+
+	var dataMaskingEntityTypesData string
+	if connParams.DataMaskingEntityTypesData != nil {
+		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
+	}
 	opts := map[string]string{
 		"sid":                       sid,
 		"dlp_provider":              connParams.DlpProvider,
@@ -44,6 +49,7 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
+		"data_masking_entity_data":  dataMaskingEntityTypesData,
 	}
 	args := append(connParams.CmdList, connParams.ClientArgs...)
 	cmd, err := libhoop.NewConsole(connParams.EnvVars, args, stdoutWriter, opts)

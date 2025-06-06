@@ -32,7 +32,7 @@ func getAccessToken(c *gin.Context) string {
 //
 //	@Summary		Reviewed Exec
 //	@Description	Run an execution in a reviewed session
-//	@Tags			Core
+//	@Tags			Session
 //	@Accept			json
 //	@Produce		json
 //	@Param			session_id		path		string					true	"The id of the resource"

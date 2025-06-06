@@ -48,6 +48,11 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	}
 
 	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
+
+	var dataMaskingEntityTypesData string
+	if connParams.DataMaskingEntityTypesData != nil {
+		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
+	}
 	opts := map[string]string{
 		"sid":                       sessionID,
 		"hostname":                  connenv.host,
@@ -62,6 +67,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"dlp_masking_character":     "#",
+		"data_masking_entity_data":  dataMaskingEntityTypesData,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {
