@@ -4698,12 +4698,11 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "name",
-                "regex",
                 "score"
             ],
             "properties": {
                 "deny_list": {
-                    "description": "List of words to be returned as PII if found.",
+                    "description": "List of words to be returned as PII if found.\nEither this or the regex is required",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4720,7 +4719,7 @@ const docTemplate = `{
                     "example": "ZIP_CODE"
                 },
                 "regex": {
-                    "description": "The regex pattern to match (python) the custom entity type",
+                    "description": "The regex pattern to match (python) the custom entity type.\nEither this or the deny_list is required",
                     "type": "string",
                     "example": "\\b\\d{5}(?:-\\d{4})?\\b"
                 },
@@ -4994,8 +4993,9 @@ const docTemplate = `{
                     }
                 },
                 "updated_at": {
-                    "description": "UpdatedAt is the timestamp when the resource was last updated",
+                    "description": "The timestamp when the rule was updated",
                     "type": "string",
+                    "readOnly": true,
                     "example": "2023-08-15T14:30:45Z"
                 }
             }
@@ -5042,8 +5042,9 @@ const docTemplate = `{
                     }
                 },
                 "updated_at": {
-                    "description": "UpdatedAt is the timestamp when the resource was last updated",
+                    "description": "The timestamp when the rule was updated",
                     "type": "string",
+                    "readOnly": true,
                     "example": "2023-08-15T14:30:45Z"
                 }
             }
@@ -6819,11 +6820,18 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
-                    }
+                    },
+                    "example": [
+                        "EMAIL_ADDRESS",
+                        "PERSON",
+                        "PHONE_NUMBER",
+                        "IP_ADDRESS"
+                    ]
                 },
                 "name": {
-                    "description": "The name of the entity type as uppercase",
-                    "type": "string"
+                    "description": "An identifier for this structure, it's used as an identifier of a collection of entities.",
+                    "type": "string",
+                    "example": "PII"
                 }
             }
         },

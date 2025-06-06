@@ -271,10 +271,6 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 			c.JSON(http.StatusBadRequest, gin.H{"message": "entity type name must be uppercase: " + e.Name})
 			return nil
 		}
-		// if len(e.DenyList) > 0 && e.Regex != "" {
-		// 	c.JSON(http.StatusBadRequest, gin.H{"message": "deny_list and regex cannot be used together in custom entity types"})
-		// 	return nil
-		// }
 	}
 	return &req
 }
