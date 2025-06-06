@@ -1,49 +1,170 @@
 (ns webapp.shared-ui.sidebar.constants
-  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            [webapp.routes :as routes]))
+  (:require
+   ["lucide-react" :refer [BadgeCheck BookMarked BrainCog GalleryVerticalEnd
+                           Inbox LayoutDashboard PackageSearch Rotate3d
+                           ShieldCheck Sparkles SquareCode UsersRound
+                           UserRoundCheck]]
+   [webapp.config :as config]
+   [webapp.routes :as routes]))
 
-(def routes [{:name "Home"
-              :label "Home"
-              :icon (fn [props]
-                      [:> hero-outline-icon/CodeBracketSquareIcon props])
-              :uri (routes/url-for :editor-plugin)
-              :navigate :editor-plugin
-              :free-feature? true
-              :admin-only? false}
-             {:name "Dashboard"
-              :label "Dashboard"
-              :icon (fn [props]
-                      [:> hero-outline-icon/RectangleGroupIcon props])
-              :uri (routes/url-for :dashboard)
-              :navigate :dashboard
-              :free-feature? false
-              :admin-only? true}
-             {:name "Sessions"
-              :icon (fn [props]
-                      [:> hero-outline-icon/RectangleStackIcon props])
-              :uri (routes/url-for :sessions)
-              :free-feature? true
-              :admin-only? false}])
+;; Menu principal
+(def main-routes
+  [{:name "Connections"
+    :label "Connections"
+    :icon (fn []
+            [:> Rotate3d {:size 24}])
+    :uri (routes/url-for :connections)
+    :navigate :connections
+    :free-feature? true
+    :admin-only? false}
+   {:name "Dashboard"
+    :label "Dashboard"
+    :icon (fn []
+            [:> LayoutDashboard {:size 24}])
+    :uri (routes/url-for :dashboard)
+    :navigate :dashboard
+    :free-feature? false
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true}
+   {:name "Terminal"
+    :label "Terminal"
+    :icon (fn []
+            [:> SquareCode {:size 24}])
+    :uri (routes/url-for :editor-plugin)
+    :navigate :editor-plugin
+    :free-feature? true
+    :admin-only? false}
+   {:name "Sessions"
+    :label "Sessions"
+    :icon (fn []
+            [:> GalleryVerticalEnd {:size 24}])
+    :uri (routes/url-for :sessions)
+    :navigate :sessions
+    :free-feature? true
+    :admin-only? false}
+   {:name "Reviews"
+    :label "Reviews"
+    :icon (fn []
+            [:> Inbox {:size 24}])
+    :uri (routes/url-for :reviews-plugin)
+    :free-feature? true
+    :navigate :reviews-plugin
+    :admin-only? false}])
 
-(def plugins-routes [{:name "review"
-                      :label "Reviews"
-                      :icon (fn [props]
-                              [:> hero-outline-icon/InboxIcon props])
-                      :uri (routes/url-for :reviews-plugin)
-                      :free-feature? true
-                      :navigate :reviews-plugin
-                      :admin-only? false}])
+;; Seção Discover
+(def discover-routes
+  [{:name "Runbooks"
+    :label "Runbooks"
+    :icon (fn []
+            [:> BookMarked {:size 24}])
+    :uri (routes/url-for :runbooks)
+    :navigate :runbooks
+    :free-feature? true
+    :admin-only? true}
+   {:name "Guardrails"
+    :label "Guardrails"
+    :icon (fn []
+            [:> ShieldCheck {:size 24}])
+    :uri (routes/url-for :guardrails)
+    :navigate :guardrails
+    :free-feature? true
+    :admin-only? true}
+   {:name "JiraTemplates"
+    :label "Jira Templates"
+    :icon (fn []
+            [:div
+             [:figure {:class "flex-shrink-0 w-6"}
+              [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]])
+    :uri (routes/url-for :jira-templates)
+    :navigate :jira-templates
+    :free-feature? false
+    :upgrade-plan-route :jira-templates
+    :admin-only? true}
+   {:name "AIQueryBuilder"
+    :label "AI Query Builder"
+    :icon (fn []
+            [:> Sparkles {:size 24}])
+    :uri (routes/url-for :manage-ask-ai)
+    :navigate :manage-ask-ai
+    :free-feature? false
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true}
+   #_{:name "AIDataMasking"
+      :label "AI Data Masking"
+      :icon (fn []
+              [:> VenetianMask {:size 24}])
+      :uri (routes/url-for :ai-data-masking)
+      :navigate :ai-data-masking
+      :free-feature? false
+      :upgrade-plan-route :upgrade-plan
+      :admin-only? true}
+   {:name "AccessControl"
+    :label "Access Control"
+    :icon (fn []
+            [:> UserRoundCheck {:size 24}])
+    :uri (routes/url-for :access-control)
+    :navigate :access-control
+    :free-feature? false
+    :upgrade-plan-route :access-control
+    :admin-only? true}
+   #_{:name "JustInTimeAccess"
+      :label "Just-in-Time Access"
+      :icon (fn []
+              [:> AlarmClockCheck {:size 24}])
+      :uri (routes/url-for :just-in-time)
+      :navigate :just-in-time
+      :free-feature? false
+      :upgrade-plan-route :upgrade-plan
+      :admin-only? true}
+   {:name "ResourceDiscovery"
+    :label "Resource Discovery"
+    :icon (fn []
+            [:> PackageSearch {:size 24}])
+    :uri (routes/url-for :integrations-aws-connect)
+    :navigate :integrations-aws-connect
+    :free-feature? false
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true
+    :badge "BETA"}])
 
-(def plugins-management [{:name "runbooks"
-                          :label "Runbooks"
-                          :free-feature? true}])
+;; Seção Settings
+(def settings-routes
+  [{:name "Users"
+    :label "Users"
+    :icon (fn []
+            [:> UsersRound {:size 24}])
+    :uri (routes/url-for :users)
+    :navigate :users
+    :free-feature? true
+    :admin-only? true}
+   {:name "Agents"
+    :label "Agents"
+    :icon (fn []
+            [:> BrainCog {:size 24}])
+    :uri (routes/url-for :agents)
+    :navigate :agents
+    :free-feature? true
+    :admin-only? true}
+   {:name "License"
+    :label "License"
+    :icon (fn []
+            [:> BadgeCheck {:size 24}])
+    :uri (routes/url-for :license-management)
+    :navigate :license-management
+    :free-feature? true
+    :admin-only? true}])
 
-(def integrations-management [{:name "jira"
-                               :label "Jira"
-                               :free-feature? false}
-                              {:name "webhooks"
-                               :label "Webhooks"
-                               :free-feature? false}
-                              {:name "slack"
-                               :label "Slack"
-                               :free-feature? true}])
+;; Integrações (submenu de Settings)
+(def integrations-management
+  [{:name "jira"
+    :label "Jira"
+    :free-feature? false}
+   {:name "webhooks"
+    :label "Webhooks"
+    :free-feature? false}
+   {:name "slack"
+    :label "Slack"
+    :free-feature? true}])
+
+;; Mantemos essa constante para compatibilidade com o código existente
+(def routes main-routes)

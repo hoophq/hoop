@@ -86,9 +86,9 @@
         [section-header (:data @current-user) @users @user-groups]
         (when @alert-multitenant-active? [alert-multitenant-message])
         [:div {:class "hidden lg:block"}
-         [users-list @users @user-groups]]
+         [users-list (sort-by :name @users) @user-groups]]
         [:div {:class "block lg:hidden rounded-lg border"}
-         (for [user @users]
+         (for [user (sort-by :name @users)]
            ^{:key (:id user)}
            [:div
             {:class (str "overflow-hidden border-b cursor-pointer hover:bg-gray-50"

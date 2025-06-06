@@ -52,7 +52,10 @@
                            :ai-data-masking "https://hoop.dev/docs/setup/configuration/ai-data-masking"}
            :apis "https://hoop.dev/docs/setup/apis"
            :license-management "https://hoop.dev/docs/setup/license-management"}
-   :clients {:web-app "https://hoop.dev/docs/clients/webapp"
+   :clients {:web-app {:overview "https://hoop.dev/docs/clients/webapp/overview"
+                       :creating-connection "https://hoop.dev/docs/clients/webapp/creating-connection"
+                       :managing-accesss "https://hoop.dev/docs/clients/webapp/managing-accesss"
+                       :monitoring-sessions "https://hoop.dev/docs/clients/webapp/monitoring-sessions"}
              :desktop-app "https://hoop.dev/docs/clients/desktop-app"
              :command-line "https://hoop.dev/docs/clients/cli"}
    :integrations {:slack "https://hoop.dev/docs/integrations/slack"

@@ -55,7 +55,7 @@
  (fn
    [{:keys [db]} [_ new-user]]
    (let [success (fn []
-                   (rf/dispatch [:close-modal])
+                   (rf/dispatch [:modal->close])
                    (rf/dispatch [:users->get-users])
                    (rf/dispatch [:users->get-user-groups])
                    (rf/dispatch [:show-snackbar {:level :success
@@ -71,7 +71,7 @@
  (fn
    [{:keys [db]} [_ user]]
    (let [success (fn []
-                   (rf/dispatch [:close-modal])
+                   (rf/dispatch [:modal->close])
                    (rf/dispatch [:users->get-users])
                    (rf/dispatch [:users->get-user-groups])
                    (rf/dispatch [:show-snackbar {:level :success

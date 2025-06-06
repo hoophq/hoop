@@ -64,6 +64,9 @@
    [webapp.features.access-control.subs]
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.views.group-form :as group-form]
+   [webapp.features.users.events]
+   [webapp.features.users.subs]
+   [webapp.features.users.main :as users]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -287,11 +290,9 @@
                              [upgrade-plan/main]]])
 
 (defmethod routes/panels :users-panel []
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "Users" {:class "mb-6"}]
-                               [org-users/main]]]]])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [users/main]]])
 
 (defmethod routes/panels :connections-panel []
   [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}

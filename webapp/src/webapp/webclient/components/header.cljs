@@ -1,7 +1,7 @@
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [BookUp2 FastForward PackagePlus Play Sun Moon]]
+   ["lucide-react" :refer [BookUp2 CircleHelp FastForward PackagePlus Play Sun Moon]]
    [re-frame.core :as rf]
    [webapp.webclient.components.search :as search]))
 
@@ -64,6 +64,17 @@
            [:> Tooltip {:content "Search"}
             [:div
              [search/main active-panel]]]
+
+           [:> Tooltip {:content "Help"}
+            [:> IconButton
+             {:class (when @dark-mode?
+                       "bg-gray-8 text-gray-12")
+              :size "2"
+              :color "gray"
+              :variant "soft"
+              :onClick (fn []
+                         (js/window.open "https://help.hoop.dev" "_blank"))}
+             [:> CircleHelp {:size 16}]]]
 
            [:> Tooltip {:content "Theme"}
             [:> IconButton

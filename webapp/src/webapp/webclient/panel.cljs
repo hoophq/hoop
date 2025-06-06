@@ -208,6 +208,8 @@
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         runbooks (rf/subscribe [:runbooks-plugin->runbooks])
         multi-exec (rf/subscribe [:multi-exec/modal])
+        selected-connections (rf/subscribe [:connection-selection/selected])
+        primary-connection (rf/subscribe [:connections/selected])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
@@ -256,6 +258,13 @@
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
+            has-runbook? (some? (:data @selected-template))
+            no-connection-selected? (and (empty? @selected-connections)
+                                         (not @primary-connection))
+            run-disabled? (or (and (not exec-enabled?)
+                                   runbooks-enabled?)
+                              no-connection-selected?
+                              has-runbook?)
             only-runbooks? (and runbooks-enabled? (not exec-enabled?))
             reset-metadata (fn []
                              (reset! metadata [])
@@ -263,19 +272,21 @@
                              (reset! metadata-value ""))
             keymap [{:key "Mod-Enter"
                      :run (fn [^cm-state/StateCommand config]
-                            (let [state (.-state config)
-                                  doc (.-doc state)]
-                              (rf/dispatch [:editor-plugin/submit-task
-                                            {:script (.sliceString ^cm-state/Text doc 0 (.-length doc))}])))
+                            (when-not run-disabled?
+                              (let [state (.-state config)
+                                    doc (.-doc state)]
+                                (rf/dispatch [:editor-plugin/submit-task
+                                              {:script (.sliceString ^cm-state/Text doc 0 (.-length doc))}]))))
                      :preventDefault true}
                     {:key "Mod-Shift-Enter"
                      :run (fn [^cm-state/StateCommand config]
-                            (let [ranges (.-ranges (.-selection (.-state config)))
-                                  from (.-from (first ranges))
-                                  to (.-to (first ranges))]
-                              (rf/dispatch [:editor-plugin/submit-task
-                                            {:script
-                                             (.sliceString ^cm-state/Text (.-doc (.-state config)) from to)}])))
+                            (when-not run-disabled?
+                              (let [ranges (.-ranges (.-selection (.-state config)))
+                                    from (.-from (first ranges))
+                                    to (.-to (first ranges))]
+                                (rf/dispatch [:editor-plugin/submit-task
+                                              {:script
+                                               (.sliceString ^cm-state/Text (.-doc (.-state config)) from to)}]))))
                      :preventDefault true}
                     {:key "Alt-ArrowLeft"
                      :mac "Ctrl-ArrowLeft"
@@ -431,17 +442,25 @@
                    @multi-selected-connections)
               reset-metadata])])))))
 
-(defn main []
-  (let [script-response (rf/subscribe [:editor-plugin->script])]
-    (rf/dispatch [:editor-plugin->clear-script])
-    (rf/dispatch [:editor-plugin->clear-connection-script])
-    (rf/dispatch [:connections->get-connections])
-    (rf/dispatch [:audit->clear-session])
-    (rf/dispatch [:plugins->get-my-plugins])
-    (rf/dispatch [:jira-templates->get-all])
-    (rf/dispatch [:jira-integration->get])
-    (rf/dispatch [:search/clear-term])
+(def main
+  (r/create-class
+   {:component-will-unmount
+    (fn [this]
+      (js/window.Intercom "update" #js{:hide_default_launcher false}))
+
+    :reagent-render
     (fn []
-      (clearLocalCache)
-      (rf/dispatch [:editor-plugin->get-run-connection-list])
-      [editor {:script-output script-response}])))
+      (let [script-response (rf/subscribe [:editor-plugin->script])]
+        (rf/dispatch [:editor-plugin->clear-script])
+        (rf/dispatch [:editor-plugin->clear-connection-script])
+        (rf/dispatch [:connections->get-connections])
+        (rf/dispatch [:audit->clear-session])
+        (rf/dispatch [:plugins->get-my-plugins])
+        (rf/dispatch [:jira-templates->get-all])
+        (rf/dispatch [:jira-integration->get])
+        (rf/dispatch [:search/clear-term])
+        (js/window.Intercom "update" #js{:hide_default_launcher true})
+        (fn []
+          (clearLocalCache)
+          (rf/dispatch [:editor-plugin->get-run-connection-list])
+          [editor {:script-output script-response}])))}))

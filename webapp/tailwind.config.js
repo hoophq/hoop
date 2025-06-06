@@ -167,7 +167,7 @@ module.exports = {
         'terminal-content': 'calc(100vh - 62px)'
       },
       width: {
-        'side-menu': '296px',
+        'side-menu': '308px',
         'side-menu-sm': '72px', // Width for collapsed sidebar
         'floating-search-webclient': 'calc(100% - 50px)'
       },
@@ -242,11 +242,11 @@ module.exports = {
         regular: '1rem',
         large: '2rem',
         'x-large': '4rem',
-        'side-menu-width': '296px',
+        'side-menu-width': '308px',
         'side-menu-sm': '72px' // Small width for collapsed sidebar
       },
       left: {
-        'side-menu-width': '296px',
+        'side-menu-width': '308px',
         'side-menu-sm': '72px'
       },
       backgroundColor: {

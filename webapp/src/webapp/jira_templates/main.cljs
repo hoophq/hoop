@@ -17,7 +17,6 @@
     (rf/dispatch [:jira-templates->get-all])
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:jira-integration->get])
-    (rf/dispatch [:sidebar-desktop->close])
 
     ;; Set timer for minimum loading time
     (js/setTimeout #(reset! min-loading-done true) 1500)
