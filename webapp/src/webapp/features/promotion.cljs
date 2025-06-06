@@ -1,7 +1,8 @@
 (ns webapp.features.promotion
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Flex Heading Text]]
-   ["lucide-react" :refer [ListCheck ListTodo ShieldCheck TextSearch Settings2 FileLock2 UserRoundCheck]]
+   ["lucide-react" :refer [ListCheck ListTodo ShieldCheck TextSearch FolderLock
+                           Settings2 FileLock2 UserRoundCheck Combine SlidersHorizontal]]
    [re-frame.core :as rf]
    [reagent.core :as r]))
 
@@ -208,3 +209,29 @@
                      :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
     :primary-text "Get Started"}])
+
+(defn ai-data-masking-promotion
+  "Componente específico para AI Data Masking"
+  [{:keys [mode]}]
+  [feature-promotion
+   {:feature-name "AI Data Masking"
+    :mode mode
+    :image "data-masking-promotion.png"
+    :description "Zero-config DLP policies that automatically mask sensitive data in real-time at the protocol layer."
+    :feature-items [{:icon [:> FolderLock {:size 20}]
+                     :title "No Configuration Required"
+                     :description "Automatically masks sensitive data in the data stream of any connection where AI Data Masking is enabled."}
+                    {:icon [:> Combine {:size 20}]
+                     :title "Real-Time Protection"
+                     :description "Sensitive data is masked in real-time, ensuring that no unprotected data is exposed during access sessions."}
+                    {:icon [:> SlidersHorizontal {:size 20}]
+                     :title "Customizable Setup"
+                     :description "Easily add or remove fields to tailor the masking setup to your specific needs."}]
+    :on-primary-click (if (= mode :empty-state)
+                        #(rf/dispatch [:navigate :create-ai-data-masking])
+                        #(js/window.Intercom
+                          "showNewMessage"
+                          "I want to upgrade my current plan"))
+    :primary-text (if (= mode :empty-state)
+                    "Configure AI Data Masking"
+                    "Request demo")}])

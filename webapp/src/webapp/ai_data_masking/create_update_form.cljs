@@ -1,0 +1,107 @@
+(ns webapp.ai-data-masking.create-update-form
+  (:require
+   ["@radix-ui/themes" :refer [Badge Box Flex Grid Heading Text]]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.loaders :as loaders]
+   [webapp.components.forms :as forms]
+   [webapp.ai-data-masking.basic-info :as basic-info]
+   [webapp.ai-data-masking.connections-section :as connections-section]
+   [webapp.ai-data-masking.form-header :as form-header]
+   [webapp.ai-data-masking.helpers :as helpers]
+   [webapp.ai-data-masking.rules-table :as rules-table]))
+
+(defn ai-data-masking-form [form-type ai-data-masking scroll-pos]
+  (let [state (helpers/create-form-state ai-data-masking)
+        handlers (helpers/create-form-handlers state)
+        submitting? (rf/subscribe [:ai-data-masking->submitting?])]
+    (fn []
+      [:> Box {:class "min-h-screen bg-gray-1"}
+       [:form {:id "ai-data-masking-form"
+               :on-submit (fn [e]
+                            (.preventDefault e)
+                            (let [data (helpers/prepare-payload state)]
+                              (if (= :edit form-type)
+                                (rf/dispatch [:ai-data-masking->update-by-id data])
+                                (rf/dispatch [:ai-data-masking->create data]))))}
+
+        [form-header/main
+         {:form-type form-type
+          :id @(:id state)
+          :scroll-pos scroll-pos
+          :loading? @submitting?}]
+
+        [:> Box {:p "7" :class "space-y-radix-9"}
+         [basic-info/main
+          {:name (:name state)
+           :description (:description state)
+           :on-name-change #(reset! (:name state) %)
+           :on-description-change #(reset! (:description state) %)}]
+
+         ;; Connections section
+         [connections-section/main
+          {:connection-ids (:connection_ids state)
+           :on-connections-change (:on-connections-change handlers)}]
+
+         ;; Data protection method section
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 2 / span 2"}
+           [:> Flex {:align "center" :gap "2"}
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+             "Configure rule behavior"]
+            [:> Badge {:variant "solid" :color "green" :size "1"}
+             "Beta"]]
+           [:> Text {:size "3" :class "text-[--gray-11]"}
+            "Setup rules by individual Fields, Presets or Custom regular expression scripts."]]
+
+          [:> Box {:grid-column "span 5 / span 5"}
+           [forms/select
+            {:label "Data protection method"
+             :name "data_protection_method"
+             :full-width? true
+             :selected @(:data_protection_method state)
+             :on-change #(reset! (:data_protection_method state) %)
+             :placeholder "Select one"
+             :options helpers/data-protection-methods}]]]
+
+         ;; Output rules section
+         [:> Flex {:direction "column" :gap "5"}
+          [:> Box
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Output rules"]]
+
+          [:> Box {:class "space-y-radix-7"}
+           [rules-table/main
+            (merge
+             {:state (:rules state)
+              :select-state (:rules-select-state state)}
+             (select-keys handlers
+                          [:on-rule-field-change
+                           :on-rule-select
+                           :on-toggle-rules-select
+                           :on-toggle-all-rules
+                           :on-rules-delete
+                           :on-rule-add]))]]]]]])))
+
+(defn- loading []
+  [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
+   [:div {:class "flex items-center justify-center h-full"}
+    [loaders/simple-loader]]])
+
+(defn main [form-type]
+  (let [ai-data-masking (rf/subscribe [:ai-data-masking->active-rule])
+        scroll-pos (r/atom 0)]
+
+    (rf/dispatch [:ai-data-masking->get-connections])
+    (fn []
+      (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
+        (.addEventListener js/window "scroll" handle-scroll)
+        (finally
+          (.removeEventListener js/window "scroll" handle-scroll)))
+
+      (r/with-let [_ nil]
+        (if (= :loading (:status @ai-data-masking))
+          [loading]
+          [ai-data-masking-form form-type (:data @ai-data-masking) scroll-pos])
+        (finally
+          (rf/dispatch [:ai-data-masking->clear-active-rule]))))))

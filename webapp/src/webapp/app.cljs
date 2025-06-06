@@ -67,6 +67,10 @@
    [webapp.features.users.events]
    [webapp.features.users.subs]
    [webapp.features.users.main :as users]
+   [webapp.ai-data-masking.main :as ai-data-masking]
+   [webapp.ai-data-masking.events]
+   [webapp.ai-data-masking.subs]
+   [webapp.ai-data-masking.create-update-form :as ai-data-masking-create-update]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -80,7 +84,6 @@
    [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
-   [webapp.organization.users.main :as org-users]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.plugins.views.plugins-configurations :as plugins-configurations]
    [webapp.reviews.panel :as reviews]
@@ -536,6 +539,27 @@
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [runbook-form/main :edit {:path-id path-id}]]]]))
+
+(defmethod routes/panels :ai-data-masking-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [ai-data-masking/main]]])
+
+(defmethod routes/panels :create-ai-data-masking-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [ai-data-masking-create-update/main :create]]])
+
+(defmethod routes/panels :edit-ai-data-masking-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        ai-data-masking-id (:ai-data-masking-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [ai-data-masking-create-update/main :edit {:ai-data-masking-id ai-data-masking-id}]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;
