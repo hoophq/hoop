@@ -1,7 +1,7 @@
 (ns webapp.shared-ui.sidebar.main
   (:require ["@headlessui/react" :as ui]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["lucide-react" :refer [ChevronsRight ChevronsLeft]]
+            ["lucide-react" :refer [ChevronsRight ChevronsLeft Puzzle]]
             ["react" :as react]
             [re-frame.core :as rf]
             [webapp.components.user-icon :as user-icon]
@@ -198,9 +198,9 @@
                  [:li
                   [:a {:href "#"
                        :on-click #(rf/dispatch [:sidebar-desktop->open])
-                       :class "text-gray-400 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
-                   [:> hero-outline-icon/PuzzlePieceIcon {:class (:standard styles/icon-styles)
-                                                          :aria-hidden "true"}]
+                       :class "text-gray-300 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                   [:> Puzzle {:size 24
+                               :aria-hidden "true"}]
                    [:span {:class "sr-only"}
                     "Integrations"]]])]]
 

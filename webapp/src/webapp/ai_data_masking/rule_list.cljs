@@ -38,8 +38,7 @@
          "Configure"]])]]])
 
 (defn rule-item [{:keys [id name description connection_ids supported_entity_types custom_entity_types connections on-configure total-items]}]
-  (let [show-connections? (r/atom false)
-        total-rules (+ (count supported_entity_types) (count custom_entity_types))]
+  (let [show-connections? (r/atom false)]
     (fn []
       [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
                            "border-[--gray-a6] border "
@@ -49,19 +48,17 @@
         [:> Flex {:direction "column" :gap "2"}
          [:> Flex {:align "center" :gap "2"}
           [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12]"}
-           name]
-          [:> Badge {:variant "soft" :color "blue" :size "1"}
-           (str total-rules " rules")]]
+           name]]
          [:> Text {:size "3" :class "text-[--gray-11]"}
           (or description "No description")]
          [:> Flex {:gap "2" :wrap "wrap"}
           (for [entity-type supported_entity_types]
             ^{:key (:name entity-type)}
-            [:> Badge {:variant "soft" :color "green" :size "1"}
+            [:> Badge {:variant "soft" :size "1"}
              (:name entity-type)])
           (for [custom-type custom_entity_types]
             ^{:key (:name custom-type)}
-            [:> Badge {:variant "soft" :color "orange" :size "1"}
+            [:> Badge {:variant "soft" :size "1"}
              (:name custom-type)])]]
         [:> Flex {:align "center" :gap "4"}
          [:> Button {:size "3"

@@ -9,7 +9,7 @@
                                      {"padding" "4px"
                                       "borderRadius" "6px"
                                       "fontSize" "16px"
-                                      "backgroundColor" "#D1D5DB"})))
+                                      "backgroundColor" "#E1E5EB"})))
        "option" (fn [style]
                   (clj->js (into (js->clj style)
                                  {"fontSize" "16px"})))

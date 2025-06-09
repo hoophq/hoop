@@ -44,7 +44,7 @@
       "custom"
       [forms/input
        {:size "2"
-        :placeholder "e.g. ZIP_CODE"
+        :placeholder "Rule Name"
         :name "rule"
         :not-margin-bottom? true
         :value (:rule rule)
@@ -64,7 +64,7 @@
         [:> Box {:class "flex flex-wrap gap-1"}
          (for [value values]
            ^{:key value}
-           [:> Badge {:size "1" :variant "soft" :color "blue"}
+           [:> Badge {:size "2" :variant "solid" :color "gray"}
             value])])
 
       "custom"
