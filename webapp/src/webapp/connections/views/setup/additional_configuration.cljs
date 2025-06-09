@@ -31,6 +31,7 @@
            upgrade-plan-component
            learning-component]}]
   [:> Flex {:align "center" :gap "5"}
+   (println disabled? title)
    [:> Switch {:checked checked
                :size "3"
                :disabled disabled?
@@ -110,7 +111,7 @@
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]" :mb "5"}
             "Additional Configuration"]
            [:> Box {:class "space-y-7"}
-                                                                 ;; Reviews
+            ;; Reviews
             [:> Box {:class "space-y-2"}
              [toggle-section
               {:title "Reviews"
@@ -154,7 +155,7 @@
                                      [:> Callout.Text
                                       "Learn more about Reviews"]]]}]]
 
-          ;; AI Data Masking
+            ;; AI Data Masking
             [:> Box {:class "space-y-2"}
              [toggle-section
               {:title "AI Data Masking"
@@ -162,7 +163,8 @@
                :checked @data-masking?
                :disabled? (or free-license?
                               (= form-type :onboarding)
-                              (not has-redact-credentials?))
+                              (not has-redact-credentials?)
+                              (= redact-provider "mspresidio"))
                :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
 
                :complement-component
@@ -201,15 +203,24 @@
                                            (rf/dispatch [:navigate :upgrade-plan])))}
                     "upgrading your plan."]]])
 
-               :learning-component [:> Link {:href (get-in config/docs-url [:features :ai-datamasking])
-                                             :target "_blank"}
-                                    [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
-                                     [:> Callout.Icon
-                                      [:> ArrowUpRight {:size 16}]]
-                                     [:> Callout.Text
-                                      "Learn more about AI Data Masking"]]]}]]
+               :learning-component [:<>
+                                    [:> Link {:href (get-in config/docs-url [:features :ai-datamasking])
+                                              :target "_blank"}
+                                     [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+                                      [:> Callout.Icon
+                                       [:> ArrowUpRight {:size 16}]]
+                                      [:> Callout.Text
+                                       "Learn more about AI Data Masking"]]]
+                                    (when (= redact-provider "mspresidio")
+                                      [:> Link {:href (routes/url-for :ai-data-masking)
+                                                :target "_blank"}
+                                       [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+                                        [:> Callout.Icon
+                                         [:> ArrowUpRight {:size 16}]]
+                                        [:> Callout.Text
+                                         "Go to AI Data Masking Management"]]])]}]]
 
-           ;; Database schema
+            ;; Database schema
             (when show-database-schema?
               [:> Box {:class "space-y-2"}
                [toggle-section

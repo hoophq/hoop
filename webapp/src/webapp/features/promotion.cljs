@@ -1,10 +1,13 @@
 (ns webapp.features.promotion
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Flex Heading Text]]
-   ["lucide-react" :refer [ListCheck ListTodo ShieldCheck TextSearch FolderLock
-                           Settings2 FileLock2 UserRoundCheck Combine SlidersHorizontal]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Callout Flex Heading Link
+                               Text]]
+   ["lucide-react" :refer [Combine FileLock2 FolderLock ListCheck ListTodo
+                           Settings2 ShieldCheck SlidersHorizontal TextSearch
+                           UserRoundCheck ArrowUpRight]]
    [re-frame.core :as rf]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.config :as config]))
 
 (defn feature-item
   "Componente para exibir um item da feature com ícone"
@@ -39,7 +42,10 @@
            description
            feature-items
            on-primary-click
-           primary-text]}]
+           primary-text
+           extra-information
+           link-button-href
+           link-button-text]}]
   (let [is-empty-state? (= mode :empty-state)
         button-text (or primary-text
                         (if is-empty-state?
@@ -59,10 +65,24 @@
          ^{:key (:title item)}
          [feature-item item])]
 
-      [:> Button {:size "3"
-                  :onClick on-primary-click
-                  :class "self-start"}
-       button-text]]
+      (when extra-information
+        [:> Text {:size "2" :class "text-gray-11"}
+         extra-information])
+
+      (when (and link-button-href link-button-text)
+        [:> Link {:href (get-in config/docs-url link-button-href)
+                  :target "_blank"}
+         [:> Callout.Root {:size "1" :variant "outline" :color "gray" :class "w-fit"}
+          [:> Callout.Icon
+           [:> ArrowUpRight {:size 16}]]
+          [:> Callout.Text
+           link-button-text]]])
+
+      (when (and on-primary-click button-text)
+        [:> Button {:size "3"
+                    :onClick on-primary-click
+                    :class "self-start"}
+         button-text])]
 
      [:> Box {:class "w-1/2 bg-blue-50"}
       [:img {:src (str "/images/illustrations/" image)
@@ -212,26 +232,36 @@
 
 (defn ai-data-masking-promotion
   "Componente específico para AI Data Masking"
-  [{:keys [mode]}]
+  [{:keys [mode redact-provider]}]
   [feature-promotion
-   {:feature-name "AI Data Masking"
-    :mode mode
-    :image "data-masking-promotion.png"
-    :description "Zero-config DLP policies that automatically mask sensitive data in real-time at the protocol layer."
-    :feature-items [{:icon [:> FolderLock {:size 20}]
-                     :title "No Configuration Required"
-                     :description "Automatically masks sensitive data in the data stream of any connection where AI Data Masking is enabled."}
-                    {:icon [:> Combine {:size 20}]
-                     :title "Real-Time Protection"
-                     :description "Sensitive data is masked in real-time, ensuring that no unprotected data is exposed during access sessions."}
-                    {:icon [:> SlidersHorizontal {:size 20}]
-                     :title "Customizable Setup"
-                     :description "Easily add or remove fields to tailor the masking setup to your specific needs."}]
-    :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :create-ai-data-masking])
-                        #(js/window.Intercom
-                          "showNewMessage"
-                          "I want to upgrade my current plan"))
-    :primary-text (if (= mode :empty-state)
-                    "Configure AI Data Masking"
-                    "Request demo")}])
+   (merge
+    {:feature-name "AI Data Masking"
+     :mode mode
+     :image "data-masking-promotion.png"
+     :description "Zero-config DLP policies that automatically mask sensitive data in real-time at the protocol layer."
+     :feature-items [{:icon [:> FolderLock {:size 20}]
+                      :title "No Configuration Required"
+                      :description "Automatically masks sensitive data in the data stream of any connection where AI Data Masking is enabled."}
+                     {:icon [:> Combine {:size 20}]
+                      :title "Real-Time Protection"
+                      :description "Sensitive data is masked in real-time, ensuring that no unprotected data is exposed during access sessions."}
+                     {:icon [:> SlidersHorizontal {:size 20}]
+                      :title "Customizable Setup"
+                      :description "Easily add or remove fields to tailor the masking setup to your specific needs."}]}
+    (case redact-provider
+      "mspresidio"
+      {:on-primary-click (if (= mode :empty-state)
+                           #(rf/dispatch [:navigate :create-ai-data-masking])
+                           #(js/window.Intercom
+                             "showNewMessage"
+                             "I want to upgrade my current plan"))
+       :primary-text (if (= mode :empty-state)
+                       "Configure AI Data Masking"
+                       "Request demo")}
+      "gcp"
+      {:link-button-href [:features :ai-datamasking]
+       :link-button-text "Go to AI Data Masking Docs"
+       :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}
+      {:link-button-href [:features :ai-datamasking]
+       :link-button-text "Go to AI Data Masking Docs"
+       :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}))])

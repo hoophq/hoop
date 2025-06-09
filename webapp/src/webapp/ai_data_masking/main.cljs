@@ -10,7 +10,8 @@
 
 (defn main []
   (let [ai-data-masking-list (rf/subscribe [:ai-data-masking->list])
-        min-loading-done (r/atom false)]
+        min-loading-done (r/atom false)
+        gateway-info (rf/subscribe [:gateway->info])]
     (rf/dispatch [:ai-data-masking->get-all])
 
     ;; Set timer for minimum loading time
@@ -18,7 +19,8 @@
 
     (fn []
       (let [loading? (or (= :loading (:status @ai-data-masking-list))
-                         (not @min-loading-done))]
+                         (not @min-loading-done))
+            redact-provider (-> @gateway-info :data :redact_provider)]
         (cond
           loading?
           [:> Flex {:height "100%" :direction "column" :gap "5"
@@ -27,7 +29,8 @@
 
           (empty? (:data @ai-data-masking-list))
           [:> Box {:class "bg-gray-1 h-full"}
-           [promotion/ai-data-masking-promotion {:mode :empty-state}]]
+           [promotion/ai-data-masking-promotion {:mode :empty-state
+                                                 :redact-provider redact-provider}]]
 
           :else
           [:> Box {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
