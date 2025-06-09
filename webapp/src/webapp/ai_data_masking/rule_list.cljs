@@ -52,14 +52,25 @@
          [:> Text {:size "3" :class "text-[--gray-11]"}
           (or description "No description")]
          [:> Flex {:gap "2" :wrap "wrap"}
-          (for [entity-type supported_entity_types]
-            ^{:key (:name entity-type)}
-            [:> Badge {:variant "soft" :size "1"}
-             (:name entity-type)])
-          (for [custom-type custom_entity_types]
-            ^{:key (:name custom-type)}
-            [:> Badge {:variant "soft" :size "1"}
-             (:name custom-type)])]]
+          (concat
+           ; Process supported entity types
+           (mapcat (fn [entity-type]
+                     (if (= (:name entity-type) "CUSTOM_SELECTION")
+                       ; For CUSTOM_SELECTION, show individual entity_types as badges
+                       (for [field-type (:entity_types entity-type)]
+                         ^{:key field-type}
+                         [:> Badge {:variant "soft" :size "1"}
+                          field-type])
+                       ; For other types, show the preset name
+                       [^{:key (:name entity-type)}
+                        [:> Badge {:variant "soft" :size "1"}
+                         (:name entity-type)]]))
+                   supported_entity_types)
+           ; Process custom entity types
+           (for [custom-type custom_entity_types]
+             ^{:key (:name custom-type)}
+             [:> Badge {:variant "soft" :size "1"}
+              (:name custom-type)]))]]
         [:> Flex {:align "center" :gap "4"}
          [:> Button {:size "3"
                      :variant "soft"
