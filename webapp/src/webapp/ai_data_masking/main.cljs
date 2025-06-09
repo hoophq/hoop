@@ -5,7 +5,8 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
-   [webapp.features.promotion :as promotion]))
+   [webapp.features.promotion :as promotion]
+   [webapp.ai-data-masking.rule-list :as rule-list]))
 
 (defn main []
   (let [ai-data-masking-list (rf/subscribe [:ai-data-masking->list])
@@ -43,18 +44,6 @@
                          :on-click #(rf/dispatch [:navigate :create-ai-data-masking])}
               "Create new"]]]
 
-           [:> Box
-            (for [rule (:data @ai-data-masking-list)]
-              ^{:key (:id rule)}
-              [:> Box {:class (str "first:rounded-t-lg border-x border-t "
-                                   "last:rounded-b-lg bg-white last:border-b border-gray-200 "
-                                   "p-[--space-5]")}
-               [:> Flex {:justify "between" :align "center"}
-                [:> Box
-                 [:> Text {:size "4" :weight "bold"} (:name rule)]
-                 [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rule)]]
-                [:> Button {:variant "soft"
-                            :color "gray"
-                            :size "3"
-                            :on-click #(rf/dispatch [:navigate :edit-ai-data-masking {} :ai-data-masking-id (:id rule)])}
-                 "Configure"]]])]])))))
+           [rule-list/main
+            {:rules (:data @ai-data-masking-list)
+             :on-configure #(rf/dispatch [:navigate :edit-ai-data-masking {} :ai-data-masking-id %])}]])))))

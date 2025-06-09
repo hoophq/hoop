@@ -548,18 +548,22 @@
 
 (defmethod routes/panels :create-ai-data-masking-panel []
   (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:ai-data-masking->clear-active-rule])
   [layout :application-hoop
-   [routes/wrap-admin-only
-    [ai-data-masking-create-update/main :create]]])
+   [:div {:class "bg-gray-1 min-h-full h-max relative"}
+    [routes/wrap-admin-only
+     [ai-data-masking-create-update/main :create]]]])
 
 (defmethod routes/panels :edit-ai-data-masking-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
         ai-data-masking-id (:ai-data-masking-id (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:ai-data-masking->get-by-id ai-data-masking-id])
     [layout :application-hoop
-     [routes/wrap-admin-only
-      [ai-data-masking-create-update/main :edit {:ai-data-masking-id ai-data-masking-id}]]]))
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [routes/wrap-admin-only
+       [ai-data-masking-create-update/main :edit]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

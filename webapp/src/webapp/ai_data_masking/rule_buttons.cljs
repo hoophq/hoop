@@ -11,6 +11,7 @@
                     on-rules-delete]}]
   [:> Flex {:align "center" :gap "2"}
    [:> Button {:size "2"
+               :type "button"
                :variant "soft"
                :on-click on-rule-add}
     [:> Plus {:size 14}]
@@ -18,6 +19,7 @@
 
    [:> Flex {:gap "2"}
     [:> Button {:size "2"
+                :type "button"
                 :variant "soft"
                 :color "gray"
                 :on-click on-toggle-select}
@@ -26,12 +28,14 @@
     (when @select-state
       [:<>
        [:> Button {:size "2"
+                   :type "button"
                    :variant "soft"
                    :color "gray"
                    :on-click on-toggle-all}
         (if selected? "Unselect all" "Select all")]
 
        [:> Button {:size "2"
+                   :type "button"
                    :variant "soft"
                    :color "red"
                    :on-click on-rules-delete}

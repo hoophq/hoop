@@ -1,5 +1,6 @@
 (ns webapp.ai-data-masking.helpers
   (:require [reagent.core :as r]
+            [clojure.string]
             [webapp.connections.dlp-info-types :as dlp-types]))
 
 ;; Presets definitions
@@ -11,12 +12,7 @@
    "PERSONAL_INFORMATION" {:text "Personal Information"
                            :values ["DATE_OF_BIRTH" "CREDIT_CARD_NUMBER" "MEDICAL_RECORD_NUMBER" "PASSPORT"]}})
 
-;; Data protection methods
-(def data-protection-methods
-  [{:value "content-start" :text "Content - Start"}
-   {:value "content-middle" :text "Content - Middle"}
-   {:value "content-end" :text "Content - End"}
-   {:value "content-full" :text "Content - Full"}])
+
 
 ;; Rule types
 (def rule-types
@@ -34,7 +30,7 @@
 (defn create-empty-custom-rule []
   {:name ""
    :regex ""
-   :score 0.01
+   :score 0.8
    :selected false
    :timestamp (.now js/Date)})
 
@@ -56,17 +52,27 @@
      :selected false
      :timestamp (:timestamp rule)}))
 
+;; Helper function to reverse preset name transformation (from API format back to internal format)
+(defn reverse-preset-name [api-name]
+  (case api-name
+    "KEY-AND-PASSWORDS" "KEYS_AND_PASSWORDS"
+    "CONTACT-INFORMATION" "CONTACT_INFORMATION"
+    "PERSONAL-INFORMATION" "PERSONAL_INFORMATION"
+    "CUSTOM-SELECTION" "fields"
+    api-name)) ; fallback to original name
+
 (defn- format-supported-entity-types [supported-entity-types]
   (if (empty? supported-entity-types)
     [(create-empty-rule)]
     (mapcat (fn [entity-type]
-              (map (fn [value]
-                     {:type (:name entity-type)
-                      :rule value
-                      :details ""
-                      :selected false
-                      :timestamp (.now js/Date)})
-                   (:values entity-type)))
+              (let [internal-type (reverse-preset-name (:name entity-type))]
+                (map (fn [value]
+                       {:type internal-type
+                        :rule value
+                        :details ""
+                        :selected false
+                        :timestamp (.now js/Date)})
+                     (or (:entity_types entity-type) (:values entity-type)))))
             supported-entity-types)))
 
 (defn- format-custom-rules [rules]
@@ -79,7 +85,6 @@
    :name (r/atom (or (:name initial-data) ""))
    :description (r/atom (or (:description initial-data) ""))
    :connection_ids (r/atom (or (:connection_ids initial-data) []))
-   :data_protection_method (r/atom (or (:data_protection_method initial-data) ""))
    :rules (r/atom (vec (format-supported-entity-types (or (:supported_entity_types initial-data) []))))
    :custom-rules (r/atom (vec (format-custom-rules (or (:custom_entity_types initial-data) []))))
    :rules-select-state (r/atom false)
@@ -139,7 +144,8 @@
                          (swap! rules-atom conj (create-empty-custom-rule)))
 
    :on-connections-change (fn [connections]
-                            (reset! (:connection_ids state) (js->clj connections)))})
+                            (let [connection-ids (mapv #(get % "value") (js->clj connections))]
+                              (reset! (:connection_ids state) connection-ids)))})
 
 (defn remove-empty-rules [rules]
   (remove (fn [rule]
@@ -153,29 +159,69 @@
                 (empty? (:regex rule))))
           rules))
 
-(defn prepare-supported-entity-types [rules]
-  (->> rules
-       remove-empty-rules
-       (group-by :type)
-       (map (fn [[type-name type-rules]]
-              {:name type-name
-               :values (mapv :rule type-rules)}))
-       vec))
+;; Helper function to normalize entity names (UPPERCASE with underscores)
+(defn normalize-entity-name [name]
+  (if (or (nil? name) (empty? (clojure.string/trim name)))
+    ""
+    (-> name
+        clojure.string/trim
+        clojure.string/upper-case
+        (clojure.string/replace #"\s+" "_")
+        (clojure.string/replace #"[^A-Z0-9_]" ""))))
 
-(defn prepare-custom-entity-types [custom-rules]
-  (->> custom-rules
-       remove-empty-custom-rules
-       (mapv #(select-keys % [:name :regex :score]))
-       vec))
+;; Helper function to transform preset names to API format (with hyphens)
+(defn transform-preset-name [preset-name]
+  (case preset-name
+    "KEYS_AND_PASSWORDS" "KEY-AND-PASSWORDS"
+    "CONTACT_INFORMATION" "CONTACT-INFORMATION"
+    "PERSONAL_INFORMATION" "PERSONAL-INFORMATION"
+    preset-name)) ; fallback to original name
+
+(defn prepare-supported-entity-types [rules]
+  (let [clean-rules (->> rules
+                         remove-empty-rules
+                         (remove #(= (:type %) "custom")))
+        ; Group presets by their specific name and fields together
+        grouped-rules (group-by (fn [rule]
+                                  (if (= (:type rule) "presets")
+                                    (:rule rule) ; Group each preset by its specific name
+                                    "fields"))   ; Group all fields together
+                                clean-rules)]
+    (->> grouped-rules
+         (mapv (fn [[group-key group-rules]]
+                 (if (= group-key "fields")
+                    ; For fields, create a single CUSTOM-SELECTION entry
+                   {:name "CUSTOM-SELECTION"
+                    :entity_types (mapv :rule group-rules)}
+                    ; For presets, expand to their actual values
+                   {:name (transform-preset-name group-key)
+                    :entity_types (get-in preset-definitions [group-key :values])})))
+         vec)))
+
+(defn prepare-custom-entity-types [rules custom-rules]
+  (let [; Extract custom rules from the main rules table
+        custom-from-rules (->> rules
+                               remove-empty-rules
+                               (filter #(= (:type %) "custom"))
+                               (mapv (fn [rule]
+                                       {:name (normalize-entity-name (:rule rule))
+                                        :regex (:details rule)
+                                        :score 0.8})))
+        ; Process dedicated custom rules
+        processed-custom-rules (->> custom-rules
+                                    remove-empty-custom-rules
+                                    (mapv #(-> %
+                                               (select-keys [:name :regex :score])
+                                               (update :name normalize-entity-name))))]
+    ; Combine both sources
+    (vec (concat custom-from-rules processed-custom-rules))))
 
 (defn prepare-payload [state]
-  {:id @(:id state)
-   :name @(:name state)
+  {:name @(:name state)
    :description @(:description state)
    :connection_ids @(:connection_ids state)
-   :data_protection_method @(:data_protection_method state)
    :supported_entity_types (prepare-supported-entity-types @(:rules state))
-   :custom_entity_types (prepare-custom-entity-types @(:custom-rules state))})
+   :custom_entity_types (prepare-custom-entity-types @(:rules state) @(:custom-rules state))})
 
 ;; Helper functions for UI
 (defn get-preset-options []

@@ -43,26 +43,7 @@
           {:connection-ids (:connection_ids state)
            :on-connections-change (:on-connections-change handlers)}]
 
-         ;; Data protection method section
-         [:> Grid {:columns "7" :gap "7"}
-          [:> Box {:grid-column "span 2 / span 2"}
-           [:> Flex {:align "center" :gap "2"}
-            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-             "Configure rule behavior"]
-            [:> Badge {:variant "solid" :color "green" :size "1"}
-             "Beta"]]
-           [:> Text {:size "3" :class "text-[--gray-11]"}
-            "Setup rules by individual Fields, Presets or Custom regular expression scripts."]]
 
-          [:> Box {:grid-column "span 5 / span 5"}
-           [forms/select
-            {:label "Data protection method"
-             :name "data_protection_method"
-             :full-width? true
-             :selected @(:data_protection_method state)
-             :on-change #(reset! (:data_protection_method state) %)
-             :placeholder "Select one"
-             :options helpers/data-protection-methods}]]]
 
          ;; Output rules section
          [:> Flex {:direction "column" :gap "5"}

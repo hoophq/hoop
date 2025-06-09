@@ -44,11 +44,13 @@
       "custom"
       [forms/input
        {:size "2"
-        :placeholder "Rule Name"
+        :placeholder "e.g. ZIP_CODE"
         :name "rule"
         :not-margin-bottom? true
         :value (:rule rule)
-        :on-change #(on-rule-field-change state idx :rule (-> % .-target .-value))}]
+        :on-change #(let [raw-value (-> % .-target .-value)
+                          normalized-value (helpers/normalize-entity-name raw-value)]
+                      (on-rule-field-change state idx :rule normalized-value))}]
 
       nil)))
 

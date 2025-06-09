@@ -26,7 +26,7 @@
                       :color "red"
                       :disabled loading?
                       :type "button"
-                      :on-click #(rf/dispatch [:jira-templates->delete-by-id id])}
+                      :on-click #(rf/dispatch [:ai-data-masking->delete-by-id @id])}
            "Delete"])
         [:> Button {:size "3"
                     :variant "solid"
