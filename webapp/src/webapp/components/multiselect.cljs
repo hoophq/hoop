@@ -15,7 +15,7 @@
                                  {"fontSize" "16px"})))
        "menuPortal" (fn [style]
                       (clj->js (into (js->clj style)
-                                     {"pointer-events" "auto"
+                                     {"pointerEvents" "auto"
                                       "z-index" "60"})))
        "control" (fn [style]
                    (clj->js (into (js->clj style)

@@ -100,7 +100,7 @@
      [:> Table.Body
       (doall
        (for [[idx rule] (map-indexed vector @state)]
-         ^{:key (:timestamp rule)}
+         ^{:key (:rule rule)}
          [:> Table.Row {:align "center"}
           (when @select-state
             [:> Table.RowHeaderCell {:p "2" :width "20px"}
