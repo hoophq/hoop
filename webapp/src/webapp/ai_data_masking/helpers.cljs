@@ -63,17 +63,39 @@
 
 (defn- format-supported-entity-types [supported-entity-types]
   (if (empty? supported-entity-types)
-    [(create-empty-rule)]
+    []
     (mapcat (fn [entity-type]
-              (let [internal-type (reverse-preset-name (:name entity-type))]
-                (map (fn [value]
-                       {:type internal-type
-                        :rule value
-                        :details ""
-                        :selected false
-                        :timestamp (.now js/Date)})
-                     (or (:entity_types entity-type) (:values entity-type)))))
+              (let [api-name (:name entity-type)
+                    entity-values (or (:entity_types entity-type) (:values entity-type))]
+                (if (= api-name "CUSTOM-SELECTION")
+                  ; For CUSTOM-SELECTION, create individual field rules
+                  (map (fn [value]
+                         {:type "fields"
+                          :rule value
+                          :details ""
+                          :selected false
+                          :timestamp (.now js/Date)})
+                       entity-values)
+                  ; For presets, create a single preset rule
+                  (let [internal-preset-name (reverse-preset-name api-name)]
+                    [{:type "presets"
+                      :rule internal-preset-name
+                      :details ""
+                      :selected false
+                      :timestamp (.now js/Date)}]))))
             supported-entity-types)))
+
+;; Convert custom entity types from API to table rules
+(defn- format-custom-entity-types-to-rules [custom-entity-types]
+  (if (empty? custom-entity-types)
+    []
+    (mapv (fn [custom-type]
+            {:type "custom"
+             :rule (:name custom-type)
+             :details (:regex custom-type)
+             :selected false
+             :timestamp (.now js/Date)})
+          custom-entity-types)))
 
 (defn- format-custom-rules [rules]
   (if (empty? rules)
@@ -81,14 +103,17 @@
     (mapv format-custom-rule rules)))
 
 (defn create-form-state [initial-data]
-  {:id (r/atom (or (:id initial-data) ""))
-   :name (r/atom (or (:name initial-data) ""))
-   :description (r/atom (or (:description initial-data) ""))
-   :connection_ids (r/atom (or (:connection_ids initial-data) []))
-   :rules (r/atom (vec (format-supported-entity-types (or (:supported_entity_types initial-data) []))))
-   :custom-rules (r/atom (vec (format-custom-rules (or (:custom_entity_types initial-data) []))))
-   :rules-select-state (r/atom false)
-   :custom-rules-select-state (r/atom false)})
+  (let [supported-rules (format-supported-entity-types (or (:supported_entity_types initial-data) []))
+        custom-rules-as-table-rules (format-custom-entity-types-to-rules (or (:custom_entity_types initial-data) []))
+        all-rules (vec (concat supported-rules custom-rules-as-table-rules))]
+    {:id (r/atom (or (:id initial-data) ""))
+     :name (r/atom (or (:name initial-data) ""))
+     :description (r/atom (or (:description initial-data) ""))
+     :connection_ids (r/atom (or (:connection_ids initial-data) []))
+     :rules (r/atom (if (empty? all-rules) [(create-empty-rule)] all-rules))
+     :custom-rules (r/atom [(create-empty-custom-rule)]) ; Always start with empty for additional customs
+     :rules-select-state (r/atom false)
+     :custom-rules-select-state (r/atom false)}))
 
 (defn create-form-handlers [state]
   {:on-rule-field-change (fn [rules-atom idx field value]
