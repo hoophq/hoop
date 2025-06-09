@@ -27,6 +27,13 @@
    :selected false
    :timestamp (.now js/Date)})
 
+(defn create-empty-fields-rule []
+  {:type "fields"
+   :rule "Custom Selection"
+   :details []
+   :selected false
+   :timestamp (.now js/Date)})
+
 (defn create-empty-custom-rule []
   {:name ""
    :regex ""
@@ -61,26 +68,24 @@
 (defn- format-supported-entity-types [supported-entity-types]
   (if (empty? supported-entity-types)
     []
-    (mapcat (fn [entity-type]
-              (let [api-name (:name entity-type)
-                    entity-values (or (:entity_types entity-type) (:values entity-type))]
-                (if (= api-name "CUSTOM_SELECTION")
-      ; For CUSTOM_SELECTION, create individual field rules
-                  (map (fn [value]
-                         {:type "fields"
-                          :rule value
-                          :details ""
-                          :selected false
-                          :timestamp (.now js/Date)})
-                       entity-values)
-                  ; For presets, create a single preset rule
-                  (let [internal-preset-name (reverse-preset-name api-name)]
-                    [{:type "presets"
-                      :rule internal-preset-name
-                      :details ""
-                      :selected false
-                      :timestamp (.now js/Date)}]))))
-            supported-entity-types)))
+    (mapv (fn [entity-type]
+            (let [api-name (:name entity-type)
+                  entity-values (or (:entity_types entity-type) (:values entity-type))]
+              (if (= api-name "CUSTOM_SELECTION")
+                ; For CUSTOM_SELECTION, create a single fields rule with all values in details
+                {:type "fields"
+                 :rule "Custom Selection"
+                 :details (vec entity-values)
+                 :selected false
+                 :timestamp (.now js/Date)}
+                ; For presets, create a single preset rule
+                (let [internal-preset-name (reverse-preset-name api-name)]
+                  {:type "presets"
+                   :rule internal-preset-name
+                   :details ""
+                   :selected false
+                   :timestamp (.now js/Date)}))))
+          supported-entity-types)))
 
 ;; Convert custom entity types from API to table rules
 (defn- format-custom-entity-types-to-rules [custom-entity-types]
@@ -172,7 +177,12 @@
 (defn remove-empty-rules [rules]
   (remove (fn [rule]
             (or (empty? (:type rule))
-                (empty? (:rule rule))))
+                (if (= (:type rule) "fields")
+                  ; For fields, check if details array is empty
+                  (or (empty? (:details rule))
+                      (not (vector? (:details rule))))
+                  ; For other types, check if rule is empty
+                  (empty? (:rule rule)))))
           rules))
 
 (defn remove-empty-custom-rules [rules]
@@ -206,10 +216,10 @@
     (->> grouped-rules
          (mapv (fn [[group-key group-rules]]
                  (if (= group-key "fields")
-                        ; For fields, create a single CUSTOM_SELECTION entry
+                   ; For fields, extract entity_types from details array
                    {:name "CUSTOM_SELECTION"
-                    :entity_types (mapv :rule group-rules)}
-                    ; For presets, keep original names with underscores
+                    :entity_types (vec (mapcat :details group-rules))}
+                   ; For presets, keep original names with underscores
                    {:name group-key
                     :entity_types (get-in preset-definitions [group-key :values])})))
          vec)))
@@ -250,5 +260,5 @@
 
 (defn get-field-options []
   (mapv (fn [field]
-          {:value field :text field})
+          {"value" field "label" field})
         dlp-types/presidio-options))

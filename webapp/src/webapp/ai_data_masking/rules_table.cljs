@@ -3,6 +3,7 @@
    ["@radix-ui/themes" :refer [Box Table Text Strong Badge]]
    [webapp.components.forms :as forms]
    [webapp.ai-data-masking.rule-buttons :as rule-buttons]
+   [webapp.components.multiselect :as multi-select]
    [webapp.ai-data-masking.helpers :as helpers]))
 
 (defn- type-field [rule state idx on-rule-field-change]
@@ -12,8 +13,13 @@
     :not-margin-bottom? true
     :on-change (fn [value]
                  (on-rule-field-change state idx :type value)
-                 (on-rule-field-change state idx :rule "")
-                 (on-rule-field-change state idx :details ""))
+                 (if (= value "fields")
+                   (do
+                     (on-rule-field-change state idx :rule "Custom Selection")
+                     (on-rule-field-change state idx :details []))
+                   (do
+                     (on-rule-field-change state idx :rule "")
+                     (on-rule-field-change state idx :details ""))))
     :selected (:type rule)
     :full-width? true
     :options helpers/rule-types}])
@@ -32,14 +38,7 @@
         :options (helpers/get-preset-options)}]
 
       "fields"
-      [forms/select
-       {:size "2"
-        :variant "ghost"
-        :not-margin-bottom? true
-        :on-change #(on-rule-field-change state idx :rule %)
-        :selected (:rule rule)
-        :full-width? true
-        :options (helpers/get-field-options)}]
+      [:> Text {:size "2" :class "text-[--gray-12]"} "Custom Selection"]
 
       "custom"
       [forms/input
@@ -57,15 +56,27 @@
 (defn- details-field [rule state idx on-rule-field-change]
   (when-not (empty? (:type rule))
     (case (:type rule)
-      ("presets" "fields")
-      (let [values (if (= "presets" (:type rule))
-                     (helpers/get-preset-values (:rule rule))
-                     [(:rule rule)])]
+      "presets"
+      (let [values (helpers/get-preset-values (:rule rule))]
         [:> Box {:class "flex flex-wrap gap-1"}
          (for [value values]
            ^{:key value}
            [:> Badge {:size "2" :variant "solid" :color "gray"}
             value])])
+
+      "fields"
+      [multi-select/main
+       {:name "data-masking-rules"
+        :placeholder "Select rules..."
+        :on-change #(let [selected-values (js->clj % :keywordize-keys true)
+                          field-values (mapv :value selected-values)]
+                      (on-rule-field-change state idx :details field-values))
+        :default-value (mapv (fn [rule-id]
+                               (some #(when (= (get % "value") rule-id) %)
+                                     (helpers/get-field-options)))
+                             (:details rule))
+        :full-width? true
+        :options (helpers/get-field-options)}]
 
       "custom"
       [forms/input

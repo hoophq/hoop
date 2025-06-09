@@ -33,7 +33,7 @@ src/webapp/ai_data_masking/
 3. **Método de Proteção**: Dropdown com opções de mascaramento
 4. **Tabela de Regras**: CRUD com três tipos:
    - **Presets**: Combinações pré-definidas (Keys and Passwords, Contact Information, Personal Information)
-   - **Fields**: Tipos individuais da biblioteca presidio
+   - **Fields**: Multi-seleção de tipos individuais da biblioteca presidio (Custom Selection)
    - **Custom**: Padrões personalizados com regex
 
 ## 📊 Estrutura de Dados
@@ -67,6 +67,9 @@ src/webapp/ai_data_masking/
 
 ### **Fields (presidio-options):**
 Usa todas as opções do arquivo `dlp_info_types.cljs` como CREDIT_CARD_NUMBER, EMAIL_ADDRESS, etc.
+Na tabela, o tipo "Fields" mostra:
+- **Rule**: "Custom Selection" (texto fixo)
+- **Details**: Multi-select permitindo escolher múltiplos tipos de dados
 
 ## 🔧 Eventos Re-frame
 
