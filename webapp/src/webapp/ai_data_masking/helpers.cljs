@@ -5,12 +5,26 @@
 
 ;; Presets definitions
 (def preset-definitions
-  {"KEYS_AND_PASSWORDS" {:text "Keys and Passwords"
-                         :values ["AUTH_TOKEN" "PASSWORD" "GENERIC_ID" "HTTP_COOKIE" "JSON_WEB_TOKEN"]}
-   "CONTACT_INFORMATION" {:text "Contact Information"
+  {"CONTACT_INFORMATION" {:text "Contact Information"
                           :values ["EMAIL_ADDRESS" "PHONE_NUMBER" "PERSON_NAME" "STREET_ADDRESS"]}
    "PERSONAL_INFORMATION" {:text "Personal Information"
-                           :values ["DATE_OF_BIRTH" "CREDIT_CARD_NUMBER" "MEDICAL_RECORD_NUMBER" "PASSPORT"]}})
+                           :values ["DATE_OF_BIRTH" "CREDIT_CARD_NUMBER" "MEDICAL_RECORD_NUMBER" "PASSPORT"]}
+   "NETWORK_IDENTIFIERS" {:text "Network Identifiers"
+                          :values ["IP_ADDRESS" "MAC_ADDRESS" "MAC_ADDRESS_LOCAL" "DOMAIN_NAME" "URL"]}
+   "FINANCIAL_DATA" {:text "Financial Data"
+                     :values ["CREDIT_CARD_NUMBER" "CREDIT_CARD_TRACK_NUMBER" "IBAN_CODE" "SWIFT_CODE" "VAT_NUMBER"]}
+   "PERSONAL_NAMES" {:text "Personal Names"
+                     :values ["FIRST_NAME" "LAST_NAME" "MALE_NAME" "FEMALE_NAME" "PERSON_NAME"]}
+   "MEDICAL_INFO" {:text "Medical Information"
+                   :values ["MEDICAL_RECORD_NUMBER" "MEDICAL_TERM" "ICD9_CODE" "ICD10_CODE"]}
+   "LOCATION_DATA" {:text "Location Data"
+                    :values ["LOCATION" "LOCATION_COORDINATES" "STREET_ADDRESS" "COUNTRY_DEMOGRAPHIC"]}
+   "DEVICE_IDENTIFIERS" {:text "Device Identifiers"
+                         :values ["IMEI_HARDWARE_ID" "IMSI_ID" "ICCID_NUMBER" "ADVERTISING_ID"]}
+   "DEMOGRAPHICS" {:text "Demographics"
+                   :values ["AGE" "GENDER" "ETHNIC_GROUP" "MARITAL_STATUS"]}
+   "SYSTEM_IDENTIFIERS" {:text "System Identifiers"
+                         :values ["GENERIC_ID" "HTTP_COOKIE" "STORAGE_SIGNED_POLICY_DOCUMENT" "STORAGE_SIGNED_URL"]}})
 
 
 
@@ -27,28 +41,12 @@
    :selected false
    :timestamp (.now js/Date)})
 
-(defn create-empty-fields-rule []
-  {:type "fields"
-   :rule "Custom Selection"
-   :details []
-   :selected false
-   :timestamp (.now js/Date)})
-
 (defn create-empty-custom-rule []
   {:name ""
    :regex ""
    :score 0.8
    :selected false
    :timestamp (.now js/Date)})
-
-(defn- format-rule [rule]
-  (if (empty? (:type rule))
-    (create-empty-rule)
-    {:type (:type rule)
-     :rule (:rule rule)
-     :details (:details rule)
-     :selected false
-     :timestamp (:timestamp rule)}))
 
 (defn- format-custom-rule [rule]
   (if (empty? (:name rule))
@@ -98,11 +96,6 @@
              :selected false
              :timestamp (.now js/Date)})
           custom-entity-types)))
-
-(defn- format-custom-rules [rules]
-  (if (empty? rules)
-    [(create-empty-custom-rule)]
-    (mapv format-custom-rule rules)))
 
 (defn create-form-state [initial-data]
   (let [supported-rules (format-supported-entity-types (or (:supported_entity_types initial-data) []))
