@@ -47,9 +47,11 @@
         :name "rule"
         :not-margin-bottom? true
         :value (:rule rule)
-        :on-change #(let [raw-value (-> % .-target .-value)
-                          normalized-value (helpers/normalize-entity-name raw-value)]
-                      (on-rule-field-change state idx :rule normalized-value))}]
+        :on-change #(on-rule-field-change state idx :rule (-> % .-target .-value))
+        :on-blur #(let [raw-value (-> % .-target .-value)
+                        normalized-value (helpers/normalize-entity-name raw-value)]
+                    (when (not= raw-value normalized-value)
+                      (on-rule-field-change state idx :rule normalized-value)))}]
 
       nil)))
 
@@ -111,7 +113,7 @@
      [:> Table.Body
       (doall
        (for [[idx rule] (map-indexed vector @state)]
-         ^{:key (:rule rule)}
+         ^{:key (str idx "-" (:timestamp rule))}
          [:> Table.Row {:align "center"}
           (when @select-state
             [:> Table.RowHeaderCell {:p "2" :width "20px"}
