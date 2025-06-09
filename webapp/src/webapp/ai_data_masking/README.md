@@ -44,13 +44,12 @@ src/webapp/ai_data_masking/
   "name": "database-default_all",
   "description": "Default rules for all Database connections",
   "connection_ids": ["uuid1", "uuid2"],
-  "data_protection_method": "content-full",
   "supported_entity_types": [
-    {"name": "KEYS_AND_PASSWORDS", "values": ["AUTH_TOKEN", "PASSWORD"]},
-    {"name": "CUSTOM-SELECTION", "values": ["EMAIL_ADDRESS"]}
+    {"name": "KEYS_AND_PASSWORDS", "entity_types": ["AUTH_TOKEN", "PASSWORD"]},
+    {"name": "CUSTOM_SELECTION", "entity_types": ["EMAIL_ADDRESS"]}
   ],
   "custom_entity_types": [
-    {"name": "ZIP_CODE", "regex": "\\b[0-9]{5}\\b", "score": 0.01}
+    {"name": "ZIP_CODE", "regex": "\\b[0-9]{5}\\b", "score": 0.8}
   ]
 }
 ```

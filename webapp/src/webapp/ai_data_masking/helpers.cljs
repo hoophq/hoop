@@ -52,14 +52,11 @@
      :selected false
      :timestamp (:timestamp rule)}))
 
-;; Helper function to reverse preset name transformation (from API format back to internal format)
+;; Helper function to convert API names back to internal format
 (defn reverse-preset-name [api-name]
   (case api-name
-    "KEY-AND-PASSWORDS" "KEYS_AND_PASSWORDS"
-    "CONTACT-INFORMATION" "CONTACT_INFORMATION"
-    "PERSONAL-INFORMATION" "PERSONAL_INFORMATION"
-    "CUSTOM-SELECTION" "fields"
-    api-name)) ; fallback to original name
+    "CUSTOM_SELECTION" "fields"
+    api-name)) ; Presets keep their underscore format (no transformation needed)
 
 (defn- format-supported-entity-types [supported-entity-types]
   (if (empty? supported-entity-types)
@@ -67,8 +64,8 @@
     (mapcat (fn [entity-type]
               (let [api-name (:name entity-type)
                     entity-values (or (:entity_types entity-type) (:values entity-type))]
-                (if (= api-name "CUSTOM-SELECTION")
-                  ; For CUSTOM-SELECTION, create individual field rules
+                (if (= api-name "CUSTOM_SELECTION")
+      ; For CUSTOM_SELECTION, create individual field rules
                   (map (fn [value]
                          {:type "fields"
                           :rule value
@@ -194,13 +191,7 @@
         (clojure.string/replace #"\s+" "_")
         (clojure.string/replace #"[^A-Z0-9_]" ""))))
 
-;; Helper function to transform preset names to API format (with hyphens)
-(defn transform-preset-name [preset-name]
-  (case preset-name
-    "KEYS_AND_PASSWORDS" "KEY-AND-PASSWORDS"
-    "CONTACT_INFORMATION" "CONTACT-INFORMATION"
-    "PERSONAL_INFORMATION" "PERSONAL-INFORMATION"
-    preset-name)) ; fallback to original name
+
 
 (defn prepare-supported-entity-types [rules]
   (let [clean-rules (->> rules
@@ -215,11 +206,11 @@
     (->> grouped-rules
          (mapv (fn [[group-key group-rules]]
                  (if (= group-key "fields")
-                    ; For fields, create a single CUSTOM-SELECTION entry
-                   {:name "CUSTOM-SELECTION"
+                        ; For fields, create a single CUSTOM_SELECTION entry
+                   {:name "CUSTOM_SELECTION"
                     :entity_types (mapv :rule group-rules)}
-                    ; For presets, expand to their actual values
-                   {:name (transform-preset-name group-key)
+                    ; For presets, keep original names with underscores
+                   {:name group-key
                     :entity_types (get-in preset-definitions [group-key :values])})))
          vec)))
 
