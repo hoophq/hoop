@@ -26,7 +26,14 @@
                       :color "red"
                       :disabled loading?
                       :type "button"
-                      :on-click #(rf/dispatch [:ai-data-masking->delete-by-id @id])}
+                      :on-click #(rf/dispatch [:dialog->open
+                                               {:title "Delete AI Data Masking rule?"
+                                                :text "This action will permanently delete this AI Data Masking rule and cannot be undone. Are you sure you want to proceed?"
+                                                :text-action-button "Delete"
+                                                :action-button? true
+                                                :type :danger
+                                                :on-success (fn []
+                                                              (rf/dispatch [:ai-data-masking->delete-by-id id]))}])}
            "Delete"])
         [:> Button {:size "3"
                     :variant "solid"
