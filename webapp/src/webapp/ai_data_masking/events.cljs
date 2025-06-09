@@ -2,16 +2,6 @@
   (:require
    [re-frame.core :as rf]))
 
-
-
-;; Initialize AI Data Masking state
-(rf/reg-event-db
- :ai-data-masking->initialize
- (fn [db _]
-   (assoc db :ai-data-masking {:list {:status :idle :data []}
-                               :active-rule {:status :idle :data nil}
-                               :submitting? false})))
-
 ;; Get all AI Data Masking rules
 (rf/reg-event-fx
  :ai-data-masking->get-all

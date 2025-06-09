@@ -1,6 +1,6 @@
 (ns webapp.ai-data-masking.rules-table
   (:require
-   ["@radix-ui/themes" :refer [Box Table Text Strong Badge]]
+   ["@radix-ui/themes" :refer [Box Table Text Badge]]
    [webapp.components.forms :as forms]
    [webapp.ai-data-masking.rule-buttons :as rule-buttons]
    [webapp.components.multiselect :as multi-select]

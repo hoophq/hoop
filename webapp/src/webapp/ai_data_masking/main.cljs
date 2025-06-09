@@ -1,7 +1,6 @@
 (ns webapp.ai-data-masking.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
-   ["lucide-react" :refer [Construction]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]

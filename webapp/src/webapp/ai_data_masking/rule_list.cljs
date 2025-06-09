@@ -37,7 +37,8 @@
                                 (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
          "Configure"]])]]])
 
-(defn rule-item [{:keys [id name description connection_ids supported_entity_types custom_entity_types connections on-configure total-items]}]
+(defn rule-item [{:keys [id name description supported_entity_types
+                         custom_entity_types connections on-configure total-items]}]
   (let [show-connections? (r/atom false)]
     (fn []
       [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "

@@ -48,15 +48,6 @@
    :selected false
    :timestamp (.now js/Date)})
 
-(defn- format-custom-rule [rule]
-  (if (empty? (:name rule))
-    (create-empty-custom-rule)
-    {:name (:name rule)
-     :regex (:regex rule)
-     :score (:score rule)
-     :selected false
-     :timestamp (:timestamp rule)}))
-
 ;; Helper function to convert API names back to internal format
 (defn reverse-preset-name [api-name]
   (case api-name
