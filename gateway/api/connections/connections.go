@@ -76,7 +76,7 @@ func Post(c *gin.Context) {
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                req.Name,
 		Command:             req.Command,
-		Type:                string(req.Type),
+		Type:                req.Type,
 		SubType:             sql.NullString{String: req.SubType, Valid: true},
 		Envs:                coerceToMapString(req.Secrets),
 		Status:              req.Status,
