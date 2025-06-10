@@ -80,7 +80,7 @@ func CreateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 
 func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
-		res := tx.Debug().Table("private.datamasking_rules").
+		res := tx.Table("private.datamasking_rules").
 			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
 			Select("description", "supported_entity_types", "custom_entity_types", "updated_at").
 			Updates(DataMaskingRule{
@@ -176,7 +176,7 @@ func GetDataMaskingEntityTypes(orgID, connID string) (json.RawMessage, error) {
 }
 
 func MigratePluginConnectionToDataMaskingRules(orgID string) error {
-	return DB.Debug().Transaction(func(tx *gorm.DB) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Exec(`
 		INSERT INTO private.datamasking_rules (id, org_id, name, description, supported_entity_types, created_at, updated_at)
 		SELECT
