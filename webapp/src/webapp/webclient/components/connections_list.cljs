@@ -1,6 +1,6 @@
 (ns webapp.webclient.components.connections-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading Tooltip IconButton Text]]
    ["lucide-react" :refer [FolderTree Settings2 EllipsisVertical X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -40,9 +40,9 @@
        [:> EllipsisVertical {:size 16}]])]])
 
 (defn selected-connection []
-  (let [show-schema? (r/atom false)
+  (let [show-schema? (r/atom true)
         ;; State to avoid premature loading of the heavy component
-        schema-loaded? (r/atom false)]
+        schema-loaded? (r/atom true)]
     (fn [connection dark-mode? admin? show-tree?]
       [:> Box {:class "bg-primary-11 light"}
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
@@ -58,17 +58,19 @@
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
          (when show-tree?
-           [:> IconButton {:onClick #(do
-                                       (swap! show-schema? not)
-                                       ;; Load the schema only when needed
-                                       (when (and @show-schema? (not @schema-loaded?))
-                                         (reset! schema-loaded? true)))
-                           :class (if @show-schema? "bg-[--gray-a4]" "")}
-            [:> FolderTree {:size 16}]])
+           [:> Tooltip {:content "Database Schema"}
+            [:> IconButton {:onClick #(do
+                                        (swap! show-schema? not)
+                                        ;; Load the schema only when needed
+                                        (when (and @show-schema? (not @schema-loaded?))
+                                          (reset! schema-loaded? true)))
+                            :class (if @show-schema? "bg-[--gray-a4]" "")}
+             [:> FolderTree {:size 16}]]])
          (when admin?
-           [:> IconButton
-            {:onClick #(rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])}
-            [:> Settings2 {:size 16}]])]]
+           [:> Tooltip {:content "Configure"}
+            [:> IconButton
+             {:onClick #(rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)])}
+             [:> Settings2 {:size 16}]]])]]
 
        ;; Tree view of database schema with lazy loading
        (when (and @show-schema?
