@@ -142,7 +142,8 @@ func UpdateAgentStatus(orgID, agentID string, status AgentStatusType, metadata m
 
 // update all agent resource and connections to offline status
 func UpdateAllAgentsToOffline() error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+	sess := &gorm.Session{AllowGlobalUpdate: true}
+	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
 		err := tx.Table("private.agents").Updates(map[string]any{
 			"status":     AgentStatusDisconnected,
 			"updated_at": time.Now().UTC(),
