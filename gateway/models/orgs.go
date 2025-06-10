@@ -57,7 +57,7 @@ func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, err
 		TotalUsers:  0,
 	}
 
-	return &org, DB.Debug().Transaction(func(tx *gorm.DB) error {
+	return &org, DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Table("private.orgs").Create(&org).Error
 		if err != nil {
 			return err

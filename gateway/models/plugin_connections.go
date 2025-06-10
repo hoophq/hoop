@@ -19,45 +19,80 @@ type PluginConnection struct {
 	UpdatedAt      time.Time      `gorm:"column:updated_at" json:"updated_at"`
 }
 
-func CreatePluginConnection(pc *PluginConnection) error {
-	return DB.Table("private.plugin_connections").
-		Create(pc).
-		Error
+// UpsertPluginConnection updates an existing plugin connection by the plugin ID and connection ID.
+func UpsertPluginConnection(orgID, pluginName, connID string, config pq.StringArray) (*PluginConnection, error) {
+	var updatedPlugiConn PluginConnection
+	return &updatedPlugiConn, DB.Transaction(func(tx *gorm.DB) error {
+		var pluginID string
+		err := tx.Raw(`SELECT id FROM private.plugins WHERE org_id = ? AND name = ?`, orgID, pluginName).
+			First(&pluginID).
+			Error
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return ErrNotFound
+			}
+			return err
+		}
+		res := tx.Raw(`
+		INSERT INTO private.plugin_connections (org_id, plugin_id, connection_id, config, updated_at)
+		VALUES (@org_id, @plugin_id, @connection_id, @config, @updated_at)
+		ON CONFLICT (plugin_id, connection_id)
+		DO UPDATE SET config = @config, updated_at = @updated_at
+		RETURNING *
+		`, map[string]any{
+			"org_id":        orgID,
+			"plugin_id":     pluginID,
+			"connection_id": connID,
+			"config":        config,
+			"updated_at":    time.Now().UTC(),
+		}).
+			Scan(&updatedPlugiConn)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
-func UpdatePluginConnection(pc *PluginConnection) error {
-	res := DB.Table("private.plugin_connections").
-		Where("org_id = ? AND id = ?", pc.OrgID, pc.ID).
-		Updates(map[string]any{
-			"plugin_id":     pc.PluginID,
-			"connection_id": pc.ConnectionID,
-			"config":        pc.Config,
-			"udpated_at":    pc.UpdatedAt,
-		})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-func GetPluginConnection(orgID, id string) (*PluginConnection, error) {
+func GetPluginConnection(orgID, pluginName, connID string) (*PluginConnection, error) {
 	var pluginConn PluginConnection
-	err := DB.Table("private.plugin_connections").
-		Where(`WHERE pc.org_id = ? AND pc.id = ?`, orgID, id).
-		First(&pluginConn).
-		Error
+	err := DB.Raw(`
+		SELECT pc.id, pc.org_id, pc.plugin_id, pc.connection_id, pc.config, pc.created_at, pc.updated_at
+		FROM private.plugin_connections pc
+		INNER JOIN private.plugins p ON pc.plugin_id = p.id
+		WHERE pc.org_id = ? AND connection_id = ? AND p.name = ?`,
+		orgID, connID, pluginName).
+		First(&pluginConn).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, ErrNotFound
 	}
 	return &pluginConn, err
 }
 
-func DeletePluginConnection(orgID, id string) error {
-	return DB.Table("private.plugin_connections").
-		Where("org_id = ? AND id = ?", orgID, id).
-		Delete(&PluginConnection{}).
-		Error
+func DeletePluginConnection(orgID, pluginName, connID string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var pluginID string
+		err := tx.Raw(`SELECT id FROM private.plugins WHERE org_id = ? AND name = ?`, orgID, pluginName).
+			First(&pluginID).
+			Error
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return ErrNotFound
+			}
+			return err
+		}
+		res := tx.Table("private.plugin_connections").
+			Where("org_id = ? AND plugin_id = ? AND connection_id = ?", orgID, pluginID, connID).
+			Delete(&PluginConnection{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }

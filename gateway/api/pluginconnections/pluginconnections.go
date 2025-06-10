@@ -2,78 +2,70 @@ package apipluginconnections
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-func CreatePluginConnection(c *gin.Context) {
+// UpdatePluginConnection
+//
+//	@Summary		Upsert Plugin Connection
+//	@Description	Update or create a plugin connection resource
+//	@Tags			Plugins
+//	@Accept			json
+//	@Produce		json
+//	@Param			name		path		string							true	"The name of the plugin"
+//	@Param			id			path		string							true	"The connection id"
+//	@Param			request		body		openapi.PluginConnectionRequest	true	"The request body resource"
+//	@Success		200			{object}	openapi.PluginConnection
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/plugins/{name}/connections/{id} [put]
+func UpsertPluginConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var req openapi.PluginConnectionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	resourceID := uuid.NewString()
-	resource := &models.PluginConnection{
-		ID:           resourceID,
-		OrgID:        ctx.OrgID,
-		PluginID:     req.PluginID,
-		ConnectionID: req.ConnectionID,
-		Enabled:      true,
-		Config:       req.Config,
-		CreatedAt:    time.Now().UTC(),
-		UpdatedAt:    time.Now().UTC(),
-	}
-	err := models.CreatePluginConnection(resource)
-	if err != nil {
-		log.Errorf("failed creating plugin connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-	c.JSON(http.StatusCreated, toOpenApi(resource))
-}
-
-func UpdatePluginConnection(c *gin.Context) {
-	ctx := storagev2.ParseContext(c)
-	var req openapi.PluginConnectionRequest
+	req := openapi.PluginConnectionRequest{Config: []string{}}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	resource := &models.PluginConnection{
-		ID:           c.Param("id"),
-		OrgID:        ctx.OrgID,
-		PluginID:     req.PluginID,
-		ConnectionID: req.ConnectionID,
-		Enabled:      true,
-		Config:       req.Config,
-		UpdatedAt:    time.Now().UTC(),
+	pluginName := c.Param("name")
+	if pluginName == plugintypes.PluginReviewName || pluginName == plugintypes.PluginDLPName {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to manage review or dlp plugins, use the connection endpoint instead"})
+		return
 	}
-	err := models.UpdatePluginConnection(resource)
+	pluginConn, err := models.UpsertPluginConnection(ctx.OrgID, pluginName, c.Param("id"), req.Config)
 	switch err {
 	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"message": "either the plugin or the connection does not exist"})
 	case nil:
-		c.JSON(http.StatusOK, toOpenApi(resource))
+		c.JSON(http.StatusOK, toOpenApi(pluginConn))
 	default:
 		log.Errorf("failed updating plugin connection, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
 
+// GetPluginConnection
+//
+//	@Summary		Get Plugin Connection
+//	@Description	Get a plugin connection resource
+//	@Tags			Plugins
+//	@Produce		json
+//	@Param			name	path		string	true	"The name of the plugin"
+//	@Param			id		path		string	true	"The connection id"
+//	@Success		200		{object}	openapi.PluginConnection
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/plugins/{name}/connections/{id} [get]
 func GetPluginConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	resource, err := models.GetPluginConnection(ctx.OrgID, c.Param("id"))
+	resource, err := models.GetPluginConnection(ctx.OrgID, c.Param("name"), c.Param("id"))
 	switch err {
 	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"message": "either the plugin or the connection does not exist"})
 		return
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(resource))
@@ -84,15 +76,29 @@ func GetPluginConnection(c *gin.Context) {
 	}
 }
 
+// DeletePluginConnection
+//
+//	@Summary		Delete Plugin Connection
+//	@Description	Delete a plugin connection resource.
+//	@Tags			Plugins
+//	@Produce		json
+//	@Param			name	path	string	true	"The name of the plugin"
+//	@Param			id		path	string	true	"The connection id"
+//	@Success		204
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/plugins/{name}/connections/{id} [delete]
 func DeletePluginConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	err := models.DeletePluginConnection(ctx.OrgID, c.Param("id"))
-	if err != nil {
+	err := models.DeletePluginConnection(ctx.OrgID, c.Param("name"), c.Param("id"))
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "either the plugin or the connection does not exist"})
+	case nil:
+		c.JSON(http.StatusNoContent, nil)
+	default:
 		log.Errorf("failed removing plugin connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
 	}
-	c.JSON(http.StatusNoContent, nil)
 }
 
 func toOpenApi(obj *models.PluginConnection) openapi.PluginConnection {

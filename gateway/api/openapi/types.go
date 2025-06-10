@@ -727,10 +727,6 @@ type PluginResourceConnection struct {
 }
 
 type PluginConnectionRequest struct {
-	// The ID of the plugin to create associations
-	PluginID string `json:"plugin_id" format:"uuid"`
-	// The connection ID reference
-	ConnectionID string `json:"connection_id" format:"uuid" example:"79A5E90B-8147-475E-87F0-422881B62130"`
 	// The configuration of the plugin connection, the content depends on the plugin type
 	Config []string `json:"config" example:"sre,devops"`
 }
