@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
@@ -230,23 +232,35 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			})
 			return pb.ErrAgentOffline
 		}
+
+		var entityTypesJsonData json.RawMessage
+		if s.AppConfig.DlpProvider() == "mspresidio" {
+			var err error
+			entityTypesJsonData, err = models.GetDataMaskingEntityTypes(pctx.OrgID, pctx.ConnectionID)
+			if err != nil {
+				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).Errorf("failed getting data masking entity types, err=%v", err)
+				return status.Errorf(codes.Internal, "failed obtaining data masking entity types, err=%v", err)
+			}
+		}
+
 		clientArgs := clientArgsDecode(pkt.Spec)
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
-			ConnectionName:           pctx.ConnectionName,
-			ConnectionType:           pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
-			UserID:                   pctx.UserID,
-			UserEmail:                pctx.UserEmail,
-			EnvVars:                  pctx.ConnectionSecret,
-			CmdList:                  pctx.ConnectionCommand,
-			ClientArgs:               clientArgs,
-			ClientVerb:               pctx.ClientVerb,
-			ClientOrigin:             pctx.ClientOrigin,
-			DlpProvider:              s.AppConfig.DlpProvider(),
-			DlpMode:                  s.AppConfig.DlpMode(),
-			DlpGcpRawCredentialsJSON: s.AppConfig.GcpDLPJsonCredentials(),
-			DlpPresidioAnalyzerURL:   s.AppConfig.MSPresidioAnalyzerURL(),
-			DlpPresidioAnonymizerURL: s.AppConfig.MSPresidioAnomymizerURL(),
-			DLPInfoTypes:             stream.GetRedactInfoTypes(),
+			ConnectionName:             pctx.ConnectionName,
+			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),
+			UserID:                     pctx.UserID,
+			UserEmail:                  pctx.UserEmail,
+			EnvVars:                    pctx.ConnectionSecret,
+			CmdList:                    pctx.ConnectionCommand,
+			ClientArgs:                 clientArgs,
+			ClientVerb:                 pctx.ClientVerb,
+			ClientOrigin:               pctx.ClientOrigin,
+			DlpProvider:                s.AppConfig.DlpProvider(),
+			DlpMode:                    s.AppConfig.DlpMode(),
+			DlpGcpRawCredentialsJSON:   s.AppConfig.GcpDLPJsonCredentials(),
+			DlpPresidioAnalyzerURL:     s.AppConfig.MSPresidioAnalyzerURL(),
+			DlpPresidioAnonymizerURL:   s.AppConfig.MSPresidioAnomymizerURL(),
+			DLPInfoTypes:               stream.GetRedactInfoTypes(),
+			DataMaskingEntityTypesData: entityTypesJsonData,
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)

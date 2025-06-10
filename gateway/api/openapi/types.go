@@ -1474,3 +1474,44 @@ type TablesResponse struct {
 type ColumnsResponse struct {
 	Columns []ConnectionColumn `json:"columns"` // The columns of a table
 }
+
+type DataMaskingRule struct {
+	// The unique identifier of the data masking rule
+	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	DataMaskingRuleRequest `json:",inline"`
+}
+
+type DataMaskingRuleRequest struct {
+	// The unique name of the data masking rule, it's immutable after creation
+	Name string `json:"name" binding:"required" example:"mask-email"`
+	// The description of the data masking rule
+	Description string `json:"description" example:"Mask email addresses in the data"`
+	// The connections that this rule applies to
+	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
+	// The registered entity types that this rule applies to
+	SupportedEntityTypes []SupportedEntityTypesEntry `json:"supported_entity_types"`
+	// The custom entity types that this rule applies to
+	CustomEntityTypesEntrys []CustomEntityTypesEntry `json:"custom_entity_types"`
+	// The timestamp when the rule was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2023-08-15T14:30:45Z"`
+}
+
+type SupportedEntityTypesEntry struct {
+	// An identifier for this structure, it's used as an identifier of a collection of entities.
+	Name string `json:"name" example:"PII"`
+	// The registered entity types in the redact provider
+	EntityTypes []string `json:"entity_types" example:"EMAIL_ADDRESS,PERSON,PHONE_NUMBER,IP_ADDRESS"`
+}
+
+type CustomEntityTypesEntry struct {
+	// The name of the custom entity type as uppercase
+	Name string `json:"name" binding:"required" example:"ZIP_CODE"`
+	// The regex pattern to match (python) the custom entity type.
+	// Either this or the deny_list is required
+	Regex string `json:"regex" example:"\\b\\d{5}(?:-\\d{4})?\\b"`
+	// List of words to be returned as PII if found.
+	// Either this or the regex is required
+	DenyList []string `json:"deny_list" example:"Mr,Mr.,Mister"`
+	// Detection confidence of this pattern (0.01 if very noisy, 0.6-1.0 if very specific)
+	Score float64 `json:"score" binding:"required" example:"0.01"`
+}

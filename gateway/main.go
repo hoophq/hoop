@@ -80,6 +80,13 @@ func Run() {
 		if err != nil {
 			log.Warnf("failed provisioning default system tags, reason=%v", err)
 		}
+
+		if appconfig.Get().DlpProvider() == "mspresidio" {
+			err = models.MigratePluginConnectionToDataMaskingRules(org.ID)
+			if err != nil {
+				log.Warnf("failed migrating plugin connections to data masking rules, reason=%v", err)
+			}
+		}
 	}
 
 	g := &transport.Server{

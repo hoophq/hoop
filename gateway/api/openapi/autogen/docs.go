@@ -691,6 +691,224 @@ const docTemplate = `{
                 }
             }
         },
+        "/datamasking-rules": {
+            "get": {
+                "description": "List Data Masking Rules",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "List Data Masking Rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DataMaskingRule"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create Data Masking Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Create Data Masking Rule",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/datamasking-rules/{id}": {
+            "get": {
+                "description": "Get Data Masking Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Get Data Masking Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update Data Masking Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Update Data Masking Rule",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DataMaskingRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a Data Masking Rule resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Data Masking Rules"
+                ],
+                "summary": "Delete Data Masking Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The unique identifier of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/dbroles/jobs": {
             "get": {
                 "description": "List all db role jobs",
@@ -3324,7 +3542,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Core"
+                    "Session"
                 ],
                 "summary": "Reviewed Exec",
                 "parameters": [
@@ -4631,6 +4849,42 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.CustomEntityTypesEntry": {
+            "type": "object",
+            "required": [
+                "name",
+                "score"
+            ],
+            "properties": {
+                "deny_list": {
+                    "description": "List of words to be returned as PII if found.\nEither this or the regex is required",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "Mr",
+                        "Mr.",
+                        "Mister"
+                    ]
+                },
+                "name": {
+                    "description": "The name of the custom entity type as uppercase",
+                    "type": "string",
+                    "example": "ZIP_CODE"
+                },
+                "regex": {
+                    "description": "The regex pattern to match (python) the custom entity type.\nEither this or the deny_list is required",
+                    "type": "string",
+                    "example": "\\b\\d{5}(?:-\\d{4})?\\b"
+                },
+                "score": {
+                    "description": "Detection confidence of this pattern (0.01 if very noisy, 0.6-1.0 if very specific)",
+                    "type": "number",
+                    "example": 0.01
+                }
+            }
+        },
         "openapi.DBRoleJob": {
             "type": "object",
             "properties": {
@@ -4843,6 +5097,110 @@ const docTemplate = `{
                 "value": {
                     "type": "string",
                     "example": "banking"
+                }
+            }
+        },
+        "openapi.DataMaskingRule": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "connection_ids": {
+                    "description": "The connections that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"
+                    ]
+                },
+                "custom_entity_types": {
+                    "description": "The custom entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.CustomEntityTypesEntry"
+                    }
+                },
+                "description": {
+                    "description": "The description of the data masking rule",
+                    "type": "string",
+                    "example": "Mask email addresses in the data"
+                },
+                "id": {
+                    "description": "The unique identifier of the data masking rule",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "description": "The unique name of the data masking rule",
+                    "type": "string",
+                    "example": "mask-email"
+                },
+                "supported_entity_types": {
+                    "description": "The registered entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SupportedEntityTypesEntry"
+                    }
+                },
+                "updated_at": {
+                    "description": "The timestamp when the rule was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2023-08-15T14:30:45Z"
+                }
+            }
+        },
+        "openapi.DataMaskingRuleRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "connection_ids": {
+                    "description": "The connections that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"
+                    ]
+                },
+                "custom_entity_types": {
+                    "description": "The custom entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.CustomEntityTypesEntry"
+                    }
+                },
+                "description": {
+                    "description": "The description of the data masking rule",
+                    "type": "string",
+                    "example": "Mask email addresses in the data"
+                },
+                "name": {
+                    "description": "The unique name of the data masking rule",
+                    "type": "string",
+                    "example": "mask-email"
+                },
+                "supported_entity_types": {
+                    "description": "The registered entity types that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SupportedEntityTypesEntry"
+                    }
+                },
+                "updated_at": {
+                    "description": "The timestamp when the rule was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2023-08-15T14:30:45Z"
                 }
             }
         },
@@ -6664,6 +7022,29 @@ const docTemplate = `{
                 "StatusInvited"
             ]
         },
+        "openapi.SupportedEntityTypesEntry": {
+            "type": "object",
+            "properties": {
+                "entity_types": {
+                    "description": "The registered entity types in the redact provider",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "EMAIL_ADDRESS",
+                        "PERSON",
+                        "PHONE_NUMBER",
+                        "IP_ADDRESS"
+                    ]
+                },
+                "name": {
+                    "description": "An identifier for this structure, it's used as an identifier of a collection of entities.",
+                    "type": "string",
+                    "example": "PII"
+                }
+            }
+        },
         "openapi.TablesResponse": {
             "type": "object",
             "properties": {
@@ -6954,10 +7335,6 @@ const docTemplate = `{
         {
             "description": "Hoop implements Oauth2 and OIDC protocol to authenticate users in the system. To obtain a valid access token users need to authenticate in their own identity provider which is generated as a JSON response to the endpoint ` + "`" + `http(s)://{{ .Host }}{{ .BasePath }}/login` + "`" + `. The identity provider them redirects the user to the callback endpoint containing the access token.\n\nThe recommended approach of obtaining an access token is by visiting the Webapp main's page or using the **Hoop command line**. Example:\n\n` + "`" + `` + "`" + `` + "`" + `sh\nhoop config create --api-url https://{{ .Host }}\n# save the token after authenticating at $HOME/.hoop/config.toml\nhoop login\n# show token information\nhoop config view --raw\n` + "`" + `` + "`" + `` + "`" + `\n\nWith an access token you could use any HTTP client to interact with the documented endpoints.\nThe token must be sent through the ` + "`" + `Authorization` + "`" + ` header.\n\nExample:\n\n` + "`" + `` + "`" + `` + "`" + `sh\n# obtain the current configuration of the server\ncurl https://{{ .Host }}{{ .BasePath }}/serverinfo -H \"Authorization: Bearer $ACCESS_TOKEN\"\n` + "`" + `` + "`" + `` + "`" + `\n",
             "name": "Authentication"
-        },
-        {
-            "description": "Core resources",
-            "name": "Core"
         },
         {
             "description": "Users are active and assigned to the default organization when they signup. A user could be set to an inactive state preventing it from accessing the platform, however it’s recommended to manage the state of users in the identity provider.\n\n- The ` + "`" + `sub` + "`" + ` claim is used as the main identifier of the user in the platform.\n- The profile of the user is derived from the id_token claims ` + "`" + `email` + "`" + ` and ` + "`" + `name` + "`" + `.\n\nWhen a user authenticates for the first time, it performs an automatic signup that persist the profile claims along with it’s unique identifier.\n​\n### Groups\n\nGroups allows defining who may access or interact with certain resources.\n\n- For connection resources it’s possible to define which groups has access to a specific connection, this is enforced when the Access Control feature is enabled.\n- For review resources, it’s possible to define which groups are allowed to approve an execution, this is enforced when the Review feature is enabled.\n\n\u003e This resource could be managed manually via Webapp or propagated by the identity provider via ID Token. In this mode, groups are sync when a user performs a login.\n\n### Roles\n\n- The ` + "`" + `admin` + "`" + ` group is a special role that grants full access to all resources\n\nThis role should be granted to users that are responsible for managing the Gateway. All other users are regular, meaning that they can access their own resources and interact with connections.\n",

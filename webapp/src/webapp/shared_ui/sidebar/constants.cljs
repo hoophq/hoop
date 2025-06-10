@@ -3,7 +3,7 @@
    ["lucide-react" :refer [BadgeCheck BookMarked BrainCog GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Rotate3d
                            ShieldCheck Sparkles SquareCode UsersRound
-                           UserRoundCheck]]
+                           UserRoundCheck VenetianMask]]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
@@ -89,15 +89,15 @@
     :free-feature? false
     :upgrade-plan-route :upgrade-plan
     :admin-only? true}
-   #_{:name "AIDataMasking"
-      :label "AI Data Masking"
-      :icon (fn []
-              [:> VenetianMask {:size 24}])
-      :uri (routes/url-for :ai-data-masking)
-      :navigate :ai-data-masking
-      :free-feature? false
-      :upgrade-plan-route :upgrade-plan
-      :admin-only? true}
+   {:name "AIDataMasking"
+    :label "AI Data Masking"
+    :icon (fn []
+            [:> VenetianMask {:size 24}])
+    :uri (routes/url-for :ai-data-masking)
+    :navigate :ai-data-masking
+    :free-feature? false
+    :upgrade-plan-route :upgrade-plan
+    :admin-only? true}
    {:name "AccessControl"
     :label "Access Control"
     :icon (fn []
