@@ -323,9 +323,9 @@ func processOnUpdatePluginPhase(oldState, newState plugintypes.PluginResource) e
 }
 
 func toOpenApi(obj *models.Plugin) openapi.Plugin {
-	connections := make([]*openapi.PluginConnection, len(obj.Connections))
+	connections := make([]*openapi.PluginResourceConnection, len(obj.Connections))
 	for i, pconn := range obj.Connections {
-		connections[i] = &openapi.PluginConnection{
+		connections[i] = &openapi.PluginResourceConnection{
 			ConnectionID: pconn.ConnectionID,
 			Name:         pconn.ConnectionName,
 			Config:       pconn.Config,

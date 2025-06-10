@@ -2287,6 +2287,161 @@ const docTemplate = `{
                 }
             }
         },
+        "/plugins/{name}/connections/{id}": {
+            "get": {
+                "description": "Get a plugin connection resource",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugins"
+                ],
+                "summary": "Get Plugin Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the plugin",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The connection id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PluginConnection"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update or create a plugin connection resource",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugins"
+                ],
+                "summary": "Upsert Plugin Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the plugin",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The connection id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PluginConnectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PluginConnection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a plugin connection resource.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Plugins"
+                ],
+                "summary": "Delete Plugin Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the plugin",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The connection id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/proxymanager/connect": {
             "post": {
                 "description": "Send a connect request to the client. A successful response indicates the client has stablished a connection.\nIf the connection resource has the review enabled, it returns a successful response containing the link of the review in the ` + "`" + `Localtion` + "`" + ` header.",
@@ -5325,7 +5480,7 @@ const docTemplate = `{
                     "description": "The list of connections configured for a specific plugin",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/openapi.PluginConnection"
+                        "$ref": "#/definitions/openapi.PluginResourceConnection"
                     }
                 },
                 "id": {
@@ -5389,7 +5544,62 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "config": {
-                    "description": "The configuration for this plugin. Each plugin could have distinct set of configurations.\nRefer to Hoop's documentation for more information.",
+                    "description": "The configuration of the plugin connection, the content depends on the plugin type",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "EMAIL_ADDRESS",
+                        "URL"
+                    ]
+                },
+                "connection_id": {
+                    "description": "The connection ID reference",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "B702C63C-E6EB-46BB-9D1E-90EA077E4582"
+                },
+                "id": {
+                    "description": "The resource ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "B39D74FA-EF2E-4B0C-A28A-D382B18043C6"
+                },
+                "plugin_id": {
+                    "description": "The plugin id to create associations",
+                    "type": "string",
+                    "example": "review"
+                },
+                "updated_at": {
+                    "description": "The time when this resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T19:36:41Z"
+                }
+            }
+        },
+        "openapi.PluginConnectionRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "description": "The configuration of the plugin connection, the content depends on the plugin type",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre",
+                        "devops"
+                    ]
+                }
+            }
+        },
+        "openapi.PluginResourceConnection": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "description": "The configuration of the plugin connection, the content depends on the plugin type",
                     "type": "array",
                     "items": {
                         "type": "string"

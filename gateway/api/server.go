@@ -28,6 +28,7 @@ import (
 	loginapi "github.com/hoophq/hoop/gateway/api/login"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
+	apipluginconnections "github.com/hoophq/hoop/gateway/api/pluginconnections"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
@@ -284,22 +285,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.GetTableColumns)
 
-	// TODO(san): needs more testing, will add these endpoints later on
-	// r.POST("/connection-tags",
-	// 	r.AuthMiddleware,
-	// 	// api.TrackRequest(analytics.EventApiExecConnection),
-	// 	apiconnections.CreateTag,
-	// )
-	// r.PUT("/connection-tags/:id",
-	// 	r.AuthMiddleware,
-	// 	// api.TrackRequest(analytics.EventApiExecConnection),
-	// 	apiconnections.UpdateTagByID,
-	// )
-	// r.GET("/connection-tags/:id",
-	// 	r.AuthMiddleware,
-	// 	// api.TrackRequest(analytics.EventApiExecConnection),
-	// 	apiconnections.GetTagByID,
-	// )
 	r.GET("/connection-tags",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -400,6 +385,21 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiplugins.Get)
+
+	// the resource conn is used to avoid conflict with /plugins/runbooks/connections route
+
+	r.PUT("/plugins/:name/conn/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.UpsertPluginConnection)
+	r.GET("/plugins/:name/conn/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.GetPluginConnection)
+	r.DELETE("/plugins/:name/conn/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apipluginconnections.DeletePluginConnection)
 
 	// alias routes
 	r.GET("/plugins/audit/sessions/:session_id",
