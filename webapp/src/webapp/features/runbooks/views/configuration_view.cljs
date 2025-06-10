@@ -5,6 +5,12 @@
    [reagent.core :as r]
    [webapp.components.forms :as forms]))
 
+(defn- decode-b64 [data]
+  (try
+    (when (and data (not (empty? data)))
+      (js/atob data))
+    (catch js/Error _ "")))
+
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
         ;; State atoms
@@ -40,11 +46,29 @@
                                           (assoc :ssh-key @ssh-key
                                                  :ssh-user @ssh-user
                                                  :ssh-key-password @ssh-key-password
-                                                 :ssh-known-hosts @ssh-known-hosts))]
-                        (rf/dispatch [:runbooks-plugin->git-config config-data])
-                        (js/setTimeout
-                         #(reset! is-submitting false)
-                         1000)))]
+                                                 :ssh-known-hosts @ssh-known-hosts))
+
+                            on-success (fn []
+                                         ;; Show success message
+                                         (rf/dispatch [:show-snackbar
+                                                       {:level :success
+                                                        :text "Git repository configured!"}])
+
+                                         ;; Reset config-loaded to force reload
+                                         (reset! config-loaded false)
+
+                                         ;; Reload plugin data after successful save
+                                         (js/setTimeout
+                                          (fn []
+                                            (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
+                                            ;; Give some time for the loading effect
+                                            (js/setTimeout
+                                             #(reset! is-submitting false)
+                                             800))
+                                          200))]
+
+                        ;; Dispatch save with custom success handler
+                        (rf/dispatch [:runbooks-plugin->git-config-with-reload config-data on-success])))]
 
     (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
 
@@ -56,9 +80,9 @@
         (when (and (not @config-loaded) config)
           (reset! config-loaded true)
 
-          ;; Load git URL
+          ;; Load git URL (decode base64)
           (when-let [url (:GIT_URL config)]
-            (reset! git-url url))
+            (reset! git-url (decode-b64 url)))
 
           ;; Detect repository type and credential type based on existing config
           (let [has-ssh-key? (contains? config :GIT_SSH_KEY)
@@ -75,21 +99,21 @@
             (reset! repository-type detected-repo-type)
             (reset! credential-type detected-cred-type))
 
-          ;; Load HTTP credentials
+          ;; Load HTTP credentials (decode base64)
           (when-let [user (:GIT_USER config)]
-            (reset! http-user user))
+            (reset! http-user (decode-b64 user)))
           (when-let [password (:GIT_PASSWORD config)]
-            (reset! http-token password))
+            (reset! http-token (decode-b64 password)))
 
-          ;; Load SSH credentials
+          ;; Load SSH credentials (decode base64)
           (when-let [key (:GIT_SSH_KEY config)]
-            (reset! ssh-key key))
+            (reset! ssh-key (decode-b64 key)))
           (when-let [user (:GIT_SSH_USER config)]
-            (reset! ssh-user user))
+            (reset! ssh-user (decode-b64 user)))
           (when-let [keypass (:GIT_SSH_KEYPASS config)]
-            (reset! ssh-key-password keypass))
+            (reset! ssh-key-password (decode-b64 keypass)))
           (when-let [hosts (:GIT_SSH_KNOWN_HOSTS config)]
-            (reset! ssh-known-hosts hosts)))
+            (reset! ssh-known-hosts (decode-b64 hosts))))
 
         [:> Box {:py "7" :class "space-y-radix-9"}
          ;; Repository Privacy Type Section
