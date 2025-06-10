@@ -182,15 +182,25 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 		// if the plugin is review and no config is provided, remove the plugin connection
 		return tx.Exec(`
 		DELETE FROM private.plugin_connections
-		WHERE plugin_id = (SELECT id FROM private.plugins WHERE name = ?)
-		AND org_id = ? AND connection_id = ?`, pluginName, orgID, connID).
+		WHERE plugin_id = (SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name)
+		AND org_id = @org_id AND connection_id = @connection_id`, map[string]any{
+			"org_id":        orgID,
+			"plugin_name":   pluginName,
+			"connection_id": connID,
+		}).
 			Error
 	}
 	err = tx.Exec(`
 		INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
-		VALUES ((SELECT id FROM private.plugins WHERE name = ?), ?, ?, ?)
-		ON CONFLICT (plugin_id, connection_id) DO UPDATE SET config = ?, updated_at = ?
-		`, pluginName, orgID, connID, config, config, time.Now().UTC()).Error
+		VALUES ((SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name), @org_id, @connection_id, @config)
+		ON CONFLICT (plugin_id, connection_id) DO UPDATE SET config = @config, updated_at = @updated_at
+		`, map[string]any{
+		"org_id":        orgID,
+		"plugin_name":   pluginName,
+		"connection_id": connID,
+		"config":        config,
+		"updated_at":    time.Now().UTC(),
+	}).Error
 	if err != nil {
 		return fmt.Errorf("failed to create review plugin connection, reason: %v", err)
 	}
