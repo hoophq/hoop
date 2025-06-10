@@ -1,6 +1,7 @@
 (ns webapp.webclient.components.database-schema
   (:require ["@radix-ui/themes" :refer [Text]]
-            ["lucide-react" :refer [ChevronDown ChevronRight Database File FolderClosed FolderOpen Table]]
+            ["lucide-react" :refer [ChevronDown ChevronRight Database File
+                                    FolderClosed FolderOpen Table]]
             [reagent.core :as r]
             [re-frame.core :as rf]
             [webapp.subs :as subs]
@@ -306,19 +307,20 @@
         ;; Store the schema state locally to avoid re-renders
         ;; when there are no actual changes
         local-schema-state (r/atom nil)
-        ;; Flag para controlar se já iniciamos o carregamento
+        ;; Flag to control whether we have already started loading - initialized as false
         loading-started (r/atom false)]
-
-    (when (and connection
-               (:connection-name connection)
-               (not @loading-started))
-      (reset! loading-started true)
-      (get-database-schema (:connection-type connection) connection))
 
     ;; Using memoization for the main component
     (r/create-class
      {:component-did-mount
       (fn []
+        ;; Initialize loading on mount if necessary
+        (when (and connection
+                   (:connection-name connection)
+                   (not @loading-started))
+          (reset! loading-started true)
+          (get-database-schema (:connection-type connection) connection))
+
         (when-let [schema (get-in @database-schema [:data @local-connection])]
           (reset! local-schema-state schema))
         (when (and (#{:postgres :mongodb} (keyword (:connection-type connection)))
@@ -330,10 +332,30 @@
       :component-did-update
       (fn [this old-argv]
         (let [[_ old-conn] old-argv
-              [_ new-conn] (r/argv this)]
+              [_ new-conn] (r/argv this)
+              current-schema (get-in @database-schema [:data (:connection-name new-conn)])]
+
+          ;; Case 1: Connection change
           (when (not= (:connection-name old-conn) (:connection-name new-conn))
             (reset! local-connection (:connection-name new-conn))
-            (reset! loading-started false) ;; Resetar o flag para permitir novo carregamento
+            ;; Completely reset loading state for new connection
+            (reset! loading-started false)
+            (reset! local-schema-state nil)
+            ;; Initialize loading for new connection
+            (when (and new-conn (:connection-name new-conn))
+              (reset! loading-started true)
+              (get-database-schema (:connection-type new-conn) new-conn)))
+
+          ;; Case 2: Schema was cleared globally (clear-schema)
+          ;; Detects when global schema is nil but we have a valid connection
+          (when (and (= (:connection-name old-conn) (:connection-name new-conn)) ; same connection
+                     new-conn (:connection-name new-conn)                        ; valid connection
+                     (nil? current-schema)                                        ; schema was cleared
+                     @loading-started)                                            ; but we thought it was already loaded
+            ;; Reinitialize loading after clear-schema
+            (reset! loading-started false)
+            (reset! local-schema-state nil)
+            (reset! loading-started true)
             (get-database-schema (:connection-type new-conn) new-conn))))
 
       :should-component-update
@@ -352,7 +374,7 @@
                    (not= @local-schema-state new-schema)))))
 
       :reagent-render
-      (fn [{:keys [connection-type connection-name]}]
+      (fn [{:keys [connection-name]}]
         (let [current-schema (get-in @database-schema [:data connection-name])]
           (when (and (= (:status current-schema) :success)
                      (not= @local-schema-state current-schema))
