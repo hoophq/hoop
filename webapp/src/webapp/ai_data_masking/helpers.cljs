@@ -6,25 +6,29 @@
 ;; Presets definitions
 (def preset-definitions
   {"CONTACT_INFORMATION" {:text "Contact Information"
-                          :values ["EMAIL_ADDRESS" "PHONE_NUMBER" "PERSON_NAME" "STREET_ADDRESS"]}
-   "PERSONAL_INFORMATION" {:text "Personal Information"
-                           :values ["DATE_OF_BIRTH" "CREDIT_CARD_NUMBER" "MEDICAL_RECORD_NUMBER" "PASSPORT"]}
-   "NETWORK_IDENTIFIERS" {:text "Network Identifiers"
-                          :values ["IP_ADDRESS" "MAC_ADDRESS" "MAC_ADDRESS_LOCAL" "DOMAIN_NAME" "URL"]}
+                          :values ["EMAIL_ADDRESS" "PHONE_NUMBER" "PERSON"]}
    "FINANCIAL_DATA" {:text "Financial Data"
-                     :values ["CREDIT_CARD_NUMBER" "CREDIT_CARD_TRACK_NUMBER" "IBAN_CODE" "SWIFT_CODE" "VAT_NUMBER"]}
-   "PERSONAL_NAMES" {:text "Personal Names"
-                     :values ["FIRST_NAME" "LAST_NAME" "MALE_NAME" "FEMALE_NAME" "PERSON_NAME"]}
-   "MEDICAL_INFO" {:text "Medical Information"
-                   :values ["MEDICAL_RECORD_NUMBER" "MEDICAL_TERM" "ICD9_CODE" "ICD10_CODE"]}
+                     :values ["CREDIT_CARD" "IBAN_CODE"]}
+   "NETWORK_IDENTIFIERS" {:text "Network Identifiers"
+                          :values ["IP_ADDRESS" "URL"]}
    "LOCATION_DATA" {:text "Location Data"
-                    :values ["LOCATION" "LOCATION_COORDINATES" "STREET_ADDRESS" "COUNTRY_DEMOGRAPHIC"]}
-   "DEVICE_IDENTIFIERS" {:text "Device Identifiers"
-                         :values ["IMEI_HARDWARE_ID" "IMSI_ID" "ICCID_NUMBER" "ADVERTISING_ID"]}
-   "DEMOGRAPHICS" {:text "Demographics"
-                   :values ["AGE" "GENDER" "ETHNIC_GROUP" "MARITAL_STATUS"]}
-   "SYSTEM_IDENTIFIERS" {:text "System Identifiers"
-                         :values ["GENERIC_ID" "HTTP_COOKIE" "STORAGE_SIGNED_POLICY_DOCUMENT" "STORAGE_SIGNED_URL"]}})
+                    :values ["LOCATION"]}
+   "TIME_DATA" {:text "Date & Time Information"
+                :values ["DATE_TIME"]}
+   "US_DOCUMENTS" {:text "US Government Documents"
+                   :values ["US_PASSPORT" "US_DRIVER_LICENSE" "US_SSN" "US_ITIN" "US_BANK_NUMBER"]}
+   "UK_DOCUMENTS" {:text "UK Government Documents"
+                   :values ["UK_NHS" "UK_NINO"]}
+   "EUROPEAN_DOCUMENTS" {:text "European Documents"
+                         :values ["ES_NIF" "ES_NIE" "IT_FISCAL_CODE" "IT_DRIVER_LICENSE" "IT_VAT_CODE" "IT_PASSPORT" "IT_IDENTITY_CARD" "PL_PESEL" "FI_PERSONAL_IDENTITY_CODE"]}
+   "ASIA_PACIFIC_DOCUMENTS" {:text "Asia Pacific Documents"
+                             :values ["SG_NRIC_FIN" "SG_UEN" "AU_ABN" "AU_ACN" "AU_TFN" "AU_MEDICARE" "IN_PAN" "IN_AADHAAR" "IN_VEHICLE_REGISTRATION" "IN_VOTER" "IN_PASSPORT"]}
+   "MEDICAL_DATA" {:text "Medical Information"
+                   :values ["MEDICAL_LICENSE"]}
+   "DEMOGRAPHIC_DATA" {:text "Demographic Information"
+                       :values ["NRP"]}
+   "CRYPTO_IDENTIFIERS" {:text "Cryptocurrency Identifiers"
+                         :values ["CRYPTO"]}})
 
 
 
