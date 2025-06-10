@@ -149,11 +149,55 @@
 (rf/reg-event-fx
  :runbooks-plugin->git-config
  (fn
-   [{:keys [db]} [_ {:keys [git-url git-ssh-key]}]]
-   (let [payload (if (cs/blank? git-ssh-key)
-                   {:GIT_URL (encode-b64 git-url)}
-                   {:GIT_URL (encode-b64 git-url)
-                    :GIT_SSH_KEY (encode-b64 git-ssh-key)})
+   [{:keys [db]} [_ config-data]]
+   (let [repository-type (:repository-type config-data)
+         credential-type (:credential-type config-data)
+         git-url (:git-url config-data)
+
+         ;; Build payload based on repository type and credentials
+         base-payload {:GIT_URL (encode-b64 git-url)}
+
+         payload (cond
+                   ;; For public repositories, only GIT_URL is needed
+                   (= repository-type "public")
+                   base-payload
+
+                   ;; For private repositories with HTTP credentials
+                   (and (= repository-type "private")
+                        (= credential-type "http"))
+                   (cond-> base-payload
+                     ;; Add HTTP user if provided, otherwise defaults to "oauth2" on server
+                     (not (cs/blank? (:http-user config-data)))
+                     (assoc :GIT_USER (encode-b64 (:http-user config-data)))
+
+                     ;; HTTP token/password is required for private HTTP repos
+                     (not (cs/blank? (:http-token config-data)))
+                     (assoc :GIT_PASSWORD (encode-b64 (:http-token config-data))))
+
+                   ;; For private repositories with SSH credentials
+                   (and (= repository-type "private")
+                        (= credential-type "ssh"))
+                   (cond-> base-payload
+                     ;; SSH key is required for private SSH repos
+                     (not (cs/blank? (:ssh-key config-data)))
+                     (assoc :GIT_SSH_KEY (encode-b64 (:ssh-key config-data)))
+
+                     ;; SSH user is optional, defaults to "git" on server
+                     (not (cs/blank? (:ssh-user config-data)))
+                     (assoc :GIT_SSH_USER (encode-b64 (:ssh-user config-data)))
+
+                     ;; SSH key password is optional
+                     (not (cs/blank? (:ssh-key-password config-data)))
+                     (assoc :GIT_SSH_KEYPASS (encode-b64 (:ssh-key-password config-data)))
+
+                     ;; SSH known hosts is optional
+                     (not (cs/blank? (:ssh-known-hosts config-data)))
+                     (assoc :GIT_SSH_KNOWN_HOSTS (encode-b64 (:ssh-known-hosts config-data))))
+
+                   ;; Default fallback
+                   :else
+                   base-payload)
+
          on-failure (fn [error]
                       (rf/dispatch [:show-snackbar {:text error :level :error}]))
          on-success (fn [res]

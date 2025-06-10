@@ -144,7 +144,7 @@
                         "3" "rt-r-size-3"
                         "2" "rt-r-size-2"
                         "1" "rt-r-size-1"
-                        "rt-r-size-2"))}
+                        "rt-r-size-3"))}
     [:textarea
      {:class (str "rt-reset rt-TextAreaInput "
                   (when dark "dark"))
