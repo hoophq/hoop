@@ -27,6 +27,9 @@ run-dev:
 run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
+run-dev-presidio:
+	./scripts/dev/run-presidio.sh
+
 build-dev-client:
 	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 

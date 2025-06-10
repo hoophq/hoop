@@ -175,42 +175,48 @@ func GetDataMaskingEntityTypes(orgID, connID string) (json.RawMessage, error) {
 	return json.RawMessage(jsonStr), nil
 }
 
-// TODO: add migration function to convert plugin connections to data masking rules
-// func MigratePluginConnectionToDataMaskingRules(orgID string) error {
-// 	return DB.Transaction(func(tx *gorm.DB) error {
-// 		err := tx.Exec(`
-// 		INSERT INTO datamasking_rules (org_id, name, description, field_types, created_at, updated_at)
-// 		SELECT
-// 			pc.org_id,
-// 			'dm_' || c.name as name,  -- Make unique names per connection
-// 			pc.config as field_types,
-// 			pc.created_at,
-// 			pc.updated_at
-// 		FROM plugin_connections pc
-// 		INNER JOIN connections c ON pc.connection_id = c.id
-// 		INNER JOIN plugins p ON pc.plugin_id = p.id
-// 		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?`, orgID).
-// 			Error
-// 		if err != nil {
-// 			return fmt.Errorf("failed migrating plugin connections to data masking rules: %v", err)
-// 		}
-// 		return tx.Exec(`
-// 		INSERT INTO datamasking_rules_connections (org_id, rule_id, connection_id, status, created_at)
-// 		SELECT
-// 			pc.org_id,
-// 			dr.id as rule_id,
-// 			pc.connection_id,
-// 			CASE
-// 				WHEN pc.enabled = TRUE THEN 'active'::enum_datamasking_assoc_status
-// 				ELSE 'inactive'::enum_datamasking_assoc_status
-// 			END as status,
-// 			pc.created_at
-// 		FROM plugin_connections pc
-// 		JOIN plugins p ON pc.plugin_id = p.id
-// 		JOIN datamasking_rules dr ON dr.name = p.name || '_' || pc.id::text AND dr.org_id = pc.org_id
-// 		WHERE p.name = 'dlp';`, orgID).Error
-// 	})
-// }
+func MigratePluginConnectionToDataMaskingRules(orgID string) error {
+	return DB.Debug().Transaction(func(tx *gorm.DB) error {
+		err := tx.Exec(`
+		INSERT INTO private.datamasking_rules (id, org_id, name, description, supported_entity_types, created_at, updated_at)
+		SELECT
+			pc.id,
+			pc.org_id,
+			'dm_' || c.name AS name,  -- Make unique names per connection
+			'Migrated from DLP plugin' AS description,
+			json_build_array(
+				json_build_object(
+					'name', 'CUSTOM_SELECTION',
+					'entity_types', array_to_json(pc.config)
+				)
+			) AS supported_entity_types,
+			pc.created_at,
+			pc.updated_at
+		FROM private.plugin_connections pc
+		INNER JOIN private.connections c ON pc.connection_id = c.id
+		INNER JOIN private.plugins p ON pc.plugin_id = p.id
+		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?`, orgID).
+			Error
+		if err != nil {
+			return fmt.Errorf("failed migrating plugin connections to data masking rules: %v", err)
+		}
+		return tx.Exec(`
+		INSERT INTO private.datamasking_rules_connections (org_id, rule_id, connection_id, status, created_at)
+		SELECT
+			pc.org_id,
+			pc.id AS rule_id,
+			pc.connection_id,
+			CASE
+				WHEN pc.enabled = TRUE THEN 'active'::private.enum_datamasking_assoc_status
+				ELSE 'inactive'::private.enum_datamasking_assoc_status
+			END AS status,
+			pc.created_at
+		FROM private.plugin_connections pc
+		INNER JOIN private.connections c ON pc.connection_id = c.id
+		INNER JOIN private.plugins p ON pc.plugin_id = p.id
+		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?`, orgID).Error
+	})
+}
 
 func DeleteDataMaskingRule(orgID, ruleID string) error {
 	return DB.Table("private.datamasking_rules").

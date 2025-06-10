@@ -53,6 +53,14 @@ make build-dev-client
 
 > Append `$HOME/.hoop/bin` to your `$PATH` in your profile to find commands when typing in your shell
 
+### Data Masking Setup
+
+We use Presidio as the provider to redact sensitive data on Hoop. To run the Presidio server, you need to have Docker installed and running.
+
+```sh
+make run-dev-presidio
+```
+
 ## Swagger / OpenAPI
 
 This project uses [swag](https://github.com/swaggo/swag) to generate the api documentation. Make sure to generate it every time a change is made in the API:
