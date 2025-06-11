@@ -1,11 +1,14 @@
 (ns webapp.webclient.components.connections-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading Tooltip IconButton Text]]
-   ["lucide-react" :refer [FolderTree Settings2 EllipsisVertical X]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading
+                               Tooltip IconButton Text Link]]
+   ["lucide-react" :refer [AlertCircle EllipsisVertical FolderTree Settings2
+                           X ArrowUpRight]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
+   [webapp.routes :as routes]
    [webapp.webclient.components.database-schema :as database-schema]))
 
 (defn connection-item [{:keys [name command type subtype status selected? on-select dark? admin?]}]
@@ -99,7 +102,7 @@
                                        (or
                                         (= "enabled" (:access_mode_exec %))
                                         (= "enabled" (:access_mode_runbooks %)))) available-connections)]
-    [:> Box
+    [:> Box {:class "h-full pb-4"}
      [:> Flex {:justify "between" :align "center" :class "py-3 px-2 bg-gray-1 border-b border-t border-gray-3"}
       [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Connections"]
       (when admin?
@@ -130,6 +133,24 @@
    [:> Text {:size "2" :color "red"}
     (str "Error loading connections: " error)]])
 
+(defn license-expiration-warning []
+  (let [should-show-warning (rf/subscribe [:gateway->should-show-license-expiration-warning])]
+    (fn []
+      (when @should-show-warning
+        [:> Box {:class "p-3"}
+         [:> Callout.Root {:color "yellow" :role "alert" :size "1"}
+          [:> Callout.Icon
+           [:> AlertCircle {:size 16 :class "text-warning-12"}]]
+          [:> Callout.Text {:size "1" :class "text-warning-12"}
+           "Your organization's license is expiring soon. Visit the License section to renew it."]
+          [:> Flex {:align "center" :gap "1"}
+           [:> Callout.Text {:size "1" :weight "bold" :class "text-warning-12 cursor-pointer"
+                             :onClick #(rf/dispatch [:navigate :license-management])}
+            "Go to license page"]
+           [:> Link {:href (routes/url-for [:features :license])
+                     :target "_blank"}
+            [:> ArrowUpRight {:size 14 :class "text-warning-12"}]]]]]))))
+
 (defn main []
   (let [status (rf/subscribe [:connections/status])
         connections (rf/subscribe [:connections/filtered])
@@ -143,11 +164,16 @@
     (fn [dark-mode? show-tree?]
       (let [admin? (-> @user :data :is_admin)]
         [:> Box {:class "h-full flex flex-col"}
-         (case @status
-           :loading [loading-state]
-           :error [error-state @error]
-           :success [:<>
-                     (when @selected
-                       [selected-connection @selected dark-mode? admin? show-tree?])
-                     [connections-list @connections @selected dark-mode? admin?]]
-           [loading-state])]))))
+         ;; Área principal com scroll para as conexões
+         [:> Box {:class "flex-1 overflow-auto"}
+          (case @status
+            :loading [loading-state]
+            :error [error-state @error]
+            :success [:<>
+                      (when @selected
+                        [selected-connection @selected dark-mode? admin? show-tree?])
+                      [connections-list @connections @selected dark-mode? admin?]]
+            [loading-state])]
+
+         ;; Alerta fixo na parte inferior
+         [license-expiration-warning]]))))

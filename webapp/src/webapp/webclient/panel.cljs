@@ -199,6 +199,8 @@
     [:> Tooltip {:content (str "Your script streams to " (cs/join " " command) " via stdin")}
      [:> Info {:class "shrink-0 text-gray-11"}]]]])
 
+
+
 (defn editor []
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
@@ -373,7 +375,7 @@
              [:> Allotment {:defaultSizes vertical-pane-sizes
                             :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
               [:> (.-Pane Allotment) {:minSize 270}
-               [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto pb-16"}
+               [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto"}
                 (if @multi-run-panel?
                   [connections-panel/main dark-mode? (some? (:data @selected-template))]
                   [connections-list/main dark-mode? (show-tree? current-connection)])]]
