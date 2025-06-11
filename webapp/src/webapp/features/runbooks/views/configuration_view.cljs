@@ -1,9 +1,12 @@
 (ns webapp.features.runbooks.views.configuration-view
   (:require
-   ["@radix-ui/themes" :refer [Box Grid Flex Text Button Heading RadioGroup]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link
+                               RadioGroup Text]]
+   ["lucide-react" :refer [ArrowUpRight]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.config :as config]))
 
 (defn main [active-tab]
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
@@ -140,8 +143,13 @@
 
            ;; Learn more button
            [:> Box {:mt "4"}
-            [:> Button {:variant "ghost" :size "2" :class "text-[--gray-11] p-0"}
-             "↗ Learn more about Runbooks"]]]
+            [:> Link {:href (get-in config/docs-url [:features :runbooks])
+                      :target "_blank"}
+             [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+              [:> Callout.Icon
+               [:> ArrowUpRight {:size 16}]]
+              [:> Callout.Text
+               "Learn more about Runbooks"]]]]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
            ;; Credential type selection (only for private repos)
@@ -167,6 +175,7 @@
              [:<>
               [forms/input {:label "User (Optional)"
                             :placeholder "············"
+                            :type "password"
                             :value @http-user
                             :on-change #(reset! http-user (-> % .-target .-value))
                             :class "w-full"}]
@@ -193,6 +202,7 @@
 
               [forms/input {:label "SSH User (Optional)"
                             :placeholder "············"
+                            :type "password"
                             :value @ssh-user
                             :on-change #(reset! ssh-user (-> % .-target .-value))
                             :class "w-full"}]
