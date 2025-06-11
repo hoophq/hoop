@@ -3,7 +3,8 @@
    [clojure.string :as strings]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   ["@radix-ui/themes" :refer [Table Flex Box Text Heading Button]]
+   ["@radix-ui/themes" :refer [Table Flex Box Text Heading Button Callout]]
+   ["lucide-react" :refer [AlertCircle]]
    [webapp.components.headings :as h]
    [webapp.components.forms :as forms]))
 
@@ -92,6 +93,17 @@
                           :placeholder "Enter your license key"
                           :type "password"}]]]]]]])))
 
+(defn license-expiration-warning []
+  (let [should-show-warning (rf/subscribe [:gateway->should-show-license-expiration-warning])]
+    (fn []
+      (when @should-show-warning
+        [:> Box {:class "mb-6"}
+         [:> Callout.Root {:color "yellow" :role "alert" :size "1"}
+          [:> Callout.Icon
+           [:> AlertCircle {:size 16 :class "text-warning-12"}]]
+          [:> Callout.Text {:class "text-warning-12"}
+           "Your organization's license is expiring soon. Please contact us to avoid interruption."]]]))))
+
 (defn main []
   (let [gateway-info (rf/subscribe [:gateway->info])
         ;; used here for the input because the action
@@ -115,6 +127,9 @@
                                      (strings/blank? @license-value))
                        :on-click #(rf/dispatch [:license->update-license-key @license-value])}
             "Save license"]]]
+
+         [license-expiration-warning]
+
          [:> Flex {:direction :column
                    :gap "8"}
           [information-table license-info]
