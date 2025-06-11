@@ -195,7 +195,8 @@ func MigratePluginConnectionToDataMaskingRules(orgID string) error {
 		FROM private.plugin_connections pc
 		INNER JOIN private.connections c ON pc.connection_id = c.id
 		INNER JOIN private.plugins p ON pc.plugin_id = p.id
-		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?`, orgID).
+		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?
+		ON CONFLICT DO NOTHING`, orgID).
 			Error
 		if err != nil {
 			return fmt.Errorf("failed migrating plugin connections to data masking rules: %v", err)
@@ -214,7 +215,8 @@ func MigratePluginConnectionToDataMaskingRules(orgID string) error {
 		FROM private.plugin_connections pc
 		INNER JOIN private.connections c ON pc.connection_id = c.id
 		INNER JOIN private.plugins p ON pc.plugin_id = p.id
-		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?`, orgID).Error
+		WHERE p.name = 'dlp' AND pc.enabled = TRUE AND p.org_id = ?
+		ON CONFLICT DO NOTHING`, orgID).Error
 	})
 }
 

@@ -143,10 +143,20 @@ RUN curl -Lo ec2-metadata-mock "https://github.com/aws/amazon-ec2-metadata-mock/
 ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
 ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24"
 
-RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
+RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+  amd64) ARCH='amd64';; \
+  arm64) ARCH='aarch64';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
   echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
   chmod 755 kubectl && \
-  mv kubectl /usr/local/bin/kubectl
+  mv kubectl /usr/local/bin/kubectl && \
+  curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$ARCH.zip" -o awscli-exe-linux.zip && \
+    unzip -q awscli-exe-linux.zip && \
+    aws/install && \
+    aws --version
 
 RUN pip3 install -U \
   boto3==1.37.38 \
