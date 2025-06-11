@@ -374,8 +374,8 @@
                    (not= @local-schema-state new-schema)))))
 
       :reagent-render
-      (fn [{:keys [connection-name]}]
-        (let [current-schema (get-in @database-schema [:data connection-name])]
+      (fn [connection]
+        (let [current-schema (get-in @database-schema [:data (:connection-name connection)])]
           (when (and (= (:status current-schema) :success)
                      (not= @local-schema-state current-schema))
             (reset! local-schema-state current-schema))
