@@ -60,7 +60,6 @@
 
             [:> Box {:class "flex-grow"}
              ;; Tabs
-             (println "active-tab" @active-tab)
              [:> Tabs.Root {:value @active-tab
                             :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}

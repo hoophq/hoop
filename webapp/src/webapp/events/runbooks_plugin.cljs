@@ -52,45 +52,11 @@
              [:dispatch [:runbooks-plugin->set-filtered-runbooks
                          (map #(into {} {:name (:name %)}) runbooks)]])]})))
 
-(rf/reg-event-fx
- :runbooks-plugin->get-runbooks-by-connection
- (fn
-   [{:keys [db]} [_ connection-name]]
-   {:fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/plugins/runbooks/connections/" connection-name "/templates")
-                             :on-success (fn [res]
-                                           (rf/dispatch
-                                            [:runbooks-plugin->set-runbooks-by-connection
-                                             {:runbooks res
-                                              :status :ready
-                                              :message ""}]))
-                             :on-failure (fn [error]
-                                           (rf/dispatch
-                                            [:runbooks-plugin->set-runbooks-by-connection
-                                             {:runbooks nil
-                                              :status :error
-                                              :message error}]))}]]]
-    :db (assoc db :runbooks-plugin->runbook-by-connection {:status :loading :data nil})}))
-
-(rf/reg-event-db
- :runbooks-plugin->set-runbooks-by-connection
- (fn
-   [db [_ {:keys [runbooks status message]}]]
-   (assoc db :runbooks-plugin->runbooks-by-connection {:status status
-                                                       :data runbooks
-                                                       :message message})))
-
 (rf/reg-event-db
  :runbooks-plugin->set-filtered-runbooks
  (fn
    [db [_ runbooks]]
    (assoc db :runbooks-plugin->filtered-runbooks runbooks)))
-
-(rf/reg-event-db
- :runbooks-plugin->clear-runbooks
- (fn
-   [db [_ template]]
-   (assoc db :runbooks-plugin->runbooks {:status :ready :data nil})))
 
 (rf/reg-event-db
  :runbooks-plugin->error-runbooks
@@ -276,15 +242,3 @@
                                :on-success on-success
                                :on-failure on-failure
                                :body payload}]]]})))
-
-;; Event to set active tab
-(rf/reg-event-db
- :runbooks/set-active-tab
- (fn [db [_ tab]]
-   (assoc db :runbooks/active-tab tab)))
-
-;; Subscription to get active tab
-(rf/reg-sub
- :runbooks/active-tab
- (fn [db]
-   (get db :runbooks/active-tab "connections")))
