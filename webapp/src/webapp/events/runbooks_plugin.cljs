@@ -205,7 +205,7 @@
                        [:show-snackbar {:level :success
                                         :text "Git repository configured!"}]))]
      {:fx [[:dispatch [:fetch {:method "PUT"
-                               :uri (str "/plugins/runbooks/config")
+                               :uri "/plugins/runbooks/config"
                                :on-success on-success
                                :on-failure on-failure
                                :body payload}]]]})))
@@ -276,3 +276,15 @@
                                :on-success on-success
                                :on-failure on-failure
                                :body payload}]]]})))
+
+;; Event to set active tab
+(rf/reg-event-db
+ :runbooks/set-active-tab
+ (fn [db [_ tab]]
+   (assoc db :runbooks/active-tab tab)))
+
+;; Subscription to get active tab
+(rf/reg-sub
+ :runbooks/active-tab
+ (fn [db]
+   (get db :runbooks/active-tab "connections")))

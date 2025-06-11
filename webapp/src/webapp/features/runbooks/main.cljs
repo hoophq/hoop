@@ -3,6 +3,7 @@
    ["@radix-ui/themes" :refer [Box Flex Separator Tabs Text]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.headings :as h]
    [webapp.features.promotion :as promotion]
    [webapp.features.runbooks.views.configuration-view :as config-view]
@@ -17,17 +18,23 @@
 
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        connections (rf/subscribe [:connections])]
+        connections (rf/subscribe [:connections])
+        active-tab (r/atom "connections")
+        params (.-search (.-location js/window))
+        url-tab (r/atom (parse-params params))]
 
     (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
     (rf/dispatch [:connections->get-connections])
 
     (fn []
-      (let [params (.-search (.-location js/window))
-            tab (or (parse-params params) "connections")
-            plugin (:plugin @plugin-details)
+      (let [plugin (:plugin @plugin-details)
             installed? (or (:installed? plugin) false)
             has-connections? (and (:results @connections) (seq (:results @connections)))]
+
+        ;; Initialize active tab from URL
+        (when @url-tab
+          (reset! active-tab @url-tab)
+          (reset! url-tab nil))
 
         (if (and
              (or (not installed?)
@@ -53,7 +60,9 @@
 
             [:> Box {:class "flex-grow"}
              ;; Tabs
-             [:> Tabs.Root {:default-value tab}
+             (println "active-tab" @active-tab)
+             [:> Tabs.Root {:value @active-tab
+                            :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}
                [:> Tabs.Trigger {:value "connections"} "Connections"]
                [:> Tabs.Trigger {:value "configuration"} "Configuration"]]
@@ -66,4 +75,4 @@
                  [runbook-list/main])]
 
               [:> Tabs.Content {:value "configuration" :class "h-full"}
-               [config-view/main]]]]]])))))
+               [config-view/main active-tab]]]]]])))))

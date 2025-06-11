@@ -5,13 +5,7 @@
    [reagent.core :as r]
    [webapp.components.forms :as forms]))
 
-(defn- decode-b64 [data]
-  (try
-    (when (and data (not (empty? data)))
-      (js/atob data))
-    (catch js/Error _ "")))
-
-(defn main []
+(defn main [active-tab]
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
         ;; State atoms
         repository-type (r/atom "public")  ; "public" or "private"
@@ -57,14 +51,17 @@
                                          ;; Reset config-loaded to force reload
                                          (reset! config-loaded false)
 
-                                         ;; Reload plugin data after successful save
+                                         ;; Reload plugin data and switch to connections tab
                                          (js/setTimeout
                                           (fn []
                                             (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
-                                            ;; Give some time for the loading effect
+                                            ;; Switch to connections tab after successful save
                                             (js/setTimeout
-                                             #(reset! is-submitting false)
-                                             800))
+                                             (fn []
+                                               (reset! is-submitting false)
+                                               ;; Dispatch event to switch to connections tab
+                                               (reset! active-tab "connections"))
+                                             200))
                                           200))]
 
                         ;; Dispatch save with custom success handler
@@ -80,9 +77,9 @@
         (when (and (not @config-loaded) config)
           (reset! config-loaded true)
 
-          ;; Load git URL (decode base64)
+          ;; Load git URL
           (when-let [url (:GIT_URL config)]
-            (reset! git-url (decode-b64 url)))
+            (reset! git-url url))
 
           ;; Detect repository type and credential type based on existing config
           (let [has-ssh-key? (contains? config :GIT_SSH_KEY)
@@ -99,21 +96,21 @@
             (reset! repository-type detected-repo-type)
             (reset! credential-type detected-cred-type))
 
-          ;; Load HTTP credentials (decode base64)
+          ;; Load HTTP credentials
           (when-let [user (:GIT_USER config)]
-            (reset! http-user (decode-b64 user)))
+            (reset! http-user user))
           (when-let [password (:GIT_PASSWORD config)]
-            (reset! http-token (decode-b64 password)))
+            (reset! http-token password))
 
-          ;; Load SSH credentials (decode base64)
+          ;; Load SSH credentials
           (when-let [key (:GIT_SSH_KEY config)]
-            (reset! ssh-key (decode-b64 key)))
+            (reset! ssh-key key))
           (when-let [user (:GIT_SSH_USER config)]
-            (reset! ssh-user (decode-b64 user)))
+            (reset! ssh-user user))
           (when-let [keypass (:GIT_SSH_KEYPASS config)]
-            (reset! ssh-key-password (decode-b64 keypass)))
+            (reset! ssh-key-password keypass))
           (when-let [hosts (:GIT_SSH_KNOWN_HOSTS config)]
-            (reset! ssh-known-hosts (decode-b64 hosts))))
+            (reset! ssh-known-hosts hosts)))
 
         [:> Box {:py "7" :class "space-y-radix-9"}
          ;; Repository Privacy Type Section
