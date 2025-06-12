@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -89,7 +90,15 @@ func updateBatchConnectionTags(tx *gorm.DB, orgID, connID string, tags map[strin
 	if err != nil {
 		return fmt.Errorf("failed cleaning connection tags association, reason=%v", err)
 	}
-	for key, value := range tags {
+
+	// Sort keys to ensure consistent lock ordering across transactions
+	sortedTags := make([]string, 0, len(tags))
+	for key := range tags {
+		sortedTags = append(sortedTags, key)
+	}
+	sort.Strings(sortedTags)
+	for _, key := range sortedTags {
+		value := tags[key]
 		tagID := uuid.NewString()
 		err := tx.Raw(`
 			INSERT INTO private.connection_tags (org_id, id, key, value, updated_at)
