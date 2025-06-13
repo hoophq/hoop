@@ -1,44 +1,91 @@
 (ns webapp.connections.views.hoop-cli-modal
-  (:require ["@radix-ui/themes" :refer [Box Button Text Flex Tabs]]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.config :as config]))
+  (:require
+   ["@radix-ui/themes" :refer [Box Button Flex Tabs Text]]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.config :as config]))
 
 (def cli-commands
   {:macos {:install ["brew tap brew https://github.com/hoophq/brew"
                      "brew install hoop"]
            :configure "hoop config create --api-url https://use.hoop.dev"
            :login "hoop login"
-           :connect "hoop connect <connection-name>"}
+           :connect "hoop connect <connection-name>"
+           :docs-link (get-in config/docs-url
+                              [:clients :command-line :macos])}
    :linux {:install "curl -s -L https://releases.hoop.dev/release/install-cli.sh | sh"
            :configure "hoop config create --api-url https://use.hoop.dev"
            :login "hoop login"
-           :connect "hoop connect <connection-name>"}
-   :windows {:docs-link "https://docs.hoop.dev/cli/windows"}})
+           :connect "hoop connect <connection-name>"
+           :docs-link (get-in config/docs-url
+                              [:clients :command-line :linux])}
+   :windows {:docs-link (get-in config/docs-url
+                                [:clients :command-line :windows])}})
+
+(defn highlight-command [cmd connection-name]
+  (let [processed-cmd (cs/replace cmd "<connection-name>" connection-name)]
+    [:div
+     (cond
+       ;; Brew commands
+       (cs/includes? cmd "brew tap brew")
+       [:> Text {:size "2"}
+        "brew tap brew "
+        [:> Text {:size "2" :class "text-[--orange-7]"} "https://github.com/hoophq/brew"]]
+
+       (cs/includes? cmd "brew install")
+       [:> Text {:size "2"}
+        "brew install hoop"]
+
+       ;; Config command
+       (cs/includes? cmd "hoop config create")
+       [:> Text {:size "2"}
+        "hoop config create --api-url "
+        [:> Text {:size "2" :class "text-[--orange-7]"} "https://use.hoop.dev"]]
+
+       ;; Login command
+       (cs/includes? cmd "hoop login")
+       [:> Text {:size "2"} "hoop login"]
+
+       ;; Connect command
+       (cs/includes? cmd "hoop connect")
+       [:> Text {:size "2"}
+        "hoop connect "
+        [:> Text {:size "2" :class "text-[--orange-7]"} connection-name]]
+
+       ;; Curl command
+       (cs/includes? cmd "curl")
+       [:> Text {:size "2"}
+        "curl -s -L "
+        [:> Text {:size "2" :class "text-[--orange-7]"} "https://releases.hoop.dev/release/install-cli.sh"]
+        " | sh"]
+
+       ;; Default
+       :else processed-cmd)]))
 
 (defn code-block [commands connection-name]
   [:div {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm space-y-2"}
    (if (vector? commands)
      (for [cmd commands]
        ^{:key cmd}
-       [:div (clojure.string/replace cmd "<connection-name>" connection-name)])
-     [:div (clojure.string/replace commands "<connection-name>" connection-name)])])
+       [highlight-command cmd connection-name])
+     [highlight-command commands connection-name])])
 
 (defn cli-section [title commands connection-name]
   [:div {:class "space-y-3"}
-   [:> Text {:as "h3" :size "4" :weight "medium"}
+   [:> Text {:as "h3" :size "4" :weight "bold"}
     title]
    [code-block commands connection-name]])
 
 (defn macos-content [connection-name]
-  [:div {:class "space-y-6"}
+  [:div {:class "space-y-radix-6"}
    [cli-section "Install Hoop CLI" (get-in cli-commands [:macos :install]) connection-name]
    [cli-section "Configure authentication" (get-in cli-commands [:macos :configure]) connection-name]
    [cli-section "Get an access token" (get-in cli-commands [:macos :login]) connection-name]
    [cli-section "Connect to resource" (get-in cli-commands [:macos :connect]) connection-name]])
 
 (defn linux-content [connection-name]
-  [:div {:class "space-y-6"}
+  [:div {:class "space-y-radix-6"}
    [cli-section "Install Hoop CLI" (get-in cli-commands [:linux :install]) connection-name]
    [cli-section "Configure authentication" (get-in cli-commands [:linux :configure]) connection-name]
    [cli-section "Get an access token" (get-in cli-commands [:linux :login]) connection-name]
@@ -92,10 +139,14 @@
                      :color "gray"
                      :on-click #(rf/dispatch [:modal->close])}
           "Close"]
-         [:> Button {:variant "ghost"
-                     :color "gray"
-                     :on-click #(js/window.open "https://docs.hoop.dev/cli" "_blank")}
-          "Hoop CLI Docs"]]]
+         (when-not (= @selected-tab "windows")
+           [:> Button {:variant "ghost"
+                       :color "gray"
+                       :on-click #(js/window.open
+                                   (get-in cli-commands
+                                           [(keyword @selected-tab) :docs-link])
+                                   "_blank")}
+            "Hoop CLI Docs"])]]
 
        ;; Right side - Decorative image
        [:> Box {:class "w-[45%] bg-blue-50"}

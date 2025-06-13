@@ -9,6 +9,7 @@
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
    [webapp.routes :as routes]
+   [webapp.webclient.components.alerts-carousel :as alerts-carousel]
    [webapp.webclient.components.database-schema :as database-schema]))
 
 (defn connection-item [{:keys [name command type subtype status selected? on-select dark? admin?]}]
@@ -133,23 +134,36 @@
    [:> Text {:size "2" :color "red"}
     (str "Error loading connections: " error)]])
 
-(defn license-expiration-warning []
-  (let [should-show-warning (rf/subscribe [:gateway->should-show-license-expiration-warning])]
+(defn get-active-alerts []
+  (let [should-show-license-warning (rf/subscribe [:gateway->should-show-license-expiration-warning])
+        hide-setup-local-access (r/atom
+                                 (= (js/localStorage.getItem "hide-setup-local-access") "true"))]
     (fn []
-      (when @should-show-warning
-        [:> Box {:class "p-3"}
-         [:> Callout.Root {:color "yellow" :role "alert" :size "1"}
-          [:> Callout.Icon
-           [:> AlertCircle {:size 16 :class "text-warning-12"}]]
-          [:> Callout.Text {:size "1" :class "text-warning-12"}
-           "Your organization's license is expiring soon. Visit the License section to renew it."]
-          [:> Flex {:align "center" :gap "1"}
-           [:> Callout.Text {:size "1" :weight "bold" :class "text-warning-12 cursor-pointer"
-                             :onClick #(rf/dispatch [:navigate :license-management])}
-            "Go to license page"]
-           [:> Link {:href (routes/url-for [:features :license])
-                     :target "_blank"}
-            [:> ArrowUpRight {:size 14 :class "text-warning-12"}]]]]]))))
+      (let [alerts (cond-> []
+                     ;; License expiration warning
+                     true #_@should-show-license-warning
+                     (conj {:id :license-expiration
+                            :color "yellow"
+                            :icon [:> AlertCircle {:size 16 :class "text-warning-12"}]
+                            :text "Your organization's license is expiring soon. Visit the License section to renew it."
+                            :action-text "Go to license page"
+                            :on-action #(rf/dispatch [:navigate :license-management])
+                            :link-href (routes/url-for [:features :license])})
+
+                     true #_(not @hide-setup-local-access)
+                     (conj {:id :setup-local-access
+                            :color "yellow"
+                            :icon [:> AlertCircle {:size 16 :class "text-warning-12"}]
+                            :title "Setup Local Access"
+                            :text "Enable your local Terminal access for your resources with Hoop CLI."
+                            :action-text "Go to Connections"
+                            :closeable true
+                            :on-close (fn []
+                                        (.setItem js/localStorage "hide-setup-local-access" "true")
+                                        (reset! hide-setup-local-access true))
+                            :on-action #(rf/dispatch [:navigate :connections])
+                            :link-href (routes/url-for [:features :license])}))]
+        alerts))))
 
 (defn main []
   (let [status (rf/subscribe [:connections/status])
@@ -176,4 +190,4 @@
             [loading-state])]
 
          ;; Alerta fixo na parte inferior
-         [license-expiration-warning]]))))
+         [alerts-carousel/main {:alerts ((get-active-alerts))}]]))))

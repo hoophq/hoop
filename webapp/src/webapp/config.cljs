@@ -57,7 +57,10 @@
                        :managing-accesss "https://hoop.dev/docs/clients/webapp/managing-accesss"
                        :monitoring-sessions "https://hoop.dev/docs/clients/webapp/monitoring-sessions"}
              :desktop-app "https://hoop.dev/docs/clients/desktop-app"
-             :command-line "https://hoop.dev/docs/clients/cli"}
+             :command-line {:overview "https://hoop.dev/docs/clients/cli"
+                            :windows "https://hoop.dev/docs/clients/cli#windows"
+                            :macos "https://hoop.dev/docs/clients/cli#mac-os"
+                            :linux "https://hoop.dev/docs/clients/cli#linux"}}
    :integrations {:slack "https://hoop.dev/docs/integrations/slack"
                   :teams "https://hoop.dev/docs/integrations/teams"
                   :jira "https://hoop.dev/docs/integrations/jira"
