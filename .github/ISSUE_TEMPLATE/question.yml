@@ -1,0 +1,99 @@
+name: 💬 Question or Discussion
+description: Ask a question or start a discussion about the project
+title: "[Question]: "
+labels: ["question", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your interest in the project! Feel free to ask questions or start discussions here.
+
+  - type: dropdown
+    id: question-type
+    attributes:
+      label: Question Type
+      description: What kind of question or discussion is this?
+      options:
+        - General question
+        - How to use
+        - Best practices
+        - Architecture/Design discussion
+        - Documentation clarification
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: Please provide a clear and concise question or discussion topic
+      placeholder: |
+        I'm wondering about...
+        How do I...
+        Can someone explain...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide any relevant context or background information
+      placeholder: |
+        I'm trying to accomplish...
+        My use case is...
+        I'm working on...
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: If applicable, describe what you've already tried or researched
+      placeholder: |
+        I've looked at the documentation...
+        I tried to...
+        I searched for...
+
+  - type: textarea
+    id: code-example
+    attributes:
+      label: Code Example
+      description: If relevant, provide a code example or snippet
+      render: javascript
+      placeholder: |
+        // Your code example here
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Related Issues or Documentation
+      description: Link to any related issues, PRs, or documentation
+      placeholder: |
+        - Related to #123
+        - Documentation: https://...
+        - Similar discussion: #456
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Add any other context or information that might be helpful
+
+  - type: checkboxes
+    id: search
+    attributes:
+      label: Search
+      description: Please confirm you've searched for similar questions
+      options:
+        - label: I have searched the existing issues and discussions
+          required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true 
