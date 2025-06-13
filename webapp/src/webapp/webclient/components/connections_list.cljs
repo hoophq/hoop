@@ -141,7 +141,7 @@
     (fn []
       (let [alerts (cond-> []
                      ;; License expiration warning
-                     true #_@should-show-license-warning
+                     @should-show-license-warning
                      (conj {:id :license-expiration
                             :color "yellow"
                             :icon [:> AlertCircle {:size 16 :class "text-warning-12"}]
@@ -150,7 +150,7 @@
                             :on-action #(rf/dispatch [:navigate :license-management])
                             :link-href (routes/url-for [:features :license])})
 
-                     true #_(not @hide-setup-local-access)
+                     (not @hide-setup-local-access)
                      (conj {:id :setup-local-access
                             :color "yellow"
                             :icon [:> AlertCircle {:size 16 :class "text-warning-12"}]
