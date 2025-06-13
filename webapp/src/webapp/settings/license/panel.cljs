@@ -1,12 +1,12 @@
 (ns webapp.settings.license.panel
   (:require
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link Table Text]]
+   ["lucide-react" :refer [AlertCircle]]
    [clojure.string :as strings]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   ["@radix-ui/themes" :refer [Table Flex Box Text Heading Button Callout]]
-   ["lucide-react" :refer [AlertCircle]]
-   [webapp.components.headings :as h]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.config :as config]))
 
 (defmulti license-status-text identity)
 (defmethod license-status-text "oss" [_]
@@ -34,9 +34,6 @@
     [:> Flex {:direction :column
               :gap "4"}
      [:> Box
-      [:> Heading {:size "5"}
-       "Information"]]
-     [:> Box
       [:> Table.Root {:variant "surface"}
        [:> Table.Header
         [:> Table.Row
@@ -63,19 +60,19 @@
       [:> Flex {:direction :column
                 :gap "4"}
        [:> Box
-        [:> Heading {:size "5" :as "h3"}
-         "License"]]
+        [:> Heading {:size "4" :weight "bold" :as "h3" :class "text-gray-12"}
+         "License Details"]]
        [:> Box
         [:> Table.Root {:variant "surface"}
          [:> Table.Body
           [:> Table.Row
            [:> Table.ColumnHeaderCell
-            [:> Text {:size "1"} "Verified hostname"]]
+            [:> Text {:size "1"} "Verified Hostname"]]
            [:> Table.Cell
             [:> Text (:verified_host license-info)]]]
           [:> Table.Row
            [:> Table.ColumnHeaderCell
-            [:> Text {:size "1"} "Key ID"]]
+            [:> Text {:size "1"} "Enterprise License"]]
            [:> Table.Cell
             (if (empty? key-id)
               [:> Text {:size "1"
@@ -114,25 +111,43 @@
             is-valid? (:is_valid license-info)
             license-type (:type license-info)
             disable-license-input? (and is-valid? (= license-type "enterprise"))]
-        [:div
+        [:> Flex {:direction "column"
+                  :class "h-full"}
          [:> Flex {:class "mb-10"
                    :as "header"}
           [:> Box {:flexGrow "1"}
-           [h/PageHeader {:text "License Management"}]
-           [:> Text {:size "5" :class "text-[--gray-11]"}
-            "Manage your organization's license"]]
-          [:> Box
+           [:> Heading {:size "8" :weight "bold" :as "h1" :class "text-gray-12"}
+            "License"]
+           [:> Text {:size "2" :class "text-gray-11"}
+            "View and manage your organization's license."]]
+          [:> Flex {:gap "6" :align "center"}
+           [:> Button {:size "3"
+                       :variant "ghost"
+                       :on-click #(js/window.open "https://help.hoop.dev/" "_blank")}
+            "Contact us"]
            [:> Button {:size "3"
                        :disabled (or disable-license-input?
                                      (strings/blank? @license-value))
                        :on-click #(rf/dispatch [:license->update-license-key @license-value])}
-            "Save license"]]]
+            "Save"]]]
 
          [license-expiration-warning]
 
          [:> Flex {:direction :column
-                   :gap "8"}
+                   :gap "8"
+                   :class "flex-1 overflow-auto"}
           [information-table license-info]
           [license-table {:license-info license-info
                           :license-value license-value
-                          :disable-input? disable-license-input?}]]]))))
+                          :disable-input? disable-license-input?}]
+
+          [:> Text {:size "1" :class "text-gray-11 mt-auto self-center"}
+           "Need more information? Check out "
+           [:> Link {:href (get-in config/docs-url [:setup :license-management])
+                     :target "_blank"}
+            "License Management documentation"]
+           " or "
+           [:> Link {:href "https://help.hoop.dev/"
+                     :target "_blank"}
+            "contact us"]
+           ". "]]]))))
