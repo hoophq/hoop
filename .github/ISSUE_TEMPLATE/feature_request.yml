@@ -1,0 +1,99 @@
+name: ✨ Feature Request
+description: Suggest an idea for this project
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a new feature! Please provide as much detail as possible to help us understand your request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear and concise description of what the problem is
+      placeholder: |
+        I'm always frustrated when...
+        It would be helpful if...
+        Currently, there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+      description: A clear and concise description of what you want to happen
+      placeholder: |
+        I would like to be able to...
+        The feature should...
+        This could work by...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Describe alternatives you've considered
+      description: A clear and concise description of any alternative solutions or features you've considered
+      placeholder: |
+        Alternative approaches could include...
+        I've also thought about...
+        Other solutions might be...
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve my workflow
+        - High - Critical for my use case
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Please describe your use case and how this feature would benefit you and others
+      placeholder: |
+        In my project, I need to...
+        This would help when...
+        Users could benefit by...
+    validations:
+      required: true
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups or Examples
+      description: If applicable, add mockups, diagrams, or examples to help explain your feature request
+      placeholder: Drag and drop images here or paste URLs
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, screenshots, or references about the feature request here
+      placeholder: Any additional information that might help
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be willing to contribute to this feature?
+      options:
+        - label: I would be willing to submit a PR to implement this feature
+          required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our Code of Conduct
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true 
