@@ -1,11 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📚 Documentation
-    url: https://github.com/rogefm/hoop/wiki
+    url: https://hoop.dev/docs
     about: Check out our documentation for guides and tutorials
   - name: 💬 Discussions
-    url: https://github.com/rogefm/hoop/discussions
+    url: https://github.com/hoophq/hoop/discussions
     about: Join our community discussions for general questions and ideas
-  - name: 🚨 Security Issues
-    url: https://github.com/rogefm/hoop/security/policy
-    about: Please report security vulnerabilities privately 
