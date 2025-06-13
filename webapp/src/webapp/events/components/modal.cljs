@@ -29,5 +29,6 @@
    {:db (assoc-in db [:modal-radix] {:open? true
                                      :id (:id data)
                                      :maxWidth (:maxWidth data)
+                                     :class (:class data)
                                      :custom-on-click-out (:custom-on-click-out data)
                                      :content (:content data)})}))

@@ -233,7 +233,7 @@
 
 (defmethod routes/panels :license-management-panel []
   [layout :application-hoop
-   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
+   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-screen"}
     [routes/wrap-admin-only
      [license-management/main]]]])
 

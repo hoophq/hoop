@@ -55,6 +55,6 @@
               [:> Dialog.Title "Modal title"]]
              [:> VisuallyHidden :as-child true
               [:> Dialog.Description "Modal description"]]
-             [:> Box {:p "5"}
+             [:> Box {:p "5" :class (:class @modal)}
               (:content @modal)]]]]
           nil)))))

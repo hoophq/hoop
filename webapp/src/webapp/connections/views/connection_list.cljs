@@ -9,6 +9,7 @@
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.views.connection-settings-modal :as connection-settings-modal]
+            [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
             [webapp.connections.views.tag-selector :as tag-selector]
             [webapp.config :as config]
             [webapp.events.connections-filters]))
@@ -256,6 +257,10 @@
                                                    (js/localStorage.setItem "selected-connection" connection)
                                                    (rf/dispatch [:navigate :editor-plugin-panel]))}
                            "Open in Web Terminal"])
+                        [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [hoop-cli-modal/main (:name connection)]
+                                                                                      :maxWidth "1100px"
+                                                                                      :class "overflow-hidden"}])}
+                         "Open in Local Terminal"]
                         (when (can-open-native-client? connection)
                           [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [connection-settings-modal/main (:name connection)]
                                                                                         :maxWidth "446px"}])}
