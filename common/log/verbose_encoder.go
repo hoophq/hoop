@@ -226,217 +226,46 @@ func (v *VerboseEncoder) formatMessage(msg string, fields []zapcore.Field) strin
 		}
 	}
 
-	// Extrai campos importantes dos fields diretos OU stored fields
-	var sessionID string
-	var fullSessionID string
-	var version, platform string
+	// Combina todos os fields (diretos + stored) em um mapa
+	fieldMap := make(map[string]interface{})
 
-	// Primeiro tenta fields diretos
+	// Adiciona stored fields primeiro
+	for k, val := range v.storedFields {
+		fieldMap[k] = val
+	}
+
+	// Adiciona direct fields (sobrescreve stored se necessário)
 	for _, field := range fields {
-		switch field.Key {
-		case "sid", "session_id":
-			fullSessionID = v.getFieldStringValue(field)
-		case "version":
-			version = v.getFieldStringValue(field)
-		case "platform":
-			platform = v.getFieldStringValue(field)
-		}
+		fieldMap[field.Key] = v.extractFieldValue(field)
 	}
 
-	// Se não encontrou nos fields diretos, usa stored fields
-	if fullSessionID == "" {
-		if sid, ok := v.storedFields["sid"]; ok {
-			fullSessionID = fmt.Sprintf("%v", sid)
-		}
-	}
-	if version == "" {
-		if v, ok := v.storedFields["version"]; ok {
-			version = fmt.Sprintf("%v", v)
-		}
-	}
-	if platform == "" {
-		if p, ok := v.storedFields["platform"]; ok {
-			platform = fmt.Sprintf("%v", p)
-		}
-	}
-
-	// Processa session ID para exibição
-	if fullSessionID != "" {
-		if len(fullSessionID) > 12 {
-			sessionID = fmt.Sprintf("[%s...%s]", fullSessionID[:8], fullSessionID[len(fullSessionID)-4:])
-		} else {
-			sessionID = fmt.Sprintf("[%s]", fullSessionID)
-		}
-	}
-
-	// Define prefix com session ID quando disponível
-	prefix := ""
-	if sessionID != "" {
-		prefix = sessionID + " "
-	}
-
-	// Converte mensagem para lowercase para comparação
-	msgLower := strings.ToLower(msg)
-
-	// Usa a mesma lógica do HumanEncoder
-	switch {
-	case strings.Contains(msgLower, "starting agent"):
-		versionInfo := ""
-		if version != "" && platform != "" {
-			versionInfo = fmt.Sprintf(" v%s • %s", version, platform)
-		} else if version != "" {
-			versionInfo = fmt.Sprintf(" v%s", version)
-		}
-		if v.useEmoji {
-			return fmt.Sprintf("%s Starting Hoop Agent%s", emojiRocket, versionInfo)
-		}
-		return fmt.Sprintf("Starting Hoop Agent%s", versionInfo)
-
-	case strings.Contains(msgLower, "connecting to") && strings.Contains(msgLower, "tls="):
-		server := extractServer(msg)
-		if strings.Contains(msgLower, "tls=true") {
+	// Verifica se é um evento estruturado
+	if eventType, ok := fieldMap["event"].(string); ok {
+		if formatter, exists := Events[eventType]; exists {
+			// Usa o formatter específico do evento (verbose version)
+			formatted := formatter.FormatVerbose(fieldMap, msg)
 			if v.useEmoji {
-				return fmt.Sprintf("%s Connecting to %s %s", emojiLink, server, emojiLock)
+				return formatted
 			}
-			return fmt.Sprintf("Connecting to %s [TLS]", server)
-		} else {
-			if v.useEmoji {
-				return fmt.Sprintf("%s Connecting to %s %s", emojiLink, server, emojiUnlock)
-			}
-			return fmt.Sprintf("Connecting to %s [No TLS]", server)
+			// Remove emojis se NO_COLOR está ativo
+			return v.removeEmojis(formatted)
 		}
-
-	case strings.Contains(msgLower, "connected with success"):
-		if v.useEmoji {
-			return emojiCheck + " Connected to gateway"
-		}
-		return "Connected successfully"
-
-	case msgLower == "received connect request":
-		// Marca o início da sessão para calcular duração
-		if fullSessionID != "" {
-			v.sessionStarts[fullSessionID] = time.Now()
-		}
-		if v.useEmoji {
-			// Mostra o session ID completo na primeira vez
-			return fmt.Sprintf("%s New session: %s", emojiLink, fullSessionID)
-		}
-		return fmt.Sprintf("New session: %s", fullSessionID)
-
-	case msgLower == "sent gateway connect ok":
-		// Suprimir - redundante com "New session"
-		return ""
-
-	case msgLower == "received execution request":
-		// Suprimir - redundante com "Executing:"
-		return ""
-
-	case strings.HasPrefix(msgLower, "tty=false"):
-		// Extrai informações do comando
-		var stdinSize int
-		if idx := strings.Index(msg, "stdinsize="); idx >= 0 {
-			fmt.Sscanf(msg[idx:], "stdinsize=%d", &stdinSize)
-		}
-
-		// Extrai o comando
-		if idx := strings.Index(msg, "executing command:"); idx >= 0 {
-			cmd := msg[idx+18:]
-			// Remove colchetes
-			cmd = strings.TrimPrefix(cmd, "[")
-			cmd = strings.TrimSuffix(cmd, "]")
-
-			// Identifica o tipo de comando
-			cmdType := identifyCommand(cmd)
-
-			// Trunca comandos muito longos mas mostra o tipo
-			displayCmd := cmd
-			if len(cmd) > 50 {
-				displayCmd = cmd[:47] + "..."
-			}
-
-			// Adiciona info de input se relevante
-			inputInfo := ""
-			if stdinSize > 0 {
-				inputInfo = fmt.Sprintf(" (%d bytes input)", stdinSize)
-			}
-
-			if v.useEmoji {
-				return fmt.Sprintf("%s%s Executing %s: %s%s", prefix, emojiCommand, cmdType, displayCmd, inputInfo)
-			}
-			return fmt.Sprintf("%sExecuting %s: %s%s", prefix, cmdType, displayCmd, inputInfo)
-		}
-		return prefix + msg
-
-	case strings.HasPrefix(msgLower, "exitcode="):
-		// Formata mensagem de saída
-		var exitCode int
-		var errMsg string
-
-		// Extrai exit code e mensagem de erro
-		fmt.Sscanf(msg, "exitcode=%d", &exitCode)
-		if idx := strings.Index(msg, "err="); idx >= 0 {
-			errMsg = strings.TrimSpace(msg[idx+4:])
-		}
-
-		if exitCode == 0 {
-			if v.useEmoji {
-				return prefix + emojiCheck + " Success"
-			}
-			return prefix + "Command completed successfully"
-		} else {
-			result := ""
-			if v.useEmoji {
-				result = fmt.Sprintf("%s⚠️  Command failed (exit code: %d)", prefix, exitCode)
-			} else {
-				result = fmt.Sprintf("%sCommand failed (exit code %d)", prefix, exitCode)
-			}
-
-			// Adiciona stderr se houver
-			if errMsg != "" && errMsg != "<nil>" {
-				result += fmt.Sprintf("\n   └─ stderr: %s", errMsg)
-			}
-
-			return result
-		}
-
-	case msgLower == "cleaning up session":
-		// Calcula duração da sessão
-		duration := ""
-		if fullSessionID != "" {
-			if startTime, ok := v.sessionStarts[fullSessionID]; ok {
-				dur := time.Since(startTime)
-				duration = fmt.Sprintf(" • duration: %s", formatDuration(dur))
-				delete(v.sessionStarts, fullSessionID) // Limpa do mapa
-			}
-		}
-
-		if v.useEmoji {
-			return fmt.Sprintf("%s🔚 Session closed%s", prefix, duration)
-		}
-		return fmt.Sprintf("%sSession closed%s", prefix, duration)
-
-	case strings.Contains(msgLower, "disconnected from"):
-		if strings.Contains(msgLower, "reason=") {
-			// Extrai a razão
-			if idx := strings.Index(msg, "reason="); idx >= 0 {
-				reason := msg[idx+7:]
-				if v.useEmoji {
-					return fmt.Sprintf("⚠️  Disconnected: %s", reason)
-				}
-				return fmt.Sprintf("Disconnected: %s", reason)
-			}
-		}
-		return msg
-
-	case strings.Contains(msgLower, "shutting down"):
-		if v.useEmoji {
-			return "👋 Shutting down"
-		}
-		return "Shutting down agent"
 	}
 
-	// Mensagem padrão com prefixo de session se houver
-	return prefix + msg
+	// Fallback: Tenta auto-detectar baseado na mensagem (backward compatibility)
+	detectedEvent := v.detectEventType(msg, fieldMap)
+	if detectedEvent != "" {
+		if formatter, exists := Events[detectedEvent]; exists {
+			formatted := formatter.FormatVerbose(fieldMap, msg)
+			if v.useEmoji {
+				return formatted
+			}
+			return v.removeEmojis(formatted)
+		}
+	}
+
+	// Fallback final: Formatação manual simples com session prefix
+	return v.formatLegacyMessage(msg, fieldMap)
 }
 
 func (v *VerboseEncoder) getFieldStringValue(field zapcore.Field) string {
@@ -457,4 +286,85 @@ func (v *VerboseEncoder) getFieldStringValue(field zapcore.Field) string {
 		}
 		return field.String
 	}
+}
+
+// extractFieldValue extrai o valor de um field de forma type-safe
+func (v *VerboseEncoder) extractFieldValue(field zapcore.Field) interface{} {
+	switch field.Type {
+	case zapcore.StringType:
+		return field.String
+	case zapcore.BoolType:
+		return field.Integer == 1
+	case zapcore.Int64Type, zapcore.Int32Type, zapcore.Int16Type, zapcore.Int8Type:
+		return field.Integer
+	case zapcore.Uint64Type, zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type, zapcore.UintptrType:
+		return field.Integer
+	case zapcore.Float64Type, zapcore.Float32Type:
+		return field.Interface
+	case zapcore.ByteStringType:
+		if field.Interface != nil {
+			if bytes, ok := field.Interface.([]byte); ok {
+				return string(bytes)
+			}
+		}
+		return field.String
+	default:
+		if field.Interface != nil {
+			return field.Interface
+		}
+		return field.String
+	}
+}
+
+// detectEventType tenta auto-detectar o tipo de evento baseado na mensagem (backward compatibility)
+func (v *VerboseEncoder) detectEventType(msg string, fieldMap map[string]interface{}) string {
+	msgLower := strings.ToLower(msg)
+
+	switch {
+	case strings.Contains(msgLower, "starting agent"):
+		return "session.start"
+	case strings.Contains(msgLower, "connecting to") && strings.Contains(msgLower, "tls="):
+		return "connection.start"
+	case strings.Contains(msgLower, "connected with success"):
+		return "connection.established"
+	case msgLower == "received connect request":
+		return "session.start"
+	case strings.HasPrefix(msgLower, "tty=false") && strings.Contains(msgLower, "executing command:"):
+		return "command.exec"
+	case strings.HasPrefix(msgLower, "exitcode="):
+		return "command.result"
+	case msgLower == "cleaning up session":
+		return "session.cleanup"
+	case strings.Contains(msgLower, "shutting down"):
+		return "agent.shutdown"
+	}
+
+	return ""
+}
+
+// removeEmojis remove emojis de uma string formatada
+func (v *VerboseEncoder) removeEmojis(text string) string {
+	// Lista dos emojis usados nos formatters
+	emojis := []string{"🚀", "🔗", "✅", "📋", "⚠️", "🔚", "👋", "🔒", "🔓"}
+
+	result := text
+	for _, emoji := range emojis {
+		result = strings.ReplaceAll(result, emoji+" ", "")
+		result = strings.ReplaceAll(result, emoji, "")
+	}
+
+	return strings.TrimSpace(result)
+}
+
+// formatLegacyMessage formata mensagens usando o sistema antigo (fallback completo)
+func (v *VerboseEncoder) formatLegacyMessage(msg string, fieldMap map[string]interface{}) string {
+	// Extrai session ID para prefixo se disponível
+	sid := getStringField(fieldMap, "sid", "session_id")
+	prefix := ""
+	if sid != "" {
+		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
+	}
+
+	// Mensagem simples com prefixo de session se houver
+	return prefix + msg
 }
