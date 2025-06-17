@@ -16,10 +16,10 @@ const (
 // Action-based emojis (for different types of events)
 const (
 	// Session & Startup
-	EmojiRocket   = "🚀"  // Starting agent/service
-	EmojiSession  = "📦"  // Session start/management
-	EmojiShutdown = "👋"  // Shutting down, goodbye
-	EmojiEnd      = "⏹️" // Session end, completion
+	EmojiRocket   = "🚀" // Starting agent/service
+	EmojiSession  = "📦" // Session start/management
+	EmojiShutdown = "👋" // Shutting down, goodbye
+	EmojiEnd      = "🔚" // Session end, completion
 
 	// Connections & Network
 	EmojiLink      = "🔗" // Connecting, links
