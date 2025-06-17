@@ -252,7 +252,7 @@ func (h *HumanEncoder) detectEventType(msg string, fieldMap map[string]interface
 
 	switch {
 	case strings.Contains(msgLower, "starting agent"):
-		return "session.start"
+		return "agent.start"
 	case strings.Contains(msgLower, "connecting to") && strings.Contains(msgLower, "tls="):
 		return "connection.start"
 	case strings.Contains(msgLower, "connected with success"):
