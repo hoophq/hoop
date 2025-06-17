@@ -9,7 +9,7 @@ require (
 	github.com/creack/pty v1.1.21
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.6.1
-	golang.org/x/term v0.31.0
+	golang.org/x/term v0.32.0
 )
 
 require (
@@ -19,7 +19,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
-	github.com/lib/pq v1.10.9
 	golang.org/x/crypto v0.37.0
 	google.golang.org/grpc v1.71.1
 	mvdan.cc/sh/v3 v3.8.0
@@ -108,6 +107,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -197,7 +197,7 @@ require (
 	github.com/muesli/termenv v0.15.1
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.24.0
 	google.golang.org/protobuf v1.36.4 // indirect
 )
