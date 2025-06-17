@@ -30,27 +30,8 @@ const (
 	colorBold   = "\033[1m"
 )
 
-// emojis para diferentes níveis
-var levelEmojis = map[zapcore.Level]string{
-	zapcore.DebugLevel: "🔍",
-	zapcore.InfoLevel:  "", // Sem emoji para info - já usamos emojis específicos
-	zapcore.WarnLevel:  "⚠️",
-	zapcore.ErrorLevel: "❌",
-	zapcore.FatalLevel: "💀",
-}
-
-// emojis para diferentes ações
-const (
-	emojiRocket  = "🚀"
-	emojiLink    = "🔗"
-	emojiCheck   = "✅"
-	emojiCross   = "❌"
-	emojiSession = "📦"
-	emojiCommand = "📋"
-	emojiLock    = "🔒"
-	emojiUnlock  = "🔓"
-	emojiBroom   = "🧹"
-)
+// Use centralized emoji constants
+var levelEmojis = LevelEmojis()
 
 // NewHumanEncoder cria um encoder para formato humano
 func NewHumanEncoder(cfg zapcore.EncoderConfig) zapcore.Encoder {
@@ -293,8 +274,8 @@ func (h *HumanEncoder) detectEventType(msg string, fieldMap map[string]interface
 
 // removeEmojis remove emojis de uma string formatada
 func (h *HumanEncoder) removeEmojis(text string) string {
-	// Lista dos emojis usados nos formatters
-	emojis := []string{"🚀", "🔗", "✅", "📋", "⚠️", "🔚", "👋", "🔒", "🔓"}
+	// Use centralized emoji list
+	emojis := AllEmojis()
 
 	result := text
 	for _, emoji := range emojis {

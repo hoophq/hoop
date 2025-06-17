@@ -344,8 +344,8 @@ func (v *VerboseEncoder) detectEventType(msg string, fieldMap map[string]interfa
 
 // removeEmojis remove emojis de uma string formatada
 func (v *VerboseEncoder) removeEmojis(text string) string {
-	// Lista dos emojis usados nos formatters
-	emojis := []string{"🚀", "🔗", "✅", "📋", "⚠️", "🔚", "👋", "🔒", "🔓"}
+	// Use centralized emoji list
+	emojis := AllEmojis()
 
 	result := text
 	for _, emoji := range emojis {
