@@ -16,6 +16,7 @@ type EventRegistry map[string]EventFormatter
 
 // Global registry of event formatters
 var Events = EventRegistry{
+	"agent.start":            &AgentStartFormatter{},
 	"session.start":          &SessionStartFormatter{},
 	"session.cleanup":        &SessionCleanupFormatter{},
 	"connection.start":       &ConnectionFormatter{},
@@ -73,6 +74,32 @@ func identifyCommand(cmd string) string {
 		}
 		return "command"
 	}
+}
+
+// AgentStartFormatter handles agent startup events
+type AgentStartFormatter struct{}
+
+func (f *AgentStartFormatter) FormatHuman(fields map[string]interface{}, msg string) string {
+	version := getStringField(fields, "version")
+	platform := getStringField(fields, "platform")
+	mode := getStringField(fields, "mode")
+
+	if version != "" && platform != "" {
+		if mode != "" {
+			return fmt.Sprintf("%s Starting Hoop Agent v%s (%s) • mode: %s", EmojiRocket, version, platform, mode)
+		}
+		return fmt.Sprintf("%s Starting Hoop Agent v%s (%s)", EmojiRocket, version, platform)
+	}
+	if version != "" {
+		return fmt.Sprintf("%s Starting Hoop Agent v%s", EmojiRocket, version)
+	}
+
+	// Fallback para mensagem original
+	return EmojiRocket + " " + msg
+}
+
+func (f *AgentStartFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
+	return f.FormatHuman(fields, msg)
 }
 
 // SessionStartFormatter handles session start events
