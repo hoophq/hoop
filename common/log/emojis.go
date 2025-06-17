@@ -16,9 +16,10 @@ const (
 // Action-based emojis (for different types of events)
 const (
 	// Session & Startup
-	EmojiRocket   = "🚀" // Starting, launching
-	EmojiShutdown = "👋" // Shutting down, goodbye
-	EmojiEnd      = "🔚" // Session end, completion
+	EmojiRocket   = "🚀"  // Starting agent/service
+	EmojiSession  = "📦"  // Session start/management
+	EmojiShutdown = "👋"  // Shutting down, goodbye
+	EmojiEnd      = "⏹️" // Session end, completion
 
 	// Connections & Network
 	EmojiLink      = "🔗" // Connecting, links
@@ -47,7 +48,7 @@ func AllEmojis() []string {
 		// Level emojis
 		EmojiDebug, EmojiWarn, EmojiError, EmojiFatal,
 		// Action emojis
-		EmojiRocket, EmojiShutdown, EmojiEnd,
+		EmojiRocket, EmojiSession, EmojiShutdown, EmojiEnd,
 		EmojiLink, EmojiConnected, EmojiProxy, EmojiReconnect,
 		EmojiCommand, EmojiSuccess, EmojiFailed,
 		EmojiLock, EmojiUnlock,
