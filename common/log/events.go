@@ -89,17 +89,17 @@ func (f *SessionStartFormatter) FormatHuman(fields map[string]interface{}, msg s
 	}
 
 	if version != "" && platform != "" {
-		return fmt.Sprintf("%s %sStarting session • Hoop v%s (%s)", EmojiRocket, prefix, version, platform)
+		return fmt.Sprintf("%s %sStarting session • Hoop v%s (%s)", EmojiSession, prefix, version, platform)
 	}
 	if version != "" {
-		return fmt.Sprintf("%s %sStarting session • Hoop v%s", EmojiRocket, prefix, version)
+		return fmt.Sprintf("%s %sStarting session • Hoop v%s", EmojiSession, prefix, version)
 	}
 	if sid != "" {
-		return fmt.Sprintf("%s %sStarting session", EmojiRocket, prefix)
+		return fmt.Sprintf("%s %sStarting session", EmojiSession, prefix)
 	}
 
 	// Fallback para mensagem original
-	return EmojiRocket + " " + msg
+	return EmojiSession + " " + msg
 }
 
 func (f *SessionStartFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
