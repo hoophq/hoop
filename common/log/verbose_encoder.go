@@ -189,7 +189,7 @@ func (v *VerboseEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field
 		case zapcore.WarnLevel:
 			line.AppendString(colorYellow)
 		case zapcore.InfoLevel:
-			line.AppendString(colorBlue)
+			// Info usa cor padrão do terminal (sem cor)
 		case zapcore.DebugLevel:
 			line.AppendString(colorGray)
 		}
