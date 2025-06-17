@@ -142,7 +142,7 @@ func (f *SessionCleanupFormatter) FormatHuman(fields map[string]interface{}, msg
 
 	prefix := ""
 	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
+		prefix = fmt.Sprintf(" [%s] ", truncateSession(sid))
 	}
 
 	result := fmt.Sprintf("%s %sSession closed", EmojiEnd, prefix)
