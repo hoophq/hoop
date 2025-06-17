@@ -89,17 +89,17 @@ func (f *SessionStartFormatter) FormatHuman(fields map[string]interface{}, msg s
 	}
 
 	if version != "" && platform != "" {
-		return fmt.Sprintf("🚀 %sStarting session • Hoop v%s (%s)", prefix, version, platform)
+		return fmt.Sprintf("%s %sStarting session • Hoop v%s (%s)", EmojiRocket, prefix, version, platform)
 	}
 	if version != "" {
-		return fmt.Sprintf("🚀 %sStarting session • Hoop v%s", prefix, version)
+		return fmt.Sprintf("%s %sStarting session • Hoop v%s", EmojiRocket, prefix, version)
 	}
 	if sid != "" {
-		return fmt.Sprintf("🚀 %sStarting session", prefix)
+		return fmt.Sprintf("%s %sStarting session", EmojiRocket, prefix)
 	}
 
 	// Fallback para mensagem original
-	return "🚀 " + msg
+	return EmojiRocket + " " + msg
 }
 
 func (f *SessionStartFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
@@ -118,7 +118,7 @@ func (f *SessionCleanupFormatter) FormatHuman(fields map[string]interface{}, msg
 		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
 	}
 
-	result := fmt.Sprintf("🔚 %sSession closed", prefix)
+	result := fmt.Sprintf("%s %sSession closed", EmojiEnd, prefix)
 	if duration != "" {
 		result += fmt.Sprintf(" • duration: %s", duration)
 	}
@@ -142,11 +142,11 @@ func (f *ConnectionFormatter) FormatHuman(fields map[string]interface{}, msg str
 		if tls {
 			tlsInfo = " (TLS)"
 		}
-		return fmt.Sprintf("🔗 Connecting to %s%s", server, tlsInfo)
+		return fmt.Sprintf("%s Connecting to %s%s", EmojiLink, server, tlsInfo)
 	}
 
 	// Fallback para mensagem original
-	return "🔗 " + msg
+	return EmojiLink + " " + msg
 }
 
 func (f *ConnectionFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
@@ -160,10 +160,10 @@ func (f *ConnectionEstablishedFormatter) FormatHuman(fields map[string]interface
 	server := getStringField(fields, "server", "host")
 
 	if server != "" {
-		return fmt.Sprintf("✅ Connected to %s", server)
+		return fmt.Sprintf("%s Connected to %s", EmojiConnected, server)
 	}
 
-	return "✅ Connection established"
+	return EmojiConnected + " Connection established"
 }
 
 func (f *ConnectionEstablishedFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
@@ -196,11 +196,11 @@ func (f *CommandFormatter) FormatHuman(fields map[string]interface{}, msg string
 			inputInfo = fmt.Sprintf(" (%d bytes input)", stdinSize)
 		}
 
-		return fmt.Sprintf("📋 %sExecuting %s: %s%s", prefix, cmdType, displayCmd, inputInfo)
+		return fmt.Sprintf("%s %sExecuting %s: %s%s", EmojiCommand, prefix, cmdType, displayCmd, inputInfo)
 	}
 
 	// Fallback
-	return "📋 " + prefix + msg
+	return EmojiCommand + " " + prefix + msg
 }
 
 func (f *CommandFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
@@ -221,10 +221,10 @@ func (f *CommandResultFormatter) FormatHuman(fields map[string]interface{}, msg 
 	}
 
 	if exitCode == 0 {
-		return fmt.Sprintf("✅ %sSuccess", prefix)
+		return fmt.Sprintf("%s %sSuccess", EmojiSuccess, prefix)
 	}
 
-	result := fmt.Sprintf("⚠️ %sCommand failed (exit code: %d)", prefix, exitCode)
+	result := fmt.Sprintf("%s %sCommand failed (exit code: %d)", EmojiFailed, prefix, exitCode)
 	if stderr != "" && stderr != "<nil>" {
 		result += fmt.Sprintf("\n   └─ stderr: %s", stderr)
 	}
@@ -240,7 +240,7 @@ func (f *CommandResultFormatter) FormatVerbose(fields map[string]interface{}, ms
 type AgentShutdownFormatter struct{}
 
 func (f *AgentShutdownFormatter) FormatHuman(fields map[string]interface{}, msg string) string {
-	return "👋 Shutting down agent"
+	return EmojiShutdown + " Shutting down agent"
 }
 
 func (f *AgentShutdownFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
