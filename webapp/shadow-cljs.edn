@@ -3,12 +3,12 @@
  :source-paths ["src" "test"]
 
  :dependencies [[reagent "1.2.0"]
-                [reagent-utils "0.3.4"]
-                [re-frame "1.2.0"]
+                [reagent-utils "0.3.8"]
+                [re-frame "1.4.3"]
                 [com.andrewmcveigh/cljs-time "0.5.0"]
                 [bidi "2.1.6"]
                 [clj-commons/pushy "0.3.10"]
-                [cider/cider-nrepl "0.28.5"]
+                [cider/cider-nrepl "0.50.2"]
                 [binaryage/devtools "1.0.3"]
                 [re-frisk "1.6.0"]]
 
@@ -24,7 +24,10 @@
    :modules {:app {:init-fn webapp.core/init}}
    :devtools {:preloads [re-frisk.preload]
               :http-root "resources/public/"}
+   :compiler-options {:external-config {:react {:version "18"}}}
    :dev {:compiler-options {:source-map-detail-level :all
+                            :optimizations :none
+                            :parallel-build true
                             :closure-defines
                             {webapp.env/release-type "development"
                              webapp.env/segment-write-key #shadow/env ["SEGMENT_WRITE_KEY" "043Lv52mAcoGOHWVq7n3bxZAVvocyqx0"]
@@ -42,11 +45,12 @@
                                                              "http://localhost:8009/api"]}}}
    :release {:compiler-options {:output-to "resources/public/js"
                                 :output-dir "resources/public/js"
-                                :source-map true
                                 :source-maps "resources/public/js/app.js.map"
-                                :pretty-print true
-                                :pseudo-names true
-                                :source-map-detail-level :all
+                                :optimizations :advanced
+                                :source-map false
+                                :pretty-print false
+                                :pseudo-names false
+                                :elide-asserts true
                                 :closure-defines
                                 {webapp.env/release-type "hoop-ui"
                                  webapp.env/segment-write-key #shadow/env ["SEGMENT_WRITE_KEY" "043Lv52mAcoGOHWVq7n3bxZAVvocyqx0"]
