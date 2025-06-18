@@ -12,11 +12,11 @@ import (
 
 // HumanEncoder é um encoder customizado para formato humano
 type HumanEncoder struct {
+	*BaseEncoder  // Composição - herda todos os métodos Add*
 	cfg           zapcore.EncoderConfig
 	useEmoji      bool
 	useColor      bool
-	sessionStarts map[string]time.Time   // Para rastrear duração das sessões
-	storedFields  map[string]interface{} // NOVO: armazenar fields
+	sessionStarts map[string]time.Time // Para rastrear duração das sessões
 }
 
 // ANSI color codes
@@ -36,31 +36,29 @@ var levelEmojis = LevelEmojis()
 // NewHumanEncoder cria um encoder para formato humano
 func NewHumanEncoder(cfg zapcore.EncoderConfig) zapcore.Encoder {
 	return &HumanEncoder{
+		BaseEncoder:   NewBaseEncoder(),
 		cfg:           cfg,
 		useEmoji:      os.Getenv("NO_COLOR") == "",
 		useColor:      os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb",
 		sessionStarts: make(map[string]time.Time),
-		storedFields:  make(map[string]interface{}),
 	}
 }
 
 func (h *HumanEncoder) Clone() zapcore.Encoder {
 	cloned := &HumanEncoder{
+		BaseEncoder:   &BaseEncoder{},
 		cfg:           h.cfg,
 		useEmoji:      h.useEmoji,
 		useColor:      h.useColor,
-		sessionStarts: h.sessionStarts,              // Compartilha o mapa
-		storedFields:  make(map[string]interface{}), // Novo mapa para o clone
+		sessionStarts: h.sessionStarts, // Compartilha o mapa
 	}
 
-	// Copia fields existentes
-	for k, v := range h.storedFields {
-		cloned.storedFields[k] = v
-	}
+	// Copia fields usando o método do BaseEncoder
+	cloned.SetStoredFields(h.CopyStoredFields())
 
 	// Debug do clone
 	if os.Getenv("DEBUG_ENCODER") == "true" {
-		fmt.Fprintf(os.Stderr, "DEBUG: HumanEncoder.Clone() called. Original: %p, Cloned: %p, Fields: %v\n", h, cloned, cloned.storedFields)
+		fmt.Fprintf(os.Stderr, "DEBUG: HumanEncoder.Clone() called. Original: %p, Cloned: %p, Fields: %v\n", h, cloned, cloned.GetStoredFields())
 	}
 
 	return cloned
@@ -132,17 +130,18 @@ func (h *HumanEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) 
 func (h *HumanEncoder) formatMessage(msg string, fields []zapcore.Field) string {
 	// Debug
 	if os.Getenv("DEBUG_ENCODER") == "true" {
-		fmt.Fprintf(os.Stderr, "DEBUG: formatMessage called with %d direct fields, %d stored fields\n", len(fields), len(h.storedFields))
+		storedFields := h.GetStoredFields()
+		fmt.Fprintf(os.Stderr, "DEBUG: formatMessage called with %d direct fields, %d stored fields\n", len(fields), len(storedFields))
 		for i, field := range fields {
 			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, encoderUtils.GetFieldStringValue(field))
 		}
-		for k, v := range h.storedFields {
+		for k, v := range storedFields {
 			fmt.Fprintf(os.Stderr, "  stored[%s] = %v\n", k, v)
 		}
 	}
 
 	// Usa a função compartilhada para construir o fieldMap
-	fieldMap := encoderUtils.BuildFieldMap(h.storedFields, fields)
+	fieldMap := encoderUtils.BuildFieldMap(h.GetStoredFields(), fields)
 
 	// Usa a função compartilhada para formatação
 	return encoderUtils.FormatMessage(msg, fieldMap, h.useEmoji)
@@ -162,111 +161,4 @@ func extractServer(msg string) string {
 	return "server"
 }
 
-// Funções removidas - agora estão em encoder_utils.go
-
-// Implementar métodos necessários do zapcore.Encoder
-func (h *HumanEncoder) AddArray(key string, marshaler zapcore.ArrayMarshaler) error {
-	return nil
-}
-
-func (h *HumanEncoder) AddObject(key string, marshaler zapcore.ObjectMarshaler) error {
-	return nil
-}
-
-func (h *HumanEncoder) AddBinary(key string, value []byte) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddByteString(key string, value []byte) {
-	h.storedFields[key] = string(value)
-}
-
-func (h *HumanEncoder) AddBool(key string, value bool) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddComplex128(key string, value complex128) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddComplex64(key string, value complex64) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddDuration(key string, value time.Duration) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddFloat64(key string, value float64) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddFloat32(key string, value float32) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddInt(key string, value int) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddInt64(key string, value int64) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddInt32(key string, value int32) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddInt16(key string, value int16) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddInt8(key string, value int8) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddString(key, value string) {
-	h.storedFields[key] = value
-	if os.Getenv("DEBUG_ENCODER") == "true" {
-		fmt.Fprintf(os.Stderr, "DEBUG: AddString called: %s = %s\n", key, value)
-	}
-}
-
-func (h *HumanEncoder) AddTime(key string, value time.Time) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddUint(key string, value uint) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddUint64(key string, value uint64) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddUint32(key string, value uint32) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddUint16(key string, value uint16) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddUint8(key string, value uint8) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddUintptr(key string, value uintptr) {
-	h.storedFields[key] = value
-}
-
-func (h *HumanEncoder) AddReflected(key string, value interface{}) error {
-	h.storedFields[key] = value
-	if os.Getenv("DEBUG_ENCODER") == "true" {
-		fmt.Fprintf(os.Stderr, "DEBUG: AddReflected called: %s = %v\n", key, value)
-	}
-	return nil
-}
-
-func (h *HumanEncoder) OpenNamespace(key string) {
-}
+// Métodos Add* removidos - agora herdados do BaseEncoder via composição
