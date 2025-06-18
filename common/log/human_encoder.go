@@ -134,53 +134,18 @@ func (h *HumanEncoder) formatMessage(msg string, fields []zapcore.Field) string 
 	if os.Getenv("DEBUG_ENCODER") == "true" {
 		fmt.Fprintf(os.Stderr, "DEBUG: formatMessage called with %d direct fields, %d stored fields\n", len(fields), len(h.storedFields))
 		for i, field := range fields {
-			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, h.getFieldStringValue(field))
+			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, encoderUtils.GetFieldStringValue(field))
 		}
 		for k, v := range h.storedFields {
 			fmt.Fprintf(os.Stderr, "  stored[%s] = %v\n", k, v)
 		}
 	}
 
-	// Combina todos os fields (diretos + stored) em um mapa
-	fieldMap := make(map[string]interface{})
+	// Usa a função compartilhada para construir o fieldMap
+	fieldMap := encoderUtils.BuildFieldMap(h.storedFields, fields)
 
-	// Adiciona stored fields primeiro
-	for k, v := range h.storedFields {
-		fieldMap[k] = v
-	}
-
-	// Adiciona direct fields (sobrescreve stored se necessário)
-	for _, field := range fields {
-		fieldMap[field.Key] = h.extractFieldValue(field)
-	}
-
-	// Verifica se é um evento estruturado
-	if eventType, ok := fieldMap["event"].(string); ok {
-		if formatter, exists := Events[eventType]; exists {
-			// Usa o formatter específico do evento
-			formatted := formatter.FormatHuman(fieldMap, msg)
-			if h.useEmoji {
-				return formatted
-			}
-			// Remove emojis se NO_COLOR está ativo
-			return h.removeEmojis(formatted)
-		}
-	}
-
-	// Fallback: Tenta auto-detectar baseado na mensagem (backward compatibility)
-	detectedEvent := h.detectEventType(msg, fieldMap)
-	if detectedEvent != "" {
-		if formatter, exists := Events[detectedEvent]; exists {
-			formatted := formatter.FormatHuman(fieldMap, msg)
-			if h.useEmoji {
-				return formatted
-			}
-			return h.removeEmojis(formatted)
-		}
-	}
-
-	// Fallback final: Formatação manual simples com session prefix
-	return h.formatLegacyMessage(msg, fieldMap)
+	// Usa a função compartilhada para formatação
+	return encoderUtils.FormatMessage(msg, fieldMap, h.useEmoji)
 }
 
 func extractServer(msg string) string {
@@ -197,107 +162,7 @@ func extractServer(msg string) string {
 	return "server"
 }
 
-// getFieldStringValue extrai o valor string de um zapcore.Field
-func (h *HumanEncoder) getFieldStringValue(field zapcore.Field) string {
-	// Tenta diferentes métodos para extrair o valor
-	switch field.Type {
-	case zapcore.StringType:
-		return field.String
-	case zapcore.ByteStringType:
-		if field.Interface != nil {
-			if bytes, ok := field.Interface.([]byte); ok {
-				return string(bytes)
-			}
-		}
-		return field.String
-	default:
-		if field.Interface != nil {
-			return fmt.Sprintf("%v", field.Interface)
-		}
-		return field.String
-	}
-}
-
-// extractFieldValue extrai o valor de um field de forma type-safe
-func (h *HumanEncoder) extractFieldValue(field zapcore.Field) interface{} {
-	switch field.Type {
-	case zapcore.StringType:
-		return field.String
-	case zapcore.BoolType:
-		return field.Integer == 1
-	case zapcore.Int64Type, zapcore.Int32Type, zapcore.Int16Type, zapcore.Int8Type:
-		return field.Integer
-	case zapcore.Uint64Type, zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type, zapcore.UintptrType:
-		return field.Integer
-	case zapcore.Float64Type, zapcore.Float32Type:
-		return field.Interface
-	case zapcore.ByteStringType:
-		if field.Interface != nil {
-			if bytes, ok := field.Interface.([]byte); ok {
-				return string(bytes)
-			}
-		}
-		return field.String
-	default:
-		if field.Interface != nil {
-			return field.Interface
-		}
-		return field.String
-	}
-}
-
-// detectEventType tenta auto-detectar o tipo de evento baseado na mensagem (backward compatibility)
-func (h *HumanEncoder) detectEventType(msg string, fieldMap map[string]interface{}) string {
-	msgLower := strings.ToLower(msg)
-
-	switch {
-	case strings.Contains(msgLower, "starting agent"):
-		return "agent.start"
-	case strings.Contains(msgLower, "connecting to") && strings.Contains(msgLower, "tls="):
-		return "connection.start"
-	case strings.Contains(msgLower, "connected with success"):
-		return "connection.established"
-	case msgLower == "received connect request":
-		return "session.start"
-	case strings.HasPrefix(msgLower, "tty=false") && strings.Contains(msgLower, "executing command:"):
-		return "command.exec"
-	case strings.HasPrefix(msgLower, "exitcode="):
-		return "command.result"
-	case msgLower == "cleaning up session":
-		return "session.cleanup"
-	case strings.Contains(msgLower, "shutting down"):
-		return "agent.shutdown"
-	}
-
-	return ""
-}
-
-// removeEmojis remove emojis de uma string formatada
-func (h *HumanEncoder) removeEmojis(text string) string {
-	// Use centralized emoji list
-	emojis := AllEmojis()
-
-	result := text
-	for _, emoji := range emojis {
-		result = strings.ReplaceAll(result, emoji+" ", "")
-		result = strings.ReplaceAll(result, emoji, "")
-	}
-
-	return strings.TrimSpace(result)
-}
-
-// formatLegacyMessage formata mensagens usando o sistema antigo (fallback completo)
-func (h *HumanEncoder) formatLegacyMessage(msg string, fieldMap map[string]interface{}) string {
-	// Extrai session ID para prefixo se disponível
-	sid := getStringField(fieldMap, "sid", "session_id")
-	prefix := ""
-	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
-	}
-
-	// Mensagem simples com prefixo de session se houver
-	return prefix + msg
-}
+// Funções removidas - agora estão em encoder_utils.go
 
 // Implementar métodos necessários do zapcore.Encoder
 func (h *HumanEncoder) AddArray(key string, marshaler zapcore.ArrayMarshaler) error {
