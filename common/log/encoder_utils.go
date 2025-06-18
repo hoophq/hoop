@@ -3,11 +3,9 @@ package log
 import (
 	"fmt"
 	"strings"
-
-	"go.uber.org/zap/zapcore"
 )
 
-// EncoderUtils contém funções compartilhadas entre encoders
+// EncoderUtils contém a lógica de encoding compartilhada entre encoders
 type EncoderUtils struct{}
 
 // DetectEventType tenta auto-detectar o tipo de evento baseado na mensagem (backward compatibility)
@@ -36,54 +34,6 @@ func (u *EncoderUtils) DetectEventType(msg string, fieldMap map[string]interface
 	return ""
 }
 
-// ExtractFieldValue extrai o valor de um field de forma type-safe
-func (u *EncoderUtils) ExtractFieldValue(field zapcore.Field) interface{} {
-	switch field.Type {
-	case zapcore.StringType:
-		return field.String
-	case zapcore.BoolType:
-		return field.Integer == 1
-	case zapcore.Int64Type, zapcore.Int32Type, zapcore.Int16Type, zapcore.Int8Type:
-		return field.Integer
-	case zapcore.Uint64Type, zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type, zapcore.UintptrType:
-		return field.Integer
-	case zapcore.Float64Type, zapcore.Float32Type:
-		return field.Interface
-	case zapcore.ByteStringType:
-		if field.Interface != nil {
-			if bytes, ok := field.Interface.([]byte); ok {
-				return string(bytes)
-			}
-		}
-		return field.String
-	default:
-		if field.Interface != nil {
-			return field.Interface
-		}
-		return field.String
-	}
-}
-
-// GetFieldStringValue extrai o valor string de um zapcore.Field
-func (u *EncoderUtils) GetFieldStringValue(field zapcore.Field) string {
-	switch field.Type {
-	case zapcore.StringType:
-		return field.String
-	case zapcore.ByteStringType:
-		if field.Interface != nil {
-			if bytes, ok := field.Interface.([]byte); ok {
-				return string(bytes)
-			}
-		}
-		return field.String
-	default:
-		if field.Interface != nil {
-			return fmt.Sprintf("%v", field.Interface)
-		}
-		return field.String
-	}
-}
-
 // RemoveEmojis remove emojis de uma string formatada
 func (u *EncoderUtils) RemoveEmojis(text string) string {
 	emojis := AllEmojis()
@@ -106,23 +56,6 @@ func (u *EncoderUtils) FormatLegacyMessage(msg string, fieldMap map[string]inter
 	}
 
 	return prefix + msg
-}
-
-// BuildFieldMap combina stored fields e direct fields em um mapa
-func (u *EncoderUtils) BuildFieldMap(storedFields map[string]interface{}, fields []zapcore.Field) map[string]interface{} {
-	fieldMap := make(map[string]interface{})
-
-	// Adiciona stored fields primeiro
-	for k, v := range storedFields {
-		fieldMap[k] = v
-	}
-
-	// Adiciona direct fields (sobrescreve stored se necessário)
-	for _, field := range fields {
-		fieldMap[field.Key] = u.ExtractFieldValue(field)
-	}
-
-	return fieldMap
 }
 
 // FormatMessage é a lógica principal de formatação compartilhada
