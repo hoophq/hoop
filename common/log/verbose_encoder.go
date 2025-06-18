@@ -3,7 +3,6 @@ package log
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"go.uber.org/zap/buffer"
@@ -219,152 +218,18 @@ func (v *VerboseEncoder) formatMessage(msg string, fields []zapcore.Field) strin
 	if os.Getenv("DEBUG_ENCODER") == "true" {
 		fmt.Fprintf(os.Stderr, "DEBUG: VerboseEncoder.formatMessage called with %d direct fields, %d stored fields\n", len(fields), len(v.storedFields))
 		for i, field := range fields {
-			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, v.getFieldStringValue(field))
+			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, encoderUtils.GetFieldStringValue(field))
 		}
 		for k, val := range v.storedFields {
 			fmt.Fprintf(os.Stderr, "  stored[%s] = %v\n", k, val)
 		}
 	}
 
-	// Combina todos os fields (diretos + stored) em um mapa
-	fieldMap := make(map[string]interface{})
+	// Usa a função compartilhada para construir o fieldMap
+	fieldMap := encoderUtils.BuildFieldMap(v.storedFields, fields)
 
-	// Adiciona stored fields primeiro
-	for k, val := range v.storedFields {
-		fieldMap[k] = val
-	}
-
-	// Adiciona direct fields (sobrescreve stored se necessário)
-	for _, field := range fields {
-		fieldMap[field.Key] = v.extractFieldValue(field)
-	}
-
-	// Verifica se é um evento estruturado
-	if eventType, ok := fieldMap["event"].(string); ok {
-		if formatter, exists := Events[eventType]; exists {
-			// Usa o formatter específico do evento (verbose version)
-			formatted := formatter.FormatVerbose(fieldMap, msg)
-			if v.useEmoji {
-				return formatted
-			}
-			// Remove emojis se NO_COLOR está ativo
-			return v.removeEmojis(formatted)
-		}
-	}
-
-	// Fallback: Tenta auto-detectar baseado na mensagem (backward compatibility)
-	detectedEvent := v.detectEventType(msg, fieldMap)
-	if detectedEvent != "" {
-		if formatter, exists := Events[detectedEvent]; exists {
-			formatted := formatter.FormatVerbose(fieldMap, msg)
-			if v.useEmoji {
-				return formatted
-			}
-			return v.removeEmojis(formatted)
-		}
-	}
-
-	// Fallback final: Formatação manual simples com session prefix
-	return v.formatLegacyMessage(msg, fieldMap)
+	// Usa a função compartilhada para formatação verbose
+	return encoderUtils.FormatVerboseMessage(msg, fieldMap, v.useEmoji)
 }
 
-func (v *VerboseEncoder) getFieldStringValue(field zapcore.Field) string {
-	// Tenta diferentes métodos para extrair o valor
-	switch field.Type {
-	case zapcore.StringType:
-		return field.String
-	case zapcore.ByteStringType:
-		if field.Interface != nil {
-			if bytes, ok := field.Interface.([]byte); ok {
-				return string(bytes)
-			}
-		}
-		return field.String
-	default:
-		if field.Interface != nil {
-			return fmt.Sprintf("%v", field.Interface)
-		}
-		return field.String
-	}
-}
-
-// extractFieldValue extrai o valor de um field de forma type-safe
-func (v *VerboseEncoder) extractFieldValue(field zapcore.Field) interface{} {
-	switch field.Type {
-	case zapcore.StringType:
-		return field.String
-	case zapcore.BoolType:
-		return field.Integer == 1
-	case zapcore.Int64Type, zapcore.Int32Type, zapcore.Int16Type, zapcore.Int8Type:
-		return field.Integer
-	case zapcore.Uint64Type, zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type, zapcore.UintptrType:
-		return field.Integer
-	case zapcore.Float64Type, zapcore.Float32Type:
-		return field.Interface
-	case zapcore.ByteStringType:
-		if field.Interface != nil {
-			if bytes, ok := field.Interface.([]byte); ok {
-				return string(bytes)
-			}
-		}
-		return field.String
-	default:
-		if field.Interface != nil {
-			return field.Interface
-		}
-		return field.String
-	}
-}
-
-// detectEventType tenta auto-detectar o tipo de evento baseado na mensagem (backward compatibility)
-func (v *VerboseEncoder) detectEventType(msg string, fieldMap map[string]interface{}) string {
-	msgLower := strings.ToLower(msg)
-
-	switch {
-	case strings.Contains(msgLower, "starting agent"):
-		return "agent.start"
-	case strings.Contains(msgLower, "connecting to") && strings.Contains(msgLower, "tls="):
-		return "connection.start"
-	case strings.Contains(msgLower, "connected with success"):
-		return "connection.established"
-	case msgLower == "received connect request":
-		return "session.start"
-	case strings.HasPrefix(msgLower, "tty=false") && strings.Contains(msgLower, "executing command:"):
-		return "command.exec"
-	case strings.HasPrefix(msgLower, "exitcode="):
-		return "command.result"
-	case msgLower == "cleaning up session":
-		return "session.cleanup"
-	case strings.Contains(msgLower, "shutting down"):
-		return "agent.shutdown"
-	}
-
-	return ""
-}
-
-// removeEmojis remove emojis de uma string formatada
-func (v *VerboseEncoder) removeEmojis(text string) string {
-	// Use centralized emoji list
-	emojis := AllEmojis()
-
-	result := text
-	for _, emoji := range emojis {
-		result = strings.ReplaceAll(result, emoji+" ", "")
-		result = strings.ReplaceAll(result, emoji, "")
-	}
-
-	return strings.TrimSpace(result)
-}
-
-// formatLegacyMessage formata mensagens usando o sistema antigo (fallback completo)
-func (v *VerboseEncoder) formatLegacyMessage(msg string, fieldMap map[string]interface{}) string {
-	// Extrai session ID para prefixo se disponível
-	sid := getStringField(fieldMap, "sid", "session_id")
-	prefix := ""
-	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
-	}
-
-	// Mensagem simples com prefixo de session se houver
-	return prefix + msg
-}
+// Funções removidas - agora estão em encoder_utils.go
