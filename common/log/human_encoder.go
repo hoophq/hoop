@@ -133,7 +133,7 @@ func (h *HumanEncoder) formatMessage(msg string, fields []zapcore.Field) string 
 		storedFields := h.GetStoredFields()
 		fmt.Fprintf(os.Stderr, "DEBUG: formatMessage called with %d direct fields, %d stored fields\n", len(fields), len(storedFields))
 		for i, field := range fields {
-			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, encoderUtils.GetFieldStringValue(field))
+			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, GetFieldStringValue(field))
 		}
 		for k, v := range storedFields {
 			fmt.Fprintf(os.Stderr, "  stored[%s] = %v\n", k, v)
@@ -141,7 +141,7 @@ func (h *HumanEncoder) formatMessage(msg string, fields []zapcore.Field) string 
 	}
 
 	// Usa a função compartilhada para construir o fieldMap
-	fieldMap := encoderUtils.BuildFieldMap(h.GetStoredFields(), fields)
+	fieldMap := BuildFieldMap(h.GetStoredFields(), fields)
 
 	// Usa a função compartilhada para formatação
 	return encoderUtils.FormatMessage(msg, fieldMap, h.useEmoji)

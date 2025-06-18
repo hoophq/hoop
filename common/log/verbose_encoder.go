@@ -112,7 +112,7 @@ func (v *VerboseEncoder) formatMessage(msg string, fields []zapcore.Field) strin
 		storedFields := v.GetStoredFields()
 		fmt.Fprintf(os.Stderr, "DEBUG: VerboseEncoder.formatMessage called with %d direct fields, %d stored fields\n", len(fields), len(storedFields))
 		for i, field := range fields {
-			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, encoderUtils.GetFieldStringValue(field))
+			fmt.Fprintf(os.Stderr, "  direct[%d] %s = %v\n", i, field.Key, GetFieldStringValue(field))
 		}
 		for k, val := range storedFields {
 			fmt.Fprintf(os.Stderr, "  stored[%s] = %v\n", k, val)
@@ -120,7 +120,7 @@ func (v *VerboseEncoder) formatMessage(msg string, fields []zapcore.Field) strin
 	}
 
 	// Usa a função compartilhada para construir o fieldMap
-	fieldMap := encoderUtils.BuildFieldMap(v.GetStoredFields(), fields)
+	fieldMap := BuildFieldMap(v.GetStoredFields(), fields)
 
 	// Usa a função compartilhada para formatação verbose
 	return encoderUtils.FormatVerboseMessage(msg, fieldMap, v.useEmoji)
