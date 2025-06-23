@@ -44,13 +44,13 @@ var (
 	Fatalf = sugar.Fatalf
 	Fatal  = sugar.Fatal
 
-	// CORREÇÃO: With usando zap.Logger base para preservar fields corretamente
+	// FIX: With using base zap.Logger to preserve fields correctly
 	With = func(args ...interface{}) *zap.SugaredLogger {
 		if os.Getenv("DEBUG_ENCODER") == "true" {
 			log.Printf("DEBUG: With called with args: %v", args)
 		}
 
-		// Converte args para fields do zap
+		// Convert args to zap fields
 		fields := make([]zap.Field, 0, len(args)/2)
 		for i := 0; i < len(args); i += 2 {
 			if i+1 < len(args) {
@@ -60,7 +60,7 @@ var (
 			}
 		}
 
-		// Usa o logger base com fields e retorna sugar
+		// Use base logger with fields and return sugar
 		result := zlog.With(fields...).Sugar()
 
 		if os.Getenv("DEBUG_ENCODER") == "true" {
@@ -101,7 +101,6 @@ func NewDefaultLogger(additionalWriterLogger io.Writer) *zap.Logger {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	// Seleciona o encoder baseado em LOG_ENCODING
 	var encoder zapcore.Encoder
 	switch LogEncoding {
 	case "human":
@@ -124,10 +123,7 @@ func NewDefaultLogger(additionalWriterLogger io.Writer) *zap.Logger {
 
 	defaultLoggerSetLevel = logLevel.SetLevel
 	logger := zap.New(core,
-		// sampler - removido temporariamente para debug
-		// zap.WrapCore(func(core zapcore.Core) zapcore.Core {
-		// 	return zapcore.NewSamplerWithOptions(core, time.Second, 1000, 15)
-		// }),
+
 		zap.ErrorOutput(stderrSink),
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
@@ -164,22 +160,17 @@ func SetDefaultLoggerLevel(level string) {
 
 func Sync() error { return zlog.Sync() }
 
-// ReinitializeLogger permite reinicializar o logger após mudanças nas variáveis de ambiente
+// ReinitializeLogger allows reinitializing the logger after environment variable changes
 func ReinitializeLogger() {
-	// Re-lê as variáveis de ambiente
 	LogEncoding = os.Getenv("LOG_ENCODING")
 
-	// Debug
 	if os.Getenv("DEBUG_ENCODER") == "true" {
 		log.Printf("DEBUG: Reinitializing logger with encoding: %s", LogEncoding)
 	}
 
-	// Recria o logger
 	oldLogger := zlog
 	zlog = NewDefaultLogger(nil)
 	sugar = zlog.Sugar()
-
-	// Re-atribui os aliases
 	Printf = sugar.Infof
 	Println = sugar.Info
 	Debug = sugar.Debug
@@ -197,7 +188,6 @@ func ReinitializeLogger() {
 			log.Printf("DEBUG: With called with args: %v", args)
 		}
 
-		// Teste simples: usar o sugar.With original
 		result := sugar.With(args...)
 
 		if os.Getenv("DEBUG_ENCODER") == "true" {
@@ -208,7 +198,6 @@ func ReinitializeLogger() {
 	}
 	IsDebugLevel = zlog.Level() == zapcore.DebugLevel
 
-	// Debug - teste se With está funcionando
 	if os.Getenv("DEBUG_ENCODER") == "true" {
 		log.Printf("DEBUG: Logger reinitialized. Old logger: %p, New logger: %p", oldLogger, zlog)
 		log.Printf("DEBUG: Testing With functionality...")

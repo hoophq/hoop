@@ -3,47 +3,45 @@ package log
 import "go.uber.org/zap/zapcore"
 
 // Centralized emoji constants for consistent usage across all logging systems
-// Using expressive emojis for better visual feedback and user experience
 
-// Level-based emojis (for log levels)
+// Level-based emojis
 const (
-	EmojiDebug = "🔍"  // Debug level indicator - magnifying glass
-	EmojiWarn  = "⚠️" // Warning level indicator - warning sign
-	EmojiError = "❌"  // Error level indicator - cross mark
-	EmojiFatal = "💀"  // Fatal level indicator - skull
+	EmojiDebug = "🔍"
+	EmojiWarn  = "⚠️"
+	EmojiError = "❌"
+	EmojiFatal = "💀"
 )
 
-// Action-based emojis (for different types of events)
+// Action-based emojis
 const (
 	// Session & Startup
-	EmojiRocket   = "🚀" // Starting agent/service - rocket
-	EmojiSession  = "📦" // Session start/management - package/box
-	EmojiShutdown = "👋" // Shutting down, goodbye - waving hand
-	EmojiEnd      = "🔚" // Session end, completion - end arrow
+	EmojiRocket   = "🚀"
+	EmojiSession  = "📦"
+	EmojiShutdown = "👋"
+	EmojiEnd      = "🔚"
 
 	// Connections & Network
-	EmojiLink      = "🔗" // Links, references - link symbol
-	EmojiConnect   = "📡" // Connecting attempt - electric plug
-	EmojiConnected = "✅" // Success, connected - check mark
-	EmojiProxy     = "🌐" // Proxy, network - globe
-	EmojiReconnect = "🔄" // Reconnecting, retry - counterclockwise arrows
+	EmojiLink      = "🔗"
+	EmojiConnect   = "📡"
+	EmojiConnected = "✅"
+	EmojiProxy     = "🌐"
+	EmojiReconnect = "🔄"
 
 	// Commands & Actions
-	EmojiCommand = "📋" // Executing commands - clipboard
-	EmojiSuccess = "✅" // Success, completion - check mark
-	EmojiFailed  = "❌" // Failed, error - cross mark
+	EmojiCommand = "📋"
+	EmojiSuccess = "✅"
+	EmojiFailed  = "❌"
 
 	// Security & Authentication
-	EmojiLock   = "🔒" // Security, authentication, DLP - locked padlock
-	EmojiUnlock = "🔓" // Unsecured, no encryption - unlocked padlock
+	EmojiLock   = "🔒"
+	EmojiUnlock = "🔓"
 
 	// Status indicators
-	EmojiCheck = "✅" // Positive status - check mark
-	EmojiCross = "❌" // Negative status - cross mark
+	EmojiCheck = "✅"
+	EmojiCross = "❌"
 )
 
 // AllEmojis returns a slice of all emojis used in the logging system
-// Useful for removeEmojis functions
 func AllEmojis() []string {
 	return []string{
 		// Level emojis

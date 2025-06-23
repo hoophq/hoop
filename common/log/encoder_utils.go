@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// EncoderUtils contém a lógica de encoding compartilhada entre encoders
+// EncoderUtils contains shared encoding logic between encoders
 type EncoderUtils struct{}
 
-// DetectEventType tenta auto-detectar o tipo de evento baseado na mensagem (backward compatibility)
+// DetectEventType attempts to auto-detect event type based on message (backward compatibility)
 func (u *EncoderUtils) DetectEventType(msg string, fieldMap map[string]interface{}) string {
 	msgLower := strings.ToLower(msg)
 
@@ -34,7 +34,7 @@ func (u *EncoderUtils) DetectEventType(msg string, fieldMap map[string]interface
 	return ""
 }
 
-// RemoveEmojis remove emojis de uma string formatada
+// RemoveEmojis removes emojis from a formatted string
 func (u *EncoderUtils) RemoveEmojis(text string) string {
 	emojis := AllEmojis()
 
@@ -47,31 +47,28 @@ func (u *EncoderUtils) RemoveEmojis(text string) string {
 	return strings.TrimSpace(result)
 }
 
-// FormatLegacyMessage formata mensagens usando o sistema antigo (fallback completo)
+// FormatLegacyMessage formats messages using the legacy system (complete fallback)
 func (u *EncoderUtils) FormatLegacyMessage(msg string, fieldMap map[string]interface{}) string {
 	sid := getStringField(fieldMap, "sid", "session_id")
 	if sid != "" {
-		// Combina indentação com session ID para melhor legibilidade e identificação
 		return fmt.Sprintf("  │ [%s] %s", truncateSession(sid), msg)
 	}
 
 	return msg
 }
 
-// FormatLegacyVerboseMessage formata mensagens verbose sem indentação (só session ID)
+// FormatLegacyVerboseMessage formats verbose messages without indentation (session ID only)
 func (u *EncoderUtils) FormatLegacyVerboseMessage(msg string, fieldMap map[string]interface{}) string {
 	sid := getStringField(fieldMap, "sid", "session_id")
 	if sid != "" {
-		// No verbose, só usa session ID sem indentação
 		return fmt.Sprintf("[%s] %s", truncateSession(sid), msg)
 	}
 
 	return msg
 }
 
-// FormatMessage é a lógica principal de formatação compartilhada
+// FormatMessage is the main shared formatting logic
 func (u *EncoderUtils) FormatMessage(msg string, fieldMap map[string]interface{}, useEmoji bool) string {
-	// 1. Verifica se é um evento estruturado
 	if eventType, ok := fieldMap["event"].(string); ok {
 		if formatter, exists := Events[eventType]; exists {
 			formatted := formatter.FormatHuman(fieldMap, msg)
@@ -82,7 +79,6 @@ func (u *EncoderUtils) FormatMessage(msg string, fieldMap map[string]interface{}
 		}
 	}
 
-	// 2. Tenta auto-detectar baseado na mensagem
 	detectedEvent := u.DetectEventType(msg, fieldMap)
 	if detectedEvent != "" {
 		if formatter, exists := Events[detectedEvent]; exists {
@@ -94,13 +90,11 @@ func (u *EncoderUtils) FormatMessage(msg string, fieldMap map[string]interface{}
 		}
 	}
 
-	// 3. Fallback final
 	return u.FormatLegacyMessage(msg, fieldMap)
 }
 
-// FormatVerboseMessage é similar ao FormatMessage mas usa FormatVerbose
+// FormatVerboseMessage is similar to FormatMessage but uses FormatVerbose
 func (u *EncoderUtils) FormatVerboseMessage(msg string, fieldMap map[string]interface{}, useEmoji bool) string {
-	// 1. Verifica se é um evento estruturado
 	if eventType, ok := fieldMap["event"].(string); ok {
 		if formatter, exists := Events[eventType]; exists {
 			formatted := formatter.FormatVerbose(fieldMap, msg)
@@ -111,7 +105,6 @@ func (u *EncoderUtils) FormatVerboseMessage(msg string, fieldMap map[string]inte
 		}
 	}
 
-	// 2. Tenta auto-detectar baseado na mensagem
 	detectedEvent := u.DetectEventType(msg, fieldMap)
 	if detectedEvent != "" {
 		if formatter, exists := Events[detectedEvent]; exists {
@@ -123,9 +116,8 @@ func (u *EncoderUtils) FormatVerboseMessage(msg string, fieldMap map[string]inte
 		}
 	}
 
-	// 3. Fallback final
 	return u.FormatLegacyVerboseMessage(msg, fieldMap)
 }
 
-// Instância global para reutilização
+// Global instance for reuse
 var encoderUtils = &EncoderUtils{}

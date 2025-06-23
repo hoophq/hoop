@@ -20,7 +20,6 @@ func (f *AgentStartFormatter) FormatHuman(fields map[string]interface{}, msg str
 		return fmt.Sprintf("%s Starting Hoop Agent v%s", EmojiRocket, version)
 	}
 
-	// Fallback para mensagem original
 	return EmojiRocket + " " + msg
 }
 
@@ -62,7 +61,7 @@ func (f *SessionStartFormatter) FormatHuman(fields map[string]interface{}, msg s
 	version := getStringField(fields, "version")
 	platform := getStringField(fields, "platform")
 
-	// Para starting session, mostra o ID completo no final
+	// For starting session, show complete ID at the end
 	if version != "" && platform != "" {
 		if sid != "" {
 			return fmt.Sprintf("%s Starting session • Hoop v%s (%s) • session: %s", EmojiSession, version, platform, sid)
@@ -79,7 +78,6 @@ func (f *SessionStartFormatter) FormatHuman(fields map[string]interface{}, msg s
 		return fmt.Sprintf("%s New session: %s", EmojiSession, sid)
 	}
 
-	// Fallback para mensagem original
 	return EmojiSession + " " + msg
 }
 
@@ -144,7 +142,6 @@ func (f *ConnectionFormatter) FormatHuman(fields map[string]interface{}, msg str
 		return fmt.Sprintf("%s Connecting to %s%s", EmojiConnect, server, tlsInfo)
 	}
 
-	// Fallback para mensagem original
 	return EmojiConnect + " " + msg
 }
 
@@ -226,7 +223,6 @@ func (f *CommandFormatter) FormatHuman(fields map[string]interface{}, msg string
 		return fmt.Sprintf("%s Executing %s: %s%s", EmojiCommand, cmdType, displayCmd, inputInfo)
 	}
 
-	// Fallback
 	if sid != "" {
 		return fmt.Sprintf("  │ [%s] %s %s", truncateSession(sid), EmojiCommand, msg)
 	}
@@ -323,7 +319,7 @@ func (f *CommandResultFormatter) FormatVerbose(fields map[string]interface{}, ms
 		result += fmt.Sprintf("\n           Stdout: %d bytes written", stdoutSize)
 	}
 
-	// Se há stderr content e não apenas size
+	// If there's stderr content and not just size
 	if stderr != "" && stderr != "<nil>" && stderrSize == 0 {
 		result += fmt.Sprintf("\n           Stderr: %s", stderr)
 	}
