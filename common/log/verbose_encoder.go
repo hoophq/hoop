@@ -47,8 +47,6 @@ func (v *VerboseEncoder) Clone() zapcore.Encoder {
 	return cloned
 }
 
-// Add* methods removed - now inherited from BaseEncoder via composition
-
 func (v *VerboseEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
 	msg := v.formatMessage(entry.Message, fields)
 
