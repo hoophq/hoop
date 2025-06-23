@@ -95,7 +95,7 @@ func (u *EncoderUtils) FormatMessage(msg string, fieldMap map[string]interface{}
 	}
 
 	// 3. Fallback final
-	return u.FormatLegacyVerboseMessage(msg, fieldMap)
+	return u.FormatLegacyMessage(msg, fieldMap)
 }
 
 // FormatVerboseMessage é similar ao FormatMessage mas usa FormatVerbose
@@ -124,7 +124,7 @@ func (u *EncoderUtils) FormatVerboseMessage(msg string, fieldMap map[string]inte
 	}
 
 	// 3. Fallback final
-	return u.FormatLegacyMessage(msg, fieldMap)
+	return u.FormatLegacyVerboseMessage(msg, fieldMap)
 }
 
 // Instância global para reutilização
