@@ -103,12 +103,7 @@ func (f *SessionCleanupFormatter) FormatHuman(fields map[string]interface{}, msg
 	sid := getStringField(fields, "sid", "session_id")
 	duration := formatDuration(fields)
 
-	prefix := ""
-	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
-	}
-
-	result := fmt.Sprintf("%s%s Session closed", prefix, EmojiEnd)
+	result := fmt.Sprintf("  │ [%s] %s Session closed", truncateSession(sid), EmojiEnd)
 	if duration != "" {
 		result += fmt.Sprintf(" • duration: %s", duration)
 	}
@@ -140,11 +135,11 @@ func (f *ConnectionFormatter) FormatHuman(fields map[string]interface{}, msg str
 		if tls {
 			tlsInfo = " (TLS)"
 		}
-		return fmt.Sprintf("%s Connecting to %s%s", EmojiLink, server, tlsInfo)
+		return fmt.Sprintf("%s Connecting to %s%s", EmojiConnect, server, tlsInfo)
 	}
 
 	// Fallback para mensagem original
-	return EmojiLink + " " + msg
+	return EmojiConnect + " " + msg
 }
 
 func (f *ConnectionFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
@@ -207,11 +202,6 @@ func (f *CommandFormatter) FormatHuman(fields map[string]interface{}, msg string
 	tty := getBoolField(fields, "tty")
 	stdinSize := getIntField(fields, "stdin_size")
 
-	prefix := ""
-	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
-	}
-
 	if cmd != "" {
 		cmdType := identifyCommand(cmd)
 		displayCmd := cmd
@@ -224,11 +214,17 @@ func (f *CommandFormatter) FormatHuman(fields map[string]interface{}, msg string
 			inputInfo = fmt.Sprintf(" (%d bytes input)", stdinSize)
 		}
 
-		return fmt.Sprintf("%s%s Executing %s: %s%s", prefix, EmojiCommand, cmdType, displayCmd, inputInfo)
+		if sid != "" {
+			return fmt.Sprintf("  │ [%s] %s Executing %s: %s%s", truncateSession(sid), EmojiCommand, cmdType, displayCmd, inputInfo)
+		}
+		return fmt.Sprintf("%s Executing %s: %s%s", EmojiCommand, cmdType, displayCmd, inputInfo)
 	}
 
 	// Fallback
-	return prefix + EmojiCommand + " " + msg
+	if sid != "" {
+		return fmt.Sprintf("  │ [%s] %s %s", truncateSession(sid), EmojiCommand, msg)
+	}
+	return EmojiCommand + " " + msg
 }
 
 func (f *CommandFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
@@ -258,18 +254,22 @@ func (f *CommandResultFormatter) FormatHuman(fields map[string]interface{}, msg 
 	stderr := getStringField(fields, "stderr", "error")
 	sid := getStringField(fields, "sid", "session_id")
 
-	prefix := ""
-	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
-	}
-
 	if exitCode == 0 {
-		return fmt.Sprintf("%s%s Success", prefix, EmojiSuccess)
+		if sid != "" {
+			return fmt.Sprintf("  │ [%s] %s Success", truncateSession(sid), EmojiSuccess)
+		}
+		return fmt.Sprintf("%s Success", EmojiSuccess)
 	}
 
-	result := fmt.Sprintf("%s%s Command failed (exit code: %d)", prefix, EmojiFailed, exitCode)
+	var result string
+	if sid != "" {
+		result = fmt.Sprintf("  │ [%s] %s Command failed (exit code: %d)", truncateSession(sid), EmojiFailed, exitCode)
+	} else {
+		result = fmt.Sprintf("%s Command failed (exit code: %d)", EmojiFailed, exitCode)
+	}
+
 	if stderr != "" && stderr != "<nil>" {
-		result += fmt.Sprintf("\n   └─ stderr: %s", stderr)
+		result += fmt.Sprintf("\n     └─ stderr: %s", stderr)
 	}
 
 	return result
