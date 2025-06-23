@@ -173,6 +173,11 @@ func RunExec(c *gin.Context) {
 		return
 	}
 
+	if runbook == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("runbook file %v not found on git repo", req.FileName)})
+		return
+	}
+
 	for key, val := range req.EnvVars {
 		// don't replace environment variables from runbook
 		if _, ok := runbook.EnvVars[key]; ok {
