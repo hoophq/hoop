@@ -50,12 +50,12 @@ func (u *EncoderUtils) RemoveEmojis(text string) string {
 // FormatLegacyMessage formata mensagens usando o sistema antigo (fallback completo)
 func (u *EncoderUtils) FormatLegacyMessage(msg string, fieldMap map[string]interface{}) string {
 	sid := getStringField(fieldMap, "sid", "session_id")
-	prefix := ""
 	if sid != "" {
-		prefix = fmt.Sprintf("[%s] ", truncateSession(sid))
+		// Combina indentação com session ID para melhor legibilidade e identificação
+		return fmt.Sprintf("  │ [%s] %s", truncateSession(sid), msg)
 	}
 
-	return prefix + msg
+	return msg
 }
 
 // FormatMessage é a lógica principal de formatação compartilhada
