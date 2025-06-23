@@ -31,16 +31,18 @@ func getBoolField(fields map[string]interface{}, key string) bool {
 	return false
 }
 
-// getIntField extrai valores int de um fieldMap com conversão automática
-func getIntField(fields map[string]interface{}, key string) int {
-	if val, ok := fields[key]; ok {
-		switch v := val.(type) {
-		case int:
-			return v
-		case int64:
-			return int(v)
-		case float64:
-			return int(v)
+// getIntField extrai valores int de um fieldMap com conversão automática e fallback para múltiplas chaves
+func getIntField(fields map[string]interface{}, keys ...string) int {
+	for _, key := range keys {
+		if val, ok := fields[key]; ok {
+			switch v := val.(type) {
+			case int:
+				return v
+			case int64:
+				return int(v)
+			case float64:
+				return int(v)
+			}
 		}
 	}
 	return 0

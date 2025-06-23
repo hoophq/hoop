@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"go.uber.org/zap/buffer"
@@ -62,43 +63,35 @@ func (v *VerboseEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field
 
 	line := buffer.NewPool().Get()
 
-	// Timestamp sempre visível em verbose
+	// Timestamp no formato [HH:MM:SS] - sem milissegundos
 	line.AppendString("[")
-	line.AppendTime(entry.Time, "15:04:05.000")
+	line.AppendTime(entry.Time, "15:04:05")
 	line.AppendString("] ")
 
-	// Emoji ou prefix baseado no level (só para níveis que têm emoji)
-	emoji := levelEmojis[entry.Level]
-	if emoji != "" && v.useEmoji {
-		line.AppendString(emoji + " ")
-	}
-
-	// Mensagem principal formatada
+	// Level em maiúsculas com cores
+	levelStr := strings.ToUpper(entry.Level.String())
 	if v.useColor {
 		switch entry.Level {
 		case zapcore.ErrorLevel, zapcore.FatalLevel:
-			line.AppendString(colorRed)
+			line.AppendString(colorRed + levelStr + colorReset)
 		case zapcore.WarnLevel:
-			line.AppendString(colorYellow)
+			line.AppendString(colorYellow + levelStr + colorReset)
 		case zapcore.InfoLevel:
-			// Info usa cor padrão do terminal (sem cor)
+			line.AppendString(colorBlue + levelStr + colorReset)
 		case zapcore.DebugLevel:
-			line.AppendString(colorGray)
+			line.AppendString(colorGray + levelStr + colorReset)
+		default:
+			line.AppendString(levelStr)
 		}
+	} else {
+		line.AppendString(levelStr)
 	}
 
+	// Espaçamento para alinhar com a mensagem
+	line.AppendString("  ")
+
+	// Mensagem principal formatada (sem emojis no verbose)
 	line.AppendString(msg)
-
-	if v.useColor {
-		line.AppendString(colorReset)
-	}
-
-	// Adiciona caller info se disponível (detalhes extras em verbose)
-	if entry.Caller.Defined {
-		line.AppendString(" [")
-		line.AppendString(entry.Caller.TrimmedPath())
-		line.AppendString("]")
-	}
 
 	// Nova linha
 	line.AppendString("\n")

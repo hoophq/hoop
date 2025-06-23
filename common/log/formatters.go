@@ -25,7 +25,33 @@ func (f *AgentStartFormatter) FormatHuman(fields map[string]interface{}, msg str
 }
 
 func (f *AgentStartFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	version := getStringField(fields, "version")
+	platform := getStringField(fields, "platform")
+	mode := getStringField(fields, "mode")
+	server := getStringField(fields, "server", "host")
+	tls := getBoolField(fields, "tls")
+
+	result := "Starting Hoop Agent"
+
+	if version != "" {
+		result += fmt.Sprintf("\n           Version: %s", version)
+	}
+	if platform != "" {
+		result += fmt.Sprintf("\n           Platform: %s", platform)
+	}
+	if mode != "" {
+		result += fmt.Sprintf("\n           Mode: %s", mode)
+	}
+	if server != "" {
+		result += fmt.Sprintf("\n           Server: %s", server)
+	}
+	tlsStatus := "disabled"
+	if tls {
+		tlsStatus = "enabled"
+	}
+	result += fmt.Sprintf("\n           TLS: %s", tlsStatus)
+
+	return result
 }
 
 // SessionStartFormatter handles session start events
@@ -58,7 +84,16 @@ func (f *SessionStartFormatter) FormatHuman(fields map[string]interface{}, msg s
 }
 
 func (f *SessionStartFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg) // Mesmo formato para verbose
+	sid := getStringField(fields, "sid", "session_id")
+	dlpTypes := getIntField(fields, "dlp_types", "dlp_info_types")
+
+	result := fmt.Sprintf("Session started: %s", sid)
+
+	if dlpTypes >= 0 {
+		result += fmt.Sprintf("\n           DLP info types: %d", dlpTypes)
+	}
+
+	return result
 }
 
 // SessionCleanupFormatter handles session cleanup events
@@ -82,7 +117,15 @@ func (f *SessionCleanupFormatter) FormatHuman(fields map[string]interface{}, msg
 }
 
 func (f *SessionCleanupFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	duration := formatDuration(fields)
+
+	result := "Session closed"
+
+	if duration != "" {
+		result += fmt.Sprintf("\n           Duration: %s", duration)
+	}
+
+	return result
 }
 
 // ConnectionFormatter handles connection start events
@@ -105,7 +148,25 @@ func (f *ConnectionFormatter) FormatHuman(fields map[string]interface{}, msg str
 }
 
 func (f *ConnectionFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	server := getStringField(fields, "server", "host")
+	tls := getBoolField(fields, "tls")
+	timeout := getIntField(fields, "timeout")
+
+	result := "Connecting to server..."
+
+	if server != "" {
+		result += fmt.Sprintf("\n           Server: %s", server)
+	}
+	if timeout > 0 {
+		result += fmt.Sprintf("\n           Timeout: %ds", timeout)
+	}
+	tlsStatus := "disabled"
+	if tls {
+		tlsStatus = "enabled"
+	}
+	result += fmt.Sprintf("\n           TLS: %s", tlsStatus)
+
+	return result
 }
 
 // ConnectionEstablishedFormatter handles successful connections
@@ -122,7 +183,19 @@ func (f *ConnectionEstablishedFormatter) FormatHuman(fields map[string]interface
 }
 
 func (f *ConnectionEstablishedFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	server := getStringField(fields, "server", "host")
+	responseTime := getIntField(fields, "response_time_ms")
+
+	result := "Connected successfully"
+
+	if server != "" {
+		result += fmt.Sprintf("\n           Server: %s", server)
+	}
+	if responseTime > 0 {
+		result += fmt.Sprintf("\n           Response time: %dms", responseTime)
+	}
+
+	return result
 }
 
 // CommandFormatter handles command execution events
@@ -159,7 +232,22 @@ func (f *CommandFormatter) FormatHuman(fields map[string]interface{}, msg string
 }
 
 func (f *CommandFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	cmd := getStringField(fields, "command", "cmd")
+	tty := getBoolField(fields, "tty")
+	stdinSize := getIntField(fields, "stdin_size")
+	tableName := getStringField(fields, "table_name")
+
+	result := fmt.Sprintf("Executing command: %s", cmd)
+
+	if tableName != "" {
+		result += fmt.Sprintf("\n           Table name: %s", tableName)
+	}
+	result += fmt.Sprintf("\n           TTY: %t", tty)
+	if stdinSize > 0 {
+		result += fmt.Sprintf("\n           Stdin size: %d bytes", stdinSize)
+	}
+
+	return result
 }
 
 // CommandResultFormatter handles command completion events
@@ -188,7 +276,38 @@ func (f *CommandResultFormatter) FormatHuman(fields map[string]interface{}, msg 
 }
 
 func (f *CommandResultFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	exitCode := getIntField(fields, "exit_code")
+	stderrSize := getIntField(fields, "stderr_size", "stderr_bytes")
+	stdoutSize := getIntField(fields, "stdout_size", "stdout_bytes")
+	duration := formatDuration(fields)
+	stderr := getStringField(fields, "stderr", "error")
+
+	var result string
+	if exitCode == 0 {
+		result = "Command completed successfully"
+	} else {
+		result = "Command failed"
+	}
+
+	result += fmt.Sprintf("\n           Exit code: %d", exitCode)
+
+	if duration != "" {
+		result += fmt.Sprintf("\n           Duration: %s", duration)
+	}
+
+	if stderrSize > 0 {
+		result += fmt.Sprintf("\n           Stderr: %d bytes written", stderrSize)
+	}
+	if stdoutSize >= 0 {
+		result += fmt.Sprintf("\n           Stdout: %d bytes written", stdoutSize)
+	}
+
+	// Se há stderr content e não apenas size
+	if stderr != "" && stderr != "<nil>" && stderrSize == 0 {
+		result += fmt.Sprintf("\n           Stderr: %s", stderr)
+	}
+
+	return result
 }
 
 // AgentShutdownFormatter handles agent shutdown events
@@ -199,5 +318,17 @@ func (f *AgentShutdownFormatter) FormatHuman(fields map[string]interface{}, msg 
 }
 
 func (f *AgentShutdownFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
-	return f.FormatHuman(fields, msg)
+	reason := getStringField(fields, "reason")
+	uptime := formatDuration(fields)
+
+	result := "Shutting down agent"
+
+	if reason != "" {
+		result += fmt.Sprintf("\n           Reason: %s", reason)
+	}
+	if uptime != "" {
+		result += fmt.Sprintf("\n           Uptime: %s", uptime)
+	}
+
+	return result
 }
