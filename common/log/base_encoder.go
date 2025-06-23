@@ -8,29 +8,29 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// BaseEncoder contém a implementação compartilhada dos métodos zapcore.Encoder
+// BaseEncoder contains the shared implementation of zapcore.Encoder methods
 type BaseEncoder struct {
 	storedFields map[string]interface{}
 }
 
-// NewBaseEncoder cria uma nova instância do encoder base
+// NewBaseEncoder creates a new instance of the base encoder
 func NewBaseEncoder() *BaseEncoder {
 	return &BaseEncoder{
 		storedFields: make(map[string]interface{}),
 	}
 }
 
-// GetStoredFields retorna os campos armazenados
+// GetStoredFields returns the stored fields
 func (b *BaseEncoder) GetStoredFields() map[string]interface{} {
 	return b.storedFields
 }
 
-// SetStoredFields define os campos armazenados (usado no Clone)
+// SetStoredFields sets the stored fields (used in Clone)
 func (b *BaseEncoder) SetStoredFields(fields map[string]interface{}) {
 	b.storedFields = fields
 }
 
-// CopyStoredFields copia os campos armazenados para um novo mapa
+// CopyStoredFields copies the stored fields to a new map
 func (b *BaseEncoder) CopyStoredFields() map[string]interface{} {
 	copied := make(map[string]interface{})
 	for k, v := range b.storedFields {
@@ -39,7 +39,7 @@ func (b *BaseEncoder) CopyStoredFields() map[string]interface{} {
 	return copied
 }
 
-// Implementação de todos os métodos Add* do zapcore.Encoder
+// Implementation of all Add* methods from zapcore.Encoder
 func (b *BaseEncoder) AddArray(key string, marshaler zapcore.ArrayMarshaler) error {
 	return nil
 }
@@ -144,5 +144,5 @@ func (b *BaseEncoder) AddReflected(key string, value interface{}) error {
 }
 
 func (b *BaseEncoder) OpenNamespace(key string) {
-	// Implementação vazia - não fazemos nada com namespaces
+	// Empty implementation - we don't do anything with namespaces
 }

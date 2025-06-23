@@ -9,7 +9,7 @@ import (
 
 // Field extraction utilities
 
-// getStringField extrai valores string de um fieldMap com fallback para múltiplas chaves
+// getStringField extracts string values from a fieldMap with fallback for multiple keys
 func getStringField(fields map[string]interface{}, keys ...string) string {
 	for _, key := range keys {
 		if val, ok := fields[key]; ok {
@@ -21,7 +21,7 @@ func getStringField(fields map[string]interface{}, keys ...string) string {
 	return ""
 }
 
-// getBoolField extrai valores bool de um fieldMap
+// getBoolField extracts bool values from a fieldMap
 func getBoolField(fields map[string]interface{}, key string) bool {
 	if val, ok := fields[key]; ok {
 		if b, ok := val.(bool); ok {
@@ -31,7 +31,7 @@ func getBoolField(fields map[string]interface{}, key string) bool {
 	return false
 }
 
-// getIntField extrai valores int de um fieldMap com conversão automática e fallback para múltiplas chaves
+// getIntField extracts int values from a fieldMap with automatic conversion and fallback for multiple keys
 func getIntField(fields map[string]interface{}, keys ...string) int {
 	for _, key := range keys {
 		if val, ok := fields[key]; ok {
@@ -48,7 +48,7 @@ func getIntField(fields map[string]interface{}, keys ...string) int {
 	return 0
 }
 
-// ExtractFieldValue extrai o valor de um zapcore.Field de forma type-safe
+// ExtractFieldValue extracts the value from a zapcore.Field in a type-safe manner
 func ExtractFieldValue(field zapcore.Field) interface{} {
 	switch field.Type {
 	case zapcore.StringType:
@@ -76,7 +76,7 @@ func ExtractFieldValue(field zapcore.Field) interface{} {
 	}
 }
 
-// GetFieldStringValue extrai o valor string de um zapcore.Field
+// GetFieldStringValue extracts the string value from a zapcore.Field
 func GetFieldStringValue(field zapcore.Field) string {
 	switch field.Type {
 	case zapcore.StringType:
@@ -96,16 +96,14 @@ func GetFieldStringValue(field zapcore.Field) string {
 	}
 }
 
-// BuildFieldMap combina stored fields e direct fields em um mapa
+// BuildFieldMap combines stored fields and direct fields into a map
 func BuildFieldMap(storedFields map[string]interface{}, fields []zapcore.Field) map[string]interface{} {
 	fieldMap := make(map[string]interface{})
 
-	// Adiciona stored fields primeiro
 	for k, v := range storedFields {
 		fieldMap[k] = v
 	}
 
-	// Adiciona direct fields (sobrescreve stored se necessário)
 	for _, field := range fields {
 		fieldMap[field.Key] = ExtractFieldValue(field)
 	}
@@ -115,7 +113,7 @@ func BuildFieldMap(storedFields map[string]interface{}, fields []zapcore.Field) 
 
 // Formatting utilities
 
-// truncateSession trunca session IDs para exibição mais limpa
+// truncateSession truncates session IDs for cleaner display
 func truncateSession(sid string) string {
 	if len(sid) > 12 {
 		return fmt.Sprintf("%s...%s", sid[:8], sid[len(sid)-4:])
@@ -123,7 +121,7 @@ func truncateSession(sid string) string {
 	return sid
 }
 
-// formatDuration formata durações de diferentes tipos de campos
+// formatDuration formats durations from different field types
 func formatDuration(fields map[string]interface{}) string {
 	if dur, ok := fields["duration"].(string); ok {
 		return dur
@@ -137,7 +135,7 @@ func formatDuration(fields map[string]interface{}) string {
 	return ""
 }
 
-// identifyCommand identifica o tipo de comando baseado na string do comando
+// identifyCommand identifies the command type based on the command string
 func identifyCommand(cmd string) string {
 	if cmd == "" {
 		return "command"
@@ -158,7 +156,6 @@ func identifyCommand(cmd string) string {
 	case strings.Contains(cmdLower, "bash") || strings.Contains(cmdLower, "sh"):
 		return "Shell"
 	default:
-		// Pega o primeiro comando
 		parts := strings.Fields(cmd)
 		if len(parts) > 0 {
 			return strings.Title(parts[0])

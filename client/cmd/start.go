@@ -24,14 +24,11 @@ var startAgentCmd = &cobra.Command{
 	Short:        "Runs the agent component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Se verbose está ativo, força o formato verbose
 		if verboseMode && outputFormat == "auto" {
 			outputFormat = "verbose"
 		}
 
-		// Configura o formato de log baseado nas flags
 		if outputFormat == "auto" || outputFormat == "" {
-			// Auto-detecta baseado em TTY usando fileinfo
 			if fileInfo, _ := os.Stdout.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
 				os.Setenv("LOG_ENCODING", "human")
 			} else {
@@ -55,7 +52,6 @@ var startAgentCmd = &cobra.Command{
 			os.Setenv("LOG_LEVEL", "DEBUG")
 		}
 
-		// Reinicializa o logger com as novas configurações
 		log.ReinitializeLogger()
 
 		agent.Run()
@@ -72,7 +68,6 @@ var startGatewayCmd = &cobra.Command{
 }
 
 func init() {
-	// Adiciona flags para o comando agent
 	startAgentCmd.Flags().StringVar(&outputFormat, "format", "auto",
 		"Output format: auto, human, verbose, json (default \"auto\")")
 	startAgentCmd.Flags().BoolVarP(&verboseMode, "verbose", "v", false,
