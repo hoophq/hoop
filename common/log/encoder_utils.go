@@ -58,6 +58,17 @@ func (u *EncoderUtils) FormatLegacyMessage(msg string, fieldMap map[string]inter
 	return msg
 }
 
+// FormatLegacyVerboseMessage formata mensagens verbose sem indentação (só session ID)
+func (u *EncoderUtils) FormatLegacyVerboseMessage(msg string, fieldMap map[string]interface{}) string {
+	sid := getStringField(fieldMap, "sid", "session_id")
+	if sid != "" {
+		// No verbose, só usa session ID sem indentação
+		return fmt.Sprintf("[%s] %s", truncateSession(sid), msg)
+	}
+
+	return msg
+}
+
 // FormatMessage é a lógica principal de formatação compartilhada
 func (u *EncoderUtils) FormatMessage(msg string, fieldMap map[string]interface{}, useEmoji bool) string {
 	// 1. Verifica se é um evento estruturado
@@ -84,7 +95,7 @@ func (u *EncoderUtils) FormatMessage(msg string, fieldMap map[string]interface{}
 	}
 
 	// 3. Fallback final
-	return u.FormatLegacyMessage(msg, fieldMap)
+	return u.FormatLegacyVerboseMessage(msg, fieldMap)
 }
 
 // FormatVerboseMessage é similar ao FormatMessage mas usa FormatVerbose
