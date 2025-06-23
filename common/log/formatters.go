@@ -112,9 +112,15 @@ func (f *SessionCleanupFormatter) FormatHuman(fields map[string]interface{}, msg
 }
 
 func (f *SessionCleanupFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
+	sid := getStringField(fields, "sid", "session_id")
 	duration := formatDuration(fields)
 
-	result := "Session closed"
+	var result string
+	if sid != "" {
+		result = fmt.Sprintf("[%s] Session closed", truncateSession(sid))
+	} else {
+		result = "Session closed"
+	}
 
 	if duration != "" {
 		result += fmt.Sprintf("\n           Duration: %s", duration)
@@ -229,11 +235,17 @@ func (f *CommandFormatter) FormatHuman(fields map[string]interface{}, msg string
 
 func (f *CommandFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
 	cmd := getStringField(fields, "command", "cmd")
+	sid := getStringField(fields, "sid", "session_id")
 	tty := getBoolField(fields, "tty")
 	stdinSize := getIntField(fields, "stdin_size")
 	tableName := getStringField(fields, "table_name")
 
-	result := fmt.Sprintf("Executing command: %s", cmd)
+	var result string
+	if sid != "" {
+		result = fmt.Sprintf("[%s] Executing command: %s", truncateSession(sid), cmd)
+	} else {
+		result = fmt.Sprintf("Executing command: %s", cmd)
+	}
 
 	if tableName != "" {
 		result += fmt.Sprintf("\n           Table name: %s", tableName)
@@ -277,16 +289,25 @@ func (f *CommandResultFormatter) FormatHuman(fields map[string]interface{}, msg 
 
 func (f *CommandResultFormatter) FormatVerbose(fields map[string]interface{}, msg string) string {
 	exitCode := getIntField(fields, "exit_code")
+	sid := getStringField(fields, "sid", "session_id")
 	stderrSize := getIntField(fields, "stderr_size", "stderr_bytes")
 	stdoutSize := getIntField(fields, "stdout_size", "stdout_bytes")
 	duration := formatDuration(fields)
 	stderr := getStringField(fields, "stderr", "error")
 
 	var result string
-	if exitCode == 0 {
-		result = "Command completed successfully"
+	if sid != "" {
+		if exitCode == 0 {
+			result = fmt.Sprintf("[%s] Command completed successfully", truncateSession(sid))
+		} else {
+			result = fmt.Sprintf("[%s] Command failed", truncateSession(sid))
+		}
 	} else {
-		result = "Command failed"
+		if exitCode == 0 {
+			result = "Command completed successfully"
+		} else {
+			result = "Command failed"
+		}
 	}
 
 	result += fmt.Sprintf("\n           Exit code: %d", exitCode)
