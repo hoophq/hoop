@@ -143,5 +143,3 @@ func extractServer(msg string) string {
 	}
 	return "server"
 }
-
-// Add* methods removed - now inherited from BaseEncoder via composition
