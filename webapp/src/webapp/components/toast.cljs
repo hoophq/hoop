@@ -1,27 +1,10 @@
 (ns webapp.components.toast
   (:require
+   ["@radix-ui/themes" :refer [Text]]
+   ["lucide-react" :refer [CheckCircle AlertCircle ChevronDown ChevronUp]]
    ["sonner" :refer [toast]]
-   [reagent.core :as r]
-   [clojure.string :as str]))
+   [reagent.core :as r]))
 
-;; Ícones SVG inline (substituir por biblioteca de ícones se preferir)
-(defn check-icon []
-  [:svg {:width "20" :height "20" :viewBox "0 0 24 24" :fill "none" :stroke "currentColor" :stroke-width "2"}
-   [:polyline {:points "20,6 9,17 4,12"}]])
-
-(defn alert-circle-icon []
-  [:svg {:width "20" :height "20" :viewBox "0 0 24 24" :fill "none" :stroke "currentColor" :stroke-width "2"}
-   [:circle {:cx "12" :cy "12" :r "10"}]
-   [:line {:x1 "12" :y1 "8" :x2 "12" :y2 "12"}]
-   [:line {:x1 "12" :y1 "16" :x2 "12.01" :y2 "16"}]])
-
-(defn chevron-down-icon []
-  [:svg {:width "16" :height "16" :viewBox "0 0 24 24" :fill "none" :stroke "currentColor" :stroke-width "2"}
-   [:polyline {:points "6,9 12,15 18,9"}]])
-
-(defn chevron-up-icon []
-  [:svg {:width "16" :height "16" :viewBox "0 0 24 24" :fill "none" :stroke "currentColor" :stroke-width "2"}
-   [:polyline {:points "18,15 12,9 6,15"}]])
 
 ;; Função para formatar JSON de forma legível
 (defn format-json [obj]
@@ -33,19 +16,10 @@
 ;; Função para obter estilos baseados no tipo
 (defn get-toast-styles [toast-type]
   (case toast-type
-    :success {:bg "bg-green-50"
-              :border "border-green-200"
-              :text "text-green-800"
-              :icon-color "text-green-600"}
-    :error {:bg "bg-red-50"
-            :border "border-red-200"
-            :text "text-red-800"
-            :icon-color "text-red-600"}
+    :success {:icon-color "text-green-600"}
+    :error {:icon-color "text-red-600"}
     ;; Default
-    {:bg "bg-white"
-     :border "border-gray-200"
-     :text "text-gray-900"
-     :icon-color "text-gray-500"}))
+    {:icon-color "text-gray-500"}))
 
 ;; Toast component principal
 (defn toast-component [{:keys [id title description type details button]}]
@@ -54,8 +28,8 @@
         styles (get-toast-styles type)]
 
     (fn []
-      [:div {:class (str "flex flex-col rounded-lg shadow-lg ring-1 ring-black/5 w-full md:max-w-[364px] p-4 "
-                         (:bg styles) " " (:border styles))}
+      [:div {:class (str "flex flex-col rounded-lg shadow-lg ring-1 "
+                         "ring-black/5 w-full w-[364px] p-4 bg-white")}
 
        ;; Header com ícone, título e botão de fechar
        [:div {:class "flex items-start justify-between"}
@@ -63,16 +37,16 @@
          ;; Ícone baseado no tipo
          [:div {:class (str "flex-shrink-0 " (:icon-color styles))}
           (case type
-            :success [check-icon]
-            :error [alert-circle-icon]
+            :success [:> CheckCircle {:size "20"}]
+            :error [:> AlertCircle {:size "20"}]
             [:div])]
 
          ;; Conteúdo principal
          [:div {:class "flex-1 min-w-0"}
-          [:p {:class (str "text-sm font-medium " (:text styles))}
+          [:> Text {:as "p" :size "2" :class "text-gray-12"}
            title]
           (when description
-            [:p {:class (str "mt-1 text-sm " (:text styles) " opacity-75")}
+            [:> Text {:as "p" :size "2" :class "text-gray-12"}
              description])]]
 
         ;; Botão de fechar
@@ -87,7 +61,7 @@
          [:div {:class "mt-3 pt-3 border-t border-gray-200"}
           [:button {:class "flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
                     :on-click #(swap! expanded? not)}
-           (if @expanded? [chevron-up-icon] [chevron-down-icon])
+           (if @expanded? [:> ChevronUp {:size "20"}] [:> ChevronDown {:size "20"}])
            (if @expanded? "Hide details" "Show details")]])
 
        ;; Área expansível com detalhes do erro
@@ -129,27 +103,3 @@
                   :title title
                   :description description
                   :details details})))
-
-;; Função de conveniência para criar toasts simples (mantendo compatibilidade)
-(defn toast-simple [message]
-  (toast-success message))
-
-;; Exemplo de botão que renderiza diferentes tipos de toast
-(defn example-button []
-  [:div {:class "flex gap-2 p-4"}
-   [:button {:class "px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-             :on-click #(toast-success "Plugin updated")}
-    "Success Toast"]
-
-   [:button {:class "px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-             :on-click #(toast-error "Failed connecting to resource")}
-    "Error Toast (simple)"]
-
-   [:button {:class "px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-             :on-click #(toast-error
-                         "Failed connecting to resource"
-                         nil
-                         {:message "Failed to connect to remote host=12345, port=5651, reason=dial tcp: address 2351: invalid port"
-                          :code "AccessDenied"
-                          :type "Sender"})}
-    "Error Toast (with details)"]])
