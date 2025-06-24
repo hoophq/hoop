@@ -39,19 +39,32 @@
      jira-templates-list (rf/subscribe [:jira-templates->list])
      initialized? (r/atom false)
      check-form-validity! (fn []
-                            (when-let [form (.getElementById js/document "credentials-form")]
-                              (.reportValidity form)
-                              (reset! credentials-valid? (.checkValidity form))))
+                            ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
+                            (when-let [connection-data (:data @connection)]
+                              (let [connection-type (:type connection-data)
+                                    connection-subtype (:subtype connection-data)
+                                    form-id (cond
+                                              (and (= connection-type "application")
+                                                   (= connection-subtype "ssh")) "ssh-credentials-form"
+                                              :else "credentials-form")
+                                    form (.getElementById js/document form-id)]
+                                (when form
+                                  (.reportValidity form)
+                                  (reset! credentials-valid? (.checkValidity form))))))
      _ (rf/dispatch [:connections->get-connection-details connection-name])
      _ (rf/dispatch [:guardrails->get-all])
      _ (rf/dispatch [:jira-templates->get-all])]
 
-    (when-let [form (.getElementById js/document "credentials-form")]
-      (reset! credentials-valid? (.checkValidity form)))
-
     (let [handle-submit (fn [e]
                           (.preventDefault e)
-                          (let [form (.getElementById js/document "credentials-form")
+                          ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
+                          (let [connection-type (:type (:data @connection))
+                                connection-subtype (:subtype (:data @connection))
+                                form-id (cond
+                                          (and (= connection-type "application")
+                                               (= connection-subtype "ssh")) "ssh-credentials-form"
+                                          :else "credentials-form")
+                                form (.getElementById js/document form-id)
                                 current-env-key @(rf/subscribe [:connection-setup/env-current-key])
                                 current-env-value @(rf/subscribe [:connection-setup/env-current-value])
                                 current-file-name @(rf/subscribe [:connection-setup/config-current-name])
@@ -64,6 +77,23 @@
                               (reset! credentials-valid? (.checkValidity form)))
 
                             (when @credentials-valid?
+                              ;; Para conexões SSH, limpar campos não utilizados baseado no método de autenticação
+                              (when (and (= connection-type "application")
+                                         (= connection-subtype "ssh"))
+                                (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
+                                  (case auth-method
+                                    "password"
+                                    ;; Limpar campo de chave privada quando usando username & password
+                                    (rf/dispatch [:connection-setup/update-ssh-credentials
+                                                  "authorized_server_keys" ""])
+
+                                    "key"
+                                    ;; Limpar campo de senha quando usando private key authentication
+                                    (rf/dispatch [:connection-setup/update-ssh-credentials
+                                                  "pass" ""])
+
+                                    nil))) ; não fazer nada se método não definido
+
                               ;; Process current input values before submitting
                               (when (and (not (empty? current-env-key))
                                          (not (empty? current-env-value)))
