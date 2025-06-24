@@ -248,6 +248,15 @@
         ssh-credentials (when (and (= (:type connection) "application")
                                    (= (:subtype connection) "ssh"))
                           (extract-ssh-credentials credentials))
+        ;; Determinar método de autenticação SSH baseado nos dados existentes
+        ssh-auth-method (when ssh-credentials
+                          (cond
+                            (and (not (empty? (get ssh-credentials "authorized_server_keys")))
+                                 (empty? (get ssh-credentials "pass"))) "key"
+                            (and (not (empty? (get ssh-credentials "pass")))
+                                 (empty? (get ssh-credentials "authorized_server_keys"))) "password"
+                            (not (empty? (get ssh-credentials "authorized_server_keys"))) "key"
+                            :else "password"))
         ;; Extrair tags no formato correto
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
@@ -297,6 +306,7 @@
      :database-credentials (when (= (:type connection) "database") credentials)
      :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
+     :ssh-auth-method (or ssh-auth-method "password")
      :command (if (empty? (:command connection))
                 (get constants/connection-commands (:subtype connection))
                 (str/join " " (:command connection)))
