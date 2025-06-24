@@ -209,7 +209,7 @@
             :else
             [:section
              {:class "antialiased min-h-screen"}
-             [:> Toaster]
+             [:> Toaster {:position "top-left"}]
              [modals/modal]
              [modals/modal-radix]
              [dialog/dialog]

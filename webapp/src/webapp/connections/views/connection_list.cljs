@@ -3,7 +3,7 @@
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
                                         Flex Text Callout Popover]]
             ["sonner" :refer [toast]]
-            [webapp.components.toast :refer [custom-toast]]
+            [webapp.components.toast :refer [toast-success toast-error]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -138,11 +138,20 @@
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
             [:> Button {:on-click (fn []
                                     (rf/dispatch [:navigate :create-connection])
-                                    (custom-toast {:title "This is a headless toast"
-                                                   :description "You have full control of styles and jsx, while still having the animations."
-                                                   :button {:label "Reply"
-                                                            :on-click (fn [] (toast.dismiss))}}))}
-             "Add Connection"]])
+                                    (toast-success "Navegando para criar nova conexão..."))}
+             "Add Connection"]
+
+            ;; Botão para testar toast de erro com detalhes
+            [:> Button {:variant "soft"
+                        :color "red"
+                        :on-click (fn []
+                                    (toast-error
+                                     "Failed connecting to resource"
+                                     nil
+                                     {:message "Failed to connect to remote host=12345, port=5651, reason=dial tcp: address 2351: invalid port"
+                                      :code "AccessDenied"
+                                      :type "Sender"}))}
+             "Test Error"]])
          [:> Flex {:as "header"
                    :direction "column"
                    :gap "3"
