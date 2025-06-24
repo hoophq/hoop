@@ -77,6 +77,23 @@
                               (reset! credentials-valid? (.checkValidity form)))
 
                             (when @credentials-valid?
+                              ;; Para conexões SSH, limpar campos não utilizados baseado no método de autenticação
+                              (when (and (= connection-type "application")
+                                         (= connection-subtype "ssh"))
+                                (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
+                                  (case auth-method
+                                    "password"
+                                    ;; Limpar campo de chave privada quando usando username & password
+                                    (rf/dispatch [:connection-setup/update-ssh-credentials
+                                                  "authorized_server_keys" ""])
+
+                                    "key"
+                                    ;; Limpar campo de senha quando usando private key authentication
+                                    (rf/dispatch [:connection-setup/update-ssh-credentials
+                                                  "pass" ""])
+
+                                    nil))) ; não fazer nada se método não definido
+
                               ;; Process current input values before submitting
                               (when (and (not (empty? current-env-key))
                                          (not (empty? current-env-value)))
