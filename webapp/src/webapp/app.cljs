@@ -4,6 +4,7 @@
    ["gsap/all" :refer [Draggable gsap]]
    ["ag-grid-community" :refer [AllCommunityModule
                                 ModuleRegistry]]
+   ["sonner" :refer [Toaster]]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -208,6 +209,7 @@
             :else
             [:section
              {:class "antialiased min-h-screen"}
+             [:> Toaster]
              [modals/modal]
              [modals/modal-radix]
              [dialog/dialog]
@@ -222,6 +224,7 @@
 
 (defmethod layout :auth [_ panels]
   [:<>
+   [:> Toaster]
    (snackbar/snackbar)
    [modals/modal]
    [modals/modal-radix]
