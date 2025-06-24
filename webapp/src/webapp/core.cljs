@@ -1,6 +1,6 @@
 (ns webapp.core
   (:require
-   [reagent.dom.client :as rdom]
+   [reagent.dom :as rdom]
    [re-frame.core :as re-frame]
    [webapp.events :as events]
    [webapp.routes :as routes]

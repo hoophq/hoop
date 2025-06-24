@@ -57,6 +57,7 @@
     "react-select": "^5.7.0",
     "react-tailwindcss-datepicker": "^1.6.6",
     "recharts": "2.12.0",
+    "sonner": "^2.0.5",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "unique-names-generator": "^4.7.1"
