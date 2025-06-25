@@ -348,7 +348,8 @@
                              (= (:type connection) "mssql")
                              (= (:type connection) "oracledb")
                              (= (:type connection) "database")
-                             (= (:subtype connection) "dynamodb")))
+                             (= (:subtype connection) "dynamodb")
+                             (= (:subtype connection) "cloudwatch")))
             panel-content (case @active-panel
                             :runbooks (runbooks-panel/main)
                             :metadata (metadata-panel/main {:metadata metadata

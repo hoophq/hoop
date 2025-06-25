@@ -21,6 +21,9 @@
 (defmethod get-database-schema "dynamodb" [_ connection]
   (rf/dispatch [:database-schema->handle-dynamodb-schema connection])
   (rf/dispatch [:database-schema->set-loading-status connection]))
+(defmethod get-database-schema "cloudwatch" [_ connection]
+  (rf/dispatch [:database-schema->handle-cloudwatch-schema connection])
+  (rf/dispatch [:database-schema->set-loading-status connection]))
 
 ;; Adding memoization for components that are rendered frequently
 (def memoized-field-type-tree
@@ -272,6 +275,9 @@
 
     ;; Modified for DynamoDB - use databases-tree as multi-database banks
     "dynamodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+
+    ;; CloudWatch - use databases-tree for log groups (similar to DynamoDB)
+    "cloudwatch" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
     [:> Text {:size "1"}
      "Couldn't load the schema"]))

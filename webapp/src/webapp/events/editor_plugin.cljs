@@ -406,8 +406,15 @@
                                  (< (count script) 1))
          selected-db (.getItem js/localStorage "selected-database")
          is-dynamodb? (= (:subtype primary-connection) "dynamodb")
-         env-vars (when (and is-dynamodb? selected-db)
-                    {"envvar:TABLE_NAME" (js/btoa selected-db)})
+         is-cloudwatch? (= (:subtype primary-connection) "cloudwatch")
+         env-vars (cond
+                    (and is-dynamodb? selected-db)
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)}
+
+                    (and is-cloudwatch? selected-db)
+                    {"envvar:LOG_GROUP_NAME" (js/btoa selected-db)}
+
+                    :else nil)
          keep-metadata? (get-in db [:editor-plugin :keep-metadata?])
          current-metadatas (get-in db [:editor-plugin :metadata])
          current-metadata-key (get-in db [:editor-plugin :metadata-key])
@@ -552,7 +559,18 @@
 (rf/reg-event-fx
  :editor-plugin/handle-template-submit
  (fn [{:keys [db]} [_ {:keys [form-data script metadata env_vars keep-metadata?]}]]
-   (let [connection (get-in db [:editor :connections :selected])]
+   (let [connection (get-in db [:editor :connections :selected])
+         is-dynamodb? (= (:subtype connection) "dynamodb")
+         is-cloudwatch? (= (:subtype connection) "cloudwatch")
+         selected-db (.getItem js/localStorage "selected-database")
+         env-vars (cond
+                    (and is-dynamodb? selected-db)
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)}
+
+                    (and is-cloudwatch? selected-db)
+                    {"envvar:LOG_GROUP_NAME" selected-db}
+
+                    :else nil)]
      {:fx [[:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->exec-script
                        (cond-> {:script script
@@ -638,9 +656,16 @@
    (let [connection (first (filter #(= (:name %) connection-name)
                                    (get-in db [:editor-plugin->run-connection-list :data])))
          is-dynamodb? (= (:subtype connection) "dynamodb")
+         is-cloudwatch? (= (:subtype connection) "cloudwatch")
          selected-db (.getItem js/localStorage "selected-database")
-         env-vars (when (and is-dynamodb? selected-db)
-                    {"envvar:TABLE_NAME" (js/btoa selected-db)})]
+         env-vars (cond
+                    (and is-dynamodb? selected-db)
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)}
+
+                    (and is-cloudwatch? selected-db)
+                    {"envvar:LOG_GROUP_NAME" selected-db}
+
+                    :else nil)]
      {:fx [[:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->run-runbook
                        (cond-> {:file-name file-name

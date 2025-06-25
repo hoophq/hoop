@@ -135,7 +135,8 @@
                  :guardrail_rules guardrails-processed
                  :jira_issue_template_id jira-template-id-processed
                  :access_schema (or (when (or (= api-type "database")
-                                              (= connection-subtype "dynamodb"))
+                                              (= connection-subtype "dynamodb")
+                                              (= connection-subtype "cloudwatch"))
                                       (if effective-database-schema
                                         "enabled"
                                         "disabled"))
