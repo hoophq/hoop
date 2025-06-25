@@ -49,7 +49,7 @@
              description])
 
           (when has-details?
-            [:> Box {:class "flex items-center gap-1 cursor-pointer"
+            [:> Box {:class "mt-1 flex items-center gap-1 cursor-pointer"
                      :on-click #(swap! expanded? not)}
              [:> Text {:size "2"
                        :weight "medium"
@@ -66,18 +66,20 @@
           [:div {:class "text-xs font-mono"}
            (format-json-colored details)]])])))
 
-(defn custom-toast [toast-data]
+(defn custom-toast [toast-data toast-props]
   (toast.custom
    (fn [id]
      (r/as-element
-      [toast-component (assoc toast-data :id id)]))))
+      [toast-component (assoc toast-data :id id)])) toast-props))
 
 (defn toast-success
   ([title] (toast-success title nil))
   ([title description]
    (custom-toast {:type :success
                   :title title
-                  :description description})))
+                  :description description}
+
+                 #js{})))
 
 (defn toast-error
   ([title] (toast-error title nil nil))
@@ -86,4 +88,6 @@
    (custom-toast {:type :error
                   :title title
                   :description description
-                  :details details})))
+                  :details details}
+
+                 #js{:duration 10000})))
