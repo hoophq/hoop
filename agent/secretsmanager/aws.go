@@ -26,7 +26,7 @@ func newAwsProvider() (*awsProvider, error) {
 	}
 	svc := secretsmanager.NewFromConfig(cfg, func(o *secretsmanager.Options) {
 		if log.IsDebugLevel {
-			o.ClientLogMode = aws.LogSigning | aws.LogRequest | aws.LogResponseWithBody
+			o.ClientLogMode = aws.LogResponse
 		}
 		// TODO: add zap as logger
 		o.Logger = logging.NewStandardLogger(os.Stdout)
