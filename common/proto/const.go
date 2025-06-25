@@ -40,6 +40,7 @@ const (
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
 	ConnectionTypeDynamoDB    ConnectionType = "dynamodb"
+	ConnectionTypeCloudWatch  ConnectionType = "cloudwatch"
 	ConnectionTypePostgres    ConnectionType = "postgres"
 	ConnectionTypeMySQL       ConnectionType = "mysql"
 	ConnectionTypeMSSQL       ConnectionType = "mssql"

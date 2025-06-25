@@ -481,7 +481,9 @@ func ListTables(c *gin.Context) {
 		return
 	}
 
-	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
+	isDatabaseConnection := conn.Type == "database" ||
+		(conn.Type == "custom" && conn.SubType.String == "dynamodb") ||
+		(conn.Type == "custom" && conn.SubType.String == "cloudwatch")
 	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
 		return
@@ -495,7 +497,8 @@ func ListTables(c *gin.Context) {
 		currentConnectionType == pb.ConnectionTypeMongoDB
 
 	// DynamoDB doesn't need dbName
-	if conn.Type == "custom" && conn.SubType.String == "dynamodb" {
+	if conn.Type == "custom" && conn.SubType.String == "dynamodb" ||
+		conn.Type == "custom" && conn.SubType.String == "cloudwatch" {
 		needsDbName = false
 	}
 
@@ -569,6 +572,15 @@ func ListTables(c *gin.Context) {
 			if err != nil {
 				log.Errorf("failed parsing DynamoDB response: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse DynamoDB response: %v", err)})
+				return
+			}
+			response = tables
+		} else if currentConnectionType == pb.ConnectionTypeCloudWatch {
+			// Special parsing for CloudWatch
+			tables, err := parseCloudWatchTables(outcome.Output)
+			if err != nil {
+				log.Errorf("failed parsing CloudWatch response: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse CloudWatch response: %v", err)})
 				return
 			}
 			response = tables
@@ -656,7 +668,9 @@ func GetTableColumns(c *gin.Context) {
 		return
 	}
 
-	isDatabaseConnection := conn.Type == "database" || (conn.Type == "custom" && conn.SubType.String == "dynamodb")
+	isDatabaseConnection := conn.Type == "database" ||
+		(conn.Type == "custom" && conn.SubType.String == "dynamodb") ||
+		(conn.Type == "custom" && conn.SubType.String == "cloudwatch")
 	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
 		return
@@ -671,6 +685,11 @@ func GetTableColumns(c *gin.Context) {
 
 	// DynamoDB doesn't need dbName
 	if currentConnectionType == pb.ConnectionTypeDynamoDB {
+		needsDbName = false
+	}
+
+	// CloudWatch doesn't need dbName
+	if currentConnectionType == pb.ConnectionTypeCloudWatch {
 		needsDbName = false
 	}
 
