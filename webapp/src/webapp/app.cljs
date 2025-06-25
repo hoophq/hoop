@@ -38,6 +38,7 @@
    [webapp.events.components.draggable-card]
    [webapp.events.components.modal]
    [webapp.events.components.sidebar]
+   [webapp.events.components.toast]
    [webapp.events.connections]
    [webapp.events.database-schema]
    [webapp.events.editor-plugin]
@@ -209,7 +210,7 @@
             :else
             [:section
              {:class "antialiased min-h-screen"}
-             [:> Toaster {:position "top-left"}]
+             [:> Toaster {:position "top-right"}]
              [modals/modal]
              [modals/modal-radix]
              [dialog/dialog]
@@ -224,7 +225,7 @@
 
 (defmethod layout :auth [_ panels]
   [:<>
-   [:> Toaster]
+   [:> Toaster {:position "top-right"}]
    (snackbar/snackbar)
    [modals/modal]
    [modals/modal-radix]

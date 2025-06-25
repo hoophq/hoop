@@ -118,7 +118,9 @@
                    jira_fields (assoc :jira_fields jira_fields)
                    cmdb_fields (assoc :cmdb_fields cmdb_fields))
          on-failure (fn [error-message error]
-                      (rf/dispatch [:show-snackbar {:text error-message :level :error}])
+                      (rf/dispatch [:show-snackbar {:text error-message
+                                                    :level :error
+                                                    :details error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))
          on-success (fn [res]
                       (rf/dispatch
@@ -221,7 +223,9 @@
                   :metadata metadata
                   :jira_fields jira_fields}
          on-failure (fn [error]
-                      (rf/dispatch [:show-snackbar {:text error :level :error}])
+                      (rf/dispatch [:show-snackbar {:text error
+                                                    :level :error
+                                                    :details error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))
          on-success (fn [res]
                       (rf/dispatch

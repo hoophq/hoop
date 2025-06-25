@@ -96,24 +96,6 @@
                :dialog-title (:title data))}))
 
 (rf/reg-event-fx
- :hide-snackbar
- (fn
-   [{:keys [db]} [_ _]]
-   {:db (assoc db
-               :snackbar-status :hidden
-               :snackbar-level nil
-               :snackbar-text nil)}))
-
-(rf/reg-event-fx
- :show-snackbar
- (fn
-   [{:keys [db]} [_ data]]
-   {:db (assoc db
-               :snackbar-status :shown
-               :snackbar-level (:level data)
-               :snackbar-text (:text data))}))
-
-(rf/reg-event-fx
  :initialize-intercom
  (fn
    [{:keys [db]} [_ user]]
