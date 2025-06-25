@@ -6,16 +6,16 @@
    [reagent.core :as r]
    [webapp.config :as config]))
 
-(def cli-commands
+(defn cli-commands [api-url]
   {:macos {:install ["brew tap brew https://github.com/hoophq/brew"
                      "brew install hoop"]
-           :configure "hoop config create --api-url https://use.hoop.dev"
+           :configure (str "hoop config create --api-url " api-url)
            :login "hoop login"
            :connect "hoop connect <connection-name>"
            :docs-link (get-in config/docs-url
                               [:clients :command-line :macos])}
    :linux {:install "curl -s -L https://releases.hoop.dev/release/install-cli.sh | sh"
-           :configure "hoop config create --api-url https://use.hoop.dev"
+           :configure (str "hoop config create --api-url " api-url)
            :login "hoop login"
            :connect "hoop connect <connection-name>"
            :docs-link (get-in config/docs-url
@@ -23,7 +23,7 @@
    :windows {:docs-link (get-in config/docs-url
                                 [:clients :command-line :windows])}})
 
-(defn highlight-command [cmd connection-name]
+(defn highlight-command [cmd connection-name api-url]
   (let [processed-cmd (cs/replace cmd "<connection-name>" connection-name)]
     [:div
      (cond
@@ -41,7 +41,7 @@
        (cs/includes? cmd "hoop config create")
        [:> Text {:size "2"}
         "hoop config create --api-url "
-        [:> Text {:size "2" :class "text-[--orange-7]"} "https://use.hoop.dev"]]
+        [:> Text {:size "2" :class "text-[--orange-7]"} api-url]]
 
        ;; Login command
        (cs/includes? cmd "hoop login")
@@ -63,48 +63,49 @@
        ;; Default
        :else processed-cmd)]))
 
-(defn code-block [commands connection-name]
+(defn code-block [commands connection-name api-url]
   [:div {:class "bg-gray-900 text-white p-4 rounded-lg font-mono text-sm space-y-2"}
    (if (vector? commands)
      (for [cmd commands]
        ^{:key cmd}
-       [highlight-command cmd connection-name])
-     [highlight-command commands connection-name])])
+       [highlight-command cmd connection-name api-url])
+     [highlight-command commands connection-name api-url])])
 
-(defn cli-section [title commands connection-name]
+(defn cli-section [title commands connection-name api-url]
   [:div {:class "space-y-3"}
    [:> Text {:as "h3" :size "4" :weight "bold"}
     title]
-   [code-block commands connection-name]])
+   [code-block commands connection-name api-url]])
 
-(defn macos-content [connection-name]
+(defn macos-content [connection-name api-url]
   [:div {:class "space-y-radix-6"}
-   [cli-section "Install Hoop CLI" (get-in cli-commands [:macos :install]) connection-name]
-   [cli-section "Configure authentication" (get-in cli-commands [:macos :configure]) connection-name]
-   [cli-section "Get an access token" (get-in cli-commands [:macos :login]) connection-name]
-   [cli-section "Connect to resource" (get-in cli-commands [:macos :connect]) connection-name]])
+   [cli-section "Install Hoop CLI" (get-in (cli-commands api-url) [:macos :install]) connection-name api-url]
+   [cli-section "Configure authentication" (get-in (cli-commands api-url) [:macos :configure]) connection-name api-url]
+   [cli-section "Get an access token" (get-in (cli-commands api-url) [:macos :login]) connection-name api-url]
+   [cli-section "Connect to resource" (get-in (cli-commands api-url) [:macos :connect]) connection-name api-url]])
 
-(defn linux-content [connection-name]
+(defn linux-content [connection-name api-url]
   [:div {:class "space-y-radix-6"}
-   [cli-section "Install Hoop CLI" (get-in cli-commands [:linux :install]) connection-name]
-   [cli-section "Configure authentication" (get-in cli-commands [:linux :configure]) connection-name]
-   [cli-section "Get an access token" (get-in cli-commands [:linux :login]) connection-name]
-   [cli-section "Connect to resource" (get-in cli-commands [:linux :connect]) connection-name]])
+   [cli-section "Install Hoop CLI" (get-in (cli-commands api-url) [:linux :install]) connection-name api-url]
+   [cli-section "Configure authentication" (get-in (cli-commands api-url) [:linux :configure]) connection-name api-url]
+   [cli-section "Get an access token" (get-in (cli-commands api-url) [:linux :login]) connection-name api-url]
+   [cli-section "Connect to resource" (get-in (cli-commands api-url) [:linux :connect]) connection-name api-url]])
 
-(defn windows-content []
+(defn windows-content [api-url]
   [:div {:class "space-y-6"}
    [:> Text {:as "h3" :size "4" :weight "medium"}
     "Install Hoop CLI"]
    [:> Text {:as "p" :size "2" :class "text-gray-11"}
     "For details about Windows installation check "
-    [:a {:href (get-in cli-commands [:windows :docs-link])
+    [:a {:href (get-in (cli-commands api-url) [:windows :docs-link])
          :target "_blank"
          :class "text-blue-600 hover:text-blue-800 underline"}
      "Windows CLI documentation"]
     "."]])
 
 (defn main [connection-name]
-  (let [selected-tab (r/atom "macos")]
+  (let [selected-tab (r/atom "macos")
+        gateway-info (rf/subscribe [:gateway->info])]
     (fn [connection-name]
       [:div {:class "flex max-h-[696px] overflow-hidden -m-8"}
        ;; Left side - Content
@@ -126,13 +127,13 @@
            "Windows"]]
 
          [:> Tabs.Content {:value "macos"}
-          [macos-content connection-name]]
+          [macos-content connection-name (:api_url (:data @gateway-info))]]
 
          [:> Tabs.Content {:value "linux"}
-          [linux-content connection-name]]
+          [linux-content connection-name (:api_url (:data @gateway-info))]]
 
          [:> Tabs.Content {:value "windows"}
-          [windows-content]]]
+          [windows-content (:api_url (:data @gateway-info))]]]
 
         [:> Flex {:justify "between"}
          [:> Button {:variant "ghost"
@@ -143,7 +144,7 @@
            [:> Button {:variant "ghost"
                        :color "gray"
                        :on-click #(js/window.open
-                                   (get-in cli-commands
+                                   (get-in (cli-commands (:api_url (:data @gateway-info)))
                                            [(keyword @selected-tab) :docs-link])
                                    "_blank")}
             "Hoop CLI Docs"])]]
