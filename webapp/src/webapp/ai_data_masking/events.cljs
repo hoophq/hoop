@@ -74,7 +74,9 @@
    {:db (-> db
             (assoc-in [:ai-data-masking :submitting?] false)
             (assoc-in [:ai-data-masking :error] error))
-    :fx [[:dispatch [:show-snackbar {:text (str "Error creating rule: " error) :level :error}]]]}))
+    :fx [[:dispatch [:show-snackbar {:text "Failed to create data masking rule"
+                                     :level :error
+                                     :details error}]]]}))
 
 ;; Update AI Data Masking rule
 (rf/reg-event-fx
@@ -101,7 +103,9 @@
    {:db (-> db
             (assoc-in [:ai-data-masking :submitting?] false)
             (assoc-in [:ai-data-masking :error] error))
-    :fx [[:dispatch [:show-snackbar {:text (str "Error updating rule: " error) :level :error}]]]}))
+    :fx [[:dispatch [:show-snackbar {:text "Failed to update data masking rule"
+                                     :level :error
+                                     :details error}]]]}))
 
 ;; Delete AI Data Masking rule
 (rf/reg-event-fx
@@ -127,7 +131,9 @@
    {:db (-> db
             (assoc-in [:ai-data-masking :submitting?] false)
             (assoc-in [:ai-data-masking :error] error))
-    :fx [[:dispatch [:show-snackbar {:text (str "Error deleting rule: " error) :level :error}]]]}))
+    :fx [[:dispatch [:show-snackbar {:text "Failed to delete data masking rule"
+                                     :level :error
+                                     :details error}]]]}))
 
 ;; Clear active rule
 (rf/reg-event-db

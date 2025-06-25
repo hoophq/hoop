@@ -13,7 +13,7 @@
    (let [payload {:SLACK_BOT_TOKEN (encode-b64 slack-bot-token)
                   :SLACK_APP_TOKEN (encode-b64 slack-app-token)}
          on-failure (fn [error]
-                      (rf/dispatch [:show-snackbar {:text error :level :error}]))
+                      (rf/dispatch [:show-snackbar {:text "Failed to configure Slack plugin" :level :error :details error}]))
          on-success (fn [_]
                       (rf/dispatch
                        [:show-snackbar {:level :success

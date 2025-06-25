@@ -180,7 +180,9 @@
                    (let [session-id (:session_id res)]
                      (if (and session-id (> (count session-id) 0))
                        (success res)
-                       (rf/dispatch [:show-snackbar {:text error :level :error}]))))]
+                       (rf/dispatch [:show-snackbar {:text "Failed to execute script"
+                                                     :level :error
+                                                     :details error}]))))]
      {:fx [[:dispatch [:fetch (merge
                                {:method "POST"
                                 :uri (str "/sessions/" (:id session) "/exec")
@@ -315,8 +317,9 @@
                         (rf/dispatch [:audit->get-sessions])
                         (rf/dispatch [:audit->get-session-by-id session]))
                       500))
-                   :on-failure #(rf/dispatch [:show-snackbar {:text %
-                                                              :level :error}])}]]]}))
+                   :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
+                                                              :level :error
+                                                              :details %}])}]]]}))
 
 (rf/reg-event-fx
  :audit->session-file-generate
@@ -324,7 +327,9 @@
    [{:keys [db]} [_ session-id extension]]
    (let [success (fn [res] (.open js/window (:download_url res)))
          failure (fn [error]
-                   (rf/dispatch [:show-snackbar {:text error :level :error}]))]
+                   (rf/dispatch [:show-snackbar {:text "Failed to generate session file"
+                                                 :level :error
+                                                 :details error}]))]
      {:fx [[:dispatch [:fetch {:method "GET"
                                :uri (str "/sessions/"
                                          session-id
@@ -374,7 +379,8 @@
                                              (reset! killing-status :ready))
                                            (rf/dispatch [:show-snackbar
                                                          {:level :error
-                                                          :text (or (:message error) "Failed to kill session")}]))}]]]}))
+                                                          :text "Failed to kill session"
+                                                          :details error}]))}]]]}))
 
 (rf/reg-fx
  :reset-connecting-status

@@ -118,7 +118,7 @@
                    jira_fields (assoc :jira_fields jira_fields)
                    cmdb_fields (assoc :cmdb_fields cmdb_fields))
          on-failure (fn [error-message error]
-                      (rf/dispatch [:show-snackbar {:text error-message
+                      (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
                                                     :level :error
                                                     :details error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))
@@ -223,7 +223,7 @@
                   :metadata metadata
                   :jira_fields jira_fields}
          on-failure (fn [error]
-                      (rf/dispatch [:show-snackbar {:text error
+                      (rf/dispatch [:show-snackbar {:text "Failed to execute script"
                                                     :level :error
                                                     :details error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))

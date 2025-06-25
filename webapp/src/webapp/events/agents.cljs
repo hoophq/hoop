@@ -74,8 +74,8 @@
                           (rf/dispatch [:agents->get-agents]))
             :on-failure (fn [error]
                           (rf/dispatch [:show-snackbar {:level :error
-                                                        :text (str "Failed to delete agent: "
-                                                                   (or (:message error) "Unknown error"))}]))}]]]}))
+                                                        :text "Failed to delete agent"
+                                                        :details error}]))}]]]}))
 
 (rf/reg-sub
  :agents->agent-key
