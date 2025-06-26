@@ -169,23 +169,34 @@
       [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
                           (when is-loading-this-db "opacity-75 ")
                           "flex items-center")
-              :on-click #(if is-selected
-                           (rf/dispatch [:database-schema->close-database {:connection-name connection-name}])
-                           (rf/dispatch [:database-schema->change-database
-                                         {:connection-name connection-name}
-                                         db]))}
+              :on-click #(if (= type "cloudwatch")
+                           ;; CloudWatch: simple selection without expand/collapse
+                           (do
+                             (.setItem js/localStorage "selected-database" db)
+                             (rf/dispatch [:database-schema->change-database
+                                           {:connection-name connection-name}
+                                           db]))
+                           ;; Other types: normal expand/collapse behavior
+                           (if is-selected
+                             (rf/dispatch [:database-schema->close-database {:connection-name connection-name}])
+                             (rf/dispatch [:database-schema->change-database
+                                           {:connection-name connection-name}
+                                           db])))}
        [:> Text {:size "1" :weight "bold"} db]
-       (if is-selected
-         [:> ChevronDown {:size 12}]
-         [:> ChevronRight {:size 12}])]]
+       ;; CloudWatch doesn't show expand/collapse icons
+       (when (not= type "cloudwatch")
+         (if is-selected
+           [:> ChevronDown {:size 12}]
+           [:> ChevronRight {:size 12}]))]]
 
      (when is-selected
        [:div
         (cond
           is-loading-this-db
-          [loading-indicator (if (= type "dynamodb")
-                               "Loading columns..."
-                               "Loading tables...")]
+          [loading-indicator (cond
+                               (= type "dynamodb") "Loading columns..."
+                               (= type "cloudwatch") "Selecting log group..."
+                               :else "Loading tables...")]
 
           (= "mysql" type)
           (let [schema-name (first (keys db-schemas))
@@ -200,6 +211,12 @@
               current-database
               loading-columns
               columns-cache]])
+
+          ;; Special case for CloudWatch - just show selection message
+          (= type "cloudwatch")
+          [:div
+           [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+            (str "✓ Selected log group: " db)]]
 
           ;; Special case for DynamoDB when columns were loaded
           (and (= type "dynamodb") (get-in current-schema [:columns-cache db]))

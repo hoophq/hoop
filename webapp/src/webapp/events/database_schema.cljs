@@ -115,6 +115,16 @@
          (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
 
 ;; Events for loading log groups directly for CloudWatch
+(rf/reg-event-db
+ :database-schema->cloudwatch-database-selected
+ (fn [db [_ connection database]]
+   ;; For CloudWatch, selecting a log group doesn't require loading tables
+   ;; Just mark as selected and remove from loading state
+   (-> db
+       (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
+       (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                  (fn [databases] (disj (or databases #{}) database))))))
+
 (rf/reg-event-fx
  :database-schema->handle-cloudwatch-schema
  (fn [{:keys [db]} [_ connection]]
@@ -265,8 +275,8 @@
                 [[:dispatch [:database-schema->load-dynamodb-table connection database]]]
 
                 (= connection-type "cloudwatch")
-                ;; For CloudWatch, log groups don't have columns, just select
-                []
+                ;; For CloudWatch, log groups don't have columns, just select and immediately finish loading
+                [[:dispatch [:database-schema->cloudwatch-database-selected connection database]]]
 
                 :else
                 ;; For other databases, we use the existing load-tables event
