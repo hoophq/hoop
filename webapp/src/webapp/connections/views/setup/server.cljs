@@ -215,7 +215,8 @@
        (case current-step
          :credentials [resource-step]
          :additional-config [additional-configuration/main
-                             {:selected-type connection-subtype
+                             {:show-database-schema? (= connection-subtype "cloudwatch")
+                              :selected-type connection-subtype
                               :form-type form-type
                               :submit-fn (cond
                                            (= connection-subtype "console")

@@ -553,3 +553,33 @@ func parseDynamoDBColumns(output string) ([]openapi.ConnectionColumn, error) {
 
 	return columns, nil
 }
+
+// parseCloudWatchTables parses CloudWatch output and returns a TablesResponse structure
+func parseCloudWatchTables(output string) (openapi.TablesResponse, error) {
+	var result struct {
+		LogGroups []struct {
+			LogGroupName string `json:"logGroupName"`
+		} `json:"logGroups"`
+	}
+
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return openapi.TablesResponse{}, err
+	}
+
+	// Create response in expected format
+	response := openapi.TablesResponse{
+		Schemas: []openapi.SchemaInfo{
+			{
+				Name:   "cloudwatch",
+				Tables: []string{},
+			},
+		},
+	}
+
+	// Add log groups as "tables"
+	for _, logGroup := range result.LogGroups {
+		response.Schemas[0].Tables = append(response.Schemas[0].Tables, logGroup.LogGroupName)
+	}
+
+	return response, nil
+}

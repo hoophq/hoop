@@ -190,7 +190,8 @@
                    [:> Tabs.Content {:value "configuration"}
                     [additional-configuration/main
                      {:show-database-schema? (or (= (:type (:data @connection)) "database")
-                                                 (= (:subtype (:data @connection)) "dynamodb"))
+                                                 (= (:subtype (:data @connection)) "dynamodb")
+                                                 (= (:subtype (:data @connection)) "cloudwatch"))
                       :selected-type (:subtype (:data @connection))
                       :form-type :update}]]]]]
 

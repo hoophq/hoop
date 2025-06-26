@@ -224,8 +224,12 @@
             (when show-database-schema?
               [:> Box {:class "space-y-2"}
                [toggle-section
-                {:title "Database schema"
-                 :description "Show database schema in the Editor section."
+                {:title (if (= selected-type "cloudwatch")
+                          "Log groups"
+                          "Database schema")
+                 :description (if (= selected-type "cloudwatch")
+                                "Show log groups in the Editor section."
+                                "Show database schema in the Editor section.")
                  :checked @database-schema?
                  :on-change #(rf/dispatch [:connection-setup/toggle-database-schema])}]])]]
 

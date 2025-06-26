@@ -180,6 +180,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		switch subtype {
 		case "dynamodb":
 			return ConnectionType(ConnectionTypeDynamoDB)
+		case "cloudwatch":
+			return ConnectionType(ConnectionTypeCloudWatch)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}

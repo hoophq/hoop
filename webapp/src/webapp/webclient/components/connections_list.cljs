@@ -62,7 +62,9 @@
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
          (when show-tree?
-           [:> Tooltip {:content "Database Schema"}
+           [:> Tooltip {:content (if (= (:subtype connection) "cloudwatch")
+                                   "Log Groups"
+                                   "Database Schema")}
             [:> IconButton {:onClick #(do
                                         (swap! show-schema? not)
                                         ;; Load the schema only when needed
@@ -79,7 +81,8 @@
        ;; Tree view of database schema with lazy loading
        (when (and @show-schema?
                   (or (= (:type connection) "database")
-                      (= (:subtype connection) "dynamodb"))
+                      (= (:subtype connection) "dynamodb")
+                      (= (:subtype connection) "cloudwatch"))
                   (not= (:access_schema connection) "disabled"))
          [:> Box {:class "bg-[--gray-a4] px-2 py-3"}
           ;; Lazy loading of the schema component

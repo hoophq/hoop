@@ -1160,3 +1160,196 @@ func TestParseDynamoDBColumns(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCloudWatchTables(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    openapi.TablesResponse
+		wantErr bool
+	}{
+		{
+			name:    "empty input",
+			input:   "",
+			want:    openapi.TablesResponse{},
+			wantErr: true,
+		},
+		{
+			name:    "invalid JSON",
+			input:   "invalid json",
+			want:    openapi.TablesResponse{},
+			wantErr: true,
+		},
+		{
+			name:  "no log groups",
+			input: `{"logGroups": []}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "single log group",
+			input: `{"logGroups": [{"logGroupName": "/aws/lambda/service1"}]}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{"/aws/lambda/service1"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "multiple log groups",
+			input: `{
+				"logGroups": [
+					{"logGroupName": "/aws/lambda/service1"},
+					{"logGroupName": "/aws/lambda/service2"},
+					{"logGroupName": "/application/logs/app1"}
+				]
+			}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{"/aws/lambda/service1", "/aws/lambda/service2", "/application/logs/app1"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "log groups with extra fields",
+			input: `{
+				"logGroups": [
+					{
+						"logGroupName": "/aws/lambda/service1",
+						"creationTime": 1234567890,
+						"retentionInDays": 7,
+						"metricFilterCount": 0,
+						"arn": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/service1",
+						"storedBytes": 1024
+					},
+					{
+						"logGroupName": "/aws/lambda/service2",
+						"creationTime": 1234567891,
+						"retentionInDays": 14
+					}
+				],
+				"nextToken": "eyJhd..."
+			}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{"/aws/lambda/service1", "/aws/lambda/service2"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "real AWS CLI output format",
+			input: `{
+				"logGroups": [
+					{
+						"logGroupName": "/aws/apigateway/welcome",
+						"creationTime": 1609459200000,
+						"retentionInDays": 30,
+						"metricFilterCount": 0,
+						"arn": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/apigateway/welcome",
+						"storedBytes": 0
+					},
+					{
+						"logGroupName": "/aws/lambda/my-function",
+						"creationTime": 1609459200001,
+						"metricFilterCount": 1,
+						"arn": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/my-function",
+						"storedBytes": 2048
+					},
+					{
+						"logGroupName": "/custom/application/logs",
+						"creationTime": 1609459200002,
+						"retentionInDays": 90,
+						"metricFilterCount": 0,
+						"arn": "arn:aws:logs:us-east-1:123456789012:log-group:/custom/application/logs",
+						"storedBytes": 4096
+					}
+				]
+			}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{"/aws/apigateway/welcome", "/aws/lambda/my-function", "/custom/application/logs"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "log groups with missing logGroupName",
+			input: `{
+				"logGroups": [
+					{"logGroupName": "/aws/lambda/service1"},
+					{"creationTime": 1234567890},
+					{"logGroupName": "/aws/lambda/service2"}
+				]
+			}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{"/aws/lambda/service1", "", "/aws/lambda/service2"},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "malformed logGroups field",
+			input: `{
+				"logGroups": "not an array"
+			}`,
+			want:    openapi.TablesResponse{},
+			wantErr: true,
+		},
+		{
+			name: "missing logGroups field",
+			input: `{
+				"nextToken": "eyJhd...",
+				"accountIdentifiers": []
+			}`,
+			want: openapi.TablesResponse{
+				Schemas: []openapi.SchemaInfo{
+					{
+						Name:   "cloudwatch",
+						Tables: []string{},
+					},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseCloudWatchTables(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseCloudWatchTables() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}

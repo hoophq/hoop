@@ -114,6 +114,50 @@
          (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
          (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
 
+;; Events for loading log groups directly for CloudWatch
+(rf/reg-event-db
+ :database-schema->cloudwatch-database-selected
+ (fn [db [_ connection database]]
+   ;; For CloudWatch, selecting a log group doesn't require loading tables
+   ;; Just mark as selected and ensure loading state is clean
+   (-> db
+       (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
+       ;; Cleanup any potential loading state (defensive programming)
+       (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                  (fn [databases] (disj (or databases #{}) database))))))
+
+(rf/reg-event-fx
+ :database-schema->handle-cloudwatch-schema
+ (fn [{:keys [db]} [_ connection]]
+   {:db (-> db
+            (assoc-in [:database-schema :current-connection] (:connection-name connection))
+            ;; Ensure the status remains loading during the search
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
+            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" (:connection-name connection) "/tables")
+                             :on-success (fn [response]
+                                           (rf/dispatch [:database-schema->cloudwatch-tables-loaded connection response]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+
+;; Handle CloudWatch log groups
+(rf/reg-event-db
+ :database-schema->cloudwatch-tables-loaded
+ (fn [db [_ connection response]]
+   (let [tables (get-in response [:schemas 0 :tables] [])
+         ;; We treat log groups as databases for CloudWatch
+         databases tables]
+     (-> db
+         (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
+         (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
+         (assoc-in [:database-schema :data (:connection-name connection) :type] "cloudwatch")
+         ;; Instead of populating schema-tree, we populate the list of databases
+         (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
+         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] {})
+         (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
+         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
+
 ;; Events for loading tables (for multi-database banks)
 (rf/reg-event-fx
  :database-schema->load-tables
@@ -220,15 +264,23 @@
                 (cond-> (not= database current-db)
                   ;; Update status to loading
                   (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
-                (cond-> (not= database current-db)
-                  ;; Add to the list of databases in loading
+                (cond-> (and (not= database current-db)
+                             (not= connection-type "cloudwatch"))
+                  ;; Add to the list of databases in loading (except CloudWatch)
                   (update-in [:database-schema :data (:connection-name connection) :loading-databases]
                              (fn [databases] (conj (or databases #{}) database)))))
         ;; Only dispatch loading if it's not the current database
         :fx (when (not= database current-db)
-              (if (= connection-type "dynamodb")
+              (cond
+                (= connection-type "dynamodb")
                 ;; For DynamoDB, we load the table columns directly
                 [[:dispatch [:database-schema->load-dynamodb-table connection database]]]
+
+                (= connection-type "cloudwatch")
+                ;; For CloudWatch, log groups don't have columns, just select and immediately finish loading
+                [[:dispatch [:database-schema->cloudwatch-database-selected connection database]]]
+
+                :else
                 ;; For other databases, we use the existing load-tables event
                 [[:dispatch [:database-schema->load-tables connection database]]]))}))))
 

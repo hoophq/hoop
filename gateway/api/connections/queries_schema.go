@@ -11,6 +11,8 @@ func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	switch connType {
 	case pb.ConnectionTypeDynamoDB:
 		return getDynamoDBTablesQuery() // DynamoDB tables are listed as databases
+	case pb.ConnectionTypeCloudWatch:
+		return getCloudWatchTablesQuery()
 	case pb.ConnectionTypePostgres:
 		return getPostgresTablesQuery(dbName)
 	case pb.ConnectionTypeMSSQL:
@@ -145,6 +147,11 @@ print(JSON.stringify(result));`, dbName)
 // Query for DynamoDB tables
 func getDynamoDBTablesQuery() string {
 	return `aws dynamodb list-tables --output json`
+}
+
+// Query for CloudWatch log groups
+func getCloudWatchTablesQuery() string {
+	return `aws logs describe-log-groups --output json`
 }
 
 // Query for DynamoDB table columns/attributes
