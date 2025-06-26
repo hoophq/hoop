@@ -119,9 +119,10 @@
  :database-schema->cloudwatch-database-selected
  (fn [db [_ connection database]]
    ;; For CloudWatch, selecting a log group doesn't require loading tables
-   ;; Just mark as selected and remove from loading state
+   ;; Just mark as selected and ensure loading state is clean
    (-> db
        (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
+       ;; Cleanup any potential loading state (defensive programming)
        (update-in [:database-schema :data (:connection-name connection) :loading-databases]
                   (fn [databases] (disj (or databases #{}) database))))))
 
@@ -263,8 +264,9 @@
                 (cond-> (not= database current-db)
                   ;; Update status to loading
                   (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading))
-                (cond-> (not= database current-db)
-                  ;; Add to the list of databases in loading
+                (cond-> (and (not= database current-db)
+                             (not= connection-type "cloudwatch"))
+                  ;; Add to the list of databases in loading (except CloudWatch)
                   (update-in [:database-schema :data (:connection-name connection) :loading-databases]
                              (fn [databases] (conj (or databases #{}) database)))))
         ;; Only dispatch loading if it's not the current database
