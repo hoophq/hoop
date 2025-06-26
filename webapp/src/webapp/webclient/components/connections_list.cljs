@@ -62,7 +62,9 @@
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
          (when show-tree?
-           [:> Tooltip {:content "Database Schema"}
+           [:> Tooltip {:content (if (= (:subtype connection) "cloudwatch")
+                                   "Log Groups"
+                                   "Database Schema")}
             [:> IconButton {:onClick #(do
                                         (swap! show-schema? not)
                                         ;; Load the schema only when needed
