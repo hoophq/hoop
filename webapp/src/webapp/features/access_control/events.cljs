@@ -3,14 +3,6 @@
    [re-frame.core :as rf]))
 
 (rf/reg-event-fx
- :access-control/activate
- (fn [{:keys [db]} _]
-   {:fx [[:dispatch [:plugins->create-plugin {:name "access_control"
-                                              :connections []}]]
-         [:dispatch [:show-snackbar {:level :success
-                                     :text "Access Control activated successfully!"}]]]}))
-
-(rf/reg-event-fx
  :access-control/add-group-permissions
  (fn [{:keys [db]} [_ {:keys [group-id connections plugin]}]]
 
@@ -78,9 +70,8 @@
                                                                                        :plugin plugin}]))}]))
                              :on-failure (fn [error]
                                            (rf/dispatch [:show-snackbar {:level :error
-                                                                         :text (str "Failed to delete group: "
-                                                                                    (or (get-in error [:response :message])
-                                                                                        "Unknown error"))}]))}]]]}))
+                                                                         :text "Failed to delete access control group"
+                                                                         :details error}]))}]]]}))
 
 (rf/reg-event-fx
  :access-control/remove-group-from-connections
@@ -128,9 +119,8 @@
                                            (js/setTimeout #(rf/dispatch [:navigate :access-control]) 1000))
                              :on-failure (fn [error]
                                            (rf/dispatch [:show-snackbar {:level :error
-                                                                         :text (str "Failed to create group: "
-                                                                                    (or (get-in error [:response :message])
-                                                                                        "Unknown error"))}]))}]]]}))
+                                                                         :text "Failed to create access control group"
+                                                                         :details error}]))}]]]}))
 
 (rf/reg-event-fx
  :plugins->get-plugin-by-name-with-callback
@@ -145,18 +135,3 @@
                              :on-failure #(rf/dispatch [:plugins->set-plugin {:name plugin-name
                                                                               :installed? false}])}]]]
     :db (assoc-in db [:plugins->plugin-details :status] :loading)}))
-
-(rf/reg-event-fx
- :plugins->delete-plugin
- (fn [{:keys [db]} [_ plugin-name]]
-   {:fx [[:dispatch [:fetch {:method "DELETE"
-                             :uri (str "/plugins/" plugin-name)
-                             :on-success (fn []
-                                           (rf/dispatch [:show-snackbar {:level :success
-                                                                         :text "Access control disabled successfully!"}])
-                                           (rf/dispatch [:plugins->get-plugin-by-name plugin-name]))
-                             :on-failure (fn [error]
-                                           (rf/dispatch [:show-snackbar {:level :error
-                                                                         :text (str "Failed to disable access control: "
-                                                                                    (or (get-in error [:response :message])
-                                                                                        "Unknown error"))}]))}]]]}))

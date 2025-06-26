@@ -90,52 +90,6 @@
                                       (rf/dispatch [:navigate :connections]))}]]]})))
 
 (rf/reg-event-fx
- :connections->connection-connect
- (fn
-   [{:keys [db]} [_ connection]]
-   (let [body {:connection_name connection
-               :port "8999"
-               :access_duration 1800000000000}]
-     {:db (assoc-in db [:connections->connection-connected] {:data body :status :loading})
-      :fx [[:dispatch [:fetch
-                       {:method "POST"
-                        :uri "/proxymanager/connect"
-                        :body body
-                        :on-failure (fn [err]
-                                      (rf/dispatch [::connections->connection-connected-error (merge body {:error-message err})])
-                                      (rf/dispatch [:show-snackbar {:level :error
-                                                                    :text err}])
-                                      (rf/dispatch [:modal->open {:content  [connection-connect/main]
-                                                                  :maxWidth "446px"
-                                                                  :custom-on-click-out connection-connect/minimize-modal}]))
-                        :on-success (fn [res]
-                                      (cond
-                                        ;; Case 1: Review required
-                                        (and (= (:status res) "disconnected")
-                                             (:has_review res))
-                                        (do
-                                          (rf/dispatch [:show-snackbar {:level :info
-                                                                        :text (str "The connection " connection " requires review.")}])
-                                          (when (not (get-in db [:draggable-card :open?]))
-                                            (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
-                                                                        :maxWidth "446px"}])))
-
-                                        ;; Case 2: Connection failure
-                                        (= (:status res) "disconnected")
-                                        (do
-                                          (rf/dispatch [:show-snackbar {:level :error
-                                                                        :text (str "The connection " connection " is not able "
-                                                                                   "to be connected, please contact your admin.")}])
-                                          (rf/dispatch [:modal->close]))
-
-                                        ;; Case 3: Connection success
-                                        :else
-                                        (do
-                                          (rf/dispatch [:show-snackbar {:level :success
-                                                                        :text (str "The connection " connection " is connected!")}])
-                                          (rf/dispatch [::connections->connection-connected-success res]))))}]]]})))
-
-(rf/reg-event-fx
  :connections->connection-disconnect
  (fn
    [{:keys [db]} [_]]
@@ -270,7 +224,8 @@ ORDER BY total_amount DESC;")
                       :on-failure (fn [err]
                                     (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})])
                                     (rf/dispatch [:show-snackbar {:level :error
-                                                                  :text err}])
+                                                                  :text "Failed to connect to resource"
+                                                                  :details err}])
                                     (rf/dispatch [:modal->open {:content  [connection-connect/main]
                                                                 :maxWidth "446px"
                                                                 :custom-on-click-out connection-connect/minimize-modal}])
@@ -292,8 +247,9 @@ ORDER BY total_amount DESC;")
                                       ;; Case 2: Connection failure
                                       (= (:status res) "disconnected")
                                       (rf/dispatch [:show-snackbar {:level :error
-                                                                    :text (str "The connection " (:connection_name connection) " is not able "
-                                                                               "to be connected, please contact your admin.")}])
+                                                                    :text "Failed to connect to resource"
+                                                                    :details {:connection (:connection_name connection)
+                                                                              :reason "Connection not able to be connected, please contact your admin."}}])
 
                                       ;; Case 3: Connection success
                                       :else

@@ -3,12 +3,6 @@
    [re-frame.core :as rf]))
 
 (rf/reg-event-fx
- :plugins->set-active-tab
- (fn
-   [{:keys [db]} [_ tab]]
-   {:db (assoc-in db [:plugins->active-tab] tab)}))
-
-(rf/reg-event-fx
  :plugins->get-my-plugins
  (fn
    [{:keys [db]} [_]]
@@ -39,14 +33,6 @@
     :db (assoc-in db [:plugins->plugin-details :status] :loading)}))
 
 (rf/reg-event-db
- :plugins->clear-plugin-details
- (fn
-   [db [_ plugin]]
-   (assoc db :plugins->plugin-details
-          {:plugin {}
-           :status :loading})))
-
-(rf/reg-event-db
  :plugins->set-plugin
  (fn
    [db [_ plugin]]
@@ -57,9 +43,9 @@
 (rf/reg-event-fx
  :plugins->update-plugin-connections
  (fn
-  ;; action -> :add or :remove
-  ;; plugin -> the plugin how it is
-  ;; connection -> the connection to be added or removed
+   ;; action -> :add or :remove
+   ;; plugin -> the plugin how it is
+   ;; connection -> the connection to be added or removed
    [{:keys [db]} [_ {:keys [action plugin connection]}]]
    (let [connections (case action
                        :add (conj
@@ -72,9 +58,10 @@
                       (rf/dispatch [:show-snackbar {:level :success
                                                     :text "Plugin updated"}])
                       (rf/dispatch [:plugins->get-plugin-by-name (:name plugin)]))
-         on-failure (fn []
+         on-failure (fn [error]
                       (rf/dispatch [:show-snackbar {:level :error
-                                                    :text "Something went wrong. Please try again"}]))]
+                                                    :text "Failed to update plugin connections"
+                                                    :details error}]))]
      {:fx [[:dispatch [:fetch {:method "PUT"
                                :uri (str "/plugins/" (:name plugin))
                                :body payload
@@ -89,10 +76,10 @@
                    (rf/dispatch [:show-snackbar {:text "Plugin created!"
                                                  :level :success}])
                    (rf/dispatch [:plugins->get-my-plugins]))
-         failure (fn []
-                   (rf/dispatch [:show-snackbar {:text (str "Something went wrong "
-                                                            "Installing your plugin")
-                                                 :level :error}]))]
+         failure (fn [error]
+                   (rf/dispatch [:show-snackbar {:text "Failed to create plugin"
+                                                 :level :error
+                                                 :details error}]))]
      {:fx [[:dispatch [:fetch {:method "POST"
                                :uri "/plugins"
                                :body body
@@ -108,9 +95,10 @@
                                                     :text "Plugin updated"}])
                       (rf/dispatch [:close-modal])
                       (rf/dispatch [:plugins->get-plugin-by-name (:name plugin)]))
-         on-failure (fn []
+         on-failure (fn [error]
                       (rf/dispatch [:show-snackbar {:level :error
-                                                    :text "Something went wrong. Please try again"}]))]
+                                                    :text "Failed to update plugin"
+                                                    :details error}]))]
      {:fx [[:dispatch [:fetch {:method "PUT"
                                :uri (str "/plugins/" (:name plugin))
                                :body plugin

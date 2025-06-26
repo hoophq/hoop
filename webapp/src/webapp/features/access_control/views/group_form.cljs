@@ -132,7 +132,7 @@
                                   (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
                                   (rf/dispatch [:connections->get-connections])
                                   (rf/dispatch [:show-snackbar {:level :error
-                                                                :text "Não foi possível salvar. Tentando recarregar dados..."}])
+                                                                :text "Failed to save group permissions"}])
                                   (js/setTimeout #(reset! is-submitting false) 1000))))}
 
           [:<>

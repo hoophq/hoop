@@ -103,7 +103,8 @@
             (assoc-in [:aws-connect :loading :message] nil)
             (assoc-in [:aws-connect :error] (or response "Failed to save AWS credentials")))
     :dispatch [:show-snackbar {:level :error
-                               :text "Failed to save AWS credentials. Please check your inputs and try again."}]}))
+                               :text "Failed to save AWS credentials"
+                               :details response}]}))
 
 
 (rf/reg-event-fx
@@ -203,7 +204,8 @@
               (assoc-in [:aws-connect :resources :data] [])
               (assoc-in [:aws-connect :resources :api-error] api-error))
       :dispatch [:show-snackbar {:level :error
-                                 :text "Failed to retrieve database instances from AWS. Please check your credentials and try again."}]})))
+                                 :text "Failed to retrieve AWS database instances"
+                                 :details response}]})))
 
 (rf/reg-event-fx
  :aws-connect/create-connections
@@ -317,7 +319,8 @@
      {:db (-> updated-db
               (assoc-in [:aws-connect :creation-status :all-completed?] all-completed?))
       :dispatch [:show-snackbar {:level :error
-                                 :text (str "Failed to create connection " connection-name)}]})))
+                                 :text "Failed to create AWS connection"
+                                 :details response}]})))
 
 ;; New events for fetching AWS accounts
 (rf/reg-event-fx
@@ -428,7 +431,8 @@
  (fn [{:keys [db]} [_ response]]
    {:db (assoc-in db [:aws-connect :agents :data] [])
     :dispatch [:show-snackbar {:level :error
-                               :text "Failed to load agents. Using default options."}]}))
+                               :text "Failed to load agents"
+                               :details response}]}))
 
 (rf/reg-sub
  :aws-connect/resources-api-error

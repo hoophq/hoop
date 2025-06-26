@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.47.4",
+  "version": "1.47.5",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -46,22 +46,21 @@
     "cross-env": "^7.0.3",
     "genversion": "^3.1.1",
     "gsap": "^3.11.5",
-    "highlight.js": "^11.1.0",
     "is-url-http": "^2.3.9",
     "launchdarkly-js-client-sdk": "^2.20.0",
     "lucide-react": "^0.429.0",
     "markdown-it": "^14.1.0",
     "next-themes": "^0.3.0",
     "papaparse": "^5.3.2",
-    "react": "17.0.2",
-    "react-dom": "17.0.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-select": "^5.7.0",
     "react-tailwindcss-datepicker": "^1.6.6",
     "recharts": "2.12.0",
+    "sonner": "^2.0.5",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "unique-names-generator": "^4.7.1",
-    "url-parse": "^1.5.10"
+    "unique-names-generator": "^4.7.1"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
@@ -76,7 +75,7 @@
     "postcss": "^8.4.39",
     "postcss-cli": "^9.1.0",
     "postcss-import": "^15.1.0",
-    "shadow-cljs": "2.25.10",
+    "shadow-cljs": "2.28.14",
     "tailwindcss": "^3.4.4"
   }
 }

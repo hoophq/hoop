@@ -89,7 +89,7 @@
    (let [payload {:file_name file-name
                   :parameters params}
          on-failure (fn [error-message error]
-                      (rf/dispatch [:show-snackbar {:text error-message :level :error}])
+                      (rf/dispatch [:show-snackbar {:text "Failed to execute runbook" :level :error :details error}])
                       (js/setTimeout
                        #(rf/dispatch [:audit->get-session-by-id {:id (:session_id error) :verb "exec"}]) 4000))
          on-success (fn [res]
@@ -165,7 +165,7 @@
                    base-payload)
 
          on-failure (fn [error]
-                      (rf/dispatch [:show-snackbar {:text error :level :error}]))
+                      (rf/dispatch [:show-snackbar {:text "Failed to configure Git repository" :level :error :details error}]))
          on-success (fn [res]
                       (rf/dispatch
                        [:show-snackbar {:level :success
@@ -229,7 +229,7 @@
                    base-payload)
 
          on-failure (fn [error]
-                      (rf/dispatch [:show-snackbar {:text error :level :error}]))
+                      (rf/dispatch [:show-snackbar {:text "Failed to configure Git repository" :level :error :details error}]))
          on-success (fn [res]
                       ;; Use custom success handler if provided
                       (if custom-on-success

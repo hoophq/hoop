@@ -2,6 +2,8 @@
   (:require ["lucide-react" :refer [EllipsisVertical InfoIcon Tag Shapes Check]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
                                         Flex Text Callout Popover]]
+            ["sonner" :refer [toast]]
+            [webapp.components.toast :refer [toast-success toast-error]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -134,7 +136,8 @@
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
-            [:> Button {:on-click (fn [] (rf/dispatch [:navigate :create-connection]))}
+            [:> Button {:on-click (fn []
+                                    (rf/dispatch [:navigate :create-connection]))}
              "Add Connection"]])
          [:> Flex {:as "header"
                    :direction "column"

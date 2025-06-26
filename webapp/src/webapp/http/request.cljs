@@ -1,11 +1,12 @@
 (ns webapp.http.request
-
   (:require
    [re-frame.core :as rf]))
 
 (defn error-handling
   [error]
-  (rf/dispatch [:show-snackbar {:level :error :text (:message error)}]))
+  (rf/dispatch [:show-snackbar {:level :error
+                                :text (:message error)
+                                :details error}]))
 
 (defn not-ok
   "This functions has two possible outcomes:

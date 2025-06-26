@@ -299,7 +299,7 @@
                                  (rf/dispatch [:navigate :jira-templates])
                                  (rf/dispatch [:jira-templates->clear-active-template]))
                    :on-failure (fn [error]
-                                 (rf/dispatch [:show-snackbar {:text error :level :error}])
+                                 (rf/dispatch [:show-snackbar {:text "Failed to create JIRA template" :level :error :details error}])
                                  (rf/dispatch [:jira-templates->set-submitting false]))}]]]}))
 
 (rf/reg-event-fx
@@ -316,7 +316,7 @@
                                  (rf/dispatch [:navigate :jira-templates])
                                  (rf/dispatch [:jira-templates->clear-active-template]))
                    :on-failure (fn [error]
-                                 (rf/dispatch [:show-snackbar {:text error :level :error}])
+                                 (rf/dispatch [:show-snackbar {:text "Failed to update JIRA template" :level :error :details error}])
                                  (rf/dispatch [:jira-templates->set-submitting false]))}]]]}))
 
 (rf/reg-event-fx
