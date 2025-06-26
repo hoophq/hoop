@@ -24,7 +24,7 @@ if [[ ! -t 0 && ! -p /dev/stdin ]] || [[ -p /dev/stdin ]]; then
     if head -n5 $JS_FILE  | egrep '\/\/\s*mongosh\s*$' > /dev/null; then
         MONGO_BIN=/usr/bin/mongosh
     fi
-    cat $JS_FILE | $MONGO_BIN $@
+    $MONGO_BIN $@ < $JS_FILE
     exit $?
 fi
 
