@@ -33,8 +33,6 @@ func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName s
 	switch connType {
 	case pb.ConnectionTypeDynamoDB:
 		return getDynamoDBColumnsQuery(tableName)
-	case pb.ConnectionTypeCloudWatch:
-		return "" // CloudWatch logs don't have fixed schema
 	case pb.ConnectionTypePostgres:
 		return getPostgresColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeMSSQL:

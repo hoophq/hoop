@@ -669,8 +669,7 @@ func GetTableColumns(c *gin.Context) {
 	}
 
 	isDatabaseConnection := conn.Type == "database" ||
-		(conn.Type == "custom" && conn.SubType.String == "dynamodb") ||
-		(conn.Type == "custom" && conn.SubType.String == "cloudwatch")
+		(conn.Type == "custom" && conn.SubType.String == "dynamodb")
 	if !isDatabaseConnection {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection is not a database type"})
 		return
@@ -685,11 +684,6 @@ func GetTableColumns(c *gin.Context) {
 
 	// DynamoDB doesn't need dbName
 	if currentConnectionType == pb.ConnectionTypeDynamoDB {
-		needsDbName = false
-	}
-
-	// CloudWatch doesn't need dbName
-	if currentConnectionType == pb.ConnectionTypeCloudWatch {
 		needsDbName = false
 	}
 
