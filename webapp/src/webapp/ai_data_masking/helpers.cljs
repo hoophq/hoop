@@ -100,6 +100,8 @@
      :name (r/atom (or (:name initial-data) ""))
      :description (r/atom (or (:description initial-data) ""))
      :connection_ids (r/atom (or (:connection_ids initial-data) []))
+     :score_threshold (r/atom (when (:score_threshold initial-data)
+                                (* (:score_threshold initial-data) 100))) ; Convert float to percentage for display, no default
      :rules (r/atom (if (empty? all-rules) [(create-empty-rule)] all-rules))
      :custom-rules (r/atom [(create-empty-custom-rule)]) ; Always start with empty for additional customs
      :rules-select-state (r/atom false)
@@ -231,11 +233,15 @@
     (vec (concat custom-from-rules processed-custom-rules))))
 
 (defn prepare-payload [state]
-  {:name @(:name state)
-   :description @(:description state)
-   :connection_ids @(:connection_ids state)
-   :supported_entity_types (prepare-supported-entity-types @(:rules state))
-   :custom_entity_types (prepare-custom-entity-types @(:rules state) @(:custom-rules state))})
+  (let [base-payload {:name @(:name state)
+                      :description @(:description state)
+                      :connection_ids @(:connection_ids state)
+                      :supported_entity_types (prepare-supported-entity-types @(:rules state))
+                      :custom_entity_types (prepare-custom-entity-types @(:rules state) @(:custom-rules state))}
+        score-threshold @(:score_threshold state)]
+    (if (and score-threshold (not= score-threshold ""))
+      (assoc base-payload :score_threshold (/ score-threshold 100.0)) ; Convert percentage to float (0.0-1.0)
+      base-payload))) ; Don't include score_threshold if empty
 
 ;; Helper functions for UI
 (defn get-preset-options []
