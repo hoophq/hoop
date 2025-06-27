@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"time"
 
+	llog "libhoop/llog"
+
 	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller"
 	"github.com/hoophq/hoop/common/backoff"
@@ -29,6 +31,9 @@ var (
 )
 
 func Run() {
+	// Reinitialize libhoop logger to use the same log format configured in client
+	llog.ReinitializeLogger()
+
 	_, _ = monitoring.StartSentry()
 	config, err := agentconfig.Load()
 	if err != nil {
