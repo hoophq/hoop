@@ -11,7 +11,6 @@ import (
 
 var (
 	outputFormat string
-	verboseMode  bool
 )
 
 var startCmd = &cobra.Command{
@@ -24,32 +23,32 @@ var startAgentCmd = &cobra.Command{
 	Short:        "Runs the agent component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		if verboseMode && outputFormat == "auto" {
+		// Use verbose format when global debug flag is enabled
+		if debugFlag && outputFormat == "auto" {
 			outputFormat = "verbose"
 		}
 
-		if outputFormat == "auto" || outputFormat == "" {
-			if fileInfo, _ := os.Stdout.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
-				os.Setenv("LOG_ENCODING", "human")
+		switch outputFormat {
+		case "human":
+			os.Setenv("LOG_ENCODING", "human")
+		case "verbose":
+			os.Setenv("LOG_ENCODING", "verbose")
+		case "console":
+			os.Setenv("LOG_ENCODING", "console")
+		case "json":
+			os.Setenv("LOG_ENCODING", "json")
+		default:
+			// Auto-detect format based on output destination
+			if fileInfo, err := os.Stdout.Stat(); err == nil {
+				if (fileInfo.Mode() & os.ModeCharDevice) != 0 {
+					os.Setenv("LOG_ENCODING", "human")
+				} else {
+					os.Setenv("LOG_ENCODING", "json")
+				}
 			} else {
+				// Fallback to JSON if we can't determine output type
 				os.Setenv("LOG_ENCODING", "json")
 			}
-		} else {
-			switch outputFormat {
-			case "human":
-				os.Setenv("LOG_ENCODING", "human")
-			case "verbose":
-				os.Setenv("LOG_ENCODING", "verbose")
-			case "console":
-				os.Setenv("LOG_ENCODING", "console")
-			case "json":
-				os.Setenv("LOG_ENCODING", "json")
-			}
-		}
-
-		// Verbose mode = debug level
-		if verboseMode || outputFormat == "verbose" {
-			os.Setenv("LOG_LEVEL", "DEBUG")
 		}
 
 		log.ReinitializeLogger()
@@ -69,9 +68,7 @@ var startGatewayCmd = &cobra.Command{
 
 func init() {
 	startAgentCmd.Flags().StringVar(&outputFormat, "format", "auto",
-		"Output format: auto, human, verbose, json (default \"auto\")")
-	startAgentCmd.Flags().BoolVarP(&verboseMode, "verbose", "v", false,
-		"Verbose output (same as --format verbose)")
+		"Output format: auto, human, verbose, console, json (default \"auto\")")
 
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
