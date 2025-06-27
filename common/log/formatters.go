@@ -113,11 +113,9 @@ func (f *SessionCleanupFormatter) FormatVerbose(fields map[string]interface{}, m
 	sid := getStringField(fields, "sid", "session_id")
 	duration := formatDuration(fields)
 
-	var result string
+	result := "Session closed"
 	if sid != "" {
 		result = fmt.Sprintf("[%s] Session closed", truncateSession(sid))
-	} else {
-		result = "Session closed"
 	}
 
 	if duration != "" {
@@ -236,11 +234,9 @@ func (f *CommandFormatter) FormatVerbose(fields map[string]interface{}, msg stri
 	stdinSize := getIntField(fields, "stdin_size")
 	tableName := getStringField(fields, "table_name")
 
-	var result string
+	result := fmt.Sprintf("Executing command: %s", cmd)
 	if sid != "" {
 		result = fmt.Sprintf("[%s] Executing command: %s", truncateSession(sid), cmd)
-	} else {
-		result = fmt.Sprintf("Executing command: %s", cmd)
 	}
 
 	if tableName != "" {
@@ -269,11 +265,9 @@ func (f *CommandResultFormatter) FormatHuman(fields map[string]interface{}, msg 
 		return fmt.Sprintf("%s Success", EmojiSuccess)
 	}
 
-	var result string
+	result := fmt.Sprintf("%s Command failed (exit code: %d)", EmojiFailed, exitCode)
 	if sid != "" {
 		result = fmt.Sprintf("  │ [%s] %s Command failed (exit code: %d)", truncateSession(sid), EmojiFailed, exitCode)
-	} else {
-		result = fmt.Sprintf("%s Command failed (exit code: %d)", EmojiFailed, exitCode)
 	}
 
 	if stderr != "" && stderr != "<nil>" {
@@ -291,18 +285,15 @@ func (f *CommandResultFormatter) FormatVerbose(fields map[string]interface{}, ms
 	duration := formatDuration(fields)
 	stderr := getStringField(fields, "stderr", "error")
 
-	var result string
+	result := "Command completed successfully"
+	if exitCode != 0 {
+		result = "Command failed"
+	}
 	if sid != "" {
 		if exitCode == 0 {
 			result = fmt.Sprintf("[%s] Command completed successfully", truncateSession(sid))
 		} else {
 			result = fmt.Sprintf("[%s] Command failed", truncateSession(sid))
-		}
-	} else {
-		if exitCode == 0 {
-			result = "Command completed successfully"
-		} else {
-			result = "Command failed"
 		}
 	}
 
