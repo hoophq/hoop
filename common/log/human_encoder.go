@@ -14,8 +14,6 @@ import (
 type HumanEncoder struct {
 	*BaseEncoder  // Composition - inherits all Add* methods
 	cfg           zapcore.EncoderConfig
-	useEmoji      bool
-	useColor      bool
 	sessionStarts map[string]time.Time // For tracking session durations
 }
 
@@ -38,8 +36,6 @@ func NewHumanEncoder(cfg zapcore.EncoderConfig) zapcore.Encoder {
 	return &HumanEncoder{
 		BaseEncoder:   NewBaseEncoder(),
 		cfg:           cfg,
-		useEmoji:      os.Getenv("NO_COLOR") == "",
-		useColor:      os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb",
 		sessionStarts: make(map[string]time.Time),
 	}
 }
@@ -48,8 +44,6 @@ func (h *HumanEncoder) Clone() zapcore.Encoder {
 	cloned := &HumanEncoder{
 		BaseEncoder:   &BaseEncoder{},
 		cfg:           h.cfg,
-		useEmoji:      h.useEmoji,
-		useColor:      h.useColor,
 		sessionStarts: h.sessionStarts, // Share the map
 	}
 
@@ -89,27 +83,27 @@ func (h *HumanEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) 
 
 	line := buffer.NewPool().Get()
 
+	// Always use emoji for human-readable format
 	emoji := levelEmojis[entry.Level]
-	if emoji != "" && h.useEmoji {
+	if emoji != "" {
 		line.AppendString(emoji + " ")
 	}
-	if h.useColor {
-		switch entry.Level {
-		case zapcore.ErrorLevel, zapcore.FatalLevel:
-			line.AppendString(colorRed)
-		case zapcore.WarnLevel:
-			line.AppendString(colorYellow)
-		case zapcore.InfoLevel:
-		case zapcore.DebugLevel:
-			line.AppendString(colorGray)
-		}
+
+	// Always use color for human-readable format
+	switch entry.Level {
+	case zapcore.ErrorLevel, zapcore.FatalLevel:
+		line.AppendString(colorRed)
+	case zapcore.WarnLevel:
+		line.AppendString(colorYellow)
+	case zapcore.InfoLevel:
+	case zapcore.DebugLevel:
+		line.AppendString(colorGray)
 	}
 
 	line.AppendString(msg)
 
-	if h.useColor {
-		line.AppendString(colorReset)
-	}
+	// Always add color reset for human-readable format
+	line.AppendString(colorReset)
 
 	line.AppendString("\n")
 
@@ -129,7 +123,8 @@ func (h *HumanEncoder) formatMessage(msg string, fields []zapcore.Field) string 
 	}
 
 	fieldMap := BuildFieldMap(h.GetStoredFields(), fields)
-	return encoderUtils.FormatMessage(msg, fieldMap, h.useEmoji)
+	// Always use emoji for human-readable format
+	return encoderUtils.FormatMessage(msg, fieldMap, true)
 }
 
 func extractServer(msg string) string {
