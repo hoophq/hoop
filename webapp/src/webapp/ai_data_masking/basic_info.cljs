@@ -5,8 +5,10 @@
 
 (defn main [{:keys [name
                     description
+                    score_threshold
                     on-name-change
-                    on-description-change]}]
+                    on-description-change
+                    on-score-threshold-change]}]
   [:> Grid {:columns "7" :gap "7"}
    [:> Box {:grid-column "span 2 / span 2"}
     [:> Flex {:align "center" :gap "2"}
@@ -32,4 +34,20 @@
        :value @description
        :on-change #(on-description-change (-> % .-target .-value))
        :placeholder "Describe how this is used in your connections"
-       :rows 3}]]]])
+       :rows 3}]]
+
+    [:> Box
+     [forms/input
+      {:label "Analyzer confidence threshold"
+       :label-suffix "(Optional)"
+       :name "score_threshold"
+       :type "number"
+       :min 1
+       :max 100
+       :maxlength 3
+       :value @score_threshold
+       :on-change #(let [value (-> % .-target .-value)]
+                     (on-score-threshold-change (if (empty? value) nil (js/parseInt value))))
+       :placeholder "85"}]
+     [:> Text {:size "2" :class "text-[--gray-11] mt-1"}
+      "Minimum confidence level required to detect and mask sensitive data. Default 85% works well for most use cases."]]]])

@@ -34,15 +34,15 @@
          [basic-info/main
           {:name (:name state)
            :description (:description state)
+           :score_threshold (:score_threshold state)
            :on-name-change #(reset! (:name state) %)
-           :on-description-change #(reset! (:description state) %)}]
+           :on-description-change #(reset! (:description state) %)
+           :on-score-threshold-change #(reset! (:score_threshold state) %)}]
 
          ;; Connections section
          [connections-section/main
           {:connection-ids (:connection_ids state)
            :on-connections-change (:on-connections-change handlers)}]
-
-
 
          ;; Output rules section
          [:> Flex {:direction "column" :gap "5"}
