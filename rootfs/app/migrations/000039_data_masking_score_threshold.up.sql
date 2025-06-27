@@ -1,0 +1,1 @@
+ALTER TABLE private.datamasking_rules ADD COLUMN score_threshold FLOAT NULL;
