@@ -1,7 +1,6 @@
 package apigdatamasking
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -56,6 +55,7 @@ func Post(c *gin.Context) {
 		Description:          req.Description,
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
+		ScoreThreshold:       req.ScoreThreshold,
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
@@ -108,8 +108,6 @@ func Put(c *gin.Context) {
 		})
 	}
 
-	fmt.Printf("CUSTOM ENTITY TYPES: %#v\n", customEntityTypes)
-
 	rule, err := models.UpdateDataMaskingRule(&models.DataMaskingRule{
 		ID:                   c.Param("id"),
 		OrgID:                ctx.GetOrgID(),
@@ -117,6 +115,7 @@ func Put(c *gin.Context) {
 		Description:          req.Description,
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
+		ScoreThreshold:       req.ScoreThreshold,
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
@@ -232,6 +231,7 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 			Description:             obj.Description,
 			SupportedEntityTypes:    entityTypes,
 			CustomEntityTypesEntrys: customEntityTypes,
+			ScoreThreshold:          obj.ScoreThreshold,
 			ConnectionIDs:           obj.ConnectionIDs,
 			UpdatedAt:               obj.UpdatedAt,
 		},
@@ -245,7 +245,10 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return nil
 	}
-	fmt.Printf("REQUEST: %#v\n", req)
+	if req.ScoreThreshold != nil && *req.ScoreThreshold < 0 && *req.ScoreThreshold > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "score threshold must be between 0 and 1"})
+		return nil
+	}
 	for _, connID := range req.ConnectionIDs {
 		if _, err := uuid.Parse(connID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"message": "invalid connection ID " + connID})

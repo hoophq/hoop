@@ -1490,6 +1490,8 @@ type DataMaskingRuleRequest struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// The registered entity types that this rule applies to
 	SupportedEntityTypes []SupportedEntityTypesEntry `json:"supported_entity_types"`
+	// The minimal detection score threshold for the entities to be masked.
+	ScoreThreshold *float64 `json:"score_threshold" example:"0.6"`
 	// The custom entity types that this rule applies to
 	CustomEntityTypesEntrys []CustomEntityTypesEntry `json:"custom_entity_types"`
 	// The timestamp when the rule was updated

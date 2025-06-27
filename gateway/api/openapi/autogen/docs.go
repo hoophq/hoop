@@ -5136,9 +5136,14 @@ const docTemplate = `{
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "name": {
-                    "description": "The unique name of the data masking rule",
+                    "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
                     "example": "mask-email"
+                },
+                "score_threshold": {
+                    "description": "The minimal detection score threshold for the entities to be masked.",
+                    "type": "number",
+                    "example": 0.6
                 },
                 "supported_entity_types": {
                     "description": "The registered entity types that this rule applies to",
@@ -5185,9 +5190,14 @@ const docTemplate = `{
                     "example": "Mask email addresses in the data"
                 },
                 "name": {
-                    "description": "The unique name of the data masking rule",
+                    "description": "The unique name of the data masking rule, it's immutable after creation",
                     "type": "string",
                     "example": "mask-email"
+                },
+                "score_threshold": {
+                    "description": "The minimal detection score threshold for the entities to be masked.",
+                    "type": "number",
+                    "example": 0.6
                 },
                 "supported_entity_types": {
                     "description": "The registered entity types that this rule applies to",

@@ -19,6 +19,7 @@ type DataMaskingRule struct {
 	Description          string                   `gorm:"column:description"`
 	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
+	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
 	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
 	UpdatedAt            time.Time                `gorm:"column:updated_at"`
 }
@@ -82,11 +83,12 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.datamasking_rules").
 			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-			Select("description", "supported_entity_types", "custom_entity_types", "updated_at").
+			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "updated_at").
 			Updates(DataMaskingRule{
 				Description:          rule.Description,
 				SupportedEntityTypes: rule.SupportedEntityTypes,
 				CustomEntityTypes:    rule.CustomEntityTypes,
+				ScoreThreshold:       rule.ScoreThreshold,
 				UpdatedAt:            rule.UpdatedAt,
 			})
 		if res.Error != nil {
@@ -122,7 +124,7 @@ func ListDataMaskingRules(orgID string) ([]DataMaskingRule, error) {
 	var rules []DataMaskingRule
 	return rules, DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
@@ -138,7 +140,7 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 	var rule DataMaskingRule
 	err := DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
@@ -162,6 +164,7 @@ func GetDataMaskingEntityTypes(orgID, connID string) (json.RawMessage, error) {
 				'id', r.id,
 				'name', r.name,
 				'supported_entity_types', r.supported_entity_types,
+				'score_threshold', r.score_threshold,
 				'custom_entity_types', r.custom_entity_types
 			)), '[]'::json)
 		FROM private.datamasking_rules r
