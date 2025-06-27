@@ -431,7 +431,7 @@ func Get(c *gin.Context) {
 		err = encodeBlobStream(session, openapi.SessionEventStreamType(c.Query("event_stream")))
 		switch err {
 		case errEventStreamUnsupportedFormat:
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": errEventStreamUnsupportedFormat})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": errEventStreamUnsupportedFormat.Error()})
 			return
 		case nil:
 		default:

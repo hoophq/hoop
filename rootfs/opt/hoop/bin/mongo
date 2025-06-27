@@ -11,21 +11,10 @@ if [ ! -f "$HOME/.mongoshrc.js" ]; then
     echo 'prompt = function() { return ""; }' > $HOME/.mongoshrc.js
 fi
 
-# stdin or pipe redirect
-if [[ ! -t 0 && ! -p /dev/stdin ]] || [[ -p /dev/stdin ]]; then
-    JS_FILE=/tmp/$HOOP_SESSION_ID.js
-    function cleanup() {
-        rm -f $JS_FILE || true
-    }
-    trap cleanup EXIT
-
-    cat > $JS_FILE
-    chmod 0400 $JS_FILE
-    if head -n5 $JS_FILE  | egrep '\/\/\s*mongosh\s*$' > /dev/null; then
-        MONGO_BIN=/usr/bin/mongosh
-    fi
-    $MONGO_BIN $@ < $JS_FILE
-    exit $?
+# it's inject by the agent if it contains the comment hoop.dev/runtime=mongosh
+# the user is indicating that they want to use the mongosh runtime
+if [ "$HOOP_EXEC_MONGOSH_RUNTIME" == "1" ]; then
+    MONGO_BIN=/usr/bin/mongosh
 fi
 
 $MONGO_BIN $@
