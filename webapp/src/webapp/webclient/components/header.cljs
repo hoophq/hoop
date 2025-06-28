@@ -67,9 +67,7 @@
 
            [:> Tooltip {:content "Help"}
             [:> IconButton
-             {:class (when @dark-mode?
-                       "bg-gray-8 text-gray-12")
-              :size "2"
+             {:size "2"
               :color "gray"
               :variant "soft"
               :onClick (fn []

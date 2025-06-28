@@ -1,30 +1,24 @@
 (ns webapp.components.forms
   (:require
-   ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Select]]
-   ["lucide-react" :refer [Eye EyeOff]]
+   ["@radix-ui/themes" :refer [Select Tooltip Text]]
+   ["lucide-react" :refer [Eye EyeOff HelpCircle]]
    [clojure.string :as cs]
    [reagent.core :as r]))
 
 (defn- form-label
   [text]
-  [:label {:class "block text-xs font-semibold text-[--gray-12]"} text])
+  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12"}
+   text])
 
 (defn- form-label-dark
   [text]
-  [:label {:class "text-white block text-xs font-semibold"} text])
+  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12"}
+   text])
 
 (defn- form-helper-text
-  [text dark]
-  [:div {:class (str "relative flex flex-col group"
-                     (when dark " text-white"))}
-   [:> hero-outline-icon/QuestionMarkCircleIcon {:class "w-4 h-4"
-                                                 :aria-hidden "true"}]
-   [:div {:class "absolute bottom-0 flex-col hidden mb-6 w-max group-hover:flex"}
-    [:span {:class (str "relative border -left-3 border-gray-300 bg-white rounded-md z-50 "
-                        "p-2 text-xs text-gray-700 leading-none whitespace-no-wrap shadow-lg")}
-     text]
-    [:div {:class "w-3 h-3 -mt-2 border-r border-b border-gray-300 bg-white transform rotate-45"}]]])
+  [text]
+  [:> Tooltip {:content text}
+   [:> HelpCircle {:size 14}]])
 
 (defn input
   "Multi purpose HTML input component.
@@ -214,26 +208,4 @@
                                     (when dark "dark"))}]
     [:> Select.Content {:position "popper"
                         :color "indigo"}
-     (map #(option % selected) options)]]])
-
-(defn select-editor
-  "HTML select.
-  Props signature:
-  label -> html label text;
-  options -> List of {:text string :value string};
-  active -> the option value of an already active item;
-  on-change -> function to be executed on change;
-  required -> HTML required attribute;"
-  [{:keys [name size options selected on-change full-width? required disabled]}]
-  [:div {:class "text-xs"}
-   [:> Select.Root {:size (or size "1")
-                    :name name
-                    :value selected
-                    :on-value-change on-change
-                    :required (or required false)
-                    :disabled (or disabled false)}
-    [:> Select.Trigger {:class (str "dark"
-                                    (when full-width? "w-full"))
-                        :placeholder "Select one"}]
-    [:> Select.Content {:position "popper"}
      (map #(option % selected) options)]]])
