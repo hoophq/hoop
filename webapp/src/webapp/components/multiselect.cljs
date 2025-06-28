@@ -1,7 +1,11 @@
 (ns webapp.components.multiselect
-  (:require ["react-select" :default Select]
-            ["react-select/creatable" :default CreatableSelect]
-            [reagent.core :as r]))
+  (:require
+   ["lucide-react" :refer [HelpCircle]]
+   ["react-select" :default Select]
+   ["react-select/creatable" :default CreatableSelect]
+   ["@radix-ui/themes" :refer [Text Tooltip]]
+   [clojure.string :as cs]
+   [reagent.core :as r]))
 
 (def styles
   #js {"multiValue" (fn [style]
@@ -39,7 +43,8 @@
 
 (defn- form-label
   [text]
-  [:label {:class "mb-1 block text-xs font-semibold text-gray-800"} text])
+  [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12"}
+   text])
 
 (defn main []
   (let [container-ref (r/atom nil)]
@@ -172,11 +177,15 @@
        :styles styles}]]))
 
 (defn single []
-  (fn [{:keys [default-value disabled? required? clearable? searchble? on-change options label id name]}]
+  (fn [{:keys [default-value disabled? helper-text required? clearable? searchble? on-change options label id name]}]
     [:div {:class "mb-regular text-sm"}
-     [:div {:class "flex items-center gap-2"}
+     [:div {:class "flex items-center mb-1 gap-2"}
       (when label
-        [form-label label])]
+        [form-label label])
+      (when (not (cs/blank? helper-text))
+        [:> Tooltip {:content helper-text}
+         [:> HelpCircle {:size 14}]])]
+
      [:> Select
       {:value default-value
        :id id
