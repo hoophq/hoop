@@ -23,7 +23,4 @@
              nil
              (:details data)))
 
-   #_{:db (assoc db
-                 :snackbar-status :shown
-                 :snackbar-level (:level data)
-                 :snackbar-text (:text data))}))
+   {}))
