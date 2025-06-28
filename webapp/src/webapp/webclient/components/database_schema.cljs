@@ -324,89 +324,45 @@
                :database-schema-status database-schema-status
                :current-schema current-schema}])])
 
+;; Simplificação do componente main - removendo toda a complexidade dos lifecycle methods
 (defn main [connection]
   (let [database-schema (rf/subscribe [::subs/database-schema])
-        local-connection (r/atom (:connection-name connection))
-        ;; Store the schema state locally to avoid re-renders
-        ;; when there are no actual changes
-        local-schema-state (r/atom nil)
-        ;; Flag to control whether we have already started loading - initialized as false
-        loading-started (r/atom false)]
+        ;; Flag para controlar se já iniciamos o carregamento
+        loading-started (r/atom false)
+        ;; Track da connection atual para detectar mudanças
+        current-connection-name (r/atom nil)]
 
-    ;; Using memoization for the main component
-    (r/create-class
-     {:component-did-mount
-      (fn []
-        ;; Initialize loading on mount if necessary
+    (fn [connection]
+      (let [current-schema (get-in @database-schema [:data (:connection-name connection)])
+            connection-name (:connection-name connection)]
+
+        ;; Detectar mudança de connection e resetar estado
+        (when (not= @current-connection-name connection-name)
+          (reset! current-connection-name connection-name)
+          (reset! loading-started false))
+
+        ;; Lógica simplificada de inicialização
         (when (and connection
-                   (:connection-name connection)
-                   (not @loading-started))
+                   connection-name
+                   (not @loading-started)
+                   (not current-schema))
           (reset! loading-started true)
           (get-database-schema (:connection-type connection) connection))
 
-        (when-let [schema (get-in @database-schema [:data @local-connection])]
-          (reset! local-schema-state schema))
+        ;; Restaurar database selecionado do localStorage se necessário
         (when (and (#{:postgres :mongodb} (keyword (:connection-type connection)))
-                   (.getItem js/localStorage "selected-database"))
+                   (.getItem js/localStorage "selected-database")
+                   (= (:status current-schema) :success)
+                   (not (get-in current-schema [:open-database])))
           (rf/dispatch [:database-schema->change-database
-                        {:connection-name (:connection-name connection)}
-                        (.getItem js/localStorage "selected-database")])))
+                        {:connection-name connection-name}
+                        (.getItem js/localStorage "selected-database")]))
 
-      :component-did-update
-      (fn [this old-argv]
-        (let [[_ old-conn] old-argv
-              [_ new-conn] (r/argv this)
-              current-schema (get-in @database-schema [:data (:connection-name new-conn)])]
-
-          ;; Case 1: Connection change
-          (when (not= (:connection-name old-conn) (:connection-name new-conn))
-            (reset! local-connection (:connection-name new-conn))
-            ;; Completely reset loading state for new connection
-            (reset! loading-started false)
-            (reset! local-schema-state nil)
-            ;; Initialize loading for new connection
-            (when (and new-conn (:connection-name new-conn))
-              (reset! loading-started true)
-              (get-database-schema (:connection-type new-conn) new-conn)))
-
-          ;; Case 2: Schema was cleared globally (clear-schema)
-          ;; Detects when global schema is nil but we have a valid connection
-          (when (and (= (:connection-name old-conn) (:connection-name new-conn)) ; same connection
-                     new-conn (:connection-name new-conn)                        ; valid connection
-                     (nil? current-schema)                                        ; schema was cleared
-                     @loading-started)                                            ; but we thought it was already loaded
-            ;; Reinitialize loading after clear-schema
-            (reset! loading-started false)
-            (reset! local-schema-state nil)
-            (reset! loading-started true)
-            (get-database-schema (:connection-type new-conn) new-conn))))
-
-      :should-component-update
-      (fn [this old-argv]
-        (let [[_ old-conn] old-argv
-              [_ new-conn] (r/argv this)
-              old-schema (get-in @database-schema [:data (:connection-name old-conn)])
-              new-schema (get-in @database-schema [:data (:connection-name new-conn)])]
-          ;; Only updates when the connection or the schema actually change
-          (or (not= (:connection-name old-conn) (:connection-name new-conn))
-              (not= (:status old-schema) (:status new-schema))
-              (not= (:database-schema-status old-schema) (:database-schema-status new-schema))
-              (not= (:loading-columns old-schema) (:loading-columns new-schema))
-              (not= (:columns-cache old-schema) (:columns-cache new-schema))
-              (and (= (:status new-schema) :success)
-                   (not= @local-schema-state new-schema)))))
-
-      :reagent-render
-      (fn [connection]
-        (let [current-schema (get-in @database-schema [:data (:connection-name connection)])]
-          (when (and (= (:status current-schema) :success)
-                     (not= @local-schema-state current-schema))
-            (reset! local-schema-state current-schema))
-
-          (tree-view-status
-           {:status (:status current-schema)
-            :databases (:databases current-schema)
-            :schema (:schema-tree current-schema)
-            :connection connection
-            :database-schema-status (:database-schema-status current-schema)
-            :current-schema current-schema})))})))
+        ;; Renderização direta sem complexidade adicional
+        [tree-view-status
+         {:status (:status current-schema)
+          :databases (:databases current-schema)
+          :schema (:schema-tree current-schema)
+          :connection connection
+          :database-schema-status (:database-schema-status current-schema)
+          :current-schema current-schema}]))))

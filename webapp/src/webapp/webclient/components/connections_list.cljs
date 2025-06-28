@@ -43,6 +43,16 @@
                    (rf/dispatch [:navigate :edit-connection {} :connection-name name]))}
        [:> EllipsisVertical {:size 16}]])]])
 
+;; Função memoizada para criar o objeto connection e evitar recriações desnecessárias
+(def create-connection-obj
+  (memoize
+   (fn [connection-name subtype icon_name type]
+     {:connection-name connection-name
+      :connection-type (cond
+                         (not (cs/blank? subtype)) subtype
+                         (not (cs/blank? icon_name)) icon_name
+                         :else type)})))
+
 (defn selected-connection []
   (let [show-schema? (r/atom true)
         ;; State to avoid premature loading of the heavy component
@@ -88,11 +98,11 @@
           ;; Lazy loading of the schema component
           (if @schema-loaded?
             [database-schema/main
-             {:connection-name (:name connection)
-              :connection-type (cond
-                                 (not (cs/blank? (:subtype connection))) (:subtype connection)
-                                 (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-                                 :else (:type connection))}]
+             (create-connection-obj
+              (:name connection)
+              (:subtype connection)
+              (:icon_name connection)
+              (:type connection))]
             ;; Placeholder while we load the real component
             [:div {:class "flex items-center justify-center p-4 text-sm text-gray-400"}
              "Loading database schema..."])])])))
