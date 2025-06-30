@@ -246,7 +246,7 @@
                                review-groups)
                          (some (fn [review-group]
                                  (some #(= (:group review-group) %)
-                                       (-> user :data :groups)))
+                                       (-> user :groups)))
                                review-groups))
             is-session-owner? (= session-user-id current-user-id)
             add-review-cb (fn [status]
