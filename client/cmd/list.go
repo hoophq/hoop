@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
@@ -48,13 +49,13 @@ func runList() {
 
 	connections, err := fetchConnections(config)
 	if err != nil {
-		printErrorAndExit("Failed to fetch connections: %v", err)
+		styles.PrintErrorAndExit("Failed to fetch connections: %v", err)
 	}
 
 	if outputFlag == "json" {
 		jsonData, err := json.MarshalIndent(connections, "", "  ")
 		if err != nil {
-			printErrorAndExit("Failed to encode JSON: %v", err)
+			styles.PrintErrorAndExit("Failed to encode JSON: %v", err)
 		}
 		fmt.Print(string(jsonData))
 		return
@@ -76,7 +77,7 @@ func fetchConnections(config *clientconfig.Config) ([]map[string]any, error) {
 	if config.IsApiKey() {
 		req.Header.Set("Api-Key", config.Token)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", version.Get().Version))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%v", version.Get().Version))
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {
@@ -157,7 +158,7 @@ func fetchAgentInfo(config *clientconfig.Config) map[string]map[string]any {
 	if config.IsApiKey() {
 		req.Header.Set("Api-Key", config.Token)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", version.Get().Version))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%v", version.Get().Version))
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {

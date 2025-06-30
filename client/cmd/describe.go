@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
@@ -39,13 +40,13 @@ func runDescribe(connectionName string) {
 
 	connection, err := fetchConnection(config, connectionName)
 	if err != nil {
-		printErrorAndExit("Failed to fetch connection '%s': %v", connectionName, err)
+		styles.PrintErrorAndExit("Failed to fetch connection '%s': %v", connectionName, err)
 	}
 
 	if outputFlag == "json" {
 		jsonData, err := json.MarshalIndent(connection, "", "  ")
 		if err != nil {
-			printErrorAndExit("Failed to encode JSON: %v", err)
+			styles.PrintErrorAndExit("Failed to encode JSON: %v", err)
 		}
 		fmt.Print(string(jsonData))
 		return
@@ -67,7 +68,7 @@ func fetchConnection(config *clientconfig.Config, name string) (map[string]any, 
 	if config.IsApiKey() {
 		req.Header.Set("Api-Key", config.Token)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", version.Get().Version))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%v", version.Get().Version))
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {
@@ -166,7 +167,7 @@ func fetchAllAgentInfo(config *clientconfig.Config) map[string]map[string]any {
 	if config.IsApiKey() {
 		req.Header.Set("Api-Key", config.Token)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", version.Get().Version))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%v", version.Get().Version))
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {
@@ -225,7 +226,7 @@ func fetchConnectionPlugins(config *clientconfig.Config, connectionName string) 
 	if config.IsApiKey() {
 		req.Header.Set("Api-Key", config.Token)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%s", version.Get().Version))
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%v", version.Get().Version))
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {
