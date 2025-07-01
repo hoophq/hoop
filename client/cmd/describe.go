@@ -129,17 +129,6 @@ func displayConnectionDetails(config *clientconfig.Config, conn map[string]any) 
 	// Plugins
 	fmt.Printf("plugins: %s\n", formatPlugins(plugins))
 
-	// Secrets
-	secrets, _ := conn["secret"].(map[string]any)
-	if secrets == nil {
-		secrets, _ = conn["secrets"].(map[string]any)
-	}
-	if len(secrets) > 0 {
-		fmt.Printf("secrets: %d configured\n", len(secrets))
-	} else {
-		fmt.Printf("secrets: -\n")
-	}
-
 	// Tags (if they exist)
 	if tags := conn["connection_tags"]; tags != nil {
 		if tagStr := formatTags(tags); tagStr != "-" {
@@ -147,12 +136,6 @@ func displayConnectionDetails(config *clientconfig.Config, conn map[string]any) 
 		}
 	}
 
-	// Environment variables (if they exist)
-	if envs := conn["envs"]; envs != nil {
-		if envMap, ok := envs.(map[string]any); ok && len(envMap) > 0 {
-			fmt.Printf("environment: %d variables configured\n", len(envMap))
-		}
-	}
 }
 
 func fetchAllAgentInfo(config *clientconfig.Config) map[string]map[string]any {
