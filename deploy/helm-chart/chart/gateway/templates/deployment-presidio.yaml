@@ -1,0 +1,73 @@
+{{- if and .Values.dataMasking.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidio-analyzer
+spec:
+  selector:
+    matchLabels:
+      app: presidio-analyzer
+  template:
+    metadata:
+      labels:
+        app: presidio-analyzer
+    spec:
+      containers:
+      - image: '{{ .Values.dataMasking.analyzer.imageRepository | default "mcr.microsoft.com/presidio-analyzer" }}:{{ .Values.dataMasking.version | default "latest" }}'
+        name: presidio-analyzer
+        imagePullPolicy: {{ .Values.dataMasking.analyzer.imagePullPolicy | default "Always" }}
+        resources:
+          {{- toYaml .Values.dataMasking.analyzer.resources | nindent 10 }}
+        ports:
+        - containerPort: 3000
+          name: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidio-anonymizer
+spec:
+  selector:
+    matchLabels:
+      app: presidio-anonymizer
+  template:
+    metadata:
+      labels:
+        app: presidio-anonymizer
+    spec:
+      containers:
+      - image: '{{ .Values.dataMasking.anonymizer.imageRepository | default "mcr.microsoft.com/presidio-anonymizer" }}:{{ .Values.dataMasking.version | default "latest" }}'
+        name: presidio-anonymizer
+        imagePullPolicy: {{ .Values.dataMasking.anonymizer.imagePullPolicy | default "Always" }}
+        resources:
+          {{- toYaml .Values.dataMasking.anonymizer.resources | nindent 10 }}
+        ports:
+        - containerPort: 3000
+          name: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidio-analyzer
+spec:
+  selector:
+    app: presidio-analyzer
+  ports:
+    - port: 3000
+      name: api
+      protocol: TCP
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidio-anonymizer
+spec:
+  selector:
+    app: presidio-anonymizer
+  ports:
+    - port: 3000
+      name: api
+      protocol: TCP
+      targetPort: 3000
+{{ end -}}
