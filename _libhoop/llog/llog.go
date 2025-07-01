@@ -1,0 +1,4 @@
+package llog
+
+func ReinitializeLogger() {
+}
