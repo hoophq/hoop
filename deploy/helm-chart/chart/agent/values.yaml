@@ -2,7 +2,7 @@
 ## This is a YAML-formatted file.
 ## Declare variables to be passed into your templates.
 
-# Refer to this guide for more details: https://hoop.dev/docs/setup/kubernetes
+# Refer to this guide for more details: https://hoop.dev/docs/setup/deployment/overview
 
 # -- Define a custom image configuration
 image: {}
@@ -10,8 +10,6 @@ image: {}
   # pullPolicy: Always
   # tag: latest
 
-
-# hoop agent configuration. Please refer to https://hoop.dev/docs/configuring/agent
 config: {}
   # HOOP_KEY: '<AUTH_KEY>'
   # LOG_ENCODING: 'console|json'

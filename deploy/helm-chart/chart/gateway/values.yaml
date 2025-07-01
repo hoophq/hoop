@@ -2,7 +2,7 @@
 ## This is a YAML-formatted file.
 ## Declare variables to be passed into your templates.
 
-# Refer to this guide for more details: https://hoop.dev/docs/self-hosting/kubernetes
+# Refer to this guide for more details: https://hoop.dev/docs/setup/deployment/overview
 
 # -- Define a custom image configuration
 image:
@@ -18,6 +18,31 @@ defaultAgent:
   imageTag: latest
   imagePullPolicy: Always
   grpcHost: 127.0.0.1:8010
+
+# -- Enable data masking with Presidio
+dataMasking:
+  enabled: false
+  version: latest
+  # best-effort | strict
+  mode: best-effort
+
+  analyzer:
+    resources:
+      limits:
+        cpu: 512m
+        memory: 1024Mi
+      requests:
+        cpu: 256m
+        memory: 1024Mi
+
+  anonymizer:
+    resources:
+      limits:
+        cpu: 512m
+        memory: 512Mi
+      requests:
+        cpu: 256m
+        memory: 512Mi
 
 ## Set pod annotations
 ##
