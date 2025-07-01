@@ -19,13 +19,12 @@ import (
 )
 
 var (
-	verboseFlag bool
-	outputFlag  string
+	outputFlag string
 )
 
 var listExampleDesc = `hoop list
 hoop ls
-hoop list --verbose
+hoop list -o wide
 hoop list -o json`
 
 var listCmd = &cobra.Command{
@@ -40,8 +39,7 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show additional information including command")
-	listCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
+	listCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json|wide)")
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -115,7 +113,7 @@ func displayConnections(connections []map[string]any) {
 	w := tabwriter.NewWriter(os.Stdout, 6, 4, 3, ' ', tabwriter.TabIndent)
 	defer w.Flush()
 
-	if verboseFlag {
+	if outputFlag == "wide" {
 		fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tTAGS\t")
 	} else {
 		fmt.Fprintln(w, "NAME\tTYPE\tAGENT\tSTATUS\t")
@@ -133,7 +131,7 @@ func displayConnections(connections []map[string]any) {
 		// Get agent name
 		agentName := getAgentName(agentInfo, agentID)
 
-		if verboseFlag {
+		if outputFlag == "wide" {
 			cmdList, _ := conn["command"].([]any)
 			command := joinCommand(cmdList)
 			tags := formatConnectionTags(conn["connection_tags"])
