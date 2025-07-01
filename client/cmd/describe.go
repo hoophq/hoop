@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -78,12 +79,13 @@ func fetchConnection(config *clientconfig.Config, name string) (map[string]any, 
 
 	log.Debugf("http response %v", resp.StatusCode)
 
-	if resp.StatusCode == 404 {
-		return nil, fmt.Errorf("connection '%s' not found", name)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch connection, status=%v", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == 404 {
+			return nil, fmt.Errorf("connection '%s' not found", name)
+		}
+		return nil, fmt.Errorf("failed performing request, status=%v, body=%v",
+			resp.StatusCode, string(respBody))
 	}
 
 	var connection map[string]any
@@ -176,8 +178,9 @@ func fetchAllAgentInfo(config *clientconfig.Config) map[string]map[string]any {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		log.Debugf("failed to fetch agents, status=%v", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Debugf("failed to fetch agents, status=%v, body=%v", resp.StatusCode, string(respBody))
 		return nil
 	}
 
@@ -235,8 +238,9 @@ func fetchConnectionPlugins(config *clientconfig.Config, connectionName string) 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		log.Debugf("failed to fetch plugins, status=%v", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Debugf("failed to fetch plugins, status=%v, body=%v", resp.StatusCode, string(respBody))
 		return []string{}
 	}
 

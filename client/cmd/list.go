@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -87,8 +88,10 @@ func fetchConnections(config *clientconfig.Config) ([]map[string]any, error) {
 
 	log.Debugf("http response %v", resp.StatusCode)
 
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to fetch connections, status=%v", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed performing request, status=%v, body=%v",
+			resp.StatusCode, string(respBody))
 	}
 
 	var connections []map[string]any
@@ -167,8 +170,9 @@ func fetchAgentInfo(config *clientconfig.Config) map[string]map[string]any {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		log.Debugf("failed to fetch agents, status=%v", resp.StatusCode)
+	if resp.StatusCode != 200 && resp.StatusCode != 201 && resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Debugf("failed to fetch agents, status=%v, body=%v", resp.StatusCode, string(respBody))
 		return nil
 	}
 
