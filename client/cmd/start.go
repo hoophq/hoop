@@ -24,7 +24,7 @@ var startAgentCmd = &cobra.Command{
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Use verbose format when global debug flag is enabled
-		if debugFlag && outputFormat == "auto" {
+		if debugFlag && outputFormat == "" {
 			outputFormat = "verbose"
 		}
 
@@ -67,8 +67,8 @@ var startGatewayCmd = &cobra.Command{
 }
 
 func init() {
-	startAgentCmd.Flags().StringVar(&outputFormat, "format", "auto",
-		"Output format: auto, human, verbose, console, json (default \"auto\")")
+	startAgentCmd.Flags().StringVar(&outputFormat, "format", os.Getenv("LOG_ENCODING"),
+		"Output format: auto, human, verbose, console, json")
 
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
