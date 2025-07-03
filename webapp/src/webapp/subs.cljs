@@ -206,6 +206,11 @@
    (:audit->session-details db)))
 
 (re-frame/reg-sub
+ :audit->session-logs
+ (fn [db _]
+   (:audit->session-logs db)))
+
+(re-frame/reg-sub
  ::connections->updating-connection
  (fn [db _]
    (:connections->updating-connection db)))

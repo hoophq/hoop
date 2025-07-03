@@ -1,6 +1,6 @@
 {
   "name": "webapp",
-  "version": "1.47.7",
+  "version": "1.47.8",
   "scripts": {
     "ancient": "clojure -Sdeps '{:deps {com.github.liquidz/antq {:mvn/version \"RELEASE\"}}}' -m antq.core",
     "genversion": "npx genversion src/webapp/version.js",
@@ -44,6 +44,7 @@
     "codemirror-copilot": "^0.0.7",
     "codemirror-lang-elixir": "^4.0.0",
     "cross-env": "^7.0.3",
+    "fancy-ansi": "^0.1.3",
     "genversion": "^3.1.1",
     "gsap": "^3.11.5",
     "is-url-http": "^2.3.9",

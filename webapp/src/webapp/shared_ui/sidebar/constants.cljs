@@ -104,8 +104,7 @@
             [:> UserRoundCheck {:size 24}])
     :uri (routes/url-for :access-control)
     :navigate :access-control
-    :free-feature? false
-    :upgrade-plan-route :access-control
+    :free-feature? true
     :admin-only? true}
    #_{:name "JustInTimeAccess"
       :label "Just-in-Time Access"

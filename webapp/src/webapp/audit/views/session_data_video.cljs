@@ -1,8 +1,13 @@
 (ns webapp.audit.views.session-data-video
   (:require
    [reagent.core :as r]
+   [re-frame.core :as rf]
    ["asciinema-player" :as asciinema]
-   [webapp.audit.views.empty-event-stream :as empty-event-stream]))
+   ["fancy-ansi/react" :refer [AnsiHtml]]
+   [webapp.audit.views.empty-event-stream :as empty-event-stream]
+   [webapp.components.tabs :as tabs]
+   [webapp.components.loaders :as loaders]
+   [webapp.utilities :as utilities]))
 
 (defn- asciinema-player-container [event-stream]
   (let [asciinema-view (atom {:current nil})
@@ -30,13 +35,66 @@
                               :class ""
                               :ref #(swap! asciinema-view assoc :current %)}])})))
 
-(defn main [event-stream]
+(defn- logs-text-container [logs-text]
+  [:section
+   {:class (str "relative bg-gray-900 font-mono overflow-auto h-[600px]"
+                " whitespace-pre text-gray-200 text-sm"
+                " px-regular py-regular group")}
+   [:div
+    {:class "overflow-auto whitespace-pre h-full"}
+    [:> AnsiHtml {:text logs-text
+                  :className "font-mono whitespace-pre text-sm"}]]])
+
+(defn- loading-logs []
+  [:div {:class "flex gap-small items-center justify-center py-large"}
+   [:span {:class "italic text-xs text-gray-600"}
+    "Loading logs for this session"]
+   [loaders/simple-loader {:size 4}]])
+
+(defn- tab-container [_ session-id]
+  (let [selected-tab (r/atom "Logs")
+        session-logs (rf/subscribe [:audit->session-logs])
+        handle-tab-change (fn [tab-name]
+                            (reset! selected-tab tab-name)
+                            (when (and (= tab-name "Logs")
+                                       (not (:data @session-logs)))
+                              (rf/dispatch [:audit->get-session-logs-data session-id])))]
+
+    (rf/dispatch [:audit->get-session-logs-data session-id])
+
+    (fn [event-stream]
+      [:div {:class "flex flex-col h-full"}
+       [tabs/tabs {:on-change handle-tab-change
+                   :tabs ["Logs" "Video"]
+                   :default-value "Logs"}]
+       (case @selected-tab
+         "Logs" (cond
+                  (= (:status @session-logs) :loading)
+                  [loading-logs]
+
+                  (and (= (:status @session-logs) :success)
+                       (seq (:data @session-logs)))
+                  (let [event-data (first (:data @session-logs))
+                        logs-text (utilities/decode-b64 event-data)]
+                    (if (empty? logs-text)
+                      [empty-event-stream/main]
+                      [logs-text-container logs-text]))
+
+                  (= (:status @session-logs) :error)
+                  [empty-event-stream/main]
+
+                  :else
+                  [empty-event-stream/main])
+
+         "Video" [asciinema-player-container
+                  (map
+                   (fn [e]
+                     [(first e)
+                      (second e)
+                      (js/atob (nth e 2))]) event-stream)])])))
+
+(defn main [event-stream session-id]
   [:div
    (if (empty? event-stream)
      [empty-event-stream/main]
-     [asciinema-player-container
-      (map
-       (fn [e]
-         [(first e)
-          (second e)
-          (js/atob (nth e 2))]) event-stream)])])
+     [tab-container event-stream session-id])])
