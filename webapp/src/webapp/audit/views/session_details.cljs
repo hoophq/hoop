@@ -62,13 +62,17 @@
 (defmulti ^:private session-event-stream identity)
 (defmethod ^:private session-event-stream "command-line"
   [_ session]
-  (let [event-stream (:event_stream session)]
-    [session-data-video/main event-stream]))
+  (let [event-stream (:event_stream session)
+        session-id (:id session)
+        start-date (:start_date session)]
+    [session-data-video/main event-stream session-id start-date]))
 
 (defmethod ^:private session-event-stream "custom"
   [_ session]
-  (let [event-stream (:event_stream session)]
-    [session-data-video/main event-stream]))
+  (let [event-stream (:event_stream session)
+        session-id (:id session)
+        start-date (:start_date session)]
+    [session-data-video/main event-stream session-id start-date]))
 
 (defmethod ^:private session-event-stream :default
   [_ session]
@@ -476,12 +480,11 @@
            ;; end data masking analytics
 
            [:section {:id "session-event-stream"
-                      :class "pt-regular"}
+                      :class "pt-regular max-h-[700px]"}
             (if (= (:status @session-details) :loading)
               [loading-player]
 
-              [:section {:id "session-event-stream"
-                         :class "pt-regular"}
+              [:<>
                (if has-large-payload?
                  [large-payload-warning
                   {:session session}]

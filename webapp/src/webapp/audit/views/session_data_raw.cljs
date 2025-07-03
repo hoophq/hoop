@@ -1,6 +1,5 @@
 (ns webapp.audit.views.session-data-raw
-  (:require [clojure.string :as string]
-            [reagent.core :as r]
+  (:require [reagent.core :as r]
             [webapp.audit.views.empty-event-stream :as empty-event-stream]
             [webapp.components.icon :as icon]
             [webapp.components.searchbox :as searchbox]
