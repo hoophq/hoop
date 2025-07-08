@@ -43,7 +43,8 @@
      "/hoop-app" :hoop-app
      "/idplogin" :idplogin-hoop
      "/integrations" [["/aws-connect" :integrations-aws-connect]
-                      ["/aws-connect/setup" :integrations-aws-connect-setup]]
+                      ["/aws-connect/setup" :integrations-aws-connect-setup]
+                      ["/authentication" :authentication]]
      "/jira-templates" [["" :jira-templates]
                         ["/new" :create-jira-template]
                         [["/edit/" :jira-template-id] :edit-jira-template]]
