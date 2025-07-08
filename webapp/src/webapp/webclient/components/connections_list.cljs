@@ -185,8 +185,8 @@
         error (rf/subscribe [:connections/error])
         user (rf/subscribe [:users->current-user])]
 
-    (rf/dispatch [:connections/load-persisted])
-    (rf/dispatch [:connections/initialize])
+    ;; Inicializa as conexões e carrega a seleção persistida na ordem correta
+    (rf/dispatch [:connections/initialize-with-persistence])
 
     (fn [dark-mode? show-tree?]
       (let [admin? (-> @user :data :is_admin)]
