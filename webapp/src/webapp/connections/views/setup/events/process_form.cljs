@@ -114,7 +114,9 @@
         effective-access-modes (merge default-access-modes access-modes)
 
         default-database-schema true
-        effective-database-schema (or (:database-schema config) default-database-schema)
+        effective-database-schema (if (nil? (:database-schema config))
+                                    default-database-schema
+                                    (:database-schema config))
 
         command-string (get-in db [:connection-setup :command])
         command-args (get-in db [:connection-setup :command-args] [])
