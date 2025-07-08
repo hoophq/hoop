@@ -52,7 +52,7 @@
                                                          connection
                                                          (:databases response)]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-multi-databases-error connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-multi-databases-error connection {:message error}]))}]]]}))
 
 (rf/reg-event-fx
  :database-schema->set-multi-databases-error
@@ -102,7 +102,7 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->tables-loaded connection nil response]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection {:message error}]))}]]]}))
 
 ;; Events for loading tables directly for DynamoDB
 (rf/reg-event-fx
@@ -195,7 +195,7 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->tables-loaded connection database response]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection {:message error}]))}]]]}))
 
 (rf/reg-event-db
  :database-schema->tables-loaded
@@ -344,7 +344,7 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->dynamodb-columns-loaded connection table-name response]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection {:message error}]))}]]]}))
 
 ;; Handler to process DynamoDB columns
 (rf/reg-event-db
