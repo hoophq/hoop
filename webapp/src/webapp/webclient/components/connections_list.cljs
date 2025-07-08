@@ -1,9 +1,8 @@
 (ns webapp.webclient.components.connections-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading
-                               Tooltip IconButton Text Link]]
-   ["lucide-react" :refer [AlertCircle EllipsisVertical FolderTree Settings2
-                           X ArrowUpRight]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading
+                               Tooltip IconButton Text]]
+   ["lucide-react" :refer [AlertCircle EllipsisVertical FolderTree Settings2 X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]

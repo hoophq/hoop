@@ -324,14 +324,14 @@
                :database-schema-status database-schema-status
                :current-schema current-schema}])])
 
-;; Simplificação do componente main - removendo toda a complexidade dos lifecycle methods
+;; Simplification of the main component - removing all the complexity of the lifecycle methods
 (defn main []
   (let [database-schema (rf/subscribe [::subs/database-schema])
-        ;; Flag para controlar se já iniciamos o carregamento
+        ;; Flag to control if we've started loading
         loading-started (r/atom false)
-        ;; Track da connection atual para detectar mudanças
+        ;; Track current connection to detect changes
         current-connection-name (r/atom nil)
-        ;; Track do último status para detectar mudanças
+        ;; Track last status to detect changes
         last-status (r/atom nil)]
 
     (fn [connection]
@@ -339,22 +339,25 @@
             connection-name (:connection-name connection)
             current-status (:status current-schema)]
 
-        ;; Detectar mudança de connection e resetar estado
         (when (not= @current-connection-name connection-name)
           (reset! current-connection-name connection-name)
           (reset! loading-started false)
-          (reset! last-status nil))
+          (reset! last-status nil)
+          (when (and connection connection-name)
+            (get-database-schema (:connection-type connection) connection)
+            (reset! loading-started true)))
 
-        ;; Resetar loading-started se mudou de erro para nil (componente foi desmontado e remontado)
+        ;; Reset loading-started if changed from error to nil (component was unmounted and remounted)
         (when (and (= @last-status :error)
                    (nil? current-status))
           (reset! loading-started false))
 
-        ;; Atualizar último status
+
+        ;; Update last status
         (reset! last-status current-status)
 
-        ;; Lógica simplificada de inicialização
-        ;; Permite recarregar se: não iniciou, não tem schema, ou teve erro
+        ;; Simple initialization logic
+        ;; Allows reloading if: not started, no schema, or error
         (when (and connection
                    connection-name
                    (not @loading-started)
@@ -364,7 +367,7 @@
           (reset! loading-started true)
           (get-database-schema (:connection-type connection) connection))
 
-        ;; Restaurar database selecionado do localStorage se necessário
+        ;; Restore selected database from localStorage if necessary
         (when (and (#{:postgres :mongodb} (keyword (:connection-type connection)))
                    (.getItem js/localStorage "selected-database")
                    (= (:status current-schema) :success)
@@ -373,7 +376,7 @@
                         {:connection-name connection-name}
                         (.getItem js/localStorage "selected-database")]))
 
-        ;; Renderização direta sem complexidade adicional
+        ;; Direct rendering without additional complexity
         [tree-view-status
          {:status (:status current-schema)
           :databases (:databases current-schema)
