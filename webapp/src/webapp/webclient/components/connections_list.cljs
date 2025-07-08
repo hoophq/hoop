@@ -59,6 +59,14 @@
         ;; State to avoid premature loading of the heavy component
         schema-loaded? (r/atom true)]
     (fn [connection dark-mode? admin? show-tree?]
+      ;; Detectar erro e fechar automaticamente
+      (let [db-schema @(rf/subscribe [::subs/database-schema])
+            current-schema (get-in db-schema [:data (:name connection)])
+            has-error? (or (= (:status current-schema) :error)
+                           (= (:database-schema-status current-schema) :error))]
+        (when (and has-error? @show-schema?)
+          (reset! show-schema? false)))
+
       [:> Box {:class "bg-primary-11 light"}
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
         [:> Text {:as "p" :size "1" :class "px-2 pt-2 pb-1 text-primary-5"} "Selected"]

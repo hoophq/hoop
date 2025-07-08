@@ -325,7 +325,7 @@
                :current-schema current-schema}])])
 
 ;; Simplificação do componente main - removendo toda a complexidade dos lifecycle methods
-(defn main [connection]
+(defn main []
   (let [database-schema (rf/subscribe [::subs/database-schema])
         ;; Flag para controlar se já iniciamos o carregamento
         loading-started (r/atom false)
@@ -334,7 +334,7 @@
         ;; Track do último status para detectar mudanças
         last-status (r/atom nil)]
 
-    (fn []
+    (fn [connection]
       (let [current-schema (get-in @database-schema [:data (:connection-name connection)])
             connection-name (:connection-name connection)
             current-status (:status current-schema)]
