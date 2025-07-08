@@ -1,16 +1,16 @@
 (ns webapp.webclient.components.connections-list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading
-                               Tooltip IconButton Text Link]]
-   ["lucide-react" :refer [AlertCircle EllipsisVertical FolderTree Settings2
-                           X ArrowUpRight]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading
+                               Tooltip IconButton Text]]
+   ["lucide-react" :refer [AlertCircle EllipsisVertical FolderTree Settings2 X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
    [webapp.routes :as routes]
    [webapp.webclient.components.alerts-carousel :as alerts-carousel]
-   [webapp.webclient.components.database-schema :as database-schema]))
+   [webapp.webclient.components.database-schema :as database-schema]
+   [webapp.subs :as subs]))
 
 (defn connection-item [{:keys [name command type subtype status selected? on-select dark? admin?]}]
   [:> Box {:class (str "flex justify-between items-center py-3 "
@@ -58,6 +58,14 @@
         ;; State to avoid premature loading of the heavy component
         schema-loaded? (r/atom true)]
     (fn [connection dark-mode? admin? show-tree?]
+      ;; Detectar erro e fechar automaticamente
+      (let [db-schema @(rf/subscribe [::subs/database-schema])
+            current-schema (get-in db-schema [:data (:name connection)])
+            has-error? (or (= (:status current-schema) :error)
+                           (= (:database-schema-status current-schema) :error))]
+        (when (and has-error? @show-schema?)
+          (reset! show-schema? false)))
+
       [:> Box {:class "bg-primary-11 light"}
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
         [:> Text {:as "p" :size "1" :class "px-2 pt-2 pb-1 text-primary-5"} "Selected"]
@@ -77,6 +85,15 @@
                                    "Database Schema")}
             [:> IconButton {:onClick #(do
                                         (swap! show-schema? not)
+                                        ;; Se estamos abrindo o schema e teve erro antes, limpa o estado para forçar recarregamento
+                                        (when @show-schema?
+                                          (let [db-schema @(rf/subscribe [::subs/database-schema])
+                                                current-schema (get-in db-schema [:data (:name connection)])
+                                                had-error? (or (= (:status current-schema) :error)
+                                                               (= (:database-schema-status current-schema) :error))]
+                                            (when had-error?
+                                              ;; Limpa o estado para forçar novo carregamento
+                                              (rf/dispatch [:database-schema->clear-connection-schema (:name connection)]))))
                                         ;; Load the schema only when needed
                                         (when (and @show-schema? (not @schema-loaded?))
                                           (reset! schema-loaded? true)))
@@ -185,8 +202,8 @@
         error (rf/subscribe [:connections/error])
         user (rf/subscribe [:users->current-user])]
 
-    (rf/dispatch [:connections/load-persisted])
-    (rf/dispatch [:connections/initialize])
+    ;; Inicializa as conexões e carrega a seleção persistida na ordem correta
+    (rf/dispatch [:connections/initialize-with-persistence])
 
     (fn [dark-mode? show-tree?]
       (let [admin? (-> @user :data :is_admin)]

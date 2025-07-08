@@ -20,10 +20,12 @@
 (rf/reg-event-fx
  :connection-selection/persist
  (fn [{:keys [db]} _]
-   (let [selections (get-in db [:editor :multi-connections :selected])]
+   (let [selections (get-in db [:editor :multi-connections :selected])
+         ;; Salva apenas os nomes das conexões
+         names-only (mapv #(hash-map :name (:name %)) selections)]
      (.setItem js/localStorage
                "run-connection-list-selected"
-               (pr-str selections))
+               (pr-str names-only))
      {})))
 
 ;; Carrega seleções do localStorage
@@ -31,8 +33,15 @@
  :connection-selection/load-persisted
  (fn [{:keys [db]} _]
    (let [saved (.getItem js/localStorage "run-connection-list-selected")
-         parsed (when saved (reader/read-string saved))]
-     {:db (assoc-in db [:editor :multi-connections :selected] (or parsed []))})))
+         parsed (when saved (reader/read-string saved))
+         ;; Buscar conexões atualizadas da lista
+         connections (get-in db [:editor :connections :list])
+         updated-selections (when (and parsed connections)
+                              (vec (keep (fn [saved-conn]
+                                           (first (filter #(= (:name %) (:name saved-conn))
+                                                          connections)))
+                                         parsed)))]
+     {:db (assoc-in db [:editor :multi-connections :selected] (or updated-selections []))})))
 
 ;; Limpa todas as seleções
 (rf/reg-event-fx

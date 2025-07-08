@@ -16,6 +16,15 @@
 
 ;; Events
 (rf/reg-event-fx
+ :connections/initialize-with-persistence
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:editor :connections :status] :loading)
+    :fx [[:fetch-connections]
+         [:dispatch-later {:ms 500 :dispatch [:connections/load-persisted]}]
+         [:dispatch-later {:ms 600 :dispatch [:connection-selection/load-persisted]}]
+         [:dispatch-later {:ms 2000 :dispatch [:connections/update-runbooks]}]]}))
+
+(rf/reg-event-fx
  :connections/initialize
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :status] :loading)
@@ -32,9 +41,26 @@
 (rf/reg-event-db
  :connections/set-list
  (fn [db [_ connections]]
-   (-> db
-       (assoc-in [:editor :connections :status] :success)
-       (assoc-in [:editor :connections :list] connections))))
+   (let [selected (get-in db [:editor :connections :selected])
+         ;; Se há uma conexão selecionada, atualiza com dados frescos
+         updated-selected (when (and selected (:name selected))
+                            (first (filter #(= (:name %) (:name selected)) connections)))
+         ;; Atualiza também as multi-conexões selecionadas
+         multi-selected (get-in db [:editor :multi-connections :selected])
+         updated-multi-selected (when multi-selected
+                                  (vec (keep (fn [saved-conn]
+                                               (first (filter #(= (:name %) (:name saved-conn))
+                                                              connections)))
+                                             multi-selected)))]
+     (-> db
+         (assoc-in [:editor :connections :status] :success)
+         (assoc-in [:editor :connections :list] connections)
+         ;; Atualiza a conexão selecionada se encontrada
+         (cond-> updated-selected
+           (assoc-in [:editor :connections :selected] updated-selected))
+         ;; Atualiza as multi-conexões selecionadas
+         (cond-> (seq updated-multi-selected)
+           (assoc-in [:editor :multi-connections :selected] updated-multi-selected))))))
 
 (rf/reg-event-db
  :connections/set-filter
@@ -64,7 +90,7 @@
    (let [selected (get-in db [:editor :connections :selected])]
      (.setItem js/localStorage
                "selected-connection"
-               (when selected (pr-str selected)))
+               (when selected (pr-str {:name (:name selected)})))
      {})))
 
 (rf/reg-event-fx
@@ -72,8 +98,16 @@
  (fn [{:keys [db]} _]
    (let [saved (.getItem js/localStorage "selected-connection")
          parsed (when (and saved (not= saved "null"))
-                  (read-string saved))]
-     {:db (assoc-in db [:editor :connections :selected] parsed)})))
+                  (read-string saved))
+         connection-name (:name parsed)
+         ;; Buscar a conexão atualizada da lista de conexões
+         connections (get-in db [:editor :connections :list])
+         updated-connection (when (and connection-name connections)
+                              (first (filter #(= (:name %) connection-name) connections)))]
+     (if updated-connection
+       {:db (assoc-in db [:editor :connections :selected] updated-connection)}
+       ;; Se não encontrar na lista, mantém apenas o nome para buscar depois
+       {:db (assoc-in db [:editor :connections :selected] parsed)}))))
 
 (rf/reg-event-fx
  :connections/update-runbooks
