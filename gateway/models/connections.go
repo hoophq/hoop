@@ -607,3 +607,248 @@ func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
 		Updates(map[string]any{"status": status}).
 		Error
 }
+
+// Individual field update functions for PATCH support
+
+func UpdateConnectionCommand(ctx UserContext, nameOrID string, command pq.StringArray) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	res := DB.Table(tableConnections).
+		Where("org_id = ? AND (name = ? OR id::text = ?)", ctx.GetOrgID(), nameOrID, nameOrID).
+		Updates(map[string]any{"command": command})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func UpdateConnectionType(ctx UserContext, nameOrID, connType, subType string) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	updates := map[string]any{"type": connType}
+	if subType != "" {
+		updates["subtype"] = subType
+	}
+
+	res := DB.Table(tableConnections).
+		Where("org_id = ? AND (name = ? OR id::text = ?)", ctx.GetOrgID(), nameOrID, nameOrID).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func UpdateConnectionSecrets(ctx UserContext, nameOrID string, secrets map[string]string) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	return DB.Table("private.env_vars").
+		Where("org_id = ? AND id = ?", ctx.GetOrgID(), conn.ID).
+		Updates(map[string]any{"envs": secrets}).
+		Error
+}
+
+func UpdateConnectionReviewers(ctx UserContext, nameOrID string, reviewers pq.StringArray) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// Update the plugin connection for review plugin
+		return addPluginConnection(ctx.GetOrgID(), conn.ID, plugintypes.PluginReviewName, reviewers, tx)
+	})
+}
+
+func UpdateConnectionRedactTypes(ctx UserContext, nameOrID string, redactTypes pq.StringArray) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// Update the plugin connection for dlp plugin
+		return addPluginConnection(ctx.GetOrgID(), conn.ID, plugintypes.PluginDLPName, redactTypes, tx)
+	})
+}
+
+func UpdateConnectionTags(ctx UserContext, nameOrID string, tags pq.StringArray) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	res := DB.Table(tableConnections).
+		Where("org_id = ? AND (name = ? OR id::text = ?)", ctx.GetOrgID(), nameOrID, nameOrID).
+		Updates(map[string]any{"_tags": tags})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func UpdateConnectionConnectionTags(ctx UserContext, nameOrID string, connectionTags map[string]string) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return updateBatchConnectionTags(tx, ctx.GetOrgID(), conn.ID, connectionTags)
+	})
+}
+
+func UpdateConnectionAccessModes(ctx UserContext, nameOrID, accessModeRunbooks, accessModeExec, accessModeConnect, accessSchema string) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	updates := map[string]any{
+		"access_mode_runbooks": accessModeRunbooks,
+		"access_mode_exec":     accessModeExec,
+		"access_mode_connect":  accessModeConnect,
+		"access_schema":        accessSchema,
+	}
+
+	res := DB.Table(tableConnections).
+		Where("org_id = ? AND (name = ? OR id::text = ?)", ctx.GetOrgID(), nameOrID, nameOrID).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func UpdateConnectionGuardRailRules(ctx UserContext, nameOrID string, guardRailRules pq.StringArray) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// Create a temporary connection to use existing guard rail update logic
+		tempConn := &Connection{
+			ID:             conn.ID,
+			OrgID:          ctx.GetOrgID(),
+			GuardRailRules: guardRailRules,
+		}
+		return updateGuardRailRules(tx, tempConn)
+	})
+}
+
+func UpdateConnectionJiraIssueTemplate(ctx UserContext, nameOrID, jiraIssueTemplateID string) error {
+	conn, err := GetConnectionByNameOrID(ctx, nameOrID)
+	if err != nil {
+		return err
+	}
+	if conn == nil {
+		return ErrNotFound
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		return fmt.Errorf("unable to update a connection managed by its agent")
+	}
+
+	updates := map[string]any{}
+	if jiraIssueTemplateID == "" {
+		updates["jira_issue_template_id"] = nil
+	} else {
+		updates["jira_issue_template_id"] = jiraIssueTemplateID
+	}
+
+	res := DB.Table(tableConnections).
+		Where("org_id = ? AND (name = ? OR id::text = ?)", ctx.GetOrgID(), nameOrID, nameOrID).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

@@ -184,6 +184,336 @@ func Put(c *gin.Context) {
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
+// PatchConnectionCommand
+//
+//	@Summary	Update Connection Command
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string									true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchCommandRequest	true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/command [patch]
+func PatchCommand(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchCommandRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionCommand(ctx, nameOrID, req.Command)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection command, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionType
+//
+//	@Summary	Update Connection Type
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string								true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchTypeRequest	true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/type [patch]
+func PatchType(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchTypeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionType(ctx, nameOrID, req.Type, req.SubType)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection type, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionSecrets
+//
+//	@Summary	Update Connection Secrets
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string									true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchSecretsRequest	true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/secrets [patch]
+func PatchSecrets(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchSecretsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionSecrets(ctx, nameOrID, coerceToMapString(req.Secrets))
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection secrets, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionReviewers
+//
+//	@Summary	Update Connection Reviewers
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string										true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchReviewersRequest		true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/reviewers [patch]
+func PatchReviewers(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchReviewersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionReviewers(ctx, nameOrID, req.Reviewers)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection reviewers, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionRedactTypes
+//
+//	@Summary	Update Connection Redact Types
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string											true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchRedactTypesRequest		true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/redact-types [patch]
+func PatchRedactTypes(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchRedactTypesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionRedactTypes(ctx, nameOrID, req.RedactTypes)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection redact types, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionTags
+//
+//	@Summary	Update Connection Legacy Tags
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string								true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchTagsRequest	true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/tags [patch]
+func PatchTags(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionTags(ctx, nameOrID, req.Tags)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection tags, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionConnectionTags
+//
+//	@Summary	Update Connection Tags
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string												true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchConnectionTagsRequest		true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/connection-tags [patch]
+func PatchConnectionTags(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchConnectionTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionConnectionTags(ctx, nameOrID, req.ConnectionTags)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection tags, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionAccessModes
+//
+//	@Summary	Update Connection Access Modes
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string											true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchAccessModesRequest		true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/access-modes [patch]
+func PatchAccessModes(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchAccessModesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionAccessModes(ctx, nameOrID, req.AccessModeRunbooks, req.AccessModeExec, req.AccessModeConnect, req.AccessSchema)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection access modes, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionGuardRailRules
+//
+//	@Summary	Update Connection Guard Rail Rules
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string												true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchGuardRailRulesRequest		true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/guardrail-rules [patch]
+func PatchGuardRailRules(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchGuardRailRulesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionGuardRailRules(ctx, nameOrID, req.GuardRailRules)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection guard rail rules, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
+// PatchConnectionJiraIssueTemplate
+//
+//	@Summary	Update Connection Jira Issue Template
+//	@Tags		Connections
+//	@Accept		json
+//	@Produce	json
+//	@Param		nameOrID	path	string													true	"The name or ID of the resource"
+//	@Param		request		body	openapi.ConnectionPatchJiraIssueTemplateRequest		true	"The request body resource"
+//	@Success	204
+//	@Failure	400,404,500	{object}	openapi.HTTPError
+//	@Router		/connections/{nameOrID}/jira-issue-template [patch]
+func PatchJiraIssueTemplate(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	
+	var req openapi.ConnectionPatchJiraIssueTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	
+	err := models.UpdateConnectionJiraIssueTemplate(ctx, nameOrID, req.JiraIssueTemplateID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
+	case nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	default:
+		log.Errorf("failed updating connection jira issue template, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	}
+}
+
 // DeleteConnection
 //
 //	@Summary		Delete Connection

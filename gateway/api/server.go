@@ -270,6 +270,59 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventDeleteConnection),
 		apiconnections.Delete)
+	
+	// PATCH endpoints for individual field updates
+	r.PATCH("/connections/:nameOrID/command",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchCommand)
+	r.PATCH("/connections/:nameOrID/type",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchType)
+	r.PATCH("/connections/:nameOrID/secrets",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchSecrets)
+	r.PATCH("/connections/:nameOrID/reviewers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchReviewers)
+	r.PATCH("/connections/:nameOrID/redact-types",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchRedactTypes)
+	r.PATCH("/connections/:nameOrID/tags",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchTags)
+	r.PATCH("/connections/:nameOrID/connection-tags",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchConnectionTags)
+	r.PATCH("/connections/:nameOrID/access-modes",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchAccessModes)
+	r.PATCH("/connections/:nameOrID/guardrail-rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchGuardRailRules)
+	r.PATCH("/connections/:nameOrID/jira-issue-template",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.PatchJiraIssueTemplate)
+	
 	r.GET("/connections/:nameOrID/databases",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,

@@ -1517,3 +1517,62 @@ type CustomEntityTypesEntry struct {
 	// Detection confidence of this pattern (0.01 if very noisy, 0.6-1.0 if very specific)
 	Score float64 `json:"score" binding:"required" example:"0.01"`
 }
+
+// Connection PATCH request types for individual field updates
+type ConnectionPatchCommandRequest struct {
+	// The shell command array to update
+	Command []string `json:"command" example:"/bin/bash,-c,echo hello"`
+}
+
+type ConnectionPatchTypeRequest struct {
+	// The connection type to update
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// The connection subtype to update (optional)
+	SubType string `json:"subtype" example:"postgres"`
+}
+
+type ConnectionPatchSecretsRequest struct {
+	// The secrets/environment variables to update
+	Secrets map[string]any `json:"secrets"`
+}
+
+type ConnectionPatchReviewersRequest struct {
+	// The list of reviewer groups to update
+	Reviewers []string `json:"reviewers" example:"dba-group,sre-team"`
+}
+
+type ConnectionPatchRedactTypesRequest struct {
+	// The list of redact types to update
+	RedactTypes []string `json:"redact_types" example:"EMAIL_ADDRESS,PHONE_NUMBER"`
+}
+
+type ConnectionPatchTagsRequest struct {
+	// DEPRECATED: Legacy tags to update
+	Tags []string `json:"tags" example:"prod,database"`
+}
+
+type ConnectionPatchConnectionTagsRequest struct {
+	// The connection tags to update
+	ConnectionTags map[string]string `json:"connection_tags" example:"environment:prod,tier:backend"`
+}
+
+type ConnectionPatchAccessModesRequest struct {
+	// Toggle Ad Hoc Runbooks Executions
+	AccessModeRunbooks string `json:"access_mode_runbooks" binding:"required" enums:"enabled,disabled"`
+	// Toggle Ad Hoc Executions  
+	AccessModeExec string `json:"access_mode_exec" binding:"required" enums:"enabled,disabled"`
+	// Toggle Port Forwarding
+	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
+	// Toggle Introspection Schema
+	AccessSchema string `json:"access_schema" binding:"required" enums:"enabled,disabled"`
+}
+
+type ConnectionPatchGuardRailRulesRequest struct {
+	// The guard rail rules to associate with this connection
+	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+}
+
+type ConnectionPatchJiraIssueTemplateRequest struct {
+	// The jira issue template ID to associate with this connection
+	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+}
