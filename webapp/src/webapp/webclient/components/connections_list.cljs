@@ -10,7 +10,8 @@
    [webapp.connections.constants :as connection-constants]
    [webapp.routes :as routes]
    [webapp.webclient.components.alerts-carousel :as alerts-carousel]
-   [webapp.webclient.components.database-schema :as database-schema]))
+   [webapp.webclient.components.database-schema :as database-schema]
+   [webapp.subs :as subs]))
 
 (defn connection-item [{:keys [name command type subtype status selected? on-select dark? admin?]}]
   [:> Box {:class (str "flex justify-between items-center py-3 "
@@ -77,6 +78,15 @@
                                    "Database Schema")}
             [:> IconButton {:onClick #(do
                                         (swap! show-schema? not)
+                                        ;; Se estamos abrindo o schema e teve erro antes, limpa o estado para forçar recarregamento
+                                        (when @show-schema?
+                                          (let [db-schema @(rf/subscribe [::subs/database-schema])
+                                                current-schema (get-in db-schema [:data (:name connection)])
+                                                had-error? (or (= (:status current-schema) :error)
+                                                               (= (:database-schema-status current-schema) :error))]
+                                            (when had-error?
+                                              ;; Limpa o estado para forçar novo carregamento
+                                              (rf/dispatch [:database-schema->clear-connection-schema (:name connection)]))))
                                         ;; Load the schema only when needed
                                         (when (and @show-schema? (not @schema-loaded?))
                                           (reset! schema-loaded? true)))

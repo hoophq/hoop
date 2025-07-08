@@ -330,22 +330,37 @@
         ;; Flag para controlar se já iniciamos o carregamento
         loading-started (r/atom false)
         ;; Track da connection atual para detectar mudanças
-        current-connection-name (r/atom nil)]
+        current-connection-name (r/atom nil)
+        ;; Track do último status para detectar mudanças
+        last-status (r/atom nil)]
 
-    (fn [connection]
+    (fn []
       (let [current-schema (get-in @database-schema [:data (:connection-name connection)])
-            connection-name (:connection-name connection)]
+            connection-name (:connection-name connection)
+            current-status (:status current-schema)]
 
         ;; Detectar mudança de connection e resetar estado
         (when (not= @current-connection-name connection-name)
           (reset! current-connection-name connection-name)
+          (reset! loading-started false)
+          (reset! last-status nil))
+
+        ;; Resetar loading-started se mudou de erro para nil (componente foi desmontado e remontado)
+        (when (and (= @last-status :error)
+                   (nil? current-status))
           (reset! loading-started false))
 
+        ;; Atualizar último status
+        (reset! last-status current-status)
+
         ;; Lógica simplificada de inicialização
+        ;; Permite recarregar se: não iniciou, não tem schema, ou teve erro
         (when (and connection
                    connection-name
                    (not @loading-started)
-                   (not current-schema))
+                   (or (not current-schema)
+                       (= (:status current-schema) :error)
+                       (= (:database-schema-status current-schema) :error)))
           (reset! loading-started true)
           (get-database-schema (:connection-type connection) connection))
 

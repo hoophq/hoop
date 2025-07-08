@@ -28,6 +28,12 @@
    {:db (-> db
             (assoc-in [:database-schema :data] nil))}))
 
+(rf/reg-event-db
+ :database-schema->clear-connection-schema
+ (fn [db [_ connection-name]]
+   (-> db
+       (update-in [:database-schema :data] dissoc connection-name))))
+
 (rf/reg-event-fx
  :database-schema->handle-multi-database-schema
  (fn [{:keys [db]} [_ connection]]
@@ -44,7 +50,20 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->set-multi-databases
                                                          connection
-                                                         (:databases response)]))}]]]}))
+                                                         (:databases response)]))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:database-schema->set-multi-databases-error connection error]))}]]]}))
+
+(rf/reg-event-fx
+ :database-schema->set-multi-databases-error
+ (fn [{:keys [db]} [_ connection error]]
+   {:db (-> db
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :error)
+            (assoc-in [:database-schema :data (:connection-name connection) :error]
+                      (or error "Failed to load databases")))
+    :fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to load databases"
+                                     :details (or error "Failed to load databases")}]]]}))
 
 (rf/reg-event-db
  :database-schema->set-multi-databases
@@ -59,12 +78,16 @@
  (fn [{:keys [db]} [_ connection error]]
    {:db (-> db
             ;; Mark the general status as error
-            (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
+            (assoc-in [:database-schema :data (:connection-name connection) :status] :error)
             ;; Mark the schema status as error
             (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :error)
             ;; Define the error message
             (assoc-in [:database-schema :data (:connection-name connection) :error]
-                      (or error "Schema size too large to display.")))}))
+                      (or error "Schema size too large to display.")))
+    ;; Show error in snackbar
+    :fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to load database schema"
+                                     :details (or error "Schema size too large to display.")}]]]}))
 
 ;; Events for loading tables (for single-database banks)
 (rf/reg-event-fx
@@ -95,7 +118,7 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->dynamodb-tables-loaded connection response]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection {:message error}]))}]]]}))
 
 ;; Handle DynamoDB tables
 (rf/reg-event-db
@@ -139,7 +162,7 @@
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->cloudwatch-tables-loaded connection response]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection {:message error}]))}]]]}))
 
 ;; Handle CloudWatch log groups
 (rf/reg-event-db
@@ -231,14 +254,17 @@
          (assoc-in [:database-schema :data connection-name :columns-cache cache-key] columns-map)
          (assoc-in [:database-schema :data connection-name :schema-tree schema-name table-name] columns-map)))))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :database-schema->columns-failure
- (fn [db [_ connection-name schema-name table-name error]]
+ (fn [{:keys [db]} [_ connection-name schema-name table-name error]]
    (let [cache-key (str schema-name "." table-name)]
-     (-> db
-         (update-in [:database-schema :data connection-name :loading-columns] disj cache-key)
-         (assoc-in [:database-schema :data connection-name :columns-cache cache-key]
-                   {:error (or (.-message error) "Failed to load columns")})))))
+     {:db (-> db
+              (update-in [:database-schema :data connection-name :loading-columns] disj cache-key)
+              (assoc-in [:database-schema :data connection-name :columns-cache cache-key]
+                        {:error (or (.-message error) "Failed to load columns")}))
+      :fx [[:dispatch [:show-snackbar {:level :error
+                                       :text (str "Failed to load columns for " table-name)
+                                       :details (or (.-message error) "Failed to load columns")}]]]})))
 
 (rf/reg-event-fx
  :database-schema->change-database
