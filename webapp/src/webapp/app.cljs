@@ -73,6 +73,9 @@
    [webapp.ai-data-masking.events]
    [webapp.ai-data-masking.subs]
    [webapp.ai-data-masking.create-update-form :as ai-data-masking-create-update]
+   [webapp.features.authentication.main :as authentication]
+   [webapp.features.authentication.events]
+   [webapp.features.authentication.subs]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -290,6 +293,13 @@
    [:div {:class "bg-gray-1 min-h-full h-full"}
     [routes/wrap-admin-only
      [aws-connect/main :create]]]])
+
+(defmethod routes/panels :authentication-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [:div {:class "h-full"}
+    [routes/wrap-admin-only
+     [authentication/main]]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])
