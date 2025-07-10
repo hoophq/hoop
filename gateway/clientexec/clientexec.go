@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,23 +43,25 @@ func NewTimeoutResponse(sessionID string) *Response {
 }
 
 type clientExec struct {
-	folderName string
-	wlog       *wal.Log
-	client     pb.ClientTransport
-	ctx        context.Context
-	cancelFn   context.CancelFunc
-	sessionID  string
-	orgID      string
+	folderName                string
+	wlog                      *wal.Log
+	client                    pb.ClientTransport
+	ctx                       context.Context
+	cancelFn                  context.CancelFunc
+	connectionCommandOverride []byte
+	sessionID                 string
+	orgID                     string
 }
 
 type Options struct {
-	OrgID          string
-	SessionID      string
-	ConnectionName string
-	BearerToken    string
-	Origin         string
-	Verb           string
-	UserAgent      string
+	OrgID                     string
+	SessionID                 string
+	ConnectionName            string
+	ConnectionCommandOverride []string
+	BearerToken               string
+	Origin                    string
+	Verb                      string
+	UserAgent                 string
 }
 
 type Response struct {
@@ -117,6 +120,15 @@ func New(opts *Options) (*clientExec, error) {
 		opts.Verb = pb.ClientVerbExec
 	}
 
+	var connectionCommandJson []byte
+	if len(opts.ConnectionCommandOverride) > 0 {
+		var err error
+		connectionCommandJson, err = json.Marshal(opts.ConnectionCommandOverride)
+		if err != nil {
+			return nil, fmt.Errorf("failed encoding connection command, reason=%v", err)
+		}
+	}
+
 	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, opts.OrgID, opts.SessionID)
 	wlog, err := wal.Open(folderName, wal.DefaultOptions)
 	if err != nil {
@@ -148,13 +160,15 @@ func New(opts *Options) (*clientExec, error) {
 	}
 	ctx, cancelFn := context.WithCancel(context.Background())
 	return &clientExec{
-		folderName: folderName,
-		wlog:       wlog,
-		client:     client,
-		ctx:        ctx,
-		cancelFn:   cancelFn,
-		sessionID:  opts.SessionID,
-		orgID:      opts.OrgID}, nil
+		folderName:                folderName,
+		wlog:                      wlog,
+		client:                    client,
+		ctx:                       ctx,
+		cancelFn:                  cancelFn,
+		sessionID:                 opts.SessionID,
+		orgID:                     opts.OrgID,
+		connectionCommandOverride: connectionCommandJson,
+	}, nil
 }
 
 func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, clientArgs ...string) *Response {
@@ -173,6 +187,11 @@ func (c *clientExec) Run(inputPayload []byte, clientEnvVars map[string]string, c
 		}
 		openSessionSpec[pb.SpecClientExecArgsKey] = encClientArgs
 	}
+
+	if len(c.connectionCommandOverride) > 0 {
+		openSessionSpec[pb.SpecConnectionCommand] = c.connectionCommandOverride
+	}
+
 	now := time.Now().UTC()
 	resp := c.run(inputPayload, openSessionSpec)
 	resp.ExecutionTimeMili = time.Since(now).Milliseconds()

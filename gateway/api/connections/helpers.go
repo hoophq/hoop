@@ -583,3 +583,11 @@ func parseCloudWatchTables(output string) (openapi.TablesResponse, error) {
 
 	return response, nil
 }
+
+func getConnectionCommandOverride(currentConnectionType pb.ConnectionType) []string {
+	switch currentConnectionType {
+	case pb.ConnectionTypeCloudWatch, pb.ConnectionTypeDynamoDB:
+		return []string{"bash"}
+	}
+	return nil
+}

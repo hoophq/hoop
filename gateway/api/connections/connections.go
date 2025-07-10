@@ -532,11 +532,12 @@ func ListTables(c *gin.Context) {
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		ConnectionName: conn.Name,
-		BearerToken:    getAccessToken(c),
-		UserAgent:      userAgent,
-		Verb:           pb.ClientVerbPlainExec,
+		OrgID:                     ctx.GetOrgID(),
+		ConnectionName:            conn.Name,
+		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType),
+		BearerToken:               getAccessToken(c),
+		UserAgent:                 userAgent,
+		Verb:                      pb.ClientVerbPlainExec,
 	})
 	if err != nil {
 		log.Error(err)
