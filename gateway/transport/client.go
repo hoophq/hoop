@@ -243,6 +243,19 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			}
 		}
 
+		// override the entrypoint of the connection command
+		if pctx.ClientVerb == pb.ClientVerbPlainExec {
+			connectionCommandJSON, ok := pkt.Spec[pb.SpecConnectionCommand]
+			if ok {
+				var connectionCommand []string
+				if err := json.Unmarshal(connectionCommandJSON, &connectionCommand); err != nil {
+					log.With("sid", pctx.SID).Errorf("failed decoding connection command override, err=%v", err)
+					return status.Errorf(codes.Internal, "failed decoding connection command override, err=%v", err)
+				}
+				pctx.ConnectionCommand = connectionCommand
+			}
+		}
+
 		clientArgs := clientArgsDecode(pkt.Spec)
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
