@@ -534,7 +534,7 @@ func ListTables(c *gin.Context) {
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:                     ctx.GetOrgID(),
 		ConnectionName:            conn.Name,
-		ConnectionOverrideCommand: getConnectionCommandOverride(currentConnectionType),
+		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType),
 		BearerToken:               getAccessToken(c),
 		UserAgent:                 userAgent,
 		Verb:                      pb.ClientVerbPlainExec,

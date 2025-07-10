@@ -57,7 +57,7 @@ type Options struct {
 	OrgID                     string
 	SessionID                 string
 	ConnectionName            string
-	ConnectionOverrideCommand []string
+	ConnectionCommandOverride []string
 	BearerToken               string
 	Origin                    string
 	Verb                      string
@@ -121,9 +121,9 @@ func New(opts *Options) (*clientExec, error) {
 	}
 
 	var connectionCommandJson []byte
-	if len(opts.ConnectionOverrideCommand) > 0 {
+	if len(opts.ConnectionCommandOverride) > 0 {
 		var err error
-		connectionCommandJson, err = json.Marshal(opts.ConnectionOverrideCommand)
+		connectionCommandJson, err = json.Marshal(opts.ConnectionCommandOverride)
 		if err != nil {
 			return nil, fmt.Errorf("failed encoding connection command, reason=%v", err)
 		}
