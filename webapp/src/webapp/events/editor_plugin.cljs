@@ -113,8 +113,21 @@
  :editor-plugin->run-runbook
  (fn
    [{:keys [db]} [_ {:keys [file-name params connection-name jira_fields cmdb_fields]}]]
-   (let [payload (cond-> {:file_name file-name
-                          :parameters params}
+   (let [primary-connection (get-in db [:editor :connections :selected])
+         selected-db (.getItem js/localStorage "selected-database")
+         is-dynamodb? (= (:subtype primary-connection) "dynamodb")
+         is-cloudwatch? (= (:subtype primary-connection) "cloudwatch")
+         env-vars (cond
+                    (and is-dynamodb? selected-db)
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)}
+
+                    (and is-cloudwatch? selected-db)
+                    {"envvar:LOG_GROUP_NAME" (js/btoa selected-db)}
+
+                    :else nil)
+         payload (cond-> {:file_name file-name
+                          :parameters params
+                          :env_vars env-vars}
                    jira_fields (assoc :jira_fields jira_fields)
                    cmdb_fields (assoc :cmdb_fields cmdb_fields))
          on-failure (fn [error-message error]
