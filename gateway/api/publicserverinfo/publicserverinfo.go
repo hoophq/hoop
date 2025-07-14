@@ -19,7 +19,7 @@ import (
 //	@Router			/publicserverinfo [get]
 func Get(c *gin.Context) {
 	publicServerInfo := openapi.PublicServerInfo{
-		AuthMethod: appconfig.Get().AuthMethod(),
+		AuthMethod: string(appconfig.Get().AuthMethod()),
 	}
 	c.PureJSON(http.StatusOK, publicServerInfo)
 }

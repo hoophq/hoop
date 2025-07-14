@@ -1,7 +1,6 @@
-package localauthapi
+package loginlocalapi
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -18,8 +17,8 @@ import (
 
 func Register(c *gin.Context) {
 	var user User
-	if err := c.BindJSON(&user); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -27,11 +26,12 @@ func Register(c *gin.Context) {
 	// fetch user by email
 	existingUser, err := models.GetUserByEmail(user.Email)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		log.Errorf("failed fetching user by email %s, reason=%v", user.Email, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching user by email, reason=" + err.Error()})
 		return
 	}
 	if existingUser != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
+		c.JSON(http.StatusConflict, gin.H{"message": "user already exists"})
 		return
 	}
 
@@ -41,29 +41,37 @@ func Register(c *gin.Context) {
 	org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
 	if err != nil {
 		log.Debugf("failed fetching default organization, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch default organization"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to fetch default organization"})
 		return
 	}
 	// if there is one user already, do not allow new users to be created
 	// it avoids a security issue of anyone being able to add themselves to
 	// the default organization. Instead, they should get an invitation
 	if org.TotalUsers > 0 {
-		log.Debugf("default organization already has users")
-		c.AbortWithStatus(http.StatusForbidden)
+		log.Warnf("unable to register new users, main user already exists")
+		c.JSON(http.StatusForbidden, gin.H{"message": "unable to register new users, please contact your administrator"})
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to hash password"})
+		return
+	}
+
+	tokenString, err := generateNewAccessToken(user.Email, user.Email)
+	if err != nil {
+		log.Errorf("failed generating access token, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating token"})
 		return
 	}
 
 	adminGroupName := types.GroupAdmin
 	userID := uuid.New().String()
+
 	err = models.CreateUser(models.User{
 		ID:             userID,
-		Subject:        fmt.Sprintf("local|%v", userID),
+		Subject:        user.Email,
 		OrgID:          org.ID,
 		Email:          user.Email,
 		Name:           user.Name,
@@ -74,7 +82,7 @@ func Register(c *gin.Context) {
 
 	if err != nil {
 		log.Debugf("failed creating user, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user"})
 		return
 	}
 
@@ -99,14 +107,7 @@ func Register(c *gin.Context) {
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {
 		log.Errorf("failed creating user group, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user group"})
-		return
-	}
-
-	tokenString, err := generateNewAccessToken(userID, user.Email)
-	if err != nil {
-		log.Errorf("failed generating access token, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed generating token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user group"})
 		return
 	}
 

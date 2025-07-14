@@ -56,7 +56,6 @@ deploymentAnnotations: {}
 config:
   POSTGRES_DB_URI: ''
   # API_URL: 'yourdomain.tld'
-  JWT_SECRET_KEY: null
   IDP_AUDIENCE: null
   IDP_ISSUER: null
   IDP_CLIENT_ID: null

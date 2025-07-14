@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -123,7 +124,7 @@ func ProvisionOrgAgentKey(orgID, grpcURL string) (agentID, dsn string, err error
 	default:
 		return "", "", fmt.Errorf("failed fetching for existing organization token, err=%v", err)
 	}
-	secretKey, secretKeyHash, err := dsnkeys.GenerateSecureRandomKey()
+	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey(32)
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating organization token: %v", err)
 	}

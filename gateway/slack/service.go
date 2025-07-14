@@ -13,12 +13,6 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
-type EventCallback interface {
-	// CommandSlackSubscribe should send a link to authenticate the user
-	// which will associate the slack id with the user signing in/up
-	CommandSlackSubscribe(command, slackID string) (string, error)
-}
-
 type SlackService struct {
 	apiClient     *slack.Client
 	socketClient  *socketmode.Client
@@ -28,7 +22,6 @@ type SlackService struct {
 	apiURL        string
 	ctx           context.Context
 	cancelFn      context.CancelFunc
-	callback      EventCallback
 }
 
 const (
@@ -41,7 +34,7 @@ const (
 	maxGroupsSize = 50
 )
 
-func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, callback EventCallback) (*SlackService, error) {
+func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) (*SlackService, error) {
 	apiClient := slack.New(
 		slackBotToken,
 		// slack.OptionDebug(true),
@@ -67,7 +60,7 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string, 
 		apiURL:        apiURL,
 		ctx:           ctx,
 		cancelFn:      cancelFn,
-		callback:      callback}, nil
+	}, nil
 
 }
 

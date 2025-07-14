@@ -1,4 +1,4 @@
-package loginapi
+package loginoidcapi
 
 import (
 	"github.com/gin-gonic/gin"

@@ -1,7 +1,8 @@
-package idp
+package oidcprovider
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -14,8 +15,11 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
 
@@ -24,48 +28,56 @@ const (
 	gsuiteGroupsScope = "https://www.googleapis.com/auth/cloud-identity.groups.readonly"
 )
 
-type (
-	Provider struct {
-		SecretKey             string
-		Issuer                string
-		Audience              string
-		ClientID              string
-		ClientSecret          string
-		CustomScopes          string
-		GroupsClaim           string
-		ApiURL                string
-		authWithUserInfo      bool
-		mustFetchGsuiteGroups bool
+type provider struct {
+	context context.Context
 
-		*oidc.Provider
-		oauth2.Config
-		*oidc.IDTokenVerifier
-		context.Context
-		*keyfunc.JWKS
-	}
-	UserInfoToken struct {
-		token *oauth2.Token
-	}
-	ProviderUserInfo struct {
-		Subject       string
-		Email         string
-		EmailVerified *bool
-		Groups        []string
-		Profile       string
-		Picture       string
+	issuer                   string
+	audience                 string
+	clientID                 string
+	clientSecret             string
+	customScopes             string
+	groupsClaim              string
+	mustValidateWithUserInfo bool
+	mustFetchGsuiteGroups    bool
 
-		MustSyncGroups bool
-	}
+	oidcProvider    *oidc.Provider
+	idTokenVerifier *oidc.IDTokenVerifier
+	jwks            *keyfunc.JWKS
+
+	oauth2Config oauth2.Config
+}
+
+var (
+	runtimeProviderStore = memory.New()
+	runtimeProviderKey   = "runtime-provider"
 )
 
-func NewProvider(apiURL, secretKey string) *Provider {
-	if appconfig.Get().AuthMethod() == "local" {
-		return &Provider{Context: context.Background(), ApiURL: apiURL, SecretKey: secretKey}
+type UserInfoToken struct {
+	token *oauth2.Token
+}
+
+type ProviderUserInfo struct {
+	Subject       string
+	Email         string
+	EmailVerified *bool
+	Groups        []string
+	Profile       string
+	Picture       string
+
+	MustSyncGroups       bool
+	MustSyncGsuiteGroups bool
+}
+
+func GetInstance() (*provider, error) {
+	if obj := runtimeProviderStore.Get(runtimeProviderKey); obj != nil {
+		if provider, ok := obj.(*provider); ok {
+			return provider, nil
+		}
+		return nil, fmt.Errorf("internal error, runtime provider is not of type *provider, got %T", obj)
 	}
 	ctx := context.Background()
-	provider := &Provider{
-		Context: ctx,
-		ApiURL:  apiURL,
+	provider := &provider{
+		context: ctx,
 	}
 
 	if err := setProviderConfFromEnvs(provider); err != nil {
@@ -73,69 +85,71 @@ func NewProvider(apiURL, secretKey string) *Provider {
 	}
 
 	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v",
-		provider.Issuer, provider.Audience, provider.CustomScopes, os.Getenv("IDP_URI") != "")
-	oidcProviderConfig, err := newProviderConfig(provider.Context, provider.Issuer)
+		provider.issuer, provider.audience, provider.customScopes, os.Getenv("IDP_URI") != "")
+	oidcProviderConfig, err := newProviderConfig(provider.context, provider.issuer)
 	if err != nil {
 		log.Fatal(err)
 	}
 	oidcProvider := oidcProviderConfig.NewProvider(ctx)
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
-	if provider.CustomScopes != "" {
-		scopes = addCustomScopes(scopes, provider.CustomScopes)
+	if provider.customScopes != "" {
+		scopes = addCustomScopes(scopes, provider.customScopes)
 	}
+	apiURL := appconfig.Get().ApiURL()
 	redirectURL := apiURL + "/api/callback"
 	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
 		redirectURL,
-		provider.authWithUserInfo,
+		provider.mustValidateWithUserInfo,
 		oidcProviderConfig.AuthURL,
 		oidcProviderConfig.TokenURL,
 		oidcProviderConfig.UserInfoURL,
 		oidcProviderConfig.JWKSURL,
 		oidcProviderConfig.Algorithms,
-		provider.GroupsClaim,
+		provider.groupsClaim,
 		scopes)
 
 	conf := oauth2.Config{
-		ClientID:     provider.ClientID,
-		ClientSecret: provider.ClientSecret,
+		ClientID:     provider.clientID,
+		ClientSecret: provider.clientSecret,
 		RedirectURL:  redirectURL,
 		Endpoint:     oidcProvider.Endpoint(),
 		Scopes:       scopes,
 	}
 
 	oidcConfig := &oidc.Config{
-		ClientID:             provider.ClientID,
+		ClientID:             provider.clientID,
 		SupportedSigningAlgs: oidcProviderConfig.Algorithms,
 	}
-	provider.Config = conf
-	provider.Provider = oidcProvider
-	provider.IDTokenVerifier = provider.Verifier(oidcConfig)
-	provider.JWKS = downloadJWKS(oidcProviderConfig.JWKSURL)
-	provider.mustFetchGsuiteGroups = provider.Issuer == googleIssuerURL && slices.Contains(scopes, gsuiteGroupsScope)
-	return provider
+	provider.oauth2Config = conf
+	provider.oidcProvider = oidcProvider
+	provider.idTokenVerifier = oidcProvider.Verifier(oidcConfig)
+	provider.jwks = downloadJWKS(oidcProviderConfig.JWKSURL)
+	provider.mustFetchGsuiteGroups = provider.issuer == googleIssuerURL && slices.Contains(scopes, gsuiteGroupsScope)
+	runtimeProviderStore.Set(runtimeProviderKey, provider)
+	return provider, nil
 }
 
-func setProviderConfFromEnvs(p *Provider) error {
+func setProviderConfFromEnvs(p *provider) error {
 	if idpURI := os.Getenv("IDP_URI"); idpURI != "" {
 		u, err := url.Parse(idpURI)
 		if err != nil {
 			return fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
 		}
 		if u.User != nil {
-			p.ClientID = u.User.Username()
-			p.ClientSecret, _ = u.User.Password()
+			p.clientID = u.User.Username()
+			p.clientSecret, _ = u.User.Password()
 		}
-		if p.ClientID == "" || p.ClientSecret == "" {
+		if p.clientID == "" || p.clientSecret == "" {
 			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
 		}
-		p.Audience = os.Getenv("IDP_AUDIENCE")
-		p.GroupsClaim = u.Query().Get("groupsclaim")
-		if p.GroupsClaim == "" {
+		p.audience = os.Getenv("IDP_AUDIENCE")
+		p.groupsClaim = u.Query().Get("groupsclaim")
+		if p.groupsClaim == "" {
 			// keep default value
-			p.GroupsClaim = proto.CustomClaimGroups
+			p.groupsClaim = proto.CustomClaimGroups
 		}
-		p.CustomScopes = u.Query().Get("scopes")
-		p.authWithUserInfo = u.Query().Get("_userinfo") == "1"
+		p.customScopes = u.Query().Get("scopes")
+		p.mustValidateWithUserInfo = u.Query().Get("_userinfo") == "1"
 		qs := u.Query()
 		qs.Del("scopes")
 		qs.Del("_userinfo")
@@ -145,7 +159,7 @@ func setProviderConfFromEnvs(p *Provider) error {
 			encQueryStr = "?" + encQueryStr
 		}
 		// scheme://host:port/path?query#fragment
-		p.Issuer = fmt.Sprintf("%s://%s%s%s",
+		p.issuer = fmt.Sprintf("%s://%s%s%s",
 			u.Scheme,
 			u.Host,
 			u.Path,
@@ -153,22 +167,22 @@ func setProviderConfFromEnvs(p *Provider) error {
 		)
 		return nil
 	}
-	p.Issuer = os.Getenv("IDP_ISSUER")
-	p.ClientID = os.Getenv("IDP_CLIENT_ID")
-	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
-	p.Audience = os.Getenv("IDP_AUDIENCE")
-	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
-	p.GroupsClaim = os.Getenv("IDP_GROUPS_CLAIM")
-	if p.GroupsClaim == "" {
-		p.GroupsClaim = proto.CustomClaimGroups
+	p.issuer = os.Getenv("IDP_ISSUER")
+	p.clientID = os.Getenv("IDP_CLIENT_ID")
+	p.clientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	p.audience = os.Getenv("IDP_AUDIENCE")
+	p.customScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	p.groupsClaim = os.Getenv("IDP_GROUPS_CLAIM")
+	if p.groupsClaim == "" {
+		p.groupsClaim = proto.CustomClaimGroups
 	}
 
-	issuerURL, err := url.Parse(p.Issuer)
+	issuerURL, err := url.Parse(p.issuer)
 	if err != nil {
 		return fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
 	}
-	p.authWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
-	if p.ClientSecret == "" || p.ClientID == "" {
+	p.mustValidateWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
+	if p.clientSecret == "" || p.clientID == "" {
 		return nil
 	}
 	qs := issuerURL.Query()
@@ -178,7 +192,7 @@ func setProviderConfFromEnvs(p *Provider) error {
 		encQueryStr = "?" + encQueryStr
 	}
 	// scheme://host:port/path?query#fragment
-	p.Issuer = fmt.Sprintf("%s://%s%s%s",
+	p.issuer = fmt.Sprintf("%s://%s%s%s",
 		issuerURL.Scheme,
 		issuerURL.Host,
 		issuerURL.Path,
@@ -214,44 +228,64 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 	return jwks
 }
 
-func (p *Provider) VerifyIDToken(token *oauth2.Token) (*oidc.IDToken, error) {
+func (p *provider) GetAudience() string { return p.audience }
+func (p *provider) GetAuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	return p.oauth2Config.AuthCodeURL(state, opts...)
+}
+
+func (p *provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo idptypes.ProviderUserInfo, err error) {
+	token, err = p.oauth2Config.Exchange(context.Background(), code)
+	if err != nil {
+		return nil, uinfo, fmt.Errorf("failed exchange authorization code, reason=%v", err)
+	}
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return nil, errors.New("no id_token field in oauth2 token")
+		return nil, uinfo, errors.New("no id_token field in oauth2 token")
+	}
+	var idToken *oidc.IDToken
+	idToken, err = p.idTokenVerifier.Verify(p.context, rawIDToken)
+	if err != nil {
+		return nil, uinfo, fmt.Errorf("failed verifying id_token, reason=%v", err)
 	}
 
-	return p.Verify(p.Context, rawIDToken)
+	idTokenClaims := map[string]any{}
+	if err := idToken.Claims(&idTokenClaims); err != nil {
+		return nil, uinfo, fmt.Errorf("failed extracting id token claims, reason=%v", err)
+	}
+
+	debugClaims(idToken.Subject, idTokenClaims, token)
+
+	uinfo = p.parseUserInfo(idTokenClaims)
+
+	// It's a best effort to sync groups, in case it fails just print the error
+	groups, syncGsuiteGroups, err := p.fetchGsuiteGroups(token.AccessToken, uinfo.Email)
+	if err != nil {
+		log.Errorf("unable to synchronize groups from Google: %v", err)
+	}
+
+	// overwrite the groups and indicate it should sync groups
+	if syncGsuiteGroups {
+		uinfo.Groups = groups
+		uinfo.MustSyncGroups = true
+		uinfo.MustSyncGsuiteGroups = true
+	}
+
+	// uinfo = p.ParseUserInfo(idTokenClaims, token.AccessToken)
+	log.With("issuer", idToken.Issuer, "subject", uinfo.Subject, "email", uinfo.Email, "email-verified", uinfo.EmailVerified).
+		Infof("token exchanged (oauth2) and id_token verified")
+
+	// overwrite the groups and indicate it should sync groups
+	if syncGsuiteGroups {
+		uinfo.Groups = groups
+		uinfo.MustSyncGroups = true
+		uinfo.MustSyncGsuiteGroups = true
+	}
+	return token, uinfo, err
 }
 
 // VerifyAccessTokenWithUserInfo verify the access token by querying the OIDC user info endpoint
-func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*ProviderUserInfo, error) {
+func (p *provider) VerifyAccessTokenWithUserInfo(accessToken string) (*idptypes.ProviderUserInfo, error) {
 	return p.userInfoEndpoint(accessToken)
-}
-
-func (p *Provider) HasSecretKey() bool { return p.SecretKey != "" }
-
-// VerifyAccessTokenHS256Alg verify the access token using a symmetric secret (HS256)
-func (p *Provider) VerifyAccessTokenHS256Alg(accessToken string) (string, error) {
-	if p.SecretKey == "" {
-		return "", fmt.Errorf("jwt secret token is not set")
-	}
-	token, err := jwt.Parse(accessToken, func(token *jwt.Token) (any, error) {
-		return []byte(p.SecretKey), nil
-	})
-	if err != nil {
-		return "", err
-	}
-	if !token.Valid {
-		return "", fmt.Errorf("parse error, token invalid")
-	}
-	if claims, ok := token.Claims.(jwt.MapClaims); ok {
-		subject, ok := claims["sub"].(string)
-		if !ok || subject == "" {
-			return "", fmt.Errorf("'sub' not found or has an empty value")
-		}
-		return subject, nil
-	}
-	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
 // VerifyAccessToken validate the access token against the user info endpoint (OIDC) if it's an opaque token.
@@ -264,9 +298,9 @@ func (p *Provider) VerifyAccessTokenHS256Alg(accessToken string) (string, error)
 // When the "gty" claim is present and set to "client-credentials" it will accept the token as valid.
 // Such claim is not part of any specification and it's present when using Auth0.
 // In cases of access tokens obtained through grants where no resource owner is involved, such as the client credentials grant,
-func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
+func (p *provider) VerifyAccessToken(accessToken string) (string, error) {
 	isBearerToken := len(strings.Split(accessToken, ".")) != 3
-	if isBearerToken || p.authWithUserInfo {
+	if isBearerToken || p.mustValidateWithUserInfo {
 		uinfo, err := p.userInfoEndpoint(accessToken)
 		if err != nil {
 			return "", err
@@ -274,7 +308,7 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 		return uinfo.Subject, nil
 	}
 
-	token, err := jwt.Parse(accessToken, p.JWKS.Keyfunc)
+	token, err := jwt.Parse(accessToken, p.jwks.Keyfunc)
 	if err != nil {
 		return "", err
 	}
@@ -296,7 +330,7 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
-func (p *Provider) validateAuthorizedParty(claims jwt.MapClaims) error {
+func (p *provider) validateAuthorizedParty(claims jwt.MapClaims) error {
 	// Auth0 specific claim, not part of the spec
 	// do not check the authorized party in this case
 	gty := fmt.Sprintf("%v", claims["gty"])
@@ -309,14 +343,14 @@ func (p *Provider) validateAuthorizedParty(claims jwt.MapClaims) error {
 		authorizedParty, hasField = claims["client_id"].(string)
 	}
 
-	if hasField && authorizedParty != p.ClientID {
+	if hasField && authorizedParty != p.clientID {
 		return fmt.Errorf("it's not an authorized party: %v", authorizedParty)
 	}
 	return nil
 }
 
-func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, error) {
-	user, err := p.Provider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
+func (p *provider) userInfoEndpoint(accessToken string) (*idptypes.ProviderUserInfo, error) {
+	user, err := p.oidcProvider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
@@ -327,7 +361,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 	if err = user.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed verifying user info claims, err=%v", err)
 	}
-	uinfo := p.ParseUserInfo(claims, accessToken, p.GroupsClaim)
+	uinfo := p.parseUserInfo(claims)
 	uinfo.Email = strings.ToLower(user.Email)
 	uinfo.Subject = user.Subject
 	uinfo.EmailVerified = &user.EmailVerified
@@ -338,7 +372,7 @@ func (p *Provider) userInfoEndpoint(accessToken string) (*ProviderUserInfo, erro
 }
 
 // FetchGroups parses user information from the provided token claims.
-func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, groupsClaimName string) (u ProviderUserInfo) {
+func (p *provider) parseUserInfo(idTokenClaims map[string]any) (u idptypes.ProviderUserInfo) {
 	email, _ := idTokenClaims["email"].(string)
 	email = strings.ToLower(email)
 	if profile, ok := idTokenClaims["name"].(string); ok {
@@ -350,7 +384,7 @@ func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, grou
 	}
 	u.Picture = profilePicture
 	u.Email = email
-	switch groupsClaim := idTokenClaims[groupsClaimName].(type) {
+	switch groupsClaim := idTokenClaims[p.groupsClaim].(type) {
 	case string:
 		u.MustSyncGroups = true
 		if groupsClaim != "" {
@@ -373,3 +407,24 @@ func (p *Provider) ParseUserInfo(idTokenClaims map[string]any, accessToken, grou
 }
 
 func (u *UserInfoToken) Token() (*oauth2.Token, error) { return u.token, nil }
+
+func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Token) {
+	logClaims := []any{}
+	for claimKey, claimVal := range claims {
+		val := fmt.Sprintf("%v", claimVal)
+		if len(val) > 200 {
+			logClaims = append(logClaims, claimKey, val[:200]+fmt.Sprintf(" (... %v)", len(val)-200))
+			continue
+		}
+		logClaims = append(logClaims, claimKey, val)
+	}
+	var isJWT bool
+	var jwtHeader []byte
+	if parts := strings.Split(accessToken.AccessToken, "."); len(parts) == 3 {
+		isJWT = true
+		jwtHeader, _ = base64.RawStdEncoding.DecodeString(parts[0])
+	}
+	log.With(logClaims...).Infof("jwt-access-token=%v, jwt-header=%v, id_token claims=%v, subject=%s, admingroup=%q",
+		isJWT, string(jwtHeader),
+		len(claims), subject, types.GroupAdmin)
+}

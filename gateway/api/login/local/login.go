@@ -1,10 +1,13 @@
-package localauthapi
+package loginlocalapi
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	localprovider "github.com/hoophq/hoop/gateway/idp/local"
 	"github.com/hoophq/hoop/gateway/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -39,7 +42,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	tokenString, err := generateNewAccessToken(dbUser.ID, dbUser.Email)
+	tokenString, err := generateNewAccessToken(dbUser.Email, dbUser.Email)
 	if err != nil {
 		log.Errorf("failed signing token for %s, reason=%v", user.Email, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to generate token"})
@@ -50,4 +53,12 @@ func Login(c *gin.Context) {
 	c.Header("Token", tokenString)
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func generateNewAccessToken(subject, email string) (string, error) {
+	instance, err := localprovider.GetInstance()
+	if err != nil {
+		return "", fmt.Errorf("failed to get local provider instance: %v", err)
+	}
+	return instance.NewAccessToken(subject, email, time.Hour*168) // 168 hours = 7 days
 }

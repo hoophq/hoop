@@ -32,7 +32,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		log.With("sid", sid).Infof("approver is not allowed")
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "You are not registered. "+
 			"Visit the link to associate your Slack user with Hoop.\n"+
-			"%s/slack/user/new/%s", p.idpProvider.ApiURL, ev.msg.SlackID)
+			"%s/slack/user/new/%s", p.apiURL, ev.msg.SlackID)
 		return
 	}
 

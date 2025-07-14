@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -107,14 +108,22 @@ func configureHostsPrompt(conf *proxyconfig.Config) {
 }
 
 func doLogin(apiURL, tlsCA string) (string, error) {
-	accessToken, err := performLoginWithBasicAuth(apiURL, tlsCA)
+	authMethod, err := fetchAuthMethod(apiURL, tlsCA)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed fetching auth method, reason=%v", err)
 	}
+	var accessToken string
+	if authMethod == string(idptypes.ProviderTypeLocal) {
+		accessToken, err = performLoginWithBasicAuth(apiURL, tlsCA)
+		if err != nil {
+			return "", err
+		}
+	}
+
 	if accessToken != "" {
 		return accessToken, nil
 	}
-	loginUrl, err := requestForUrl(apiURL, tlsCA)
+	loginUrl, err := requestForUrl(authMethod, apiURL, tlsCA)
 	if err != nil {
 		return "", err
 	}
@@ -169,9 +178,12 @@ func doLogin(apiURL, tlsCA string) (string, error) {
 	}
 }
 
-func requestForUrl(apiURL, tlsCA string) (string, error) {
+func requestForUrl(authMethod, apiURL, tlsCA string) (string, error) {
 	c := httpclient.NewHttpClient(tlsCA)
 	url := fmt.Sprintf("%s/api/login", apiURL)
+	if authMethod == string(idptypes.ProviderTypeSAML) {
+		url = fmt.Sprintf("%s/api/saml/login", apiURL)
+	}
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -200,8 +212,7 @@ func requestForUrl(apiURL, tlsCA string) (string, error) {
 	return "", fmt.Errorf("failed authenticating, status=%v, response=%v", resp.StatusCode, l.Message)
 }
 
-// performLoginWithBasicAuth prompt for username and password if the gateway authentication method is local
-func performLoginWithBasicAuth(apiURL, tlsCA string) (string, error) {
+func fetchAuthMethod(apiURL, tlsCA string) (string, error) {
 	c := httpclient.NewHttpClient(tlsCA)
 	url := fmt.Sprintf("%s/api/publicserverinfo", apiURL)
 	req, err := http.NewRequest("GET", url, nil)
@@ -221,10 +232,11 @@ func performLoginWithBasicAuth(apiURL, tlsCA string) (string, error) {
 			contentType, resp.StatusCode, err)
 	}
 	log.Debugf("public server info endpoint response: %v", publicInfo)
-	authMethod := fmt.Sprintf("%v", publicInfo["auth_method"])
-	if authMethod != "local" {
-		return "", nil
-	}
+	return fmt.Sprintf("%v", publicInfo["auth_method"]), nil
+}
+
+// performLoginWithBasicAuth prompt for username and password if the gateway authentication method is local
+func performLoginWithBasicAuth(apiURL, tlsCA string) (string, error) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Fprintf(os.Stderr, "Enter Email: ")
 	username, err := reader.ReadString('\n')

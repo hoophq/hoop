@@ -30,7 +30,7 @@ func contextTracerMiddleware() gin.HandlerFunc {
 			attribute.String("hoop.gateway.environment", environment),
 			attribute.String("hoop.gateway.grpc-url", grpcURL),
 			attribute.String("hoop.gateway.tenancy-type", tenancyType),
-			attribute.String("hoop.gateway.auth-method", authMethod),
+			attribute.String("hoop.gateway.auth-method", string(authMethod)),
 			attribute.String("hoop.gateway.platform", vs.Platform),
 			attribute.String("hoop.gateway.version", vs.Version),
 		)

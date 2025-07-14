@@ -18,7 +18,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
-	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -58,7 +57,6 @@ func Run() {
 	}
 
 	apiURL := appconfig.Get().FullApiURL()
-	idProvider := idp.NewProvider(apiURL, string(appconfig.Get().JWTSecretKey()))
 	grpcURL := appconfig.Get().GrpcURL()
 
 	if err := models.InitDatabaseConnection(); err != nil {
@@ -95,12 +93,10 @@ func Run() {
 	g := &transport.Server{
 		TLSConfig:   tlsConfig,
 		ApiHostname: appconfig.Get().ApiHostname(),
-		IDProvider:  idProvider,
 		AppConfig:   appconfig.Get(),
 	}
 	a := &api.Api{
 		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
-		IDProvider:          idProvider,
 		GrpcURL:             grpcURL,
 		TLSConfig:           tlsConfig,
 	}
@@ -111,7 +107,7 @@ func Run() {
 		pluginsdlp.New(),
 		pluginsrbac.New(),
 		pluginswebhooks.New(),
-		pluginsslack.New(idProvider, g.ReleaseConnectionOnReview),
+		pluginsslack.New(g.ReleaseConnectionOnReview),
 	}
 
 	for _, p := range plugintypes.RegisteredPlugins {

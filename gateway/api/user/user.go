@@ -81,7 +81,7 @@ func Create(c *gin.Context) {
 			return
 		}
 		hashedPassword = string(hashedPwdBytes)
-		userSubject = fmt.Sprintf("local|%v", newUser.ID)
+		userSubject = newUser.Email
 	}
 
 	modelsUser := models.User{
@@ -103,7 +103,7 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	if newUser.Groups != nil && len(newUser.Groups) > 0 {
+	if len(newUser.Groups) > 0 {
 		var userGroups []models.UserGroup
 		for i := range newUser.Groups {
 			userGroups = append(userGroups, models.UserGroup{

@@ -7,6 +7,7 @@ import (
 
 	"github.com/hoophq/hoop/common/agentcontroller"
 	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -145,7 +146,7 @@ func listAgents(client *apiClient) (map[string]*agentcontroller.Deployment, erro
 
 func generateDsnKey(gatewayGrpcURL, agentName string) (dsnKey, secretKeyHash string, err error) {
 	var secretKey string
-	secretKey, secretKeyHash, err = dsnkeys.GenerateSecureRandomKey()
+	secretKey, secretKeyHash, err = keys.GenerateSecureRandomKey(32)
 	if err != nil {
 		return
 	}

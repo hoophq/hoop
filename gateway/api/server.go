@@ -25,8 +25,9 @@ import (
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
 	apijiraintegration "github.com/hoophq/hoop/gateway/api/integrations"
 	awsintegration "github.com/hoophq/hoop/gateway/api/integrations/aws"
-	localauthapi "github.com/hoophq/hoop/gateway/api/localauth"
-	loginapi "github.com/hoophq/hoop/gateway/api/login"
+	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
+	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
+	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apipluginconnections "github.com/hoophq/hoop/gateway/api/pluginconnections"
@@ -36,6 +37,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
+	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
@@ -43,12 +45,10 @@ import (
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/security/idp"
 )
 
 type Api struct {
 	ReleaseConnectionFn reviewapi.TransportReleaseConnectionFunc
-	IDProvider          *idp.Provider
 	GrpcURL             string
 	TLSConfig           *tls.Config
 	logger              *zap.Logger
@@ -138,7 +138,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 			Repanic: true,
 		}))
 	}
-	router := apiroutes.New(rg, a.IDProvider, appconfig.Get().GrpcURL(), appconfig.Get().ApiKey())
+	router := apiroutes.New(rg)
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
 
@@ -160,7 +160,8 @@ func (a *Api) StartAPI(sentryInit bool) {
 
 func (api *Api) buildRoutes(r *apiroutes.Router) {
 	reviewHandler := reviewapi.NewHandler(api.ReleaseConnectionFn)
-	loginHandler := loginapi.New(api.IDProvider)
+	loginOidcApiHandler := loginoidcapi.New()
+	loginSamlApiHandler := loginsamlapi.New()
 
 	r.GET("/healthz", apihealthz.LivenessHandler())
 	r.GET("/openapiv2.json", openapi.Handler)
@@ -172,15 +173,20 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiserverinfo.New(api.GrpcURL).Get)
 
-	r.GET("/login", loginHandler.Login)
-	r.GET("/callback", loginHandler.LoginCallback)
+	// Ouath2 / OIDC
+	r.GET("/login", loginOidcApiHandler.Login)
+	r.GET("/callback", loginOidcApiHandler.LoginCallback)
+
+	// SAML 2.0
+	r.GET("/saml/login", loginSamlApiHandler.SamlLogin)
+	r.POST("/saml/callback", loginSamlApiHandler.SamlLoginCallback)
 
 	r.POST("/localauth/register",
 		api.TrackRequest(analytics.EventSignup),
-		localauthapi.Register)
+		loginlocalapi.Register)
 	r.POST("/localauth/login",
 		api.TrackRequest(analytics.EventLogin),
-		localauthapi.Login)
+		loginlocalapi.Login)
 
 	r.POST("/signup",
 		api.TrackRequest(analytics.EventSignup),
@@ -666,4 +672,15 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apidatamasking.Delete)
+
+	r.GET("/serverconfig",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.Get,
+	)
+	r.PUT("/serverconfig",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.Put,
+	)
 }

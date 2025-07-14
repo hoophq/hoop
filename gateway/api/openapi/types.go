@@ -34,10 +34,9 @@ type (
 )
 
 const (
-	StatusActive    StatusType = "active"
-	StatusInactive  StatusType = "inactive"
-	StatusReviewing StatusType = "reviewing"
-	StatusInvited   StatusType = "invited"
+	StatusActive   StatusType = "active"
+	StatusInactive StatusType = "inactive"
+	StatusInvited  StatusType = "invited"
 
 	// RoleAdminType will grant access to all routes.
 	RoleAdminType RoleType = "admin"
@@ -1516,4 +1515,10 @@ type CustomEntityTypesEntry struct {
 	DenyList []string `json:"deny_list" example:"Mr,Mr.,Mister"`
 	// Detection confidence of this pattern (0.01 if very noisy, 0.6-1.0 if very specific)
 	Score float64 `json:"score" binding:"required" example:"0.01"`
+}
+
+type ServerConfig struct {
+	ProductAnalytics      string `json:"product_analytics" enum:"active,inactive" example:"active"`
+	WebappUsersManagement string `json:"webapp_users_management" enum:"active,inactive" example:"active"`
+	GrpcServerURL         string `json:"grpc_server_url" example:"grpcs://hoop.domain.tld:8443"`
 }
