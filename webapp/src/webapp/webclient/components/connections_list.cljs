@@ -56,8 +56,19 @@
 (defn selected-connection []
   (let [show-schema? (r/atom true)
         ;; State to avoid premature loading of the heavy component
-        schema-loaded? (r/atom true)]
-    (fn [connection dark-mode? admin? show-tree?]
+        schema-loaded? (r/atom true)
+        ;; Track the current connection to detect changes
+        current-connection-name (r/atom nil)]
+    (fn [connection dark-mode? admin?]
+      ;; Check if connection changed and if new connection doesn't support schema
+      (when (not= @current-connection-name (:name connection))
+        (reset! current-connection-name (:name connection))
+        ;; Close schema panel if new connection doesn't support it
+        (when (not (or (= (:type connection) "database")
+                       (= (:subtype connection) "dynamodb")
+                       (= (:subtype connection) "cloudwatch")))
+          (reset! show-schema? false)))
+
       ;; Detectar erro e fechar automaticamente
       (let [db-schema @(rf/subscribe [::subs/database-schema])
             current-schema (get-in db-schema [:data (:name connection)])
@@ -79,7 +90,9 @@
                 :dark? dark-mode?
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
-         (when show-tree?
+         (when (or (= (:type connection) "database")
+                   (= (:subtype connection) "dynamodb")
+                   (= (:subtype connection) "cloudwatch"))
            [:> Tooltip {:content (if (= (:subtype connection) "cloudwatch")
                                    "Log Groups"
                                    "Database Schema")}
@@ -106,23 +119,28 @@
              [:> Settings2 {:size 16}]]])]]
 
        ;; Tree view of database schema with lazy loading
-       (when (and @show-schema?
-                  (or (= (:type connection) "database")
-                      (= (:subtype connection) "dynamodb")
-                      (= (:subtype connection) "cloudwatch"))
-                  (not= (:access_schema connection) "disabled"))
+       (when @show-schema?
          [:> Box {:class "bg-[--gray-a4] px-2 py-3"}
-          ;; Lazy loading of the schema component
-          (if @schema-loaded?
-            [database-schema/main
-             (create-connection-obj
-              (:name connection)
-              (:subtype connection)
-              (:icon_name connection)
-              (:type connection))]
-            ;; Placeholder while we load the real component
-            [:div {:class "flex items-center justify-center p-4 text-sm text-gray-400"}
-             "Loading database schema..."])])])))
+          ;; Check if access_schema is disabled
+          (cond
+            (= (:access_schema connection) "disabled")
+            [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
+             [:> Text {:size "2" :mb "2" :class "text-[--gray-1]"} "Database Schema Disabled"]
+             [:> Text {:size "1" :class "text-[--gray-1]"}
+              "Database schema access is disabled for this connection. Please ask an admin to enable it."]]
+
+            ;; Show the actual schema component
+            :else
+            (if @schema-loaded?
+              [database-schema/main
+               (create-connection-obj
+                (:name connection)
+                (:subtype connection)
+                (:icon_name connection)
+                (:type connection))]
+              ;; Placeholder while we load the real component
+              [:div {:class "flex items-center justify-center p-4 text-sm text-gray-400"}
+               "Loading database schema..."]))])])))
 
 (defn connections-list [connections selected dark-mode? admin?]
   (let [available-connections (if selected
@@ -205,7 +223,7 @@
     ;; Inicializa as conexões e carrega a seleção persistida na ordem correta
     (rf/dispatch [:connections/initialize-with-persistence])
 
-    (fn [dark-mode? show-tree?]
+    (fn [dark-mode?]
       (let [admin? (-> @user :data :is_admin)]
         [:> Box {:class "h-full flex flex-col"}
          ;; Área principal com scroll para as conexões
@@ -215,7 +233,7 @@
             :error [error-state @error]
             :success [:<>
                       (when @selected
-                        [selected-connection @selected dark-mode? admin? show-tree?])
+                        [selected-connection @selected dark-mode? admin?])
                       [connections-list @connections @selected dark-mode? admin?]]
             [loading-state])]
 
