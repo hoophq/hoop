@@ -1,12 +1,10 @@
-package loginapi
+package loginoidcapi
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -19,8 +17,9 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
@@ -28,10 +27,27 @@ import (
 var errUserInactive = fmt.Errorf("user is inactive")
 
 type handler struct {
-	idpProv *idp.Provider
+	// oidc   idp.OidcVerifier
+	// saml   idp.SamlVerifier
+	apiURL string
 }
 
-func New(provider *idp.Provider) *handler { return &handler{idpProv: provider} }
+func New() *handler {
+	return &handler{apiURL: appconfig.Get().ApiURL()}
+}
+
+func (h *handler) loadOidcVerifier(c *gin.Context) (idp.OidcVerifier, bool) {
+	oidcVerifier, err := idp.NewOidcVerifierProvider()
+	switch err {
+	case idp.ErrUnknownIdpProvider:
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "OIDC provider not configured"})
+	case nil:
+	default:
+		log.Errorf("failed to load IDP provider: %v", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error, failed loading IDP provider"})
+	}
+	return oidcVerifier, err == nil
+}
 
 // Login
 //
@@ -46,6 +62,11 @@ func New(provider *idp.Provider) *handler { return &handler{idpProv: provider} }
 //	@Failure		400,409,422,500	{object}	openapi.HTTPError
 //	@Router			/login [get]
 func (h *handler) Login(c *gin.Context) {
+	oidc, ok := h.loadOidcVerifier(c)
+	if !ok {
+		return
+	}
+
 	redirectURL, err := parseRedirectURL(c)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -67,28 +88,14 @@ func (h *handler) Login(c *gin.Context) {
 	}
 
 	var params = []oauth2.AuthCodeOption{}
-	if h.idpProv.Audience != "" {
-		params = append(params, oauth2.SetAuthURLParam("audience", h.idpProv.Audience))
+	if audience := oidc.GetAudience(); audience != "" {
+		params = append(params, oauth2.SetAuthURLParam("audience", audience))
 	}
 	if auth0Params := h.parseAuth0QueryParams(c); len(auth0Params) > 0 {
 		params = append(params, auth0Params...)
 	}
-	url := h.idpProv.AuthCodeURL(stateUID, params...)
+	url := oidc.GetAuthCodeURL(stateUID, params...)
 	c.JSON(http.StatusOK, openapi.Login{URL: url})
-}
-
-// parseRedirectURL validates the redirect query attribute to match against the API_URL env
-// or the default localhost address
-func parseRedirectURL(c *gin.Context) (string, error) {
-	redirectURL := c.Query("redirect")
-	if redirectURL != "" {
-		u, _ := url.Parse(redirectURL)
-		if u == nil || u.Hostname() != appconfig.Get().ApiHostname() {
-			return "", fmt.Errorf("redirect attribute does not match with api url")
-		}
-		return redirectURL, nil
-	}
-	return fmt.Sprintf("http://%s/callback", proto.ClientLoginCallbackAddress), nil
 }
 
 // LoginCallback
@@ -103,6 +110,11 @@ func parseRedirectURL(c *gin.Context) (string, error) {
 //	@Failure				400,409,422,500	{object}	openapi.HTTPError
 //	@Router					/callback [get]
 func (h *handler) LoginCallback(c *gin.Context) {
+	oidc, ok := h.loadOidcVerifier(c)
+	if !ok {
+		return
+	}
+
 	// https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
 	errorMsg := c.Query("error")
 	if errorMsg != "" {
@@ -131,14 +143,19 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	// update the login state when this method returns
 	defer updateLoginState(login)
 	log.With("state", stateUUID).Debugf("login record found, verifying ID Token")
-	token, uinfo, err := h.verifyIDToken(code)
+	token, uinfo, err := oidc.VerifyIDTokenForCode(code)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed verifying ID Token, reason=%v", err)
 		log.Error(login.Outcome)
 		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
 		return
 	}
-	subject, err := h.idpProv.VerifyAccessToken(token.AccessToken)
+
+	log.With("subject", uinfo.Subject, "email", uinfo.Email, "email-verified", uinfo.EmailVerified).
+		Infof("obtained user information, sync-groups=%v, sync-gsuite=%v, groups=%v, fetch-gsuite-err=%v",
+			uinfo.MustSyncGroups, uinfo.MustSyncGsuiteGroups, len(uinfo.Groups), err != nil)
+
+	subject, err := oidc.VerifyAccessToken(token.AccessToken)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed verifiying access token, reason=%v", err)
 		log.Warn(login.Outcome)
@@ -236,7 +253,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
 }
 
-func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
+func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (isNewUser bool, err error) {
 	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)
 	if err != nil {
 		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
@@ -307,7 +324,7 @@ func registerMultiTenantUser(uinfo idp.ProviderUserInfo, slackID string) (isNewU
 	return true, nil
 }
 
-func syncSingleTenantUser(ctx *models.Context, uinfo idp.ProviderUserInfo) (isNewUser bool, err error) {
+func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) (isNewUser bool, err error) {
 	// if the user exists, sync the groups and the slack id
 	userGroups := ctx.UserGroups
 	if uinfo.MustSyncGroups {
@@ -463,68 +480,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idp.ProviderUserInfo) (isNe
 	return true, nil
 }
 
-func (h *handler) verifyIDToken(code string) (token *oauth2.Token, uinfo idp.ProviderUserInfo, err error) {
-	token, err = h.idpProv.Exchange(h.idpProv.Context, code)
-	if err != nil {
-		return nil, uinfo, fmt.Errorf("failed exchange authorization code, reason=%v", err)
-	}
-
-	idToken, err := h.idpProv.VerifyIDToken(token)
-	if err != nil {
-		return nil, uinfo, fmt.Errorf("failed veryfing oidc ID Token, reason=%v", err)
-	}
-	log.With("issuer", idToken.Issuer, "subject", idToken.Subject).
-		Infof("token exchanged")
-
-	idTokenClaims := map[string]any{}
-	if err := idToken.Claims(&idTokenClaims); err != nil {
-		return nil, uinfo, fmt.Errorf("failed extracting id token claims, reason=%v", err)
-	}
-	debugClaims(idToken.Subject, idTokenClaims, token)
-	uinfo = h.idpProv.ParseUserInfo(idTokenClaims, token.AccessToken, h.idpProv.GroupsClaim)
-	groups, syncGsuiteGroups, err := h.idpProv.FetchGsuiteGroups(token.AccessToken, uinfo.Email)
-
-	// overwrite the groups and indicate it should sync groups
-	if syncGsuiteGroups {
-		uinfo.Groups = groups
-		uinfo.MustSyncGroups = true
-	}
-
-	log.With("issuer", idToken.Issuer, "email", uinfo.Email).
-		Infof("obtained user information, sync-groups=%v, sync-gsuite=%v, groups=%v, fetch-gsuite-err=%v",
-			uinfo.MustSyncGroups, syncGsuiteGroups, len(uinfo.Groups), err != nil)
-	// It's a best effort to sync groups, in case it fails just print the error
-	if err != nil {
-		log.Errorf("unable to synchronize groups from Google: %v", err)
-	}
-	return token, uinfo, nil
-}
-
 func updateLoginState(login *models.Login) {
 	if err := models.UpdateLoginOutcome(login.ID, login.Outcome); err != nil {
 		log.Warnf("failed updating login state, reason=%v", err)
 	}
-}
-
-func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Token) {
-	logClaims := []any{}
-	for claimKey, claimVal := range claims {
-		val := fmt.Sprintf("%v", claimVal)
-		if len(val) > 200 {
-			logClaims = append(logClaims, claimKey, val[:200]+fmt.Sprintf(" (... %v)", len(val)-200))
-			continue
-		}
-		logClaims = append(logClaims, claimKey, val)
-	}
-	var isJWT bool
-	var jwtHeader []byte
-	if parts := strings.Split(accessToken.AccessToken, "."); len(parts) == 3 {
-		isJWT = true
-		jwtHeader, _ = base64.RawStdEncoding.DecodeString(parts[0])
-	}
-	log.With(logClaims...).Infof("jwt-access-token=%v, jwt-header=%v, id_token claims=%v, subject=%s, admingroup=%q",
-		isJWT, string(jwtHeader),
-		len(claims), subject, types.GroupAdmin)
 }
 
 // analyticsTrack tracks the user signup/login event
@@ -544,7 +503,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 			"name":         ctx.UserName,
-			"api-url":      h.idpProv.ApiURL,
+			"api-url":      h.apiURL,
 		})
 		return
 	}
@@ -555,7 +514,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		UserName:   ctx.UserName,
 		UserEmail:  ctx.UserEmail,
 		UserGroups: ctx.UserGroups,
-		ApiURL:     h.idpProv.ApiURL,
+		ApiURL:     h.apiURL,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
@@ -566,7 +525,21 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 			"user-agent":   userAgent,
 			"license-type": licenseType,
 			"name":         ctx.UserName,
-			"api-url":      h.idpProv.ApiURL,
+			"api-url":      h.apiURL,
 		})
 	}()
+}
+
+// parseRedirectURL validates the redirect query attribute to match against the API_URL env
+// or the default localhost address
+func parseRedirectURL(c *gin.Context) (string, error) {
+	redirectURL := c.Query("redirect")
+	if redirectURL != "" {
+		u, _ := url.Parse(redirectURL)
+		if u == nil || u.Hostname() != appconfig.Get().ApiHostname() {
+			return "", fmt.Errorf("redirect attribute does not match with api url")
+		}
+		return redirectURL, nil
+	}
+	return fmt.Sprintf("http://%s/callback", proto.ClientLoginCallbackAddress), nil
 }

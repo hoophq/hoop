@@ -309,7 +309,7 @@ func (s *Server) ReleaseConnectionOnReview(orgID, sid, reviewOwnerSlackID, revie
 			orgID,
 			reviewOwnerSlackID,
 			sid,
-			s.IDProvider.ApiURL,
+			s.AppConfig.ApiURL(),
 		)
 	}
 

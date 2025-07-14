@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/connectionstatus"
@@ -40,7 +39,6 @@ type (
 		pb.UnimplementedTransportServer
 
 		TLSConfig   *tls.Config
-		IDProvider  *idp.Provider
 		ApiHostname string
 		AppConfig   appconfig.Config
 	}
@@ -58,8 +56,8 @@ func (s *Server) StartRPCServer() {
 
 	grpcInterceptors := grpc.ChainStreamInterceptor(
 		sessionuuidinterceptor.New(),
-		authinterceptor.New(s.IDProvider),
-		tracinginterceptor.New(s.IDProvider.ApiURL),
+		authinterceptor.New(),
+		tracinginterceptor.New(s.AppConfig.ApiURL()),
 	)
 	var grpcServer *grpc.Server
 	if s.TLSConfig != nil {
@@ -67,14 +65,14 @@ func (s *Server) StartRPCServer() {
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpc.Creds(credentials.NewTLS(s.TLSConfig)),
 			grpcInterceptors,
-			authinterceptor.WithUnaryValidator(s.IDProvider),
+			authinterceptor.WithUnaryValidator(),
 		)
 	}
 	if grpcServer == nil {
 		grpcServer = grpc.NewServer(
 			grpc.MaxRecvMsgSize(commongrpc.MaxRecvMsgSize),
 			grpcInterceptors,
-			authinterceptor.WithUnaryValidator(s.IDProvider),
+			authinterceptor.WithUnaryValidator(),
 		)
 	}
 	pb.RegisterTransportServer(grpcServer, s)

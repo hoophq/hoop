@@ -71,7 +71,7 @@ func (h *handler) Get(c *gin.Context) {
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
 	}
-	serverInfoData.AuthMethod = appc.AuthMethod()
+	serverInfoData.AuthMethod = string(appc.AuthMethod())
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.GrpcURL = h.grpcURL
 	serverInfoData.ApiURL = appc.ApiURL()

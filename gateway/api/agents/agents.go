@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -45,7 +46,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	secretKey, secretKeyHash, err := dsnkeys.GenerateSecureRandomKey()
+	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey(32)
 	if err != nil {
 		log.Errorf("failed generating agent token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating agent token"})

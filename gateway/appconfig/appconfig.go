@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/common/envloader"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 )
 
 // TODO: it should include all runtime configuration
@@ -25,7 +26,7 @@ type pgCredentials struct {
 type Config struct {
 	apiKey                          string
 	askAICredentials                *url.URL
-	authMethod                      string
+	authMethod                      idptypes.ProviderType
 	pgCred                          *pgCredentials
 	gcpDLPJsonCredentials           string
 	dlpProvider                     string
@@ -47,7 +48,6 @@ type Config struct {
 	apiScheme                       string
 	apiURLPath                      string
 	webappUsersManagement           string
-	jwtSecretKey                    []byte
 	webappStaticUIPath              string
 	disableSessionsDownload         bool
 	gatewayTLSCa                    string
@@ -74,6 +74,10 @@ func Load() error {
 	if grpcURL == "" {
 		grpcURL = "grpc://127.0.0.1:8010"
 	}
+
+	apiURL = strings.TrimSuffix(apiURL, "/")
+	grpcURL = strings.TrimSuffix(grpcURL, "/")
+
 	apiRawURL, err := url.Parse(apiURL)
 	if err != nil {
 		return fmt.Errorf("failed parsing API_URL env, reason=%v", err)
@@ -190,7 +194,6 @@ func Load() error {
 		webhookAppKey:                   os.Getenv("WEBHOOK_APPKEY"),
 		webhookAppURL:                   webhookAppURL,
 		webappUsersManagement:           webappUsersManagement,
-		jwtSecretKey:                    []byte(os.Getenv("JWT_SECRET_KEY")),
 		webappStaticUIPath:              webappStaticUiPath,
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
@@ -205,36 +208,29 @@ func Load() error {
 
 func Get() Config { return runtimeConfig }
 
-// loadAuthMethod() returns the auth method to use
-// the possible values are: "local" and "idp".
-// If not set, it defaults to "local"
-// it also cross check the IDP_ISSUER, IDP_CLIENT_ID
-// and IDP_CLIENT_SECRET envs to determine if it should
-// the IDP configuration already set even without setting
-// AUTH_METHOD to "idp".
-// This last behavior ensures compatibility with the previous version
-func loadAuthMethod() (authMethod string, err error) {
-	authMethod = os.Getenv("AUTH_METHOD")
-	switch authMethod {
-	case "local":
-		err = validateLocalAuthJwtKey()
-	case "idp":
-	default:
-		if !hasIdpEnvs() {
-			// default to local auth method
-			return "local", validateLocalAuthJwtKey()
+// maintains compatibility by loading oidc auth method when
+// the IDP_ envs are set.
+//
+// Load the local auth method when it's not set
+func loadAuthMethod() (authMethod idptypes.ProviderType, err error) {
+	authMethod = idptypes.ProviderType(os.Getenv("AUTH_METHOD"))
+	if hasIdpEnvs() && authMethod == "" {
+		authMethod = idptypes.ProviderTypeOIDC
+		return
+	}
 
-		}
-		return "idp", nil
+	if authMethod == "" || authMethod == idptypes.ProviderTypeLocal {
+		authMethod = idptypes.ProviderTypeLocal
+	}
+
+	switch authMethod {
+	case idptypes.ProviderTypeOIDC, idptypes.ProviderTypeIDP:
+	case idptypes.ProviderTypeSAML:
+	case idptypes.ProviderTypeLocal, idptypes.ProviderType(""):
+	default:
+		return idptypes.ProviderType(""), fmt.Errorf("invalid AUTH_METHOD env, got=%v", authMethod)
 	}
 	return
-}
-
-func validateLocalAuthJwtKey() error {
-	if jwtSecretKey := os.Getenv("JWT_SECRET_KEY"); jwtSecretKey == "" {
-		return fmt.Errorf("when AUTH_METHOD is set as `local`, you must configure a random string value at the JWT_SECRET_KEY environment variable")
-	}
-	return nil
 }
 
 func hasIdpEnvs() bool {
@@ -331,7 +327,7 @@ func (c Config) ApiHost() string                       { return c.apiHost } // A
 func (c Config) ApiScheme() string                     { return c.apiScheme }
 func (c Config) ApiURLPath() string                    { return c.apiURLPath }
 func (c Config) ApiKey() string                        { return c.apiKey }
-func (c Config) AuthMethod() string                    { return c.authMethod }
+func (c Config) AuthMethod() idptypes.ProviderType     { return c.authMethod }
 func (c Config) WebhookAppKey() string                 { return c.webhookAppKey }
 func (c Config) WebhookAppURL() *url.URL               { return c.webhookAppURL }
 func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCredentials }
@@ -348,7 +344,6 @@ func (c Config) MigrationPathFiles() string            { return c.migrationPathF
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
-func (c Config) JWTSecretKey() []byte                  { return c.jwtSecretKey }
 func (c Config) GatewayTLSCa() string                  { return c.gatewayTLSCa }
 func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }

@@ -14,8 +14,8 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,13 +33,11 @@ type serverStreamWrapper struct {
 }
 
 type interceptor struct {
-	idp *idp.Provider
+	// idp idp.TokenVerifier
 }
 
-func New(idpProvider *idp.Provider) grpc.StreamServerInterceptor {
-	return (&interceptor{
-		idp: idpProvider,
-	}).StreamServerInterceptor
+func New() grpc.StreamServerInterceptor {
+	return (&interceptor{}).StreamServerInterceptor
 }
 
 func (s *serverStreamWrapper) Context() context.Context {
@@ -80,6 +78,11 @@ func (s *serverStreamWrapper) Context() context.Context {
 }
 
 func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	tokenVerifier, err := idp.NewTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to initialize identity provider, err=%v", err)
+		return status.Error(codes.Internal, "internal error, unable to initialize identity provider")
+	}
 	md, ok := metadata.FromIncomingContext(ss.Context())
 	if !ok {
 		return status.Error(codes.InvalidArgument, "missing context metadata")
@@ -120,7 +123,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy manager authentication (access token)
 	case pb.ConnectionOriginClientProxyManager:
-		subject, err := i.validateAccessToken(bearerToken)
+		subject, err := tokenVerifier.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -191,8 +194,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			break
 		}
 		// first we check if the auth method is local, if so, we authenticate the user
-		// using the local auth method, otherwise we use the i.idp.VerifyAccessToken
-		subject, err := i.validateAccessToken(bearerToken)
+		// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
+		subject, err := tokenVerifier.VerifyAccessToken(bearerToken)
 		if err != nil {
 			log.Debugf("failed verifying access token, reason=%v", err)
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -227,13 +230,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	}
 
 	return handler(srv, &serverStreamWrapper{ss, nil, ctxVal})
-}
-
-func (i *interceptor) validateAccessToken(bearerToken string) (subject string, err error) {
-	if i.idp.HasSecretKey() {
-		return i.idp.VerifyAccessTokenHS256Alg(bearerToken)
-	}
-	return i.idp.VerifyAccessToken(bearerToken)
 }
 
 func (i *interceptor) getConnection(name string, userCtx *models.Context) (*types.ConnectionInfo, error) {

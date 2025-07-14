@@ -1,9 +1,7 @@
 package dsnkeys
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"net/url"
 
@@ -100,21 +98,6 @@ func Parse(keyDsn string) (*DSN, error) {
 		SecretKeyHash: secretKeyHash,
 		key:           keyDsn,
 	}, err
-}
-
-func GenerateSecureRandomKey() (secretKey, secretKeyHash string, err error) {
-	secretRandomBytes := make([]byte, 32)
-	_, err = rand.Read(secretRandomBytes)
-	if err != nil {
-		return "", "", fmt.Errorf("failed generating entropy, err=%v", err)
-	}
-	secretKey = base64.RawURLEncoding.EncodeToString(secretRandomBytes)
-	secretKey = "xagt-" + secretKey
-	secretKeyHash, err = hash256Key(secretKey)
-	if err != nil {
-		return "", "", fmt.Errorf("failed generating secret hash, err=%v", err)
-	}
-	return secretKey, secretKeyHash, err
 }
 
 func hash256Key(secretKey string) (secret256Hash string, err error) {

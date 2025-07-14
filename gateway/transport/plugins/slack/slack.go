@@ -10,10 +10,9 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/security/idp"
 	"github.com/hoophq/hoop/gateway/slack"
-	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -24,8 +23,8 @@ const (
 
 type (
 	slackPlugin struct {
-		idpProvider                *idp.Provider
 		TransportReleaseConnection reviewapi.TransportReleaseConnectionFunc
+		apiURL                     string
 	}
 )
 
@@ -50,27 +49,25 @@ func addSlackServiceInstance(orgID string, slackSvc *slack.SlackService) {
 	instances[orgID] = slackSvc
 }
 
-func New(idpProvider *idp.Provider, releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
+func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
 	instances = map[string]*slack.SlackService{}
 	mu = sync.RWMutex{}
 	return &slackPlugin{
-		idpProvider:                idpProvider,
 		TransportReleaseConnection: releaseConnFn,
+		apiURL:                     appconfig.Get().ApiURL(),
 	}
 }
 
 func (p *slackPlugin) Name() string { return plugintypes.PluginSlackName }
 
 func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slackConfig) error {
-	storectx := storagev2.NewOrganizationContext(orgID)
 	log.Infof("starting slack service instance for org %v", orgID)
 	ss, err := slack.New(
 		slackConfig.slackBotToken,
 		slackConfig.slackAppToken,
 		slackConfig.slackChannel,
 		orgID,
-		p.idpProvider.ApiURL,
-		&eventCallback{orgID, storectx, p.idpProvider},
+		p.apiURL,
 	)
 	if err != nil {
 		return fmt.Errorf("failed starting slack service, err=%v", err)
@@ -222,7 +219,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, plugintypes.InternalErr("internal error, failed fetching review input", err)
 		}
 		sreq.ID = rev.ID
-		sreq.WebappURL = fmt.Sprintf("%s/reviews/%s", p.idpProvider.ApiURL, rev.ID)
+		sreq.WebappURL = fmt.Sprintf("%s/reviews/%s", p.apiURL, rev.ID)
 		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
 		if rev.AccessDurationSec > 0 {
 			ad := time.Duration(rev.AccessDurationSec) * time.Second

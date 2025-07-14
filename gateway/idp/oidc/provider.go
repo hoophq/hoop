@@ -1,4 +1,4 @@
-package idp
+package oidcprovider
 
 import (
 	"context"
