@@ -43,7 +43,7 @@
                    (rf/dispatch [:navigate :edit-connection {} :connection-name name]))}
        [:> EllipsisVertical {:size 16}]])]])
 
-;; Função memoizada para criar o objeto connection e evitar recriações desnecessárias
+;; Memoized function to create connection object and avoid unnecessary recreations
 (def create-connection-obj
   (memoize
    (fn [connection-name subtype icon_name type]
@@ -69,7 +69,7 @@
                        (= (:subtype connection) "cloudwatch")))
           (reset! show-schema? false)))
 
-      ;; Detectar erro e fechar automaticamente
+      ;; Auto-close panel when there are errors
       (let [db-schema @(rf/subscribe [::subs/database-schema])
             current-schema (get-in db-schema [:data (:name connection)])
             has-error? (or (= (:status current-schema) :error)
@@ -98,14 +98,14 @@
                                    "Database Schema")}
             [:> IconButton {:onClick #(do
                                         (swap! show-schema? not)
-                                        ;; Se estamos abrindo o schema e teve erro antes, limpa o estado para forçar recarregamento
+                                        ;; Clear previous error state when reopening schema
                                         (when @show-schema?
                                           (let [db-schema @(rf/subscribe [::subs/database-schema])
                                                 current-schema (get-in db-schema [:data (:name connection)])
                                                 had-error? (or (= (:status current-schema) :error)
                                                                (= (:database-schema-status current-schema) :error))]
                                             (when had-error?
-                                              ;; Limpa o estado para forçar novo carregamento
+                                              ;; Clear state to force reload
                                               (rf/dispatch [:database-schema->clear-connection-schema (:name connection)]))))
                                         ;; Load the schema only when needed
                                         (when (and @show-schema? (not @schema-loaded?))
@@ -163,7 +163,7 @@
           :onClick #(rf/dispatch [:navigate :create-connection])}
          "Create"])]
 
-     ;; Lista de conexões disponíveis (excluindo a selecionada)
+     ;; List of available connections (excluding selected one)
      (for [conn filtered-connections]
        ^{:key (:name conn)}
        [connection-item
@@ -220,13 +220,13 @@
         error (rf/subscribe [:connections/error])
         user (rf/subscribe [:users->current-user])]
 
-    ;; Inicializa as conexões e carrega a seleção persistida na ordem correta
+    ;; Initialize connections and load persisted selection
     (rf/dispatch [:connections/initialize-with-persistence])
 
     (fn [dark-mode?]
       (let [admin? (-> @user :data :is_admin)]
         [:> Box {:class "h-full flex flex-col"}
-         ;; Área principal com scroll para as conexões
+         ;; Main area with scroll for connections
          [:> Box {:class "flex-1 overflow-auto"}
           (case @status
             :loading [loading-state]
@@ -237,5 +237,5 @@
                       [connections-list @connections @selected dark-mode? admin?]]
             [loading-state])]
 
-         ;; Alerta fixo na parte inferior
+         ;; Fixed alert at the bottom
          [alerts-carousel/main {:alerts ((get-active-alerts))}]]))))
