@@ -31,7 +31,6 @@
            upgrade-plan-component
            learning-component]}]
   [:> Flex {:align "center" :gap "5"}
-   (println disabled? title)
    [:> Switch {:checked checked
                :size "3"
                :disabled disabled?

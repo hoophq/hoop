@@ -43,7 +43,7 @@
                    (rf/dispatch [:navigate :edit-connection {} :connection-name name]))}
        [:> EllipsisVertical {:size 16}]])]])
 
-;; Função memoizada para criar o objeto connection e evitar recriações desnecessárias
+;; Memoized function to create connection object and avoid unnecessary recreations
 (def create-connection-obj
   (memoize
    (fn [connection-name subtype icon_name type]
@@ -56,9 +56,20 @@
 (defn selected-connection []
   (let [show-schema? (r/atom true)
         ;; State to avoid premature loading of the heavy component
-        schema-loaded? (r/atom true)]
-    (fn [connection dark-mode? admin? show-tree?]
-      ;; Detectar erro e fechar automaticamente
+        schema-loaded? (r/atom true)
+        ;; Track the current connection to detect changes
+        current-connection-name (r/atom nil)]
+    (fn [connection dark-mode? admin?]
+      ;; Check if connection changed and if new connection doesn't support schema
+      (when (not= @current-connection-name (:name connection))
+        (reset! current-connection-name (:name connection))
+        ;; Close schema panel if new connection doesn't support it
+        (when (not (or (= (:type connection) "database")
+                       (= (:subtype connection) "dynamodb")
+                       (= (:subtype connection) "cloudwatch")))
+          (reset! show-schema? false)))
+
+      ;; Auto-close panel when there are errors
       (let [db-schema @(rf/subscribe [::subs/database-schema])
             current-schema (get-in db-schema [:data (:name connection)])
             has-error? (or (= (:status current-schema) :error)
@@ -79,20 +90,22 @@
                 :dark? dark-mode?
                 :admin? admin?)]
         [:> Flex {:align "center" :gap "2"}
-         (when show-tree?
+         (when (or (= (:type connection) "database")
+                   (= (:subtype connection) "dynamodb")
+                   (= (:subtype connection) "cloudwatch"))
            [:> Tooltip {:content (if (= (:subtype connection) "cloudwatch")
                                    "Log Groups"
                                    "Database Schema")}
             [:> IconButton {:onClick #(do
                                         (swap! show-schema? not)
-                                        ;; Se estamos abrindo o schema e teve erro antes, limpa o estado para forçar recarregamento
+                                        ;; Clear previous error state when reopening schema
                                         (when @show-schema?
                                           (let [db-schema @(rf/subscribe [::subs/database-schema])
                                                 current-schema (get-in db-schema [:data (:name connection)])
                                                 had-error? (or (= (:status current-schema) :error)
                                                                (= (:database-schema-status current-schema) :error))]
                                             (when had-error?
-                                              ;; Limpa o estado para forçar novo carregamento
+                                              ;; Clear state to force reload
                                               (rf/dispatch [:database-schema->clear-connection-schema (:name connection)]))))
                                         ;; Load the schema only when needed
                                         (when (and @show-schema? (not @schema-loaded?))
@@ -106,23 +119,28 @@
              [:> Settings2 {:size 16}]]])]]
 
        ;; Tree view of database schema with lazy loading
-       (when (and @show-schema?
-                  (or (= (:type connection) "database")
-                      (= (:subtype connection) "dynamodb")
-                      (= (:subtype connection) "cloudwatch"))
-                  (not= (:access_schema connection) "disabled"))
+       (when @show-schema?
          [:> Box {:class "bg-[--gray-a4] px-2 py-3"}
-          ;; Lazy loading of the schema component
-          (if @schema-loaded?
-            [database-schema/main
-             (create-connection-obj
-              (:name connection)
-              (:subtype connection)
-              (:icon_name connection)
-              (:type connection))]
-            ;; Placeholder while we load the real component
-            [:div {:class "flex items-center justify-center p-4 text-sm text-gray-400"}
-             "Loading database schema..."])])])))
+          ;; Check if access_schema is disabled
+          (cond
+            (= (:access_schema connection) "disabled")
+            [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
+             [:> Text {:size "2" :mb "2" :class "text-[--gray-1]"} "Database Schema Disabled"]
+             [:> Text {:size "1" :class "text-[--gray-1]"}
+              "Database schema access is disabled for this connection. Please ask an admin to enable it."]]
+
+            ;; Show the actual schema component
+            :else
+            (if @schema-loaded?
+              [database-schema/main
+               (create-connection-obj
+                (:name connection)
+                (:subtype connection)
+                (:icon_name connection)
+                (:type connection))]
+              ;; Placeholder while we load the real component
+              [:div {:class "flex items-center justify-center p-4 text-sm text-gray-400"}
+               "Loading database schema..."]))])])))
 
 (defn connections-list [connections selected dark-mode? admin?]
   (let [available-connections (if selected
@@ -145,7 +163,7 @@
           :onClick #(rf/dispatch [:navigate :create-connection])}
          "Create"])]
 
-     ;; Lista de conexões disponíveis (excluindo a selecionada)
+     ;; List of available connections (excluding selected one)
      (for [conn filtered-connections]
        ^{:key (:name conn)}
        [connection-item
@@ -202,22 +220,22 @@
         error (rf/subscribe [:connections/error])
         user (rf/subscribe [:users->current-user])]
 
-    ;; Inicializa as conexões e carrega a seleção persistida na ordem correta
+    ;; Initialize connections and load persisted selection
     (rf/dispatch [:connections/initialize-with-persistence])
 
-    (fn [dark-mode? show-tree?]
+    (fn [dark-mode?]
       (let [admin? (-> @user :data :is_admin)]
         [:> Box {:class "h-full flex flex-col"}
-         ;; Área principal com scroll para as conexões
+         ;; Main area with scroll for connections
          [:> Box {:class "flex-1 overflow-auto"}
           (case @status
             :loading [loading-state]
             :error [error-state @error]
             :success [:<>
                       (when @selected
-                        [selected-connection @selected dark-mode? admin? show-tree?])
+                        [selected-connection @selected dark-mode? admin?])
                       [connections-list @connections @selected dark-mode? admin?]]
             [loading-state])]
 
-         ;; Alerta fixo na parte inferior
+         ;; Fixed alert at the bottom
          [alerts-carousel/main {:alerts ((get-active-alerts))}]]))))

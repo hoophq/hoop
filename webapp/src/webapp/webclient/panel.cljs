@@ -338,19 +338,7 @@
                                                   (save-code-to-localstorage value))
                                                 editor-debounce-time)))
 
-            show-tree? (fn [connection]
-                         (and (or (= (:type connection) "mysql-csv")
-                                  (= (:type connection) "postgres-csv")
-                                  (= (:type connection) "mongodb")
-                                  (= (:type connection) "postgres")
-                                  (= (:type connection) "mysql")
-                                  (= (:type connection) "sql-server-csv")
-                                  (= (:type connection) "mssql")
-                                  (= (:type connection) "oracledb")
-                                  (= (:type connection) "database")
-                                  (= (:subtype connection) "dynamodb")
-                                  (= (:subtype connection) "cloudwatch"))
-                              (= (:access_schema current-connection) "enabled")))
+
             panel-content (case @active-panel
                             :runbooks (runbooks-panel/main)
                             :metadata (metadata-panel/main {:metadata metadata
@@ -380,7 +368,7 @@
                [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto"}
                 (if @multi-run-panel?
                   [connections-panel/main dark-mode? (some? (:data @selected-template))]
-                  [connections-list/main dark-mode? (show-tree? current-connection)])]]
+                  [connections-list/main dark-mode?])]]
 
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
@@ -413,7 +401,6 @@
                 [log-area/main
                  connection-type
                  is-one-connection-selected?
-                 (show-tree? current-connection)
                  @dark-mode?
                  (not disabled-download)]
 
