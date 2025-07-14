@@ -1,10 +1,11 @@
 (ns webapp.features.authentication.views.providers.form-fields
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading Grid Switch Text]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Grid Heading Switch Text]]
    ["lucide-react" :refer [X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]))
 
 ;; Provider-specific field configurations
 (def provider-configs
@@ -18,6 +19,9 @@
    "google" {:fields []}
    "jumpcloud" {:fields []}
    "okta" {:fields []}})
+
+(defn array->select-options [array]
+  (map #(into {} {"value" % "label" %}) array))
 
 (defn custom-scopes-input [{:keys [scopes on-change]}]
   (let [input-value (r/atom "")]
@@ -106,12 +110,14 @@
          "Additional OAuth scopes to request during login."]]
 
        [:> Box {:grid-column "span 5 / span 5"}
-        [forms/input
-         {:full-width? true
-          :type "password"
-          :value (:client-secret @config)
-          :on-change #(rf/dispatch [:authentication->update-config-field
-                                    :client-secret (-> % .-target .-value)])}]]]
+        (println (:custom-scopes @config))
+        [multi-select/creatable-select
+         {:label "Groups"
+          :options (array->select-options ["email" "profile"])
+          :default-value (array->select-options (:custom-scopes @config))
+          :on-change (fn [value]
+                       (rf/dispatch [:authentication->update-config-field
+                                     :custom-scopes (mapv #(get % "value") (js->clj value))]))}]]]
 
       [:> Grid {:columns "7" :gap "7"}
        [:> Box {:grid-column "span 2 / span 2"}
