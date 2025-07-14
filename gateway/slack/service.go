@@ -13,12 +13,6 @@ import (
 	"github.com/slack-go/slack/socketmode"
 )
 
-type EventCallback interface {
-	// CommandSlackSubscribe should send a link to authenticate the user
-	// which will associate the slack id with the user signing in/up
-	CommandSlackSubscribe(command, slackID string) (string, error)
-}
-
 type SlackService struct {
 	apiClient     *slack.Client
 	socketClient  *socketmode.Client

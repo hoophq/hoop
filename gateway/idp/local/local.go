@@ -81,7 +81,7 @@ func (p *provider) VerifyAccessToken(accessToken string) (string, error) {
 }
 
 // GetOrCreateSigningKey generates a new Ed25519 signing key or retrieves the existing one from the server config.
-// It saves the key to the server config if it does not already exist.
+// It saves the key to the server config if it doesn't exist
 func GetOrCreateSigningKey() (ed25519.PrivateKey, error) {
 	serverConfig, err := models.GetServerConfig()
 	if err != nil && err != models.ErrNotFound {

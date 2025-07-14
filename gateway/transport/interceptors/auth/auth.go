@@ -32,9 +32,7 @@ type serverStreamWrapper struct {
 	newCtxVal any
 }
 
-type interceptor struct {
-	// idp idp.TokenVerifier
-}
+type interceptor struct{}
 
 func New() grpc.StreamServerInterceptor {
 	return (&interceptor{}).StreamServerInterceptor

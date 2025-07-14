@@ -27,8 +27,6 @@ import (
 var errUserInactive = fmt.Errorf("user is inactive")
 
 type handler struct {
-	// oidc   idp.OidcVerifier
-	// saml   idp.SamlVerifier
 	apiURL string
 }
 

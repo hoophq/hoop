@@ -3035,6 +3035,97 @@ const docTemplate = `{
                 }
             }
         },
+        "/saml/callback": {
+            "post": {
+                "description": "It redirects the user to the redirect URL with a JWT access token on success",
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Saml Login Callback (ACS)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Base64 encoded SAML response from identity provider",
+                        "name": "SAMLResponse",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Login"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/saml/login": {
+            "get": {
+                "description": "Returns the login url to perform the signin on the identity provider",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Saml Login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "The URL to redirect after the signin",
+                        "name": "redirect",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Login"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverinfo": {
             "get": {
                 "description": "Get server information",
@@ -7022,13 +7113,11 @@ const docTemplate = `{
             "enum": [
                 "active",
                 "inactive",
-                "reviewing",
                 "invited"
             ],
             "x-enum-varnames": [
                 "StatusActive",
                 "StatusInactive",
-                "StatusReviewing",
                 "StatusInvited"
             ]
         },
