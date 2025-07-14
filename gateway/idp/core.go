@@ -55,7 +55,7 @@ func NewTokenVerifierProvider() (TokenVerifier, error) {
 
 func NewOidcVerifierProvider() (OidcVerifier, error) {
 	providerType := idptypes.ProviderType(appconfig.Get().AuthMethod())
-	if providerType != idptypes.ProviderTypeOIDC {
+	if providerType != idptypes.ProviderTypeOIDC && providerType != idptypes.ProviderTypeIDP {
 		return nil, ErrUnknownIdpProvider
 	}
 	return oidcprovider.GetInstance()
