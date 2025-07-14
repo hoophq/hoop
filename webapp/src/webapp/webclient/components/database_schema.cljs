@@ -41,6 +41,31 @@
    [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
 
+(defn- empty-state [connection-type]
+  (let [message (case connection-type
+                  "postgres" "No databases found"
+                  "mysql" "No databases found"
+                  "mongodb" "No databases found"
+                  "oracledb" "No schemas found"
+                  "mssql" "No schemas found"
+                  "dynamodb" "No tables found"
+                  "cloudwatch" "No log groups found"
+                  "No data found")]
+    [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
+     [:> Text {:size "2" :mb "2"} message]
+     [:> Text {:size "1"}
+      "We couldn't find any "
+      (case connection-type
+        "postgres" "databases"
+        "mysql" "databases"
+        "mongodb" "databases"
+        "oracledb" "schemas"
+        "mssql" "schemas"
+        "dynamodb" "tables"
+        "cloudwatch" "log groups"
+        "data")
+      " for this connection."]]))
+
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
         dropdown-columns-status (r/atom :closed)]
@@ -240,10 +265,10 @@
              db-schemas))]
 
           :else
-          [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
-           (if (and (= :error database-schema-status) (:error current-schema))
-             (:error current-schema)
-             "No tables found")])])]))
+          (if (and (= :error database-schema-status) (:error current-schema))
+            [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+             (:error current-schema)]
+            [empty-state type]))])]))
 
 (defn- databases-tree []
   (fn [databases schema connection-name database-schema-status current-schema type]
@@ -267,6 +292,10 @@
        [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
         (:error current-schema)]
 
+       (and (= :success database-schema-status) (empty? schema))
+       (let [connection-type (get current-schema :type)]
+         [empty-state connection-type])
+
        :else
        (doall
         (map-indexed
@@ -282,22 +311,25 @@
          schema)))]))
 
 (defn db-view [{:keys [type schema databases connection-name current-schema database-schema-status]}]
-  (case type
-    "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
-    "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+  (let [is-empty? (get current-schema :empty?)]
+    (if (and (= database-schema-status :success) is-empty?)
+      [empty-state type]
+      (case type
+        "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
+        "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
 
-    "mysql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
-    "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
-    "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+        "mysql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+        "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+        "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
-    ;; Modified for DynamoDB - use databases-tree as multi-database banks
-    "dynamodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+        ;; Modified for DynamoDB - use databases-tree as multi-database banks
+        "dynamodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
-    ;; CloudWatch - use databases-tree for log groups (similar to DynamoDB)
-    "cloudwatch" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
+        ;; CloudWatch - use databases-tree for log groups (similar to DynamoDB)
+        "cloudwatch" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
 
-    [:> Text {:size "1"}
-     "Couldn't load the schema"]))
+        [:> Text {:size "1"}
+         "Couldn't load the schema"]))))
 
 (defn tree-view-status [{:keys [status
                                 databases
