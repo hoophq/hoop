@@ -256,6 +256,12 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			}
 		}
 
+		infoTypes := stream.GetRedactInfoTypes()
+		if pctx.ClientVerb == pb.ClientVerbPlainExec {
+			infoTypes = nil // do not redact info types for plain exec
+			entityTypesJsonData = nil
+		}
+
 		clientArgs := clientArgsDecode(pkt.Spec)
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
@@ -272,7 +278,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			DlpGcpRawCredentialsJSON:   s.AppConfig.GcpDLPJsonCredentials(),
 			DlpPresidioAnalyzerURL:     s.AppConfig.MSPresidioAnalyzerURL(),
 			DlpPresidioAnonymizerURL:   s.AppConfig.MSPresidioAnomymizerURL(),
-			DLPInfoTypes:               stream.GetRedactInfoTypes(),
+			DLPInfoTypes:               infoTypes,
 			DataMaskingEntityTypesData: entityTypesJsonData,
 		})
 		if err != nil {

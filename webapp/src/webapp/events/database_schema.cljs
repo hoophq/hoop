@@ -70,7 +70,8 @@
  (fn [db [_ connection databases]]
    (-> db
        (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
-       (assoc-in [:database-schema :data (:connection-name connection) :status] :success))))
+       (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
+       (assoc-in [:database-schema :data (:connection-name connection) :empty?] (empty? databases)))))
 
 ;; Common events for all connection types
 (rf/reg-event-fx
@@ -133,6 +134,7 @@
          (assoc-in [:database-schema :data (:connection-name connection) :type] "dynamodb")
          ;; Instead of populating schema-tree, we populate the list of databases
          (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
+         (assoc-in [:database-schema :data (:connection-name connection) :empty?] (empty? databases))
          (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] {})
          (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
          (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
@@ -177,6 +179,7 @@
          (assoc-in [:database-schema :data (:connection-name connection) :type] "cloudwatch")
          ;; Instead of populating schema-tree, we populate the list of databases
          (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
+         (assoc-in [:database-schema :data (:connection-name connection) :empty?] (empty? databases))
          (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] {})
          (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
          (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
@@ -201,14 +204,17 @@
  :database-schema->tables-loaded
  (fn [db [_ connection database response]]
    (let [open-db (or database
-                     (get-in db [:database-schema :data (:connection-name connection) :current-database]))]
+                     (get-in db [:database-schema :data (:connection-name connection) :current-database]))
+         schema-tree (process-tables response)
+         is-empty? (empty? schema-tree)]
      (-> db
          (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
          (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
          (assoc-in [:database-schema :data (:connection-name connection) :type] (:subtype connection))
          (assoc-in [:database-schema :data (:connection-name connection) :current-database] open-db)
          (assoc-in [:database-schema :data (:connection-name connection) :open-database] open-db)
-         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] (process-tables response))
+         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] schema-tree)
+         (assoc-in [:database-schema :data (:connection-name connection) :empty?] is-empty?)
          (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
          (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})
 
