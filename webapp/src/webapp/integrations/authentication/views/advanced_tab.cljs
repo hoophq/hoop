@@ -1,4 +1,4 @@
-(ns webapp.features.authentication.views.advanced-tab
+(ns webapp.integrations.authentication.views.advanced-tab
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Text]]
    ["lucide-react" :refer [AlertTriangle Copy RotateCw]]

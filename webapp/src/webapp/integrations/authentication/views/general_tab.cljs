@@ -1,4 +1,4 @@
-(ns webapp.features.authentication.views.general-tab
+(ns webapp.integrations.authentication.views.general-tab
   (:require
    ["@radix-ui/themes" :refer [Box Grid Heading Text]]
    ["lucide-react" :refer [Key Users]]
@@ -7,7 +7,7 @@
    [webapp.components.callout-link :as callout-link]
    [webapp.components.selection-card :as selection-card]
    [webapp.config :as config]
-   [webapp.features.authentication.views.providers.form-fields :as provider-forms]))
+   [webapp.integrations.authentication.views.providers.form-fields :as provider-forms]))
 
 (defn identity-provider-grid []
   (let [selected-provider (rf/subscribe [:authentication->selected-provider])]

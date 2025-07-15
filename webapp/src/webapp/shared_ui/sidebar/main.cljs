@@ -1,7 +1,7 @@
 (ns webapp.shared-ui.sidebar.main
   (:require ["@headlessui/react" :as ui]
             ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["lucide-react" :refer [ChevronsRight ChevronsLeft Puzzle]]
+            ["lucide-react" :refer [ChevronsRight ChevronsLeft Puzzle Settings]]
             ["react" :as react]
             [re-frame.core :as rf]
             [webapp.components.user-icon :as user-icon]
@@ -172,7 +172,7 @@
              [:li
               [:ul {:role "list"
                     :class "flex flex-col items-center space-y-1"}
-               (for [route constants/settings-routes
+               (for [route constants/organization-routes
                      :when (not (and (:admin-only? route) (not admin?)))]
                  ^{:key (:name route)}
                  [:li
@@ -202,7 +202,17 @@
                    [:> Puzzle {:size 24
                                :aria-hidden "true"}]
                    [:span {:class "sr-only"}
-                    "Integrations"]]])]]
+                    "Integrations"]]])
+
+               (when admin?
+                 [:li
+                  [:a {:href "#"
+                       :on-click #(rf/dispatch [:sidebar-desktop->open])
+                       :class "text-gray-300 hover:text-white hover:bg-white/5 group items-start flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+                   [:> Settings {:size 24
+                                 :aria-hidden "true"}]
+                   [:span {:class "sr-only"}
+                    "Settings"]]])]]
 
              ;; User profile (always at bottom)
              [:li {:class "mt-auto mb-3"}
