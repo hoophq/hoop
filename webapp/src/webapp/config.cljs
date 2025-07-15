@@ -60,7 +60,8 @@
              :command-line {:overview "https://hoop.dev/docs/clients/cli"
                             :windows "https://hoop.dev/docs/clients/cli#windows"
                             :macos "https://hoop.dev/docs/clients/cli#mac-os"
-                            :linux "https://hoop.dev/docs/clients/cli#linux"}}
+                            :linux "https://hoop.dev/docs/clients/cli#linux"
+                            :managing-configuration "https://hoop.dev/docs/clients/cli#managing-configuration"}}
    :integrations {:slack "https://hoop.dev/docs/integrations/slack"
                   :teams "https://hoop.dev/docs/integrations/teams"
                   :jira "https://hoop.dev/docs/integrations/jira"
