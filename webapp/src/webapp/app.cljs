@@ -95,6 +95,9 @@
    [webapp.reviews.review-detail :as review-detail]
    [webapp.routes :as routes]
    [webapp.settings.license.panel :as license-management]
+   [webapp.settings.infrastructure.main :as infrastructure]
+   [webapp.settings.infrastructure.events]
+   [webapp.settings.infrastructure.subs]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
@@ -243,6 +246,12 @@
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-screen"}
     [routes/wrap-admin-only
      [license-management/main]]]])
+
+(defmethod routes/panels :infrastructure-panel []
+  [layout :application-hoop
+   [:div {:class "h-full"}
+    [routes/wrap-admin-only
+     [infrastructure/main]]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop

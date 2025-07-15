@@ -70,7 +70,8 @@
      "/sessions" [["" :sessions]
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
-     "/settings" [["/license" :license-management]]
+     "/settings" [["/license" :license-management]
+                  ["/infrastructure" :infrastructure]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop
      "/upgrade-plan" :upgrade-plan}]))
