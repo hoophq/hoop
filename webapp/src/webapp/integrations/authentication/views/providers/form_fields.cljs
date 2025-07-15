@@ -1,4 +1,4 @@
-(ns webapp.features.authentication.views.providers.form-fields
+(ns webapp.integrations.authentication.views.providers.form-fields
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Grid Heading Switch Text]]
    ["lucide-react" :refer [X]]

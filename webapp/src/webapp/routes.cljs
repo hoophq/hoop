@@ -44,7 +44,7 @@
      "/idplogin" :idplogin-hoop
      "/integrations" [["/aws-connect" :integrations-aws-connect]
                       ["/aws-connect/setup" :integrations-aws-connect-setup]
-                      ["/authentication" :authentication]]
+                      ["/authentication" :integrations-authentication]]
      "/jira-templates" [["" :jira-templates]
                         ["/new" :create-jira-template]
                         [["/edit/" :jira-template-id] :edit-jira-template]]
@@ -71,7 +71,8 @@
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
-                  ["/infrastructure" :infrastructure]]
+                  ["/infrastructure" :settings-infrastructure]
+                  ["/jira" :settings-jira]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop
      "/upgrade-plan" :upgrade-plan}]))

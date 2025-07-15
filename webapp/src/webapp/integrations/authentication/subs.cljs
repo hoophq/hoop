@@ -1,4 +1,4 @@
-(ns webapp.features.authentication.subs
+(ns webapp.integrations.authentication.subs
   (:require
    [re-frame.core :as rf]))
 
