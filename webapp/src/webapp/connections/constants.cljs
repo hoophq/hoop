@@ -169,7 +169,7 @@
    :access_schema "enabled"
    :agent_id ""
    :reviewers []
-   :redact_enabled false
+   :redact_enabled true
    :redact_types []
    :secret {:envvar:DB "ZGVsbHN0b3Jl"
             :envvar:HOST "ZGVtby1wZy1kYi5jaDcwN3JuYWl6amcudXMtZWFzdC0xLnJkcy5hbWF6b25hd3MuY29t"

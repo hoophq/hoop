@@ -378,10 +378,13 @@
                   [:section {:class "h-full p-3 overflow-auto"}
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
-                                        :selected-connections (if (and (empty? @multi-selected-connections)
-                                                                       (not current-connection))
-                                                                nil
-                                                                (conj @multi-selected-connections current-connection))
+                                        :selected-connections (if (seq @multi-selected-connections)
+                                                                (if (and current-connection
+                                                                         (not (some #(= (:name %) (:name current-connection))
+                                                                                    @multi-selected-connections)))
+                                                                  (conj @multi-selected-connections current-connection)
+                                                                  @multi-selected-connections)
+                                                                (when current-connection [current-connection]))
                                         :only-runbooks? only-runbooks?}]]
 
                   [:div {:class "h-full flex flex-col"}
