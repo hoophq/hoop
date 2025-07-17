@@ -3,7 +3,6 @@ package authinterceptor
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
@@ -102,7 +101,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	}
 
-	bearerToken, err := parseBearerToken(md)
+	bearerToken, isApiKey, err := parseBearerToken(md)
 	if err != nil {
 		return err
 	}
@@ -148,22 +147,23 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy authentication (access token)
 	default:
-		apiKeyEnv := os.Getenv("API_KEY")
-		isOrgMultitenant := appconfig.Get().OrgMultitenant()
-		// this is a not so optimal solution, but due to the overall
-		// complexity of the authentication system, we decided to make this
-		// simple comparison on a optimistic way and if it fails, we fallback
-		// to the regular authentication flow with the IDP (see else stetament)
-		if apiKeyEnv != "" && apiKeyEnv == bearerToken && !isOrgMultitenant {
-			log.Debug("Authenticating with API key")
-			orgID := strings.Split(bearerToken, "|")[0]
-			org, err := models.GetOrganizationByNameOrID(orgID)
-			if err != nil {
+		if isApiKey {
+			log.Debug("user provided an api key for authentication")
+			if appconfig.Get().OrgMultitenant() {
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+
+			serverConfig := tokenVerifier.ServerConfig()
+			if serverConfig.ApiKey == "" || serverConfig.ApiKey != bearerToken {
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
+			org, err := models.GetOrganizationByNameOrID(serverConfig.OrgID)
+			if err != nil {
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
 			ctx := &models.Context{
-				OrgID:          orgID,
+				OrgID:          org.ID,
 				OrgName:        org.Name,
 				OrgLicenseData: org.LicenseData,
 				UserID:         deterministicUuid.String(),
@@ -173,12 +173,10 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				UserStatus:     "active",
 				UserGroups:     []string{types.GroupAdmin},
 			}
-
 			gwctx := &GatewayContext{
 				UserContext: *ctx,
 				BearerToken: bearerToken,
 			}
-
 			connectionName := commongrpc.MetaGet(md, "connection-name")
 			conn, err := i.getConnection(connectionName, ctx)
 			if err != nil {
@@ -290,19 +288,25 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 	return ag, nil
 }
 
-func parseBearerToken(md metadata.MD) (string, error) {
+func parseBearerToken(md metadata.MD) (string, bool, error) {
 	t := md.Get("authorization")
 	if len(t) == 0 {
 		log.Debugf("missing authorization header, client-metadata=%v", md)
-		return "", status.Error(codes.Unauthenticated, "invalid authentication")
+		return "", false, status.Error(codes.Unauthenticated, "invalid authentication")
 	}
 
 	tokenValue := t[0]
 	tokenParts := strings.Split(tokenValue, " ")
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" || tokenParts[1] == "" {
 		log.Debugf("authorization header in wrong format, client-metadata=%v", md)
-		return "", status.Error(codes.Unauthenticated, "invalid authentication")
+		return "", false, status.Error(codes.Unauthenticated, "invalid authentication")
 	}
 
-	return tokenParts[1], nil
+	// legacy api key format
+	parts := strings.Split(tokenParts[1], "|")
+	if _, err := uuid.Parse(parts[0]); err == nil {
+		return tokenParts[1], true, nil
+	}
+	// new api key format
+	return tokenParts[1], strings.HasPrefix(tokenParts[1], "xapi-"), nil
 }

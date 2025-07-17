@@ -2,6 +2,8 @@ package types
 
 import (
 	"encoding/json"
+
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 )
 
 type APIContext struct {
@@ -23,8 +25,9 @@ type APIContext struct {
 	UserAnonPicture       string
 	UserAnonEmailVerified *bool
 
-	ApiURL  string `json:"-"`
-	GrpcURL string `json:"-"`
+	ApiURL       string                `json:"-"`
+	GrpcURL      string                `json:"-"`
+	ProviderType idptypes.ProviderType `json:"-"`
 }
 
 type Plugin struct {

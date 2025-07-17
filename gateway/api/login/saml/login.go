@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
-	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -44,14 +43,14 @@ func (h *handler) loadSamlVerifier(c *gin.Context) (idp.SamlVerifier, bool) {
 	return samlVerifier, err == nil
 }
 
-// Login
+// SamlLogin
 //
-//	@Summary		Saml Login
-//	@Description	Returns the login url to perform the signin on the identity provider
+//	@Summary		SAML | Login
+//	@Description	Returns the login url to perform the signin on the identity provider.
 //	@Tags			Authentication
 //	@Produce		json
-//	@Param			redirect		query		string	false	"The URL to redirect after the signin"	Format(string)
-//	@Success		200				{object}	openapi.Login
+//	@Param			redirect	query		string	false	"The URL to redirect after the signin"	Format(string)
+//	@Success		200			{object}	openapi.Login
 //	@Failure		400,401,500	{object}	openapi.HTTPError
 //	@Router			/saml/login [get]
 func (h *handler) SamlLogin(c *gin.Context) {
@@ -114,15 +113,15 @@ func (h *handler) SamlLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.Login{URL: authURL})
 }
 
-// LoginCallback
+// SamlLoginCallback
 //
-//	@Summary				Saml Login Callback (ACS)
-//	@Description	It redirects the user to the redirect URL with a JWT access token on success
-//	@Tags					Authentication
-//	@Param					SAMLResponse	formData	string	true	"Base64 encoded SAML response from identity provider"
-//	@Success				200				{object}	openapi.Login
-//	@Failure				400,401,500	{object}	openapi.HTTPError
-//	@Router					/saml/callback [post]
+//	@Summary		SAML | Login Callback
+//	@Description	It redirects the user to the redirect URL with a JWT access token on success. A success authentication will redirect the user back to the default redirect url provided in the /saml/login route. In case of error it will include the query string error=<description> when redirecting.
+//	@Tags			Authentication
+//	@Param			SAMLResponse	formData	string	true	"Base64 encoded SAML response from identity provider"
+//	@Success		200				{object}	openapi.Login
+//	@Failure		400,401,500		{object}	openapi.HTTPError
+//	@Router			/saml/callback [post]
 func (h *handler) SamlLoginCallback(c *gin.Context) {
 	saml, ok := h.loadSamlVerifier(c)
 	if !ok {
@@ -208,7 +207,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 
 	// parse and validate user information in the database
 	uinfo := parseToUserInfo(saml, *assertionInfo)
-	log = log.With("email", uinfo.Email, "state", responseID)
+	log = log.With("email", uinfo.Email)
 	usr, err := models.GetUserByEmailV2(uinfo.Email)
 	switch err {
 	case models.ErrNotFound:
@@ -270,14 +269,15 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	}
 
 	// generate a new access token for the user base on the saml assertion
-	log.Infof("obtained user information, notOnOrAfter=%v", notOnOrAfter.Format(time.RFC3339))
+	log.Infof("obtained user information, sync-groups=%v (%v), notOnOrAfter=%v",
+		uinfo.MustSyncGroups, len(uinfo.Groups), notOnOrAfter.Format(time.RFC3339))
 
 	if notOnOrAfter.IsZero() {
 		log.Warnf("unable to parse SAML assertion notOnOrAfter, using default duration of 60 minutes")
 		notOnOrAfter = time.Now().Add(time.Minute * 60).UTC()
 	}
 	tokenDuration := notOnOrAfter.Sub(time.Now().UTC())
-	sessionToken, err := generateNewAccessToken(uinfo.Subject, uinfo.Email, tokenDuration)
+	sessionToken, err := saml.NewAccessToken(uinfo.Subject, uinfo.Email, tokenDuration)
 	if err != nil {
 		log.Errorf("failed generating access token, reason=%v", err)
 		redirectToErrURL(c, login.Redirect, "unable to generate access token")
@@ -329,14 +329,6 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 		uinfo.Profile = fmt.Sprintf("%s %s", firstName, lastName)
 	}
 	return uinfo
-}
-
-func generateNewAccessToken(subject, email string, tokenDuration time.Duration) (string, error) {
-	instance, err := samlprovider.GetInstance()
-	if err != nil {
-		return "", fmt.Errorf("failed to get SAML provider instance: %v", err)
-	}
-	return instance.NewAccessToken(subject, email, tokenDuration)
 }
 
 // parseRedirectURL validates the redirect query attribute to match against the API_URL env

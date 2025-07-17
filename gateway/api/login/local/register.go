@@ -9,14 +9,27 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// RegisterLocalUser
+//
+//	@Summary		Local | Register User
+//	@Description	It registers a new user in the system with the provided email and password. Additionall users are only registered when they are invited by an existing admin user.
+//	@Tags			Authentication
+//	@Accept			json
+//	@Produce		json
+//	@Param			Token				header		string				false	"token"
+//	@Param			request				body		openapi.UserRequest	true	"The request body resource"
+//	@Success		201					{object}	openapi.Login
+//	@Failure		400,401,403,409,500	{object}	openapi.HTTPError
+//	@Router			/localauth/register [post]
 func Register(c *gin.Context) {
-	var user User
+	var user openapi.UserRequest
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

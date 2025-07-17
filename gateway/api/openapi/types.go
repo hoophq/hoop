@@ -201,7 +201,12 @@ type Connection struct {
 	// * mysql - Implements MySQL protocol
 	// * mongodb - Implements MongoDB Wire Protocol
 	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
 	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
 	SubType string `json:"subtype" example:"postgres"`
 	// Secrets are environment variables that are going to be exposed
 	// in the runtime of the connection:
@@ -877,7 +882,7 @@ type ServerLicenseInfo struct {
 
 type PublicServerInfo struct {
 	// Auth method used by the server
-	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
+	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
 }
 
 type ServerInfo struct {
@@ -889,8 +894,6 @@ type ServerInfo struct {
 	LogLevel string `json:"log_level" enums:"INFO,WARN,DEBUG,ERROR" example:"INFO"`
 	// Expose `GODEBUG` flags enabled
 	GoDebug string `json:"go_debug" example:"http2debug=2"`
-	// The group name that has administrator permissions
-	AdminUsername string `json:"admin_username" example:"admin"`
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
 	// Redact Provider used by the server
@@ -1517,8 +1520,70 @@ type CustomEntityTypesEntry struct {
 	Score float64 `json:"score" binding:"required" example:"0.01"`
 }
 
-type ServerConfig struct {
-	ProductAnalytics      string `json:"product_analytics" enum:"active,inactive" example:"active"`
-	WebappUsersManagement string `json:"webapp_users_management" enum:"active,inactive" example:"active"`
-	GrpcServerURL         string `json:"grpc_server_url" example:"grpcs://hoop.domain.tld:8443"`
+type ServerMiscConfig struct {
+	// Either to enable or disable the product analytics tracking
+	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`
+	// The gRPC server URL used to advertise the gRPC server to clients
+	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
+}
+
+type ServerAuthOidcConfig struct {
+	// Identity Provider Issuer URL (Oauth2)
+	IssuerURL string `json:"issuer_url" example:"https://auth.domain.tld/oidc" binding:"required"`
+	// Oauth2 Client ID
+	ClientID string `json:"client_id" example:"hoop-client-id" binding:"required"`
+	// Oauth2 Client Secret
+	ClientSecret string `json:"client_secret" example:"hoop-client-secret" binding:"required"`
+	// Additional Oauth2 scopes to append in the request. Default values are openid, profile and email.
+	Scopes []string `json:"scopes" example:"openid,email,profile"`
+	// Identity Provider Audience (Oauth2)
+	Audience string `json:"audience" example:"hoop-audience"`
+	// Specifies the claim identifier used to configure group propagation.
+	GroupsClaim string `json:"groups_claim" example:"groups"`
+}
+
+type ServerAuthSamlConfig struct {
+	// Identity Provider Metadata URL (SAML 2.0)
+	IdpMetadataURL string `json:"idp_metadata_url" example:"https://auth.domain.tld/saml/metadata" binding:"required"`
+	// Specifies the claim identifier used to configure group propagation.
+	GroupsClaim string `json:"groups_claim" default:"groups"`
+}
+
+type ProviderType string
+
+const (
+	ProviderTypeOIDC  ProviderType = "oidc"
+	ProviderTypeSAML  ProviderType = "saml"
+	ProviderTypeLocal ProviderType = "local"
+)
+
+type ServerAuthConfig struct {
+	// The identity provider type to configure
+	AuthMethod ProviderType `json:"auth_method" example:"local" binding:"required"`
+	// OIDC / Oauth2 identity provider configuration
+	OidcConfig *ServerAuthOidcConfig `json:"oidc_config"`
+	// SAML 2.0 identity provider configuration
+	SamlConfig *ServerAuthSamlConfig `json:"saml_config"`
+	// The api key with admin privileges used to authenticate in the API. It is a read only field
+	ApiKey *string `json:"api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK" readonly:"true"`
+	// The api key to rollout. When this field is set, the server will rollout the previous api_key.
+	// This attribute must be obtained in the endpoint to generate rollout api keys.
+	RolloutApiKey *string `json:"rollout_api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK"`
+	// Enable the users management in the Webapp. It allows to create, edit and delete users.
+	WebappUsersManagementStatus string `json:"webapp_users_management_status" enums:"enabled,disabled" binding:"required"`
+	// Changes the default administrator role of the system
+	AdminRoleName string `json:"admin_role_name" default:"admin"`
+	// Changes the default auditor role of the system
+	AuditorRoleName string `json:"auditor_role_name" default:"auditor"`
+}
+
+type GenerateApiKeyResponse struct {
+	// The API key that was generated to rollout the previous api_key.
+	RolloutApiKey string `json:"rollout_api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK"`
+}
+
+type UserRequest struct {
+	Email    string `json:"email" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Name     string `json:"name"`
 }

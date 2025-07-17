@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"os"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/grpc"
@@ -15,7 +16,9 @@ import (
 	"github.com/hoophq/hoop/gateway/api"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
+	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/transport"
@@ -38,7 +41,6 @@ func Run() {
 	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
 		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, appconfig.Get().OrgMultitenant(), ver.BuildDate)
 
-	// TODO: refactor to load all app gateway runtime configuration in this method
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
@@ -57,19 +59,24 @@ func Run() {
 	}
 
 	apiURL := appconfig.Get().FullApiURL()
-	grpcURL := appconfig.Get().GrpcURL()
-
 	if err := models.InitDatabaseConnection(); err != nil {
 		log.Fatal(err)
 	}
 
-	if !appconfig.Get().OrgMultitenant() {
+	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
+	if !isOrgMultiTenant {
 		log.Infof("provisioning default organization")
+		tokenVerifier, err := idp.NewTokenVerifierProvider()
+		if err != nil {
+			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
+		}
+
 		org, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
-		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, grpcURL)
+
+		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, tokenVerifier.ServerConfig().GrpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}
@@ -86,6 +93,12 @@ func Run() {
 				log.Warnf("failed migrating plugin connections to data masking rules, reason=%v", migrationErr)
 			}
 		}
+
+		// TODO(san): refactor to propagate the defined user name roles as context to routes
+		if err := apiserverconfig.SetGlobalGatewayUserRoles(); err != nil {
+			log.Fatalf("failed setting global gateway user roles, reason=%v", err)
+		}
+
 		log.Infof("self hosted setup completed, dlp-provider=%s, plugin-connection-migration-err=%v",
 			appconfig.Get().DlpProvider(), migrationErr)
 	}
@@ -97,7 +110,6 @@ func Run() {
 	}
 	a := &api.Api{
 		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
-		GrpcURL:             grpcURL,
 		TLSConfig:           tlsConfig,
 	}
 	// order matters
@@ -117,11 +129,15 @@ func Run() {
 		}
 	}
 	sentryStarted, _ := monitoring.StartSentry()
-	if err := agentcontroller.Run(grpcURL); err != nil {
-		err := fmt.Errorf("failed to start agent controller, reason=%v", err)
-		log.Warn(err)
-		sentry.CaptureException(err)
+	if isOrgMultiTenant {
+		// grpc url from env is used for multi tenant setups
+		if err := agentcontroller.Run(os.Getenv("GRPC_URL")); err != nil {
+			err := fmt.Errorf("failed to start agent controller, reason=%v", err)
+			log.Warn(err)
+			sentry.CaptureException(err)
+		}
 	}
+
 	connectionstatus.InitConciliationProcess()
 	streamclient.InitProxyMemoryCleanup()
 

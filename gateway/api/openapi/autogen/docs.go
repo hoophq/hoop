@@ -153,7 +153,7 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Login Callback",
+                "summary": "OIDC | Login Callback",
                 "parameters": [
                     {
                         "type": "string",
@@ -1853,6 +1853,125 @@ const docTemplate = `{
                 }
             }
         },
+        "/localauth/login": {
+            "get": {
+                "description": "Generate a new access token  to interact with the API that expires in 12 hours.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Local | Login",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "token",
+                        "name": "Token",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/localauth/register": {
+            "post": {
+                "description": "It registers a new user in the system with the provided email and password. Additionall users are only registered when they are invited by an existing admin user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication"
+                ],
+                "summary": "Local | Register User",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "token",
+                        "name": "Token",
+                        "in": "header"
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Login"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/login": {
             "get": {
                 "description": "Returns the login url to perform the signin on the identity provider",
@@ -1862,7 +1981,7 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Login",
+                "summary": "OIDC | Login",
                 "parameters": [
                     {
                         "type": "string",
@@ -3037,11 +3156,11 @@ const docTemplate = `{
         },
         "/saml/callback": {
             "post": {
-                "description": "It redirects the user to the redirect URL with a JWT access token on success",
+                "description": "It redirects the user to the redirect URL with a JWT access token on success. A success authentication will redirect the user back to the default redirect url provided in the /saml/login route. In case of error it will include the query string error=\u003cdescription\u003e when redirecting.",
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Saml Login Callback (ACS)",
+                "summary": "SAML | Login Callback",
                 "parameters": [
                     {
                         "type": "string",
@@ -3081,14 +3200,14 @@ const docTemplate = `{
         },
         "/saml/login": {
             "get": {
-                "description": "Returns the login url to perform the signin on the identity provider",
+                "description": "Returns the login url to perform the signin on the identity provider.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Saml Login",
+                "summary": "SAML | Login",
                 "parameters": [
                     {
                         "type": "string",
@@ -3113,6 +3232,214 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/auth": {
+            "get": {
+                "description": "Get authentication configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Authentication Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerAuthConfig"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update authentication configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Authentication Configuration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerAuthConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerAuthConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/auth/apikey": {
+            "post": {
+                "description": "Generate a rollout api key",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Generate API Key",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.GenerateApiKeyResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/misc": {
+            "get": {
+                "description": "Get server miscellaneous configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Server Miscellaneous Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMiscConfig"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update server miscellaneous configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Update Server Miscellaneous Configuration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMiscConfig"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ServerMiscConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3850,7 +4177,7 @@ const docTemplate = `{
                 "tags": [
                     "Authentication"
                 ],
-                "summary": "Signup",
+                "summary": "OIDC | Signup",
                 "parameters": [
                     {
                         "description": "The request body resource",
@@ -4762,7 +5089,7 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "subtype": {
-                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* tcp - Forwards a TCP connection",
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
                     "type": "string",
                     "example": "postgres"
                 },
@@ -5421,6 +5748,16 @@ const docTemplate = `{
                 "FeatureStatusEnabled",
                 "FeatureStatusDisabled"
             ]
+        },
+        "openapi.GenerateApiKeyResponse": {
+            "type": "object",
+            "properties": {
+                "rollout_api_key": {
+                    "description": "The API key that was generated to rollout the previous api_key.",
+                    "type": "string",
+                    "example": "xapi-WqIAoYhKuIv2IPmVkfsyyK"
+                }
+            }
         },
         "openapi.GuardRailRuleRequest": {
             "type": "object",
@@ -6081,6 +6418,19 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ProviderType": {
+            "type": "string",
+            "enum": [
+                "oidc",
+                "saml",
+                "local"
+            ],
+            "x-enum-varnames": [
+                "ProviderTypeOIDC",
+                "ProviderTypeSAML",
+                "ProviderTypeLocal"
+            ]
+        },
         "openapi.ProxyManagerRequest": {
             "type": "object",
             "required": [
@@ -6178,8 +6528,9 @@ const docTemplate = `{
                     "description": "Auth method used by the server",
                     "type": "string",
                     "enum": [
+                        "local",
                         "oidc",
-                        "local"
+                        "saml"
                     ],
                     "example": "local"
                 }
@@ -6531,14 +6882,137 @@ const docTemplate = `{
                 "SecretsManagerProviderVault"
             ]
         },
+        "openapi.ServerAuthConfig": {
+            "type": "object",
+            "required": [
+                "auth_method",
+                "webapp_users_management_status"
+            ],
+            "properties": {
+                "admin_role_name": {
+                    "description": "Changes the default administrator role of the system",
+                    "type": "string",
+                    "default": "admin"
+                },
+                "api_key": {
+                    "description": "The api key with admin privileges used to authenticate in the API. It is a read only field",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "xapi-WqIAoYhKuIv2IPmVkfsyyK"
+                },
+                "auditor_role_name": {
+                    "description": "Changes the default auditor role of the system",
+                    "type": "string",
+                    "default": "auditor"
+                },
+                "auth_method": {
+                    "description": "The identity provider type to configure",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ProviderType"
+                        }
+                    ],
+                    "example": "local"
+                },
+                "oidc_config": {
+                    "description": "OIDC / Oauth2 identity provider configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ServerAuthOidcConfig"
+                        }
+                    ]
+                },
+                "rollout_api_key": {
+                    "description": "The api key to rollout. When this field is set, the server will rollout the previous api_key.\nThis attribute must be obtained in the endpoint to generate rollout api keys.",
+                    "type": "string",
+                    "example": "xapi-WqIAoYhKuIv2IPmVkfsyyK"
+                },
+                "saml_config": {
+                    "description": "SAML 2.0 identity provider configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ServerAuthSamlConfig"
+                        }
+                    ]
+                },
+                "webapp_users_management_status": {
+                    "description": "Enable the users management in the Webapp. It allows to create, edit and delete users.",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                }
+            }
+        },
+        "openapi.ServerAuthOidcConfig": {
+            "type": "object",
+            "required": [
+                "client_id",
+                "client_secret",
+                "issuer_url"
+            ],
+            "properties": {
+                "audience": {
+                    "description": "Identity Provider Audience (Oauth2)",
+                    "type": "string",
+                    "example": "hoop-audience"
+                },
+                "client_id": {
+                    "description": "Oauth2 Client ID",
+                    "type": "string",
+                    "example": "hoop-client-id"
+                },
+                "client_secret": {
+                    "description": "Oauth2 Client Secret",
+                    "type": "string",
+                    "example": "hoop-client-secret"
+                },
+                "groups_claim": {
+                    "description": "Specifies the claim identifier used to configure group propagation.",
+                    "type": "string",
+                    "example": "groups"
+                },
+                "issuer_url": {
+                    "description": "Identity Provider Issuer URL (Oauth2)",
+                    "type": "string",
+                    "example": "https://auth.domain.tld/oidc"
+                },
+                "scopes": {
+                    "description": "Additional Oauth2 scopes to append in the request. Default values are openid, profile and email.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "openid",
+                        "email",
+                        "profile"
+                    ]
+                }
+            }
+        },
+        "openapi.ServerAuthSamlConfig": {
+            "type": "object",
+            "required": [
+                "idp_metadata_url"
+            ],
+            "properties": {
+                "groups_claim": {
+                    "description": "Specifies the claim identifier used to configure group propagation.",
+                    "type": "string",
+                    "default": "groups"
+                },
+                "idp_metadata_url": {
+                    "description": "Identity Provider Metadata URL (SAML 2.0)",
+                    "type": "string",
+                    "example": "https://auth.domain.tld/saml/metadata"
+                }
+            }
+        },
         "openapi.ServerInfo": {
             "type": "object",
             "properties": {
-                "admin_username": {
-                    "description": "The group name that has administrator permissions",
-                    "type": "string",
-                    "example": "admin"
-                },
                 "analytics_tracking": {
                     "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)\n* disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)",
                     "type": "string",
@@ -6694,6 +7168,21 @@ const docTemplate = `{
                     "description": "The error returned when verifying the license",
                     "type": "string",
                     "example": "unable to verify license"
+                }
+            }
+        },
+        "openapi.ServerMiscConfig": {
+            "type": "object",
+            "properties": {
+                "grpc_server_url": {
+                    "description": "The gRPC server URL used to advertise the gRPC server to clients",
+                    "type": "string",
+                    "default": "grpc://127.0.0.1:8010"
+                },
+                "product_analytics": {
+                    "description": "Either to enable or disable the product analytics tracking",
+                    "type": "string",
+                    "example": "active"
                 }
             }
         },
@@ -7380,6 +7869,24 @@ const docTemplate = `{
                 "slack_id": {
                     "type": "string",
                     "example": "U053ELZHB53"
+                }
+            }
+        },
+        "openapi.UserRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
                 }
             }
         },

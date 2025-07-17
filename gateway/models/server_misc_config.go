@@ -6,15 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
-type ServerConfig struct {
-	ProductAnalytics      string `gorm:"column:product_analytics"`
-	WebappUsersManagement string `gorm:"column:webapp_users_management"`
-	GrpcServerURL         string `gorm:"column:grpc_server_url"`
-	SharedSigningKey      string `gorm:"column:shared_signing_key;->"`
+type ServerMiscConfig struct {
+	ProductAnalytics string `gorm:"column:product_analytics"`
+	GrpcServerURL    string `gorm:"column:grpc_server_url"`
 }
 
-func GetServerConfig() (*ServerConfig, error) {
-	var config ServerConfig
+func GetServerMiscConfig() (*ServerMiscConfig, error) {
+	var config ServerMiscConfig
 	err := DB.Table("private.serverconfig").First(&config).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, ErrNotFound
@@ -22,8 +20,8 @@ func GetServerConfig() (*ServerConfig, error) {
 	return &config, err
 }
 
-func UpsertServerConfig(newObj *ServerConfig) (*ServerConfig, error) {
-	_, err := GetServerConfig()
+func UpsertServerMiscConfig(newObj *ServerMiscConfig) (*ServerMiscConfig, error) {
+	_, err := GetServerMiscConfig()
 	switch err {
 	case ErrNotFound:
 		return newObj, DB.Table("private.serverconfig").
@@ -33,9 +31,8 @@ func UpsertServerConfig(newObj *ServerConfig) (*ServerConfig, error) {
 		res := DB.Table("private.serverconfig").
 			Where("1=1").
 			Updates(map[string]any{
-				"product_analytics":       newObj.ProductAnalytics,
-				"webapp_users_management": newObj.WebappUsersManagement,
-				"grpc_server_url":         newObj.GrpcServerURL,
+				"product_analytics": newObj.ProductAnalytics,
+				"grpc_server_url":   newObj.GrpcServerURL,
 			})
 		if res.Error != nil {
 			return nil, res.Error

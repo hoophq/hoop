@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -429,6 +431,24 @@ func GetUserInfo(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to obtain ask-ai feature status"})
 		return
 	}
+
+	serverAuthConfig, _, err := idp.LoadServerAuthConfig()
+	if err != nil {
+		log.Errorf("failed to load server auth config: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to load server auth config"})
+		return
+	}
+
+	webappUsersManagement := appconfig.Get().WebappUsersManagement()
+	if serverAuthConfig != nil {
+		if toggle := ptr.ToString(serverAuthConfig.WebappUsersManagement); toggle != "" {
+			webappUsersManagement = "off"
+			if toggle == "active" {
+				webappUsersManagement = "on"
+			}
+		}
+	}
+
 	groupList := []string{}
 	if len(ctx.UserGroups) > 0 {
 		groupList = ctx.UserGroups
@@ -470,7 +490,7 @@ func GetUserInfo(c *gin.Context) {
 		OrgName:                ctx.OrgName,
 		OrgLicense:             ctx.OrgLicense,
 		FeatureAskAI:           askAIFeatureStatus,
-		WebAppUsersManagement:  appconfig.Get().WebappUsersManagement(),
+		WebAppUsersManagement:  webappUsersManagement,
 		IntercomUserHmacDigest: intercomUserHash,
 	}
 	if ctx.IsAnonymous() {

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,7 +50,7 @@ func (h *handler) loadOidcVerifier(c *gin.Context) (idp.OidcVerifier, bool) {
 
 // Login
 //
-//	@Summary		Login
+//	@Summary		OIDC | Login
 //	@Description	Returns the login url to perform the signin on the identity provider
 //	@Tags			Authentication
 //	@Produce		json
@@ -98,7 +99,7 @@ func (h *handler) Login(c *gin.Context) {
 
 // LoginCallback
 //
-//	@Summary				Login Callback
+//	@Summary				OIDC | Login Callback
 //	@Description.markdown	api-login-callback
 //	@Tags					Authentication
 //	@Param					error			query		string	false	"The error description in case of failure to authenticate"	Format(string)
@@ -357,8 +358,9 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			// inactive status verification happens in the upper scope
 			// here we change the user status to active in case it's "invited"
 			// otherwise, it stays as it is
-			Status:  string(types.UserStatusActive),
-			SlackID: ctx.UserSlackID,
+			Status:         string(types.UserStatusActive),
+			SlackID:        ctx.UserSlackID,
+			HashedPassword: ptr.ToString(ctx.UserHashedPassword),
 		}
 
 		newUserGroups := []models.UserGroup{}

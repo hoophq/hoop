@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
@@ -19,21 +21,23 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
-func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, bool) {
+func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, idptypes.ServerConfig, bool) {
 	tokenVerifier, err := idp.NewUserInfoTokenVerifierProvider()
 	switch err {
 	case idp.ErrUnknownIdpProvider:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "unknown idp provider"})
+		return nil, idptypes.ServerConfig{}, false
 	case nil:
 	default:
 		log.Errorf("failed to load IDP provider: %v", err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error, failed loading IDP provider"})
+		return nil, idptypes.ServerConfig{}, false
 	}
-	return tokenVerifier, err == nil
+	return tokenVerifier, tokenVerifier.ServerConfig(), err == nil
 }
 
 func (r *Router) AuthMiddleware(c *gin.Context) {
-	tokenVerifier, ok := r.loadTokenVerifier(c)
+	tokenVerifier, serverConfig, ok := r.loadTokenVerifier(c)
 	if !ok {
 		return
 	}
@@ -41,29 +45,37 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 	// api key authentication validation
 	// allow accessing all routes as admin
 	if apiKey := c.GetHeader("Api-Key"); apiKey != "" {
-		if r.registeredApiKey != apiKey {
+		registeredApiKey := serverConfig.ApiKey
+		if registeredApiKey == "" || appconfig.Get().OrgMultitenant() {
+			log.Warnf("api key is not set or configured in the server")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+			return
+		}
+
+		if registeredApiKey != apiKey {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "unauthorize"})
 			return
 		}
+
+		// legacy api key format: orgID|key
 		orgID := strings.Split(apiKey, "|")[0]
-		org, err := models.GetOrganizationByNameOrID(orgID)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-			return
+		if strings.HasPrefix(apiKey, "xapi-") {
+			// the new format is derived from the server config database
+			orgID = serverConfig.OrgID
 		}
 
 		deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 		r.setUserContext(&models.Context{
 			OrgID:          orgID,
-			OrgName:        org.Name,
-			OrgLicenseData: org.LicenseData,
+			OrgName:        proto.DefaultOrgName,
+			OrgLicenseData: nil, // not enforcing license for API keys at this moment
 			UserID:         deterministicUuid.String(),
 			UserSubject:    "API_KEY",
 			UserName:       "API_KEY",
 			UserEmail:      "API_KEY",
 			UserStatus:     "active",
 			UserGroups:     []string{types.GroupAdmin},
-		}, c)
+		}, c, serverConfig.GrpcURL, serverConfig.AuthMethod)
 		return
 	}
 
@@ -108,7 +120,8 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 			storagev2.NewContext("", "").
 				WithAnonymousInfo(uinfo.Profile, uinfo.Email, uinfo.Subject, uinfo.Picture, uinfo.EmailVerified).
 				WithApiURL(r.apiURL).
-				WithGrpcURL(r.grpcURL),
+				WithGrpcURL(serverConfig.GrpcURL).
+				WithProviderType(serverConfig.AuthMethod),
 		)
 		c.Next()
 		return
@@ -131,11 +144,11 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 
 	log.Debugf("access allowed: %v %v, roles=%v, email=%s, isadmin=%v, isauditor=%v",
 		c.Request.Method, c.Request.URL.Path, roles, ctx.UserEmail, ctx.IsAdmin(), ctx.IsAuditor())
-	r.setUserContext(ctx, c)
+	r.setUserContext(ctx, c, serverConfig.GrpcURL, serverConfig.AuthMethod)
 }
 
 // setUserContext and call next middleware
-func (r *Router) setUserContext(ctx *models.Context, c *gin.Context) {
+func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL string, providerType idptypes.ProviderType) {
 	auditApiChanges(c, ctx)
 	c.Set(storagev2.ContextKey,
 		storagev2.NewContext(ctx.UserSubject, ctx.OrgID).
@@ -144,7 +157,8 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context) {
 			WithOrgName(ctx.OrgName).
 			WithOrgLicenseData(ctx.OrgLicenseData).
 			WithApiURL(r.apiURL).
-			WithGrpcURL(r.grpcURL),
+			WithGrpcURL(grpcURL).
+			WithProviderType(providerType),
 	)
 	c.Next()
 }

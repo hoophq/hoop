@@ -12,13 +12,14 @@ import (
 	"time"
 
 	keyfunc "github.com/MicahParks/keyfunc/v2"
+	"github.com/aws/smithy-go/ptr"
 	"github.com/coreos/go-oidc/v3/oidc"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
 )
@@ -39,6 +40,7 @@ type provider struct {
 	groupsClaim              string
 	mustValidateWithUserInfo bool
 	mustFetchGsuiteGroups    bool
+	serverAuthConfig         *models.ServerAuthConfig
 
 	oidcProvider    *oidc.Provider
 	idTokenVerifier *oidc.IDTokenVerifier
@@ -47,86 +49,74 @@ type provider struct {
 	oauth2Config oauth2.Config
 }
 
-var (
-	runtimeProviderStore = memory.New()
-	runtimeProviderKey   = "runtime-provider"
-)
-
 type UserInfoToken struct {
 	token *oauth2.Token
 }
 
-type ProviderUserInfo struct {
-	Subject       string
-	Email         string
-	EmailVerified *bool
-	Groups        []string
-	Profile       string
-	Picture       string
-
-	MustSyncGroups       bool
-	MustSyncGsuiteGroups bool
-}
-
-func GetInstance() (*provider, error) {
-	if obj := runtimeProviderStore.Get(runtimeProviderKey); obj != nil {
-		if provider, ok := obj.(*provider); ok {
-			return provider, nil
-		}
-		return nil, fmt.Errorf("internal error, runtime provider is not of type *provider, got %T", obj)
-	}
+func New(serverAuthConfig *models.ServerAuthConfig) (*provider, error) {
 	ctx := context.Background()
-	provider := &provider{
-		context: ctx,
+	p := &provider{context: ctx, serverAuthConfig: serverAuthConfig}
+	if serverAuthConfig == nil || serverAuthConfig.OidcConfig == nil {
+		if err := setProviderConfFromEnvs(p); err != nil {
+			return nil, fmt.Errorf("failed to set provider configuration from environment variables: %v", err)
+		}
+	} else {
+		p.issuer = serverAuthConfig.OidcConfig.IssuerURL
+		p.clientID = serverAuthConfig.OidcConfig.ClientID
+		p.clientSecret = serverAuthConfig.OidcConfig.ClientSecret
+		p.audience = serverAuthConfig.OidcConfig.Audience
+		p.customScopes = strings.Join(serverAuthConfig.OidcConfig.Scopes, ",")
+		p.groupsClaim = serverAuthConfig.OidcConfig.GroupsClaim
+		p.mustValidateWithUserInfo = false
 	}
 
-	if err := setProviderConfFromEnvs(provider); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v",
-		provider.issuer, provider.audience, provider.customScopes, os.Getenv("IDP_URI") != "")
-	oidcProviderConfig, err := newProviderConfig(provider.context, provider.issuer)
+	log.Infof("issuer-url=%s, audience=%v, custom-scopes=%v, idp-uri-set=%v, server-auth-config-set=%v",
+		p.issuer, p.audience, p.customScopes, os.Getenv("IDP_URI") != "", serverAuthConfig != nil)
+	oidcProviderConfig, err := newProviderConfig(p.context, p.issuer)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	oidcProvider := oidcProviderConfig.NewProvider(ctx)
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
-	if provider.customScopes != "" {
-		scopes = addCustomScopes(scopes, provider.customScopes)
+	if p.customScopes != "" {
+		scopes = addCustomScopes(scopes, p.customScopes)
+	}
+
+	jwksKeyFunc, err := downloadJWKS(oidcProviderConfig.JWKSURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download JWKS from %s, reason=%v", oidcProviderConfig.JWKSURL, err)
 	}
 	apiURL := appconfig.Get().ApiURL()
 	redirectURL := apiURL + "/api/callback"
 	log.Infof("loaded oidc provider configuration, redirect-url=%v, with-user-info=%v, auth=%v, token=%v, userinfo=%v, jwks=%v, algorithms=%v, groupsclaim=%v, scopes=%v",
 		redirectURL,
-		provider.mustValidateWithUserInfo,
+		p.mustValidateWithUserInfo,
 		oidcProviderConfig.AuthURL,
 		oidcProviderConfig.TokenURL,
 		oidcProviderConfig.UserInfoURL,
 		oidcProviderConfig.JWKSURL,
 		oidcProviderConfig.Algorithms,
-		provider.groupsClaim,
+		p.groupsClaim,
 		scopes)
 
 	conf := oauth2.Config{
-		ClientID:     provider.clientID,
-		ClientSecret: provider.clientSecret,
+		ClientID:     p.clientID,
+		ClientSecret: p.clientSecret,
 		RedirectURL:  redirectURL,
 		Endpoint:     oidcProvider.Endpoint(),
 		Scopes:       scopes,
 	}
 
 	oidcConfig := &oidc.Config{
-		ClientID:             provider.clientID,
+		ClientID:             p.clientID,
 		SupportedSigningAlgs: oidcProviderConfig.Algorithms,
 	}
-	provider.oauth2Config = conf
-	provider.oidcProvider = oidcProvider
-	provider.idTokenVerifier = oidcProvider.Verifier(oidcConfig)
-	provider.jwks = downloadJWKS(oidcProviderConfig.JWKSURL)
-	provider.mustFetchGsuiteGroups = provider.issuer == googleIssuerURL && slices.Contains(scopes, gsuiteGroupsScope)
-	runtimeProviderStore.Set(runtimeProviderKey, provider)
-	return provider, nil
+	p.oauth2Config = conf
+	p.oidcProvider = oidcProvider
+	p.idTokenVerifier = oidcProvider.Verifier(oidcConfig)
+	p.jwks = jwksKeyFunc
+	p.mustFetchGsuiteGroups = p.issuer == googleIssuerURL && slices.Contains(scopes, gsuiteGroupsScope)
+	return p, nil
 }
 
 func setProviderConfFromEnvs(p *provider) error {
@@ -209,7 +199,7 @@ func addCustomScopes(scopes []string, customScope string) []string {
 	return scopes
 }
 
-func downloadJWKS(jwksURL string) *keyfunc.JWKS {
+func downloadJWKS(jwksURL string) (*keyfunc.JWKS, error) {
 	log.Infof("downloading provider public key from=%v", jwksURL)
 	options := keyfunc.Options{
 		Ctx:                 context.Background(),
@@ -219,18 +209,68 @@ func downloadJWKS(jwksURL string) *keyfunc.JWKS {
 		RefreshTimeout:      time.Second * 10,
 		RefreshUnknownKID:   true,
 	}
-
-	var err error
-	jwks, err := keyfunc.Get(jwksURL, options)
-	if err != nil {
-		log.Fatalf("failed loading jwks url, reason=%v", err)
-	}
-	return jwks
+	return keyfunc.Get(jwksURL, options)
 }
 
 func (p *provider) GetAudience() string { return p.audience }
 func (p *provider) GetAuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
 	return p.oauth2Config.AuthCodeURL(state, opts...)
+}
+
+func (p *provider) ServerConfig() (config idptypes.ServerConfig) {
+	// TODO(san): these defaults are kept for backward compatibility
+	// in future releases we should deprecated and remove them
+	appConfig := appconfig.Get()
+	config = idptypes.ServerConfig{
+		ApiKey:     appConfig.ApiKey(),
+		GrpcURL:    appConfig.GrpcURL(),
+		AuthMethod: idptypes.ProviderTypeOIDC,
+	}
+	if p.serverAuthConfig != nil {
+		config.OrgID = p.serverAuthConfig.OrgID
+		if p.serverAuthConfig.ApiKey != nil {
+			config.ApiKey = *p.serverAuthConfig.ApiKey
+		}
+		if p.serverAuthConfig.GrpcServerURL != nil {
+			config.GrpcURL = *p.serverAuthConfig.GrpcServerURL
+		}
+	}
+	return
+}
+
+func (p *provider) HasServerConfigChanged(newConfig *models.ServerAuthConfig) (hasChanged bool) {
+	return hasServerConfigChanged(p.serverAuthConfig, newConfig)
+}
+
+func hasServerConfigChanged(old, new *models.ServerAuthConfig) bool {
+	var newc models.ServerAuthConfig
+	if new != nil {
+		newc = *new
+	}
+	var oid models.ServerAuthOidcConfig
+	if newc.OidcConfig != nil {
+		oid = *newc.OidcConfig
+	}
+
+	newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v",
+		toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), oid.IssuerURL, oid.ClientID, oid.ClientSecret,
+		oid.Audience, oid.Scopes, oid.GroupsClaim)
+
+	var oldc models.ServerAuthConfig
+	if old != nil {
+		oldc = *old
+	}
+
+	var oldOidc models.ServerAuthOidcConfig
+	if oldc.OidcConfig != nil {
+		oldOidc = *oldc.OidcConfig
+	}
+
+	oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v",
+		toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldOidc.IssuerURL, oldOidc.ClientID, oldOidc.ClientSecret,
+		oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim)
+
+	return newConfigStr != oldConfigStr
 }
 
 func (p *provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo idptypes.ProviderUserInfo, err error) {
@@ -428,3 +468,5 @@ func debugClaims(subject string, claims map[string]any, accessToken *oauth2.Toke
 		isJWT, string(jwtHeader),
 		len(claims), subject, types.GroupAdmin)
 }
+
+func toStr(s *string) string { return ptr.ToString(s) }

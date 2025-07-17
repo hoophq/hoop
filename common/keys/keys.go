@@ -11,11 +11,15 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var defaultKeySize uint16 = 32
+var (
+	defaultKeySize   uint16 = 32
+	defaultPrefixKey string = "xagt"
+)
 
 // GenerateSecureRandomKey generates a secure random key of the specified size.
 // If size is 0, it defaults to defaultKeySize (32 bytes).
-func GenerateSecureRandomKey(size uint16) (secretKey, secretKeyHash string, err error) {
+// It defaults the prefix to defaultPrefixKey if not provided.
+func GenerateSecureRandomKey(prefixKey string, size uint16) (secretKey, secretKeyHash string, err error) {
 	if size <= 0 {
 		size = defaultKeySize
 	}
@@ -25,7 +29,10 @@ func GenerateSecureRandomKey(size uint16) (secretKey, secretKeyHash string, err 
 		return "", "", fmt.Errorf("failed generating entropy, err=%v", err)
 	}
 	secretKey = base64.RawURLEncoding.EncodeToString(secretRandomBytes)
-	secretKey = "xagt-" + secretKey
+	if prefixKey == "" {
+		prefixKey = defaultPrefixKey
+	}
+	secretKey = prefixKey + "-" + secretKey
 	secretKeyHash, err = hash256Key(secretKey)
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating secret hash, err=%v", err)
