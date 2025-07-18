@@ -176,7 +176,7 @@
                 :size "3"
                 :variant "ghost"
                 :radius "medium"
-                :on-click #(rf/dispatch [:navigate :manage-plugin {:tab "configurations"} :plugin-name "runbooks"])}
+                :on-click #(rf/dispatch [:navigate :runbooks {:tab "configurations"}])}
      "Go to Configurations"]]])
 
 (defn main []

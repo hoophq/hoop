@@ -88,7 +88,8 @@
                                        :connection @review-connection
                                        :start_date (iso-date "start_date" (.-startDate date-obj))
                                        :end_date (iso-date "end_date" (.-endDate date-obj))}]))]
-    (rf/dispatch [:reviews-plugin->get-reviews {:status @review-status}])
+    (rf/dispatch [:reviews-plugin->get-reviews {:status @review-status
+                                                :user @review-user}])
     (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:users->get-users])
     (fn []
@@ -100,7 +101,7 @@
                                    @searched-users)]
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          [:div {:class "mb-regular flex items-center gap-2"}
-;; User Filter
+          ;; User Filter
           [:> ui/Popover {:class "relative"}
            (fn [params]
              (r/as-element
@@ -167,7 +168,7 @@
                           (when (= (:value user) @review-user)
                             [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]))]
 
-        ;; Status Filter
+          ;; Status Filter
           [:> ui/Popover {:class "relative"}
            (fn [params]
              (r/as-element
@@ -216,7 +217,7 @@
                         (when (= (:value status) @review-status)
                           [:> Check {:size 16}])]]))]]]]]))]
 
-        ;; Connection Filter
+          ;; Connection Filter
           [:> ui/Popover {:class "relative"}
            (fn [params]
              (r/as-element
@@ -287,7 +288,7 @@
                           (when (= (:name connection) @review-connection)
                             [:> Check {:size 16}])]]))]])]]]))]
 
-        ;; Date Filter
+          ;; Date Filter
           [:div
            [:> Datepicker {:value @date
                            :placeholder "Period"

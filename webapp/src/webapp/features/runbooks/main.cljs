@@ -64,7 +64,7 @@
                             :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}
                [:> Tabs.Trigger {:value "connections"} "Connections"]
-               [:> Tabs.Trigger {:value "configuration"} "Configuration"]]
+               [:> Tabs.Trigger {:value "configurations"} "Configurations"]]
 
               [:> Separator {:size "4" :mb "7"}]
 
@@ -73,5 +73,5 @@
                  [empty-state/main installed?]
                  [runbook-list/main])]
 
-              [:> Tabs.Content {:value "configuration" :class "h-full"}
+              [:> Tabs.Content {:value "configurations" :class "h-full"}
                [config-view/main active-tab]]]]]])))))
