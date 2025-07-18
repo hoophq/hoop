@@ -175,14 +175,18 @@ const docTemplate = `{
                         "description": "The authorization code (Oauth2)",
                         "name": "code",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "The location header to redirect in case of failure or success. In case of error it will contain the ` + "`" + `error=\u003cmessage\u003e` + "`" + ` query string",
+                        "name": "Location",
+                        "in": "header"
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.Login"
-                        }
+                    "307": {
+                        "description": "Redirect with Success or Error"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -1866,7 +1870,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "token",
+                        "description": "The access token generated after a successful login",
                         "name": "Token",
                         "in": "header"
                     }
@@ -1918,7 +1922,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "token",
+                        "description": "The access token generated after successful registration",
                         "name": "Token",
                         "in": "header"
                     },
@@ -1936,7 +1940,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.Login"
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "400": {
@@ -3164,18 +3168,22 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Base64 encoded SAML response from identity provider",
-                        "name": "SAMLResponse",
-                        "in": "formData",
-                        "required": true
+                        "format": "string",
+                        "description": "The error description in case of failure to authenticate",
+                        "name": "error",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "The location header to redirect in case of failure or success. In case of error it will contain the ` + "`" + `error=\u003cmessage\u003e` + "`" + ` query string",
+                        "name": "Location",
+                        "in": "header"
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.Login"
-                        }
+                    "307": {
+                        "description": "Redirect with Success or Error"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -3183,8 +3191,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "401": {
-                        "description": "Unauthorized",
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }

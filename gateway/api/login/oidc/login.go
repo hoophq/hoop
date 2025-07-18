@@ -102,11 +102,12 @@ func (h *handler) Login(c *gin.Context) {
 //	@Summary				OIDC | Login Callback
 //	@Description.markdown	api-login-callback
 //	@Tags					Authentication
-//	@Param					error			query		string	false	"The error description in case of failure to authenticate"	Format(string)
-//	@Param					state			query		string	false	"The state value (Oauth2)"									Format(string)
-//	@Param					code			query		string	false	"The authorization code (Oauth2)"							Format(string)
-//	@Success				200				{object}	openapi.Login
-//	@Failure				400,409,422,500	{object}	openapi.HTTPError
+//	@Param					error			query								string	false	"The error description in case of failure to authenticate"																				Format(string)
+//	@Param					state			query								string	false	"The state value (Oauth2)"																												Format(string)
+//	@Param					code			query								string	false	"The authorization code (Oauth2)"																										Format(string)
+//	@Param					Location		header								string	false	"The location header to redirect in case of failure or success. In case of error it will contain the `error=<message>` query string"	Format(string)
+//	@Success				307				"Redirect with Success or Error"	{string}
+//	@Failure				400,409,422,500	{object}							openapi.HTTPError
 //	@Router					/callback [get]
 func (h *handler) LoginCallback(c *gin.Context) {
 	oidc, ok := h.loadOidcVerifier(c)
