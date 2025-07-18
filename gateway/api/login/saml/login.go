@@ -113,14 +113,15 @@ func (h *handler) SamlLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.Login{URL: authURL})
 }
 
-// SamlLoginCallback
+// LoginCallback
 //
 //	@Summary		SAML | Login Callback
 //	@Description	It redirects the user to the redirect URL with a JWT access token on success. A success authentication will redirect the user back to the default redirect url provided in the /saml/login route. In case of error it will include the query string error=<description> when redirecting.
 //	@Tags			Authentication
-//	@Param			SAMLResponse	formData	string	true	"Base64 encoded SAML response from identity provider"
-//	@Success		200				{object}	openapi.Login
-//	@Failure		400,401,500		{object}	openapi.HTTPError
+//	@Param			error			query								string	false	"The error description in case of failure to authenticate"																				Format(string)
+//	@Param			Location		header								string	false	"The location header to redirect in case of failure or success. In case of error it will contain the `error=<message>` query string"	Format(string)
+//	@Success		307				"Redirect with Success or Error"	{string}
+//	@Failure		400,409,422,500	{object}							openapi.HTTPError
 //	@Router			/saml/callback [post]
 func (h *handler) SamlLoginCallback(c *gin.Context) {
 	saml, ok := h.loadSamlVerifier(c)

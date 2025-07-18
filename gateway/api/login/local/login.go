@@ -22,7 +22,7 @@ const defaultTokenExpiration = time.Hour * 12
 //	@Tags			Authentication
 //	@Produce		json
 //	@Success		200
-//	@Param			Token			header		string	false	"token"
+//	@Param			Token			header		string	false	"The access token generated after a successful login"
 //	@Failure		400,401,404,500	{object}	openapi.HTTPError
 //	@Router			/localauth/login [get]
 func Login(c *gin.Context) {
