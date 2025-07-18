@@ -10,7 +10,6 @@ import (
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 )
 
@@ -22,9 +21,6 @@ var (
 )
 
 func Run(gatewayGrpcURL string) error {
-	if !appconfig.Get().OrgMultitenant() {
-		return nil
-	}
 	client, err := NewApiClient()
 	if err != nil {
 		return err
@@ -146,7 +142,7 @@ func listAgents(client *apiClient) (map[string]*agentcontroller.Deployment, erro
 
 func generateDsnKey(gatewayGrpcURL, agentName string) (dsnKey, secretKeyHash string, err error) {
 	var secretKey string
-	secretKey, secretKeyHash, err = keys.GenerateSecureRandomKey(32)
+	secretKey, secretKeyHash, err = keys.GenerateSecureRandomKey("", 32)
 	if err != nil {
 		return
 	}

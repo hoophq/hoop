@@ -6,12 +6,14 @@ import (
 	"os"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -24,21 +26,14 @@ var (
 		Commit:                  vinfo.GitCommit,
 		LogLevel:                os.Getenv("LOG_LEVEL"),
 		GoDebug:                 os.Getenv("GODEBUG"),
-		AdminUsername:           os.Getenv("ADMIN_USERNAME"),
 		RedactProvider:          os.Getenv("DLP_PROVIDER"),
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
 		DisableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
-		AnalyticsTracking:       getAnalyticsTrackingStatus(),
+		// AnalyticsTracking:       getAnalyticsTrackingStatus(),
 	}
 )
-
-type handler struct {
-	grpcURL string
-}
-
-func New(grpcURL string) *handler { return &handler{grpcURL: grpcURL} }
 
 // GetServerInfo
 //
@@ -49,7 +44,7 @@ func New(grpcURL string) *handler { return &handler{grpcURL: grpcURL} }
 //	@Success		200	{object}	openapi.ServerInfo
 //	@Failure		500	{object}	openapi.HTTPError
 //	@Router			/serverinfo [get]
-func (h *handler) Get(c *gin.Context) {
+func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	org, err := models.GetOrganizationByNameOrID(ctx.OrgID)
 	if err != nil {
@@ -58,6 +53,13 @@ func (h *handler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
+	serverConfig, _, err := idp.LoadServerAuthConfig()
+	if err != nil {
+		log.Errorf("failed loading server auth config, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, failed loading server auth config"})
+		return
+	}
+
 	appc := appconfig.Get()
 	apiHostname := appc.ApiHostname()
 	l, licenseVerifyErr := defaultOSSLicense(), ""
@@ -67,13 +69,26 @@ func (h *handler) Get(c *gin.Context) {
 			licenseVerifyErr = err.Error()
 		}
 	}
+
+	serverInfoData.AnalyticsTracking = getAnalyticsTrackingStatus()
+	if serverConfig != nil && serverConfig.ProductAnalytics != nil {
+		serverInfoData.AnalyticsTracking = ptr.ToString(serverConfig.ProductAnalytics)
+		switch serverInfoData.AnalyticsTracking {
+		case "active":
+			serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingEnabled)
+		case "inactive":
+			serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingDisabled)
+		}
+	}
+
 	tenancyType := "selfhosted"
 	if isOrgMultiTenant {
 		tenancyType = "multitenant"
 	}
-	serverInfoData.AuthMethod = string(appc.AuthMethod())
+
 	serverInfoData.TenancyType = tenancyType
-	serverInfoData.GrpcURL = h.grpcURL
+	serverInfoData.AuthMethod = string(ctx.ProviderType)
+	serverInfoData.GrpcURL = ctx.GrpcURL
 	serverInfoData.ApiURL = appc.ApiURL()
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
 	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()

@@ -23,7 +23,7 @@ import (
 
 // Signup
 //
-//	@Summary		Signup
+//	@Summary		OIDC | Signup
 //	@Description	Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.
 //	@Tags			Authentication
 //	@Accept			json

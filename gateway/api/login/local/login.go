@@ -7,19 +7,26 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
-	localprovider "github.com/hoophq/hoop/gateway/idp/local"
+	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type User struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	Name     string `json:"name"`
-}
+const defaultTokenExpiration = time.Hour * 12
 
+// LocalAuthLogin
+//
+//	@Summary		Local | Login
+//	@Description	Generate a new access token  to interact with the API that expires in 12 hours.
+//	@Tags			Authentication
+//	@Produce		json
+//	@Success		200
+//	@Param			Token			header		string	false	"token"
+//	@Failure		400,401,404,500	{object}	openapi.HTTPError
+//	@Router			/localauth/login [get]
 func Login(c *gin.Context) {
-	var user User
+	var user openapi.UserRequest
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -35,6 +42,13 @@ func Login(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "user not found"})
 		return
 	}
+
+	if dbUser.HashedPassword == "" {
+		log.Warnf("user %s has no password set, cannot login", user.Email)
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "invalid credentials"})
+		return
+	}
+
 	err = bcrypt.CompareHashAndPassword([]byte(dbUser.HashedPassword), []byte(user.Password))
 	if err != nil {
 		log.Errorf("failed comparing password for user %s, reason=%v", user.Email, err)
@@ -56,9 +70,9 @@ func Login(c *gin.Context) {
 }
 
 func generateNewAccessToken(subject, email string) (string, error) {
-	instance, err := localprovider.GetInstance()
+	localVerifier, err := idp.NewLocalVerifierProvider()
 	if err != nil {
 		return "", fmt.Errorf("failed to get local provider instance: %v", err)
 	}
-	return instance.NewAccessToken(subject, email, time.Hour*168) // 168 hours = 7 days
+	return localVerifier.NewAccessToken(subject, email, defaultTokenExpiration)
 }

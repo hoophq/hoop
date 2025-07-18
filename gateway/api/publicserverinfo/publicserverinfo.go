@@ -1,11 +1,13 @@
 package apipublicserverinfo
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
 )
 
 // GetPublicServerInfo
@@ -18,8 +20,15 @@ import (
 //	@Failure		500	{object}	openapi.HTTPError
 //	@Router			/publicserverinfo [get]
 func Get(c *gin.Context) {
-	publicServerInfo := openapi.PublicServerInfo{
-		AuthMethod: string(appconfig.Get().AuthMethod()),
+	_, authMethod, err := idp.LoadServerAuthConfig()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to load server auth config: %v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
 	}
-	c.PureJSON(http.StatusOK, publicServerInfo)
+	publicServerInfo := openapi.PublicServerInfo{
+		AuthMethod: string(authMethod),
+	}
+	c.JSON(http.StatusOK, publicServerInfo)
 }

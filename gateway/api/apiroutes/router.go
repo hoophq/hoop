@@ -32,9 +32,7 @@ func routeTypeFromContext(c *gin.Context) string {
 
 type Router struct {
 	*gin.RouterGroup
-	grpcURL          string
-	apiURL           string
-	registeredApiKey string
+	apiURL string
 }
 
 func New(route *gin.RouterGroup) *Router {
@@ -49,10 +47,8 @@ func New(route *gin.RouterGroup) *Router {
 	))
 	route.Use(contextTracerMiddleware())
 	return &Router{
-		RouterGroup:      route,
-		registeredApiKey: appconfig.Get().ApiKey(),
-		grpcURL:          appconfig.Get().GrpcURL(),
-		apiURL:           appconfig.Get().ApiURL(),
+		RouterGroup: route,
+		apiURL:      appconfig.Get().ApiURL(),
 	}
 }
 

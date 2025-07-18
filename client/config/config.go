@@ -135,6 +135,10 @@ func (c *Config) isEmpty() bool  { return c.GrpcURL == "" && c.ApiURL == "" }
 func (c *Config) IsValid() bool  { return c.ApiURL != "" }
 func (c *Config) HasToken() bool { return c.Mode == clientconfig.ModeLocal || c.Token != "" }
 func (c *Config) IsApiKey() bool {
+	if strings.HasPrefix(c.Token, "xapi-") {
+		return true
+	}
+	// legacy api key format
 	parts := strings.Split(c.Token, "|")
 	if _, err := uuid.Parse(parts[0]); err == nil {
 		return true
@@ -188,8 +192,8 @@ func GetClientConfigOrDie() *Config {
 	default:
 		styles.PrintErrorAndExit(err.Error())
 	}
-	log.Debugf("loaded clientconfig, mode=%v, grpc-tls=%v, api_url=%v, grpc_url=%v, tokenlength=%v, tlsca=%v",
-		config.Mode, !config.InsecureGRPC, config.ApiURL, config.GrpcURL, len(config.Token), config.TlsCAB64Enc != "")
+	log.Debugf("loaded clientconfig, mode=%v, grpc-tls=%v, api_url=%v, grpc_url=%v, isapikey=%v, tokenlength=%v, tlsca=%v",
+		config.Mode, !config.InsecureGRPC, config.ApiURL, config.GrpcURL, config.IsApiKey(), len(config.Token), config.TlsCAB64Enc != "")
 	return config
 }
 

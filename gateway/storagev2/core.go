@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
@@ -93,6 +94,11 @@ func (c *Context) WithApiURL(apiURL string) *Context {
 
 func (c *Context) WithGrpcURL(grpcURL string) *Context {
 	c.GrpcURL = grpcURL
+	return c
+}
+
+func (c *Context) WithProviderType(providerType idptypes.ProviderType) *Context {
+	c.ProviderType = providerType
 	return c
 }
 

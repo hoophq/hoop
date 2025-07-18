@@ -37,6 +37,7 @@ Gateway Commit: %v
 Webapp Commit:  %v
 
 Configuration:
+  IDP Provider:            %v
   Log Level:               %v
   Go Debug:                %v
   Admin Username:          %v
@@ -100,6 +101,7 @@ var serverInfoCmd = &cobra.Command{
 				resp["version"],
 				resp["gateway_commit"],
 				resp["webapp_commit"],
+				resp["auth_method"],
 				resp["log_level"],
 				resp["go_debug"],
 				resp["admin_username"],

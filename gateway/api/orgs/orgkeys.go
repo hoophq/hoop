@@ -11,7 +11,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -73,7 +72,7 @@ func GetAgentKey(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	dsn, err := dsnkeys.New(appconfig.Get().GrpcURL(), agentKeyDefaultName, ag.Key)
+	dsn, err := dsnkeys.New(ctx.GrpcURL, agentKeyDefaultName, ag.Key)
 	if err != nil {
 		log.Errorf("failed generating agent key, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
@@ -124,7 +123,7 @@ func ProvisionOrgAgentKey(orgID, grpcURL string) (agentID, dsn string, err error
 	default:
 		return "", "", fmt.Errorf("failed fetching for existing organization token, err=%v", err)
 	}
-	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey(32)
+	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey("", 32)
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating organization token: %v", err)
 	}

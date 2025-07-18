@@ -26,17 +26,18 @@ func NewAdminContext(orgID string) UserContext {
 }
 
 type Context struct {
-	OrgID          string          `gorm:"column:org_id"`
-	OrgName        string          `gorm:"column:org_name"`
-	OrgLicenseData json.RawMessage `gorm:"column:org_license_data"`
-	UserID         string          `gorm:"column:user_id"`
-	UserSubject    string          `gorm:"column:user_subject"`
-	UserEmail      string          `gorm:"column:user_email"`
-	UserName       string          `gorm:"column:user_name"`
-	UserStatus     string          `gorm:"column:user_status"`
-	UserSlackID    string          `gorm:"column:user_slack_id"`
-	UserPicture    string          `gorm:"column:user_picture"`
-	UserGroups     pq.StringArray  `gorm:"column:user_groups;type:text[]"`
+	OrgID              string          `gorm:"column:org_id"`
+	OrgName            string          `gorm:"column:org_name"`
+	OrgLicenseData     json.RawMessage `gorm:"column:org_license_data"`
+	UserID             string          `gorm:"column:user_id"`
+	UserSubject        string          `gorm:"column:user_subject"`
+	UserEmail          string          `gorm:"column:user_email"`
+	UserName           string          `gorm:"column:user_name"`
+	UserStatus         string          `gorm:"column:user_status"`
+	UserSlackID        string          `gorm:"column:user_slack_id"`
+	UserPicture        string          `gorm:"column:user_picture"`
+	UserHashedPassword *string         `gorm:"column:user_hashed_password"`
+	UserGroups         pq.StringArray  `gorm:"column:user_groups;type:text[]"`
 }
 
 // IsEmpty returns true if the user is not logged in and has not signed up yet.
@@ -57,10 +58,10 @@ func GetUserContext(subject string) (*Context, error) {
 	var ctx Context
 	err := DB.Raw(`
 	WITH usr AS (
-		SELECT id, org_id, subject, email, name, status::TEXT, slack_id, picture, created_at, updated_at
+		SELECT id, org_id, subject, email, name, status::TEXT, slack_id, picture, hashed_password, created_at, updated_at
 		FROM private.users
 		UNION
-		SELECT id, org_id, subject, subject AS email, name, status::TEXT, '', '', created_at, updated_at
+		SELECT id, org_id, subject, subject AS email, name, status::TEXT, '', '', '', created_at, updated_at
 		FROM private.service_accounts
 	) SELECT
 		o.id AS org_id,
@@ -73,6 +74,7 @@ func GetUserContext(subject string) (*Context, error) {
 		u.status AS user_status,
 		u.slack_id AS user_slack_id,
 		u.picture AS user_picture,
+		u.hashed_password AS user_hashed_password,
 		COALESCE((
 			SELECT array_agg(ug.name::TEXT) FROM private.user_groups ug
 			WHERE ug.user_id = u.id OR ug.service_account_id = u.id

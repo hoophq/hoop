@@ -20,3 +20,10 @@ type ProviderUserInfo struct {
 	MustSyncGroups       bool
 	MustSyncGsuiteGroups bool
 }
+
+type ServerConfig struct {
+	OrgID      string
+	AuthMethod ProviderType
+	ApiKey     string
+	GrpcURL    string
+}

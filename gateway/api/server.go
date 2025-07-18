@@ -49,7 +49,6 @@ import (
 
 type Api struct {
 	ReleaseConnectionFn reviewapi.TransportReleaseConnectionFunc
-	GrpcURL             string
 	TLSConfig           *tls.Config
 	logger              *zap.Logger
 }
@@ -171,7 +170,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/serverinfo",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
-		apiserverinfo.New(api.GrpcURL).Get)
+		apiserverinfo.Get)
 
 	// Ouath2 / OIDC
 	r.GET("/login", loginOidcApiHandler.Login)
@@ -673,14 +672,30 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apidatamasking.Delete)
 
-	r.GET("/serverconfig",
+	// server config routes
+	r.GET("/serverconfig/misc",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiserverconfig.Get,
+		apiserverconfig.GetServerMisc,
 	)
-	r.PUT("/serverconfig",
+	r.PUT("/serverconfig/misc",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiserverconfig.Put,
+		apiserverconfig.UpdateServerMisc,
+	)
+	r.GET("/serverconfig/auth",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.GetAuthConfig,
+	)
+	r.PUT("/serverconfig/auth",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.UpdateAuthConfig,
+	)
+	r.POST("/serverconfig/auth/apikey",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.GenerateApiKey,
 	)
 }

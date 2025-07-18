@@ -25,7 +25,7 @@ func (i *interceptor) UnaryValidator(ctx context.Context, srv any, info *grpc.Un
 		return handler(ctx, srv)
 	}
 
-	bearerToken, err := parseBearerToken(md)
+	bearerToken, _, err := parseBearerToken(md)
 	if err != nil {
 		return nil, err
 	}
