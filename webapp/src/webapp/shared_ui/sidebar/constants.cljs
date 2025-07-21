@@ -145,24 +145,28 @@
     :free-feature? true
     :uri (routes/url-for :integrations-authentication)
     :navigate :integrations-authentication
-    :admin-only? true}
+    :admin-only? true
+    :selfhosted-only? true}
    {:name "jira"
     :label "Jira"
     :plugin? false
     :uri (routes/url-for :settings-jira)
     :navigate :settings-jira
     :free-feature? false
-    :admin-only? true}
+    :admin-only? true
+    :selfhosted-only? false}
    {:name "webhooks"
     :label "Webhooks"
     :plugin? true
     :free-feature? false
-    :admin-only? true}
+    :admin-only? true
+    :selfhosted-only? false}
    {:name "slack"
     :label "Slack"
     :plugin? true
     :free-feature? true
-    :admin-only? true}])
+    :admin-only? true
+    :selfhosted-only? false}])
 
 ;; Settings
 (def settings-management
@@ -171,19 +175,22 @@
     :uri (routes/url-for :settings-infrastructure)
     :navigate :settings-infrastructure
     :free-feature? true
-    :admin-only? true}
+    :admin-only? true
+    :selfhosted-only? true}
    {:name "license"
     :label "License"
     :uri (routes/url-for :license-management)
     :navigate :license-management
     :free-feature? true
-    :admin-only? true}
+    :admin-only? true
+    :selfhosted-only? false}
    {:name "users"
     :label "Users"
     :uri (routes/url-for :users)
     :navigate :users
     :free-feature? true
-    :admin-only? true}])
+    :admin-only? true
+    :selfhosted-only? false}])
 
 ;; Mantemos essa constante para compatibilidade com o código existente
 (def routes main-routes)

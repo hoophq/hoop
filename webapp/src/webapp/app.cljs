@@ -248,9 +248,10 @@
 
 (defmethod routes/panels :settings-infrastructure-panel []
   [layout :application-hoop
-   [:div {:class "h-full"}
+   [:div {:class "bg-gray-1 min-h-full h-full"}
     [routes/wrap-admin-only
-     [infrastructure/main]]]])
+     [routes/wrap-selfhosted-only
+      [infrastructure/main]]]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
@@ -305,9 +306,10 @@
 (defmethod routes/panels :integrations-authentication-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
-   [:div {:class "h-full"}
+   [:div {:class "bg-gray-1 min-h-full h-full"}
     [routes/wrap-admin-only
-     [integrations-authentication/main]]]])
+     [routes/wrap-selfhosted-only
+      [integrations-authentication/main]]]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])

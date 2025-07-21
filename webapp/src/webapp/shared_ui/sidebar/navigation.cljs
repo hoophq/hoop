@@ -20,6 +20,7 @@
             auth-method (:auth_method (:data @gateway-info))
             user-data (:data user)
             admin? (:admin? user-data)
+            selfhosted? (= (:tenancy_type user-data) "selfhosted")
             free-license? (:free-license? user-data)
             current-route @current-route]
         [:<>
@@ -127,24 +128,24 @@
                                                    :class "mt-1 px-2"}
                        (for [plugin sidebar-constants/integrations-management]
                          ^{:key (:name plugin)}
-                         [:li
-                          (println "plugin" plugin)
-                          [:a {:on-click (fn [e]
-                                           (.preventDefault e)
-                                           (if (and free-license? (not (:free-feature? plugin)))
-                                             (rf/dispatch [:navigate (:upgrade-plan-route plugin)])
-                                             (if (:plugin? plugin)
-                                               (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
-                                               (rf/dispatch [:navigate (:navigate plugin)]))))
-                               :href "#"
-                               :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                           "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                           (when (and free-license? (not (:free-feature? plugin)))
-                                             " text-opacity-30"))}
-                           (:label plugin)
-                           (when (and free-license? (not (:free-feature? plugin)))
-                             [:div {:class styles/badge-upgrade}
-                              "Upgrade"])]])]]))])
+                         (when (or selfhosted? (not (:selfhosted-only? plugin)))
+                           [:li
+                            [:a {:on-click (fn [e]
+                                             (.preventDefault e)
+                                             (if (and free-license? (not (:free-feature? plugin)))
+                                               (rf/dispatch [:navigate (:upgrade-plan-route plugin)])
+                                               (if (:plugin? plugin)
+                                                 (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
+                                                 (rf/dispatch [:navigate (:navigate plugin)]))))
+                                 :href "#"
+                                 :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                             "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                             (when (and free-license? (not (:free-feature? plugin)))
+                                               " text-opacity-30"))}
+                             (:label plugin)
+                             (when (and free-license? (not (:free-feature? plugin)))
+                               [:div {:class styles/badge-upgrade}
+                                "Upgrade"])]]))]]))])
 
                (when admin?
                  [:> ui/Disclosure {:as "li"
@@ -166,23 +167,24 @@
                                                    :class "mt-1 px-2"}
                        (for [route sidebar-constants/settings-management]
                          ^{:key (:name route)}
-                         [:li
-                          [:a {:on-click (fn [e]
-                                           (.preventDefault e)
-                                           (if (and free-license? (not (:free-feature? route)))
-                                             (rf/dispatch [:navigate (:upgrade-plan-route route)])
-                                             (rf/dispatch [:navigate (:navigate route)])))
-                               :href (if (and free-license? (not (:free-feature? route)))
-                                       "#"
-                                       (:uri route))
-                               :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
-                                           "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
-                                           (when (and free-license? (not (:free-feature? route)))
-                                             " text-opacity-30"))}
-                           (:label route)
-                           (when (and free-license? (not (:free-feature? route)))
-                             [:div {:class styles/badge-upgrade}
-                              "Upgrade"])]])]]))])]])
+                         (when (or selfhosted? (not (:selfhosted-only? route)))
+                           [:li
+                            [:a {:on-click (fn [e]
+                                             (.preventDefault e)
+                                             (if (and free-license? (not (:free-feature? route)))
+                                               (rf/dispatch [:navigate (:upgrade-plan-route route)])
+                                               (rf/dispatch [:navigate (:navigate route)])))
+                                 :href (if (and free-license? (not (:free-feature? route)))
+                                         "#"
+                                         (:uri route))
+                                 :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
+                                             "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
+                                             (when (and free-license? (not (:free-feature? route)))
+                                               " text-opacity-30"))}
+                             (:label route)
+                             (when (and free-license? (not (:free-feature? route)))
+                               [:div {:class styles/badge-upgrade}
+                                "Upgrade"])]]))]]))])]])
 
            [:li {:class "mt-auto mb-3"}
             [profile-dropdown {:user-data user-data
