@@ -246,7 +246,7 @@
     [routes/wrap-admin-only
      [license-management/main]]]])
 
-(defmethod routes/panels :infrastructure-panel []
+(defmethod routes/panels :settings-infrastructure-panel []
   [layout :application-hoop
    [:div {:class "h-full"}
     [routes/wrap-admin-only

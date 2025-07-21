@@ -2,33 +2,44 @@
   (:require
    [re-frame.core :as rf]))
 
-;; Mock data for development
-(def mock-config
-  {:auth-method "identity-provider"
-   :selected-provider "auth0"
-   :config {:client-id "your-auth0-client-id"
-            :client-secret "your-auth0-client-secret"
-            :custom-scopes ["email" "profile"]
-            :audience "https://api.example.com"}
-   :advanced {:admin-role "admin"
-              :auditor-role "auditor"
-              :api-key {:org-id "d9fe7aa1-b0a2-48d9-bde1"
-                        :secret "VuOnc2nUwv8aCRhfQGsp"}}})
-
 ;; Get authentication configuration
 (rf/reg-event-fx
  :authentication->get-config
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:authentication :status] :loading)
-    :fx [[:dispatch-later {:ms 1000
-                           :dispatch [:authentication->get-config-success mock-config]}]]}))
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/serverconfig/auth"
+                             :on-success #(rf/dispatch [:authentication->get-config-success %])
+                             :on-failure #(rf/dispatch [:authentication->get-config-failure %])}]]]}))
 
 (rf/reg-event-db
  :authentication->get-config-success
  (fn [db [_ data]]
-   (-> db
-       (assoc-in [:authentication :status] :success)
-       (assoc-in [:authentication :data] data))))
+   (let [mapped-data (-> data
+                         ;; Map API fields to UI structure
+                         (assoc :auth-method (if (= (:auth_method data) "oidc") "identity-provider" "local"))
+                         (assoc :selected-provider (when (= (:auth_method data) "oidc") "auth0"))
+                         (assoc :config (merge
+                                         {:client-id (:client_id (:oidc_config data))
+                                          :client-secret (:client_secret (:oidc_config data))
+                                          :custom-scopes (:scopes (:oidc_config data))
+                                          :audience (:audience (:oidc_config data))}))
+                         (assoc :advanced {:admin-role (:admin_role_name data)
+                                           :auditor-role (:auditor_role_name data)
+                                           :api-key {:org-id nil ;; Not used in new API
+                                                     :secret (:rollout_api_key data)}
+                                           :local-auth-enabled (= (:webapp_users_management_status data) "enabled")}))]
+     (-> db
+         (assoc-in [:authentication :status] :success)
+         (assoc-in [:authentication :data] mapped-data)))))
+
+(rf/reg-event-fx
+ :authentication->get-config-failure
+ (fn [{:keys [db]} [_ error]]
+   {:db (assoc-in db [:authentication :status] :error)
+    :fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to load authentication configuration"
+                                     :details error}]]]}))
 
 ;; Update authentication method
 (rf/reg-event-db
@@ -63,25 +74,66 @@
  (fn [db [_ enabled?]]
    (assoc-in db [:authentication :data :advanced :local-auth-enabled] enabled?)))
 
+;; Generate new API key
+(rf/reg-event-fx
+ :authentication->generate-api-key
+ (fn [{:keys [db]} _]
+   {:fx [#_[:dispatch [:show-snackbar {:level :info
+                                       :text "Generating new API key..."}]]
+         [:dispatch [:fetch {:method "POST"
+                             :uri "/serverconfig/auth/apikey"
+                             :on-success #(rf/dispatch [:authentication->generate-api-key-success %])
+                             :on-failure #(rf/dispatch [:authentication->generate-api-key-failure %])}]]]}))
+
+(rf/reg-event-fx
+ :authentication->generate-api-key-success
+ (fn [{:keys [db]} [_ response]]
+   {:db (assoc-in db [:authentication :data :advanced :api-key :secret] (:rollout_api_key response))
+    :fx [[:dispatch [:show-snackbar {:level :success
+                                     :text "New API key generated successfully!"}]]]}))
+
+(rf/reg-event-fx
+ :authentication->generate-api-key-failure
+ (fn [{:keys [db]} [_ error]]
+   {:fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to generate new API key"
+                                     :details error}]]]}))
+
 ;; Save authentication configuration
 (rf/reg-event-fx
  :authentication->save-config
  (fn [{:keys [db]} _]
-   (let [config (get-in db [:authentication :data])]
+   (let [ui-config (get-in db [:authentication :data])
+         ;; Map UI structure back to API format
+         api-payload {:auth_method (if (= (:auth-method ui-config) "identity-provider") "oidc" "local")
+                      :admin_role_name (get-in ui-config [:advanced :admin-role])
+                      :auditor_role_name (get-in ui-config [:advanced :auditor-role])
+                      :rollout_api_key (get-in ui-config [:advanced :api-key :secret])
+                      :webapp_users_management_status (if (get-in ui-config [:advanced :local-auth-enabled]) "active" "inactive")
+                      :oidc_config (when (= (:auth-method ui-config) "identity-provider")
+                                     {:client_id (get-in ui-config [:config :client-id])
+                                      :client_secret (get-in ui-config [:config :client-secret])
+                                      :audience (get-in ui-config [:config :audience])
+                                      :groups_claim "groups"
+                                      :issuer_url ""  ;; TODO: Add issuer URL field to UI
+                                      :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
+                      :saml_config nil}]
      {:db (assoc-in db [:authentication :submitting?] true)
-      :fx [[:dispatch [:show-snackbar {:level :info
-                                       :text "Saving authentication configuration..."}]]
-           ;; Mock API call - replace with actual endpoint
-           [:dispatch-later {:ms 2000
-                             :dispatch [:authentication->save-config-success]}]]})))
+      :fx [#_[:dispatch [:show-snackbar {:level :info
+                                         :text "Saving authentication configuration..."}]]
+           [:dispatch [:fetch {:method "PUT"
+                               :uri "/serverconfig/auth"
+                               :body api-payload
+                               :on-success #(rf/dispatch [:authentication->save-config-success %])
+                               :on-failure #(rf/dispatch [:authentication->save-config-failure %])}]]]})))
 
 (rf/reg-event-fx
  :authentication->save-config-success
- (fn [{:keys [db]} _]
+ (fn [{:keys [db]} [_ response]]
    {:db (assoc-in db [:authentication :submitting?] false)
     :fx [[:dispatch [:show-snackbar {:level :success
                                      :text "Authentication configuration saved successfully!"}]]
-         ;; Refresh configuration
+         ;; Refresh configuration to ensure UI is in sync
          [:dispatch [:authentication->get-config]]]}))
 
 (rf/reg-event-fx
@@ -92,20 +144,3 @@
                                      :text "Failed to save authentication configuration"
                                      :details error}]]]}))
 
-;; Generate new API key
-(rf/reg-event-fx
- :authentication->generate-api-key
- (fn [{:keys [db]} _]
-   {:fx [[:dispatch [:show-snackbar {:level :info
-                                     :text "Generating new API key..."}]]
-         ;; Mock API call - replace with actual endpoint
-         [:dispatch-later {:ms 1000
-                           :dispatch [:authentication->generate-api-key-success
-                                      "new-generated-api-key-" (str (rand-int 1000))]}]]}))
-
-(rf/reg-event-fx
- :authentication->generate-api-key-success
- (fn [{:keys [db]} [_ new-key]]
-   {:db (assoc-in db [:authentication :data :advanced :api-key :secret] new-key)
-    :fx [[:dispatch [:show-snackbar {:level :success
-                                     :text "New API key generated successfully!"}]]]}))
