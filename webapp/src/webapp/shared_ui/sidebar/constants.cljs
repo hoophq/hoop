@@ -169,7 +169,7 @@
   [{:name "infrastructure"
     :label "Infrastructure"
     :uri (routes/url-for :settings-infrastructure)
-    :navigate :infrastructure
+    :navigate :settings-infrastructure
     :free-feature? true
     :admin-only? true}
    {:name "license"
