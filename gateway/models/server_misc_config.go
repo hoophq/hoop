@@ -7,8 +7,8 @@ import (
 )
 
 type ServerMiscConfig struct {
-	ProductAnalytics string `gorm:"column:product_analytics"`
-	GrpcServerURL    string `gorm:"column:grpc_server_url"`
+	ProductAnalytics *string `gorm:"column:product_analytics"`
+	GrpcServerURL    *string `gorm:"column:grpc_server_url"`
 }
 
 func GetServerMiscConfig() (*ServerMiscConfig, error) {

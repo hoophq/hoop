@@ -49,6 +49,21 @@ type provider struct {
 	oauth2Config oauth2.Config
 }
 
+type ProviderOptions struct {
+	IssuerURL                string
+	ClientID                 string
+	ClientSecret             string
+	Audience                 string
+	CustomScopes             string
+	GroupsClaim              string
+	mustValidateWithUserInfo bool
+}
+
+func (o ProviderOptions) GetCustomScopes() []string {
+	scopes := []string{}
+	return addCustomScopes(scopes, o.CustomScopes)
+}
+
 type UserInfoToken struct {
 	token *oauth2.Token
 }
@@ -57,9 +72,17 @@ func New(serverAuthConfig *models.ServerAuthConfig) (*provider, error) {
 	ctx := context.Background()
 	p := &provider{context: ctx, serverAuthConfig: serverAuthConfig}
 	if serverAuthConfig == nil || serverAuthConfig.OidcConfig == nil {
-		if err := setProviderConfFromEnvs(p); err != nil {
+		opts, err := GetProviderOptionsFromEnv()
+		if err != nil {
 			return nil, fmt.Errorf("failed to set provider configuration from environment variables: %v", err)
 		}
+		p.issuer = opts.IssuerURL
+		p.clientID = opts.ClientID
+		p.clientSecret = opts.ClientSecret
+		p.audience = opts.Audience
+		p.customScopes = opts.CustomScopes
+		p.groupsClaim = opts.GroupsClaim
+		p.mustValidateWithUserInfo = opts.mustValidateWithUserInfo
 	} else {
 		p.issuer = serverAuthConfig.OidcConfig.IssuerURL
 		p.clientID = serverAuthConfig.OidcConfig.ClientID
@@ -119,26 +142,26 @@ func New(serverAuthConfig *models.ServerAuthConfig) (*provider, error) {
 	return p, nil
 }
 
-func setProviderConfFromEnvs(p *provider) error {
+func GetProviderOptionsFromEnv() (p ProviderOptions, err error) {
 	if idpURI := os.Getenv("IDP_URI"); idpURI != "" {
 		u, err := url.Parse(idpURI)
 		if err != nil {
-			return fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
+			return p, fmt.Errorf("failed parsing IDP_URI env, reason=%v. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=", err)
 		}
 		if u.User != nil {
-			p.clientID = u.User.Username()
-			p.clientSecret, _ = u.User.Password()
+			p.ClientID = u.User.Username()
+			p.ClientSecret, _ = u.User.Password()
 		}
-		if p.clientID == "" || p.clientSecret == "" {
-			return fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
+		if p.ClientID == "" || p.ClientSecret == "" {
+			return p, fmt.Errorf("missing credentials for IDP_URI env. Valid format is: <scheme>://<client-id>:<client-secret>@<issuer-host>?<options>=")
 		}
-		p.audience = os.Getenv("IDP_AUDIENCE")
-		p.groupsClaim = u.Query().Get("groupsclaim")
-		if p.groupsClaim == "" {
+		p.Audience = os.Getenv("IDP_AUDIENCE")
+		p.GroupsClaim = u.Query().Get("groupsclaim")
+		if p.GroupsClaim == "" {
 			// keep default value
-			p.groupsClaim = proto.CustomClaimGroups
+			p.GroupsClaim = proto.CustomClaimGroups
 		}
-		p.customScopes = u.Query().Get("scopes")
+		p.CustomScopes = u.Query().Get("scopes")
 		p.mustValidateWithUserInfo = u.Query().Get("_userinfo") == "1"
 		qs := u.Query()
 		qs.Del("scopes")
@@ -149,32 +172,29 @@ func setProviderConfFromEnvs(p *provider) error {
 			encQueryStr = "?" + encQueryStr
 		}
 		// scheme://host:port/path?query#fragment
-		p.issuer = fmt.Sprintf("%s://%s%s%s",
+		p.IssuerURL = fmt.Sprintf("%s://%s%s%s",
 			u.Scheme,
 			u.Host,
 			u.Path,
 			encQueryStr,
 		)
-		return nil
+		return p, nil
 	}
-	p.issuer = os.Getenv("IDP_ISSUER")
-	p.clientID = os.Getenv("IDP_CLIENT_ID")
-	p.clientSecret = os.Getenv("IDP_CLIENT_SECRET")
-	p.audience = os.Getenv("IDP_AUDIENCE")
-	p.customScopes = os.Getenv("IDP_CUSTOM_SCOPES")
-	p.groupsClaim = os.Getenv("IDP_GROUPS_CLAIM")
-	if p.groupsClaim == "" {
-		p.groupsClaim = proto.CustomClaimGroups
+	p.IssuerURL = os.Getenv("IDP_ISSUER")
+	p.ClientID = os.Getenv("IDP_CLIENT_ID")
+	p.ClientSecret = os.Getenv("IDP_CLIENT_SECRET")
+	p.Audience = os.Getenv("IDP_AUDIENCE")
+	p.CustomScopes = os.Getenv("IDP_CUSTOM_SCOPES")
+	p.GroupsClaim = os.Getenv("IDP_GROUPS_CLAIM")
+	if p.GroupsClaim == "" {
+		p.GroupsClaim = proto.CustomClaimGroups
 	}
 
-	issuerURL, err := url.Parse(p.issuer)
+	issuerURL, err := url.Parse(p.IssuerURL)
 	if err != nil {
-		return fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
+		return p, fmt.Errorf("failed parsing IDP_ISSUER env, reason=%v", err)
 	}
 	p.mustValidateWithUserInfo = issuerURL.Query().Get("_userinfo") == "1"
-	if p.clientSecret == "" || p.clientID == "" {
-		return nil
-	}
 	qs := issuerURL.Query()
 	qs.Del("_userinfo")
 	encQueryStr := qs.Encode()
@@ -182,19 +202,23 @@ func setProviderConfFromEnvs(p *provider) error {
 		encQueryStr = "?" + encQueryStr
 	}
 	// scheme://host:port/path?query#fragment
-	p.issuer = fmt.Sprintf("%s://%s%s%s",
+	p.IssuerURL = fmt.Sprintf("%s://%s%s%s",
 		issuerURL.Scheme,
 		issuerURL.Host,
 		issuerURL.Path,
 		encQueryStr,
 	)
-	return nil
+	return p, nil
 }
 
 func addCustomScopes(scopes []string, customScope string) []string {
 	custom := strings.Split(customScope, ",")
 	for _, c := range custom {
-		scopes = append(scopes, strings.Trim(c, " "))
+		scope := strings.Trim(c, " ")
+		if scope == "" || slices.Contains(scopes, scope) {
+			continue
+		}
+		scopes = append(scopes, scope)
 	}
 	return scopes
 }

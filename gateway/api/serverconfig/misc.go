@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -29,21 +30,31 @@ func GetServerMisc(c *gin.Context) {
 	}
 
 	config, err := models.GetServerMiscConfig()
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": "server config not found"})
-		return
-	case nil:
-		c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-			ProductAnalytics: config.ProductAnalytics,
-			GrpcServerURL:    config.GrpcServerURL,
-		})
-		return
-	default:
-		log.Errorf("failed to get server config, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get server config"})
+	if err != nil && err != models.ErrNotFound {
+		errMsg := fmt.Sprintf("failed to get server config, reason=%v", err)
+		log.Errorf(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
+
+	appc := appconfig.Get()
+	productAnalytics := "active"
+	if !appc.AnalyticsTracking() {
+		productAnalytics = "inactive"
+	}
+
+	grpcURL := appc.GrpcURL()
+	if config.ProductAnalytics != nil {
+		productAnalytics = *config.ProductAnalytics
+	}
+	if config.GrpcServerURL != nil {
+		grpcURL = *config.GrpcServerURL
+	}
+
+	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
+		ProductAnalytics: productAnalytics,
+		GrpcServerURL:    grpcURL,
+	})
 }
 
 // UpdateServerMisc
@@ -79,8 +90,8 @@ func UpdateServerMisc(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics: updatedConfig.ProductAnalytics,
-		GrpcServerURL:    updatedConfig.GrpcServerURL,
+		ProductAnalytics: ptr.ToString(updatedConfig.ProductAnalytics),
+		GrpcServerURL:    ptr.ToString(updatedConfig.GrpcServerURL),
 	})
 }
 
@@ -105,8 +116,8 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	}
 
 	return &models.ServerMiscConfig{
-		ProductAnalytics: req.ProductAnalytics,
-		GrpcServerURL:    req.GrpcServerURL,
+		ProductAnalytics: &req.ProductAnalytics,
+		GrpcServerURL:    &req.GrpcServerURL,
 	}, nil
 }
 
