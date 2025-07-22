@@ -40,6 +40,10 @@ func GetServerMisc(c *gin.Context) {
 		config = &models.ServerMiscConfig{}
 	}
 
+	if config == nil {
+		config = &models.ServerMiscConfig{}
+	}
+
 	appc := appconfig.Get()
 	productAnalytics := "active"
 	if !appc.AnalyticsTracking() {

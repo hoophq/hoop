@@ -47,7 +47,8 @@
                                                        :free-license? (not (and (:is_valid license-info)
                                                                                 (= (:type license-info) "enterprise")))
                                                        :admin? (:is_admin user)
-                                                       :tenancy_type "multi-tenant")})
+                                                       ;;:tenancy_type "multi-tenant"
+                                                       )})
       :fx [[:dispatch [:initialize-intercom user]]
            [:dispatch [:close-page-loader]]]})))
 
