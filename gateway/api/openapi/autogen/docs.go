@@ -6953,8 +6953,8 @@ const docTemplate = `{
                     "description": "Enable the users management in the Webapp. It allows to create, edit and delete users.",
                     "type": "string",
                     "enum": [
-                        "enabled",
-                        "disabled"
+                        "active",
+                        "inactive"
                     ]
                 }
             }

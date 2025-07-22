@@ -1570,7 +1570,7 @@ type ServerAuthConfig struct {
 	// This attribute must be obtained in the endpoint to generate rollout api keys.
 	RolloutApiKey *string `json:"rollout_api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK"`
 	// Enable the users management in the Webapp. It allows to create, edit and delete users.
-	WebappUsersManagementStatus string `json:"webapp_users_management_status" enums:"enabled,disabled" binding:"required"`
+	WebappUsersManagementStatus string `json:"webapp_users_management_status" enums:"active,inactive" binding:"required"`
 	// Changes the default administrator role of the system
 	AdminRoleName string `json:"admin_role_name" default:"admin"`
 	// Changes the default auditor role of the system

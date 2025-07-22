@@ -3,15 +3,19 @@ package apiserverconfig
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	localprovider "github.com/hoophq/hoop/gateway/idp/local"
 	oidcprovider "github.com/hoophq/hoop/gateway/idp/oidc"
 	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
+	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -37,9 +41,61 @@ func GetAuthConfig(c *gin.Context) {
 		return
 	}
 	config, err := models.GetServerAuthConfig()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get auth config"})
-		return
+	if err != nil && err != models.ErrNotFound {
+		errMsg := fmt.Sprintf("failed to get server auth config, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+	}
+
+	// return the current configuration from environment variables in case there's no auth config in the database
+	isEmptyAuthConfig := err == models.ErrNotFound || config != nil && config.OrgID == ""
+	if isEmptyAuthConfig {
+		appc := appconfig.Get()
+		authMethod := appc.AuthMethod()
+		if authMethod == "idp" {
+			authMethod = idptypes.ProviderTypeOIDC
+		}
+		webappUsersManagement := appc.WebappUsersManagement()
+		if webappUsersManagement == "on" {
+			webappUsersManagement = "active"
+		} else {
+			webappUsersManagement = "inactive"
+		}
+
+		var oidcConfig *models.ServerAuthOidcConfig
+		isIdpEnvsSet := os.Getenv("IDP_ISSUER") != "" || os.Getenv("IDP_URI") != ""
+		if isIdpEnvsSet {
+			oidcEnvOpts, err := oidcprovider.GetProviderOptionsFromEnv()
+			if err != nil {
+				errMsg := fmt.Sprintf("failed to get OIDC provider options from env, reason=%v", err)
+				log.Error(errMsg)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+				return
+			}
+
+			oidcConfig = &models.ServerAuthOidcConfig{
+				IssuerURL:    oidcEnvOpts.IssuerURL,
+				ClientID:     oidcEnvOpts.ClientID,
+				ClientSecret: oidcEnvOpts.ClientSecret,
+				Scopes:       oidcEnvOpts.GetCustomScopes(),
+				Audience:     oidcEnvOpts.Audience,
+				GroupsClaim:  oidcEnvOpts.GroupsClaim,
+			}
+		}
+		config = &models.ServerAuthConfig{
+			AuthMethod:            ptr.String(string(authMethod)),
+			OidcConfig:            oidcConfig,
+			SamlConfig:            nil,
+			ApiKey:                nil,
+			RolloutApiKey:         nil,
+			WebappUsersManagement: ptr.String(webappUsersManagement),
+			AdminRoleName:         ptr.String(types.GroupAdmin),
+			AuditorRoleName:       ptr.String(types.GroupAuditor),
+			ProductAnalytics:      nil,
+			GrpcServerURL:         nil,
+			SharedSigningKey:      nil,
+			UpdatedAt:             time.Time{},
+		}
 	}
 	c.JSON(http.StatusOK, toAuthOpenApi(config))
 }
