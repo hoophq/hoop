@@ -78,9 +78,7 @@
 (rf/reg-event-fx
  :authentication->generate-api-key
  (fn [{:keys [db]} _]
-   {:fx [#_[:dispatch [:show-snackbar {:level :info
-                                       :text "Generating new API key..."}]]
-         [:dispatch [:fetch {:method "POST"
+   {:fx [[:dispatch [:fetch {:method "POST"
                              :uri "/serverconfig/auth/apikey"
                              :on-success #(rf/dispatch [:authentication->generate-api-key-success %])
                              :on-failure #(rf/dispatch [:authentication->generate-api-key-failure %])}]]]}))
@@ -119,9 +117,7 @@
                                       :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
                       :saml_config nil}]
      {:db (assoc-in db [:authentication :submitting?] true)
-      :fx [#_[:dispatch [:show-snackbar {:level :info
-                                         :text "Saving authentication configuration..."}]]
-           [:dispatch [:fetch {:method "PUT"
+      :fx [[:dispatch [:fetch {:method "PUT"
                                :uri "/serverconfig/auth"
                                :body api-payload
                                :on-success #(rf/dispatch [:authentication->save-config-success %])

@@ -52,9 +52,7 @@
          api-payload {:grpc_server_url (:grpc-url ui-config)
                       :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")}]
      {:db (assoc-in db [:infrastructure :submitting?] true)
-      :fx [[:dispatch [:show-snackbar {:level :info
-                                       :text "Saving infrastructure configuration..."}]]
-           [:dispatch [:fetch {:method "PUT"
+      :fx [[:dispatch [:fetch {:method "PUT"
                                :uri "/serverconfig/misc"
                                :body api-payload
                                :on-success #(rf/dispatch [:infrastructure->save-config-success %])
