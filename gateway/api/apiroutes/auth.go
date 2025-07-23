@@ -22,7 +22,7 @@ import (
 )
 
 func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, idptypes.ServerConfig, bool) {
-	tokenVerifier, err := idp.NewUserInfoTokenVerifierProvider()
+	tokenVerifier, serverConfig, err := idp.NewUserInfoTokenVerifierProvider()
 	switch err {
 	case idp.ErrUnknownIdpProvider:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "unknown idp provider"})
@@ -33,7 +33,7 @@ func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, i
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error, failed loading IDP provider"})
 		return nil, idptypes.ServerConfig{}, false
 	}
-	return tokenVerifier, tokenVerifier.ServerConfig(), err == nil
+	return tokenVerifier, serverConfig, err == nil
 }
 
 func (r *Router) AuthMiddleware(c *gin.Context) {

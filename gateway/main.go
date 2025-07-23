@@ -66,7 +66,7 @@ func Run() {
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
 	if !isOrgMultiTenant {
 		log.Infof("provisioning default organization")
-		tokenVerifier, err := idp.NewTokenVerifierProvider()
+		_, serverConfig, err := idp.NewTokenVerifierProvider()
 		if err != nil {
 			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
 		}
@@ -76,7 +76,7 @@ func Run() {
 			log.Fatal(err)
 		}
 
-		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, tokenVerifier.ServerConfig().GrpcURL)
+		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}
@@ -145,7 +145,7 @@ func Run() {
 		log.SetGrpcLogger()
 	}
 
-	log.Infof("starting servers, authmethod=%v, api-key-set=%v",
+	log.Infof("starting servers, env-authmethod=%v, env-api-key-set=%v",
 		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)

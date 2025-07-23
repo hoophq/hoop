@@ -75,7 +75,7 @@ func (s *serverStreamWrapper) Context() context.Context {
 }
 
 func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	tokenVerifier, err := idp.NewTokenVerifierProvider()
+	tokenVerifier, serverConfig, err := idp.NewTokenVerifierProvider()
 	if err != nil {
 		log.Errorf("failed to initialize identity provider, err=%v", err)
 		return status.Error(codes.Internal, "internal error, unable to initialize identity provider")
@@ -153,7 +153,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 
-			serverConfig := tokenVerifier.ServerConfig()
 			if serverConfig.ApiKey == "" || serverConfig.ApiKey != bearerToken {
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}

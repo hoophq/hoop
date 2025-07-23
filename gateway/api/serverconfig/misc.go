@@ -36,6 +36,9 @@ func GetServerMisc(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 		return
 	}
+	if config == nil {
+		config = &models.ServerMiscConfig{}
+	}
 
 	appc := appconfig.Get()
 	productAnalytics := "active"

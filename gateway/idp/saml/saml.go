@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -25,31 +24,32 @@ var ErrNotImplemented = fmt.Errorf("saml: user info endpoint not implemented for
 
 const defaultGroupsName = "groups"
 
-type provider struct {
+type Provider struct {
+	Options
+
 	idpSSOUrl             string
 	serviceProviderIssuer string
 	acsURL                string
 	audienceURI           string
 	tokenSigningKey       ed25519.PrivateKey
 	samlServiceProvider   *saml2.SAMLServiceProvider
-	options               Options
-	serverAuthConfig      *models.ServerAuthConfig
 }
 
 type Options struct {
-	GroupsName string
+	IdpMetadataURL string
+	GroupsClaim    string
 }
 
 type ServiceProvider struct {
 	*saml2.SAMLServiceProvider
-	Options Options
+	GroupsClaim string
 }
 
 // New retrieves the singleton instance of the SAML provider.
 // It creates a new instance if it does not exist or if the SAML configuration has changed.
-func New(serverAuthConfig *models.ServerAuthConfig) (*provider, error) {
-	if serverAuthConfig == nil || serverAuthConfig.SamlConfig == nil {
-		return nil, fmt.Errorf("SAML configuration is not set")
+func New(opts Options) (*Provider, error) {
+	if opts.IdpMetadataURL == "" {
+		return nil, fmt.Errorf("idp metadata URL is required")
 	}
 
 	apiURL := appconfig.Get().ApiURL()
@@ -57,13 +57,12 @@ func New(serverAuthConfig *models.ServerAuthConfig) (*provider, error) {
 	audienceURI := fmt.Sprintf("%s/saml/acs", apiURL)
 	serviceProviderAcsURL := fmt.Sprintf("%s/api/saml/callback", apiURL)
 
-	idpMetadataUrl := serverAuthConfig.SamlConfig.IdpMetadataURL
-	idpGroupsClaim := serverAuthConfig.SamlConfig.GroupsClaim
+	idpGroupsClaim := opts.GroupsClaim
 	if idpGroupsClaim == "" {
 		idpGroupsClaim = defaultGroupsName
 	}
 
-	res, err := http.Get(idpMetadataUrl)
+	res, err := http.Get(opts.IdpMetadataURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch SAML metadata: %v", err)
 	}
@@ -120,23 +119,22 @@ func New(serverAuthConfig *models.ServerAuthConfig) (*provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ed25519 signing key: %v", err)
 	}
-	p := &provider{
+	p := &Provider{
 		idpSSOUrl:             md.IDPSSODescriptor.SingleSignOnServices[0].Location,
 		serviceProviderIssuer: serviceProviderIssuer,
 		acsURL:                serviceProviderAcsURL,
 		audienceURI:           audienceURI,
 		tokenSigningKey:       tokenSigningKey,
-		options:               Options{GroupsName: idpGroupsClaim},
-		serverAuthConfig:      serverAuthConfig,
+		Options:               opts,
 	}
 	p.samlServiceProvider = p.newServerProvider(md.EntityID, &certStore)
 	log.Infof("loaded SAML 2 provider configuration, sp-issuer=%v, sp-audience=%v, groupsclaim=%v, config-groupsclaim=%v, idp-metadata-url=%v",
-		p.serviceProviderIssuer, p.audienceURI, idpGroupsClaim, serverAuthConfig.SamlConfig.GroupsClaim, idpMetadataUrl)
+		p.serviceProviderIssuer, p.audienceURI, idpGroupsClaim, p.GroupsClaim, p.IdpMetadataURL)
 
 	return p, nil
 }
 
-func (p *provider) newServerProvider(idpIssuer string, idpCertStore dsig.X509CertificateStore) *saml2.SAMLServiceProvider {
+func (p *Provider) newServerProvider(idpIssuer string, idpCertStore dsig.X509CertificateStore) *saml2.SAMLServiceProvider {
 	return &saml2.SAMLServiceProvider{
 		IdentityProviderSSOURL:      p.idpSSOUrl,
 		IdentityProviderIssuer:      idpIssuer,
@@ -150,70 +148,18 @@ func (p *provider) newServerProvider(idpIssuer string, idpCertStore dsig.X509Cer
 	}
 }
 
-func (p *provider) ServiceProvider() *ServiceProvider {
+func (p *Provider) ServiceProvider() *ServiceProvider {
 	return &ServiceProvider{
 		SAMLServiceProvider: p.samlServiceProvider,
-		Options:             p.options,
+		GroupsClaim:         p.GroupsClaim,
 	}
 }
 
-func (p *provider) ServerConfig() (config idptypes.ServerConfig) {
-	appConfig := appconfig.Get()
-	config = idptypes.ServerConfig{
-		ApiKey:     appConfig.ApiKey(),
-		GrpcURL:    appConfig.GrpcURL(),
-		AuthMethod: idptypes.ProviderTypeSAML,
-	}
-	if p.serverAuthConfig != nil {
-		config.OrgID = p.serverAuthConfig.OrgID
-		if p.serverAuthConfig.ApiKey != nil {
-			config.ApiKey = *p.serverAuthConfig.ApiKey
-		}
-		if p.serverAuthConfig.GrpcServerURL != nil {
-			config.GrpcURL = *p.serverAuthConfig.GrpcServerURL
-		}
-	}
-	return
-}
-
-func (p *provider) HasServerConfigChanged(newConfig *models.ServerAuthConfig) bool {
-	return hasServerConfigChanged(p.serverAuthConfig, newConfig)
-}
-
-func hasServerConfigChanged(old, new *models.ServerAuthConfig) bool {
-	var newc models.ServerAuthConfig
-	if new != nil {
-		newc = *new
-	}
-	var saml models.ServerAuthSamlConfig
-	if newc.SamlConfig != nil {
-		saml = *newc.SamlConfig
-	}
-
-	newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v",
-		toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, toStr(newc.SharedSigningKey))
-
-	var oldc models.ServerAuthConfig
-	if old != nil {
-		oldc = *old
-	}
-
-	var oldSaml models.ServerAuthSamlConfig
-	if oldc.SamlConfig != nil {
-		oldSaml = *oldc.SamlConfig
-	}
-
-	oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v",
-		toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, toStr(oldc.SharedSigningKey))
-
-	return newConfigStr != oldConfigStr
-}
-
-func (p *provider) NewAccessToken(subject, email string, tokenDuration time.Duration) (string, error) {
+func (p *Provider) NewAccessToken(subject, email string, tokenDuration time.Duration) (string, error) {
 	return keys.NewJwtToken(p.tokenSigningKey, subject, email, tokenDuration)
 }
 
-func (p *provider) VerifyAccessToken(accessToken string) (subject string, err error) {
+func (p *Provider) VerifyAccessToken(accessToken string) (subject string, err error) {
 	if len(p.tokenSigningKey) == 0 {
 		return "", fmt.Errorf("signing key is not set")
 	}
@@ -226,20 +172,16 @@ func (p *provider) VerifyAccessToken(accessToken string) (subject string, err er
 }
 
 // VerifyAccessTokenWithUserInfo verify the access token by querying the OIDC user info endpoint
-func (p *provider) VerifyAccessTokenWithUserInfo(accessToken string) (*idptypes.ProviderUserInfo, error) {
+func (p *Provider) VerifyAccessTokenWithUserInfo(accessToken string) (*idptypes.ProviderUserInfo, error) {
 	return nil, ErrNotImplemented
 }
 
 // getOrCreateSigningKey generates a new Ed25519 signing key or retrieves the existing one from the server config.
 // It saves the key to the server config if it doesn't exist
 func getOrCreateSigningKey() (ed25519.PrivateKey, error) {
-	serverConfig, err := models.GetServerAuthConfig()
+	sharedSigningKey, err := models.GetSharedSigningKey()
 	if err != nil && err != models.ErrNotFound {
 		return nil, fmt.Errorf("failed to obtain server config shared signing key: %v", err)
-	}
-	var sharedSigningKey string
-	if serverConfig != nil && serverConfig.SharedSigningKey != nil {
-		sharedSigningKey = *serverConfig.SharedSigningKey
 	}
 	if sharedSigningKey != "" {
 		privKey, err := keys.Base64DecodeEd25519PrivateKey(sharedSigningKey)
@@ -259,5 +201,3 @@ func getOrCreateSigningKey() (ed25519.PrivateKey, error) {
 	}
 	return privKey, nil
 }
-
-func toStr(s *string) string { return ptr.ToString(s) }

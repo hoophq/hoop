@@ -50,7 +50,7 @@ func (g gsuiteGroups) String() string {
 	return fmt.Sprintf("page_token=%v, members=%v, %v", g.NextPageToken != "", len(g.Memberships), memberStr)
 }
 
-func (p *provider) fetchGsuiteGroups(accessToken, email string) (groups []string, mustSync bool, err error) {
+func (p *Provider) fetchGsuiteGroups(accessToken, email string) (groups []string, mustSync bool, err error) {
 	if !p.mustFetchGsuiteGroups {
 		return
 	}
@@ -79,7 +79,7 @@ func (p *provider) fetchGsuiteGroups(accessToken, email string) (groups []string
 	return groups, true, nil
 }
 
-func (p *provider) fetchGroupsPage(accessToken, email, pageToken string) (*gsuiteGroups, error) {
+func (p *Provider) fetchGroupsPage(accessToken, email, pageToken string) (*gsuiteGroups, error) {
 	apiURL := fmt.Sprintf("%s?query=member_key_id=='%s'&pageSize=%v&pageToken=%v",
 		cloudIdentityURL, email, defaultMaxPageSize, pageToken)
 	req, err := http.NewRequest("GET", apiURL, nil)

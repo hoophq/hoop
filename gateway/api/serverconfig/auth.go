@@ -3,7 +3,7 @@ package apiserverconfig
 import (
 	"fmt"
 	"net/http"
-	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -12,7 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	localprovider "github.com/hoophq/hoop/gateway/idp/local"
+	"github.com/hoophq/hoop/gateway/idp"
 	oidcprovider "github.com/hoophq/hoop/gateway/idp/oidc"
 	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
@@ -45,10 +45,11 @@ func GetAuthConfig(c *gin.Context) {
 		errMsg := fmt.Sprintf("failed to get server auth config, reason=%v", err)
 		log.Error(errMsg)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
 	}
 
 	// return the current configuration from environment variables in case there's no auth config in the database
-	isEmptyAuthConfig := err == models.ErrNotFound || config != nil && config.OrgID == ""
+	isEmptyAuthConfig := err == models.ErrNotFound || config != nil && config.AuthMethod == nil
 	if isEmptyAuthConfig {
 		appc := appconfig.Get()
 		authMethod := appc.AuthMethod()
@@ -62,24 +63,30 @@ func GetAuthConfig(c *gin.Context) {
 			webappUsersManagement = "inactive"
 		}
 
-		var oidcConfig *models.ServerAuthOidcConfig
-		isIdpEnvsSet := os.Getenv("IDP_ISSUER") != "" || os.Getenv("IDP_URI") != ""
-		if isIdpEnvsSet {
-			oidcEnvOpts, err := oidcprovider.GetProviderOptionsFromEnv()
-			if err != nil {
-				errMsg := fmt.Sprintf("failed to get OIDC provider options from env, reason=%v", err)
-				log.Error(errMsg)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
-				return
-			}
+		var rolloutApiKey *string
+		if config != nil && config.RolloutApiKey != nil {
+			rolloutApiKey = config.RolloutApiKey
+		}
 
+		opts, err := idp.NewOidcProviderOptions(nil)
+		if err != nil {
+			log.Error(err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+		var oidcConfig *models.ServerAuthOidcConfig
+		if opts.IssuerURL != "" {
+			scopes := []string{}
+			if opts.CustomScopes != "" {
+				scopes = append(scopes, strings.Split(opts.CustomScopes, ",")...)
+			}
 			oidcConfig = &models.ServerAuthOidcConfig{
-				IssuerURL:    oidcEnvOpts.IssuerURL,
-				ClientID:     oidcEnvOpts.ClientID,
-				ClientSecret: oidcEnvOpts.ClientSecret,
-				Scopes:       oidcEnvOpts.GetCustomScopes(),
-				Audience:     oidcEnvOpts.Audience,
-				GroupsClaim:  oidcEnvOpts.GroupsClaim,
+				IssuerURL:    opts.IssuerURL,
+				ClientID:     opts.ClientID,
+				ClientSecret: opts.ClientSecret,
+				Scopes:       scopes,
+				Audience:     opts.Audience,
+				GroupsClaim:  opts.GroupsClaim,
 			}
 		}
 		config = &models.ServerAuthConfig{
@@ -87,7 +94,7 @@ func GetAuthConfig(c *gin.Context) {
 			OidcConfig:            oidcConfig,
 			SamlConfig:            nil,
 			ApiKey:                nil,
-			RolloutApiKey:         nil,
+			RolloutApiKey:         rolloutApiKey,
 			WebappUsersManagement: ptr.String(webappUsersManagement),
 			AdminRoleName:         ptr.String(types.GroupAdmin),
 			AuditorRoleName:       ptr.String(types.GroupAuditor),
@@ -184,11 +191,21 @@ func UpdateAuthConfig(c *gin.Context) {
 	log.With("auth_method", req.AuthMethod).Infof("performing pre-flight check for auth config update")
 	switch req.AuthMethod {
 	case openapi.ProviderTypeOIDC:
-		_, err = oidcprovider.New(existentConfig)
+		_, err = oidcprovider.New(oidcprovider.Options{
+			IssuerURL:    req.OidcConfig.IssuerURL,
+			ClientID:     req.OidcConfig.ClientID,
+			ClientSecret: req.OidcConfig.ClientSecret,
+			Audience:     req.OidcConfig.Audience,
+			GroupsClaim:  req.OidcConfig.GroupsClaim,
+			CustomScopes: strings.Join(req.OidcConfig.Scopes, ","),
+		})
 	case openapi.ProviderTypeSAML:
-		_, err = samlprovider.New(existentConfig)
-	case openapi.ProviderTypeLocal:
-		_, err = localprovider.New(existentConfig)
+		_, err = samlprovider.New(samlprovider.Options{
+			IdpMetadataURL: req.SamlConfig.IdpMetadataURL,
+			GroupsClaim:    req.SamlConfig.GroupsClaim,
+		})
+	case openapi.ProviderTypeLocal: // noop
+		err = nil
 	default:
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("invalid auth method: %s", req.AuthMethod)})
 		return
@@ -235,10 +252,13 @@ func GenerateApiKey(c *gin.Context) {
 	}
 
 	existentConfig, err := models.GetServerAuthConfig()
-	if err != nil {
+	if err != nil && err != models.ErrNotFound {
 		log.Errorf("failed to get server auth config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get server auth config"})
 		return
+	}
+	if existentConfig == nil {
+		existentConfig = &models.ServerAuthConfig{}
 	}
 
 	existentConfig.OrgID = ctx.OrgID

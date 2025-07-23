@@ -301,7 +301,7 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 	for key, val := range assertionInfo.Values {
 
 		switch key {
-		case saml.ServiceProvider().Options.GroupsName:
+		case saml.ServiceProvider().GroupsClaim:
 			uinfo.MustSyncGroups = true
 			groups := map[string]string{}
 			for _, v := range val.Values {
