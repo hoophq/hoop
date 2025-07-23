@@ -46,6 +46,16 @@ func UpsertServerMiscConfig(newObj *ServerMiscConfig) (*ServerMiscConfig, error)
 }
 
 func CreateServerSharedSigningKey(encB64Key string) error {
-	return DB.Exec(`INSERT INTO private.serverconfig (shared_signing_key) VALUES (?)`, encB64Key).
-		Error
+	res := DB.Exec(`
+	INSERT INTO private.serverconfig (shared_signing_key)
+	SELECT ?
+	WHERE NOT EXISTS (
+		SELECT 1
+		FROM private.serverconfig
+		WHERE shared_signing_key IS NOT NULL
+	)`, encB64Key)
+	if res.RowsAffected == 0 {
+		return ErrAlreadyExists
+	}
+	return nil
 }

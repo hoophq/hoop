@@ -59,6 +59,17 @@ func GetServerAuthConfig() (*ServerAuthConfig, error) {
 	return &config, err
 }
 
+func GetSharedSigningKey() (string, error) {
+	var sharedSigningKey string
+	err := DB.Raw(`SELECT shared_signing_key FROM private.serverconfig WHERE shared_signing_key IS NOT NULL`).
+		First(&sharedSigningKey).
+		Error
+	if err == gorm.ErrRecordNotFound {
+		return "", ErrNotFound
+	}
+	return sharedSigningKey, err
+}
+
 // Create or update the server auth config.
 // If the config already exists, it will be updated with the new values.
 // The api_key attribute is optional, if not provided it will not be updated or created
