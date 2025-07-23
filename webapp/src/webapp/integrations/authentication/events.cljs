@@ -23,7 +23,8 @@
                                          {:client-id (:client_id (:oidc_config data))
                                           :client-secret (:client_secret (:oidc_config data))
                                           :custom-scopes (:scopes (:oidc_config data))
-                                          :audience (:audience (:oidc_config data))}))
+                                          :audience (:audience (:oidc_config data))
+                                          :issuer-url (:issuer_url (:oidc_config data))}))
                          (assoc :advanced {:admin-role (:admin_role_name data)
                                            :auditor-role (:auditor_role_name data)
                                            :api-key {:org-id nil ;; Not used in new API
@@ -113,7 +114,7 @@
                                       :client_secret (get-in ui-config [:config :client-secret])
                                       :audience (get-in ui-config [:config :audience])
                                       :groups_claim "groups"
-                                      :issuer_url ""  ;; TODO: Add issuer URL field to UI
+                                      :issuer_url (get-in ui-config [:config :issuer-url])
                                       :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
                       :saml_config nil}]
      {:db (assoc-in db [:authentication :submitting?] true)

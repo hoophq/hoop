@@ -101,6 +101,21 @@
           :on-change #(rf/dispatch [:authentication->update-config-field
                                     :client-secret (-> % .-target .-value)])}]]]
 
+      ;; Issuer URL
+      [:> Grid {:columns "7" :gap "7"}
+       [:> Box {:grid-column "span 2 / span 2"}
+        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+         "Issuer URL"]
+        [:> Text {:size "3" :class "text-[--gray-11]"}
+         "The base URL where authentication endpoints are discovered."]]
+
+       [:> Box {:grid-column "span 5 / span 5"}
+        [forms/input
+         {:full-width? true
+          :placeholder "https://example.auth0.com/"
+          :value (:issuer-url @config)
+          :on-change #(rf/dispatch [:authentication->update-config-field
+                                    :issuer-url (-> % .-target .-value)])}]]]
 
       [:> Grid {:columns "7" :gap "7"}
        [:> Box {:grid-column "span 2 / span 2"}
@@ -129,10 +144,10 @@
        [:> Box {:grid-column "span 5 / span 5"}
         [forms/input
          {:full-width? true
-          :type "password"
-          :value (:client-secret @config)
+          :placeholder "https://api.example.com"
+          :value (:audience @config)
           :on-change #(rf/dispatch [:authentication->update-config-field
-                                    :client-secret (-> % .-target .-value)])}]]]
+                                    :audience (-> % .-target .-value)])}]]]
 
       [:> Grid {:columns "7" :gap "7"}
        [:> Box {:grid-column "span 2 / span 2"}
