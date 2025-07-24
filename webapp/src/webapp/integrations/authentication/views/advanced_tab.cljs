@@ -70,14 +70,6 @@
 
        ;; API Key fields
        [:> Box {:class "space-y-radix-4"}
-        ;; Organization ID (readonly)
-        [:> Box
-         [:> Text {:size "2" :weight "medium" :mb "1"} "Organization ID"]
-         [forms/input
-          {:value (:org-id @api-key)
-           :disabled true
-           :class "bg-gray-50"}]]
-
         ;; Secret Key with actions
         [:> Box
          [:> Flex {:justify "between" :align "end" :mb "1"}
@@ -98,8 +90,7 @@
            :placeholder "e.g. VuOnc2nUwv8aCRhfQGsp"
            :class "font-mono"
            :on-change #(rf/dispatch [:authentication->update-advanced-field
-                                     :api-key (assoc @api-key :secret
-                                                     (-> % .-target .-value))])}]]]
+                                     :api-key {:secret (-> % .-target .-value)}])}]]]
 
        ;; Learn more about API Keys
        [:> Text {:size "2" :class "text-blue-600 cursor-pointer hover:underline"}

@@ -27,8 +27,7 @@
                                           :issuer-url (:issuer_url (:oidc_config data))}))
                          (assoc :advanced {:admin-role (:admin_role_name data)
                                            :auditor-role (:auditor_role_name data)
-                                           :api-key {:org-id nil ;; Not used in new API
-                                                     :secret (:rollout_api_key data)}
+                                           :api-key {:secret (:api_key data)}
                                            :local-auth-enabled (= (:webapp_users_management_status data) "enabled")}))]
      (-> db
          (assoc-in [:authentication :status] :success)
