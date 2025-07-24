@@ -9,24 +9,24 @@
    [webapp.config :as config]
    [webapp.integrations.authentication.views.providers.form-fields :as provider-forms]))
 
-(defn identity-provider-grid []
-  (let [selected-provider (rf/subscribe [:authentication->selected-provider])]
-    [:> Box
-     [:> Grid {:columns "3" :gap "3" :mb "6"}
-      ;; TODO: Replace with actual provider icons
-      (doall
-       (for [provider [{:id "auth0" :name "Auth0"}
-                       {:id "aws-cognito" :name "AWS Cognito"}
-                       {:id "azure" :name "Azure"}
-                       {:id "google" :name "Google"}
-                       {:id "jumpcloud" :name "JumpCloud"}
-                       {:id "okta" :name "Okta"}]]
-         ^{:key (:id provider)}
-         [selection-card/selection-card
-          {:icon (r/as-element [:> Users {:size 18}])
-           :title (:name provider)
-           :selected? (= @selected-provider (:id provider))
-           :on-click #(rf/dispatch [:authentication->set-provider (:id provider)])}]))]]))
+#_(defn identity-provider-grid []
+    (let [selected-provider (rf/subscribe [:authentication->selected-provider])]
+      [:> Box
+       [:> Grid {:columns "3" :gap "3" :mb "6"}
+        ;; TODO: Replace with actual provider icons
+        (doall
+         (for [provider [{:id "auth0" :name "Auth0"}
+                         {:id "aws-cognito" :name "AWS Cognito"}
+                         {:id "azure" :name "Azure"}
+                         {:id "google" :name "Google"}
+                         {:id "jumpcloud" :name "JumpCloud"}
+                         {:id "okta" :name "Okta"}]]
+           ^{:key (:id provider)}
+           [selection-card/selection-card
+            {:icon (r/as-element [:> Users {:size 18}])
+             :title (:name provider)
+             :selected? (= @selected-provider (:id provider))
+             :on-click #(rf/dispatch [:authentication->set-provider (:id provider)])}]))]]))
 
 (defn main []
   (let [auth-method (rf/subscribe [:authentication->auth-method])
@@ -63,15 +63,15 @@
      ;; Identity Provider Configuration (shown when selected)
      (when (= @auth-method "identity-provider")
        [:<>
-        [:> Grid {:columns "7" :gap "7"}
-         [:> Box {:grid-column "span 2 / span 2"}
-          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-           "Identity Provider"]
-          [:> Text {:size "3" :class "text-[--gray-11]"}
-           "Choose the identity provider that manages your organization's user accounts."]]
+        #_[:> Grid {:columns "7" :gap "7"}
+           [:> Box {:grid-column "span 2 / span 2"}
+            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+             "Identity Provider"]
+            [:> Text {:size "3" :class "text-[--gray-11]"}
+             "Choose the identity provider that manages your organization's user accounts."]]
 
-         [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-          [identity-provider-grid]]]
+           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
+            [identity-provider-grid]]]
 
         (when @selected-provider
           [provider-forms/provider-form @selected-provider])])]))

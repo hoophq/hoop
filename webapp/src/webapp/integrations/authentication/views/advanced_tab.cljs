@@ -91,6 +91,7 @@
             :placeholder "e.g. VuOnc2nUwv8aCRhfQGsp"
             :full-width? true
             :not-margin-bottom? true
+            :type "password"
             :class "font-mono flex-1"
             :on-change #(rf/dispatch [:authentication->update-advanced-field
                                       :api-key {:secret (-> % .-target .-value)

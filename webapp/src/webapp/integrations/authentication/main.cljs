@@ -1,11 +1,12 @@
 (ns webapp.integrations.authentication.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading Separator Tabs]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading Separator Tabs Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.integrations.authentication.views.general-tab :as general-tab]
-   [webapp.integrations.authentication.views.advanced-tab :as advanced-tab]))
+   [webapp.integrations.authentication.views.advanced-tab :as advanced-tab]
+   [webapp.config :as config]))
 
 (defn main []
   (let [auth-config (rf/subscribe [:authentication->config])
@@ -37,7 +38,28 @@
              [:> Button {:size "3"
                          :loading submitting?
                          :disabled submitting?
-                         :on-click #(rf/dispatch [:authentication->save-config])}
+                         :on-click (fn []
+                                     (rf/dispatch [:dialog->open
+                                                   {:title "Save Authentication Configuration?"
+                                                    :type :warning
+                                                    :text-action-button "Save Configuration"
+                                                    :action-button? true
+                                                    :text [:> Box {:class "space-y-radix-4"}
+                                                           [:> Text {:as "p"}
+                                                            "Changing authentication settings may prevent access to your organization if misconfigured."]
+                                                           [:> Text {:as "p"}
+                                                            [:> Text {:as "span"}
+                                                             "If you lose access, refer to the "]
+                                                            [:> Text {:as "span" :weight "medium" :class "text-blue-600 underline cursor-pointer"
+                                                                      :on-click #(js/window.open "https://hoop.dev/docs/setup/configuration/idp/get-started#troubleshooting" "_blank")}
+                                                             "troubleshooting documentation"]
+                                                            [:> Text {:as "span"}
+                                                             " for recovery procedures."]]
+                                                           [:> Text {:as "p" :weight "medium"}
+                                                            "Are you sure you want to save these changes?"]]
+                                                    :on-success (fn []
+                                                                  (rf/dispatch [:authentication->save-config])
+                                                                  (rf/dispatch [:modal->close]))}]))}
               "Save"]]]
 
            ;; Tabs content
