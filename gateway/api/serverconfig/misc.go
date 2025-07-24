@@ -117,8 +117,17 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	if req.GrpcServerURL == "" {
 		req.GrpcServerURL = defaultGrpcServerURL
 	}
-	hasGrpcPrefix := strings.HasPrefix(req.GrpcServerURL, "grpc://") || strings.HasPrefix(req.GrpcServerURL, "grpcs://")
-	if !hasGrpcPrefix {
+
+	validPrefixes := []string{"grpc://", "grpcs://", "http://", "https://"}
+	hasValidPrefix := false
+	for _, prefix := range validPrefixes {
+		if strings.HasPrefix(req.GrpcServerURL, prefix) {
+			hasValidPrefix = true
+			break
+		}
+	}
+
+	if !hasValidPrefix {
 		return nil, fmt.Errorf("invalid attribute for 'grpc_server_url', it must start with 'grpc://' or 'grpcs://'")
 	}
 
