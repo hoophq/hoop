@@ -35,6 +35,8 @@ type Host struct {
 	Host string
 }
 
+func (h Host) Addr() string { return fmt.Sprintf("%s:%s", h.Host, h.Port) }
+
 func getListenAddr(listenAddr string) Host {
 	host, port, _ := strings.Cut(listenAddr, ":")
 	return Host{Host: host, Port: port}

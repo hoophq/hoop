@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -84,18 +85,21 @@ func (t *Terminal) ProcessPacketWriteStdout(pkt *pb.Packet) (int, error) {
 	return os.Stdout.Write(pkt.Payload)
 }
 
-func (t *Terminal) restoreTerm() {
-	if t.oldState == nil {
+// restoreTerm restores the terminal to its previous state using the os.Stdin file descriptor.
+// it will block for a short duration to ensure the terminal is restored properly.
+func restoreTerm(oldState *term.State) {
+	if oldState == nil {
 		return
 	}
-	if err := term.Restore(int(os.Stdin.Fd()), t.oldState); err != nil {
+	if err := term.Restore(int(os.Stdin.Fd()), oldState); err != nil {
 		fmt.Printf("failed restoring terminal, err=%v\n", err)
 	}
+	time.Sleep(time.Second * 1)
 }
 
 func (t *Terminal) CloseTCPConnection(_ string) {}
 func (t *Terminal) Close() error {
-	t.restoreTerm()
+	restoreTerm(t.oldState)
 	_, _ = t.client.Close()
 	return nil
 }
