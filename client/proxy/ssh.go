@@ -30,6 +30,9 @@ import (
 
 var clog = charmlog.New(os.Stderr)
 
+// from syscall.SIGWINCH, avoid syscall errors when compiling on Windows
+const SIGWINCH = syscall.Signal(0x1c)
+
 type SSHServer struct {
 	listenHost      Host
 	client          pb.ClientTransport
@@ -197,7 +200,7 @@ func (p *SSHServer) runSSHClient() error {
 
 	// Handle pty size.
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGWINCH)
+	signal.Notify(sig, SIGWINCH)
 	go func() {
 		for range sig {
 			if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
@@ -205,7 +208,7 @@ func (p *SSHServer) runSSHClient() error {
 			}
 		}
 	}()
-	sig <- syscall.SIGWINCH // Initial resize.
+	sig <- SIGWINCH // Initial resize.
 
 	// Copy stdin to the pty and the pty to stdout.
 	// NOTE: The goroutine will keep reading until the next keystroke before returning.
