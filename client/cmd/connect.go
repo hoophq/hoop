@@ -29,6 +29,8 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type ConnectFlags struct {
@@ -215,23 +217,29 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				if sshHostKeyEnc, ok := pkt.Spec[pb.SpecClientSSHHostKey]; ok && len(sshHostKeyEnc) > 0 {
 					sshHostKeySigner, err = parseHostKey(sshHostKeyEnc)
 				}
-				if sshHostKeySigner == nil || err != nil && log.IsDebugLevel {
+				if debugFlag && err != nil {
 					fmt.Fprintln(os.Stderr, styles.Fainted("unable to parse SSH host key received from server, using random key"))
 					fmt.Fprintln(os.Stderr, styles.Fainted("parse host key error=%v", err))
 				}
-				srv := proxy.NewSSHServer(c.proxyPort, c.client, sshHostKeySigner)
-				if err := srv.Serve(string(sessionID)); err != nil {
+				srv, err := proxy.NewSSHServer(c.proxyPort, c.connectionName, c.client, sshHostKeySigner, debugFlag)
+				if err != nil {
 					c.processGracefulExit(err)
 				}
+
+				if c.proxyPort == "" {
+					err = srv.ServeAndConnect(string(sessionID))
+				} else {
+					err = srv.Serve(string(sessionID))
+				}
+
+				if err != nil {
+					c.processGracefulExit(err)
+				}
+
 				c.loader.Stop()
 				c.client.StartKeepAlive()
 				c.connStore.Set(string(sessionID), srv)
-				c.printHeader(connectionType, pkt)
-				fmt.Println()
-				fmt.Println("--------------------ssh-connection--------------------")
-				fmt.Printf("      host=%s port=%s user=noop password=noop\n", srv.Host().Host, srv.Host().Port)
-				fmt.Println("------------------------------------------------------")
-				fmt.Println("ready to accept connections!")
+				ossig.shutdownFn = func() { loader.Stop(); srv.Close() }
 			case pb.ConnectionTypeHttpProxy:
 				proxyPort := "8081"
 				if c.proxyPort != "" {
@@ -420,6 +428,18 @@ func (c *connect) processGracefulExit(err error) {
 				os.Exit(0)
 			}
 			fmt.Printf("\n\n")
+			c.printErrorAndExit(err.Error())
+		case *proxy.SSHServer:
+			v.Close()
+			if err == io.EOF {
+				os.Exit(0)
+			}
+			if s, _ := status.FromError(err); s != nil && s.Code() == codes.Canceled && !log.IsDebugLevel {
+				if c.loader != nil {
+					c.loader.Stop()
+				}
+				os.Exit(0)
+			}
 			c.printErrorAndExit(err.Error())
 		case proxy.Closer:
 			v.Close()
