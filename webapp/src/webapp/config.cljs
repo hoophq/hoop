@@ -50,7 +50,8 @@
                            :identity-providers "https://hoop.dev/docs/setup/configuration/idp/get-started"
                            :secrets-manager "https://hoop.dev/docs/setup/configuration/secrets-manager-configuration"
                            :ai-data-masking "https://hoop.dev/docs/setup/configuration/ai-data-masking"}
-           :apis "https://hoop.dev/docs/setup/apis"
+           :apis {:api-keys "https://hoop.dev/docs/setup/apis/api-key#api-key"
+                  :overview "https://hoop.dev/docs/setup/apis"}
            :license-management "https://hoop.dev/docs/setup/license-management"}
    :clients {:web-app {:overview "https://hoop.dev/docs/clients/webapp/overview"
                        :creating-connection "https://hoop.dev/docs/clients/webapp/creating-connection"

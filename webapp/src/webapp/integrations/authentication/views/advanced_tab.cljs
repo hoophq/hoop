@@ -1,7 +1,7 @@
 (ns webapp.integrations.authentication.views.advanced-tab
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Text]]
-   ["lucide-react" :refer [AlertTriangle Copy RotateCw]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
+   ["lucide-react" :refer [Copy RotateCw]]
    [re-frame.core :as rf]
    [webapp.components.callout-link :as callout-link]
    [webapp.components.forms :as forms]
@@ -69,7 +69,7 @@
         "This key has unrestricted access. Store securely and rotate regularly."]
 
        ;; Learn more link
-       [callout-link/main {:href "#" ;; TODO: Add proper API Keys documentation URL
+       [callout-link/main {:href (get-in config/docs-url [:setup :apis :api-keys])
                            :text "Learn more about API Keys"}]]
 
       [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5" :items "end"}
