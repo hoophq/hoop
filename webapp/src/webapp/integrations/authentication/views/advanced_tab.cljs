@@ -3,7 +3,9 @@
    ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Text]]
    ["lucide-react" :refer [AlertTriangle Copy RotateCw]]
    [re-frame.core :as rf]
-   [webapp.components.forms :as forms]))
+   [webapp.components.callout-link :as callout-link]
+   [webapp.components.forms :as forms]
+   [webapp.config :as config]))
 
 (defn copy-to-clipboard [text]
   (-> js/navigator
@@ -57,41 +59,47 @@
        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
         "Service API Key"]
        [:> Text {:size "3" :class "text-[--gray-11]"}
-        "Optional configuration that enables programmatic access with admin privileges."]]
+        "Optional configuration that enables programmatic access with admin privileges."]
 
-      [:> Box {:class "space-y-radix-5" :grid-column "span 5 / span 5"}
-       ;; Security notice
-       [:> Callout.Root {:size "2" :variant "surface" :color "yellow"}
-        [:> Callout.Icon
-         [:> AlertTriangle {:size 16}]]
-        [:> Callout.Text
-         [:> Text {:weight "medium"} "Security notice: "]
-         "This key has unrestricted access. Store securely and rotate regularly."]]
+       [:br] [:br]
 
-       ;; API Key fields
-       [:> Box {:class "space-y-radix-4"}
-        ;; Secret Key with actions
-        [:> Box
-         [:> Flex {:justify "between" :align "end" :mb "1"}
+       [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
+        "Security notice: "]
+       [:> Text {:size "3" :class "text-[--gray-11]"}
+        "This key has unrestricted access. Store securely and rotate regularly."]
+
+       ;; Learn more link
+       [callout-link/main {:href "#" ;; TODO: Add proper API Keys documentation URL
+                           :text "Learn more about API Keys"}]]
+
+      [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5" :items "end"}
+       [:> Flex {:gap "2"}
+        [:> Flex {:direction "column" :gap "2" :width "100%"}
+         [:> Flex {:justify "between" :align "center" :mb "1"}
           [:> Text {:size "2" :weight "medium"} "Secret Key"]
           [:> Flex {:gap "2"}
            [:> Button {:size "1"
                        :variant "ghost"
+                       :color "gray"
+                       :class "mr-1"
                        :on-click #(copy-to-clipboard (:secret @api-key))}
             [:> Copy {:size 14}]
-            "Copy"]
-           [:> Button {:size "1"
-                       :variant "ghost"
-                       :on-click #(rf/dispatch [:authentication->generate-api-key])}
-            [:> RotateCw {:size 14}]
-            "Generate"]]]
-         [forms/input
-          {:value (:secret @api-key)
-           :placeholder "e.g. VuOnc2nUwv8aCRhfQGsp"
-           :class "font-mono"
-           :on-change #(rf/dispatch [:authentication->update-advanced-field
-                                     :api-key {:secret (-> % .-target .-value)}])}]]]
+            "Copy"]]]
+         [:> Flex {:gap "2" :align "center" :items "center"}
+          [forms/input
+           {:value (:secret @api-key)
+            :placeholder "e.g. VuOnc2nUwv8aCRhfQGsp"
+            :full-width? true
+            :not-margin-bottom? true
+            :class "font-mono flex-1"
+            :on-change #(rf/dispatch [:authentication->update-advanced-field
+                                      :api-key {:secret (-> % .-target .-value)
+                                                :newly-generated? (:newly-generated? @api-key)}])}]]]
 
-       ;; Learn more about API Keys
-       [:> Text {:size "2" :class "text-blue-600 cursor-pointer hover:underline"}
-        "Learn more about API Keys"]]]]))
+        [:> Button {:size "3"
+                    :variant "soft"
+                    :color "gray"
+                    :class "self-end"
+                    :on-click #(rf/dispatch [:authentication->generate-api-key])}
+         "Refresh"
+         [:> RotateCw {:size 16}]]]]]]))

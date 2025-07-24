@@ -27,8 +27,9 @@
                                           :issuer-url (:issuer_url (:oidc_config data))}))
                          (assoc :advanced {:admin-role (:admin_role_name data)
                                            :auditor-role (:auditor_role_name data)
-                                           :api-key {:secret (:api_key data)}
-                                           :local-auth-enabled (= (:webapp_users_management_status data) "enabled")}))]
+                                           :api-key {:secret (:api_key data)
+                                                     :newly-generated? false}
+                                           :local-auth-enabled (= (:webapp_users_management_status data) "active")}))]
      (-> db
          (assoc-in [:authentication :status] :success)
          (assoc-in [:authentication :data] mapped-data)))))
@@ -86,7 +87,9 @@
 (rf/reg-event-fx
  :authentication->generate-api-key-success
  (fn [{:keys [db]} [_ response]]
-   {:db (assoc-in db [:authentication :data :advanced :api-key :secret] (:rollout_api_key response))
+   {:db (assoc-in db [:authentication :data :advanced :api-key]
+                  {:secret (:rollout_api_key response)
+                   :newly-generated? true})
     :fx [[:dispatch [:show-snackbar {:level :success
                                      :text "New API key generated successfully!"}]]]}))
 
@@ -102,20 +105,24 @@
  :authentication->save-config
  (fn [{:keys [db]} _]
    (let [ui-config (get-in db [:authentication :data])
+         newly-generated? (get-in ui-config [:advanced :api-key :newly-generated?])
          ;; Map UI structure back to API format
-         api-payload {:auth_method (if (= (:auth-method ui-config) "identity-provider") "oidc" "local")
-                      :admin_role_name (get-in ui-config [:advanced :admin-role])
-                      :auditor_role_name (get-in ui-config [:advanced :auditor-role])
-                      :rollout_api_key (get-in ui-config [:advanced :api-key :secret])
-                      :webapp_users_management_status (if (get-in ui-config [:advanced :local-auth-enabled]) "active" "inactive")
-                      :oidc_config (when (= (:auth-method ui-config) "identity-provider")
-                                     {:client_id (get-in ui-config [:config :client-id])
-                                      :client_secret (get-in ui-config [:config :client-secret])
-                                      :audience (get-in ui-config [:config :audience])
-                                      :groups_claim "groups"
-                                      :issuer_url (get-in ui-config [:config :issuer-url])
-                                      :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
-                      :saml_config nil}]
+         base-payload {:auth_method (if (= (:auth-method ui-config) "identity-provider") "oidc" "local")
+                       :admin_role_name (get-in ui-config [:advanced :admin-role])
+                       :auditor_role_name (get-in ui-config [:advanced :auditor-role])
+                       :webapp_users_management_status (if (get-in ui-config [:advanced :local-auth-enabled]) "active" "inactive")
+                       :oidc_config (when (= (:auth-method ui-config) "identity-provider")
+                                      {:client_id (get-in ui-config [:config :client-id])
+                                       :client_secret (get-in ui-config [:config :client-secret])
+                                       :audience (get-in ui-config [:config :audience])
+                                       :groups_claim "groups"
+                                       :issuer_url (get-in ui-config [:config :issuer-url])
+                                       :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
+                       :saml_config nil}
+         ;; Only include rollout_api_key if a new one was generated
+         api-payload (if newly-generated?
+                       (assoc base-payload :rollout_api_key (get-in ui-config [:advanced :api-key :secret]))
+                       base-payload)]
      {:db (assoc-in db [:authentication :submitting?] true)
       :fx [[:dispatch [:fetch {:method "PUT"
                                :uri "/serverconfig/auth"
