@@ -43,7 +43,8 @@
      "/hoop-app" :hoop-app
      "/idplogin" :idplogin-hoop
      "/integrations" [["/aws-connect" :integrations-aws-connect]
-                      ["/aws-connect/setup" :integrations-aws-connect-setup]]
+                      ["/aws-connect/setup" :integrations-aws-connect-setup]
+                      ["/authentication" :integrations-authentication]]
      "/jira-templates" [["" :jira-templates]
                         ["/new" :create-jira-template]
                         [["/edit/" :jira-template-id] :edit-jira-template]]
@@ -69,7 +70,9 @@
      "/sessions" [["" :sessions]
                   ["/filtered" :sessions-list-filtered-by-ids]
                   [["/" :session-id] :session-details]]
-     "/settings" [["/license" :license-management]]
+     "/settings" [["/license" :license-management]
+                  ["/infrastructure" :settings-infrastructure]
+                  ["/jira" :settings-jira]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop
      "/upgrade-plan" :upgrade-plan}]))
@@ -123,6 +126,12 @@
  (fn [db]
    (get-in db [:users->current-user :data :admin?])))
 
+;; Subscription for checking if the user has selfhosted tenancy type
+(rf/reg-sub
+ :user/is-selfhosted?
+ (fn [db]
+   (= "selfhosted" (get-in db [:users->current-user :data :tenancy_type]))))
+
 ;; Component wrapper to check if the user is an admin
 ;; If not, redirect to home and show a loader component
 (defn admin-only []
@@ -147,6 +156,30 @@
 (defn wrap-admin-only [component]
   [admin-only component])
 
+;; Component wrapper to check if the user has selfhosted tenancy type
+;; If not, redirect to home and show a loader component
+(defn selfhosted-only []
+  (let [is-selfhosted? (rf/subscribe [:user/is-selfhosted?])]
+    (fn [component]
+      (if (nil? @is-selfhosted?)
+        [:<>]
+        (if @is-selfhosted?
+          ;; If it's selfhosted, render the component normally
+          component
+          ;; If it's not selfhosted, redirect to home and show a loader
+          (do
+            (js/setTimeout #(rf/dispatch [:navigate :home]) 1200)
+            [:div {:class "flex items-center justify-center h-full"}
+             [:div {:class "text-center"}
+              [:div {:class "mb-4 text-xl font-medium text-gray-900"}
+               "Redirecting..."]
+              [:div {:class "text-sm text-gray-500"}
+               "This feature is only available for self-hosted environments."]]]))))))
+
+;; Function wrapper to wrap selfhosted components
+(defn wrap-selfhosted-only [component]
+  [selfhosted-only component])
+
 ;; Example of usage:
 ;; Instead of:
 ;; (defmethod routes/panels :users-panel []
@@ -155,3 +188,8 @@
 ;; Use:
 ;; (defmethod routes/panels :users-panel []
 ;;   [layout :application-hoop [wrap-admin-only users/main]])
+;;
+;; Or for selfhosted-only:
+;; (defmethod routes/panels :some-panel []
+;;   [layout :application-hoop [wrap-selfhosted-only some-component/main]])
+

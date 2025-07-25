@@ -448,7 +448,7 @@
        ;; No connection selected
        (empty? primary-connection)
        {:fx [[:dispatch [:show-snackbar
-                         {:level :info
+                         {:level :error
                           :text "You must choose a connection"}]]]}
 
        ;; Multiple connections with Jira template not allowed

@@ -127,43 +127,70 @@
     :badge "BETA"}])
 
 ;; Seção Settings
-(def settings-routes
-  [{:name "Users"
-    :label "Users"
-    :icon (fn []
-            [:> UsersRound {:size 24}])
-    :uri (routes/url-for :users)
-    :navigate :users
-    :free-feature? true
-    :admin-only? true}
-   {:name "Agents"
+(def organization-routes
+  [{:name "Agents"
     :label "Agents"
     :icon (fn []
             [:> BrainCog {:size 24}])
     :uri (routes/url-for :agents)
     :navigate :agents
     :free-feature? true
-    :admin-only? true}
-   {:name "License"
+    :admin-only? true}])
+
+;; Integrations
+(def integrations-management
+  [{:name "authentication"
+    :label "Authentication"
+    :plugin? false
+    :free-feature? true
+    :uri (routes/url-for :integrations-authentication)
+    :navigate :integrations-authentication
+    :admin-only? true
+    :selfhosted-only? true}
+   {:name "jira"
+    :label "Jira"
+    :plugin? false
+    :uri (routes/url-for :settings-jira)
+    :navigate :settings-jira
+    :free-feature? false
+    :admin-only? true
+    :selfhosted-only? false}
+   {:name "webhooks"
+    :label "Webhooks"
+    :plugin? true
+    :free-feature? false
+    :admin-only? true
+    :selfhosted-only? false}
+   {:name "slack"
+    :label "Slack"
+    :plugin? true
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false}])
+
+;; Settings
+(def settings-management
+  [{:name "infrastructure"
+    :label "Infrastructure"
+    :uri (routes/url-for :settings-infrastructure)
+    :navigate :settings-infrastructure
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? true}
+   {:name "license"
     :label "License"
-    :icon (fn []
-            [:> BadgeCheck {:size 24}])
     :uri (routes/url-for :license-management)
     :navigate :license-management
     :free-feature? true
-    :admin-only? true}])
-
-;; Integrações (submenu de Settings)
-(def integrations-management
-  [{:name "jira"
-    :label "Jira"
-    :free-feature? false}
-   {:name "webhooks"
-    :label "Webhooks"
-    :free-feature? false}
-   {:name "slack"
-    :label "Slack"
-    :free-feature? true}])
+    :admin-only? true
+    :selfhosted-only? false}
+   {:name "users"
+    :label "Users"
+    :uri (routes/url-for :users)
+    :navigate :users
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false}])
 
 ;; Mantemos essa constante para compatibilidade com o código existente
 (def routes main-routes)

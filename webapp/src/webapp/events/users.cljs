@@ -46,7 +46,9 @@
                                                        :user-management? (= (:webapp_users_management user) "on")
                                                        :free-license? (not (and (:is_valid license-info)
                                                                                 (= (:type license-info) "enterprise")))
-                                                       :admin? (:is_admin user))})
+                                                       :admin? (:is_admin user)
+                                                       ;;:tenancy_type "multi-tenant"
+                                                       )})
       :fx [[:dispatch [:initialize-intercom user]]
            [:dispatch [:close-page-loader]]]})))
 

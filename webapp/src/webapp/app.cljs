@@ -1,15 +1,18 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Theme Box Heading Spinner]]
+   ["@radix-ui/themes" :refer [Box Heading Spinner Theme]]
+   ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
-   ["ag-grid-community" :refer [AllCommunityModule
-                                ModuleRegistry]]
    ["sonner" :refer [Toaster]]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.agents.new :as create-agent]
    [webapp.agents.panel :as agents]
+   [webapp.ai-data-masking.create-update-form :as ai-data-masking-create-update]
+   [webapp.ai-data-masking.events]
+   [webapp.ai-data-masking.main :as ai-data-masking]
+   [webapp.ai-data-masking.subs]
    [webapp.audit.views.main :as audit]
    [webapp.audit.views.session-details :as session-details]
    [webapp.audit.views.sessions-filtered-by-id :as session-filtered-by-id]
@@ -60,23 +63,25 @@
    [webapp.events.slack-plugin]
    [webapp.events.tracking]
    [webapp.events.users]
-   [webapp.features.runbooks.events]
-   [webapp.features.runbooks.subs]
    [webapp.features.access-control.events]
-   [webapp.features.access-control.subs]
    [webapp.features.access-control.main :as access-control]
+   [webapp.features.access-control.subs]
    [webapp.features.access-control.views.group-form :as group-form]
+   [webapp.features.runbooks.events]
+   [webapp.features.runbooks.main :as runbooks]
+   [webapp.features.runbooks.subs]
+   [webapp.features.runbooks.views.runbook-form :as runbook-form]
    [webapp.features.users.events]
-   [webapp.features.users.subs]
    [webapp.features.users.main :as users]
-   [webapp.ai-data-masking.main :as ai-data-masking]
-   [webapp.ai-data-masking.events]
-   [webapp.ai-data-masking.subs]
-   [webapp.ai-data-masking.create-update-form :as ai-data-masking-create-update]
+   [webapp.features.users.subs]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
+   [webapp.integrations.authentication.events]
+   [webapp.integrations.authentication.main :as integrations-authentication]
+   [webapp.integrations.authentication.subs]
    [webapp.integrations.events]
+   [webapp.integrations.jira.main :as jira-integration]
    [webapp.jira-templates.create-update-form :as jira-templates-create-update]
    [webapp.jira-templates.main :as jira-templates]
    [webapp.onboarding.aws-connect :as aws-connect]
@@ -87,10 +92,12 @@
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
-   [webapp.plugins.views.plugins-configurations :as plugins-configurations]
    [webapp.reviews.panel :as reviews]
    [webapp.reviews.review-detail :as review-detail]
    [webapp.routes :as routes]
+   [webapp.settings.infrastructure.events]
+   [webapp.settings.infrastructure.main :as infrastructure]
+   [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
@@ -104,9 +111,7 @@
    [webapp.webclient.events.metadata]
    [webapp.webclient.events.multi-exec]
    [webapp.webclient.events.search]
-   [webapp.webclient.panel :as webclient]
-   [webapp.features.runbooks.main :as runbooks]
-   [webapp.features.runbooks.views.runbook-form :as runbook-form]))
+   [webapp.webclient.panel :as webclient]))
 
 ;; Tracking initialization is now handled by :tracking->initialize-if-allowed
 ;; which is dispatched after gateway info is loaded and checks do_not_track
@@ -241,6 +246,13 @@
     [routes/wrap-admin-only
      [license-management/main]]]])
 
+(defmethod routes/panels :settings-infrastructure-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [routes/wrap-selfhosted-only
+      [infrastructure/main]]]]])
+
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
@@ -290,6 +302,14 @@
    [:div {:class "bg-gray-1 min-h-full h-full"}
     [routes/wrap-admin-only
      [aws-connect/main :create]]]])
+
+(defmethod routes/panels :integrations-authentication-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [routes/wrap-selfhosted-only
+      [integrations-authentication/main]]]]])
 
 (defmethod routes/panels :upgrade-plan-panel []
   (rf/dispatch [:destroy-page-loader])
@@ -404,21 +424,13 @@
      [routes/wrap-admin-only
       [manage-plugin/main plugin-name]]]))
 
-(defmethod routes/panels :manage-ask-ai-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [routes/wrap-admin-only
-                              [:<>
-                               [h/h2 "AI Query Builder" {:class "mb-6"}]
-                               [plugins-configurations/config "ask_ai"]]]]))
-
-(defmethod routes/panels :manage-jira-panel []
+(defmethod routes/panels :settings-jira-panel []
   (rf/dispatch [:destroy-page-loader])
   (layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
                              [routes/wrap-admin-only
                               [:<>
                                [h/h2 "Jira" {:class "mb-6"}]
-                               [plugins-configurations/config "jira"]]]]))
+                               [jira-integration/main]]]]))
 
 (defmethod routes/panels :audit-plugin-panel []
   ;; this performs a redirect while we're migrating

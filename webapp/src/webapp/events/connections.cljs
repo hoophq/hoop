@@ -174,7 +174,7 @@ ORDER BY total_amount DESC;")
 
        ;; If no agent in app state, navigate back to setup to start agent check
        {:fx [[:dispatch [:navigate :onboarding]]
-             [:dispatch [:show-snackbar {:level :info
+             [:dispatch [:show-snackbar {:level :error
                                          :text "Setting up agents before creating demo database..."}]]]}))))
 
 (rf/reg-event-fx
@@ -238,8 +238,9 @@ ORDER BY total_amount DESC;")
                                       ;; Case 1: Review required
                                       (and (= (:status res) "disconnected")
                                            (:has_review res))
+
                                       (do
-                                        (rf/dispatch [:show-snackbar {:level :info
+                                        (rf/dispatch [:show-snackbar {:level :error
                                                                       :text (str "The connection " (:connection_name connection) " requires review.")}])
                                         (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
                                                                     :maxWidth "446px"}]))
