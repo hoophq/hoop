@@ -40,10 +40,6 @@ func GetServerMisc(c *gin.Context) {
 		config = &models.ServerMiscConfig{}
 	}
 
-	if config == nil {
-		config = &models.ServerMiscConfig{}
-	}
-
 	appc := appconfig.Get()
 	productAnalytics := "active"
 	if !appc.AnalyticsTracking() {
@@ -128,7 +124,7 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	}
 
 	if !hasValidPrefix {
-		return nil, fmt.Errorf("invalid attribute for 'grpc_server_url', it must start with 'grpc://' or 'grpcs://'")
+		return nil, fmt.Errorf("invalid attribute for 'grpc_server_url', it must start with 'grpc://', 'grpcs://', 'http://', or 'https://'")
 	}
 
 	return &models.ServerMiscConfig{
