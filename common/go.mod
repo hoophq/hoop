@@ -15,7 +15,7 @@ require (
 	go.mongodb.org/mongo-driver v1.15.1
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.37.0
-	golang.org/x/oauth2 v0.25.0
+	golang.org/x/oauth2 v0.28.0
 	google.golang.org/grpc v1.71.1
 	google.golang.org/protobuf v1.36.4
 	k8s.io/api v0.29.3

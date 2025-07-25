@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.15
 	github.com/aws/smithy-go v1.22.2
 	github.com/coreos/go-oidc/v3 v3.14.1
-	github.com/getkin/kin-openapi v0.126.0
+	github.com/getkin/kin-openapi v0.131.0
 	github.com/getsentry/sentry-go v0.18.0
 	github.com/gin-contrib/static v0.0.1
 	github.com/gin-contrib/zap v0.2.0
@@ -96,7 +96,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.8.1 // indirect
 	github.com/honeycombio/otel-config-go v1.12.1 // indirect
-	github.com/invopop/yaml v0.3.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.7.1 // indirect
@@ -117,6 +116,8 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
+	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
+	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
