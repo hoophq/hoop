@@ -78,7 +78,7 @@
          [connections-panel {:connections connections}])])))
 
 (defn main []
-  (let [user-groups (rf/subscribe [:user-groups])
+  (let [all-groups (rf/subscribe [:access-control/all-groups])
         groups-with-permissions (rf/subscribe [:access-control/groups-with-permissions])
         all-connections (rf/subscribe [:connections])
 
@@ -91,10 +91,9 @@
     (rf/dispatch [:connections->get-connections])
 
     (fn []
-      (let [all-groups (or @user-groups [])
+      (let [filtered-groups (or @all-groups [])
             group-permissions (or @groups-with-permissions {})
             connections-map (reduce #(assoc %1 (:name %2) %2) {} (:results @all-connections))
-            filtered-groups (filter #(not= "admin" %) all-groups)
 
             ;; Aplicar filtro de conexão se selecionado
             groups-filtered-by-connection (if (empty? @selected-connection)

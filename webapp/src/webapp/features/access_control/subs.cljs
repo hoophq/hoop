@@ -35,3 +35,28 @@
  :<- [:access-control/groups-with-permissions]
  (fn [groups-with-permissions [_ group-id]]
    (get groups-with-permissions group-id [])))
+
+;; Nova subscription que une grupos de /users/groups com grupos do plugin
+(rf/reg-sub
+ :access-control/all-groups
+ :<- [:user-groups]
+ :<- [:access-control/connections]
+ (fn [[user-groups connections]]
+   (let [;; Grupos vindos do endpoint /users/groups
+         system-groups (set (or user-groups []))
+
+         ;; Grupos encontrados nas configurações das conexões do plugin
+         plugin-groups (when connections
+                         (->> connections
+                              (mapcat #(or (:config %) []))
+                              (into #{})))
+
+         ;; União de ambos os conjuntos
+         all-groups (into system-groups plugin-groups)
+
+         ;; Filtrar grupo "admin" e retornar como vetor ordenado
+         filtered-groups (-> all-groups
+                             (disj "admin")
+                             sort
+                             vec)]
+     filtered-groups)))
