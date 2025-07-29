@@ -11,7 +11,7 @@
 
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        user-groups (rf/subscribe [:user-groups])
+        all-groups (rf/subscribe [:access-control/all-groups])
         min-loading-done (r/atom false)]
 
     (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
@@ -22,8 +22,7 @@
     (fn []
       (let [plugin (:plugin @plugin-details)
             installed? (or (:installed? plugin) false)
-            filtered-user-groups (filter #(not= "admin" %) @user-groups)
-            has-user-groups? (and filtered-user-groups (seq filtered-user-groups))
+            has-user-groups? (and @all-groups (seq @all-groups))
             loading? (or (= :loading (:status @plugin-details))
                          (not @min-loading-done))]
 
