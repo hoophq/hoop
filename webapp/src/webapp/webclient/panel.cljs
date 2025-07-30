@@ -205,13 +205,11 @@
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
-        selected-connection (rf/subscribe [:connections/selected])
-        multi-selected-connections (rf/subscribe [:connection-selection/selected])
+        multi-selected-connections (rf/subscribe [:multiple-connections/selected])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         runbooks (rf/subscribe [:runbooks-plugin->runbooks])
-        multi-exec (rf/subscribe [:multi-exec/modal])
-        selected-connections (rf/subscribe [:connection-selection/selected])
-        primary-connection (rf/subscribe [:connections/selected])
+        multi-exec (rf/subscribe [:multiple-connection-execution/modal])
+        primary-connection (rf/subscribe [:primary-connection/selected])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
@@ -251,17 +249,17 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
-      (handle-connection-modes! @selected-connection)
+      (handle-connection-modes! @primary-connection)
 
       (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
-            current-connection @selected-connection
+            current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
             has-runbook? (some? (:data @selected-template))
-            no-connection-selected? (and (empty? @selected-connections)
+            no-connection-selected? (and (empty? @multi-selected-connections)
                                          (not @primary-connection))
             run-disabled? (or (and (not exec-enabled?)
                                    runbooks-enabled?)

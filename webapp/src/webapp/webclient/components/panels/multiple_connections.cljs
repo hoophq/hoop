@@ -60,9 +60,9 @@
              connections)))
 
 (defn connections-list [dark-mode? runbooks-panel-opened?]
-  (let [connections @(rf/subscribe [:connections/filtered])
-        primary-connection @(rf/subscribe [:connections/selected])
-        selected-connections @(rf/subscribe [:connection-selection/selected])
+  (let [connections @(rf/subscribe [:primary-connection/filtered])
+        primary-connection @(rf/subscribe [:primary-connection/selected])
+        selected-connections @(rf/subscribe [:multiple-connections/selected])
         filtered-connections (filter-connections connections)
         filtered-compatible-connections (filter-compatible-connections filtered-connections
                                                                        primary-connection
@@ -83,10 +83,10 @@
        [connection-item
         {:connection connection
          :selected? (some #(= (:name %) (:name connection)) selected-connections)
-         :on-select #(rf/dispatch [:connection-selection/toggle connection])} dark-mode?])]))
+         :on-select #(rf/dispatch [:multiple-connections/toggle connection])} dark-mode?])]))
 
 (defn main [dark-mode? runbooks-panel-opened?]
-  (let [selected-connections @(rf/subscribe [:connection-selection/selected])]
+  (let [selected-connections @(rf/subscribe [:multiple-connections/selected])]
     [:> Box {:class "h-full flex flex-col"}
      [:> Flex {:justify "between"
                :align "center"

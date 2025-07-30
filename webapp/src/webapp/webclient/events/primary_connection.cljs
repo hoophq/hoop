@@ -11,35 +11,35 @@
    (rf/dispatch [:fetch
                  {:method "GET"
                   :uri "/connections"
-                  :on-success #(rf/dispatch [:connections/set-list %])
-                  :on-failure #(rf/dispatch [:connections/set-error %])}])))
+                  :on-success #(rf/dispatch [:primary-connection/set-list %])
+                  :on-failure #(rf/dispatch [:primary-connection/set-error %])}])))
 
 ;; Events
 (rf/reg-event-fx
- :connections/initialize-with-persistence
+ :primary-connection/initialize-with-persistence
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :status] :loading)
     :fx [[:fetch-connections]
-         [:dispatch-later {:ms 500 :dispatch [:connections/load-persisted]}]
-         [:dispatch-later {:ms 600 :dispatch [:connection-selection/load-persisted]}]
-         [:dispatch-later {:ms 2000 :dispatch [:connections/update-runbooks]}]]}))
+         [:dispatch-later {:ms 500 :dispatch [:primary-connection/load-persisted]}]
+         [:dispatch-later {:ms 600 :dispatch [:multiple-connections/load-persisted]}]
+         [:dispatch-later {:ms 2000 :dispatch [:primary-connection/update-runbooks]}]]}))
 
 (rf/reg-event-fx
- :connections/initialize
+ :primary-connection/initialize
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :status] :loading)
     :fx [[:fetch-connections]
-         [:dispatch-later {:ms 2000 :dispatch [:connections/update-runbooks]}]]}))
+         [:dispatch-later {:ms 2000 :dispatch [:primary-connection/update-runbooks]}]]}))
 
 (rf/reg-event-db
- :connections/set-error
+ :primary-connection/set-error
  (fn [db [_ error]]
    (-> db
        (assoc-in [:editor :connections :status] :error)
        (assoc-in [:editor :connections :error] error))))
 
 (rf/reg-event-db
- :connections/set-list
+ :primary-connection/set-list
  (fn [db [_ connections]]
    (let [selected (get-in db [:editor :connections :selected])
          ;; Se há uma conexão selecionada, atualiza com dados frescos
@@ -63,29 +63,29 @@
            (assoc-in [:editor :multi-connections :selected] updated-multi-selected))))))
 
 (rf/reg-event-db
- :connections/set-filter
+ :primary-connection/set-filter
  (fn [db [_ filter-text]]
    (assoc-in db [:editor :connections :filter] filter-text)))
 
 (rf/reg-event-fx
- :connections/set-selected
+ :primary-connection/set-selected
  (fn [{:keys [db]} [_ connection]]
    {:db (assoc-in db [:editor :connections :selected] connection)
     :fx [[:dispatch [:editor-plugin/clear-language]]
-         [:dispatch [:connections/persist-selected]]
+         [:dispatch [:primary-connection/persist-selected]]
          [:dispatch [:database-schema->clear-schema]]
-         [:dispatch [:connections/update-runbooks]]]}))
+         [:dispatch [:primary-connection/update-runbooks]]]}))
 
 (rf/reg-event-fx
- :connections/clear-selected
+ :primary-connection/clear-selected
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :selected] nil)
-    :fx [[:dispatch [:connections/persist-selected]]
+    :fx [[:dispatch [:primary-connection/persist-selected]]
          [:dispatch [:database-schema->clear-schema]]
-         [:dispatch [:connections/update-runbooks]]]}))
+         [:dispatch [:primary-connection/update-runbooks]]]}))
 
 (rf/reg-event-fx
- :connections/persist-selected
+ :primary-connection/persist-selected
  (fn [{:keys [db]} _]
    (let [selected (get-in db [:editor :connections :selected])]
      (.setItem js/localStorage
@@ -94,7 +94,7 @@
      {})))
 
 (rf/reg-event-fx
- :connections/load-persisted
+ :primary-connection/load-persisted
  (fn [{:keys [db]} _]
    (let [saved (.getItem js/localStorage "selected-connection")
          parsed (when (and saved (not= saved "null"))
@@ -110,7 +110,7 @@
        {:db (assoc-in db [:editor :connections :selected] parsed)}))))
 
 (rf/reg-event-fx
- :connections/update-runbooks
+ :primary-connection/update-runbooks
  (fn [{:keys [db]} _]
    (let [primary-connection (get-in db [:editor :connections :selected])
          selected-connections (get-in db [:editor :multi-connections :selected] [])]
@@ -121,34 +121,34 @@
 
 ;; Subscriptions
 (rf/reg-sub
- :connections/status
+ :primary-connection/status
  (fn [db]
    (get-in db [:editor :connections :status])))
 
 (rf/reg-sub
- :connections/list
+ :primary-connection/list
  (fn [db]
    (get-in db [:editor :connections :list])))
 
 (rf/reg-sub
- :connections/error
+ :primary-connection/error
  (fn [db]
    (get-in db [:editor :connections :error])))
 
 (rf/reg-sub
- :connections/selected
+ :primary-connection/selected
  (fn [db]
    (get-in db [:editor :connections :selected])))
 
 (rf/reg-sub
- :connections/filter
+ :primary-connection/filter
  (fn [db]
    (get-in db [:editor :connections :filter])))
 
 (rf/reg-sub
- :connections/filtered
- :<- [:connections/list]
- :<- [:connections/filter]
+ :primary-connection/filtered
+ :<- [:primary-connection/list]
+ :<- [:primary-connection/filter]
  (fn [[connections filter-text]]
    (if (empty? filter-text)
      connections

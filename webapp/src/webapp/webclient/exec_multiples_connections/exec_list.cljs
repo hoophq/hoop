@@ -52,7 +52,7 @@
   [:div {:class "mt-6 flex items-center justify-end gap-small"}
    [button/secondary {:text "Close"
                       :type "button"
-                      :on-click #(rf/dispatch [:multi-exec/clear])}]
+                      :on-click #(rf/dispatch [:multiple-connection-execution/clear])}]
    [button/primary {:text [:div {:class "flex items-center gap-small"}
                            [:> hero-solid-icon/PlayIcon {:class "h-5 w-5 text-white"
                                                          :aria-hidden "true"}]
@@ -60,14 +60,14 @@
                     :disabled false
                     :type "button"
                     :on-click (fn []
-                                (rf/dispatch [:multi-exec/execute-script exec-list]))}]])
+                                (rf/dispatch [:multiple-connection-execution/execute-script exec-list]))}]])
 
 (defn button-group-completed [exec-list]
   (rf/dispatch [:editor-plugin->multiple-connections-update-metadata exec-list])
   [:div {:class "mt-6 flex items-center justify-end gap-small"}
    [button/secondary {:text "Close"
                       :type "button"
-                      :on-click #(rf/dispatch [:multi-exec/clear])}]
+                      :on-click #(rf/dispatch [:multiple-connection-execution/clear])}]
    [:a {:href (str (. (. js/window -location) -origin)
                    "/sessions/filtered?id="
                    (cs/join "," (map :session-id exec-list)))
@@ -79,7 +79,7 @@
                      :on-click (fn [] false)}]]])
 
 (defn main []
-  (let [multi-exec (rf/subscribe [:multi-exec/modal])]
+  (let [multi-exec (rf/subscribe [:multiple-connection-execution/modal])]
     (rf/dispatch [:editor-plugin->clear-connection-script])
     (fn []
       [:div {:id "modal"

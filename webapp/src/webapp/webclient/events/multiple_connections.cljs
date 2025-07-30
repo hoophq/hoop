@@ -6,19 +6,19 @@
 
 ;; Toggle seleção de uma conexão
 (rf/reg-event-fx
- :connection-selection/toggle
+ :multiple-connections/toggle
  (fn [{:keys [db]} [_ connection]]
    (let [current-selections (get-in db [:editor :multi-connections :selected] [])
          updated-selections (if (some #(= (:name %) (:name connection)) current-selections)
                               (filterv #(not= (:name %) (:name connection)) current-selections)
                               (conj current-selections connection))]
      {:db (assoc-in db [:editor :multi-connections :selected] updated-selections)
-      :fx [[:dispatch [:connection-selection/persist]]
-           [:dispatch [:connections/update-runbooks]]]})))
+      :fx [[:dispatch [:multiple-connections/persist]]
+           [:dispatch [:primary-connection/update-runbooks]]]})))
 
 ;; Persiste seleções no localStorage
 (rf/reg-event-fx
- :connection-selection/persist
+ :multiple-connections/persist
  (fn [{:keys [db]} _]
    (let [selections (get-in db [:editor :multi-connections :selected])
          ;; Salva apenas os nomes das conexões
@@ -30,7 +30,7 @@
 
 ;; Carrega seleções do localStorage
 (rf/reg-event-fx
- :connection-selection/load-persisted
+ :multiple-connections/load-persisted
  (fn [{:keys [db]} _]
    (let [saved (.getItem js/localStorage "run-connection-list-selected")
          parsed (when saved (reader/read-string saved))
@@ -45,34 +45,34 @@
 
 ;; Limpa todas as seleções
 (rf/reg-event-fx
- :connection-selection/clear
+ :multiple-connections/clear
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :multi-connections :selected] [])
-    :fx [[:dispatch [:connection-selection/persist]]
-         [:dispatch [:connections/update-runbooks]]]}))
+    :fx [[:dispatch [:multiple-connections/persist]]
+         [:dispatch [:primary-connection/update-runbooks]]]}))
 
 ;; Filtra conexões
 (rf/reg-event-db
- :connection-selection/filter
+ :multiple-connections/filter
  (fn [db [_ filter-text]]
    (assoc-in db [:editor :multi-connections :filter] filter-text)))
 
 ;; -- Subscriptions --
 
 (rf/reg-sub
- :connection-selection/selected
+ :multiple-connections/selected
  (fn [db]
    (get-in db [:editor :multi-connections :selected] [])))
 
 (rf/reg-sub
- :connection-selection/filter
+ :multiple-connections/filter
  (fn [db]
    (get-in db [:editor :multi-connections :filter] "")))
 
 (rf/reg-sub
- :connection-selection/filtered-connections
- :<- [:connections/list]
- :<- [:connection-selection/filter]
+ :multiple-connections/filtered-connections
+ :<- [:primary-connection/list]
+ :<- [:multiple-connections/filter]
  (fn [[connections filter-text]]
    (if (empty? filter-text)
      connections

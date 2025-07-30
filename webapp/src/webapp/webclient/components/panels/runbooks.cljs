@@ -17,8 +17,8 @@
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])
         search-term (rf/subscribe [:search/term])
-        primary-connection (rf/subscribe [:connections/selected])
-        selected-connections (rf/subscribe [:connection-selection/selected])
+        primary-connection (rf/subscribe [:primary-connection/selected])
+        selected-connections (rf/subscribe [:multiple-connections/selected])
         data-loaded? (rf/subscribe [:runbooks/data-loaded])]
 
     (when (and (not @data-loaded?)

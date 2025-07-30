@@ -462,7 +462,7 @@
 
        ;; Multiple connections - show execution modal
        multiple-connections?
-       {:fx [[:dispatch [:multi-exec/show-modal
+       {:fx [[:dispatch [:multiple-connection-execution/show-modal
                          (map #(hash-map
                                 :connection-name (:name %)
                                 :script final-script

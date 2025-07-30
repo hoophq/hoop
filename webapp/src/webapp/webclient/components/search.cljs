@@ -35,7 +35,7 @@
                                (let [value (-> e .-target .-value)]
                                  (reset! has-text? (not (empty? value)))
                                  (rf/dispatch [:search/set-term value])
-                                 (rf/dispatch [:connections/set-filter value])
+                                 (rf/dispatch [:primary-connection/set-filter value])
                                  (when (= @active-panel :runbooks)
                                    (rf/dispatch [:search/filter-runbooks value]))))}]
          (if @has-text?
@@ -50,7 +50,7 @@
 
                         (set! (.-value (.getElementById js/document input-id)) "")
                         (rf/dispatch [:search/clear-term])
-                        (rf/dispatch [:connections/set-filter ""])
+                        (rf/dispatch [:primary-connection/set-filter ""])
 
                         (when (= @active-panel :runbooks)
                           (rf/dispatch [:search/filter-runbooks ""])))}

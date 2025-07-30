@@ -25,8 +25,8 @@
         metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
-        primary-connection (rf/subscribe [:connections/selected])
-        selected-connections (rf/subscribe [:connection-selection/selected])]
+        primary-connection (rf/subscribe [:primary-connection/selected])
+        selected-connections (rf/subscribe [:multiple-connections/selected])]
     (fn [active-panel multi-run-panel? dark-mode? submit]
       (let [has-runbook? (some? (:data @selected-template))
             has-metadata? (or (seq @metadata)
@@ -46,7 +46,7 @@
                                    (reset! active-panel (when-not (= @active-panel type) type))
                                    (cond
                                      (= type :connections)
-                                     (rf/dispatch [:connection-selection/clear])
+                                     (rf/dispatch [:multiple-connections/clear])
 
                                      (= type :runbooks)
                                      (rf/dispatch [:runbooks-plugin->get-runbooks
@@ -112,7 +112,7 @@
               [:> FastForward {:size 16}]
               #(do
                  (reset! multi-run-panel? (not @multi-run-panel?))
-                 (rf/dispatch [:connection-selection/clear]))
+                 (rf/dispatch [:multiple-connections/clear]))
               @multi-run-panel?
               has-multirun?
               false]]]
