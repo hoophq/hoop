@@ -1,4 +1,4 @@
-(ns webapp.webclient.events.connection-selection
+(ns webapp.webclient.events.multiple-connections
   (:require
    [cljs.reader :as reader]
    [clojure.string :as cs]

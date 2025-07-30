@@ -1,4 +1,4 @@
-(ns webapp.webclient.events.multi-exec
+(ns webapp.webclient.events.connection-execution
   (:require
    [re-frame.core :as rf]))
 

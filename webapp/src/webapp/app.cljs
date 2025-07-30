@@ -106,11 +106,11 @@
    [webapp.upgrade-plan.main :as upgrade-plan]
    [webapp.views.home :as home]
    [webapp.webclient.events.codemirror]
-   [webapp.webclient.events.connection-selection]
-   [webapp.webclient.events.connections]
-   [webapp.webclient.events.metadata]
-   [webapp.webclient.events.multi-exec]
+   [webapp.webclient.events.primary-connection]
+   [webapp.webclient.events.multiple-connections]
+   [webapp.webclient.events.connection-execution]
    [webapp.webclient.events.search]
+   [webapp.webclient.events.metadata]
    [webapp.webclient.panel :as webclient]))
 
 ;; Tracking initialization is now handled by :tracking->initialize-if-allowed

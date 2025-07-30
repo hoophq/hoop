@@ -1,4 +1,4 @@
-(ns webapp.webclient.components.connections-list
+(ns webapp.webclient.components.primary-connection-list
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading
                                Tooltip IconButton Text]]

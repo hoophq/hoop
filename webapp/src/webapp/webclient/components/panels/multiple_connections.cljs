@@ -1,4 +1,4 @@
-(ns webapp.webclient.components.panels.connections
+(ns webapp.webclient.components.panels.multiple-connections
   (:require
    ["@radix-ui/themes" :refer [Box Badge Flex IconButton Text]]
    ["lucide-react" :refer [Plus Minus]]
