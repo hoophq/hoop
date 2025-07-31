@@ -26,6 +26,7 @@ type Context struct {
 	ConnectionSubType                   string
 	ConnectionEnvs                      map[string]any
 	ConnectionJiraTransitionNameOnClose string
+	ConnectionReviewers                 []string
 	UserEmail                           string
 	Verb                                string
 }

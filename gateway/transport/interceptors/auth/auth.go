@@ -252,6 +252,7 @@ func (i *interceptor) getConnection(name string, userCtx *models.Context) (*type
 		AccessModeExec:                   conn.AccessModeExec,
 		AccessModeConnect:                conn.AccessModeConnect,
 		AccessSchema:                     conn.AccessSchema,
+		Reviewers:                        conn.Reviewers,
 		JiraTransitionNameOnSessionClose: conn.JiraTransitionNameOnClose.String,
 	}, nil
 }

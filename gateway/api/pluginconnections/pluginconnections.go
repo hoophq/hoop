@@ -23,7 +23,7 @@ import (
 //	@Param			request		body		openapi.PluginConnectionRequest	true	"The request body resource"
 //	@Success		200			{object}	openapi.PluginConnection
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/plugins/{name}/connections/{id} [put]
+//	@Router			/plugins/{name}/conn/{id} [put]
 func UpsertPluginConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	req := openapi.PluginConnectionRequest{Config: []string{}}
@@ -59,7 +59,7 @@ func UpsertPluginConnection(c *gin.Context) {
 //	@Param			id		path		string	true	"The connection id"
 //	@Success		200		{object}	openapi.PluginConnection
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/plugins/{name}/connections/{id} [get]
+//	@Router			/plugins/{name}/conn/{id} [get]
 func GetPluginConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	resource, err := models.GetPluginConnection(ctx.OrgID, c.Param("name"), c.Param("id"))
@@ -86,7 +86,7 @@ func GetPluginConnection(c *gin.Context) {
 //	@Param			id		path	string	true	"The connection id"
 //	@Success		204
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/plugins/{name}/connections/{id} [delete]
+//	@Router			/plugins/{name}/conn/{id} [delete]
 func DeletePluginConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	err := models.DeletePluginConnection(ctx.OrgID, c.Param("name"), c.Param("id"))

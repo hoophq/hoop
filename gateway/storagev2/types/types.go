@@ -89,5 +89,6 @@ type ConnectionInfo struct {
 	AccessModeExec                   string
 	AccessModeConnect                string
 	AccessSchema                     string
+	Reviewers                        []string
 	JiraTransitionNameOnSessionClose string
 }

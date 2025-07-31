@@ -2628,7 +2628,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/plugins/{name}/connections/{id}": {
+        "/plugins/{name}/conn/{id}": {
             "get": {
                 "description": "Get a plugin connection resource",
                 "produces": [

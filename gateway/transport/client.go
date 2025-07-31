@@ -160,6 +160,13 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		default:
 			return status.Errorf(codes.Internal, err.Error())
 		}
+
+		// this function must deperecate the plugin system above
+		if err := handleExtensionOnReceive(pctx, pkt); err != nil {
+			log.With("sid", pctx.SID).Warn(err)
+			return err
+		}
+
 		if connectResponse != nil {
 			if connectResponse.Context != nil {
 				pctx.Context = connectResponse.Context
@@ -179,7 +186,7 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	}
 }
 
-func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
+func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 	extContext := transportext.Context{
 		OrgID:                               pctx.OrgID,
 		SID:                                 pctx.SID,
@@ -189,15 +196,15 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		ConnectionSubType:                   pctx.ConnectionSubType,
 		ConnectionEnvs:                      pctx.ConnectionSecret,
 		ConnectionJiraTransitionNameOnClose: pctx.ConnectionJiraTransitionNameOnClose,
+		ConnectionReviewers:                 pctx.ConnectionReviewers,
 		UserEmail:                           pctx.UserEmail,
 		Verb:                                pctx.ClientVerb,
 	}
 
-	if err := transportext.OnReceive(extContext, pkt); err != nil {
-		log.With("sid", pctx.SID).Error(err)
-		return err
-	}
+	return transportext.OnReceive(extContext, pkt)
+}
 
+func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
 		spec := map[string][]byte{
