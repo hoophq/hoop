@@ -86,21 +86,12 @@ func Run() {
 			log.Warnf("failed provisioning default system tags, reason=%v", err)
 		}
 
-		var migrationErr error
-		if appconfig.Get().DlpProvider() == "mspresidio" {
-			migrationErr = models.MigratePluginConnectionToDataMaskingRules(org.ID)
-			if migrationErr != nil {
-				log.Warnf("failed migrating plugin connections to data masking rules, reason=%v", migrationErr)
-			}
-		}
-
 		// TODO(san): refactor to propagate the defined user name roles as context to routes
 		if err := apiserverconfig.SetGlobalGatewayUserRoles(); err != nil {
 			log.Fatalf("failed setting global gateway user roles, reason=%v", err)
 		}
 
-		log.Infof("self hosted setup completed, dlp-provider=%s, plugin-connection-migration-err=%v",
-			appconfig.Get().DlpProvider(), migrationErr)
+		log.Infof("self hosted setup completed, dlp-provider=%v", appconfig.Get().DlpProvider())
 	}
 
 	g := &transport.Server{
