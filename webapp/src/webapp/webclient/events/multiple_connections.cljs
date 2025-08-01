@@ -8,13 +8,30 @@
 (rf/reg-event-fx
  :multiple-connections/toggle
  (fn [{:keys [db]} [_ connection]]
-   (let [current-selections (get-in db [:editor :multi-connections :selected] [])
-         updated-selections (if (some #(= (:name %) (:name connection)) current-selections)
-                              (filterv #(not= (:name %) (:name connection)) current-selections)
-                              (conj current-selections connection))]
-     {:db (assoc-in db [:editor :multi-connections :selected] updated-selections)
-      :fx [[:dispatch [:multiple-connections/persist]]
-           [:dispatch [:primary-connection/update-runbooks]]]})))
+   (let [primary-connection (get-in db [:editor :connections :selected])]
+
+     ;; 🚫 REGRA 1: Sem primary = sem múltiplas
+     (if-not primary-connection
+       {:fx [[:dispatch [:dialog->open
+                         {:title "Primary Connection Required"
+                          :text "Please select a primary connection first before adding multiple connections."
+                          :action-button? false}]]]}
+
+       ;; 🚫 REGRA 2: Primary não pode ser múltipla
+       (if (= (:name connection) (:name primary-connection))
+         {:fx [[:dispatch [:dialog->open
+                           {:title "Cannot Add Primary Connection"
+                            :text "The primary connection cannot be added to multiple connections. It's already included by default."
+                            :action-button? false}]]]}
+
+         ;; ✅ Lógica normal de toggle (preservada)
+         (let [current-selections (get-in db [:editor :multi-connections :selected] [])
+               updated-selections (if (some #(= (:name %) (:name connection)) current-selections)
+                                    (filterv #(not= (:name %) (:name connection)) current-selections)
+                                    (conj current-selections connection))]
+           {:db (assoc-in db [:editor :multi-connections :selected] updated-selections)
+            :fx [[:dispatch [:multiple-connections/persist]]
+                 [:dispatch [:primary-connection/update-runbooks]]]}))))))
 
 ;; Persiste seleções no localStorage
 (rf/reg-event-fx
@@ -32,16 +49,28 @@
 (rf/reg-event-fx
  :multiple-connections/load-persisted
  (fn [{:keys [db]} _]
-   (let [saved (.getItem js/localStorage "run-connection-list-selected")
-         parsed (when saved (reader/read-string saved))
-         ;; Buscar conexões atualizadas da lista
-         connections (get-in db [:editor :connections :list])
-         updated-selections (when (and parsed connections)
-                              (vec (keep (fn [saved-conn]
-                                           (first (filter #(= (:name %) (:name saved-conn))
-                                                          connections)))
-                                         parsed)))]
-     {:db (assoc-in db [:editor :multi-connections :selected] (or updated-selections []))})))
+   (let [primary-connection (get-in db [:editor :connections :selected])
+         saved (.getItem js/localStorage "run-connection-list-selected")]
+
+     ;; Só carrega se há primary para validar compatibilidade
+     (if (and primary-connection saved)
+       (let [parsed (reader/read-string saved)
+             connections (get-in db [:editor :connections :list])
+             valid-selections (when (and parsed connections)
+                                (vec (keep (fn [saved-conn]
+                                             (let [conn (first (filter #(= (:name %) (:name saved-conn)) connections))]
+                                               ;; Só mantém se compatível com primary E não é a própria primary
+                                               (when (and conn
+                                                          (= (:type conn) (:type primary-connection))
+                                                          (= (:subtype conn) (:subtype primary-connection))
+                                                          (not= (:name conn) (:name primary-connection)))
+                                                 conn)))
+                                           parsed)))]
+         {:db (assoc-in db [:editor :multi-connections :selected] (or valid-selections []))})
+
+       ;; Sem primary = força limpeza
+       {:db (assoc-in db [:editor :multi-connections :selected] [])
+        :fx [[:dispatch [:multiple-connections/persist]]]}))))
 
 ;; Limpa todas as seleções
 (rf/reg-event-fx
@@ -84,3 +113,36 @@
                 (cs/lower-case (:type %))
                 (cs/lower-case filter-text)))
              connections))))
+
+;; ---- Composição: Selectors Centralizados ----
+
+(rf/reg-sub
+ :execution/target-connections
+ :<- [:primary-connection/selected]
+ :<- [:multiple-connections/selected]
+ (fn [[primary multiples]]
+   (if primary
+     (cons primary multiples)        ; Primary sempre primeiro
+     [])))                           ; Sem primary = sem execução
+
+(rf/reg-sub
+ :execution/total-count
+ :<- [:primary-connection/selected]
+ :<- [:multiple-connections/selected]
+ (fn [[primary multiples]]
+   (+ (if primary 1 0) (count multiples))))
+
+(rf/reg-sub
+ :execution/is-single-mode
+ :<- [:multiple-connections/selected]
+ (fn [multiples]
+   (empty? multiples)))             ; Só primary = single mode
+
+(rf/reg-sub
+ :execution/can-execute
+ :<- [:primary-connection/selected]
+ :<- [:multiple-connections/selected]
+ (fn [[primary multiples]]
+   (and (some? primary)             ; Tem primary
+        (every? #(= (:type %) (:type primary)) multiples)  ; Todas compatíveis
+        (every? #(not= (:name %) (:name primary)) multiples))))

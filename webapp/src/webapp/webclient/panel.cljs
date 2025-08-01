@@ -251,7 +251,7 @@
     (fn [{:keys [script-output]}]
       (handle-connection-modes! @primary-connection)
 
-      (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
+      (let [is-one-connection-selected? @(rf/subscribe [:execution/is-single-mode])  ; ← CORRIGIDO: usar selector
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
@@ -377,11 +377,7 @@
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
                                         :selected-connections (if (seq @multi-selected-connections)
-                                                                (if (and current-connection
-                                                                         (not (some #(= (:name %) (:name current-connection))
-                                                                                    @multi-selected-connections)))
-                                                                  (conj @multi-selected-connections current-connection)
-                                                                  @multi-selected-connections)
+                                                                @multi-selected-connections              ; ← CORRIGIDO: SEM duplicação!
                                                                 (when current-connection [current-connection]))
                                         :only-runbooks? only-runbooks?}]]
 

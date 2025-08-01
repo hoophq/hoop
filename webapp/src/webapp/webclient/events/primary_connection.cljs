@@ -69,18 +69,30 @@
 
 (rf/reg-event-fx
  :primary-connection/set-selected
- (fn [{:keys [db]} [_ connection]]
-   {:db (assoc-in db [:editor :connections :selected] connection)
-    :fx [[:dispatch [:editor-plugin/clear-language]]
-         [:dispatch [:primary-connection/persist-selected]]
-         [:dispatch [:database-schema->clear-schema]]
-         [:dispatch [:primary-connection/update-runbooks]]]}))
+ (fn [{:keys [db]} [_ new-primary]]
+   (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
+         ;; Validar quais múltiplas ainda são compatíveis com nova primary
+         compatible-multiples (filter #(and (= (:type %) (:type new-primary))
+                                            (= (:subtype %) (:subtype new-primary))
+                                            (not= (:name %) (:name new-primary)))  ; Não incluir a própria primary
+                                      current-multiples)]
+     {:db (-> db
+              (assoc-in [:editor :connections :selected] new-primary)
+              (assoc-in [:editor :multi-connections :selected] compatible-multiples))  ; ← NOVA: filtra incompatíveis
+      :fx [[:dispatch [:editor-plugin/clear-language]]
+           [:dispatch [:primary-connection/persist-selected]]
+           [:dispatch [:multiple-connections/persist]]                                ; ← NOVA: persiste filtro
+           [:dispatch [:database-schema->clear-schema]]
+           [:dispatch [:primary-connection/update-runbooks]]]})))
 
 (rf/reg-event-fx
  :primary-connection/clear-selected
  (fn [{:keys [db]} _]
-   {:db (assoc-in db [:editor :connections :selected] nil)
+   {:db (-> db
+            (assoc-in [:editor :connections :selected] nil)
+            (assoc-in [:editor :multi-connections :selected] []))
     :fx [[:dispatch [:primary-connection/persist-selected]]
+         [:dispatch [:multiple-connections/persist]]
          [:dispatch [:database-schema->clear-schema]]
          [:dispatch [:primary-connection/update-runbooks]]]}))
 

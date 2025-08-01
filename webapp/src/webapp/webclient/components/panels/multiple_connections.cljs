@@ -86,7 +86,8 @@
          :on-select #(rf/dispatch [:multiple-connections/toggle connection])} dark-mode?])]))
 
 (defn main [dark-mode? runbooks-panel-opened?]
-  (let [selected-connections @(rf/subscribe [:multiple-connections/selected])]
+  (let [selected-connections @(rf/subscribe [:multiple-connections/selected])
+        total-count @(rf/subscribe [:execution/total-count])]
     [:> Box {:class "h-full flex flex-col"}
      [:> Flex {:justify "between"
                :align "center"
@@ -99,7 +100,7 @@
           [:> Text {:size "1" :weight "medium" :class "text-white"} "Selected"]
           [:> Badge {:variant "solid" :radius "full" :class "bg-white"}
            [:> Text {:size "1" :weight "bold" :class "text-success-9"}
-            (+ (count selected-connections) 1)]]]]]]]
+            total-count]]]]]]]
 
 
      [:> Box {:class "space-y-4 text-gray-11"}
