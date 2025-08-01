@@ -6,13 +6,14 @@ const (
 )
 
 type EventSessionOpen struct {
-	Verb              string         `json:"verb"`
-	ConnectionName    string         `json:"connection_name"`
-	ConnectionType    string         `json:"connection_type"`
-	ConnectionSubType string         `json:"connection_subtype"`
-	ConnectionEnvs    map[string]any `json:"connection_envs"`
-	Input             string         `json:"input"`
-	UserEmail         string         `json:"user_email"`
+	Verb                string         `json:"verb"`
+	ConnectionName      string         `json:"connection_name"`
+	ConnectionType      string         `json:"connection_type"`
+	ConnectionSubType   string         `json:"connection_subtype"`
+	ConnectionEnvs      map[string]any `json:"connection_envs"`
+	ConnectionReviewers []string       `json:"connection_reviewers"`
+	Input               string         `json:"input"`
+	UserEmail           string         `json:"user_email"`
 }
 
 type EventSessionClose struct {

@@ -48,6 +48,7 @@ type Context struct {
 	ConnectionSecret                    map[string]any
 	ConnectionTags                      map[string]string
 	ConnectionJiraTransitionNameOnClose string
+	ConnectionReviewers                 []string
 
 	// Agent attributes
 	AgentID   string
