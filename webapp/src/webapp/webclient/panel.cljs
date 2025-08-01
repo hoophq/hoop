@@ -376,9 +376,7 @@
                   [:section {:class "h-full p-3 overflow-auto"}
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
-                                        :selected-connections (if (seq @multi-selected-connections)
-                                                                @multi-selected-connections              ; ← CORRIGIDO: SEM duplicação!
-                                                                (when current-connection [current-connection]))
+                                        :selected-connections @(rf/subscribe [:execution/target-connections])  ; ← CORRIGIDO: sempre inclui primary
                                         :only-runbooks? only-runbooks?}]]
 
                   [:div {:class "h-full flex flex-col"}
