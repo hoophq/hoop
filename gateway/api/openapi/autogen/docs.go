@@ -6936,6 +6936,11 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "provider_name": {
+                    "description": "The provider type name used to identify the authentication provider",
+                    "type": "string",
+                    "example": "generic"
+                },
                 "rollout_api_key": {
                     "description": "The api key to rollout. When this field is set, the server will rollout the previous api_key.\nThis attribute must be obtained in the endpoint to generate rollout api keys.",
                     "type": "string",

@@ -13,6 +13,7 @@ type ServerAuthConfig struct {
 	AuthMethod            *string               `gorm:"column:auth_method"`
 	OidcConfig            *ServerAuthOidcConfig `gorm:"column:oidc_config;serializer:json"`
 	SamlConfig            *ServerAuthSamlConfig `gorm:"column:saml_config;serializer:json"`
+	ProviderName          *string               `gorm:"column:provider_name"`
 	ApiKey                *string               `gorm:"column:api_key"`
 	RolloutApiKey         *string               `gorm:"column:rollout_api_key"`
 	WebappUsersManagement *string               `gorm:"column:webapp_users_management"`
@@ -44,7 +45,7 @@ func GetServerAuthConfig() (*ServerAuthConfig, error) {
 	WITH authconfig AS (
 		SELECT
 			org_id, auth_method, oidc_config, saml_config, api_key, rollout_api_key,
-			webapp_users_management, admin_role_name, auditor_role_name, updated_at
+			provider_name, webapp_users_management, admin_role_name, auditor_role_name, updated_at
 		FROM private.authconfig
 	), serverconfig AS (
 		SELECT product_analytics, grpc_server_url, shared_signing_key FROM private.serverconfig
@@ -81,6 +82,7 @@ func UpdateServerAuthConfig(newObj *ServerAuthConfig) (*ServerAuthConfig, error)
 		"auth_method":             newObj.AuthMethod,
 		"oidc_config":             newObj.OidcConfig,
 		"saml_config":             newObj.SamlConfig,
+		"provider_name":           newObj.ProviderName,
 		"rollout_api_key":         newObj.RolloutApiKey,
 		"webapp_users_management": newObj.WebappUsersManagement,
 		"admin_role_name":         newObj.AdminRoleName,
