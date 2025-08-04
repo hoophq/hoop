@@ -251,7 +251,7 @@
     (fn [{:keys [script-output]}]
       (handle-connection-modes! @primary-connection)
 
-      (let [is-one-connection-selected? @(rf/subscribe [:execution/is-single-mode])  ; ← CORRIGIDO: usar selector
+      (let [is-one-connection-selected? @(rf/subscribe [:execution/is-single-mode])
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
@@ -376,7 +376,7 @@
                   [:section {:class "h-full p-3 overflow-auto"}
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
-                                        :selected-connections @(rf/subscribe [:execution/target-connections])  ; ← CORRIGIDO: sempre inclui primary
+                                        :selected-connections @(rf/subscribe [:execution/target-connections])
                                         :only-runbooks? only-runbooks?}]]
 
                   [:div {:class "h-full flex flex-col"}

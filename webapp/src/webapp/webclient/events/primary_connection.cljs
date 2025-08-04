@@ -4,7 +4,6 @@
    [clojure.string :as string]
    [re-frame.core :as rf]))
 
-;; Efeito para buscar conexões
 (rf/reg-fx
  :fetch-connections
  (fn [_]
@@ -24,13 +23,6 @@
          [:dispatch-later {:ms 600 :dispatch [:multiple-connections/load-persisted]}]
          [:dispatch-later {:ms 2000 :dispatch [:primary-connection/update-runbooks]}]]}))
 
-(rf/reg-event-fx
- :primary-connection/initialize
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:editor :connections :status] :loading)
-    :fx [[:fetch-connections]
-         [:dispatch-later {:ms 2000 :dispatch [:primary-connection/update-runbooks]}]]}))
-
 (rf/reg-event-db
  :primary-connection/set-error
  (fn [db [_ error]]
@@ -42,10 +34,8 @@
  :primary-connection/set-list
  (fn [db [_ connections]]
    (let [selected (get-in db [:editor :connections :selected])
-         ;; Se há uma conexão selecionada, atualiza com dados frescos
          updated-selected (when (and selected (:name selected))
                             (first (filter #(= (:name %) (:name selected)) connections)))
-         ;; Atualiza também as multi-conexões selecionadas
          multi-selected (get-in db [:editor :multi-connections :selected])
          updated-multi-selected (when multi-selected
                                   (vec (keep (fn [saved-conn]
@@ -55,10 +45,8 @@
      (-> db
          (assoc-in [:editor :connections :status] :success)
          (assoc-in [:editor :connections :list] connections)
-         ;; Atualiza a conexão selecionada se encontrada
          (cond-> updated-selected
            (assoc-in [:editor :connections :selected] updated-selected))
-         ;; Atualiza as multi-conexões selecionadas
          (cond-> (seq updated-multi-selected)
            (assoc-in [:editor :multi-connections :selected] updated-multi-selected))))))
 
@@ -71,17 +59,16 @@
  :primary-connection/set-selected
  (fn [{:keys [db]} [_ new-primary]]
    (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
-         ;; Validar quais múltiplas ainda são compatíveis com nova primary
          compatible-multiples (filter #(and (= (:type %) (:type new-primary))
                                             (= (:subtype %) (:subtype new-primary))
-                                            (not= (:name %) (:name new-primary)))  ; Não incluir a própria primary
+                                            (not= (:name %) (:name new-primary)))
                                       current-multiples)]
      {:db (-> db
               (assoc-in [:editor :connections :selected] new-primary)
-              (assoc-in [:editor :multi-connections :selected] compatible-multiples))  ; ← NOVA: filtra incompatíveis
+              (assoc-in [:editor :multi-connections :selected] compatible-multiples))
       :fx [[:dispatch [:editor-plugin/clear-language]]
            [:dispatch [:primary-connection/persist-selected]]
-           [:dispatch [:multiple-connections/persist]]                                ; ← NOVA: persiste filtro
+           [:dispatch [:multiple-connections/persist]]
            [:dispatch [:database-schema->clear-schema]]
            [:dispatch [:primary-connection/update-runbooks]]]})))
 
@@ -112,13 +99,11 @@
          parsed (when (and saved (not= saved "null"))
                   (read-string saved))
          connection-name (:name parsed)
-         ;; Buscar a conexão atualizada da lista de conexões
          connections (get-in db [:editor :connections :list])
          updated-connection (when (and connection-name connections)
                               (first (filter #(= (:name %) connection-name) connections)))]
      (if updated-connection
        {:db (assoc-in db [:editor :connections :selected] updated-connection)}
-       ;; Se não encontrar na lista, mantém apenas o nome para buscar depois
        {:db (assoc-in db [:editor :connections :selected] parsed)}))))
 
 (rf/reg-event-fx
