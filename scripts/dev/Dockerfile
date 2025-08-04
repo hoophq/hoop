@@ -91,7 +91,7 @@ RUN echo 'root:1a2b3c4d' | chpasswd && \
   mkdir -p /root/.ssh && \
   ssh-keygen -A
 
-RUN echo "deb http://apt.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
+RUN echo "deb http://apt-archive.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
   echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
   echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
   curl -sL https://packages.microsoft.com/config/ubuntu/20.04/prod.list | tee /etc/apt/sources.list.d/msprod.list && \
@@ -106,7 +106,7 @@ RUN apt-get update -y && \
   default-mysql-client \
   postgresql-client-15 \
   mongodb-mongosh mongodb-org-tools mongodb-org-shell mongocli \
-  google-cloud-cli \
+  google-cloud-cli=488.0.0-0 \
   sqlcmd unixodbc-dev
 
 # Download and install Oracle Instant Client and SQL*Plus
