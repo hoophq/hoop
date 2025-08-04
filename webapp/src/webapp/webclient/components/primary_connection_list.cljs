@@ -1,4 +1,4 @@
-(ns webapp.webclient.components.connections-list
+(ns webapp.webclient.components.primary-connection-list
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading
                                Tooltip IconButton Text]]
@@ -81,7 +81,7 @@
        [:> Flex {:justify "between" :align "center" :class "px-2 pt-2 pb-1"}
         [:> Text {:as "p" :size "1" :class "px-2 pt-2 pb-1 text-primary-5"} "Selected"]
         [:> IconButton {:size "1"
-                        :onClick #(rf/dispatch [:connections/clear-selected])}
+                        :onClick #(rf/dispatch [:primary-connection/clear-selected])}
          [:> X {:size 14}]]]
        [:> Flex {:align "center" :justify "between" :class "px-2 py-3"}
         [connection-item
@@ -171,7 +171,7 @@
                :selected? false
                :dark? dark-mode?
                :admin? admin?
-               :on-select #(rf/dispatch [:connections/set-selected conn]))])]))
+               :on-select #(rf/dispatch [:primary-connection/set-selected conn]))])]))
 
 (defn loading-state []
   [:> Box {:class "flex items-center justify-center h-32"}
@@ -214,14 +214,14 @@
         alerts))))
 
 (defn main []
-  (let [status (rf/subscribe [:connections/status])
-        connections (rf/subscribe [:connections/filtered])
-        selected (rf/subscribe [:connections/selected])
-        error (rf/subscribe [:connections/error])
+  (let [status (rf/subscribe [:primary-connection/status])
+        connections (rf/subscribe [:primary-connection/filtered])
+        selected (rf/subscribe [:primary-connection/selected])
+        error (rf/subscribe [:primary-connection/error])
         user (rf/subscribe [:users->current-user])]
 
     ;; Initialize connections and load persisted selection
-    (rf/dispatch [:connections/initialize-with-persistence])
+    (rf/dispatch [:primary-connection/initialize-with-persistence])
 
     (fn [dark-mode?]
       (let [admin? (-> @user :data :is_admin)]

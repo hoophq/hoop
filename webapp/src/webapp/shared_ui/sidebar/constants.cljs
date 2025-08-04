@@ -80,15 +80,6 @@
     :free-feature? false
     :upgrade-plan-route :jira-templates
     :admin-only? true}
-   {:name "AIQueryBuilder"
-    :label "AI Query Builder"
-    :icon (fn []
-            [:> Sparkles {:size 24}])
-    :uri (routes/url-for :manage-ask-ai)
-    :navigate :manage-ask-ai
-    :free-feature? false
-    :upgrade-plan-route :upgrade-plan
-    :admin-only? true}
    {:name "AIDataMasking"
     :label "AI Data Masking"
     :icon (fn []

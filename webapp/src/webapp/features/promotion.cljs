@@ -173,7 +173,7 @@
                      :title "Flexible User Prompts & Data Collection"
                      :description "Request additional information from users during access workflows. Map manual or automated data to Jira fields."}]
     :on-primary-click (if (= mode :empty-state)
-                        #(rf/dispatch [:navigate :manage-plugin {} :plugin-name :jira])
+                        #(rf/dispatch [:navigate :settings-jira])
                         #(js/window.Intercom
                           "showNewMessage"
                           "I want to upgrade my current plan"))

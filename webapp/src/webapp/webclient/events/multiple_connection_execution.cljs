@@ -1,16 +1,16 @@
-(ns webapp.webclient.events.multi-exec
+(ns webapp.webclient.events.multiple-connection-execution
   (:require
    [re-frame.core :as rf]))
 
 ;; ---- Multi Script Execution Events ----
 
 (rf/reg-event-fx
- :multi-exec/execute-script
+ :multiple-connection-execution/execute-script
  (fn [{:keys [db]} [_ exec-list]]
    (let [on-failure (fn [error exec]
-                      (rf/dispatch [:multi-exec/script-failure error exec]))
+                      (rf/dispatch [:multiple-connection-execution/script-failure error exec]))
          on-success (fn [res exec]
-                      (rf/dispatch [:multi-exec/script-success res exec]))
+                      (rf/dispatch [:multiple-connection-execution/script-success res exec]))
          dispatches (mapv (fn [exec]
                             [:dispatch-later
                              {:ms 1000
@@ -29,7 +29,7 @@
       :fx dispatches})))
 
 (rf/reg-event-fx
- :multi-exec/script-success
+ :multiple-connection-execution/script-success
  (fn [{:keys [db]} [_ result current-exec]]
    (let [current-exec-parsed {:connection-name (:connection-name current-exec)
                               :type (:type current-exec)
@@ -53,7 +53,7 @@
                                  :type :script})})))
 
 (rf/reg-event-fx
- :multi-exec/script-failure
+ :multiple-connection-execution/script-failure
  (fn [{:keys [db]} [_ error current-exec]]
    (let [current-exec-parsed {:connection-name (:connection-name current-exec)
                               :type (:type current-exec)
@@ -77,12 +77,12 @@
 ;; ---- Common Events ----
 
 (rf/reg-event-fx
- :multi-exec/clear
+ :multiple-connection-execution/clear
  (fn [{:keys [db]} _]
    {:db (assoc db :multi-exec {:data [] :status :ready :type nil})}))
 
 (rf/reg-event-fx
- :multi-exec/show-modal
+ :multiple-connection-execution/show-modal
  (fn [{:keys [db]} [_ executions]]
    {:db (assoc db :multi-exec {:data executions
                                :status :ready})}))
@@ -90,6 +90,6 @@
 ;; ---- Subscriptions ----
 
 (rf/reg-sub
- :multi-exec/modal
+ :multiple-connection-execution/modal
  (fn [db]
    (get db :multi-exec)))

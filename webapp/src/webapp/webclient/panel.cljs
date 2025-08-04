@@ -24,10 +24,10 @@
    [webapp.formatters :as formatters]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.webclient.codemirror.extensions :as extensions]
-   [webapp.webclient.components.connections-list :as connections-list]
+   [webapp.webclient.components.primary-connection-list :as primary-connection-list]
    [webapp.webclient.components.header :as header]
    [webapp.webclient.components.language-select :as language-select]
-   [webapp.webclient.components.panels.connections :as connections-panel]
+   [webapp.webclient.components.panels.multiple-connections :as multiple-connections-panel]
    [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.components.panels.runbooks :as runbooks-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
@@ -205,13 +205,11 @@
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
-        selected-connection (rf/subscribe [:connections/selected])
-        multi-selected-connections (rf/subscribe [:connection-selection/selected])
+        multi-selected-connections (rf/subscribe [:multiple-connections/selected])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         runbooks (rf/subscribe [:runbooks-plugin->runbooks])
-        multi-exec (rf/subscribe [:multi-exec/modal])
-        selected-connections (rf/subscribe [:connection-selection/selected])
-        primary-connection (rf/subscribe [:connections/selected])
+        multi-exec (rf/subscribe [:multiple-connection-execution/modal])
+        primary-connection (rf/subscribe [:primary-connection/selected])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
@@ -251,17 +249,17 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
-      (handle-connection-modes! @selected-connection)
+      (handle-connection-modes! @primary-connection)
 
-      (let [is-one-connection-selected? (= 0 (count @multi-selected-connections))
+      (let [is-one-connection-selected? @(rf/subscribe [:execution/is-single-mode])
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
-            current-connection @selected-connection
+            current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
             has-runbook? (some? (:data @selected-template))
-            no-connection-selected? (and (empty? @selected-connections)
+            no-connection-selected? (and (empty? @multi-selected-connections)
                                          (not @primary-connection))
             run-disabled? (or (and (not exec-enabled?)
                                    runbooks-enabled?)
@@ -367,8 +365,8 @@
               [:> (.-Pane Allotment) {:minSize 270}
                [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto"}
                 (if @multi-run-panel?
-                  [connections-panel/main dark-mode? (some? (:data @selected-template))]
-                  [connections-list/main dark-mode?])]]
+                  [multiple-connections-panel/main dark-mode? (some? (:data @selected-template))]
+                  [primary-connection-list/main dark-mode?])]]
 
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
@@ -378,13 +376,7 @@
                   [:section {:class "h-full p-3 overflow-auto"}
                    [runbooks-form/main {:runbook @selected-template
                                         :preselected-connection (:name current-connection)
-                                        :selected-connections (if (seq @multi-selected-connections)
-                                                                (if (and current-connection
-                                                                         (not (some #(= (:name %) (:name current-connection))
-                                                                                    @multi-selected-connections)))
-                                                                  (conj @multi-selected-connections current-connection)
-                                                                  @multi-selected-connections)
-                                                                (when current-connection [current-connection]))
+                                        :selected-connections @(rf/subscribe [:execution/target-connections])
                                         :only-runbooks? only-runbooks?}]]
 
                   [:div {:class "h-full flex flex-col"}
