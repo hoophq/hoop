@@ -50,8 +50,7 @@
                         [["/edit/" :jira-template-id] :edit-jira-template]]
      "/login" :login-hoop
      "/logout" :logout-hoop
-     "/plugins" [["/manage/ask-ai" :manage-ask-ai]
-                 ["/manage/jira" :manage-jira]
+     "/plugins" [["/manage/jira" :manage-jira]
                  [["/reviews/" :review-id] :reviews-plugin-details]
                  [["/manage/" :plugin-name] :manage-plugin]]
      "/organization" [["/users" :users]]
