@@ -94,6 +94,7 @@ func GetAuthConfig(c *gin.Context) {
 			OidcConfig:            oidcConfig,
 			SamlConfig:            nil,
 			ApiKey:                nil,
+			ProviderName:          nil,
 			RolloutApiKey:         rolloutApiKey,
 			WebappUsersManagement: ptr.String(webappUsersManagement),
 			AdminRoleName:         ptr.String(types.GroupAdmin),
@@ -187,6 +188,7 @@ func UpdateAuthConfig(c *gin.Context) {
 	existentConfig.AuditorRoleName = &auditorRoleName
 	existentConfig.AuthMethod = ptr.String(string(req.AuthMethod))
 	existentConfig.WebappUsersManagement = ptr.String(req.WebappUsersManagementStatus)
+	existentConfig.ProviderName = ptr.String(req.ProviderName)
 
 	log.With("auth_method", req.AuthMethod).Infof("performing pre-flight check for auth config update")
 	switch req.AuthMethod {
@@ -356,6 +358,7 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 		AuthMethod:                  openapi.ProviderType(ptr.ToString(cfg.AuthMethod)),
 		OidcConfig:                  oidcConfig,
 		SamlConfig:                  samlConfig,
+		ProviderName:                ptr.ToString(cfg.ProviderName),
 		ApiKey:                      cfg.ApiKey,
 		RolloutApiKey:               cfg.RolloutApiKey,
 		WebappUsersManagementStatus: ptr.ToString(cfg.WebappUsersManagement),

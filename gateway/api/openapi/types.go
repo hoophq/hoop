@@ -1564,6 +1564,8 @@ type ServerAuthConfig struct {
 	OidcConfig *ServerAuthOidcConfig `json:"oidc_config"`
 	// SAML 2.0 identity provider configuration
 	SamlConfig *ServerAuthSamlConfig `json:"saml_config"`
+	// The provider type name used to identify the authentication provider
+	ProviderName string `json:"provider_name" example:"generic"`
 	// The api key with admin privileges used to authenticate in the API. It is a read only field
 	ApiKey *string `json:"api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK" readonly:"true"`
 	// The api key to rollout. When this field is set, the server will rollout the previous api_key.
