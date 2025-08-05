@@ -215,8 +215,15 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 
 	// set server configuration falling back to appconfig
 	appc := appconfig.Get()
+
+	// legacy api key organization id
+	orgID := strings.Split(appc.ApiKey(), "|")[0]
+	// fallback loading from the server auth config in case it's set
+	if serverAuthConfig != nil && serverAuthConfig.OrgID != "" {
+		orgID = serverAuthConfig.OrgID
+	}
 	serverConfig := idptypes.ServerConfig{
-		OrgID:      "",
+		OrgID:      orgID,
 		AuthMethod: providerType,
 		ApiKey:     appc.ApiKey(),
 		GrpcURL:    appc.GrpcURL(),
