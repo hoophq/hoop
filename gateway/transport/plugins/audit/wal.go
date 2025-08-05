@@ -197,7 +197,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		EndSession: &endDate,
 	})
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-		Infof("finished persisting session to store, err=%v", errMsg)
+		Infof("finished persisting session to store, update-session-err=%v, context-err=%v", err, errMsg)
 
 	if err != nil {
 		_ = walogm.log.Write(eventlogv1.NewCommitError(endDate, err.Error()))
