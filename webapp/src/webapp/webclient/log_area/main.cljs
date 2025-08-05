@@ -27,7 +27,7 @@
 
 (defn main [_]
   (let [script-response (rf/subscribe [:editor-plugin->script])]
-    (fn [connection-type is-one-connection-selected? show-tabular? dark-mode? allow-copy?]
+    (fn [connection-type is-one-connection-selected? dark-mode? allow-copy?]
       (let [logs-content {:status (:status @script-response)
                           :response (:output (:data @script-response))
                           :response-status (:output_status (:data @script-response))
@@ -49,8 +49,7 @@
             available-tabs (merge
                             {:logs "Logs"}
                             (when (and connection-type-database?
-                                       is-one-connection-selected?
-                                       show-tabular?)
+                                       is-one-connection-selected?)
                               {:tabular "Tabular"}))]
 
         (when-not (some #(= @selected-tab %) (vals available-tabs))
