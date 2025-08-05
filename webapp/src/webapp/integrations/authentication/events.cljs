@@ -1,5 +1,6 @@
 (ns webapp.integrations.authentication.events
   (:require
+   [clojure.string :as cs]
    [re-frame.core :as rf]))
 
 ;; Get authentication configuration
@@ -18,7 +19,9 @@
    (let [mapped-data (-> data
                          ;; Map API fields to UI structure
                          (assoc :auth-method (if (= (:auth_method data) "oidc") "identity-provider" "local"))
-                         (assoc :selected-provider (when (= (:auth_method data) "oidc") "auth0"))
+                         (assoc :selected-provider (if (not (cs/blank? (:provider_name data)))
+                                                     (:provider_name data)
+                                                     "other"))
                          (assoc :config (merge
                                          {:client-id (:client_id (:oidc_config data))
                                           :client-secret (:client_secret (:oidc_config data))
@@ -53,9 +56,7 @@
  :authentication->set-provider
  (fn [db [_ provider]]
    (-> db
-       (assoc-in [:authentication :data :selected-provider] provider)
-       ;; Reset config when changing provider
-       (assoc-in [:authentication :data :config] {:custom-scopes ["email" "profile"]}))))
+       (assoc-in [:authentication :data :selected-provider] provider))))
 
 ;; Update provider configuration field
 (rf/reg-event-db
@@ -111,6 +112,7 @@
                        :admin_role_name (get-in ui-config [:advanced :admin-role])
                        :auditor_role_name (get-in ui-config [:advanced :auditor-role])
                        :webapp_users_management_status (if (get-in ui-config [:advanced :local-auth-enabled]) "active" "inactive")
+                       :provider_name (get-in ui-config [:selected-provider])
                        :oidc_config (when (= (:auth-method ui-config) "identity-provider")
                                       {:client_id (get-in ui-config [:config :client-id])
                                        :client_secret (get-in ui-config [:config :client-secret])
