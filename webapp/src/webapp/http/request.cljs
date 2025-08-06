@@ -17,31 +17,42 @@
     (rf/dispatch [:navigate :logout-hoop]))
   (when (> status 399) (on-failure)))
 
-(defn parse-json-response
+(defn parse-response
   [response on-success on-failure]
-  (.then
-   (.json response)
-   (fn [json]
-     (let [payload (js->clj json :keywordize-keys true)]
-       (if (.-ok response)
-         (on-success payload (.-headers response))
-         (not-ok {:status (.-status response)
-                  :on-failure #(on-failure payload)}))))
-   (fn [error]
-     ;; JSON parsing failed
-     (.then
-      (.text response)
-      (fn [text]
-        (let [error-payload {:message text :status (.-status response)}]
-          (if (.-ok response)
-            (on-success text (.-headers response))
-            (not-ok {:status (.-status response)
-                     :on-failure #(on-failure error-payload)}))))))))
+  (let [status (.-status response)]
+    ;; Clone response to check body first
+    (.then
+     (.text (.clone response))
+     (fn [text]
+       (cond
+         ;; No content in body
+         (empty? text)
+         (if (.-ok response)
+           (on-success nil (.-headers response))
+           (not-ok {:status status
+                    :on-failure #(on-failure {:status status})}))
+
+         ;; Has content - try JSON first
+         :else
+         (.then
+          (.json response)
+          (fn [json]
+            (let [payload (js->clj json :keywordize-keys true)]
+              (if (.-ok response)
+                (on-success payload (.-headers response))
+                (not-ok {:status status
+                         :on-failure #(on-failure payload)}))))
+          (fn [_error]
+            ;; JSON failed, return as text
+            (if (.-ok response)
+              (on-success text (.-headers response))
+              (not-ok {:status status
+                       :on-failure #(on-failure {:message text :status status})})))))))))
 
 (defn query-params-parser
   [queries]
   (let [url-search-params (new js/URLSearchParams (clj->js queries))]
-    (if (and (not (empty? (.toString url-search-params))) queries)
+    (if (and (seq (.toString url-search-params)) queries)
       (str "?" (.toString url-search-params))
       "")))
 
@@ -53,8 +64,8 @@
       (when (.-ok response)
         (on-success response (.-headers response)))
       response)
-    ;; All other methods expect JSON
-    (parse-json-response response on-success on-failure)))
+    ;; Parse response intelligently based on content
+    (parse-response response on-success on-failure)))
 
 (defn request
   "request abstraction for making a http request
