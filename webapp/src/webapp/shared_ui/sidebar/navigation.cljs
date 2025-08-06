@@ -127,8 +127,8 @@
                       [:> (.-Panel ui/Disclosure) {:as "ul"
                                                    :class "mt-1 px-2"}
                        (for [plugin sidebar-constants/integrations-management]
-                         ^{:key (:name plugin)}
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
+                           ^{:key (:name plugin)}
                            [:li
                             [:a {:on-click (fn [e]
                                              (.preventDefault e)
@@ -166,8 +166,8 @@
                       [:> (.-Panel ui/Disclosure) {:as "ul"
                                                    :class "mt-1 px-2"}
                        (for [route sidebar-constants/settings-management]
-                         ^{:key (:name route)}
                          (when (or selfhosted? (not (:selfhosted-only? route)))
+                           ^{:key (:name route)}
                            [:li
                             [:a {:on-click (fn [e]
                                              (.preventDefault e)
