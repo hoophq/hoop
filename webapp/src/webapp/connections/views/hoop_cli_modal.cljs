@@ -7,7 +7,7 @@
    [webapp.config :as config]))
 
 (defn cli-commands [api-url]
-  {:macos {:install ["brew tap brew https://github.com/hoophq/brew"
+  {:macos {:install ["brew tap hoophq/brew https://github.com/hoophq/brew"
                      "brew install hoop"]
            :configure (str "hoop config create --api-url " api-url)
            :login "hoop login"
