@@ -43,6 +43,11 @@ Parameters:
     Description: '(REQUIRED) The public DNS of the App (HTTP and gRPC). It must match with the certificate'
     AllowedPattern: ^[a-zA-Z0-9-\._]+
 
+  AppIDPURI:
+    Type: String
+    Description: |-
+      (OPTIONAL) It defaults using local authentication. To use a custom, specify the configuration. Format: https://<idp-client-id>:<idp-client-secret>@<idp-host>?<options>
+
   ImageId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Description: 'The AWS image to use, default to latest Amazon Linux (al2023)'
@@ -79,6 +84,9 @@ Mappings:
     m6g2xLarge2TB:
       instanceClass: db.m6g.2xlarge
       allocatedStorage: "2000"
+
+Conditions:
+  IsDefaultIDP: !Equals ["", !Ref AppIDPURI]
 
 Resources:
 
@@ -301,6 +309,8 @@ Resources:
     Type: AWS::RDS::DBInstance
     UpdateReplacePolicy: Snapshot
     DeletionPolicy: Snapshot
+    DependsOn:
+    - HoopDBSecret
     Properties:
       AvailabilityZone: !Select
       - 0
@@ -400,6 +410,23 @@ Resources:
   ####
   GatewayServerGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+        Count: 1
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 1
+        MinInstancesInService: 0
+        PauseTime: PT10M
+        WaitOnResourceSignals: true
+        # https://repost.aws/knowledge-center/auto-scaling-group-rolling-updates
+        SuspendProcesses:
+        - HealthCheck
+        - ReplaceUnhealthy
+        - AZRebalance
+        - AlarmNotification
+        - ScheduledActions
     Properties:
       VPCZoneIdentifier:
       - !Ref PrivateSubnet1
@@ -441,6 +468,17 @@ Resources:
             Action:
             - secretsmanager:GetSecretValue
             - secretsmanager:DescribeSecret
+      - PolicyName: EC2VolumeAttacher
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            # TODO: change to specific resource
+            # See managed policy AmazonECSInfrastructureRolePolicyForVolumes
+            Resource: "*"
+            Action:
+            - ec2:DescribeVolumes
+            - ec2:AttachVolume
 
   DefaultInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -448,6 +486,23 @@ Resources:
       Path: '/'
       Roles:
       - !Ref DefaultInstanceRole
+
+  # https://serverfault.com/questions/831974/can-i-re-use-an-ebs-volume-with-aws-asg
+  GatewayVMVol:
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Delete
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone: !Select
+      - 0
+      - Fn::GetAZs: !Ref 'AWS::Region'
+      Encrypted: true
+      VolumeType: gp3
+      Iops: 3000
+      Size: 15
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-hoopsessions
 
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -465,16 +520,54 @@ Resources:
               aws-cfn-bootstrap \
               amazon-ssm-agent
             # force recreate
-            echo "LATEST_HOOP_VERSION ${AppPublicDNS}" >/dev/null
+            echo "LATEST_HOOP_VERSION ${AppIDPURI} ${AppPublicDNS}" >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
             cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
       AWS::CloudFormation::Init:
         configSets:
           default:
+          - setup_ebs_volume
           - setup_gateway
           - setup_system_agent
           - verify_gateway_health
+        setup_ebs_volume:
+          commands:
+            setup_volume:
+              cwd: '~'
+              command: !Sub |
+                #!/bin/bash
+                # https://serverfault.com/questions/831974/can-i-re-use-an-ebs-volume-with-aws-asg
+                # https://docs.aws.amazon.com/ebs/latest/userguide/ebs-using-volumes.html
+                set -eo pipefail
+                until [[ $VOL_STATUS == '"available"' ]]; do
+                  VOL_STATUS=$(aws ec2 describe-volumes --volume-ids ${GatewayVMVol} --query 'Volumes[0].State')
+                  echo "Volume not available yet, waiting 5 seconds ..."
+                  sleep 5
+                done
+                TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+                INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+                echo "attaching volume ${GatewayVMVol}"
+                DEVICE=/dev/xvdbc
+                aws ec2 attach-volume --volume-id ${GatewayVMVol} --instance-id $INSTANCE_ID --device $DEVICE
+                until [[ $VOL_STATUS == '"in-use"' ]]; do
+                  VOL_STATUS=$(aws ec2 describe-volumes --volume-ids ${GatewayVMVol} --query 'Volumes[0].State')
+                  echo "Volume not attached yet, waiting 5 seconds ..."
+                  sleep 5
+                done
+
+                echo "Volume ${GatewayVMVol} is ready for use"
+                OUTPUT=$(file -sL $DEVICE)
+                if [[ $OUTPUT == "$DEVICE: data" ]]; then
+                  mkfs -t xfs $DEVICE && \
+                  xfs_admin -L hoopsessions $DEVICE
+                elif [[ $OUTPUT =~ "$DEVICE: cannot open"* ]]; then
+                  echo "Device $DEVICE is not attached or ready: $OUTPUT"
+                  exit 1
+                fi
+                mkdir -p /opt/hoop/sessions/indexes
+                grep LABEL=hoopsessions /etc/fstab || echo 'LABEL=hoopsessions /opt/hoop/sessions xfs defaults,nofail, 0 2' >> /etc/fstab
+                mount -a
         setup_gateway:
           packages:
             yum:
@@ -500,16 +593,29 @@ Resources:
                 WantedBy=multi-user.target
             /etc/hoopgateway.d/config:
               # Make LOG_LEVEL coerce to GODEBUG
-              content: !Sub |
-                PLUGIN_AUDIT_PATH=/opt/hoop/sessions
-                PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
-                STATIC_UI_PATH=/opt/hoop/webapp/public
-                MIGRATION_PATH_FILES=/opt/hoop/migrations
-                LOG_LEVEL=info
-                LOG_ENCODING=json
-                API_URL=https://${AppPublicDNS}
-                GRPC_URL=https://${AppPublicDNS}:8443
-                POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+              content: !If
+                - IsDefaultIDP
+                - !Sub |
+                  PLUGIN_AUDIT_PATH=/opt/hoop/sessions
+                  PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
+                  STATIC_UI_PATH=/opt/hoop/webapp/public
+                  MIGRATION_PATH_FILES=/opt/hoop/migrations
+                  LOG_LEVEL=info
+                  LOG_ENCODING=json
+                  API_URL=https://${AppPublicDNS}
+                  GRPC_URL=https://${AppPublicDNS}:8443
+                  POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                - !Sub |
+                  PLUGIN_AUDIT_PATH=/opt/hoop/sessions
+                  PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
+                  STATIC_UI_PATH=/opt/hoop/webapp/public
+                  MIGRATION_PATH_FILES=/opt/hoop/migrations
+                  LOG_LEVEL=info
+                  LOG_ENCODING=json
+                  API_URL=https://${AppPublicDNS}
+                  GRPC_URL=https://${AppPublicDNS}:8443
+                  POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                  IDP_URI=${AppIDPURI}
               mode: "000400"
               owner: root
               group: root
