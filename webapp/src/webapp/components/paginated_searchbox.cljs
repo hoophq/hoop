@@ -18,7 +18,9 @@
    - placeholder: text to show when nothing is selected
    - total-items: total number of items
    - current-page: current page
-   - items-per-page: items per page"
+   - items-per-page: items per page
+   - required?: boolean indicating if selection is required
+   - name: form field name for validation"
   []
   (let [open? (r/atom false)
         search-term (r/atom "")
@@ -49,7 +51,8 @@
       :reagent-render
       (fn [{:keys [options loading? on-search on-page-change
                    on-select selected-value placeholder
-                   total-items current-page items-per-page]}]
+                   total-items current-page items-per-page
+                   required? name]}]
 
         ;; Update selected label when we have the option in current options
         (when selected-value
@@ -70,6 +73,22 @@
                      :width (.-width rect)})))
 
         [:div {:class "relative w-full"}
+
+         ;; Invisible input for form validation (allows validation popup to show)
+         (when (and required? name)
+           [:input {:type "text"
+                    :style {:position "absolute"
+                            :opacity 0
+                            :pointer-events "none"
+                            :width "1px"
+                            :height "1px"
+                            :z-index -1
+                            :top "40px"
+                            :left "50%"}
+                    :name name
+                    :value (or selected-value "")
+                    :required true
+                    :tab-index -1}])
 
          ;; Trigger button
          [:button {:type "button"

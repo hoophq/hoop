@@ -75,6 +75,8 @@
        :total-items (:total-items @pagination)
        :current-page (:page @pagination)
        :items-per-page (:per-page @pagination)
+       :required? (:required cmdb-item)
+       :name (:jira_field cmdb-item)
        :on-search (fn [term]
                     (rf/dispatch [:jira-templates->set-cmdb-search cmdb-item term])
                     (rf/dispatch [:jira-templates->get-cmdb-values template-id cmdb-item 1 term]))
