@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
+	apidbaccess "github.com/hoophq/hoop/gateway/api/dbaccess"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
@@ -697,5 +698,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiserverconfig.GenerateApiKey,
+	)
+
+	r.POST("/dbaccess",
+		r.AuthMiddleware,
+		apidbaccess.CreateDbAccess,
+	)
+	r.GET("/dbaccess/:id",
+		r.AuthMiddleware,
+		apidbaccess.GetDbAccessByID,
 	)
 }

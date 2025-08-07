@@ -32,6 +32,10 @@ var (
 
 	// PlainExecSecretKey is a key to execute plain executions in the gateway securely by this package
 	PlainExecSecretKey string = generateSecureRandomKeyOrDie()
+
+	// TODO: move to other package
+	// ImpersonateSecretKey is a key to impersonate users in the gateway securely by this package
+	ImpersonateSecretKey string = generateSecureRandomKeyOrDie()
 )
 
 func init() { _ = os.MkdirAll(walLogPath, 0755) }

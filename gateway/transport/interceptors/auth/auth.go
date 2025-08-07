@@ -115,8 +115,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return err
 		}
 		ctxVal = &GatewayContext{
-			Agent:       *ag,
-			BearerToken: bearerToken,
+			Agent: *ag,
 		}
 	// client proxy manager authentication (access token)
 	case pb.ConnectionOriginClientProxyManager:
@@ -143,7 +142,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		userCtx.UserID = userCtx.UserSubject
 		ctxVal = &GatewayContext{
 			UserContext: *userCtx,
-			BearerToken: bearerToken,
 		}
 	// client proxy authentication (access token)
 	default:
@@ -174,7 +172,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			}
 			gwctx := &GatewayContext{
 				UserContext: *ctx,
-				BearerToken: bearerToken,
 			}
 			connectionName := commongrpc.MetaGet(md, "connection-name")
 			conn, err := i.getConnection(connectionName, ctx)
@@ -188,13 +185,33 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			ctxVal = gwctx
 			break
 		}
-		// first we check if the auth method is local, if so, we authenticate the user
-		// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
-		subject, err := tokenVerifier.VerifyAccessToken(bearerToken)
-		if err != nil {
-			log.Debugf("failed verifying access token, reason=%v", err)
-			return status.Errorf(codes.Unauthenticated, "invalid authentication")
+
+		var subject string
+		// TODO: validate impersonate token
+		impersonateAuthKey := md.Get("impersonate-auth-key")
+		if len(impersonateAuthKey) > 0 {
+			if impersonateAuthKey[0] != clientexec.ImpersonateSecretKey {
+				errMsg := "failed validating impersonation, impersonate-auth-key attribute is missing or does not match"
+				log.Warn(errMsg)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			userIDVal := md.Get("impersonate-user-id")
+			if len(userIDVal) == 0 || userIDVal[0] == "" {
+				errMsg := "failed validating impersonation, impersonate-user-id attribute is missing"
+				log.Warn(errMsg)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			subject = userIDVal[0]
+		} else {
+			// first we check if the auth method is local, if so, we authenticate the user
+			// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
+			subject, err = tokenVerifier.VerifyAccessToken(bearerToken)
+			if err != nil {
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
 		}
+
 		userCtx, err := models.GetUserContext(subject)
 		if err != nil || userCtx.IsEmpty() {
 			return status.Errorf(codes.Unauthenticated, "invalid authentication")
@@ -210,7 +227,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		userCtx.UserID = userCtx.UserSubject
 		gwctx := &GatewayContext{
 			UserContext: *userCtx,
-			BearerToken: bearerToken,
 		}
 		connectionName := commongrpc.MetaGet(md, "connection-name")
 		conn, err := i.getConnection(connectionName, userCtx)
@@ -289,6 +305,10 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 }
 
 func parseBearerToken(md metadata.MD) (string, bool, error) {
+	if md.Get("impersonate-auth-key") != nil {
+		// this is an impersonation request, the token is not a bearer token
+		return "", false, nil
+	}
 	t := md.Get("authorization")
 	if len(t) == 0 {
 		log.Debugf("missing authorization header, client-metadata=%v", md)
@@ -307,6 +327,7 @@ func parseBearerToken(md metadata.MD) (string, bool, error) {
 	if _, err := uuid.Parse(parts[0]); err == nil {
 		return tokenParts[1], true, nil
 	}
+
 	// new api key format
 	return tokenParts[1], strings.HasPrefix(tokenParts[1], "xapi-"), nil
 }

@@ -221,6 +221,11 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.ListAWSDBInstances{Items: instances})
 }
 
+func CreateRDSCredentials(c *gin.Context) {
+	// ctx := storagev2.ParseContext(c)
+
+}
+
 // CreateDBRoleJob
 //
 //	@Summary		Create Database Role Job

@@ -15,6 +15,7 @@ const (
 	TCPConnectionClose       = "AgentCloseTCPConnection"
 	TCPConnectionWrite       = "AgentTCPConnectionWrite"
 	PGConnectionWrite        = "AgentPGConnectionWrite"
+	PGConnectionWriteV2      = "AgentPGConnectionWriteV2"
 	MySQLConnectionWrite     = "AgentMySQLConnectionWrite"
 	MSSQLConnectionWrite     = "AgentMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "AgentMongoDBConnectionWrite"

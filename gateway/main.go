@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/proxyproto"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -138,6 +139,10 @@ func Run() {
 
 	log.Infof("starting servers, env-authmethod=%v, env-api-key-set=%v",
 		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
+
+	if err := proxyproto.NewPGServer().Serve(); err != nil {
+		log.Fatalf("failed starting postgres server proxy, reason=%v", err)
+	}
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
 }

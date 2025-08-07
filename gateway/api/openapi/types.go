@@ -1373,6 +1373,17 @@ type CreateDBRoleJobResponse struct {
 	JobID string `json:"job_id" example:"8F680C64-DBFD-48E1-9855-6650D9CAD62C"`
 }
 
+type CreateRDSCredentialsRequest struct {
+	// Instance ARN Items contains the identifier for the database instance to generate credentials for
+	InstanceArnItems []string `json:"instance_arn_items" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance,arn:aws:rds:us-west-2:123456789012:db:my-instance2"`
+}
+
+type CreateRDSCredentialsResponse struct {
+	// Instance ARN Items contains the identifier for the database instance to generate credentials for
+	// InstanceArnItems []string `json:"instance_arn_items" binding:"required" example:"arn:aws:rds:us-west-2:123456789012:db:my-instance,arn:aws:rds:us-west-2:123456789012:db:my-instance2"`
+
+}
+
 type DBRoleJob struct {
 	// Unique identifier of the organization that owns this job
 	OrgID string `json:"org_id" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
