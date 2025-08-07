@@ -4,7 +4,7 @@
 (rf/reg-event-fx
  :gateway->get-info
  (fn
-   [{:keys [db]} [_ _]]
+   [{:keys [db]} [_]]
    {:db (assoc db :gateway->info {:loading true
                                   :data (-> db :gateway->info :data)})
     :fx [[:dispatch [:fetch
