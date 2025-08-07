@@ -4,7 +4,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
-   [webapp.components.paginated-dropdown :as paginated-dropdown]))
+   [webapp.components.paginated-searchbox :as paginated-searchbox]))
 
 (defn- create-cmdb-select-options [jira-values]
   (mapv (fn [{:keys [id name type]}]
@@ -67,7 +67,7 @@
       (:label cmdb-item)
       (when (:required cmdb-item)
         [:span.text-red-500 " *"])]
-     [paginated-dropdown/paginated-dropdown
+     [paginated-searchbox/main
       {:options options
        :loading? @loading?
        :selected-value (:value cmdb-item)
