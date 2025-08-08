@@ -145,6 +145,12 @@
  (fn [db [_ index field value]]
    (assoc-in db [:connection-setup :credentials :environment-variables index field] value)))
 
+;; Resource Subtype Override events
+(rf/reg-event-db
+ :connection-setup/set-resource-subtype-override
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :resource-subtype-override] value)))
+
 ;; Configuration Files events
 (rf/reg-event-db
  :connection-setup/update-config-file-name

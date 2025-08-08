@@ -180,7 +180,7 @@
                       "database" [database/credentials-step
                                   (:subtype (:data @connection))
                                   :update]
-                      "custom" [server/credentials-step]
+                      "custom" [server/credentials-step :update]
                       "application" (if (= (:subtype (:data @connection)) "ssh")
                                       [server/ssh-credentials]
                                       [network/credentials-form
