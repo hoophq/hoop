@@ -609,6 +609,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		awsintegration.DescribeRDSDBInstances)
 
+	r.POST("/integrations/aws/rds/credentials",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.CreateRDSRootPassword)
+
 	r.POST("/dbroles/jobs",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

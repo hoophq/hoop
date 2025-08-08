@@ -80,6 +80,19 @@ func (p *provisioner) Run(jobID string) error {
 		return fmt.Errorf("failed fetching db instance, reason=%v", err)
 	}
 
+	randomPasswd, err := generateRandomPassword()
+	if err != nil {
+		return fmt.Errorf("failed generating random password: %v", err)
+	}
+	credKeyId := fmt.Sprintf("%s:%s", p.orgID, dbArn)
+	if obj := rdsCredentialsStore.Get(credKeyId); obj != nil {
+		cred, ok := obj.(*openapi.CreateRdsRootPasswordCredentialsInfo)
+		if ok && cred.ExpireAt.After(time.Now().UTC()) {
+			log.With("sid", jobID).Infof("using cached credentials for db instance %v, expires at %v", dbArn, cred.ExpireAt)
+			randomPasswd = cred.Password
+		}
+	}
+
 	databaseTags := parseAWSTags(db)
 	err = models.CreateDBRoleJob(&models.DBRole{
 		OrgID: p.orgID,
@@ -144,11 +157,6 @@ func (p *provisioner) Run(jobID string) error {
 		}
 
 		log.With("sid", jobID).Infof("master user password not found, modifying the instance %v", dbArn)
-		randomPasswd, err := generateRandomPassword()
-		if err != nil {
-			p.updateJob(pbsystem.NewError(jobID, "failed generating master user password: %v", err))
-			return
-		}
 		instInput.masterUserPassword = &randomPasswd
 		err = p.modifyRDSInstance(jobID, instInput, func() error { return nil })
 		if err != nil {
