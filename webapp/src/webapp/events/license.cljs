@@ -10,11 +10,14 @@
               [:fetch {:method "PUT"
                        :uri "/orgs/license"
                        :body license-obj
-                       :on-success (fn [response]
-                                     (rf/dispatch [:gateway->get-info response])
-                                     (rf/dispatch [:show-snackbar
-                                                   {:level :success
-                                                    :text "License updated successfully"}]))}]]]})
+                       :on-success (fn []
+                                     (js/setTimeout
+                                      #(rf/dispatch [:show-snackbar
+                                                     {:level :success
+                                                      :text "License updated successfully"}])
+                                      500)
+                                     (rf/dispatch [:gateway->get-info])
+                                     (rf/dispatch [:users->get-user]))}]]]})
      (catch js/Error e
        {:fx [[:dispatch
               [:show-snackbar {:level :error
