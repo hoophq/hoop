@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -29,7 +30,10 @@ import (
 
 const staticCrossAccountRoleArn = "arn:aws:iam::%s:role/HoopOrganizationAccountAccessRole"
 
-var iamStore = memory.New()
+var (
+	iamStore            = memory.New()
+	rdsCredentialsStore = memory.New()
+)
 
 // IAMUpdateAccessKey
 //
@@ -46,7 +50,7 @@ func IAMUpdateAccessKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.IAMAccessKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to parse request body, reason=" + err.Error()})
 		return
 	}
 	if req.AccessKeyID != "" {
@@ -150,7 +154,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.ListAWSDBInstancesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to parse request body, reason=" + err.Error()})
 		return
 	}
 	requestAccountIDs := map[string]any{}
@@ -221,6 +225,55 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.ListAWSDBInstances{Items: instances})
 }
 
+// CreateRDSRootPassword
+//
+//	@Summary		Create RDS Root Password
+//	@Description	It creates password for RDS instances that is used to reset the root password when executing the database role job. The password are used only once and expire after 30 minutes.
+//	@Tags			AWS
+//	@Produce		json
+//	@Param			request	body		openapi.CreateRdsRootPasswordRequest	true	"The request body resource"
+//	@Success		201		{object}	openapi.CreateRdsRootPasswordResponse
+//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Router			/integrations/aws/rds/credentials [post]
+func CreateRDSRootPassword(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.CreateRdsRootPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to parse request body, reason=" + err.Error()})
+		return
+	}
+	if len(req.InstanceArnItems) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "missing request attribute 'instances'"})
+		return
+	}
+
+	response := openapi.CreateRdsRootPasswordResponse{
+		Credentials: map[string]openapi.CreateRdsRootPasswordCredentialsInfo{},
+	}
+	for _, instanceArn := range req.InstanceArnItems {
+		if instanceArn == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "instance arn cannot be empty"})
+			return
+		}
+		randomPwd, err := generateRandomPassword()
+		if err != nil {
+			msgErr := fmt.Sprintf("failed generating random password for instance %s, reason=%v", instanceArn, err)
+			log.Errorf(msgErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": msgErr})
+			return
+		}
+
+		cred := openapi.CreateRdsRootPasswordCredentialsInfo{
+			Password: randomPwd,
+			ExpireAt: time.Now().UTC().Add(30 * time.Minute),
+		}
+		keyID := fmt.Sprintf("%s:%s", ctx.OrgID, instanceArn)
+		rdsCredentialsStore.Set(keyID, &cred)
+		response.Credentials[instanceArn] = cred
+	}
+	c.JSON(http.StatusCreated, response)
+}
+
 // CreateDBRoleJob
 //
 //	@Summary		Create Database Role Job
@@ -235,7 +288,7 @@ func CreateDBRoleJob(c *gin.Context) {
 	usrctx := storagev2.ParseContext(c)
 	var req openapi.CreateDBRoleJob
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to parse request body, reason=" + err.Error()})
 		return
 	}
 	if req.AWS == nil {
@@ -282,6 +335,23 @@ func CreateDBRoleJob(c *gin.Context) {
 			return
 		}
 		cfg = *newConfig
+	}
+
+	// cleanup expired credentials for the current org
+	for instanceArnKey, obj := range rdsCredentialsStore.Filter(func(key string) bool {
+		return strings.HasPrefix(key, usrctx.OrgID)
+	}) {
+		cred, ok := obj.(*openapi.CreateRdsRootPasswordCredentialsInfo)
+		if !ok {
+			log.Warnf("failed casting credentials for key %s", instanceArnKey)
+			rdsCredentialsStore.Del(instanceArnKey)
+			continue
+		}
+		if time.Now().UTC().After(cred.ExpireAt) {
+			log.Infof("removing expired credentials for key %s, expired-at=%v", instanceArnKey, cred.ExpireAt)
+			rdsCredentialsStore.Del(instanceArnKey)
+			continue
+		}
 	}
 
 	sid := uuid.NewString()
