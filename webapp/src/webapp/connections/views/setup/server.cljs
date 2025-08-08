@@ -1,7 +1,7 @@
 ;; server.cljs
 (ns webapp.connections.views.setup.server
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Card Flex Grid Heading RadioGroup Text]]
+   ["@radix-ui/themes" :refer [Avatar Box Badge Card Flex Grid Heading RadioGroup Text]]
    ["lucide-react" :refer [Blocks SquareTerminal]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -28,7 +28,29 @@
               :title "Console"
               :subtitle "For Ruby on Rails, Python, Node JS and more."}})
 
-(defn credentials-step []
+(defn resource-subtype-override-section []
+  (let [resource-subtype-override @(rf/subscribe [:connection-setup/resource-subtype-override])]
+    [:> Box {:class "space-y-4"}
+     [:> Flex {:align "center" :gap "2"}
+      [:> Heading {:size "3"} "Resource Subtype Override"]
+      [:> Badge {:variant "solid" :color "green" :size "1"} "Beta"]]
+
+     [:> Text {:size "2" :color "gray"}
+      "Configure your connection for specific resource types. Select a subtype only if it matches your actual resource, applying the optimal settings for that resource type."]
+     [:> Text {:size "2" :color "gray"}
+      "This feature is currently in Beta to streamline connections to most common resource types."]
+
+     [:> Box
+      [forms/select
+       {:options [{:text "DynamoDB" :value "dynamodb"}
+                  {:text "CloudWatch" :value "cloudwatch"}]
+        :selected (or resource-subtype-override "")
+        :placeholder "Select one"
+        :on-change #(rf/dispatch [:connection-setup/set-resource-subtype-override %])
+        :full-width? true
+        :not-margin-bottom? true}]]]))
+
+(defn credentials-step [& [mode]]
   [:form
    {:id "credentials-form"
     :on-submit (fn [e]
@@ -59,6 +81,10 @@
         :name "command-args"}]
       [:> Text {:size "2" :color "gray" :mt "2"}
        "Example: 'python', '-m', 'http.server', '8000'"]]]
+
+    ;; Resource Subtype Override Section (only in update mode)
+    (when (= mode :update)
+      [resource-subtype-override-section])
 
     ;; Agent Section
     [agent-selector/main]]])

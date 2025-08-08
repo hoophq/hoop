@@ -222,3 +222,9 @@
  :connection-setup/ssh-credentials
  (fn [db]
    (get-in db [:connection-setup :ssh-credentials] {})))
+
+;; Resource Subtype Override subscription
+(rf/reg-sub
+ :connection-setup/resource-subtype-override
+ (fn [db]
+   (get-in db [:connection-setup :resource-subtype-override])))
