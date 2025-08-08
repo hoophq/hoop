@@ -125,7 +125,6 @@
                         (when-not (empty? command-string)
                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
         resource-subtype-override (get-in db [:connection-setup :resource-subtype-override])
-        ;; Para custom, o resource-subtype-override substitui o subtype se estiver definido
         effective-subtype (if (and (= ui-type "custom")
                                    resource-subtype-override
                                    (seq resource-subtype-override))
@@ -258,7 +257,6 @@
         ssh-credentials (when (and (= (:type connection) "application")
                                    (= (:subtype connection) "ssh"))
                           (extract-ssh-credentials credentials))
-        ;; Determinar método de autenticação SSH baseado nos dados existentes
         ssh-auth-method (when ssh-credentials
                           (cond
                             (and (not (empty? (get ssh-credentials "authorized_server_keys")))
@@ -267,10 +265,8 @@
                                  (empty? (get ssh-credentials "authorized_server_keys"))) "password"
                             (not (empty? (get ssh-credentials "authorized_server_keys"))) "key"
                             :else "password"))
-        ;; Extrair tags no formato correto
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
-                            ;; Se for um mapa, converte para array de {:key k :value v}
                             (map? tags)
                             (mapv (fn [[k v]]
                                     (let [key (str (namespace k) "/" (name k))
@@ -280,22 +276,17 @@
                                                        key)]
                                       {:key parsed-key :value v :label (tags-utils/extract-label parsed-key)})) tags)
 
-                            ;; Se for array simples, converte cada item para {:key item :value ""}
                             (sequential? tags)
                             (mapv (fn [tag]
                                     (if (map? tag)
-                                      ;; Se já for no formato {:key k :value v}, usa diretamente
                                       tag
-                                      ;; Senão, é um valor simples que vira chave
                                       {:key tag :value ""}))
                                   tags)
 
                             :else []))
 
-        ;; Filtrar tags inválidas
         valid-tags (filter-valid-tags connection-tags)
 
-        ;; Processar environment variables para HTTP
         http-env-vars (when (and (= (:type connection) "application")
                                  (= (:subtype connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
@@ -311,7 +302,6 @@
 
     (let [connection-type (:type connection)
           connection-subtype (:subtype connection)
-          ;; Para custom, se o subtype for dynamodb ou cloudwatch, é um override
           is-custom-with-override? (and (= connection-type "custom")
                                         (contains? #{"dynamodb" "cloudwatch"} connection-subtype))
           resource-subtype-override (when is-custom-with-override? connection-subtype)]
