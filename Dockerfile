@@ -1,4 +1,4 @@
-FROM ubuntu:focal-20250404
+FROM ubuntu:noble-20250714
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
@@ -32,6 +32,7 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
 
 EXPOSE 8009
 EXPOSE 8010
+EXPOSE 15432
 
 ENV PATH="/app:${PATH}"
 ENV PATH="${PATH}:/opt/hoop/bin"

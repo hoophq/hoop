@@ -282,9 +282,140 @@ jobs:
           name: dist-artifacts-${{ github.job }}
           path: dist/
 
-  docker-publish:
+  # docker-publish:
+  #   runs-on: ubuntu-latest
+  #   name: Docker Publish
+  #   environment: production
+  #   needs:
+  #     - darwin-amd64
+  #     - darwin-arm64
+  #     - windows-amd64
+  #     - windows-arm64
+  #     - linux-amd64
+  #     - linux-arm64
+  #     - build-webapp
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
+  #     - name: Docker meta
+  #       id: meta
+  #       uses: docker/metadata-action@v4
+  #       with:
+  #         images: hoophq/hoop
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v2
+  #     - name: Login to Docker Hub
+  #       uses: docker/login-action@v2
+  #       with:
+  #         username: ${{ secrets.DOCKER_LOGIN }}
+  #         password: ${{ secrets.DOCKER_PASSWORD }}
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: dist-artifacts-*
+  #         merge-multiple: true
+  #         path: dist/
+  #     - name: Extract Webapp
+  #       run: make extract-webapp
+  #     - name: Build and push
+  #       uses: docker/build-push-action@v4
+  #       with:
+  #         context: .
+  #         platforms: linux/amd64
+  #         push: true
+  #         tags: ${{ steps.meta.outputs.tags }}
+  #         labels: ${{ steps.meta.outputs.labels }}
+
+  # docker-publish-agent:
+  #   runs-on: ubuntu-latest
+  #   name: Docker Publish Agent
+  #   environment: production
+  #   needs:
+  #     - darwin-amd64
+  #     - darwin-arm64
+  #     - windows-amd64
+  #     - windows-arm64
+  #     - linux-amd64
+  #     - linux-arm64
+  #     - build-webapp
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
+  #     - name: Docker meta
+  #       id: meta
+  #       uses: docker/metadata-action@v4
+  #       with:
+  #         images: hoophq/hoopdev
+  #     - name: Set up Docker Buildx
+  #       uses: docker/setup-buildx-action@v2
+  #     - name: Login to Docker Hub
+  #       uses: docker/login-action@v2
+  #       with:
+  #         username: ${{ secrets.DOCKER_LOGIN }}
+  #         password: ${{ secrets.DOCKER_PASSWORD }}
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: dist-artifacts-*
+  #         merge-multiple: true
+  #         path: dist/
+  #     - name: Build and Push
+  #       uses: docker/build-push-action@v4
+  #       with:
+  #         file: ./Dockerfile.dev
+  #         context: .
+  #         platforms: linux/amd64
+  #         push: true
+  #         tags: ${{ steps.meta.outputs.tags }}
+  #         labels: ${{ steps.meta.outputs.labels }}
+
+  docker-publish-hoopgateway-arm64:
+    runs-on: GitHub-Linux-Arm-Runner
+    name: Dck Publish Gateway (arm64)
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoop
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Extract Webapp
+        run: make extract-webapp
+      - name: Build and Push
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoop:${{ github.sha }}-arm64
+
+  docker-publish-hoopgateway-amd64:
     runs-on: ubuntu-latest
-    name: Docker Publish
+    name: Dck Publish Agent (amd64)
     environment: production
     needs:
       - darwin-amd64
@@ -319,15 +450,56 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: .
+          file: ./Dockerfile
+          context: '.'
           platforms: linux/amd64
+          provenance: false
+          sbom: false
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            hoophq/hoop:${{ github.sha }}-amd64
 
-  docker-publish-agent:
+  docker-publish-hoopgateway-multiarch:
     runs-on: ubuntu-latest
-    name: Docker Publish Agent
+    name: Publish Gateway Image
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-amd64
+      - docker-publish-hoopgateway-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoop
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Create SHA manifest and push
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          docker manifest create hoophq/hoop:${{ env.GIT_TAG }} \
+            --amend hoophq/hoop:${{ github.sha }}-amd64 \
+            --amend hoophq/hoop:${{ github.sha }}-arm64
+          docker manifest create hoophq/hoop:latest \
+            --amend hoophq/hoop:${{ github.sha }}-amd64 \
+            --amend hoophq/hoop:${{ github.sha }}-arm64
+          docker manifest push hoophq/hoop:${{ env.GIT_TAG }}
+          docker manifest push hoophq/hoop:latest
+
+
+  docker-publish-hoopagent-arm64:
+    runs-on: GitHub-Linux-Arm-Runner
+    name: Dck Publish Agent (arm64)
     environment: production
     needs:
       - darwin-amd64
@@ -361,11 +533,95 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.dev
-          context: .
-          platforms: linux/amd64
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            hoophq/hoopdev:${{ github.sha }}-arm64
+
+  docker-publish-hoopagent-amd64:
+    runs-on: ubuntu-latest
+    name: Dck Publish Agent (amd64)
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoopdev
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          file: Dockerfile.dev
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopdev:${{ github.sha }}-amd64
+
+  docker-publish-hoopagent-multiarch:
+    runs-on: ubuntu-latest
+    name: Publish Hoopagent Image
+    environment: production
+    needs:
+      - docker-publish-hoopagent-amd64
+      - docker-publish-hoopagent-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoopdev
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Create SHA manifest and push
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          docker manifest create hoophq/hoopdev:${{ env.GIT_TAG }} \
+            --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
+            --amend hoophq/hoopdev:${{ github.sha }}-arm64
+          docker manifest create hoophq/hoopdev:latest \
+            --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
+            --amend hoophq/hoopdev:${{ github.sha }}-arm64
+          docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
+          docker manifest push hoophq/hoopdev:latest
+
 
   docker-publish-hooplabs-arm64:
     runs-on: GitHub-Linux-Arm-Runner
@@ -515,9 +771,9 @@ jobs:
     name: Publish Release
     environment: production
     needs:
-      - docker-publish
-      - docker-publish-agent
       - docker-publish-multiarch
+      - docker-publish-hoopgateway-multiarch
+      - docker-publish-hoopagent-multiarch
 
     steps:
       - name: Checkout Hoop
