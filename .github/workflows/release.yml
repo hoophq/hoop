@@ -415,7 +415,7 @@ jobs:
 
   docker-publish-hoopgateway-amd64:
     runs-on: ubuntu-latest
-    name: Dck Publish Agent (amd64)
+    name: Dck Publish Gateway (amd64)
     environment: production
     needs:
       - darwin-amd64
@@ -576,7 +576,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          file: Dockerfile.dev
+          file: ./Dockerfile.dev
           context: '.'
           platforms: linux/amd64
           provenance: false
