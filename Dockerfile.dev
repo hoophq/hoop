@@ -1,7 +1,5 @@
 # Dockerfile.tools
-FROM hoophq/agent-tools:0.0.10
-
-ENV DEBIAN_FRONTEND=noninteractive
+FROM hoophq/agent-tools:noble-20250812
 
 COPY rootfs /
 COPY dist/binaries/ /tmp/
@@ -11,7 +9,6 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
-ENV PATH="/app:${PATH}"
 ENV PATH="${PATH}:/opt/hoop/bin"
 
 ENTRYPOINT ["tini", "--"]
