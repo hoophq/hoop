@@ -143,6 +143,29 @@
                   "-e HOOP_KEY='" hoop-key "' \\\n"
                   "--rm -d hoophq/hoopdev")}]]]])
 
+(defmethod installation "Local or remote machine" [_ hoop-key]
+  [:> Flex {:direction "column" :gap "6"}
+   [:> Flex {:direction :column :gap "6"}
+    [:> Flex {:direction "column" :gap "4"}
+     [:> Flex {:direction "column" :gap "2"}
+      [:> Text {:size "2" :weight "bold"}
+       "Install Hoop CLI"]
+      [:> Text {:size "1" :color "gray"}
+       "Run the following command to install Hoop CLI in your machine."]]
+     [code-snippet/main
+      {:code (str "brew tap hoophq/brew https://github.com/hoophq/brew.git && "
+                  "brew install hoop")}]]
+    [:> Flex {:direction "column" :gap "4"}
+     [:> Flex {:direction "column" :gap "2"}
+      [:> Text {:size "2" :weight "bold"}
+       "Export your HOOP_KEY and run it"]
+      [:> Text {:size "1" :color "gray"}
+       "Run the following command to export your HOOP_KEY and start the agent."]]
+     [code-snippet/main
+      {:code (str "export HOOP_KEY=" hoop-key)}]
+     [code-snippet/main
+      {:code (str "hoop start agent")}]]]])
+
 (defn main
   "function that render the instructions for each deployment method
   installation-method -> 'Docker Hub' | 'Kubernetes'
