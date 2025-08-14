@@ -91,6 +91,7 @@
    [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
+   [webapp.onboarding.setup-agent :as onboarding-setup-agent]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.reviews.panel :as reviews]
    [webapp.reviews.review-detail :as review-detail]
@@ -282,6 +283,9 @@
 
 (defmethod routes/panels :onboarding-setup-resource-panel []
   [layout :auth [onboarding-setup-resource/main]])
+
+(defmethod routes/panels :onboarding-setup-agent-panel []
+  [layout :auth [onboarding-setup-agent/main]])
 
 (defmethod routes/panels :onboarding-resource-providers-panel []
   [layout :auth [onboarding-resource-providers/main]])
