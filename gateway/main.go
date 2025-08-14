@@ -1,4 +1,4 @@
-package gateway
+package main
 
 import (
 	"crypto/tls"
@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/monitoring"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
+
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
@@ -45,7 +46,8 @@ func Run() {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 	if err := webappjs.ConfigureServerURL(); err != nil {
-		log.Fatal(err)
+		log.Warnf("failed configuring webappjs server URL, reason=%v", err)
+		// log.Fatal(err)
 	}
 
 	tlsConfig, err := loadServerCertificates()
@@ -163,4 +165,8 @@ func loadServerCertificates() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
 	}, nil
+}
+
+func main() {
+	Run()
 }

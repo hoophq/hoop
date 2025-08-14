@@ -3,8 +3,8 @@ package plugintypes
 import "os"
 
 const (
-	defaultAuditPath = "/opt/hoop/sessions"
-	defaultIndexPath = "/opt/hoop/indexes"
+	defaultAuditPath = "opt/sessions"
+	defaultIndexPath = "opt/indexes"
 
 	PluginReviewName                     = "review"
 	PluginAuditName                      = "audit"

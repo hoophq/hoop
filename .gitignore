@@ -42,6 +42,9 @@ libhoop
 *.srl
 *.key
 
+# sessions and indexes development files
+gateway/opt
+
 # misc dev code
 client/cmd/auth
 client/cmd/custom.go
