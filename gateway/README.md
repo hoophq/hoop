@@ -24,7 +24,7 @@ If you have a local PostgreSQL database, just create a database named `hoop` and
 Or export the following environment variables to connect to your PostgreSQL database:
 
 ```bash
-export POSTGRES_DB_URI="postgres://user:password@host:port/dbname?sslmode=disable" # ssl disable make your life easier at development, but not recommended for production
+export POSTGRES_DB_URI="postgres://user:password@host:port/dbname?sslmode=disable" # ssl disable makes your life easier at development, but not recommended for production
 ```
 
 ### Run in 
