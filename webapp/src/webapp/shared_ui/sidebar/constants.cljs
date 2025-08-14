@@ -1,9 +1,8 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
-   ["lucide-react" :refer [BadgeCheck BookMarked BrainCog GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Rotate3d
-                           ShieldCheck Sparkles SquareCode UsersRound
-                           UserRoundCheck VenetianMask]]
+                           ShieldCheck SquareCode UserRoundCheck VenetianMask]]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
