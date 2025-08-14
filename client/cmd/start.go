@@ -5,7 +5,6 @@ import (
 
 	"github.com/hoophq/hoop/agent"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/gateway"
 	"github.com/spf13/cobra"
 )
 
@@ -57,20 +56,10 @@ var startAgentCmd = &cobra.Command{
 	},
 }
 
-var startGatewayCmd = &cobra.Command{
-	Use:          "gateway",
-	Short:        "Runs the gateway component",
-	SilenceUsage: false,
-	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run()
-	},
-}
-
 func init() {
 	startAgentCmd.Flags().StringVar(&outputFormat, "format", os.Getenv("LOG_ENCODING"),
 		"Output format: auto, human, verbose, console, json")
 
 	startCmd.AddCommand(startAgentCmd)
-	startCmd.AddCommand(startGatewayCmd)
 	rootCmd.AddCommand(startCmd)
 }
