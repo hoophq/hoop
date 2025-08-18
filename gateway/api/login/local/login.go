@@ -26,7 +26,7 @@ const defaultTokenExpiration = time.Hour * 12
 //	@Failure		400,401,404,500	{object}	openapi.HTTPError
 //	@Router			/localauth/login [get]
 func Login(c *gin.Context) {
-	var user openapi.UserRequest
+	var user openapi.LocalUserRequest
 	if err := c.BindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

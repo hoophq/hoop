@@ -408,42 +408,6 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 		trackClient.Track(uinfo.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
-	iuser, err := models.GetInvitedUserByEmail(uinfo.Email)
-
-	if err != nil {
-		return false, fmt.Errorf("failed fetching invited user, reason=%v", err)
-	}
-	// validate if an invited user exists and is active and
-	// persists as a verified user
-	if iuser != nil {
-		iuser.Status = string(types.UserStatusActive)
-		log.With("multitenant", false).Infof("registering invited user %s/%s", iuser.Subject, iuser.Email)
-		iuser.Subject = uinfo.Subject
-		iuser.Verified = true
-		if len(ctx.UserName) > 0 {
-			iuser.Name = ctx.UserName
-		}
-		// update it if the login has provided a slack id (slack subscribe flow)
-		if len(ctx.UserSlackID) > 0 && len(iuser.SlackID) == 0 {
-			iuser.SlackID = ctx.UserSlackID
-		}
-
-		invitedUserGroups := []models.UserGroup{}
-		for i := range userGroups {
-			invitedUserGroups = append(invitedUserGroups, models.UserGroup{
-				OrgID:  org.ID,
-				UserID: iuser.ID,
-				Name:   userGroups[i],
-			})
-		}
-
-		if err := models.UpdateUserAndUserGroups(iuser, invitedUserGroups); err != nil {
-			return false, fmt.Errorf("failed updating user and user groups %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
-		}
-
-		return false, nil
-	}
-
 	// nutate context for analytics tracking
 	ctx.OrgID = org.ID
 	ctx.UserSubject = uinfo.Subject

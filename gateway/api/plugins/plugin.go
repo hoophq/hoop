@@ -280,15 +280,6 @@ func parsePluginConnections(c *gin.Context, pluginID string, req PluginRequest) 
 	return pluginConnectionList
 }
 
-func redactEnvVars(envs map[string]string) {
-	if envs == nil {
-		return
-	}
-	for key := range envs {
-		envs[key] = "REDACTED"
-	}
-}
-
 func validatePluginConfig(configEnvVars map[string]string) error {
 	if len(configEnvVars) == 0 {
 		return nil
@@ -340,7 +331,6 @@ func toOpenApi(obj *models.Plugin) openapi.Plugin {
 		Config:      nil,
 	}
 	if len(obj.EnvVars) > 0 {
-		redactEnvVars(obj.EnvVars)
 		plugin.Config = &openapi.PluginConfig{
 			ID:      obj.ID,
 			EnvVars: obj.EnvVars}

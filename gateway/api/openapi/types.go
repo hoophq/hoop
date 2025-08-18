@@ -1601,7 +1601,7 @@ type GenerateApiKeyResponse struct {
 	RolloutApiKey string `json:"rollout_api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK"`
 }
 
-type UserRequest struct {
+type LocalUserRequest struct {
 	Email    string `json:"email" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	Name     string `json:"name"`

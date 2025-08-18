@@ -28,10 +28,10 @@ import (
 
 var isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 
-// InviteUser
+// CreateUser
 //
-//	@Summary		Invite User
-//	@Description	Inviting a user will pre configure user definitions like display name, profile picture, groups or his slack id
+//	@Summary		Create User
+//	@Description	Creating a user will pre configure user definitions like display name, profile picture, groups and the slack id
 //	@Tags			User Management
 //	@Accept			json
 //	@Produce		json
@@ -54,9 +54,9 @@ func Create(c *gin.Context) {
 
 	existingUser, err := models.GetUserByEmailAndOrg(newUser.Email, ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed fetching existing invited user, err=%v", err)
+		log.Errorf("failed fetching existing user, err=%v", err)
 		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing invited user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing user"})
 		return
 	}
 
@@ -72,7 +72,6 @@ func Create(c *gin.Context) {
 	// accordingly to the auth method
 	userSubject := newUser.Email
 	newUser.Verified = false
-	newUser.Status = openapi.StatusInvited
 	if appconfig.Get().AuthMethod() == "local" {
 		newUser.Verified = true
 		newUser.Status = openapi.StatusActive
@@ -99,7 +98,7 @@ func Create(c *gin.Context) {
 		SlackID:        newUser.SlackID,
 	}
 	if err := models.CreateUser(modelsUser); err != nil {
-		log.Errorf("failed persisting invited user, err=%v", err)
+		log.Errorf("failed persisting user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -179,18 +178,6 @@ func Update(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
-	}
-
-	userGroups, err := models.GetUserGroupsByUserID(existingUser.ID)
-	if err != nil {
-		log.Errorf("failed getting user groups for user %s, err=%v", existingUser.ID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
-		return
-	}
-	var userGroupsList []string
-	for ug := range userGroups {
-		userGroupsList = append(userGroupsList, userGroups[ug].Name)
 	}
 
 	// don't let admin users to remove admin group from themselves
@@ -319,7 +306,14 @@ func List(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	subject := c.Param("id")
-	user, err := models.GetUserBySubjectAndOrg(subject, ctx.OrgID)
+
+	var getUserFn func(subject, orgID string) (*models.User, error)
+	if isValidMailAddress(subject) {
+		getUserFn = models.GetUserByEmailAndOrg
+	} else {
+		getUserFn = models.GetUserBySubjectAndOrg
+	}
+	user, err := getUserFn(subject, ctx.OrgID)
 	if err != nil {
 		log.Errorf("failed getting user %s, err=%v", subject, err)
 		sentry.CaptureException(err)
@@ -578,10 +572,6 @@ func PatchSlackID(c *gin.Context) {
 func ListAllGroups(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	userGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
-	var groups []string
-	for ug := range userGroups {
-		groups = append(groups, userGroups[ug].Name)
-	}
 	if err != nil {
 		log.Errorf("failed listing groups, err=%v", err)
 		sentry.CaptureException(err)
