@@ -130,7 +130,7 @@
                               [:> Flex {:direction "column" :gap "3"}
                                (doall
                                  (for [method installation-methods]
-                                   [:div {:key (:title method)
+                                   [:> Box {:key (:title method)
                                           :on-click #(reset! selected-installation-method
                                                              (:title method))}
                                     [installation-method-item
