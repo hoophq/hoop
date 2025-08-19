@@ -132,30 +132,12 @@
 
 (defn main []
   (let [agents (rf/subscribe [:agents])
-        transition-state (r/atom :loading)
-        polling-interval (r/atom nil)]
-    ;; Dispatch agent loading if not loaded
-    (comment (when (not= (:status @agents) :ready)
-      ;; Set up polling
-      (reset! polling-interval
-              (js/setInterval
-               #(let [current-agents @agents
-                      agents-ready? (= (:status current-agents) :ready)
-                      agents-available? (seq (:data current-agents))]
-                  (if (and agents-ready? agents-available?)
-                    ;; Stop polling when agents are available
-                    (js/clearInterval @polling-interval)
-                    ;; Continue polling
-                    (rf/dispatch [:agents->get-agents])))
-               5000))))
+        transition-state (r/atom :loading)]
     (rf/dispatch [:agents->get-agents])
-
     (fn []
       (let [agents-status (:status @agents)
             agents-data (:data @agents)
             agents-available? (and (= agents-status :ready) (seq agents-data))]
-        (println :agents-avaliable? agents-status)
-        (println :transition-state @transition-state)
         (when (and (= agents-status :ready)
                    (= @transition-state :loading))
           (js/setTimeout
