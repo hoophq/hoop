@@ -124,7 +124,7 @@
                              [:> Box {:gridColumn "span 2 / span 2"}
                               [:> Heading {:size "4" :weight "medium" :as "h3"}
                                "Installation method"]
-                              [:p {:class "text-sm text-gray-500"}
+                              [:> Text {:as "p" :size "2" :class "text-[--gray-7]"}
                                "Select the type of environment to setup the agent in your infrastructure."]]
                              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
                               [:> Flex {:direction "column" :gap "3"}
