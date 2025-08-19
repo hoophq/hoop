@@ -250,9 +250,14 @@ func List(c *gin.Context) {
 	var out []*openapi.Plugin
 	for _, p := range itemList {
 		plugin := toOpenApi(&p)
+		if config := plugin.Config; config != nil {
+			for key := range config.EnvVars {
+				config.EnvVars[key] = "REDACTED"
+			}
+		}
 		out = append(out, &plugin)
 	}
-	c.PureJSON(http.StatusOK, out)
+	c.JSON(http.StatusOK, out)
 }
 
 func parsePluginConnections(c *gin.Context, pluginID string, req PluginRequest) []*models.PluginConnection {
