@@ -82,7 +82,7 @@
    [:> Box {:class "max-w-[600px] text-center space-y-6"}
     [:img {:src (str config/webapp-url "/images/hoop-branding/PNG/hoop-symbol_black@4x.png")
            :class "w-16 mx-auto py-4"}]
-    [:div {:class "flex justify-center items-center"}
+    [:> Flex {:align "center" :justify "center"}
      [:> Spinner]]
     [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12] mt-6"}
      "Setting up your environment"]
