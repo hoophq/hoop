@@ -42,18 +42,14 @@ libhoop
 *.srl
 *.key
 
-# sessions and indexes development files
-gateway/opt
-
 # misc dev code
 client/cmd/auth
 client/cmd/custom.go
+gateway/cmd/gateway/.env
 
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions
 deploy/docker-compose/hoopdata/zitadel-admin-sa.json
-
-gateway/cmd/gateway/.env
 
 **/.claude/settings.local.json
 **/.mcp.json
