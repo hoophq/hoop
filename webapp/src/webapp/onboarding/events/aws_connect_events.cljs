@@ -27,7 +27,11 @@
                                 :create-connection true
                                 :enable-secrets-manager false
                                 :secrets-path ""
-                                :skip-connected-resources true})
+                                :skip-connected-resources true
+                                :password-reset {:loading? false
+                                                 :credentials nil
+                                                 :modal-open? false
+                                                 :user-confirmed? false}})
     :dispatch [:aws-connect/fetch-agents]}))
 
 (rf/reg-event-db
@@ -284,9 +288,8 @@
 
 (rf/reg-event-fx
  :aws-connect/connection-created-success
- (fn [{:keys [db]} [_ response resource]]
+ (fn [{:keys [db]} [_ _ resource]]
    (let [resource-id (:id resource)
-         connection-name (get-in db [:aws-connect :creation-status :connections resource-id :name])
          updated-db (-> db
                         (assoc-in [:aws-connect :creation-status :connections resource-id :status] "success")
                         (assoc-in [:aws-connect :creation-status :connections resource-id :error] nil))
@@ -298,13 +301,12 @@
      {:db (-> updated-db
               (assoc-in [:aws-connect :creation-status :all-completed?] all-completed?))
       :dispatch [:show-snackbar {:level :success
-                                 :text (str "Connection " connection-name " created successfully!")}]})))
+                                 :text "AWS connection created successfully!"}]})))
 
 (rf/reg-event-fx
  :aws-connect/connection-created-failure
  (fn [{:keys [db]} [_ response resource]]
    (let [resource-id (:id resource)
-         connection-name (get-in db [:aws-connect :creation-status :connections resource-id :name])
          error-message (or response
                            "Failed to create connection")
 
@@ -540,3 +542,69 @@
  :aws-connect/connected-resources
  (fn [db _]
    (get-in db [:aws-connect :resources :connected] [])))
+
+;; Password reset events and subscriptions
+(rf/reg-event-fx
+ :aws-connect/reset-root-passwords
+ (fn [{:keys [db]} _]
+   (let [selected-resources (get-in db [:aws-connect :resources :selected])
+         instances (vec selected-resources)]
+     {:db (-> db
+              (assoc-in [:aws-connect :password-reset :loading?] true)
+              (assoc-in [:aws-connect :loading :active?] true)
+              (assoc-in [:aws-connect :loading :message] "Resetting root passwords..."))
+      :dispatch [:fetch
+                 {:method "POST"
+                  :uri "/integrations/aws/rds/credentials"
+                  :body {:instances instances}
+                  :on-success #(rf/dispatch [:aws-connect/reset-passwords-success %])
+                  :on-failure #(rf/dispatch [:aws-connect/reset-passwords-failure %])}]})))
+
+(rf/reg-event-fx
+ :aws-connect/reset-passwords-success
+ (fn [{:keys [db]} [_ response]]
+   {:db (-> db
+            (assoc-in [:aws-connect :password-reset :loading?] false)
+            (assoc-in [:aws-connect :password-reset :credentials] response)
+            (assoc-in [:aws-connect :password-reset :modal-open?] true)
+            (assoc-in [:aws-connect :loading :active?] false)
+            (assoc-in [:aws-connect :loading :message] nil))}))
+
+(rf/reg-event-fx
+ :aws-connect/reset-passwords-failure
+ (fn [{:keys [db]} [_ response]]
+   {:db (-> db
+            (assoc-in [:aws-connect :password-reset :loading?] false)
+            (assoc-in [:aws-connect :loading :active?] false)
+            (assoc-in [:aws-connect :loading :message] nil))
+    :dispatch [:show-snackbar {:level :error
+                               :text "Failed to reset root passwords"
+                               :details response}]}))
+
+(rf/reg-event-db
+ :aws-connect/set-password-confirmation
+ (fn [db [_ confirmed?]]
+   (assoc-in db [:aws-connect :password-reset :user-confirmed?] confirmed?)))
+
+(rf/reg-event-fx
+ :aws-connect/finish-password-reset
+ (fn [{:keys [db]} _]
+   {:db (-> db
+            (assoc-in [:aws-connect :password-reset :modal-open?] false)
+            (assoc-in [:aws-connect :password-reset :user-confirmed?] false))
+    :dispatch [:aws-connect/create-connections]}))
+
+(rf/reg-sub
+ :aws-connect/password-reset-modal-open?
+ (fn [db _]
+   (get-in db [:aws-connect :password-reset :modal-open?] false)))
+
+(rf/reg-sub
+ :aws-connect/password-reset-credentials
+ (fn [db _]
+   (get-in db [:aws-connect :password-reset :credentials])))
+
+(rf/reg-sub
+ :aws-connect/password-reset-user-confirmed?
+ (fn [db _]
+   (get-in db [:aws-connect :password-reset :user-confirmed?] false)))
