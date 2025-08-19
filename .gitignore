@@ -53,5 +53,7 @@ deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions
 deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 
+gateway/cmd/gateway/.env
+
 **/.claude/settings.local.json
 **/.mcp.json

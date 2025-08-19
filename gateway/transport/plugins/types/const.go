@@ -3,8 +3,7 @@ package plugintypes
 import "os"
 
 const (
-	defaultAuditPath = "opt/sessions"
-	defaultIndexPath = "opt/indexes"
+	defaultAuditPath = "/opt/hoop/sessions"
 
 	PluginReviewName                     = "review"
 	PluginAuditName                      = "audit"
@@ -23,7 +22,7 @@ var (
 	// The env PLUGIN_AUDIT_PATH should be used to set a new path
 	AuditPath = os.Getenv("PLUGIN_AUDIT_PATH")
 	// IndexPath is the filesytem path where index wal logs are stored
-	IndexPath = os.Getenv("PLUGIN_INDEX_PATH")
+	// IndexPath = os.Getenv("PLUGIN_INDEX_PATH")
 	// registered at gateway/main.go
 	RegisteredPlugins []Plugin
 )
@@ -32,9 +31,5 @@ func init() {
 	if AuditPath == "" {
 		AuditPath = defaultAuditPath
 	}
-	if IndexPath == "" {
-		IndexPath = defaultIndexPath
-	}
 	_ = os.MkdirAll(AuditPath, 0755)
-	_ = os.MkdirAll(IndexPath, 0755)
 }

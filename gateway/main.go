@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"crypto/tls"
@@ -46,8 +46,7 @@ func Run() {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 	if err := webappjs.ConfigureServerURL(); err != nil {
-		log.Warnf("failed configuring webappjs server URL, reason=%v", err)
-		// log.Fatal(err)
+		log.Warnf("failed configuring webappjs server URL, running gateway without it, reason=%v", err)
 	}
 
 	tlsConfig, err := loadServerCertificates()
@@ -165,8 +164,4 @@ func loadServerCertificates() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      certPool,
 	}, nil
-}
-
-func main() {
-	Run()
 }

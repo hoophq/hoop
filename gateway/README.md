@@ -21,17 +21,24 @@ This is the Hoop Gateway folder. Below are the steps to run it in development. F
 
 If you have a local PostgreSQL database, just create a database named `hoop` and you are done.
 
-Or export the following environment variables to connect to your PostgreSQL database:
+Or configure the following environment variable in the .env file to connect to your PostgreSQL database:
 
 ```bash
 export POSTGRES_DB_URI="postgres://user:password@host:port/dbname?sslmode=disable" # ssl disable makes your life easier at development, but not recommended for production
 ```
 
-### Run in 
+### Configure and run
 
-```sh
-go run main.go
-```
+ - Navigate to `cmd/gateway` folder
+ - Copy the `.env.example` file to `.env`, the fields are not required to be changed for local development, but tweak as you wish.
+ - Source the `.env` file in your terminal:
+   ```sh
+   source .env
+   ```
+ - Run it:
+   ```sh
+   go run main.go
+   ```
 
 ### Web UI
 

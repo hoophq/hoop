@@ -93,7 +93,7 @@ func Load() error {
 	}
 	migrationPathFiles := strings.TrimSuffix(os.Getenv("MIGRATION_PATH_FILES"), "/")
 	if migrationPathFiles == "" {
-		migrationPathFiles = "../rootfs/app/migrations"
+		migrationPathFiles = "/app/migrations"
 	}
 	firstMigrationFilePath := fmt.Sprintf("%s/000001_init.up.sql", migrationPathFiles)
 	if _, err := os.Stat(firstMigrationFilePath); err != nil {
