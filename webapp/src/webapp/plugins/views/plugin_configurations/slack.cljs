@@ -3,12 +3,20 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.button :as button]
+   ["@radix-ui/themes" :refer [Button]]
    [webapp.components.forms :as forms]
    [webapp.components.headings :as h]
    [webapp.components.tabs :as tabs]
    [webapp.config :as config]
    [webapp.plugins.views.plugin-configurations.container :as plugin-configuration-container]))
+
+(defn base64-decode-safe [s]
+  (try
+    (if (and (string? s) (seq s))
+      (js/atob s)
+      s)
+    (catch :default _
+      s)))
 
 (defn configuration-modal [{:keys [connection plugin]}]
   (let [current-connection-config (first (filter #(= (:id connection)
@@ -44,15 +52,15 @@
         [:footer
          {:class "flex justify-end"}
          [:div {:class "flex-shrink"}
-          [button/primary {:text "Save"
-                           :variant :small
-                           :type "submit"}]]]]])))
+          [:> Button {:type "submit"
+                      :size "2"
+                      :variant "solid"}
+           "Save"]]]]])))
 
 (defn- configurations-view [plugin-details]
   (let [envvars (-> @plugin-details :plugin :config :envvars)
-        edit? (r/atom (not (nil? (-> @plugin-details :plugin :config))))
-        slack-bot-token (r/atom (or (:SLACK_BOT_TOKEN envvars) ""))
-        slack-app-token (r/atom (or (:SLACK_APP_TOKEN envvars) ""))]
+        slack-bot-token (r/atom (or (base64-decode-safe (:SLACK_BOT_TOKEN envvars)) ""))
+        slack-app-token (r/atom (or (base64-decode-safe (:SLACK_APP_TOKEN envvars)) ""))]
     (fn []
       [:section
        [:div {:class "grid grid-cols-3 gap-large my-large"}
@@ -70,36 +78,23 @@
            :on-submit (fn [e]
                         (.preventDefault e)
                         (rf/dispatch [:slack-plugin->slack-config {:slack-bot-token @slack-bot-token
-                                                                   :slack-app-token @slack-app-token}])
-                        (reset! edit? true))}
+                                                                   :slack-app-token @slack-app-token}]))}
           [:div {:class "grid gap-regular"}
            [forms/input {:label "Slack bot token"
                          :on-change #(reset! slack-bot-token (-> % .-target .-value))
                          :classes "whitespace-pre overflow-x"
-                         :disabled @edit?
                          :type "password"
                          :value @slack-bot-token}]
            [forms/input {:label "Slack app token"
                          :on-change #(reset! slack-app-token (-> % .-target .-value))
                          :classes "whitespace-pre overflow-x"
-                         :disabled @edit?
                          :type "password"
                          :value @slack-app-token}]]
-          [:div {:class "grid grid-cols-3 justify-items-end"}
-           (if @edit?
-             [:div {:class "col-end-4 w-full"}
-              (button/primary {:text "Edit"
-                               :type "button"
-                               :on-click (fn []
-                                           (reset! edit? false)
-                                           (reset! slack-bot-token "")
-                                           (reset! slack-app-token ""))
-                               :full-width true})]
-
-             [:div {:class "col-end-4 w-full"}
-              (button/primary {:text "Save"
-                               :type "submit"
-                               :full-width true})])]]]]])))
+          [:div {:class "flex justify-end"}
+           [:> Button {:type "submit"
+                       :size "3"
+                       :variant "solid"}
+            "Save"]]]]]])))
 
 (defmulti ^:private selected-view identity)
 (defmethod ^:private selected-view :Connections [_ _]

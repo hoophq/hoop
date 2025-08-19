@@ -16,6 +16,8 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
+var ErrMissingRequiredCredentials = fmt.Errorf("missing required credentials for slack plugin")
+
 const (
 	PluginConfigEnvVarsParam = "plugin_config"
 	slackMaxButtons          = 20
@@ -129,14 +131,15 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 
 func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) error {
 	slackInstance := getSlackServiceInstance(newState.GetOrgID())
+	if slackInstance == nil {
+		slackInstance = &slack.SlackService{}
+	}
 	switch {
 	// when it creates the plugin for the first time
 	// it should only start it, if the client has sent a valid slack configuration
 	case oldState == nil:
 		if newSlackConfig, _ := parseSlackConfig(newState.GetEnvVars()); newSlackConfig != nil {
-			if slackInstance != nil {
-				slackInstance.Close()
-			}
+			slackInstance.Close()
 			return p.startSlackServiceInstance(newState.GetOrgID(), newSlackConfig)
 		}
 	// when previous configuration doesn't exists
@@ -150,8 +153,17 @@ func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) er
 	default:
 		if oldSlackConfig, _ := parseSlackConfig(oldState.GetEnvVars()); oldSlackConfig != nil {
 			newSlackConfig, err := parseSlackConfig(newState.GetEnvVars())
-			if err != nil {
+			switch err {
+			case ErrMissingRequiredCredentials:
+				if slackInstance != nil {
+					log.Warnf("configuration has changed to empty credentials, stopping slack instance %v", newState.GetOrgID())
+					slackInstance.Close()
+				}
+				return nil
+			case nil:
+			default:
 				return err
+
 			}
 			if oldSlackConfig.slackAppToken != newSlackConfig.slackAppToken ||
 				oldSlackConfig.slackBotToken != newSlackConfig.slackBotToken {
@@ -250,7 +262,7 @@ type slackConfig struct {
 
 func parseSlackConfig(envVars map[string]string) (*slackConfig, error) {
 	if len(envVars) == 0 {
-		return nil, fmt.Errorf("missing required credentials for slack plugin")
+		return nil, ErrMissingRequiredCredentials
 	}
 	slackBotToken, _ := base64.StdEncoding.DecodeString(envVars["SLACK_BOT_TOKEN"])
 	slackAppToken, _ := base64.StdEncoding.DecodeString(envVars["SLACK_APP_TOKEN"])

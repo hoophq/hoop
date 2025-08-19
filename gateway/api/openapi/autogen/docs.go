@@ -1975,7 +1975,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/openapi.UserRequest"
+                            "$ref": "#/definitions/openapi.LocalUserRequest"
                         }
                     }
                 ],
@@ -4335,7 +4335,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Inviting a user will pre configure user definitions like display name, profile picture, groups or his slack id",
+                "description": "Creating a user will pre configure user definitions like display name, profile picture, groups and the slack id",
                 "consumes": [
                     "application/json"
                 ],
@@ -4345,7 +4345,7 @@ const docTemplate = `{
                 "tags": [
                     "User Management"
                 ],
-                "summary": "Invite User",
+                "summary": "Create User",
                 "parameters": [
                     {
                         "description": "The request body resource",
@@ -6334,6 +6334,24 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.LocalUserRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
         "openapi.Login": {
             "type": "object",
             "properties": {
@@ -7977,24 +7995,6 @@ const docTemplate = `{
                 "slack_id": {
                     "type": "string",
                     "example": "U053ELZHB53"
-                }
-            }
-        },
-        "openapi.UserRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
                 }
             }
         },
