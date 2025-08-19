@@ -82,7 +82,7 @@
                             [:> Box {:gridColumn "span 2 / span 2"}
                              [:> Heading {:size "4" :weight "medium" :as "h3"}
                               "Set an Agent name"]
-                             [:p {:class "text-sm text-gray-500"}
+                             [:> Text {:as "p" :size "2" :class "text-[--gray-7]"}
                               "This name is used to identify the Agent in your environment."]]
                             [:> Box {:class "space-y-radix-7" :gridColumn "span 5 / span 5"}
                              [:form {:on-submit #(do
