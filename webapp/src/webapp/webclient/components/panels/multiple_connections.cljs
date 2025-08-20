@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Box Badge Flex IconButton Text]]
    ["lucide-react" :refer [Plus Minus]]
    [re-frame.core :as rf]
-   [webapp.connections.constants :as connection-constants]))
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.virtualized-list :as virtualized-list]))
 
 (defn connection-item [{:keys [connection selected? on-select disabled?]} dark-mode?]
   [:> Flex {:align "center"
@@ -78,16 +79,20 @@
          :selected? true
          :disabled? true} dark-mode?])
 
-     (for [connection compatible-connections]
-       ^{:key (:name connection)}
-       [connection-item
-        {:connection connection
-         :selected? (some #(= (:name %) (:name connection)) selected-connections)
-         :on-select #(rf/dispatch [:multiple-connections/toggle connection])} dark-mode?])]))
+     ;; Virtualized list for compatible connections
+     [virtualized-list/virtualized-list
+      {:items (vec compatible-connections)
+       :item-height 50 ; px-2 py-3 + content height
+       :container-height 800 ; Fixed reasonable height for multiple connections
+       :render-item (fn [connection index]
+                      [connection-item
+                       {:connection connection
+                        :selected? (some #(= (:name %) (:name connection)) selected-connections)
+                        :on-select #(rf/dispatch [:multiple-connections/toggle connection])} dark-mode?])
+       :overscan 10}]]))
 
 (defn main [dark-mode? runbooks-panel-opened?]
-  (let [selected-connections @(rf/subscribe [:multiple-connections/selected])
-        total-count @(rf/subscribe [:execution/total-count])]
+  (let [total-count @(rf/subscribe [:execution/total-count])]
     [:> Box {:class "h-full flex flex-col"}
      [:> Flex {:justify "between"
                :align "center"
