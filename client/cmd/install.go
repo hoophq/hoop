@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/client/cmd/systemd"
@@ -16,31 +15,41 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var exampleInstallCmd = `
+hoop install systemd agent
+`
+var exampleRemoveCmd = `
+hoop remove systemd agent
+`
+
 var (
 	installCmd = &cobra.Command{
-		Use:   "install",
-		Short: "Install Hoop as a service/agent",
+		Use:     "install [COMMAND ..]",
+		Example: exampleInstallCmd,
+		Short:   "Install Hoop as a service/agent",
 	}
 
 	installSystemdCmd = &cobra.Command{
 		Use:     "systemd agent",
-		Short:   "Install Hoop as a systemd service",
-		Example: "hoop install systemd",
+		Example: exampleInstallCmd,
+		Short:   "Install Hoop as a service/agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return installSystemd(cmd)
 		},
 	}
 
 	removeCmd = &cobra.Command{
-		Use: "remove", Short: "Remove Hoop service/agent",
+		Use:     "remove [COMMAND ..]",
+		Example: exampleRemoveCmd,
+		Short:   "Remove Hoop service/agent",
 	}
 
 	removeSystemCmd = &cobra.Command{
-		Use:   "systemd agent",
-		Short: "Remove Hoop systemd service",
+		Use:     "systemd agent",
+		Example: exampleRemoveCmd,
+		Short:   "Remove Hoop systemd service",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return removeSystemd(cmd)
-
 		},
 	}
 
@@ -65,7 +74,7 @@ func installSystemd(cmd *cobra.Command) error {
 	}
 
 	if runtime.GOOS != "linux" {
-		return errors.New("systemd installation is only supported on Linux")
+		log.Fatal("Sysmted agent installation is only supported on Linux")
 	}
 
 	exe, err := os.Executable()
