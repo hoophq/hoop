@@ -49,13 +49,13 @@ func Install(opts Options) error {
 		return fmt.Errorf("resolve executable symlinks: %w", err)
 	}
 	exe = strings.ReplaceAll(exe, "%", "%%")
-	unitPath, wantedBy, ctlArgs := derivePaths(opts)
+	unitPath, ctlArgs := derivePaths(opts)
 	unit := renderUnit(unitData{
 		Description: fmt.Sprintf("%s Service", opts.ServiceName),
 		ExecPath:    exe,
 		ExecArgs:    opts.ExecArgs,
 		Env:         opts.Env,
-		WantedBy:    wantedBy,
+		WantedBy:    opts.WantedBy,
 		UserMode:    opts.UserMode,
 	})
 
@@ -85,7 +85,7 @@ func Remove(serviceName string, userMode bool) error {
 		return errors.New("ServiceName is required")
 	}
 
-	unitPath, _, ctlArgs := derivePaths(Options{ServiceName: serviceName, UserMode: userMode})
+	unitPath, ctlArgs := derivePaths(Options{ServiceName: serviceName, UserMode: userMode})
 
 	if out, err := execRunner.Run("systemctl", append(ctlArgs, "disable", "--now", serviceName)...); err != nil {
 		_ = out
@@ -102,7 +102,7 @@ func Remove(serviceName string, userMode bool) error {
 }
 
 func Reload(serviceName string, userMode bool) error {
-	_, _, ctlArgs := derivePaths(Options{ServiceName: serviceName, UserMode: userMode})
+	_, ctlArgs := derivePaths(Options{ServiceName: serviceName, UserMode: userMode})
 	if out, err := execRunner.Run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
 		return fmt.Errorf("daemon-reload failed: %v\n%s", err, out)
 	}
@@ -112,20 +112,16 @@ func Reload(serviceName string, userMode bool) error {
 	return nil
 }
 
-func derivePaths(opts Options) (unitPath, wantedBy string, ctlArgs []string) {
+func derivePaths(opts Options) (unitPath string, ctlArgs []string) {
 	if opts.UserMode {
-		if opts.UnitPath == "" {
-			home, _ := os.UserHomeDir()
-			opts.UnitPath = filepath.Join(home, ".config", "systemd", "user", opts.ServiceName+".service")
-		}
+		home, _ := os.UserHomeDir()
+		opts.UnitPath = filepath.Join(home, ".config", "systemd", "user", opts.ServiceName+".service")
 		ctlArgs = []string{"--user"}
 	} else {
-		if opts.UnitPath == "" {
-			opts.UnitPath = filepath.Join("/etc", "systemd", "system", opts.ServiceName+".service")
-		}
+		opts.UnitPath = filepath.Join("/etc", "systemd", "system", opts.ServiceName+".service")
 		ctlArgs = nil
 	}
-	return opts.UnitPath, wantedBy, ctlArgs
+	return opts.UnitPath, ctlArgs
 }
 
 type unitData struct {

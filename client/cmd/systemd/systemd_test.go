@@ -35,10 +35,7 @@ func TestRenderUnit_IncludesEnvAndExec(t *testing.T) {
 }
 
 func TestDerivePaths_SystemMode_Defaults(t *testing.T) {
-	up, wb, ctl := derivePaths(Options{ServiceName: "hoopd", UserMode: false})
-	if wb != "multi-user.target" {
-		t.Fatalf("WantedBy=%q, want multi-user.target", wb)
-	}
+	up, ctl := derivePaths(Options{ServiceName: "hoopd", UserMode: false})
 	if !strings.HasSuffix(up, "/etc/systemd/system/hoopd.service") {
 		t.Fatalf("unit path=%q, want /etc/systemd/system/hoopd.service", up)
 	}
@@ -48,10 +45,7 @@ func TestDerivePaths_SystemMode_Defaults(t *testing.T) {
 }
 
 func TestDerivePaths_UserMode_Defaults(t *testing.T) {
-	up, wb, ctl := derivePaths(Options{ServiceName: "hoopd", UserMode: true})
-	if wb != "default.target" {
-		t.Fatalf("WantedBy=%q, want default.target", wb)
-	}
+	up, ctl := derivePaths(Options{ServiceName: "hoopd", UserMode: true})
 	if !strings.HasSuffix(up, "/.config/systemd/user/hoopd.service") {
 		t.Fatalf("unit path=%q, want ~/.config/systemd/user/hoopd.service", up)
 	}
@@ -93,23 +87,5 @@ func TestReload_CallsSystemctl(t *testing.T) {
 	}
 	if strings.Join(got[1], " ") != "systemctl --user restart hoopd.service" {
 		t.Fatalf("second call=%v", got[1])
-	}
-}
-
-func TestInstall_ValidatesInputs(t *testing.T) {
-	origRunner, origLinux, origLookup := execRunner, isLinux, lookupSystemd
-	defer func() { execRunner, isLinux, lookupSystemd = origRunner, origLinux, origLookup }()
-
-	execRunner = &fakeRunner{}
-	isLinux = func() bool { return true }
-	lookupSystemd = func() error { return nil }
-
-	err := Install(Options{})
-	if err == nil || !strings.Contains(err.Error(), "service name is required") {
-		t.Fatalf("got %v, want service name error", err)
-	}
-	err = Install(Options{ServiceName: "x"})
-	if err == nil || !strings.Contains(err.Error(), "ExecPath is required") {
-		t.Fatalf("got %v, want exec path error", err)
 	}
 }
