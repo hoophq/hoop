@@ -10,6 +10,23 @@ import (
 	"strings"
 )
 
+type runner interface {
+	Run(name string, args ...string) (string, error)
+}
+
+type realRunner struct{}
+
+func (realRunner) Run(name string, args ...string) (string, error) { return run(name, args...) }
+
+var (
+	execRunner    runner = realRunner{}
+	isLinux              = func() bool { return runtime.GOOS == "linux" }
+	lookupSystemd        = func() error {
+		_, err := exec.LookPath("systemctl")
+		return err
+	}
+)
+
 type Options struct {
 	ServiceName string
 	ExecPath    string
@@ -23,14 +40,6 @@ type Options struct {
 func Install(opts Options) error {
 	if err := ensureSupported(); err != nil {
 		return err
-	}
-
-	if opts.ServiceName == "" {
-		return errors.New("Systemd service name is required")
-	}
-
-	if opts.ExecPath == "" {
-		return errors.New("Systemd ExecPath is required")
 	}
 
 	exe := opts.ExecPath
@@ -57,13 +66,11 @@ func Install(opts Options) error {
 		return fmt.Errorf("write unit file: %w", err)
 	}
 
-	// daemon-reload
-	if out, err := run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
+	if out, err := execRunner.Run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
 		return fmt.Errorf("systemctl daemon-reload failed: %v\n%s", err, out)
 	}
 
-	// enable --now <service>
-	if out, err := run("systemctl", append(ctlArgs, "enable", "--now", opts.ServiceName)...); err != nil {
+	if out, err := execRunner.Run("systemctl", append(ctlArgs, "enable", "--now", opts.ServiceName)...); err != nil {
 		return fmt.Errorf("systemctl enable --now %s failed: %v\n%s", opts.ServiceName, err, out)
 	}
 
@@ -80,19 +87,15 @@ func Remove(serviceName string, userMode bool) error {
 
 	unitPath, _, ctlArgs := derivePaths(Options{ServiceName: serviceName, UserMode: userMode})
 
-	// disable --now <service>
-	if out, err := run("systemctl", append(ctlArgs, "disable", "--now", serviceName)...); err != nil {
-		// don't hard-fail on disable; print context
+	if out, err := execRunner.Run("systemctl", append(ctlArgs, "disable", "--now", serviceName)...); err != nil {
 		_ = out
 	}
 
-	// remove file
 	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove unit file: %w", err)
 	}
 
-	// reload
-	if out, err := run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
+	if out, err := execRunner.Run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
 		return fmt.Errorf("systemctl daemon-reload failed: %v\n%s", err, out)
 	}
 	return nil
@@ -100,30 +103,23 @@ func Remove(serviceName string, userMode bool) error {
 
 func Reload(serviceName string, userMode bool) error {
 	_, _, ctlArgs := derivePaths(Options{ServiceName: serviceName, UserMode: userMode})
-	if out, err := run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
+	if out, err := execRunner.Run("systemctl", append(ctlArgs, "daemon-reload")...); err != nil {
 		return fmt.Errorf("daemon-reload failed: %v\n%s", err, out)
 	}
-	if out, err := run("systemctl", append(ctlArgs, "restart", serviceName)...); err != nil {
+	if out, err := execRunner.Run("systemctl", append(ctlArgs, "restart", serviceName)...); err != nil {
 		return fmt.Errorf("restart %s failed: %v\n%s", serviceName, err, out)
 	}
 	return nil
 }
 
 func derivePaths(opts Options) (unitPath, wantedBy string, ctlArgs []string) {
-	wantedBy = opts.WantedBy
 	if opts.UserMode {
-		if wantedBy == "" {
-			wantedBy = "default.target"
-		}
 		if opts.UnitPath == "" {
 			home, _ := os.UserHomeDir()
 			opts.UnitPath = filepath.Join(home, ".config", "systemd", "user", opts.ServiceName+".service")
 		}
 		ctlArgs = []string{"--user"}
 	} else {
-		if wantedBy == "" {
-			wantedBy = "multi-user.target"
-		}
 		if opts.UnitPath == "" {
 			opts.UnitPath = filepath.Join("/etc", "systemd", "system", opts.ServiceName+".service")
 		}
@@ -144,7 +140,6 @@ type unitData struct {
 func renderUnit(d unitData) string {
 	var envLines strings.Builder
 	for k, v := range d.Env {
-		// Quote complex values; systemd accepts shell-like quoting.
 		envLines.WriteString(fmt.Sprintf("Environment=\"%s=%s\"\n", k, v))
 	}
 
@@ -169,10 +164,10 @@ WantedBy=%s
 }
 
 func ensureSupported() error {
-	if runtime.GOOS != "linux" {
+	if !isLinux() {
 		return errors.New("systemd is only supported on Linux")
 	}
-	if _, err := exec.LookPath("systemctl"); err != nil {
+	if err := lookupSystemd(); err != nil {
 		return fmt.Errorf("systemctl not found: %w", err)
 	}
 	return nil
