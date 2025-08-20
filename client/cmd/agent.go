@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/client/cmd/systemd"
-	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/version"
 	"github.com/spf13/cobra"
 )
 
@@ -19,47 +16,67 @@ hoop remove systemd agent
 `
 
 var (
-	startByOS = map[string]func(*cobra.Command) error{
-		"linux": startLinuxAgent,
+	startByOS = map[string]func() error{
+		"linux": systemd.StartLinuxAgent,
 	}
 
-	removeByOS = map[string]func(*cobra.Command) error{
-		"linux": removeLinuxAgent,
+	removeByOS = map[string]func() error{
+		"linux": systemd.RemoveLinuxAgent,
 	}
 
-	stopByOS = map[string]func(*cobra.Command) error{
-		"linux": stopLinuxAgent,
+	stopByOS = map[string]func() error{
+		"linux": systemd.StopLinuxAgent,
 	}
 
-	logsByOS = map[string]func(*cobra.Command) error{
-		"linux": logsLinuxAgent,
+	logsByOS = map[string]func() error{
+		"linux": systemd.LogsLinuxAgent,
 	}
 )
 
 func Start(cmd *cobra.Command) error {
 	if fn, ok := startByOS[runtime.GOOS]; ok {
-		return fn(cmd)
+		err := fn()
+		if err != nil {
+			return fmt.Errorf("failed to start agent: %w", err)
+		}
+		cmd.Printf("✓ Installed and started hoop-agent service\n")
+		return nil
 	}
 	return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 }
 
 func Stop(cmd *cobra.Command) error {
 	if fn, ok := stopByOS[runtime.GOOS]; ok {
-		return fn(cmd)
+		err := fn()
+		if err != nil {
+			return fmt.Errorf("failed to stop agent: %w", err)
+		}
+		cmd.Printf("✓ Stopped hoop-agent service\n")
+		return nil
 	}
 	return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 }
 
 func Remove(cmd *cobra.Command) error {
 	if fn, ok := removeByOS[runtime.GOOS]; ok {
-		return fn(cmd)
+		err := fn()
+		if err != nil {
+			return fmt.Errorf("failed to remove agent: %w", err)
+		}
+		cmd.Printf("✓ Removed and stopped hoop-agent\n")
+		return nil
 	}
 	return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 }
 
 func Logs(cmd *cobra.Command) error {
 	if fn, ok := logsByOS[runtime.GOOS]; ok {
-		return fn(cmd)
+		err := fn()
+		if err != nil {
+			return fmt.Errorf("failed to get agent logs: %w", err)
+		}
+		cmd.Printf("✓ Showing hoop-agent logs\n")
+		return nil
 	}
 	return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 }
@@ -107,52 +124,7 @@ var (
 		},
 	}
 
-	vi = version.Get()
 )
-func logsLinuxAgent(cmd *cobra.Command) error {
-	systemd.Logs("hoop-agent")
-	return nil
-}
-
-func startLinuxAgent(cmd *cobra.Command) error {
-	cfg, err := agentconfig.Load()
-
-	if err != nil {
-		log.With("version", vi.Version).Fatal(err)
-	}
-
-	opts := systemd.Options{
-		ServiceName: "hoop-agent",
-		ExecArgs:    " start agent",
-		Env: map[string]string{
-			"HOOP_KEY": cfg.Token,
-		},
-		WantedBy: "default.target",
-	}
-
-	if err := systemd.Install(opts); err != nil {
-		return err
-	}
-
-	cmd.Printf("✓ Installed and started %s\n", opts.ServiceName)
-	return nil
-}
-
-func stopLinuxAgent(cmd *cobra.Command) error {
-	if err := systemd.Stop("hoop-agent"); err != nil {
-		return fmt.Errorf("failed to stop hoop-agent: %w", err)
-	}
-	cmd.Printf("✓ Stopped hoop-agent service\n")
-	return nil
-}
-
-func removeLinuxAgent(cmd *cobra.Command) error {
-	if err := systemd.Remove("hoop-agent"); err != nil {
-		return err
-	}
-	cmd.Printf("✓ Removed and stopped hoop-agent\n")
-	return nil
-}
 
 func init() {
 	rootCmd.AddCommand(agentCmd)
@@ -160,5 +132,4 @@ func init() {
 	agentCmd.AddCommand(removeLinuxAgentCmd)
 	agentCmd.AddCommand(stopLinuxAgentCmd)
 	agentCmd.AddCommand(logsLinuxAgentCmd)
-
 }

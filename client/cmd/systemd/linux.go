@@ -5,7 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	agentconfig "github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/version"
 )
+
+var vi = version.Get()
 
 type Options struct {
 	ServiceName string
@@ -28,15 +34,42 @@ func execPath() (string, error) {
 	return exe, nil
 }
 
-func Logs(serviceName string) error {
+func LogsLinuxAgent() error {
+	logsAgent("hoop-agent")
+	return nil
+}
+
+func logsAgent(serviceName string) error {
 	args := []string{"--user", "-u", serviceName + ".service", "-f", "-o", "cat", "--no-pager"}
 	if err := execRunner.Logs("journalctl", args...); err != nil {
 		return fmt.Errorf("journalctl --user -u %s failed: %v\n", serviceName, err)
 	}
 	return nil
 }
+func StartLinuxAgent() error {
+	cfg, err := agentconfig.Load()
 
-func Install(opts Options) error {
+	if err != nil {
+		log.With("version", vi.Version).Fatal(err)
+	}
+
+	opts := Options{
+		ServiceName: "hoop-agent",
+		ExecArgs:    " start agent",
+		Env: map[string]string{
+			"HOOP_KEY": cfg.Token,
+		},
+		WantedBy: "default.target",
+	}
+
+	if err := install(opts); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func install(opts Options) error {
 	exe, err := execPath()
 	if err != nil {
 		return err
@@ -77,7 +110,14 @@ func Install(opts Options) error {
 	return nil
 }
 
-func Stop(serviceName string) error {
+func StopLinuxAgent() error {
+	if err := stop("hoop-agent"); err != nil {
+		return fmt.Errorf("failed to stop hoop-agent: %w", err)
+	}
+	return nil
+}
+
+func stop(serviceName string) error {
 	if out, err := execRunner.Run("systemctl", "--user", "stop", serviceName); err != nil {
 		return fmt.Errorf("systemctl stop %s failed: %v\n%s", serviceName, err, out)
 	}
@@ -89,7 +129,14 @@ func Stop(serviceName string) error {
 	return nil
 }
 
-func Remove(serviceName string) error {
+func RemoveLinuxAgent() error {
+	if err := remove("hoop-agent"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func remove(serviceName string) error {
 	unitPath := userPaths(Options{ServiceName: serviceName})
 
 	if out, err := execRunner.Run("systemctl", "--user", "disable", "--now", serviceName); err != nil {
