@@ -12,7 +12,7 @@ This is the Hoop Gateway folder. Below are the steps to run it in development. F
 
 ## Dependencies
 
-- Install Golang 1.20 or later: [https://go.dev/doc/install](https://go.dev/doc/install)
+- Install Golang 1.23 or later: [https://go.dev/doc/install](https://go.dev/doc/install)
 - A PostgreSQL anywhere you want.
 
 ## Setup
