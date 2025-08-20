@@ -105,12 +105,6 @@ func installSystemd(cmd *cobra.Command) error {
 	return nil
 }
 
-func run(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.AddCommand(installSystemdCmd)
