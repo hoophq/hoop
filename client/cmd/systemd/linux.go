@@ -164,7 +164,6 @@ type unitData struct {
 	ExecArgs    string
 	Env         map[string]string
 	WantedBy    string
-	UserMode    bool
 }
 
 func renderServiceFile(d unitData) string {

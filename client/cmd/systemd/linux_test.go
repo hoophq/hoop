@@ -25,7 +25,7 @@ func (m *mockRunner) Logs(name string, args ...string) error {
 	return m.logsErr
 }
 
-func TestDerivePaths_UserMode_Defaults(t *testing.T) {
+func TestDerivePaths_Defaults(t *testing.T) {
 	up := userPaths(Options{ServiceName: "hoopd"})
 	if !strings.HasSuffix(up, "/.config/systemd/user/hoopd.service") {
 		t.Fatalf("unit path=%q, want ~/.config/systemd/user/hoopd.service", up)
