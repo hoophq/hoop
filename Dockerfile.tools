@@ -1,21 +1,19 @@
-FROM ubuntu:focal-20250404
+FROM ubuntu:noble-20250714
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
-ARG CLOJURE_VERSION=1.10.3.1040
-ARG AWS_CLI_VERSION=2.9.6
-ARG AWS_SM_VERSION=1.2.398.0
-ARG GCLOUD_VERSION=488.0.0-0
+ARG AWS_CLI_VERSION=2.28.6
+ARG GCLOUD_VERSION=533.0.0-0
 ARG GCLOUD_GKE_AUTHN_PLUGIN_VERSION=467.0.0-0
-ARG NODE_VERSION=20.17.0
+ARG NODE_VERSION=22.18.0
 
 # Common
 RUN mkdir -p /app && \
-    apt-get update -y && \
-    apt-get install -y \
+    apt update -y && \
+    apt install -y \
     python3-dev \
     python3-pip \
-    python3.9 \
+    python3.12 \
     locales \
     tini \
     apt-utils \
@@ -23,7 +21,7 @@ RUN mkdir -p /app && \
     gnupg \
     gnupg2 \
     net-tools \
-    netcat \
+    netcat-openbsd \
     groff \
     jq \
     openssh-client \
@@ -33,14 +31,15 @@ RUN mkdir -p /app && \
     gettext-base \
     lsb-release \
     alien \
-    libaio1 \
+    libaio1t64 \
     elfutils \
     libelf-dev \
     bc \
     wget \
-    && \
+    redis-tools && \
     ln -s /usr/bin/python3 /usr/bin/python
 
+# https://github.com/nodejs/release-keys
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && case "${dpkgArch##*-}" in \
     amd64) ARCH='x64';; \
@@ -54,6 +53,7 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && export GNUPGHOME="$(mktemp -d)" \
     && set -ex \
     && for key in \
+    5BE8A3F6C8A5C01D106C0AD820B1A390B168D356 \
     4ED778F539E3634C779C87C6D7062848A1AB005C \
     141F07595B7B3FFE74309A937405533BE57C7D57 \
     74F12602B6F1C4E913FAA37AD3A89613643B6201 \
@@ -82,89 +82,108 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     && node --version \
     && npm --version
 
-# kubectl / aws-cli / aws-session-manager
-RUN curl -sL "https://dl.k8s.io/release/v1.22.1/bin/linux/amd64/kubectl" -o kubectl && \
-    echo '78178a8337fc6c76780f60541fca7199f0f1a2e9c41806bded280a4a5ef665c9  kubectl' | sha256sum -c --ignore-missing --strict - && \
-    chmod 755 kubectl && \
-    mv kubectl /usr/local/bin/kubectl && \
-    curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip" -o awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip && \
-    echo '8f1de286d2c66cc0d0d26f205fdb17d5ed073f1e97f305c522e2d1fd89d5c854  awscli-exe-linux-x86_64-2.9.6.zip' | sha256sum \
-    -c --ignore-missing --strict - && \
-    unzip -q awscli-exe-linux-x86_64-$AWS_CLI_VERSION.zip && \
-    aws/install && \
-    aws --version && \
-    rm -rf aws && \
-    curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/$AWS_SM_VERSION/ubuntu_64bit/session-manager-plugin.deb" -o session-manager-plugin.deb && \
-    echo 'aae58e58fcfbba465231086766d236ce8d032ae73b9335690e1faba704af2f9a  session-manager-plugin.deb' | sha256sum \
-    -c --ignore-missing --strict - && \
-    dpkg -i session-manager-plugin.deb && \
-    rm -rf /tmp/* session-manager-plugin.deb
+RUN curl -sL "https://dl.k8s.io/release/v1.29.15/bin/linux/$(dpkg --print-architecture)/kubectl" -o kubectl && \
+  chmod 755 kubectl && \
+  mv kubectl /usr/local/bin/kubectl
 
-RUN echo "deb http://apt-archive.postgresql.org/pub/repos/apt/ focal-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list && \
-    echo "deb [arch=amd64,arm64] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/5.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list && \
-    echo "deb https://cli-assets.heroku.com/apt ./" > /etc/apt/sources.list.d/heroku.list && \
+RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+  amd64) ARCH='x86_64';; \
+  arm64) ARCH='aarch64';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-$ARCH.zip" -o awscli-exe-linux.zip && \
+    unzip -q awscli-exe-linux.zip && \
+    aws/install && \
+    aws --version
+
+RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+  amd64) ARCH='ubuntu_64bit';; \
+  arm64) ARCH='ubuntu_arm64';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && curl -sL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/$ARCH/session-manager-plugin.deb" -o session-manager-plugin.deb && \
+    dpkg -i session-manager-plugin.deb
+
+RUN LIBSSL_1_1_REPO= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+  amd64) LIBSSL_1_1_REPO='deb http://security.ubuntu.com/ubuntu focal-security main';; \
+  arm64) LIBSSL_1_1_REPO='deb http://ports.ubuntu.com/ubuntu-ports focal-security main';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && echo $LIBSSL_1_1_REPO | tee /etc/apt/sources.list.d/focal-security.list && \
+    wget -qO- https://www.mongodb.org/static/pgp/server-8.0.asc | tee /etc/apt/trusted.gpg.d/server-8.0.asc && \
     echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
-    curl -sL https://cli-assets.heroku.com/apt/release.key | apt-key add - && \
-    curl -sL https://packages.microsoft.com/config/ubuntu/20.04/prod.list | tee /etc/apt/sources.list.d/msprod.list && \
-    curl -sL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
-    curl -sL https://www.mongodb.org/static/pgp/server-5.0.asc | apt-key add - && \
+    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu noble/mongodb-org/8.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
     curl -sL https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
     curl -sL https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
 
-RUN apt-get update -y && \
-    apt-get install -y \
-    mongodb-mongosh mongodb-org-tools mongodb-org-shell \
-    openjdk-11-jre \
-    heroku \
-    default-mysql-client \
-    postgresql-client-15 \
-    sqlcmd \
-    unixodbc-dev \
+# legacy mongo client
+RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+  && case "${dpkgArch##*-}" in \
+  amd64) ARCH='x86_64';; \
+  arm64) ARCH='aarch64';; \
+  *) echo "unsupported architecture"; exit 1 ;; \
+  esac \
+  && curl -fsSLO --compressed https://fastdl.mongodb.org/linux/mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz && \
+  apt update -y && apt install libssl1.1 -y && \
+    tar -xzf mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz && \
+    mv mongodb-linux-$ARCH-ubuntu2004-5.0.31/bin/mongo /usr/local/bin/mongo && \
+    rm mongodb-linux-$ARCH-ubuntu2004-5.0.31.tgz && \
+    mongo --version
+
+RUN apt update -y && apt install -y \
+    mongodb-mongosh=2.5.6 \
+    mongodb-org-tools=8.0.12 \
+    default-mysql-client=1.1.0build1 \
+    unixodbc-dev=2.3.12-1ubuntu0.24.04.1 \
+    postgresql-client-16=16.9-0ubuntu0.24.04.1 \
     google-cloud-cli=$GCLOUD_VERSION \
     google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_GKE_AUTHN_PLUGIN_VERSION && \
-    rm -rf /var/lib/apt/lists/*
+        curl -fsSLO --compressed https://packages.microsoft.com/ubuntu/22.04/prod/pool/main/s/sqlcmd/sqlcmd_1.5.0-1_jammy_all.deb && \
+        dpkg -i sqlcmd_1.5.0-1_jammy_all.deb && \
+        rm sqlcmd_1.5.0-1_jammy_all.deb && \
+        rm -rf /var/lib/apt/lists/*
+
+# configure libaio symlink for oracle client
+RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
+    && case "${dpkgArch##*-}" in \
+    amd64) ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1;; \
+    arm64) ln -s /usr/lib/aarch64-linux-gnu/libaio.so.1t64 /usr/lib/aarch64-linux-gnu/libaio.so.1;; \
+    *) echo "unsupported architecture"; exit 1 ;; \
+    esac
 
 # Download and install Oracle Instant Client and SQL*Plus
 RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-architecture)" \
     && case "${dpkgArch##*-}" in \
-    amd64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux.x64-19.24.0.0.0dbru.zip';; \
+    amd64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/2390000/instantclient-basic-linux.x64-23.9.0.25.07.zip';; \
     arm64) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/instantclient-basic-linux-arm64.zip';; \
-    i386) URL_ORACLE_BASIC='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-basic-linux-19.24.0.0.0dbru.zip';; \
     *) echo "unsupported architecture"; exit 1 ;; \
     esac \
     && case "${dpkgArch##*-}" in \
-    amd64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux.x64-19.24.0.0.0dbru.zip';; \
+    amd64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/2390000/instantclient-sqlplus-linux.x64-23.9.0.25.07.zip';; \
     arm64) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/instantclient-sqlplus-linux-arm64.zip';; \
-    i386) URL_ORACLE_SQLPLUS='https://download.oracle.com/otn_software/linux/instantclient/1924000/instantclient-sqlplus-linux-19.24.0.0.0dbru.zip';; \
     *) echo "unsupported architecture"; exit 1 ;; \
     esac \
     && mkdir -p /opt/oracle && \
     cd /opt/oracle && \
     wget -O instantclient-basic-linux.zip $URL_ORACLE_BASIC && \
     wget -O instantclient-sqlplus-linux.zip $URL_ORACLE_SQLPLUS && \
-    unzip instantclient-basic-linux.zip && \
-    rm -rf META-INF && \
-    unzip instantclient-sqlplus-linux.zip && \
-    rm instantclient-basic-linux.zip && \
-    rm instantclient-sqlplus-linux.zip && \
-    echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> instantclient_19_24/glogin.sql && \
+    unzip instantclient-basic-linux.zip && rm -rf META-INF && \
+    unzip instantclient-sqlplus-linux.zip && rm instantclient-basic-linux.zip && rm instantclient-sqlplus-linux.zip && \
+    echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> /opt/oracle/instantclient_23_9/glogin.sql && \
+    LD_LIBRARY_PATH=/opt/oracle/instantclient_23_9 /opt/oracle/instantclient_23_9/sqlplus -V && \
     cd /
 
 # Configure environment variables
-ENV PATH="/opt/oracle/instantclient_19_24:$PATH"
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_19_24"
-
-# clojure
-RUN curl -sL https://download.clojure.org/install/linux-install-$CLOJURE_VERSION.sh -o clojure-install.sh && \
-    sha256sum clojure-install.sh && \
-    echo "665e35e8d7dd0996edaba36220fd5048fee95f5155ec0426f628f18770239821 clojure-install.sh" | sha256sum -c - && \
-    bash clojure-install.sh && \
-    rm clojure-install.sh && \
-    clojure -e "(clojure-version)"
+ENV PATH="/opt/oracle/instantclient_23_9:$PATH"
+ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_23_9"
 
 RUN pip3 install -U \
-    boto3==1.37.38 \
-    requests==2.27.1
+    boto3==1.40.6 \
+    requests==2.32.4 \
+    --break-system-packages
 
 RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && \
     locale-gen
@@ -176,4 +195,3 @@ ENV NODE_PATH=/usr/local/lib/node_modules/
 ENV PATH="/app:${PATH}"
 
 ENTRYPOINT ["tini", "--"]
-

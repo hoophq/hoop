@@ -24,12 +24,12 @@ import (
 //	@Accept			json
 //	@Produce		json
 //	@Param			Token				header		string				false	"The access token generated after successful registration"
-//	@Param			request				body		openapi.UserRequest	true	"The request body resource"
+//	@Param			request				body		openapi.LocalUserRequest	true	"The request body resource"
 //	@Success		201					{object}	openapi.HTTPError
 //	@Failure		400,401,403,409,500	{object}	openapi.HTTPError
 //	@Router			/localauth/register [post]
 func Register(c *gin.Context) {
-	var user openapi.UserRequest
+	var user openapi.LocalUserRequest
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

@@ -204,10 +204,24 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.GetUserByEmailOrID)
+	r.POST("/users",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.Create)
+	r.PUT("/users/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateUser),
+		userapi.Update)
 	r.PATCH("/users/self/slack",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateUser),
 		userapi.PatchSlackID)
+	r.DELETE("/users/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.Delete)
+
 	r.GET("/users/groups",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -220,19 +234,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.DeleteGroup)
-	r.POST("/users",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.Create)
-	r.DELETE("/users/:id",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.Delete)
-	r.PUT("/users/:id",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventUpdateUser),
-		userapi.Update)
 
 	r.GET("/serviceaccounts",
 		apiroutes.ReadOnlyAccessRole,
@@ -609,6 +610,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		awsintegration.DescribeRDSDBInstances)
+
+	r.POST("/integrations/aws/rds/credentials",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		awsintegration.CreateRDSRootPassword)
 
 	r.POST("/dbroles/jobs",
 		apiroutes.AdminOnlyAccessRole,

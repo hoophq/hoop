@@ -1,8 +1,10 @@
 (ns webapp.onboarding.aws-connect
   (:require [re-frame.core :as rf]
-            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex Heading Separator Text Callout Switch AlertDialog RadioGroup]]
+            ["@radix-ui/themes" :refer [Badge Box Button Card Spinner Link Flex
+                                        Heading Separator Text Callout Switch
+                                        AlertDialog RadioGroup Checkbox]]
             [webapp.components.forms :as forms]
-            ["lucide-react" :refer [Check Info ArrowUpRight ChevronUp ChevronDown X]]
+            ["lucide-react" :refer [Check Info ArrowUpRight ChevronUp ChevronDown X Download]]
             [webapp.connections.views.setup.page-wrapper :as page-wrapper]
             [webapp.onboarding.setup-resource :refer [aws-resources-data-table]]
             [webapp.components.data-table-simple :refer [data-table-simple]]
@@ -59,6 +61,18 @@
    {:value "us-gov-west-1" :text "us-gov-west-1"}])
 
 (def validation-error (r/atom nil))
+
+(defn download-credentials-file [credentials]
+  (let [json-content (js/JSON.stringify (clj->js credentials) nil 2)
+        blob (js/Blob. [json-content] #js {:type "application/json"})
+        url (js/URL.createObjectURL blob)
+        link (js/document.createElement "a")]
+    (set! (.-href link) url)
+    (set! (.-download link) "hoop-aws-database-credentials.json")
+    (.appendChild js/document.body link)
+    (.click link)
+    (.removeChild js/document.body link)
+    (js/URL.revokeObjectURL url)))
 
 (defn- step-number [{:keys [number active? completed?]}]
   [:> Badge
@@ -604,7 +618,59 @@
        "Cancel"]]
      [:> AlertDialog.Action {:asChild true}
       [:> Button {:variant "solid" :color "red" :on-click on-confirm}
-       "Confirm and Finish"]]]]])
+       "Confirm and Reset Password"]]]]])
+
+(defn password-reset-modal []
+  (let [modal-open? @(rf/subscribe [:aws-connect/password-reset-modal-open?])
+        credentials @(rf/subscribe [:aws-connect/password-reset-credentials])
+        user-confirmed? @(rf/subscribe [:aws-connect/password-reset-user-confirmed?])]
+    [:> AlertDialog.Root
+     {:open modal-open?}
+
+     [:> AlertDialog.Content
+      {:class "max-w-[400px]"
+       :on-escape-key-down #(.preventDefault %)
+       :on-pointer-down-outside #(.preventDefault %)}
+
+      [:> Box {:class "space-y-radix-5" :mb "4"}
+       [:> Heading {:as "h2" :size "6" :mb "3" :weight "bold" :class "text-[--gray-12]"}
+        "Save your new root passwords"]
+
+       [:> Text {:as "p" :size "2" :mb "4" :class "text-[--gray-12]"}
+        "The following file provides your new resources root passwords with full administrative access."]
+
+       [:> Box
+        [:> Text {:as "p" :size "2" :weight "medium" :class "text-[--gray-12]"}
+         "Please:"]
+        [:ol {:class "list-decimal list-inside space-y-1 text-sm text-[--gray-12]"}
+         [:li "Save this file immediately"]
+         [:li "Store all information in a secure password manager"]
+         [:li "Do not share via email or any unsecured channel"]]]
+
+       [:> Box
+        [:> Text {:as "p" :size "2" :weight "medium" :mb "2" :class "text-[--gray-12]"} "Resources new root passwords:"]
+        [:> Button {:variant "soft"
+                    :on-click #(download-credentials-file credentials)}
+         "Download File"
+         [:> Download {:size 16}]]]
+
+       [:> Box
+        [:> Text {:size "2" :weight "medium" :class "text-[--gray-12]"}
+         "Note: "]
+        [:> Text {:size "2" :class "text-[--gray-12]"}
+         "These passwords will NEVER be shown again. There is no way to retrieve it after leaving this page."]]]
+
+      [:> Flex {:align "center" :gap "2" :mb "4"}
+       [:> Checkbox {:checked user-confirmed?
+                     :on-checked-change #(rf/dispatch [:aws-connect/set-password-confirmation %])}]
+       [:> Text {:as "span" :size "2" :class "text-[--gray-12]"}
+        "I confirm that I have securely saved this password"]]
+
+      [:> Flex {:justify "end" :gap "3" :mt "4"}
+       [:> Button {:variant "solid"
+                   :disabled (not user-confirmed?)
+                   :on-click #(rf/dispatch [:aws-connect/finish-password-reset])}
+        "Confirm and Finish"]]]]))
 
 (defn aws-connect-header []
   [:<>
@@ -654,8 +720,10 @@
             {:open? @show-confirm-dialog
              :on-confirm #(do
                             (reset! show-confirm-dialog false)
-                            (rf/dispatch [:aws-connect/create-connections]))
+                            (rf/dispatch [:aws-connect/reset-root-passwords]))
              :on-cancel #(reset! show-confirm-dialog false)}]
+
+           [password-reset-modal]
 
            [:> Box {:class "mx-auto max-w-[1000px] p-6 space-y-7"}
             [:> Box {:class "place-items-center space-y-7"}
@@ -701,7 +769,7 @@
                         :credentials "Next: Accounts"
                         :accounts "Next: Resources"
                         :resources "Next: Review"
-                        :review "Confirm and Create"
+                        :review "Confirm and Reset Password"
                         :creation-status "Go to AWS Connect")
            :on-back #(case current-step
                        :credentials (.back js/history)
@@ -722,5 +790,3 @@
                              :resources (empty? @(rf/subscribe [:aws-connect/selected-resources]))
                              :review false
                              :creation-status false)}}]))))
-
-

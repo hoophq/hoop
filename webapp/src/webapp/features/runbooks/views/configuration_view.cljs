@@ -8,6 +8,14 @@
    [webapp.components.forms :as forms]
    [webapp.config :as config]))
 
+(defn base64-decode-safe [s]
+  (try
+    (if (and (string? s) (seq s))
+      (js/atob s)
+      s)
+    (catch :default _
+      s)))
+
 (defn main [active-tab]
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
         ;; State atoms
@@ -82,7 +90,7 @@
 
           ;; Load git URL
           (when-let [url (:GIT_URL config)]
-            (reset! git-url url))
+            (reset! git-url (base64-decode-safe url)))
 
           ;; Detect repository type and credential type based on existing config
           (let [has-ssh-key? (contains? config :GIT_SSH_KEY)
@@ -101,19 +109,19 @@
 
           ;; Load HTTP credentials
           (when-let [user (:GIT_USER config)]
-            (reset! http-user user))
+            (reset! http-user (base64-decode-safe user)))
           (when-let [password (:GIT_PASSWORD config)]
-            (reset! http-token password))
+            (reset! http-token (base64-decode-safe password)))
 
           ;; Load SSH credentials
           (when-let [key (:GIT_SSH_KEY config)]
-            (reset! ssh-key key))
+            (reset! ssh-key (base64-decode-safe key)))
           (when-let [user (:GIT_SSH_USER config)]
-            (reset! ssh-user user))
+            (reset! ssh-user (base64-decode-safe user)))
           (when-let [keypass (:GIT_SSH_KEYPASS config)]
-            (reset! ssh-key-password keypass))
+            (reset! ssh-key-password (base64-decode-safe keypass)))
           (when-let [hosts (:GIT_SSH_KNOWN_HOSTS config)]
-            (reset! ssh-known-hosts hosts)))
+            (reset! ssh-known-hosts (base64-decode-safe hosts))))
 
         [:> Box {:py "7" :class "space-y-radix-9"}
          ;; Repository Privacy Type Section

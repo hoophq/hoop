@@ -353,6 +353,7 @@ SELECT datname as database_name
 FROM pg_database
 WHERE datistemplate = false
   AND datname != 'postgres'
+	AND datname != 'rdsadmin'
 ORDER BY datname;`
 
 	case pb.ConnectionTypeMongoDB:
