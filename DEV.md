@@ -98,7 +98,7 @@ migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslm
 
 ### How to create a new release
 
-1. After your pull request is merged into the main branch, update your local repository by plling the latest changes:
+1. After your pull request is merged into the main branch, update your local repository by pulling the latest changes:
 ```sh
 git checkout main
 git pull origin main
