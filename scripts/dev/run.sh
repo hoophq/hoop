@@ -61,6 +61,7 @@ docker run --rm --name hoopdev \
   -p 8010:8010 \
   --env-file=.env \
   --cap-add=NET_ADMIN \
+  --add-host=host.docker.internal:host-gateway \
   -v ./dist/dev/bin/:/app/bin/ \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./rootfs/app/migrations/:/app/migrations/ \
