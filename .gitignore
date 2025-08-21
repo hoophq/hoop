@@ -45,6 +45,7 @@ libhoop
 # misc dev code
 client/cmd/auth
 client/cmd/custom.go
+gateway/cmd/gateway/.env
 
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions

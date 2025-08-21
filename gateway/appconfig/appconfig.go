@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/common/envloader"
+
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 )
 
@@ -242,6 +243,9 @@ func hasIdpEnvs() bool {
 
 func loadPostgresCredentials() (*pgCredentials, error) {
 	pgConnectionURI := os.Getenv("POSTGRES_DB_URI")
+	if pgConnectionURI == "" {
+		pgConnectionURI = "postgres://postgres:postgres@localhost:5432/hoop?sslmode=disable"
+	}
 	pgURL, err := url.Parse(pgConnectionURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing POSTGRES_DB_URI, err=%v", err)

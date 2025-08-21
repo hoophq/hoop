@@ -58,6 +58,7 @@
                     ["/aws-connect" :onboarding-aws-connect]
                     ["/setup" :onboarding-setup]
                     ["/setup/resource" :onboarding-setup-resource]
+                    ["/setup/agent" :onboarding-setup-agent]
                     ["/resource-providers" :onboarding-resource-providers]]
      "/register" :register-hoop
      "/reviews" [["" :reviews-plugin]
@@ -191,4 +192,3 @@
 ;; Or for selfhosted-only:
 ;; (defmethod routes/panels :some-panel []
 ;;   [layout :application-hoop [wrap-selfhosted-only some-component/main]])
-
