@@ -95,3 +95,25 @@ migrate -database 'postgres://hoopdevuser:1a2b3c4d@127.0.0.1:5449/hoopdevdb?sslm
 ### Migration Best Practices
 
 - https://github.com/golang-migrate/migrate/blob/master/MIGRATIONS.md
+
+### How to create a new release
+
+1. After your pull request is merged into the main branch, update your local repository by plling the latest changes:
+```sh
+git checkout main
+git pull origin main
+```
+
+2. Run the release command:
+```sh
+make publish
+```
+Note: This step requires the GitHub CLI (gh) installed and authenticated with your GitHub account.
+
+3. The release process automatically gathers all commits added since the last release and includes them in 
+the new release notes.
+
+4. Versioning rules `<version>.<minor>.<patch>`
+- VERION (X.0.0) – Increment when you make incompatible API changes.
+- MINOR (0.X.0) – Increment when you add functionality in a backward-compatible way.
+- PATCH (0.0.X) – Increment when you make backward-compatible bug fixes.
