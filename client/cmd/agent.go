@@ -8,13 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var exampleAgentStartCmd = `
-hoop agent install 
-`
-var exampleRemoveCmd = `
-hoop remove systemd agent
-`
-
 var (
 	startByOS = map[string]func() error{
 		"linux": systemd.StartLinuxAgent,
@@ -84,13 +77,13 @@ func Logs(cmd *cobra.Command) error {
 var (
 	agentCmd = &cobra.Command{
 		Use:     "agent [COMMAND ..]",
-		Example: exampleAgentStartCmd,
+		Example: "hoop agent",
 		Short:   "Install Hoop as a service/agent",
 	}
 
 	startLinuxAgentCmd = &cobra.Command{
 		Use:     "start",
-		Example: exampleAgentStartCmd,
+		Example: "hoop agent start",
 		Short:   "Hoop agent start as a service daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Start(cmd)
@@ -117,7 +110,7 @@ var (
 
 	removeLinuxAgentCmd = &cobra.Command{
 		Use:     "remove",
-		Example: exampleRemoveCmd,
+		Example: "hoop agent remove",
 		Short:   "Remove Hoop agent from service daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Remove(cmd)

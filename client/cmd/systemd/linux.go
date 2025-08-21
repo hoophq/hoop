@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 )
 
@@ -46,11 +45,12 @@ func logsAgent(serviceName string) error {
 	}
 	return nil
 }
+
 func StartLinuxAgent() error {
 	cfg, err := agentconfig.Load()
 
 	if err != nil {
-		log.With("version", vi.Version).Fatal(err)
+		return err
 	}
 
 	opts := Options{
@@ -81,7 +81,11 @@ func install(opts Options) error {
 	}
 
 	exe = strings.ReplaceAll(exe, "%", "%%")
-	unitPath := userPaths(opts)
+	unitPath, err := userPaths(opts)
+
+	if err != nil {
+		return err
+	}
 
 	unit := renderServiceFile(
 		unitData{
@@ -137,10 +141,13 @@ func RemoveLinuxAgent() error {
 }
 
 func remove(serviceName string) error {
-	unitPath := userPaths(Options{ServiceName: serviceName})
+	unitPath, err := userPaths(Options{ServiceName: serviceName})
+	if err != nil {
+		return err
+	}
 
-	if out, err := execRunner.Run("systemctl", "--user", "disable", "--now", serviceName); err != nil {
-		_ = out
+	if _, err := execRunner.Run("systemctl", "--user", "disable", "--now", serviceName); err != nil {
+		return err
 	}
 
 	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
@@ -153,9 +160,12 @@ func remove(serviceName string) error {
 	return nil
 }
 
-func userPaths(opts Options) (unitPath string) {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "systemd", "user", opts.ServiceName+".service")
+func userPaths(opts Options) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("Error getting user home dir: %w", err)
+	}
+	return filepath.Join(home, ".config", "systemd", "user", opts.ServiceName+".service"), nil
 }
 
 type unitData struct {

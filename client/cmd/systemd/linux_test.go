@@ -26,7 +26,7 @@ func (m *mockRunner) Logs(name string, args ...string) error {
 }
 
 func TestDerivePaths_Defaults(t *testing.T) {
-	up := userPaths(Options{ServiceName: "hoopd"})
+	up, _ := userPaths(Options{ServiceName: "hoopd"})
 	if !strings.HasSuffix(up, "/.config/systemd/user/hoopd.service") {
 		t.Fatalf("unit path=%q, want ~/.config/systemd/user/hoopd.service", up)
 	}
@@ -55,7 +55,7 @@ func requireContains(t *testing.T, s, substr string) {
 func TestUserPaths(t *testing.T) {
 	restore, home := withTempHome(t)
 	defer restore()
-	got := userPaths(Options{ServiceName: "hoopd"})
+	got, _ := userPaths(Options{ServiceName: "hoopd"})
 	want := filepath.Join(home, ".config", "systemd", "user", "hoopd.service")
 	if got != want {
 		t.Fatalf("userPaths mismatch\n got = %q, want = %q", got, want)
