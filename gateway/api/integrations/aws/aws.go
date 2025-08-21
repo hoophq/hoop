@@ -225,11 +225,6 @@ func DescribeRDSDBInstances(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.ListAWSDBInstances{Items: instances})
 }
 
-<<<<<<< HEAD
-func CreateRDSCredentials(c *gin.Context) {
-	// ctx := storagev2.ParseContext(c)
-
-=======
 // CreateRDSRootPassword
 //
 //	@Summary		Create RDS Root Password
@@ -277,7 +272,6 @@ func CreateRDSRootPassword(c *gin.Context) {
 		response.Credentials[instanceArn] = cred
 	}
 	c.JSON(http.StatusCreated, response)
->>>>>>> main
 }
 
 // CreateDBRoleJob
