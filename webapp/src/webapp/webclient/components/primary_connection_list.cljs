@@ -10,6 +10,7 @@
    [webapp.routes :as routes]
    [webapp.webclient.components.alerts-carousel :as alerts-carousel]
    [webapp.webclient.components.database-schema :as database-schema]
+   [webapp.components.virtualized-list :as virtualized-list]
    [webapp.subs :as subs]))
 
 (defn connection-item [{:keys [name command type subtype status selected? on-select dark? admin?]}]
@@ -120,7 +121,7 @@
 
        ;; Tree view of database schema with lazy loading
        (when @show-schema?
-         [:> Box {:class "bg-[--gray-a4] px-2 py-3"}
+         [:> Box {:class "bg-[--gray-a4] px-2 py-3 max-h-[300px] overflow-y-auto"}
           ;; Check if access_schema is disabled
           (cond
             (= (:access_schema connection) "disabled")
@@ -151,7 +152,7 @@
                                        (or
                                         (= "enabled" (:access_mode_exec %))
                                         (= "enabled" (:access_mode_runbooks %)))) available-connections)]
-    [:> Box {:class "h-full pb-4"}
+    [:> Box {:class "pb-4"}
      [:> Flex {:justify "between" :align "center" :class "py-3 px-2 bg-gray-1 border-b border-t border-gray-3"}
       [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Connections"]
       (when admin?
@@ -163,15 +164,19 @@
           :onClick #(rf/dispatch [:navigate :create-connection])}
          "Create"])]
 
-     ;; List of available connections (excluding selected one)
-     (for [conn filtered-connections]
-       ^{:key (:name conn)}
-       [connection-item
-        (assoc conn
-               :selected? false
-               :dark? dark-mode?
-               :admin? admin?
-               :on-select #(rf/dispatch [:primary-connection/set-selected conn]))])]))
+     ;; Virtualized list of available connections (excluding selected one)
+     [virtualized-list/virtualized-list
+      {:items (vec filtered-connections)
+       :item-height 60 ; py-3 + content height
+       :container-height 800 ; Fixed reasonable height for webclient
+       :render-item (fn [conn index]
+                      [connection-item
+                       (assoc conn
+                              :selected? false
+                              :dark? dark-mode?
+                              :admin? admin?
+                              :on-select #(rf/dispatch [:primary-connection/set-selected conn]))])
+       :overscan 10}]]))
 
 (defn loading-state []
   [:> Box {:class "flex items-center justify-center h-32"}
@@ -227,7 +232,7 @@
       (let [admin? (-> @user :data :is_admin)]
         [:> Box {:class "h-full flex flex-col"}
          ;; Main area with scroll for connections
-         [:> Box {:class "flex-1 overflow-auto"}
+         [:> Box {:class "flex-1"}
           (case @status
             :loading [loading-state]
             :error [error-state @error]

@@ -363,7 +363,7 @@
              [:> Allotment {:defaultSizes vertical-pane-sizes
                             :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
               [:> (.-Pane Allotment) {:minSize 270}
-               [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3] overflow-auto"}
+               [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3]"}
                 (if @multi-run-panel?
                   [multiple-connections-panel/main dark-mode? (some? (:data @selected-template))]
                   [primary-connection-list/main dark-mode?])]]
