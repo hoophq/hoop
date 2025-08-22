@@ -62,140 +62,143 @@
 (defn review-details-page [session]
   (let [user (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:reviews-plugin->review-details])
-        add-review-popover-open? (r/atom false)
-        clipboard-url (new clipboardjs ".copy-to-clipboard-url")]
+        add-review-popover-open? (r/atom false)]
     (when session
       (rf/dispatch [:reviews-plugin->get-review-by-id session]))
     (fn [_]
-      (let [current-session (:review @session-details)
-            user-name (:user_name current-session)
-            connection-name (:connection current-session)
-            review (:review current-session)
-            review-groups-data (:review_groups_data review)
-            session-type (:type current-session)
-            start-date (:start_date current-session)
-            end-date (:end_date current-session)
-            verb (:verb current-session)
+      (r/with-let [clipboard-url (new clipboardjs ".copy-to-clipboard-url")
+                   _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
+        (let [current-session (:review @session-details)
+              user-name (:user_name current-session)
+              connection-name (:connection current-session)
+              review (:review current-session)
+              review-groups-data (:review_groups_data review)
+              session-type (:type current-session)
+              start-date (:start_date current-session)
+              end-date (:end_date current-session)
+              verb (:verb current-session)
 
-            can-review? (and
-                         (some #(= "PENDING" (:status %))
-                               review-groups-data)
-                         (some (fn [review-group]
-                                 (some #(= (:group review-group) %)
-                                       (-> @user :data :groups)))
-                               review-groups-data))
-            add-review-cb (fn [status]
-                            (rf/dispatch [:reviews-plugin->add-review
-                                          current-session
-                                          status])
-                            (reset! add-review-popover-open? false))
-            in-progress? (or (= end-date nil)
-                             (= end-date ""))
-            _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))
-            current-path (.-pathname (.-location js/window))
-            is-review-page? (= current-path "/reviews")]
-        [:div {:class (str "flex flex-col gap-regular h-full "
-                           (when is-review-page? "max-h-[800px]")
-                           (when (not is-review-page?) "max-h-[9S00px]"))}
-     ;; Header
-         [:header {:class "mb-regular mr-large"}
-          [:div {:class "flex"}
-           [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
-            [:div {:class "flex flex-col"}
-             [h/h2 connection-name]
-             [:div {:class "text-sm flex flex-grow gap-regular"}
-              [:span {:class "text-gray-500"}
-               "type:"]
-              [:span {:class "font-bold"}
-               session-type]]]]
+              can-review? (and
+                           (some #(= "PENDING" (:status %))
+                                 review-groups-data)
+                           (some (fn [review-group]
+                                   (some #(= (:group review-group) %)
+                                         (-> @user :data :groups)))
+                                 review-groups-data))
+              add-review-cb (fn [status]
+                              (rf/dispatch [:reviews-plugin->add-review
+                                            current-session
+                                            status])
+                              (reset! add-review-popover-open? false))
+              in-progress? (or (= end-date nil)
+                               (= end-date ""))
+              current-path (.-pathname (.-location js/window))
+              is-review-page? (= current-path "/reviews")]
+          [:div {:class (str "flex flex-col gap-regular h-full "
+                             (when is-review-page? "max-h-[800px]")
+                             (when (not is-review-page?) "max-h-[9S00px]"))}
+           ;; Header
+           [:header {:class "mb-regular mr-large"}
+            [:div {:class "flex"}
+             [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
+              [:div {:class "flex flex-col"}
+               [h/h2 connection-name]
+               [:div {:class "text-sm flex flex-grow gap-regular"}
+                [:span {:class "text-gray-500"}
+                 "type:"]
+                [:span {:class "font-bold"}
+                 session-type]]]]
 
-           [:div {:class "relative flex gap-2.5 items-start pr-3"}
-            (when (-> session :integrations_metadata :jira_issue_url)
+             [:div {:class "relative flex gap-2.5 items-start pr-3"}
+              (when (-> session :integrations_metadata :jira_issue_url)
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Open in Jira"}
+                  [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
+                         :on-click (fn []
+                                     (js/open (-> session :integrations_metadata :jira_issue_url) "_blank"))}
+                   [:div
+                    [:figure {:class "flex-shrink-0 w-[20px]"
+                              :style {:color "currentColor"}}
+                     [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
+
               [:div {:class "relative group"}
-               [:> Tooltip {:content "Open in Jira"}
-                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
-                       :on-click (fn []
-                                   (js/open (-> session :integrations_metadata :jira_issue_url) "_blank"))}
-                 [:div
-                  [:figure {:class "flex-shrink-0 w-[20px]"
-                            :style {:color "currentColor"}}
-                   [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
+               [:> Tooltip {:content "Copy link"}
+                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
+                       :data-clipboard-text (str (-> js/document .-location .-origin)
+                                                 (routes/url-for :reviews-plugin)
+                                                 "/" (-> current-session :review :id))}
+                 [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]]]]
 
-            [:div {:class "relative group"}
-             [:> Tooltip {:content "Copy link"}
-              [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
-                     :data-clipboard-text (str (-> js/document .-location .-origin)
-                                               (routes/url-for :reviews-plugin)
-                                               "/" (-> current-session :review :id))}
-               [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]]]]
+           ;; Information Grid
+           [:section {:class "grid grid-cols-1 gap-regular pb-regular lg:grid-cols-3"}
+            [:div {:class "col-span-1 flex gap-large items-center"}
+             [:div {:class "flex flex-grow gap-regular items-center"}
+              [user-icon/initials-black user-name]
+              [:span
+               {:class "text-gray-800 text-sm"}
+               user-name]]]
 
-     ;; Information Grid
-         [:section {:class "grid grid-cols-1 gap-regular pb-regular lg:grid-cols-3"}
-          [:div {:class "col-span-1 flex gap-large items-center"}
-           [:div {:class "flex flex-grow gap-regular items-center"}
-            [user-icon/initials-black user-name]
-            [:span
-             {:class "text-gray-800 text-sm"}
-             user-name]]]
-
-          [:div {:class (str "flex flex-col gap-small self-center justify-center"
-                             " rounded-lg bg-gray-100 p-3")}
-           [:div
-            {:class "flex items-center gap-regular text-xs"}
-            [:span
-             {:class "flex-grow text-gray-500"}
-             "start:"]
-            [:span
-             (formatters/time-parsed->full-date start-date)]]
-           (when-not (and (= verb "exec") in-progress?)
+            [:div {:class (str "flex flex-col gap-small self-center justify-center"
+                               " rounded-lg bg-gray-100 p-3")}
              [:div
-              {:class "flex items-center justify-end gap-regular text-xs"}
+              {:class "flex items-center gap-regular text-xs"}
               [:span
                {:class "flex-grow text-gray-500"}
-               "end:"]
+               "start:"]
               [:span
-               (formatters/time-parsed->full-date end-date)]])
-           (when (> (or (:access_duration review) 0) 0)
-             [:div {:class "flex items-center gap-small"}
-              [:span {:class "text-gray-500"}
-               "session time:"]
-              [:span {:class "font-bold"}
-               (formatters/time-elapsed (/ (:access_duration review) 1000000))]])]
+               (formatters/time-parsed->full-date start-date)]]
+             (when-not (and (= verb "exec") in-progress?)
+               [:div
+                {:class "flex items-center justify-end gap-regular text-xs"}
+                [:span
+                 {:class "flex-grow text-gray-500"}
+                 "end:"]
+                [:span
+                 (formatters/time-parsed->full-date end-date)]])
+             (when (> (or (:access_duration review) 0) 0)
+               [:div {:class "flex items-center gap-small"}
+                [:span {:class "text-gray-500"}
+                 "session time:"]
+                [:span {:class "font-bold"}
+                 (formatters/time-elapsed (/ (:access_duration review) 1000000))]])]
 
-      ;; Reviewers section
-          [:div {:id "session-reviews" :class "self-center"}
-           [:header {:class "relative flex text-xs text-gray-800 mb-small"}
-            [:span {:class "flex-grow font-bold"} "Reviewers"]
-            [:<>
-             (when can-review?
-               [:span {:class (str "flex items-center cursor-pointer "
-                                   "text-xxs text-blue-500 font-semibold")
-                       :on-click #(reset! add-review-popover-open? true)}
-                [:span "Add your review"]
-                [icon/regular {:size 5
-                               :icon-name "cheveron-down-blue"}]])
+            ;; Reviewers section
+            [:div {:id "session-reviews" :class "self-center"}
+             [:header {:class "relative flex text-xs text-gray-800 mb-small"}
+              [:span {:class "flex-grow font-bold"} "Reviewers"]
+              [:<>
+               (when can-review?
+                 [:span {:class (str "flex items-center cursor-pointer "
+                                     "text-xxs text-blue-500 font-semibold")
+                         :on-click #(reset! add-review-popover-open? true)}
+                  [:span "Add your review"]
+                  [icon/regular {:size 5
+                                 :icon-name "cheveron-down-blue"}]])
 
-             [popover/right {:open @add-review-popover-open?
-                             :component [add-review-popover add-review-cb]
-                             :on-click-outside #(reset! add-review-popover-open? false)}]]]
+               [popover/right {:open @add-review-popover-open?
+                               :component [add-review-popover add-review-cb]
+                               :on-click-outside #(reset! add-review-popover-open? false)}]]]
 
-           (when (empty? review-groups-data)
+             (when (empty? review-groups-data)
+               [:div
+                {:class "py-small text-xs italic text-gray-500 text-left"}
+                "No review info"])
+             [:div {:class "rounded-lg w-full flex flex-col gap-2"}
+              (doall
+               (for [group review-groups-data]
+                 ^{:key (:id group)}
+                 [review-group-item group current-session @user]))]]]
+
+           ;; Script section
+           (when (not (cs/blank? (-> current-session :script :data)))
              [:div
-              {:class "py-small text-xs italic text-gray-500 text-left"}
-              "No review info"])
-           [:div {:class "rounded-lg w-full flex flex-col gap-2"}
-            (doall
-             (for [group review-groups-data]
-               ^{:key (:id group)}
-               [review-group-item group current-session @user]))]]]
+              {:class (str "w-full overflow-auto p-regular whitespace-pre "
+                           "rounded-lg bg-gray-100 "
+                           "text-xs text-gray-800 font-mono")}
+              [:article (-> current-session :script :data)]])])
 
-     ;; Script section
-         (when (not (cs/blank? (-> current-session :script :data)))
-           [:div
-            {:class (str "w-full overflow-auto p-regular whitespace-pre "
-                         "rounded-lg bg-gray-100 "
-                         "text-xs text-gray-800 font-mono")}
-            [:article (-> current-session :script :data)]])]))))
+        (finally
+          (.destroy clipboard-url))))))
 
 (defmulti item-view identity)
 (defmethod item-view :opened [_ review-details]
