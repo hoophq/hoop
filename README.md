@@ -4,27 +4,66 @@
 <h1 align="center">
 <b>hoop.dev</b>
 </h1>
-<p align="center"> 🔒 Secure infrastructure access without complexity or cost 
+<p align="center"> 🔒 Access any database or server. Customer data automatically hidden. Everything recorded.
+  
 <br /> <br />
  <a target="_blank" href="https://hoop.dev">Website</a> · <a target="_blank" href="https://hoop.dev/docs">Docs</a> · <a href="https://github.com/hoophq/hoop/discussions">Discussions</a> </p> </p>
  <p align="center"><a href="https://github.com/hoophq/hoop/actions/workflows/release.yml"><img src="https://img.shields.io/github/v/release/hoophq/hoop.svg?style=flat" /> </a><img src="https://img.shields.io/badge/Setup-4.3_min-success" /></p>
 
-Hoop.dev is the free, open-source access gateway for databases and servers - the secure alternative to VPNs, credential sharing, and access tickets.
+The only access proxy that blocks dangerous linux commands and scrubs sensitive database outputs
 
-## What is hoop.dev?
+## Wihtout Hoop
 
-Hoop is a **proxy** that secures and simplifies access to your infrastructure. It acts as an intelligent pipeline between your team and your resources (databases, servers, Kubernetes):
+```sql
+-- Debugging production issue...
+SELECT * FROM users WHERE id = 42;
+┌────┬─────────────────────────┬─────────────┬─────────────────┬────────────────────┐
+│ id │ email                   │ ssn         │ phone           │ credit_card        │
+├────┼─────────────────────────┼─────────────┼─────────────────┼────────────────────┤
+│ 42 │ john.doe@example.com    │ 123-45-6789 │ (555) 123-4567  │ 4111-1111-1111-1111 │
+└────┴─────────────────────────┴─────────────┴─────────────────┴────────────────────┘
+-- You screenshot the result for Slack...
+-- 💀 SSNs, credit cards, and phone numbers now in your team chat
+```
 
--   **No VPNs or exposed credentials**  - Outbound-only connections with zero inbound firewall rules
--   **Free SSO integration**  - Works with Google, Okta, JumpCloud, and more with no additional fees
--   **Complete audit trail**  - Every action is recorded in a standardized format for compliance
--   **Deploy in minutes**  - Average setup time of 4.3 minutes across 200+ deployments
+One query, one screenshot, one data breach.
 
-## 🚀 Quick Start
+## With Hoop
 
-Get up and running in minutes:
+Same query through Hoop:
 
-bash
+```sql
+-- You see:
+┌────┬──────────────────┬─────────────┬──────────────────┬─────────────────┐
+│ id │ email            │ ssn         │ phone            │ credit_card     │
+├────┼──────────────────┼─────────────┼──────────────────┼─────────────────┤
+│ 42 │ **************** │ *********** │ ************     │ *************** │
+└────┴──────────────────┴─────────────┴──────────────────┴─────────────────┘
+
+-- Now it's safe to share
+```
+
+## Without Hoop
+```sql
+-- Fixing bug at 3AM...
+UPDATE users SET name = 'Bob Ross'
+
+-- 💀 1000000 rows updated
+
+```
+
+## With Hoop
+```sql
+-- Fixing bug at 3AM...
+UPDATE users SET name = 'Bob Ross'
+
+-- 🚫 Query blocked by Guardrail: "Prevent UPDATE without WHERE
+
+```
+
+**That's it.** Hoop sits between you and your infrastructure. Sensitive data gets masked automatically. Dangerous operations blocked. Everything gets recorded.
+
+## 30-Second Demo
 
 ```bash
 # create a jwt secret for auth
@@ -37,32 +76,39 @@ docker compose up
 
 [View full installation options](https://hoop.dev/docs/setup/deployment/overview)
 
-## How hoop.dev Works
+## How It Works
 
-Hoop creates a secure **pipe** between users and infrastructure:
+```
+You → Hoop → Your Infrastructure
+       ↓
+   • Masks sensitive data (ML-powered)
+   • Blocks dangerous commands
+   • Records everything (for compliance)  
+   • Controls access (who, what, when)
+```
 
-1.  **Authentication**  - Users authenticate through your existing identity provider (Google, Okta, etc.)
-2.  **Connection**  - Hoop agents establish outbound-only connections to your resources
-3.  **Access**  - Users connect through the Hoop proxy with just-in-time permissions
-4.  **Audit**  - Every action is recorded for complete visibility and compliance
+Works with:
+- **Databases**: PostgreSQL, MySQL, MongoDB, Redis
+- **Servers**: SSH, Kubernetes, Docker
+- **Tools**: HTTP APIs, internal services
 
-## Why Use hoop.dev?
+## Why Teams Love Hoop
 
-### ⚡ Eliminate Security Vulnerabilities
+### 🧠 Smart Masking
+Not regex. Machine learning that understands context.
+- Knows "555-1234" is a phone number in user data
+- Knows "BUILD-555-1234" is a build number
+- Works in any language
 
-VPNs and public endpoints create unnecessary attack vectors. Hoop agents establish protected outbound-only connections between authenticated users and your authorized resources—no inbound traffic required. This reduces your attack surface while simplifying your network architecture, minimizing time spent managing complex firewall rules.
+### ⚡ Actually Fast
+- <5ms latency
+- No performance impact
+- Works with existing tools
 
-### 💸 End the SSO Tax
-
-Enterprise tools charge substantial fees annually just to connect your identity provider. Hoop integrates freely with Google Workspaces, Okta, JumpCloud, Entra ID, Auth0, and AWS Cognito—with no additional licensing fees. Save on costs while improving security through unified authentication without the SSO tax that other solutions impose.
-
-### 🔑 Automate Access Controls
-
-Stop spending hours processing access request tickets. Hoop automatically maps your existing identity provider groups to read-only, read-write, or admin profiles across all your infrastructure. Delegate access management to IT using your existing group structure and free up engineering time for higher-value tasks.
-
-### 📊 Standardize Audit Trails
-
-Multiple audit formats across different systems create compliance challenges. Hoop records every action in a single, standardized format across all your infrastructure—from database queries to Kubernetes commands. Transform audit preparation from a time-consuming project to a streamlined process while maintaining compliance with SOC2, GDPR, and other frameworks.
+### 🔐 Real Security
+- Nothing to configure
+- Full audit trail
+- SOC2/HIPAA/GDPR compliant
 
 ## 📚 Popular Guides
 
@@ -142,6 +188,8 @@ We welcome contributions! Check out our [Development Documentation](/DEV.md) to 
 ## 📣 Community
 
 Join our [Discussions](https://github.com/hoophq/hoop/discussions) to ask questions, share ideas, and connect with other users.
+
+⭐ Star this if you've ever worried about screenshots in Slack
 
 ## Backed by
 
