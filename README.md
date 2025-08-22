@@ -12,7 +12,7 @@
 
 The only access proxy that blocks dangerous linux commands and scrubs sensitive database outputs
 
-## Wihtout Hoop
+## Without Hoop
 
 ```sql
 -- Debugging production issue...
