@@ -320,16 +320,48 @@ func dedupeResourceNames(resourceNames []string) (v []string) {
 }
 
 func DeleteConnection(orgID, name string) error {
-	res := DB.Table(tableConnections).
-		Where(`org_id = ? and name = ?`, orgID, name).
-		Delete(&Connection{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return DB.Transaction(func(tx *gorm.DB) error {
+		// First get the connection ID
+		var conn Connection
+		if err := tx.Table(tableConnections).
+			Where(`org_id = ? and name = ?`, orgID, name).
+			First(&conn).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+
+		// Delete environment variables
+		if err := tx.Table("private.env_vars").
+			Where(`id = ?`, conn.ID).
+			Delete(&EnvVars{}).Error; err != nil {
+			return fmt.Errorf("failed deleting environment variables, reason=%v", err)
+		}
+
+		// Delete plugin connections
+		if err := tx.Table("private.plugin_connections").
+			Where(`org_id = ? AND connection_id = ?`, orgID, conn.ID).
+			Delete(&PluginConnection{}).Error; err != nil {
+			return fmt.Errorf("failed deleting plugin connections, reason=%v", err)
+		}
+
+		// Delete connection tags associations
+		if err := tx.Exec(`DELETE FROM private.connection_tags_association WHERE connection_id = ?`, conn.ID).Error; err != nil {
+			return fmt.Errorf("failed deleting connection tags associations, reason=%v", err)
+		}
+
+		// Note: guardrail_rules_connections will be automatically deleted due to ON DELETE CASCADE
+
+		// Finally delete the connection
+		if err := tx.Table(tableConnections).
+			Where(`org_id = ? and name = ?`, orgID, name).
+			Delete(&Connection{}).Error; err != nil {
+			return fmt.Errorf("failed deleting connection, reason=%v", err)
+		}
+
+		return nil
+	})
 }
 
 // GetConnectionGuardRailRules retrieves the guard rail rules associated with a connection.
