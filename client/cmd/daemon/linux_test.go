@@ -7,24 +7,6 @@ import (
 	"testing"
 )
 
-type mockRunner struct {
-	runOut   string
-	runErr   error
-	logsErr  error
-	callsRun []string
-	callsLog []string
-}
-
-func (m *mockRunner) Run(name string, args ...string) (string, error) {
-	m.callsRun = append(m.callsRun, name+" "+strings.Join(args, " "))
-	return m.runOut, m.runErr
-}
-
-func (m *mockRunner) Logs(name string, args ...string) error {
-	m.callsLog = append(m.callsLog, name+" "+strings.Join(args, " "))
-	return m.logsErr
-}
-
 func TestDerivePaths_Defaults(t *testing.T) {
 	up, _ := userPaths(Options{ServiceName: "hoopd"})
 	if !strings.HasSuffix(up, "/.config/systemd/user/hoopd.service") {
