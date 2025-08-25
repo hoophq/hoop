@@ -33,7 +33,7 @@ func GenerateSecureRandomKey(prefixKey string, size uint16) (secretKey, secretKe
 		prefixKey = defaultPrefixKey
 	}
 	secretKey = prefixKey + "-" + secretKey
-	secretKeyHash, err = hash256Key(secretKey)
+	secretKeyHash, err = Hash256Key(secretKey)
 	if err != nil {
 		return "", "", fmt.Errorf("failed generating secret hash, err=%v", err)
 	}
@@ -115,7 +115,7 @@ func Base64DecodeEd25519PublicKey(encodedKey string) (ed25519.PublicKey, error) 
 	return ed25519.PublicKey(pubKeyBytes), nil
 }
 
-func hash256Key(secretKey string) (secret256Hash string, err error) {
+func Hash256Key(secretKey string) (secret256Hash string, err error) {
 	h := sha256.New()
 	if _, err := h.Write([]byte(secretKey)); err != nil {
 		return "", fmt.Errorf("failed hashing secret key, err=%v", err)

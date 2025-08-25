@@ -15,9 +15,6 @@ type GatewayContext struct {
 	UserContext models.Context
 	Connection  types.ConnectionInfo
 	Agent       models.Agent
-
-	BearerToken string
-	IsAdminExec bool
 }
 
 func (c *GatewayContext) ValidateConnectionAttrs() error {

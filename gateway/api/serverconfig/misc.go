@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto"
 )
 
 const defaultGrpcServerURL = "grpc://127.0.0.1:8010"
@@ -54,9 +55,17 @@ func GetServerMisc(c *gin.Context) {
 		grpcURL = *config.GrpcServerURL
 	}
 
+	var pgServerConfig *openapi.PostgresServerConfig
+	if config.PostgresServerConfig != nil {
+		pgServerConfig = &openapi.PostgresServerConfig{
+			ListenAddress: config.PostgresServerConfig.ListenAddress,
+		}
+	}
+
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics: productAnalytics,
-		GrpcServerURL:    grpcURL,
+		ProductAnalytics:     productAnalytics,
+		GrpcServerURL:        grpcURL,
+		PostgresServerConfig: pgServerConfig,
 	})
 }
 
@@ -82,9 +91,38 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	pgProxyServer := proxyproto.GetPostgresServerInstance()
+	enablePgServerProxy := req.PostgresServerConfig != nil
+	if enablePgServerProxy {
+		currentSrvConfig, err := models.GetServerMiscConfig()
+		if err != nil && err != models.ErrNotFound {
+			log.Errorf("failed to get server config, reason=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+
+		// Stop the server if the listen address has changed
+		if currentSrvConfig != nil && currentSrvConfig.PostgresServerConfig != nil {
+			if currentSrvConfig.PostgresServerConfig.ListenAddress != req.PostgresServerConfig.ListenAddress {
+				_ = pgProxyServer.Stop()
+			}
+		}
+
+		if err := pgProxyServer.Start(req.PostgresServerConfig.ListenAddress); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+	} else {
+		if err := pgProxyServer.Stop(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
-		ProductAnalytics: req.ProductAnalytics,
-		GrpcServerURL:    req.GrpcServerURL,
+		ProductAnalytics:     req.ProductAnalytics,
+		GrpcServerURL:        req.GrpcServerURL,
+		PostgresServerConfig: req.PostgresServerConfig,
 	})
 	if err != nil {
 		log.Errorf("failed to update server config, reason=%v", err)
@@ -92,16 +130,23 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	var pgServerConfig *openapi.PostgresServerConfig
+	if updatedConfig.PostgresServerConfig != nil {
+		pgServerConfig = &openapi.PostgresServerConfig{
+			ListenAddress: updatedConfig.PostgresServerConfig.ListenAddress,
+		}
+	}
+
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics: ptr.ToString(updatedConfig.ProductAnalytics),
-		GrpcServerURL:    ptr.ToString(updatedConfig.GrpcServerURL),
+		ProductAnalytics:     ptr.ToString(updatedConfig.ProductAnalytics),
+		GrpcServerURL:        ptr.ToString(updatedConfig.GrpcServerURL),
+		PostgresServerConfig: pgServerConfig,
 	})
 }
 
 func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	var req openapi.ServerMiscConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Errorf("failed to bind request, reason=%v", err)
 		return nil, err
 	}
 
@@ -127,9 +172,20 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 		return nil, fmt.Errorf("invalid attribute for 'grpc_server_url', it must start with 'grpc://', 'grpcs://', 'http://', or 'https://'")
 	}
 
+	var pgServerConfig *models.PostgresServerConfig
+	if req.PostgresServerConfig != nil {
+		if _, _, found := strings.Cut(req.PostgresServerConfig.ListenAddress, ":"); !found {
+			return nil, fmt.Errorf("invalid attribute for 'listen_address', it must be in the format 'ip:port'")
+		}
+		pgServerConfig = &models.PostgresServerConfig{
+			ListenAddress: req.PostgresServerConfig.ListenAddress,
+		}
+	}
+
 	return &models.ServerMiscConfig{
-		ProductAnalytics: &req.ProductAnalytics,
-		GrpcServerURL:    &req.GrpcServerURL,
+		ProductAnalytics:     &req.ProductAnalytics,
+		GrpcServerURL:        &req.GrpcServerURL,
+		PostgresServerConfig: pgServerConfig,
 	}, nil
 }
 

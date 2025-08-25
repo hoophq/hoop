@@ -56,6 +56,17 @@ func (p *Packet) IsCancelRequest() bool {
 	return false
 }
 
+func (p *Packet) IsFrontendSSLRequest() bool {
+	if len(p.frame) == 4 {
+		v := make([]byte, 4)
+		_ = copy(v, p.frame)
+		sslRequest := binary.BigEndian.Uint32(v)
+		return sslRequest == ClientSSLRequestMessage ||
+			sslRequest == ClientGSSENCRequestMessage
+	}
+	return false
+}
+
 func Decode(data io.Reader) (*Packet, error) {
 	typ := make([]byte, 1)
 	_, err := data.Read(typ)
@@ -125,4 +136,33 @@ func ParseQuery(payload []byte) []byte {
 	default:
 		return nil
 	}
+}
+
+func NewFatalError(msg string, v ...any) *Packet {
+	typ := byte(ServerErrorResponse)
+	p := &Packet{typ: &typ}
+	// Severity: ERROR, FATAL, INFO, etc
+	p.frame = append(p.frame, 'S')
+	p.frame = append(p.frame, LevelFatal...)
+	p.frame = append(p.frame, '\000')
+	p.frame = append(p.frame, 'V')
+	p.frame = append(p.frame, LevelFatal...)
+	p.frame = append(p.frame, '\000')
+	// the SQLSTATE code for the error
+	p.frame = append(p.frame, 'C')
+	p.frame = append(p.frame, ConnectionFailure...)
+	p.frame = append(p.frame, '\000')
+	// Message: the primary human-readable error message.
+	// This should be accurate but terse (typically one line).
+	p.frame = append(p.frame, 'M')
+	p.frame = append(p.frame, fmt.Sprintf(msg, v...)...)
+	p.frame = append(p.frame, '\000', '\000')
+	return p.setHeaderLength(len(p.frame) + 4)
+}
+
+func (p *Packet) setHeaderLength(length int) *Packet {
+	var header [4]byte
+	binary.BigEndian.PutUint32(header[:], uint32(length))
+	p.header = header
+	return p
 }

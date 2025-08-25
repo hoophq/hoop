@@ -72,11 +72,6 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	// Accept request body and url params as connection name
-	// Maintained for compatibility with legacy endpoint /api/connections/:name/exec
-	if req.Connection == "" {
-		req.Connection = c.Param("name")
-	}
 	if err := CoerceMetadataFields(req.Metadata); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return

@@ -1542,6 +1542,13 @@ type ServerMiscConfig struct {
 	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`
 	// The gRPC server URL used to advertise the gRPC server to clients
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
+	// The PostgreSQL server proxy configuration
+	PostgresServerConfig *PostgresServerConfig `json:"postgres_server_config"`
+}
+
+type PostgresServerConfig struct {
+	// The listen address to run the PostgreSQL server proxy
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:15432" binding:"required"`
 }
 
 type ServerAuthOidcConfig struct {
@@ -1605,4 +1612,29 @@ type LocalUserRequest struct {
 	Email    string `json:"email" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	Name     string `json:"name"`
+}
+
+type ConnectionDbAccessRequest struct {
+	AccessDurationSec int `json:"access_duration_seconds"`
+}
+
+type ConnectionDbAccess struct {
+	// The unique identifier of the connection database access
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The default database name of the connection
+	DatabaseName string `json:"database_name" example:"mydb"`
+	// The hostname to access the database instance
+	Hostname string `json:"hostname" example:"db.example.com"`
+	// The username of the database instance
+	Username string `json:"username" example:"noop"`
+	// The password of the database instance
+	Password string `json:"password" example:"noop"`
+	// The port of the database instance
+	Port string `json:"port" example:"5432"`
+	// The connection string to access the database instance
+	ConnectionString string `json:"connection_string" example:"postgres://noop:noop@db.example.com:5432/mydb?sslmode=disable"`
+	// When the resource was created
+	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
+	// When the database access connection expires
+	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 }

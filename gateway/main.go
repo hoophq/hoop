@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/proxyproto"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -134,6 +135,18 @@ func Run() {
 
 	if grpc.ShouldDebugGrpc() {
 		log.SetGrpcLogger()
+	}
+
+	serverConfig, err := models.GetServerMiscConfig()
+	if err != nil && err != models.ErrNotFound {
+		log.Fatalf("failed to get server config, reason=%v", err)
+	}
+
+	isPostgresProxyEnabled := serverConfig != nil && serverConfig.PostgresServerConfig != nil
+	if isPostgresProxyEnabled {
+		if err := proxyproto.GetPostgresServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress); err != nil {
+			log.Fatalf("failed to start postgres proxy server, reason=%v", err)
+		}
 	}
 
 	log.Infof("starting servers, env-authmethod=%v, env-api-key-set=%v",
