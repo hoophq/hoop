@@ -4,25 +4,29 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/hoophq/hoop/client/cmd/systemd"
+	"github.com/hoophq/hoop/client/cmd/daemon"
 	"github.com/spf13/cobra"
 )
 
 var (
 	startByOS = map[string]func() error{
-		"linux": systemd.StartLinuxAgent,
+		"linux": daemon.StartLinuxAgent,
+		"darwin": daemon.StartDarwinAgent,
 	}
 
 	removeByOS = map[string]func() error{
-		"linux": systemd.RemoveLinuxAgent,
+		"linux": daemon.RemoveLinuxAgent,
+		"darwin": daemon.RemoveDarwinAgent,
 	}
 
 	stopByOS = map[string]func() error{
-		"linux": systemd.StopLinuxAgent,
+		"linux": daemon.StopLinuxAgent,
+		"darwin": daemon.StopDarwinAgent,
 	}
 
 	logsByOS = map[string]func() error{
-		"linux": systemd.LogsLinuxAgent,
+		"linux": daemon.LogsLinuxAgent,
+		"darwin": daemon.LogsDarwinAgent,
 	}
 )
 

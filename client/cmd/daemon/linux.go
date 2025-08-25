@@ -1,4 +1,4 @@
-package systemd
+package daemon
 
 import (
 	"fmt"
@@ -11,27 +11,6 @@ import (
 )
 
 var vi = version.Get()
-
-type Options struct {
-	ServiceName string
-	ExecArgs    string
-	Env         map[string]string
-	UnitPath    string
-	WantedBy    string
-}
-
-func execPath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("get executable path: %w", err)
-	}
-
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		return "", fmt.Errorf("resolve executable symlinks: %w", err)
-	}
-	return exe, nil
-}
 
 func LogsLinuxAgent() error {
 	logsAgent("hoop-agent")
@@ -82,7 +61,6 @@ func install(opts Options) error {
 
 	exe = strings.ReplaceAll(exe, "%", "%%")
 	unitPath, err := userPaths(opts)
-
 	if err != nil {
 		return err
 	}
@@ -166,14 +144,6 @@ func userPaths(opts Options) (string, error) {
 		return "", fmt.Errorf("Error getting user home dir: %w", err)
 	}
 	return filepath.Join(home, ".config", "systemd", "user", opts.ServiceName+".service"), nil
-}
-
-type unitData struct {
-	Description string
-	ExecPath    string
-	ExecArgs    string
-	Env         map[string]string
-	WantedBy    string
 }
 
 func renderServiceFile(d unitData) string {
