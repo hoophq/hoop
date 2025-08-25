@@ -597,6 +597,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/dbaccess": {
+            "post": {
+                "description": "Create Database Access",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Create Database Access",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionDbAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionDbAccess"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/tables": {
             "get": {
                 "description": "List tables from a database without column details",
@@ -5200,6 +5259,66 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionDbAccess": {
+            "type": "object",
+            "properties": {
+                "connection_string": {
+                    "description": "The connection string to access the database instance",
+                    "type": "string",
+                    "example": "postgres://noop:noop@db.example.com:5432/mydb?sslmode=disable"
+                },
+                "created_at": {
+                    "description": "When the resource was created",
+                    "type": "string",
+                    "example": "2025-08-25T12:00:00Z"
+                },
+                "database_name": {
+                    "description": "The default database name of the connection",
+                    "type": "string",
+                    "example": "mydb"
+                },
+                "expire_at": {
+                    "description": "When the database access connection expires",
+                    "type": "string",
+                    "example": "2025-08-25T13:00:00Z"
+                },
+                "hostname": {
+                    "description": "The hostname to access the database instance",
+                    "type": "string",
+                    "example": "db.example.com"
+                },
+                "id": {
+                    "description": "The unique identifier of the connection database access",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "password": {
+                    "description": "The password of the database instance",
+                    "type": "string",
+                    "example": "noop"
+                },
+                "port": {
+                    "description": "The port of the database instance",
+                    "type": "string",
+                    "example": "5432"
+                },
+                "username": {
+                    "description": "The username of the database instance",
+                    "type": "string",
+                    "example": "noop"
+                }
+            }
+        },
+        "openapi.ConnectionDbAccessRequest": {
+            "type": "object",
+            "properties": {
+                "access_duration_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
         "openapi.ConnectionTag": {
             "type": "object",
             "properties": {
@@ -6539,6 +6658,19 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PostgresServerConfig": {
+            "type": "object",
+            "required": [
+                "listen_address"
+            ],
+            "properties": {
+                "listen_address": {
+                    "description": "The listen address to run the PostgreSQL server proxy",
+                    "type": "string",
+                    "example": "0.0.0.0:15432"
+                }
+            }
+        },
         "openapi.ProviderType": {
             "type": "string",
             "enum": [
@@ -7304,6 +7436,14 @@ const docTemplate = `{
                     "description": "The gRPC server URL used to advertise the gRPC server to clients",
                     "type": "string",
                     "default": "grpc://127.0.0.1:8010"
+                },
+                "postgres_server_config": {
+                    "description": "The PostgreSQL server proxy configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.PostgresServerConfig"
+                        }
+                    ]
                 },
                 "product_analytics": {
                     "description": "Either to enable or disable the product analytics tracking",

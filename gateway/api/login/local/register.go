@@ -23,7 +23,7 @@ import (
 //	@Tags			Authentication
 //	@Accept			json
 //	@Produce		json
-//	@Param			Token				header		string				false	"The access token generated after successful registration"
+//	@Param			Token				header		string						false	"The access token generated after successful registration"
 //	@Param			request				body		openapi.LocalUserRequest	true	"The request body resource"
 //	@Success		201					{object}	openapi.HTTPError
 //	@Failure		400,401,403,409,500	{object}	openapi.HTTPError

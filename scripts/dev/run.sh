@@ -59,6 +59,7 @@ docker run --rm --name hoopdev \
   -p 2225:22 \
   -p 8009:8009 \
   -p 8010:8010 \
+  -p 15432:15432 \
   --env-file=.env \
   --cap-add=NET_ADMIN \
   --add-host=host.docker.internal:host-gateway \
