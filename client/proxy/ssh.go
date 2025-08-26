@@ -63,6 +63,8 @@ func NewSSHServer(listenPort, connName string, client pb.ClientTransport, hostKe
 		if err != nil {
 			return nil, fmt.Errorf("failed obtaining any local address available, reason=%v", err)
 		}
+	} else {
+		listenHost = getListenAddr(defaultListenAddr(listenPort))
 	}
 
 	config := &ssh.ServerConfig{
