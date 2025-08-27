@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
