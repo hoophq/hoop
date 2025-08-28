@@ -1,0 +1,75 @@
+package searches
+
+import (
+	"strings"
+	"time"
+
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/hoophq/hoop/common/runbooks"
+)
+
+const RUNBOOK_CACHE_TTL = 1 * time.Minute
+
+type RunbookCache struct {
+	GitURL    string
+	Commit    *object.Commit
+	CreatedAt time.Time
+}
+
+var runbookCache = make(map[string]*RunbookCache)
+
+func getRunbookCommit(config *runbooks.Config, orgId string) (*object.Commit, error) {
+	// Try to get the cached commit
+	if cache, ok := runbookCache[orgId]; ok {
+		// Check if the cache is still valid and GitURL matches
+		if time.Since(cache.CreatedAt) < RUNBOOK_CACHE_TTL && cache.GitURL == config.GitURL {
+			return cache.Commit, nil
+		}
+	}
+
+	commit, err := runbooks.CloneRepositoryInMemory(config)
+	if err != nil {
+		return nil, err
+	}
+
+	runbookCache[orgId] = &RunbookCache{
+		GitURL:    config.GitURL,
+		Commit:    commit,
+		CreatedAt: time.Now(),
+	}
+
+	return commit, nil
+}
+
+func findRunbookFilesByPath(path string, config *runbooks.Config, orgId string) ([]string, error) {
+	commit, err := getRunbookCommit(config, orgId)
+	if err != nil {
+		return nil, err
+	}
+
+	var runbookPaths []string
+
+	ctree, _ := commit.Tree()
+	if ctree == nil {
+		return runbookPaths, nil
+	}
+	if path == "" {
+		return runbookPaths, nil
+	}
+
+	normalizedPath := strings.ToLower(path)
+
+	return runbookPaths, ctree.Files().ForEach(func(f *object.File) error {
+		if !runbooks.IsRunbookFile(f.Name) {
+			return nil
+		}
+
+		if !strings.Contains(strings.ToLower(f.Name), normalizedPath) {
+			return nil
+		}
+
+		runbookPaths = append(runbookPaths, f.Name)
+
+		return nil
+	})
+}

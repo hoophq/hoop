@@ -38,6 +38,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
+	searchesapi "github.com/hoophq/hoop/gateway/api/searches"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
@@ -704,5 +705,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiserverconfig.GenerateApiKey,
+	)
+
+	r.POST("/searches",
+		r.AuthMiddleware,
+		searchesapi.Post,
 	)
 }

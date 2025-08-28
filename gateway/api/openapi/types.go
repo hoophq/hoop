@@ -1638,3 +1638,52 @@ type ConnectionDbAccess struct {
 	// When the database access connection expires
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 }
+
+type ConnectionSearch struct {
+	// Unique ID of the resource
+	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+	// Status is a read only field that informs if the connection is available for interaction
+	// * online - The agent is connected and alive
+	// * offline - The agent is not connected
+	Status string `json:"status" readonly:"true" enums:"online,offline"`
+	// Toggle Ad Hoc Runbooks Executions
+	// * enabled - Enable to run runbooks for this connection
+	// * disabled - Disable runbooks execution for this connection
+	AccessModeRunbooks string `json:"access_mode_runbooks" binding:"required" enums:"enabled,disabled"`
+	// Toggle Ad Hoc Executions
+	// * enabled - Enable to run ad-hoc executions for this connection
+	// * disabled - Disable ad-hoc executions for this connection
+	AccessModeExec string `json:"access_mode_exec" binding:"required" enums:"enabled,disabled"`
+	// Toggle Port Forwarding
+	// * enabled - Enable to perform port forwarding for this connection
+	// * disabled - Disable port forwarding for this connection
+	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
+}
+
+type SearchResponse struct {
+	Connections []ConnectionSearch `json:"connections"`
+	Runbooks    []string           `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+}
+
+type SearchRequest struct {
+	Term string `json:"term"`
+}
