@@ -584,10 +584,18 @@ func parseCloudWatchTables(output string) (openapi.TablesResponse, error) {
 	return response, nil
 }
 
-func getConnectionCommandOverride(currentConnectionType pb.ConnectionType) []string {
+func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, connectionCmd []string) []string {
+	var cmd []string
 	switch currentConnectionType {
 	case pb.ConnectionTypeCloudWatch, pb.ConnectionTypeDynamoDB:
 		return []string{"bash"}
+	case pb.ConnectionTypeMongoDB:
+		// Force the execution using the legacy mongo cli
+		// It avoids using any wrapper scripts (.e.g: /opt/hoop/bin/mongo) to perform system queries
+		if len(connectionCmd) > 1 {
+			cmd = append(cmd, "/usr/local/bin/mongo")
+			cmd = append(cmd, connectionCmd[1:]...)
+		}
 	}
-	return nil
+	return cmd
 }
