@@ -1,4 +1,4 @@
-package searches
+package search
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 	"github.com/hoophq/hoop/common/runbooks"
 )
 
-const RUNBOOK_CACHE_TTL = 1 * time.Minute
+const RUNBOOK_CACHE_TTL = 5 * time.Minute
 
 type RunbookCache struct {
 	GitURL    string

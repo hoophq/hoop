@@ -38,7 +38,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
-	searchesapi "github.com/hoophq/hoop/gateway/api/searches"
+	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
@@ -707,8 +707,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiserverconfig.GenerateApiKey,
 	)
 
-	r.POST("/searches",
+	r.GET("/search",
 		r.AuthMiddleware,
-		searchesapi.Post,
+		searchapi.Get,
 	)
 }

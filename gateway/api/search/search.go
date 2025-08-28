@@ -1,4 +1,4 @@
-package searches
+package search
 
 import (
 	"fmt"
@@ -20,15 +20,16 @@ import (
 //	@Description	Performs a search for connections and runbooks based on the provided criteria.
 //	@Tags			Search
 //	@Produce		json
-//	@Param			request body openapi.SearchRequest true "The request body resource"
+//	@Param			term	query	string	true	"Search term"
 //	@Success		200 {object} openapi.SearchResponse
 //	@Failure		400,422,500	{object} openapi.HTTPError
-//	@Router			/searches [post]
-func Post(c *gin.Context) {
+//	@Router			/search [get]
+func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var req openapi.SearchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+
+	searchTerm := c.Query("term")
+	if searchTerm == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "term parameter is required"})
 		return
 	}
 
@@ -44,7 +45,7 @@ func Post(c *gin.Context) {
 	// Fetch connections in parallel
 	g.Go(func() error {
 		var err error
-		connectionsFound, err = models.SearchConnectionsBySimilarity(ctx, req.Term)
+		connectionsFound, err = models.SearchConnectionsBySimilarity(ctx, searchTerm)
 		if err != nil {
 			return fmt.Errorf("failed fetching connections: %w", err)
 		}
@@ -70,7 +71,7 @@ func Post(c *gin.Context) {
 			return nil
 		}
 
-		runbooksFound, err = findRunbookFilesByPath(req.Term, config, ctx.GetOrgID())
+		runbooksFound, err = findRunbookFilesByPath(searchTerm, config, ctx.GetOrgID())
 		if err != nil {
 			log.Infof("failed listing runbooks, err=%v", err)
 			runbookErr = fmt.Errorf("failed searching runbooks, reason=%v", err)

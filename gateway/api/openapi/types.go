@@ -1683,7 +1683,3 @@ type SearchResponse struct {
 	Connections []ConnectionSearch `json:"connections"`
 	Runbooks    []string           `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
 }
-
-type SearchRequest struct {
-	Term string `json:"term"`
-}
