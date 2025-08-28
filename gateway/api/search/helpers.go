@@ -19,9 +19,9 @@ type RunbookCache struct {
 
 var runbookCacheStore = memory.New()
 
-func getRunbookCommit(config *runbooks.Config, orgId string) (*object.Commit, error) {
+func getRunbookCommit(config *runbooks.Config, orgID string) (*object.Commit, error) {
 	// Try to get the cached commit
-	cache, _ := runbookCacheStore.Get(orgId).(*RunbookCache)
+	cache, _ := runbookCacheStore.Get(orgID).(*RunbookCache)
 	if cache != nil {
 		// Check if the cache is still valid and GitURL matches
 		if time.Since(cache.CreatedAt) < RUNBOOK_CACHE_TTL && cache.GitURL == config.GitURL {
@@ -34,17 +34,17 @@ func getRunbookCommit(config *runbooks.Config, orgId string) (*object.Commit, er
 		return nil, err
 	}
 
-	runbookCacheStore.Set(orgId, &RunbookCache{
+	runbookCacheStore.Set(orgID, &RunbookCache{
 		GitURL:    config.GitURL,
 		Commit:    commit,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
 	})
 
 	return commit, nil
 }
 
-func findRunbookFilesByPath(path string, config *runbooks.Config, orgId string) ([]string, error) {
-	commit, err := getRunbookCommit(config, orgId)
+func findRunbookFilesByPath(path string, config *runbooks.Config, orgID string) ([]string, error) {
+	commit, err := getRunbookCommit(config, orgID)
 	if err != nil {
 		return nil, err
 	}

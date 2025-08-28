@@ -45,7 +45,7 @@ func Get(c *gin.Context) {
 	// Fetch connections in parallel
 	g.Go(func() error {
 		var err error
-		connectionsFound, err = models.SearchConnectionsBySimilarity(ctx, searchTerm)
+		connectionsFound, err = models.SearchConnectionsBySimilarity(ctx.GetOrgID(), searchTerm)
 		if err != nil {
 			return fmt.Errorf("failed fetching connections: %w", err)
 		}

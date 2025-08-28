@@ -587,7 +587,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 }
 
 // SearchBySimilarity searches connections by name, type, or subtype using a case-insensitive search.
-func SearchConnectionsBySimilarity(ctx UserContext, searchTerm string) ([]Connection, error) {
+func SearchConnectionsBySimilarity(orgID string, searchTerm string) ([]Connection, error) {
 	var items []Connection
 
 	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
@@ -608,7 +608,7 @@ func SearchConnectionsBySimilarity(ctx UserContext, searchTerm string) ([]Connec
 				c.type::text ILIKE ? OR
 				c.subtype ILIKE ?
 			)
-		ORDER BY c.name ASC`, ctx.GetOrgID(), likeQuery, likeQuery, likeQuery).Find(&items).Error
+		ORDER BY c.name ASC`, orgID, likeQuery, likeQuery, likeQuery).Find(&items).Error
 
 	if err != nil {
 		return nil, err
