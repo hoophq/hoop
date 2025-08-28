@@ -586,7 +586,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	return items, nil
 }
 
-// SearchBySimilarity searches connections by name, type, or subtype using a case-insensitive
+// SearchBySimilarity searches connections by name, type, or subtype using a case-insensitive search.
 func SearchConnectionsBySimilarity(ctx UserContext, searchTerm string) ([]Connection, error) {
 	var items []Connection
 

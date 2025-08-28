@@ -17,13 +17,13 @@ import (
 // Search
 //
 //	@Summary		Search
-//	@Description	Reports if the service is working properly
-//	@Tags			Server Management
+//	@Description	Performs a search for connections and runbooks based on the provided criteria.
+//	@Tags			Search
 //	@Produce		json
 //	@Param			request body openapi.SearchRequest true "The request body resource"
-//	@Success		201 {object} openapi.SearchResponse
+//	@Success		200 {object} openapi.SearchResponse
 //	@Failure		400,422,500	{object} openapi.HTTPError
-//	@Router			/search [post]
+//	@Router			/searches [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.SearchRequest
@@ -91,7 +91,7 @@ func Post(c *gin.Context) {
 	}
 
 	// Build response
-	c.JSON(http.StatusCreated, buildSearchResponse(connectionsFound, runbooksFound))
+	c.JSON(http.StatusOK, buildSearchResponse(connectionsFound, runbooksFound))
 }
 
 func buildSearchResponse(connections []models.Connection, runbooks []string) openapi.SearchResponse {
