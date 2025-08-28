@@ -369,7 +369,6 @@ dbs.databases.forEach(function(database) {
 	});
 });
 print(JSON.stringify(result));`
-
 	case pb.ConnectionTypeMySQL:
 		script = `
 SELECT schema_name AS database_name
@@ -384,10 +383,11 @@ ORDER BY schema_name;`
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
 	client, err := clientexec.New(&clientexec.Options{
-		OrgID:          ctx.GetOrgID(),
-		ConnectionName: conn.Name,
-		BearerToken:    getAccessToken(c),
-		UserAgent:      userAgent,
+		OrgID:                     ctx.GetOrgID(),
+		ConnectionName:            conn.Name,
+		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType, conn.Command),
+		BearerToken:               getAccessToken(c),
+		UserAgent:                 userAgent,
 		// it sets the execution to perform plain executions
 		Verb: pb.ClientVerbPlainExec,
 	})
@@ -535,7 +535,7 @@ func ListTables(c *gin.Context) {
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:                     ctx.GetOrgID(),
 		ConnectionName:            conn.Name,
-		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType),
+		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType, conn.Command),
 		BearerToken:               getAccessToken(c),
 		UserAgent:                 userAgent,
 		Verb:                      pb.ClientVerbPlainExec,
