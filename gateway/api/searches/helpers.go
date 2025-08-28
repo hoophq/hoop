@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/runbooks"
 )
 
@@ -16,11 +17,12 @@ type RunbookCache struct {
 	CreatedAt time.Time
 }
 
-var runbookCache = make(map[string]*RunbookCache)
+var runbookCacheStore = memory.New()
 
 func getRunbookCommit(config *runbooks.Config, orgId string) (*object.Commit, error) {
 	// Try to get the cached commit
-	if cache, ok := runbookCache[orgId]; ok {
+	cache, _ := runbookCacheStore.Get(orgId).(*RunbookCache)
+	if cache != nil {
 		// Check if the cache is still valid and GitURL matches
 		if time.Since(cache.CreatedAt) < RUNBOOK_CACHE_TTL && cache.GitURL == config.GitURL {
 			return cache.Commit, nil
@@ -32,11 +34,11 @@ func getRunbookCommit(config *runbooks.Config, orgId string) (*object.Commit, er
 		return nil, err
 	}
 
-	runbookCache[orgId] = &RunbookCache{
+	runbookCacheStore.Set(orgId, &RunbookCache{
 		GitURL:    config.GitURL,
 		Commit:    commit,
 		CreatedAt: time.Now(),
-	}
+	})
 
 	return commit, nil
 }
