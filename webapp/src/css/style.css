@@ -2,6 +2,157 @@
   --separator-border: rgba(128, 128, 128, 0.35);
 }
 
+/* Command Palette Styles */
+[cmdk-root] {
+  max-width: 640px;
+  width: 100%;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  font-family: var(--default-font-family);
+  border: 1px solid hsl(var(--gray-6));
+  box-shadow: 
+    0 16px 70px rgb(0 0 0 / 20%), 
+    0 10px 24px rgb(0 0 0 / 40%), 
+    0 1px 4px rgb(0 0 0 / 60%);
+}
+
+[cmdk-input] {
+  font-family: var(--default-font-family);
+  border: none;
+  width: 100%;
+  font-size: 17px;
+  padding: 16px;
+  outline: none;
+  background: white;
+  color: hsl(var(--gray-12));
+}
+
+[cmdk-input]::placeholder {
+  color: hsl(var(--gray-11));
+}
+
+[cmdk-list] {
+  height: 320px;
+  min-height: 320px;
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  transition: 200ms ease;
+  transition-property: opacity;
+}
+
+[cmdk-list-sizer] {
+  padding: 8px;
+}
+
+[cmdk-item] {
+  content-visibility: auto;
+  cursor: pointer;
+  height: 48px;
+  border-radius: 8px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  color: hsl(var(--gray-12));
+  user-select: none;
+  will-change: background, color;
+  transition: all 150ms ease;
+  transition-property: background-color, color, transform;
+}
+
+[cmdk-item][data-selected='true'] {
+  background: hsl(var(--gray-4));
+  color: hsl(var(--gray-12));
+}
+
+[cmdk-item][data-selected='true']:active {
+  background: hsl(var(--gray-5));
+  color: hsl(var(--gray-12));
+}
+
+[cmdk-item]+[cmdk-item] {
+  margin-top: 4px;
+}
+
+[cmdk-item]:last-child {
+  margin-bottom: 0;
+}
+
+[cmdk-group-heading] {
+  user-select: none;
+  font-size: 12px;
+  color: hsl(var(--gray-11));
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  margin-top: 16px;
+  font-weight: 500;
+}
+
+[cmdk-group-heading]:first-child {
+  margin-top: 8px;
+}
+
+[cmdk-group]:not([hidden]) + [cmdk-group] {
+  margin-top: 8px;
+}
+
+[cmdk-group] [cmdk-group-items] {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+[cmdk-separator] {
+  height: 1px;
+  width: 100%;
+  background: hsl(var(--gray-6));
+  margin: 4px 0;
+}
+
+[cmdk-empty] {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  white-space: pre-wrap;
+  color: hsl(var(--gray-11));
+}
+
+[cmdk-loading] {
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  white-space: pre-wrap;
+  color: hsl(var(--gray-11));
+  opacity: 0.8;
+  transition: opacity 200ms ease;
+}
+
+/* Smooth fade-in animation for results */
+[cmdk-group] {
+  animation: fadeIn 200ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Smooth color transitions for search feedback */
+
 .allotment-module_splitView__L-yRc {
   height: 100%;
   overflow: hidden;

@@ -88,4 +88,7 @@
    :user nil
    :user-groups []
    :users []
-   :users->current-user {:loading true, :data nil}})
+   :users->current-user {:loading true, :data nil}
+   :command-palette {:open? false
+                     :query ""
+                     :search-results {:status :idle :data {}}}})

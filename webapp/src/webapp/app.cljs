@@ -25,6 +25,7 @@
    [webapp.components.headings :as h]
    [webapp.components.modal :as modals]
    [webapp.components.snackbar :as snackbar]
+   [webapp.components.command-palette :as command-palette]
    [webapp.connections.views.connection-list :as connections]
    [webapp.connections.views.setup.connection-update-form :as connection-update-form]
    [webapp.connections.views.setup.events.db-events]
@@ -63,6 +64,7 @@
    [webapp.events.slack-plugin]
    [webapp.events.tracking]
    [webapp.events.users]
+   [webapp.events.command-palette]
    [webapp.features.access-control.events]
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.subs]
@@ -223,6 +225,8 @@
              [dialog/new-dialog]
              [snackbar/snackbar]
              [draggable-card/main]
+             [command-palette/command-palette]
+             [command-palette/keyboard-listener]
              [sidebar/main panels]]))))))
 
 (defmulti layout identity)

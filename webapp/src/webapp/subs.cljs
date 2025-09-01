@@ -409,3 +409,14 @@
  :jira-integration->details
  (fn [db _]
    (:jira-integration->details db)))
+
+;; Command Palette subscriptions
+(re-frame/reg-sub
+ :command-palette
+ (fn [db _]
+   (:command-palette db)))
+
+(re-frame/reg-sub
+ :command-palette->search-results
+ (fn [db _]
+   (get-in db [:command-palette :search-results])))
