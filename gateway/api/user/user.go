@@ -122,23 +122,17 @@ func Create(c *gin.Context) {
 	}
 
 	ctx.Analytics().Identify(&types.APIContext{
-		OrgID:      ctx.OrgID,
-		OrgName:    ctx.OrgName,
-		UserID:     newUser.Email,
-		UserName:   newUser.Name,
-		UserEmail:  newUser.Email,
-		UserGroups: newUser.Groups,
+		OrgID:  ctx.OrgID,
+		UserID: newUser.ID,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		properties := map[string]any{
 			"user-agent": apiutils.NormalizeUserAgent(c.Request.Header.Values),
-			"name":       newUser.Name,
-			"api-url":    ctx.ApiURL,
 		}
-		ctx.Analytics().Track(newUser.Email, analytics.EventSignup, properties)
-		ctx.Analytics().Track(newUser.Email, analytics.EventCreateInvitedUser, properties)
+		ctx.Analytics().Track(newUser.ID, analytics.EventSignup, properties)
+		ctx.Analytics().Track(newUser.ID, analytics.EventCreateInvitedUser, properties)
 	}()
 
 	c.JSON(http.StatusCreated, newUser)
@@ -217,15 +211,10 @@ func Update(c *gin.Context) {
 
 	analytics.New().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
-		OrgName:    ctx.OrgName,
-		UserID:     existingUser.Email,
-		UserName:   existingUser.Name,
-		UserEmail:  existingUser.Email,
+		UserID:     existingUser.ID,
 		UserGroups: req.Groups,
 		UserStatus: existingUser.Status,
 		SlackID:    existingUser.SlackID,
-		ApiURL:     ctx.ApiURL,
-		GrpcURL:    ctx.GrpcURL,
 	})
 
 	c.JSON(http.StatusOK, openapi.User{
