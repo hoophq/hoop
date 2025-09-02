@@ -91,4 +91,6 @@
    :users->current-user {:loading true, :data nil}
    :command-palette {:open? false
                      :query ""
+                     :current-page :main
+                     :selected-connection {}
                      :search-results {:status :idle :data {}}}})
