@@ -1544,6 +1544,15 @@ type ServerMiscConfig struct {
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
 	// The PostgreSQL server proxy configuration
 	PostgresServerConfig *PostgresServerConfig `json:"postgres_server_config"`
+	// The SSH server proxy configuration
+	SSHServerConfig *SSHServerConfig `json:"ssh_server_config"`
+}
+
+type SSHServerConfig struct {
+	// The listen address to run the SSH server proxy
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222" binding:"required"`
+	// The hosts key used for SSH connections
+	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
 }
 
 type PostgresServerConfig struct {
@@ -1614,11 +1623,11 @@ type LocalUserRequest struct {
 	Name     string `json:"name"`
 }
 
-type ConnectionDbAccessRequest struct {
+type ConnectionCredentialsRequest struct {
 	AccessDurationSec int `json:"access_duration_seconds"`
 }
 
-type ConnectionDbAccess struct {
+type ConnectionCredentials struct {
 	// The unique identifier of the connection database access
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The default database name of the connection

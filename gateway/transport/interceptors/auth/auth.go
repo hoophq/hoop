@@ -15,7 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/proxyproto"
+	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -188,14 +188,14 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 
 		var subject string
-		impersonateAuthKey := md.Get(proxyproto.ImpersonateAuthKeyHeaderKey)
+		impersonateAuthKey := md.Get(grpckey.ImpersonateAuthKeyHeaderKey)
 		if len(impersonateAuthKey) > 0 {
-			if impersonateAuthKey[0] != proxyproto.ImpersonateSecretKey {
+			if impersonateAuthKey[0] != grpckey.ImpersonateSecretKey {
 				errMsg := "failed validating impersonation, impersonate auth key attribute is missing or does not match"
 				log.Warn(errMsg)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
-			userSubjectVal := md.Get(proxyproto.ImpersonateUserSubjectHeaderKey)
+			userSubjectVal := md.Get(grpckey.ImpersonateUserSubjectHeaderKey)
 			if len(userSubjectVal) == 0 || userSubjectVal[0] == "" {
 				errMsg := "failed validating impersonation, impersonate subject attribute is missing"
 				log.Warn(errMsg)
@@ -305,7 +305,7 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 }
 
 func parseBearerToken(md metadata.MD) (string, bool, error) {
-	if md.Get(proxyproto.ImpersonateAuthKeyHeaderKey) != nil {
+	if md.Get(grpckey.ImpersonateAuthKeyHeaderKey) != nil {
 		// this is an impersonation request, the token is not a bearer token
 		return "", false, nil
 	}

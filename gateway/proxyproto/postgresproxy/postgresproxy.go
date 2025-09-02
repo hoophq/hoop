@@ -1,4 +1,4 @@
-package proxyproto
+package postgresproxy
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 )
 
 var (
@@ -32,8 +33,8 @@ type PGServer struct {
 	listenAddr      string
 }
 
-// GetPostgresServerInstance returns the singleton instance of PGServer.
-func GetPostgresServerInstance() *PGServer {
+// GetServerInstance returns the singleton instance of PGServer.
+func GetServerInstance() *PGServer {
 	if server, ok := instanceStore.Get(instanceKey).(*PGServer); ok {
 		return server
 	}
@@ -60,7 +61,15 @@ func (s *PGServer) Start(listenAddr string) error {
 
 func (s *PGServer) Stop() error {
 	if server, ok := instanceStore.Pop(instanceKey).(*PGServer); ok {
-		_ = server.Close()
+		if s.connectionStore == nil {
+			return nil
+		}
+		for _, obj := range s.connectionStore.List() {
+			if pgConn, ok := obj.(*postgresConn); ok {
+				pgConn.cancelFn("proxy server is shutting down")
+			}
+		}
+
 		if server.listener != nil {
 			log.Infof("stopping postgres server proxy at %v", server.listener.Addr().String())
 			_ = server.listener.Close()
@@ -84,14 +93,14 @@ func runPgProxyServer(listenAddr string) (*PGServer, error) {
 			connectionID++
 			pgClient, err := lis.Accept()
 			if err != nil {
-				log.Errorf("failed obtaining postgres connection, err=%v", err)
+				log.With("conn", connectionID).Warnf("failed obtaining postgres connection, err=%v", err)
 				break
 			}
 
 			sid := uuid.NewString()
 			conn, err := newPostgresConnection(sid, strconv.Itoa(connectionID), pgClient)
 			if err != nil {
-				log.Warnf("failed creating new postgres connection, err=%v", err)
+				log.With("conn", connectionID).Warnf("failed creating new postgres connection, err=%v", err)
 				_, _ = pgClient.Write(pgtypes.NewFatalError("failed creating new postgres connection, err=%v", err).Encode())
 				_ = pgClient.Close()
 				continue
@@ -100,23 +109,11 @@ func runPgProxyServer(listenAddr string) (*PGServer, error) {
 
 			go func() {
 				defer server.connectionStore.Del(sid)
-				conn.handleConnection()
+				conn.handleTcpConnection()
 			}()
 		}
 	}()
 	return server, nil
-}
-
-func (s *PGServer) Close() error {
-	if s.connectionStore == nil {
-		return nil
-	}
-	for _, obj := range s.connectionStore.List() {
-		if pgConn, ok := obj.(*postgresConn); ok {
-			pgConn.cancelFn("server is shutting down")
-		}
-	}
-	return nil
 }
 
 type postgresConn struct {
@@ -175,7 +172,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 		return nil, fmt.Errorf("failed hashing secret key: %v", err)
 	}
 
-	dba, err := models.GetValidDbAccessBySecretKey(secretKeyHash)
+	dba, err := models.GetValidConnectionCredentialsBySecretKey(secretKeyHash)
 	if err != nil {
 		if err == models.ErrNotFound {
 			return nil, fmt.Errorf("invalid secret access key credentials")
@@ -207,8 +204,8 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 		TLSCA:         tlsCA,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
-		grpc.WithOption(ImpersonateAuthKeyHeaderKey, ImpersonateSecretKey),
-		grpc.WithOption(ImpersonateUserSubjectHeaderKey, dba.UserSubject),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", pb.ClientVerbConnect),
 		grpc.WithOption("session-id", sid),
@@ -220,14 +217,14 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 	return pgConn, nil
 }
 
-func (c *postgresConn) handleConnection() {
+func (c *postgresConn) handleTcpConnection() {
 	go c.handleClientWrite()
 	go c.handleServerWrite()
 
 	<-c.ctx.Done()
 
 	ctxErr := context.Cause(c.ctx)
-	log.With("sid", c.sid, "conn", c.id).Warnf("postgres connection closed, reason=%v", ctxErr)
+	log.With("sid", c.sid, "conn", c.id).Infof("postgres connection closed, reason=%v", ctxErr)
 	err := c.streamClient.Send(&pb.Packet{
 		Type: pbagent.SessionClose,
 		Spec: map[string][]byte{
@@ -235,7 +232,7 @@ func (c *postgresConn) handleConnection() {
 		},
 	})
 	if err != nil {
-		log.With("conn", c.id).Warnf("failed sending session close packet, err=%v", err)
+		log.With("sid", c.sid, "conn", c.id).Warnf("failed sending session close packet, err=%v", err)
 	}
 
 	// propagate any errors to the underline client connection
@@ -275,7 +272,7 @@ func (c *postgresConn) handleClientWrite() {
 
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.SessionOpenOK:
-			log.With("sid", c.sid).Infof("session opened successfully")
+			log.With("sid", c.sid, "conn", c.id).Infof("session opened successfully")
 			connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			if connectionType != pb.ConnectionTypePostgres {
 				c.cancelFn("unsupported connection type, got=%v", connectionType)

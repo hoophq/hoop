@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -113,6 +115,27 @@ func Base64DecodeEd25519PublicKey(encodedKey string) (ed25519.PublicKey, error) 
 		return nil, fmt.Errorf("invalid public key size: expected %d bytes, got %d bytes", ed25519.PublicKeySize, len(pubKeyBytes))
 	}
 	return ed25519.PublicKey(pubKeyBytes), nil
+}
+
+func EncodePrivateKeyToOpenSSH(privateKey ed25519.PrivateKey) ([]byte, error) {
+	block, err := ssh.MarshalPrivateKey(privateKey, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return pem.EncodeToMemory(block), nil
+}
+
+func DecodeOpenSSHPrivateKey(pemBytes []byte) (ed25519.PrivateKey, error) {
+	privateKey, err := ssh.ParseRawPrivateKey(pemBytes)
+	if err != nil {
+		return nil, err
+	}
+	ed25519Key, ok := privateKey.(*ed25519.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("key is not Ed25519, found=%T", privateKey)
+	}
+	return *ed25519Key, nil
 }
 
 func Hash256Key(secretKey string) (secret256Hash string, err error) {
