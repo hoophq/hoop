@@ -13,7 +13,6 @@
 (def CommandEmpty (.-CommandEmpty cmdk))
 (def CommandGroup (.-CommandGroup cmdk))
 (def CommandItem (.-CommandItem cmdk))
-(def CommandLoading (.-CommandLoading cmdk))
 (def CommandSeparator (.-CommandSeparator cmdk))
 
 (defn connection-icon
@@ -29,7 +28,8 @@
   [{:keys [id name type subtype status]}]
   [:> CommandItem
    {:key id
-    :value (str name " " type " " subtype)
+    :value name
+    :keywords [type subtype status "connection" "database" "terminal"]
     :onSelect (fn []
                 (rf/dispatch [:command-palette->close])
                 (rf/dispatch [:navigate :connection-detail {:id id}]))}
@@ -45,10 +45,12 @@
 (defn runbook-item
   "Componente para item de runbook"
   [runbook-path]
-  (let [filename (last (cs/split runbook-path #"/"))]
+  (let [filename (last (cs/split runbook-path #"/"))
+        directory (cs/join "/" (butlast (cs/split runbook-path #"/")))]
     [:> CommandItem
      {:key runbook-path
-      :value runbook-path
+      :value filename
+      :keywords ["runbook" "script" "sql" directory (cs/replace filename #"\.(sql|sh|py|js)$" "")]
       :onSelect (fn []
                   (rf/dispatch [:command-palette->close])
                   ;; TODO: Implementar navegação para runbook
@@ -59,6 +61,15 @@
        [:span {:class "text-sm font-medium"} filename]
        [:span {:class "text-xs text-gray-11"} runbook-path]]]]))
 
+(defn enhanced-empty-state
+  "Empty state melhorado"
+  [current-status]
+  [:> CommandEmpty
+   {:className "flex items-center justify-center text-center text-sm text-gray-11 h-full"}
+   (cond
+     (= current-status :idle) "Digite pelo menos 2 caracteres para buscar."
+     :else "Nenhum resultado encontrado.")])
+
 (defn command-palette
   "Componente principal do command palette"
   []
@@ -67,53 +78,52 @@
         status (:status search-results)
         ;; Mostrar indicador sutil de busca apenas no ícone
         is-searching? (or (= status :searching) (= status :loading))]
-    [:> CommandDialog
-     {:open (:open? palette-state)
-      :onOpenChange #(if %
-                       (rf/dispatch [:command-palette->open])
-                       (rf/dispatch [:command-palette->close]))
-      :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"}
+    [:> Command
+     {:shouldFilter false}  ; Usar filtro manual para busca assíncrona
 
-     [:div {:class "w-full max-w-2xl bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden h-96 flex flex-col"}
-      [:div {:class "flex items-center gap-3 px-4 py-3 border-b border-gray-6"}
-       [:> Search {:size 16
-                   :class (str "transition-colors duration-200 "
-                               (if is-searching?
-                                 "text-blue-9"
-                                 "text-gray-11"))}]
-       [:> CommandInput
-        {:placeholder "Buscar conexões e runbooks..."
-         :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
-         :onValueChange #(rf/dispatch [:command-palette->search %])}]]
+     [:> CommandDialog
+      {:open (:open? palette-state)
+       :onOpenChange #(if %
+                        (rf/dispatch [:command-palette->open])
+                        (rf/dispatch [:command-palette->close]))
+       :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"}
 
-      [:> CommandList
-       {:className "flex-1 overflow-y-auto p-2"}
+      [:div {:class "w-full max-w-2xl bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden h-96 flex flex-col"}
+       [:div {:class "flex items-center gap-3 px-4 py-3 border-b border-gray-6"}
+        [:> Search {:size 16
+                    :class (str "transition-colors duration-200 "
+                                (if is-searching?
+                                  "text-blue-9"
+                                  "text-gray-11"))}]
+        [:> CommandInput
+         {:placeholder "Buscar conexões e runbooks..."
+          :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
+          :onValueChange #(rf/dispatch [:command-palette->search %])}]]
 
-       [:> CommandEmpty
-        {:className "flex items-center justify-center text-center text-sm text-gray-11 h-full"}
-        (if (= status :idle)
-          "Digite pelo menos 2 caracteres para buscar."
-          "Nenhum resultado encontrado.")]
+       [:> CommandList
+        {:className "flex-1 overflow-y-auto p-2"}
 
-       (let [connections (:connections (:data search-results))
-             runbooks (:runbooks (:data search-results))]
-         [:<>
-          (when (seq connections)
-            [:> CommandGroup
-             {:heading "Conexões"}
-             (for [connection connections]
-               ^{:key (:id connection)}
-               [connection-item connection])])
+        [enhanced-empty-state status]
 
-          (when (and (seq connections) (seq runbooks))
-            [:> CommandSeparator])
+        (let [connections (:connections (:data search-results))
+              runbooks (:runbooks (:data search-results))]
+          [:<>
+           (when (seq connections)
+             [:> CommandGroup
+              {:heading "Conexões"}
+              (for [connection connections]
+                ^{:key (:id connection)}
+                [connection-item connection])])
 
-          (when (seq runbooks)
-            [:> CommandGroup
-             {:heading "Runbooks"}
-             (for [runbook runbooks]
-               ^{:key runbook}
-               [runbook-item runbook])])])]]]))
+           (when (and (seq connections) (seq runbooks))
+             [:> CommandSeparator])
+
+           (when (seq runbooks)
+             [:> CommandGroup
+              {:heading "Runbooks"}
+              (for [runbook runbooks]
+                ^{:key runbook}
+                [runbook-item runbook])])])]]]]))
 
 (defn keyboard-listener
   "Componente para capturar CMD+K / Ctrl+K"
