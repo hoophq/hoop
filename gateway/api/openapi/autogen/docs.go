@@ -3361,6 +3361,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/search": {
+            "get": {
+                "description": "Performs a search for connections and runbooks based on the provided criteria.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Search",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search term",
+                        "name": "term",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SearchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverconfig/auth": {
             "get": {
                 "description": "Get authentication configuration",
@@ -5319,6 +5366,78 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionSearch": {
+            "type": "object",
+            "required": [
+                "access_mode_connect",
+                "access_mode_exec",
+                "access_mode_runbooks",
+                "name",
+                "type"
+            ],
+            "properties": {
+                "access_mode_connect": {
+                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_exec": {
+                    "description": "Toggle Ad Hoc Executions\n* enabled - Enable to run ad-hoc executions for this connection\n* disabled - Disable ad-hoc executions for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_runbooks": {
+                    "description": "Toggle Ad Hoc Runbooks Executions\n* enabled - Enable to run runbooks for this connection\n* disabled - Disable runbooks execution for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "id": {
+                    "description": "Unique ID of the resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "status": {
+                    "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
+                    "type": "string",
+                    "enum": [
+                        "online",
+                        "offline"
+                    ],
+                    "readOnly": true
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
+                }
+            }
+        },
         "openapi.ConnectionTag": {
             "type": "object",
             "properties": {
@@ -7139,6 +7258,27 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "openapi.SearchResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionSearch"
+                    }
+                },
+                "runbooks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "myrunbooks/run-backup.runbook.sql",
+                        "myrunbooks/run-update.runbook.sql"
+                    ]
                 }
             }
         },

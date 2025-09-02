@@ -586,6 +586,37 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	return items, nil
 }
 
+// SearchBySimilarity searches connections by name, type, or subtype using a case-insensitive search.
+func SearchConnectionsBySimilarity(orgID string, searchTerm string) ([]Connection, error) {
+	var items []Connection
+
+	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
+	err := DB.Raw(`
+		SELECT
+			c.id,
+			c.name,
+			c.type,
+			c.subtype,
+			c.status,
+			c.access_mode_runbooks,
+			c.access_mode_exec,
+			c.access_mode_connect
+		FROM private.connections c
+		WHERE
+			c.org_id = ? AND (
+				c.name ILIKE ? OR
+				c.type::text ILIKE ? OR
+				c.subtype ILIKE ?
+			)
+		ORDER BY c.name ASC`, orgID, likeQuery, likeQuery, likeQuery).Find(&items).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
 func setConnectionOptionDefaults(opts *ConnectionFilterOption) {
 	if opts.AgentID == "" {
 		opts.AgentID = "%"
