@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/keys"
@@ -81,6 +82,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		OrgID:          ctx.OrgID,
 		UserSubject:    ctx.UserID,
 		ConnectionName: conn.Name,
+		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
 		SecretKeyHash:  cred.secretKeyHash,
 		CreatedAt:      time.Now().UTC(),
 		ExpireAt:       expireAt,
@@ -92,7 +94,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 	c.JSON(201,
 		openapi.ConnectionCredentials{
 			ID:               db.ID,
-			DatabaseName:     cred.databaseName,
+			DatabaseName:     ptr.ToString(cred.databaseName),
 			Hostname:         cred.serverHostname,
 			Username:         cred.username,
 			Password:         cred.secretKey,
@@ -110,7 +112,7 @@ type credentialsInfo struct {
 	username         string
 	secretKey        string
 	secretKeyHash    string
-	databaseName     string
+	databaseName     *string
 	connectionString string
 }
 
@@ -118,12 +120,12 @@ func getKeyPrefixAndServerPort(serverConf *models.ServerMiscConfig, connType pro
 	var listenAddr string
 	switch connType {
 	case proto.ConnectionTypePostgres:
-		if serverConf.PostgresServerConfig != nil {
+		if serverConf != nil && serverConf.PostgresServerConfig != nil {
 			listenAddr = serverConf.PostgresServerConfig.ListenAddress
 		}
 		keyPrefix = "pg"
 	case proto.ConnectionTypeSSH:
-		if serverConf.SSHServerConfig != nil {
+		if serverConf != nil && serverConf.SSHServerConfig != nil {
 			listenAddr = serverConf.SSHServerConfig.ListenAddress
 		}
 		keyPrefix = "ssh"
@@ -146,27 +148,27 @@ func newAccessCredentials(serverHost string, serverConf *models.ServerMiscConfig
 		username:         "hoop",
 		secretKey:        secretKey,
 		secretKeyHash:    secretKeyHash,
-		databaseName:     "",
+		databaseName:     nil,
 		connectionString: "",
 	}
 
 	defaultDBEnc := conn.Envs["envvar:DB"]
 	if defaultDBEnc != "" {
 		defaultDBBytes, _ := base64.RawStdEncoding.DecodeString(defaultDBEnc)
-		info.databaseName = string(defaultDBBytes)
+		info.databaseName = ptr.String(string(defaultDBBytes))
 	}
 	switch connType {
 	case proto.ConnectionTypePostgres:
-		if serverConf.PostgresServerConfig == nil {
+		if serverConf == nil || serverConf.PostgresServerConfig == nil {
 			return credentialsInfo{}, fmt.Errorf("server proxy is not configured for Postgres")
 		}
-		if info.databaseName == "" {
-			info.databaseName = "postgres"
+		if info.databaseName == nil {
+			info.databaseName = ptr.String("postgres")
 		}
 		info.connectionString = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			secretKey, info.username, serverHost, serverPort, info.databaseName)
+			secretKey, info.username, serverHost, serverPort, ptr.ToString(info.databaseName))
 	case proto.ConnectionTypeSSH:
-		if serverConf.SSHServerConfig == nil {
+		if serverConf == nil || serverConf.SSHServerConfig == nil {
 			return credentialsInfo{}, fmt.Errorf("server proxy is not configured for SSH")
 		}
 		info.connectionString = fmt.Sprintf("ssh://%s@%s:%s", info.username, info.serverHostname, info.serverPort)

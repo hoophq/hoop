@@ -172,7 +172,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 		return nil, fmt.Errorf("failed hashing secret key: %v", err)
 	}
 
-	dba, err := models.GetValidConnectionCredentialsBySecretKey(secretKeyHash)
+	dba, err := models.GetValidConnectionCredentialsBySecretKey(pb.ConnectionTypePostgres.String(), secretKeyHash)
 	if err != nil {
 		if err == models.ErrNotFound {
 			return nil, fmt.Errorf("invalid secret access key credentials")

@@ -264,77 +264,49 @@ var (
 	instanceStateStop  instanceState = "stop"
 )
 
-func parsePostgresConfigState(currentState, newState *models.ServerMiscConfig) (conf models.PostgresServerConfig, state instanceState) {
+func parsePostgresConfigState(currentState, newState *models.ServerMiscConfig) (newConf models.PostgresServerConfig, state instanceState) {
 	var currentConf models.PostgresServerConfig
 	if currentState != nil && currentState.PostgresServerConfig != nil {
 		currentConf = *currentState.PostgresServerConfig
 	}
 
-	var newConf models.PostgresServerConfig
 	if newState != nil && newState.PostgresServerConfig != nil {
 		newConf = *newState.PostgresServerConfig
 	}
 
-	// configuration has drifted, new configuration is different, start the server
-	if currentConf.ListenAddress == "" && newConf.ListenAddress != "" {
+	switch {
+	// stop instance when new configuration is empty
+	case newConf.ListenAddress == "":
+		return newConf, "stop"
+	// restart on configuration drift
+	case currentConf.ListenAddress != newConf.ListenAddress:
 		return newConf, "start"
+	// noop, no configuration drift
+	default:
+		return
 	}
-
-	// configuration has drifted, new configuration is missing, stop the server
-	if currentConf.ListenAddress != "" && newConf.ListenAddress == "" {
-		return conf, "stop"
-	}
-
-	// configuration has drifted, new configuration is different, restart the server
-	if currentConf.ListenAddress != "" && currentConf.ListenAddress != newConf.ListenAddress {
-		return newConf, "start"
-	}
-
-	// noop, no configuration drifts
-	return
 }
 
-func parseSSHConfigState(currentState, newState *models.ServerMiscConfig) (conf models.SSHServerConfig, state instanceState) {
+func parseSSHConfigState(currentState, newState *models.ServerMiscConfig) (newConf models.SSHServerConfig, state instanceState) {
 	var currentConf models.SSHServerConfig
 	if currentState != nil && currentState.SSHServerConfig != nil {
 		currentConf = *currentState.SSHServerConfig
 	}
-	var newConf models.SSHServerConfig
 	if newState != nil && newState.SSHServerConfig != nil {
 		newConf = *newState.SSHServerConfig
 	}
 
-	if currentConf.ListenAddress == "" && newConf.ListenAddress != "" {
+	switch {
+	// stop instance when new configuration is empty
+	case newConf.ListenAddress == "":
+		return newConf, "stop"
+	// restart on configuration drift
+	case currentConf.ListenAddress != newConf.ListenAddress || currentConf.HostsKey != newConf.HostsKey:
 		return newConf, "start"
+	// noop, no configuration drift
+	default:
+		return
 	}
-
-	if currentConf.ListenAddress != "" && newConf.ListenAddress == "" {
-		return conf, "stop"
-	}
-
-	if currentConf.ListenAddress != "" && newConf.ListenAddress != "" {
-		if listenAddrChanged := currentConf.ListenAddress != newConf.ListenAddress; listenAddrChanged {
-			return newConf, "start"
-		}
-
-		// hosts key has new configuration, start it
-		if currentConf.HostsKey == "" && newConf.HostsKey != "" {
-			return newConf, "start"
-		}
-
-		// erasing new configuration, stop it
-		if currentConf.HostsKey != "" && newConf.HostsKey == "" {
-			return conf, "stop"
-		}
-
-		// hosts key has changed, restart the server
-		if currentConf.HostsKey != newConf.HostsKey {
-			return newConf, "start"
-		}
-	}
-
-	// noop, no configuration drifts
-	return
 }
 
 func newEd25519PrivateKey() (privateKey []byte, err error) {

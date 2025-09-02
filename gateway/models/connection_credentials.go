@@ -11,6 +11,7 @@ type ConnectionCredentials struct {
 	OrgID          string    `gorm:"column:org_id"`
 	UserSubject    string    `gorm:"column:user_subject"`
 	ConnectionName string    `gorm:"column:connection_name"`
+	ConnectionType string    `gorm:"column:connection_type"`
 	SecretKeyHash  string    `gorm:"column:secret_key_hash"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	ExpireAt       time.Time `gorm:"column:expire_at"`
@@ -34,10 +35,10 @@ func GetConnectionCredentialsByID(orgID, id string) (*ConnectionCredentials, err
 
 // GetValidConnectionCredentialsBySecretKey retrieves a valid connection credential by its secret key hash.
 // if a user has a valid connection credential, it could be used to connect in the requested resource
-func GetValidConnectionCredentialsBySecretKey(secretKeyHash string) (*ConnectionCredentials, error) {
+func GetValidConnectionCredentialsBySecretKey(connectionType, secretKeyHash string) (*ConnectionCredentials, error) {
 	var resp ConnectionCredentials
 	err := DB.Table("private.connection_credentials").
-		Where("secret_key_hash = ?", secretKeyHash).
+		Where("connection_type = ? AND secret_key_hash = ?", connectionType, secretKeyHash).
 		First(&resp).
 		Error
 	if err == gorm.ErrRecordNotFound {

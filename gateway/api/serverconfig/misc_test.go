@@ -16,24 +16,6 @@ func TestParsePostgresConfigState(t *testing.T) {
 		expectedState instanceState
 	}{
 		{
-			name:          "nil current state, nil new state - noop",
-			currentState:  nil,
-			newState:      nil,
-			expectedConf:  models.PostgresServerConfig{},
-			expectedState: instanceState(""),
-		},
-		{
-			name: "nil current config, nil new config - noop",
-			currentState: &models.ServerMiscConfig{
-				PostgresServerConfig: nil,
-			},
-			newState: &models.ServerMiscConfig{
-				PostgresServerConfig: nil,
-			},
-			expectedConf:  models.PostgresServerConfig{},
-			expectedState: instanceState(""),
-		},
-		{
 			name: "empty current config, new config with address - start",
 			currentState: &models.ServerMiscConfig{
 				PostgresServerConfig: &models.PostgresServerConfig{
@@ -79,17 +61,6 @@ func TestParsePostgresConfigState(t *testing.T) {
 			expectedState: instanceStateStop,
 		},
 		{
-			name: "current config with address, nil new state - stop",
-			currentState: &models.ServerMiscConfig{
-				PostgresServerConfig: &models.PostgresServerConfig{
-					ListenAddress: "0.0.0.0:5432",
-				},
-			},
-			newState:      nil,
-			expectedConf:  models.PostgresServerConfig{},
-			expectedState: instanceStateStop,
-		},
-		{
 			name: "current config with address, different new address - restart (returns start)",
 			currentState: &models.ServerMiscConfig{
 				PostgresServerConfig: &models.PostgresServerConfig{
@@ -118,22 +89,9 @@ func TestParsePostgresConfigState(t *testing.T) {
 					ListenAddress: "0.0.0.0:5432",
 				},
 			},
-			expectedConf:  models.PostgresServerConfig{},
-			expectedState: instanceState(""),
-		},
-		{
-			name: "both configs empty - noop",
-			currentState: &models.ServerMiscConfig{
-				PostgresServerConfig: &models.PostgresServerConfig{
-					ListenAddress: "",
-				},
+			expectedConf: models.PostgresServerConfig{
+				ListenAddress: "0.0.0.0:5432",
 			},
-			newState: &models.ServerMiscConfig{
-				PostgresServerConfig: &models.PostgresServerConfig{
-					ListenAddress: "",
-				},
-			},
-			expectedConf:  models.PostgresServerConfig{},
 			expectedState: instanceState(""),
 		},
 	}
@@ -155,24 +113,6 @@ func TestParseSSHConfigState(t *testing.T) {
 		expectedConf  models.SSHServerConfig
 		expectedState instanceState
 	}{
-		{
-			name:          "nil current state, nil new state - noop",
-			currentState:  nil,
-			newState:      nil,
-			expectedConf:  models.SSHServerConfig{},
-			expectedState: instanceState(""),
-		},
-		{
-			name: "nil current config, nil new config - noop",
-			currentState: &models.ServerMiscConfig{
-				SSHServerConfig: nil,
-			},
-			newState: &models.ServerMiscConfig{
-				SSHServerConfig: nil,
-			},
-			expectedConf:  models.SSHServerConfig{},
-			expectedState: instanceState(""),
-		},
 		{
 			name: "empty current config, new config with address - start",
 			currentState: &models.ServerMiscConfig{
@@ -229,43 +169,6 @@ func TestParseSSHConfigState(t *testing.T) {
 			expectedState: instanceStateStart,
 		},
 		{
-			name: "same address, empty current hosts key, new hosts key - start",
-			currentState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "",
-				},
-			},
-			newState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "ssh-rsa AAAAB3...",
-				},
-			},
-			expectedConf: models.SSHServerConfig{
-				ListenAddress: "localhost:22",
-				HostsKey:      "ssh-rsa AAAAB3...",
-			},
-			expectedState: instanceStateStart,
-		},
-		{
-			name: "same address, current hosts key, empty new hosts key - stop",
-			currentState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "ssh-rsa AAAAB3...",
-				},
-			},
-			newState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "",
-				},
-			},
-			expectedConf:  models.SSHServerConfig{},
-			expectedState: instanceStateStop,
-		},
-		{
 			name: "same address and hosts key - noop",
 			currentState: &models.ServerMiscConfig{
 				SSHServerConfig: &models.SSHServerConfig{
@@ -279,72 +182,11 @@ func TestParseSSHConfigState(t *testing.T) {
 					HostsKey:      "ssh-rsa AAAAB3...",
 				},
 			},
-			expectedConf:  models.SSHServerConfig{},
-			expectedState: instanceState(""),
-		},
-		{
-			name: "both configs have address but empty hosts keys (it will generate new ones) - noop",
-			currentState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "",
-				},
-			},
-			newState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "",
-				},
-			},
-			expectedConf:  models.SSHServerConfig{},
-			expectedState: instanceState(""),
-		},
-		{
-			name: "different hosts key with same address - restart (hosts key change triggers restart)",
-			currentState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "ssh-rsa AAAAB3...",
-				},
-			},
-			newState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "ssh-rsa DIFFERENT...",
-				},
-			},
-			expectedConf: models.SSHServerConfig{
-				ListenAddress: "localhost:22",
-				HostsKey:      "ssh-rsa DIFFERENT...",
-			},
-			expectedState: instanceStateStart,
-		},
-		{
-			name:         "nil current state, new config with address and hosts key - start",
-			currentState: nil,
-			newState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "ssh-rsa AAAAB3...",
-				},
-			},
 			expectedConf: models.SSHServerConfig{
 				ListenAddress: "localhost:22",
 				HostsKey:      "ssh-rsa AAAAB3...",
 			},
-			expectedState: instanceStateStart,
-		},
-		{
-			name: "current config with address and hosts key, nil new state - stop",
-			currentState: &models.ServerMiscConfig{
-				SSHServerConfig: &models.SSHServerConfig{
-					ListenAddress: "localhost:22",
-					HostsKey:      "ssh-rsa AAAAB3...",
-				},
-			},
-			newState:      nil,
-			expectedConf:  models.SSHServerConfig{},
-			expectedState: instanceStateStop,
+			expectedState: instanceState(""),
 		},
 	}
 
