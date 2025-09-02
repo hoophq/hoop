@@ -92,5 +92,5 @@
    :command-palette {:open? false
                      :query ""
                      :current-page :main
-                     :selected-connection {}
+                     :context {}
                      :search-results {:status :idle :data {}}}})

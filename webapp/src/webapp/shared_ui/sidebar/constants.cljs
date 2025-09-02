@@ -6,20 +6,69 @@
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
+;; Dicionário central de ícones com tamanho flexível (fonte única da verdade)
+(def icons-registry
+  {"Connections" (fn [& [{:keys [size] :or {size 24}}]]
+                   [:> Rotate3d {:size size}])
+   "Dashboard" (fn [& [{:keys [size] :or {size 24}}]]
+                 [:> LayoutDashboard {:size size}])
+   "Terminal" (fn [& [{:keys [size] :or {size 24}}]]
+                [:> SquareCode {:size size}])
+   "Sessions" (fn [& [{:keys [size] :or {size 24}}]]
+                [:> GalleryVerticalEnd {:size size}])
+   "Reviews" (fn [& [{:keys [size] :or {size 24}}]]
+               [:> Inbox {:size size}])
+   "Runbooks" (fn [& [{:keys [size] :or {size 24}}]]
+                [:> BookMarked {:size size}])
+   "Guardrails" (fn [& [{:keys [size] :or {size 24}}]]
+                  [:> ShieldCheck {:size size}])
+   "JiraTemplates" (fn [& [{:keys [size] :or {size 24}}]]
+                     (let [css-size (case size
+                                      16 "w-4 h-4"
+                                      24 "w-6 h-6"
+                                      "w-6 h-6")]
+                       [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
+                              :class css-size}]))
+   "AIDataMasking" (fn [& [{:keys [size] :or {size 24}}]]
+                     [:> VenetianMask {:size size}])
+   "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
+                     [:> UserRoundCheck {:size size}])
+   "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
+                         [:> PackageSearch {:size size}])
+   "Agents" (fn [& [{:keys [size] :or {size 24}}]]
+              [:> BrainCog {:size size}])
+   "authentication" (fn [& [{:keys [size] :or {size 24}}]]
+                      [:> ShieldCheck {:size size}])
+   "jira" (fn [& [{:keys [size] :or {size 24}}]]
+            (let [css-size (case size
+                             16 "w-4 h-4"
+                             24 "w-6 h-6"
+                             "w-6 h-6")]
+              [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
+                     :class css-size}]))
+   "webhooks" (fn [& [{:keys [size] :or {size 24}}]]
+                [:> PackageSearch {:size size}])
+   "slack" (fn [& [{:keys [size] :or {size 24}}]]
+             [:> PackageSearch {:size size}])
+   "infrastructure" (fn [& [{:keys [size] :or {size 24}}]]
+                      [:> LayoutDashboard {:size size}])
+   "license" (fn [& [{:keys [size] :or {size 24}}]]
+               [:> ShieldCheck {:size size}])
+   "users" (fn [& [{:keys [size] :or {size 24}}]]
+             [:> UserRoundCheck {:size size}])})
+
 ;; Menu principal
 (def main-routes
   [{:name "Connections"
     :label "Connections"
-    :icon (fn []
-            [:> Rotate3d {:size 24}])
+    :icon (get icons-registry "Connections")
     :uri (routes/url-for :connections)
     :navigate :connections
     :free-feature? true
     :admin-only? false}
    {:name "Dashboard"
     :label "Dashboard"
-    :icon (fn []
-            [:> LayoutDashboard {:size 24}])
+    :icon (get icons-registry "Dashboard")
     :uri (routes/url-for :dashboard)
     :navigate :dashboard
     :free-feature? false
@@ -27,24 +76,21 @@
     :admin-only? true}
    {:name "Terminal"
     :label "Terminal"
-    :icon (fn []
-            [:> SquareCode {:size 24}])
+    :icon (get icons-registry "Terminal")
     :uri (routes/url-for :editor-plugin)
     :navigate :editor-plugin
     :free-feature? true
     :admin-only? false}
    {:name "Sessions"
     :label "Sessions"
-    :icon (fn []
-            [:> GalleryVerticalEnd {:size 24}])
+    :icon (get icons-registry "Sessions")
     :uri (routes/url-for :sessions)
     :navigate :sessions
     :free-feature? true
     :admin-only? false}
    {:name "Reviews"
     :label "Reviews"
-    :icon (fn []
-            [:> Inbox {:size 24}])
+    :icon (get icons-registry "Reviews")
     :uri (routes/url-for :reviews-plugin)
     :free-feature? true
     :navigate :reviews-plugin
@@ -54,26 +100,21 @@
 (def discover-routes
   [{:name "Runbooks"
     :label "Runbooks"
-    :icon (fn []
-            [:> BookMarked {:size 24}])
+    :icon (get icons-registry "Runbooks")
     :uri (routes/url-for :runbooks)
     :navigate :runbooks
     :free-feature? true
     :admin-only? true}
    {:name "Guardrails"
     :label "Guardrails"
-    :icon (fn []
-            [:> ShieldCheck {:size 24}])
+    :icon (get icons-registry "Guardrails")
     :uri (routes/url-for :guardrails)
     :navigate :guardrails
     :free-feature? true
     :admin-only? true}
    {:name "JiraTemplates"
     :label "Jira Templates"
-    :icon (fn []
-            [:div
-             [:figure {:class "flex-shrink-0 w-6"}
-              [:img {:src (str config/webapp-url "/icons/icon-jira.svg")}]]])
+    :icon (get icons-registry "JiraTemplates")
     :uri (routes/url-for :jira-templates)
     :navigate :jira-templates
     :free-feature? false
@@ -81,8 +122,7 @@
     :admin-only? true}
    {:name "AIDataMasking"
     :label "AI Data Masking"
-    :icon (fn []
-            [:> VenetianMask {:size 24}])
+    :icon (get icons-registry "AIDataMasking")
     :uri (routes/url-for :ai-data-masking)
     :navigate :ai-data-masking
     :free-feature? false
@@ -90,8 +130,7 @@
     :admin-only? true}
    {:name "AccessControl"
     :label "Access Control"
-    :icon (fn []
-            [:> UserRoundCheck {:size 24}])
+    :icon (get icons-registry "AccessControl")
     :uri (routes/url-for :access-control)
     :navigate :access-control
     :free-feature? true
@@ -107,8 +146,7 @@
       :admin-only? true}
    {:name "ResourceDiscovery"
     :label "Resource Discovery"
-    :icon (fn []
-            [:> PackageSearch {:size 24}])
+    :icon (get icons-registry "ResourceDiscovery")
     :uri (routes/url-for :integrations-aws-connect)
     :navigate :integrations-aws-connect
     :free-feature? false
@@ -120,8 +158,7 @@
 (def organization-routes
   [{:name "Agents"
     :label "Agents"
-    :icon (fn []
-            [:> BrainCog {:size 24}])
+    :icon (get icons-registry "Agents")
     :uri (routes/url-for :agents)
     :navigate :agents
     :free-feature? true
