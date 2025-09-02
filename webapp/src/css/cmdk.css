@@ -31,6 +31,10 @@
   animation: fadeIn 200ms ease-out;
 }
 
+[cmdk-group]:not(:first-child) {
+  margin-top: var(--space-3);
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -43,6 +47,7 @@
 }
 
 [cmdk-group-heading] {
+  margin-bottom: var(--space-2);
   color: var(--gray-9);
   font-size: var(--font-size-1);
   line-height: var(--line-height-1);

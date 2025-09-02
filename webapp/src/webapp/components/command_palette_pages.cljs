@@ -59,7 +59,10 @@
   [search-results]
   (let [search-status (:status search-results)
         connections (:connections (:data search-results))
-        runbooks (:runbooks (:data search-results))]
+        runbooks (:runbooks (:data search-results))
+        ;; Separar itens em grupos
+        suggestions (filter #(contains? #{"Connections" "Terminal"} (:id %)) constants/main-navigation-items)
+        quick-access (remove #(contains? #{"Connections" "Terminal"} (:id %)) constants/main-navigation-items)]
     [:<>
      ;; Resultados de busca (se houver)
      (when (and (= search-status :ready) (or (seq connections) (seq runbooks)))
@@ -80,10 +83,19 @@
 
         [:> CommandSeparator]])
 
-     ;; Páginas estáticas (sempre visíveis)
+     ;; Suggestions (Connections e Terminal)
+     [:> CommandGroup
+      {:heading "Suggestions"}
+      (for [item suggestions]
+        ^{:key (:id item)}
+        [action-item item])]
+
+     [:> CommandSeparator]
+
+     ;; Quick Access (resto das páginas)
      [:> CommandGroup
       {:heading "Quick Access"}
-      (for [item constants/main-navigation-items]
+      (for [item quick-access]
         ^{:key (:id item)}
         [action-item item])]]))
 
