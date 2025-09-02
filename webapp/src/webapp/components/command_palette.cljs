@@ -1,6 +1,7 @@
 (ns webapp.components.command-palette
   (:require
    ["cmdk" :as cmdk]
+   ["@radix-ui/themes" :refer [Text]]
    ["lucide-react" :refer [Search Hash Database Terminal FileText Globe Monitor Settings HelpCircle X]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -32,14 +33,10 @@
     :keywords [type subtype status "connection" "database" "terminal"]
     :onSelect (fn []
                 (rf/dispatch [:command-palette->show-connection-actions connection]))}
-   [:div {:class "flex items-center gap-3 py-2"}
+   [:div {:class "flex items-center gap-2"}
     [:> (connection-icon type) {:size 16 :class "text-gray-11"}]
     [:div {:class "flex flex-col"}
-     [:span {:class "text-sm font-medium"} name]
-     [:div {:class "flex items-center gap-2 text-xs text-gray-11"}
-      [:span subtype]
-      (when (= status "online")
-        [:div {:class "w-2 h-2 bg-green-9 rounded-full"}])]]]])
+     [:> Text {:size "2"} name]]]])
 
 (defn runbook-item
   "Componente para item de runbook"
@@ -54,11 +51,11 @@
                   (rf/dispatch [:command-palette->close])
                   ;; TODO: Implementar navegação para runbook
                   (js/console.log "Navigate to runbook:" runbook-path))}
-     [:div {:class "flex items-center gap-3 py-2"}
+     [:div {:class "flex items-center gap-2"}
       [:> FileText {:size 16 :class "text-gray-11"}]
       [:div {:class "flex flex-col"}
        [:span {:class "text-sm font-medium"} filename]
-       [:span {:class "text-xs text-gray-11"} runbook-path]]]]))
+       [:span {:class "text-xs"} runbook-path]]]]))
 
 (defn connection-action-item
   "Componente para ação de uma conexão"
@@ -70,10 +67,10 @@
     :onSelect (fn []
                 (rf/dispatch [:command-palette->close])
                 (when action (action)))}
-   [:div {:class "flex items-center gap-3 py-2"}
+   [:div {:class "flex items-center gap-2"}
     [:> icon {:size 16 :class "text-gray-11"}]
     [:div {:class "flex flex-col"}
-     [:span {:class "text-sm font-medium"} label]]]])
+     [:> Text {:class "hover:text-[--gray-12]" :size "2"} label]]]])
 
 (defn connection-actions-list
   "Lista de ações disponíveis para uma conexão"
@@ -129,8 +126,9 @@
 (defn connection-tag
   "Tag mostrando a conexão selecionada"
   [connection]
-  [:div {:class "flex items-center gap-2 bg-gray-3 text-gray-12 px-2 py-1 rounded text-xs font-medium"}
-   [:span (:name connection)]
+  [:div {:class "flex items-center gap-2 bg-[--gray-a3] px-2 py-1 rounded-full"}
+   [:> Text {:size "1" :weight "medium" :class "text-[--gray-11]"}
+    (:name connection)]
    [:button {:class "hover:bg-gray-5 rounded p-0.5 transition-colors"
              :on-click #(rf/dispatch [:command-palette->back-to-main])}
     [:> X {:size 12}]]])
@@ -173,6 +171,7 @@
          [:> CommandDialog
           {:open (:open? @palette-state)
            :label "Command Palette"
+           :container (.querySelector js/document ".radix-themes")
            :onOpenChange #(if %
                             (rf/dispatch [:command-palette->open])
                             (rf/dispatch [:command-palette->close]))
@@ -187,17 +186,18 @@
                                       "text-gray-11"))}]
             [:div {:class "flex items-center gap-2 flex-1"}
              ;; Tag da conexão selecionada (quando em connection-actions)
-             (when (and (= current-page :connection-actions) selected-connection)
-               (println "connection-tag" selected-connection)
-               [connection-tag selected-connection])
              [:> CommandInput
               {:placeholder placeholder
                :value (or (:query @palette-state) "")
                :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
-               :onValueChange #(rf/dispatch [:command-palette->search (or % "")])}]]]
+               :onValueChange #(rf/dispatch [:command-palette->search (or % "")])}]
+
+             (when (and (= current-page :connection-actions) selected-connection)
+               (println "connection-tag" selected-connection)
+               [connection-tag selected-connection])]]
 
            [:> CommandList
-            {:className "flex-1 overflow-y-auto p-2"}
+            {:className "flex-1 overflow-y-auto p-4"}
 
             [enhanced-empty-state status]
 
@@ -206,7 +206,6 @@
               :connection-actions
               ;; Página de ações da conexão
               (when selected-connection
-                (println "connection-actions-list" selected-connection)
                 [connection-actions-list selected-connection])
 
               ;; Página principal (default)
@@ -215,7 +214,6 @@
                 [:<>
                  (when (seq connections)
                    [:> CommandGroup
-                    {:heading "Conexões"}
                     (for [connection connections]
                       ^{:key (:id connection)}
                       [connection-item connection])])
