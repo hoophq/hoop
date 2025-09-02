@@ -41,3 +41,10 @@
     transform: translateY(0);
   }
 }
+
+[cmdk-group-heading] {
+  color: var(--gray-9);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
+  letter-spacing: var(--letter-spacing-1);
+}

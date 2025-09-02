@@ -102,7 +102,7 @@
      :action :navigate
      :route :edit-connection}]
 
-   :terminal
+   :custom
    [{:id "web-terminal"
      :label "Open in Web Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])

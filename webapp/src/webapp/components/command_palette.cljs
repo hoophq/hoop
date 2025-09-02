@@ -1,6 +1,7 @@
 (ns webapp.components.command-palette
   (:require
    ["cmdk" :as cmdk]
+   ["@radix-ui/themes" :refer [Text]]
    ["lucide-react" :refer [Search X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -23,8 +24,12 @@
                 :connections-search "Connections"
                 :runbooks-search "Runbooks"
                 (str current-page))]
-    [:div {:class "flex items-center gap-2 bg-gray-3 text-gray-12 px-2 py-1 rounded text-xs font-medium"}
-     [:span label]
+    [:div {:class "flex items-center gap-2 bg-gray-3 px-2 py-1 rounded-full"}
+     [:> Text
+      {:size "1"
+       :weight "medium"
+       :class "text-[--gray-11]"}
+      label]
      [:button {:class "hover:bg-gray-5 rounded p-0.5 transition-colors"
                :on-click #(rf/dispatch [:command-palette->back])}
       [:> X {:size 12}]]]))
@@ -71,7 +76,7 @@
          [:> CommandDialog
           {:open (:open? @palette-state)
            :label "Command Palette"
-           :container (js/document.querySelector ".rt-Theme")
+           :container (js/document.querySelector ".radix-themes")
            :onOpenChange #(if %
                             (rf/dispatch [:command-palette->open])
                             (rf/dispatch [:command-palette->close]))
@@ -85,17 +90,18 @@
                                       "text-blue-9"
                                       "text-gray-11"))}]
             [:div {:class "flex items-center gap-2 flex-1"}
-             ;; Breadcrumb quando não estiver na página principal
-             (when (not= current-page :main)
-               [breadcrumb-tag current-page context])
              [:> CommandInput
               {:placeholder placeholder
                :value (or (:query @palette-state) "")
                :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
-               :onValueChange #(rf/dispatch [:command-palette->search (or % "")])}]]]
+               :onValueChange #(rf/dispatch [:command-palette->search (or % "")])}]
+
+             ;; Breadcrumb quando não estiver na página principal
+             (when (not= current-page :main)
+               [breadcrumb-tag current-page context])]]
 
            [:> CommandList
-            {:className "flex-1 overflow-y-auto p-2"}
+            {:className "flex-1 overflow-y-auto p-4"}
 
             [enhanced-empty-state status current-page]
 

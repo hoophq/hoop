@@ -15,10 +15,10 @@
   [:> CommandItem
    {:key id
     :value label
-    :keywords (:keywords item)
+    :keywords [label]
     :onSelect (fn []
                 (rf/dispatch [:command-palette->execute-action item]))}
-   [:div {:class "flex items-center gap-3 py-2"}
+   [:div {:class "flex items-center gap-2"}
     (if (fn? icon)
       [icon]
       [:> icon {:size 16 :class "text-gray-11"}])
@@ -34,13 +34,9 @@
     :keywords [(:type connection) (:subtype connection) (:status connection) "connection"]
     :onSelect (fn []
                 (rf/dispatch [:command-palette->navigate-to-page :connection-actions connection]))}
-   [:div {:class "flex items-center gap-3 py-2"}
+   [:div {:class "flex items-center gap-2"}
     [:div {:class "flex flex-col"}
-     [:span {:class "text-sm font-medium"} (:name connection)]
-     [:div {:class "flex items-center gap-2 text-xs text-gray-11"}
-      [:span (:subtype connection)]
-      (when (= (:status connection) "online")
-        [:div {:class "w-2 h-2 bg-green-9 rounded-full"}])]]]])
+     [:span {:class "text-sm font-medium"} (:name connection)]]]])
 
 (defn runbook-result-item
   "Item de resultado de busca de runbook"
@@ -53,7 +49,7 @@
       :onSelect (fn []
                   (rf/dispatch [:command-palette->close])
                   (js/console.log "Navigate to runbook:" runbook-path))}
-     [:div {:class "flex items-center gap-3 py-2"}
+     [:div {:class "flex items-center gap-2"}
       [:div {:class "flex flex-col"}
        [:span {:class "text-sm font-medium"} filename]
        [:span {:class "text-xs text-gray-11"} runbook-path]]]]))
@@ -86,7 +82,7 @@
 
      ;; Páginas estáticas (sempre visíveis)
      [:> CommandGroup
-      {:heading "Pages"}
+      {:heading "Quick Access"}
       (for [item constants/main-navigation-items]
         ^{:key (:id item)}
         [action-item item])]]))
