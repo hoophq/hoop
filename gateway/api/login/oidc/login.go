@@ -426,7 +426,6 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			OrgID:           org.ID,
 			UserID:          newUser.ID,
 			UserAnonSubject: org.ID,
-			UserGroups:      userGroups,
 		})
 		trackClient.Track(newUser.ID, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
@@ -474,9 +473,8 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		return
 	}
 	client.Identify(&types.APIContext{
-		OrgID:      ctx.OrgID,
-		UserID:     ctx.UserID,
-		UserGroups: ctx.UserGroups,
+		OrgID:  ctx.OrgID,
+		UserID: ctx.UserID,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom

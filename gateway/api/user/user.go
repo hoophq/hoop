@@ -212,7 +212,6 @@ func Update(c *gin.Context) {
 	analytics.New().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		UserID:     existingUser.ID,
-		UserGroups: req.Groups,
 		UserStatus: existingUser.Status,
 		SlackID:    existingUser.SlackID,
 	})

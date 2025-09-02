@@ -33,7 +33,6 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 		Traits: analytics.NewTraits().
 			Set("org-id", ctx.OrgID).
 			Set("user-id", ctx.UserID).
-			Set("groups", ctx.UserGroups).
 			Set("is-admin", ctx.IsAdminUser()).
 			Set("environment", s.environmentName).
 			Set("status", ctx.UserStatus),
