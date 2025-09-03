@@ -50,7 +50,8 @@
   "Componente principal do command palette"
   []
   (let [palette-state (rf/subscribe [:command-palette])
-        search-results (rf/subscribe [:command-palette->search-results])]
+        search-results (rf/subscribe [:command-palette->search-results])
+        current-user (rf/subscribe [:users->current-user])]
     (fn []
       (let [status (:status @search-results)
             current-page (:current-page @palette-state)
@@ -108,13 +109,13 @@
             ;; Renderizar conteúdo baseado na página atual
             (case current-page
               :main
-              [pages/main-page @search-results]
+              [pages/main-page @search-results (:data @current-user)]
 
               :connection-actions
               [pages/connection-actions-page context]
 
               ;; Default: página principal
-              [pages/main-page @search-results])]]]]))))
+              [pages/main-page @search-results (:data @current-user)])]]]]))))
 
 (defn keyboard-listener
   "Componente para capturar CMD+K / Ctrl+K"

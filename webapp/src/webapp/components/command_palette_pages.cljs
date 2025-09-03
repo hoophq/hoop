@@ -3,7 +3,8 @@
    ["cmdk" :as cmdk]
    [clojure.string :as cs]
    [re-frame.core :as rf]
-   [webapp.components.command-palette-constants :as constants]))
+   [webapp.components.command-palette-constants :as constants]
+   [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
 (def CommandGroup (.-CommandGroup cmdk))
 (def CommandItem (.-CommandItem cmdk))
@@ -56,13 +57,28 @@
 
 (defn main-page
   "Página principal com todas as páginas + busca"
-  [search-results]
+  [search-results user-data]
   (let [search-status (:status search-results)
         connections (:connections (:data search-results))
         runbooks (:runbooks (:data search-results))
+        ;; Informações do usuário para filtrar permissões
+        admin? (:admin? user-data)
+        selfhosted? (= (:tenancy_type user-data) "selfhosted")
+        ;; Filtrar itens baseado em permissões (igual ao sidebar)
+        filtered-items (filter (fn [item]
+                                 (let [route (first (filter #(= (:name %) (:id item))
+                                                            (concat sidebar-constants/main-routes
+                                                                    sidebar-constants/discover-routes
+                                                                    sidebar-constants/organization-routes)))]
+                                   (and
+                                    ;; Verificar admin-only
+                                    (or (not (:admin-only? route)) admin?)
+                                    ;; Verificar selfhosted-only
+                                    (or (not (:selfhosted-only? route)) selfhosted?))))
+                               constants/main-navigation-items)
         ;; Separar itens em grupos
-        suggestions (filter #(contains? #{"Connections" "Terminal"} (:id %)) constants/main-navigation-items)
-        quick-access (remove #(contains? #{"Connections" "Terminal"} (:id %)) constants/main-navigation-items)]
+        suggestions (filter #(contains? #{"Connections" "Terminal"} (:id %)) filtered-items)
+        quick-access (remove #(contains? #{"Connections" "Terminal"} (:id %)) filtered-items)]
     [:<>
      ;; Resultados de busca (se houver)
      (when (and (= search-status :ready) (or (seq connections) (seq runbooks)))
