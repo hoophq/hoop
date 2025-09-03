@@ -4,17 +4,44 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.8.4", features = ["ws"] }
-tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = "0.27"
-tungstenite = "0.27"
-serde = { version = "1.0.219", features = ["derive"] }
+futures-core = "0.3"
+futures-sink = "0.3"
+tokio = { version = "1.45", features = ["signal", "net", "io-util", "time", "rt", "rt-multi-thread", "sync", "macros", "parking_lot", "fs"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "tls12", "ring"] }
+typed-builder = "0.21"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "json", "stream", "http2", "system-proxy", "socks"] }
+async-trait = "0.1"
+tower = { version = "0.5", features = ["timeout"] }
+
+hyper = "1.6"
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "ws", "query", "tracing", "tower-log"] }
+axum-extra = { version = "0.10", features = ["query", "async-read-body", "typed-header"] }
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+tungstenite = "0.26" # Should be the same version as `axum` (we perform error downcasting for better error reporting)
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] } # Should use the same version of tungstenite as `axum`
+http-body-util = "0.1"
+
+chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4"] }
 base64 = "0.22.1"
 url = "2.5.4"
-serde_json = "1.0.142"
+time = { version = "0.3", default-features = false, features = ["std", "serde", "formatting"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_urlencoded = "0.7"
+serde-querystring = "0.3.0"
+
 bytes = "1.10.1"
 anyhow = "1"
 futures = "0.3.31"
 futures-util = "0.3.31"
-ironrdp = { version = "0.11.0" }
+
+ironrdp-connector = { version = "0.5" }
+ironrdp-acceptor = { version = "0.5" }
+ironrdp-pdu = { version = "0.5", features = ["std"] }
+ironrdp-core = { version = "0.1", features = ["std"] }
+ironrdp-rdcleanpath = "0.1"
+ironrdp-tokio = "0.5"
