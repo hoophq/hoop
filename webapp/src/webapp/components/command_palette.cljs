@@ -50,11 +50,13 @@
   "Componente principal do command palette"
   []
   (let [palette-state (rf/subscribe [:command-palette])
-        search-results (rf/subscribe [:command-palette->search-results])]
+        search-results (rf/subscribe [:command-palette->search-results])
+        db-user (rf/subscribe [:users->current-user])]
     (fn []
       (let [status (:status @search-results)
             current-page (:current-page @palette-state)
             context (:context @palette-state)
+            user-data (:data @db-user)
             ;; Mostrar indicador sutil de busca apenas no ícone
             is-searching? (or (= status :searching) (= status :loading))
             ;; Placeholder dinâmico baseado na página atual
@@ -106,15 +108,16 @@
             [enhanced-empty-state status current-page]
 
             ;; Renderizar conteúdo baseado na página atual
+            (println user-data)
             (case current-page
               :main
-              [pages/main-page @search-results]
+              [pages/main-page @search-results user-data]
 
               :connection-actions
               [pages/connection-actions-page context]
 
               ;; Default: página principal
-              [pages/main-page @search-results])]]]]))))
+              [pages/main-page @search-results user-data])]]]]))))
 
 (defn keyboard-listener
   "Componente para capturar CMD+K / Ctrl+K"
