@@ -129,3 +129,22 @@
      :type :navigate
      :action :navigate
      :route :edit-connection}]})
+
+;; Função para filtrar itens baseado em permissões do usuário
+(defn filter-items-by-permissions [user-data]
+  (let [admin? (:admin? user-data)
+        selfhosted? (= (:tenancy_type user-data) "selfhosted")
+        ;; Incluir TODAS as rotas para verificação de permissões
+        all-routes (concat sidebar-constants/main-routes
+                           sidebar-constants/discover-routes
+                           sidebar-constants/organization-routes
+                           sidebar-constants/integrations-management
+                           sidebar-constants/settings-management)]
+    (filter (fn [item]
+              (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
+                (and
+                 ;; Verificar admin-only
+                 (or (not (:admin-only? route)) admin?)
+                 ;; Verificar selfhosted-only
+                 (or (not (:selfhosted-only? route)) selfhosted?))))
+            main-navigation-items)))
