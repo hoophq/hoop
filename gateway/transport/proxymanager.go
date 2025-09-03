@@ -171,6 +171,7 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			return status.Error(codes.FailedPrecondition, errorMessage)
 		}
 
+		clientOrigin := pb.ConnectionOriginClientProxyManager
 		stream.SetPluginContext(func(pluginCtx *plugintypes.Context) {
 			pluginCtx.ConnectionID = conn.ID
 			pluginCtx.ConnectionName = conn.Name
@@ -202,6 +203,7 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			"client-version":     stream.GetMeta("version"),
 			"platform":           stream.GetMeta("platform"),
 			"user-agent":         userAgent,
+			"origin":             clientOrigin,
 			"verb":               pb.ClientVerbConnect,
 		})
 

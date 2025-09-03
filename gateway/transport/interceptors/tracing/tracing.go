@@ -98,6 +98,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			"hoop.gateway.agent-mode":      commongrpc.MetaGet(md, "agent-mode"),
 			"hoop.gateway.client-platform": commongrpc.MetaGet(md, "platform"),
 			"hoop.gateway.client-version":  commongrpc.MetaGet(md, "version"),
+			"hoop.gateway.client-origin":   clientOrigin,
 			"hoop.gateway.version":         ver.Version,
 			"hoop.gateway.platform":        ver.Platform,
 		})
