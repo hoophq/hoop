@@ -2,6 +2,7 @@ package apiserverconfig
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,6 +19,8 @@ import (
 )
 
 const defaultGrpcServerURL = "grpc://127.0.0.1:8010"
+
+var errListenAddrFormat = errors.New("invalid attribute for 'listen_address', it must be in the format 'ip:port'")
 
 // GetServerMiscellaneous
 //
@@ -220,20 +223,22 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 		return nil, fmt.Errorf("invalid attribute for 'grpc_server_url', it must start with 'grpc://', 'grpcs://', 'http://', or 'https://'")
 	}
 
+	// postgres server configuration attribute
 	var pgServerConfig *models.PostgresServerConfig
 	if req.PostgresServerConfig != nil {
 		if _, _, found := strings.Cut(req.PostgresServerConfig.ListenAddress, ":"); !found {
-			return nil, fmt.Errorf("invalid attribute for 'listen_address', it must be in the format 'ip:port'")
+			return nil, errListenAddrFormat
 		}
 		pgServerConfig = &models.PostgresServerConfig{
 			ListenAddress: req.PostgresServerConfig.ListenAddress,
 		}
 	}
 
+	// ssh server configuration attribute
 	var sshServerConfig *models.SSHServerConfig
 	if req.SSHServerConfig != nil {
 		if _, _, found := strings.Cut(req.SSHServerConfig.ListenAddress, ":"); !found {
-			return nil, fmt.Errorf("invalid attribute for 'listen_address', it must be in the format 'ip:port'")
+			return nil, errListenAddrFormat
 		}
 		sshServerConfig = &models.SSHServerConfig{
 			ListenAddress: req.SSHServerConfig.ListenAddress,
@@ -301,7 +306,8 @@ func parseSSHConfigState(currentState, newState *models.ServerMiscConfig) (newCo
 	case newConf.ListenAddress == "":
 		return newConf, "stop"
 	// restart on configuration drift
-	case currentConf.ListenAddress != newConf.ListenAddress || currentConf.HostsKey != newConf.HostsKey:
+	case currentConf.ListenAddress != newConf.ListenAddress,
+		currentConf.HostsKey != newConf.HostsKey:
 		return newConf, "start"
 	// noop, no configuration drift
 	default:
