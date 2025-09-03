@@ -39,6 +39,8 @@
      [:idle :connection-actions] "Choose an action for this connection"
      "No results found.")])
 
+
+
 (defn command-palette
   "Main command palette component"
   []
@@ -110,7 +112,7 @@
               [pages/main-page @search-results user-data]
 
               :connection-actions
-              [pages/connection-actions-page context user-data]
+              [pages/connection-actions-page context]
 
               ;; Default: main page
               [pages/main-page @search-results user-data])]]]]))))
