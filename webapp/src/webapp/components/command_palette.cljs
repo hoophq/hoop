@@ -14,15 +14,10 @@
 (def CommandEmpty (.-CommandEmpty cmdk))
 
 (defn breadcrumb-tag
-  "Tag mostrando o contexto atual"
+  "Tag showing current context"
   [current-page context]
   (let [label (case current-page
-                :connections "Connections"
-                :features "Features"
-                :organization "Organization"
                 :connection-actions (:name context)
-                :connections-search "Connections"
-                :runbooks-search "Runbooks"
                 (str current-page))]
     [:div {:class "flex items-center gap-2 bg-gray-3 px-2 py-1 rounded-full"}
      [:> Text
@@ -35,7 +30,7 @@
       [:> X {:size 12}]]]))
 
 (defn enhanced-empty-state
-  "Empty state melhorado"
+  "Enhanced empty state with contextual messages"
   [current-status current-page]
   [:> CommandEmpty
    {:className "flex items-center justify-center text-center text-sm text-gray-11 h-full"}
@@ -47,27 +42,27 @@
 
 
 (defn command-palette
-  "Componente principal do command palette"
+  "Main command palette component"
   []
   (let [palette-state (rf/subscribe [:command-palette])
         search-results (rf/subscribe [:command-palette->search-results])
-        db-user (rf/subscribe [:users->current-user])]
+        current-user (rf/subscribe [:users->current-user])]
     (fn []
       (let [status (:status @search-results)
             current-page (:current-page @palette-state)
             context (:context @palette-state)
-            user-data (:data @db-user)
-            ;; Mostrar indicador sutil de busca apenas no ícone
+            user-data (:data @current-user)
+            ;; Show subtle search indicator only on icon
             is-searching? (or (= status :searching) (= status :loading))
-            ;; Placeholder dinâmico baseado na página atual
+            ;; Dynamic placeholder based on current page
             placeholder (case current-page
                           :main "Search for resources, features and more..."
                           :connection-actions "Select or search an action"
                           "Search...")]
         [:> Command
-         {:shouldFilter false  ; Usar filtro manual para busca assíncrona
+         {:shouldFilter false  ; Use manual filtering for async search
           :onKeyDown (fn [e]
-                       ;; Navegação por teclado
+                       ;; Keyboard navigation
                        (when (or (= (.-key e) "Escape")
                                  (and (= (.-key e) "Backspace")
                                       (empty? (or (:query @palette-state) ""))))
@@ -84,7 +79,7 @@
                             (rf/dispatch [:command-palette->close]))
            :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"}
 
-          ;; Overlay manual para clique fora com blur
+          ;; Manual overlay for click outside with blur effect
           [:div {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
                  :on-click #(rf/dispatch [:command-palette->close])}]
 
@@ -102,7 +97,7 @@
                :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
                :onValueChange #(rf/dispatch [:command-palette->search (or % "")])}]
 
-             ;; Breadcrumb quando não estiver na página principal
+             ;; Breadcrumb when not on main page
              (when (not= current-page :main)
                [breadcrumb-tag current-page context])]]
 
@@ -111,8 +106,7 @@
 
             [enhanced-empty-state status current-page]
 
-            ;; Renderizar conteúdo baseado na página atual
-            (println user-data)
+            ;; Render content based on current page
             (case current-page
               :main
               [pages/main-page @search-results user-data]
@@ -120,11 +114,11 @@
               :connection-actions
               [pages/connection-actions-page context]
 
-              ;; Default: página principal
+              ;; Default: main page
               [pages/main-page @search-results user-data])]]]]))))
 
 (defn keyboard-listener
-  "Componente para capturar CMD+K / Ctrl+K"
+  "Component to capture CMD+K / Ctrl+K keyboard shortcuts"
   []
   (r/create-class
    {:component-did-mount
@@ -136,7 +130,7 @@
                 (.preventDefault e)
                 (rf/dispatch [:command-palette->toggle])))]
         (js/document.addEventListener "keydown" handle-keydown)
-        ;; Armazenar a função para cleanup
+        ;; Store function for cleanup
         (set! (.-keydownHandler js/document) handle-keydown)))
 
     :component-will-unmount

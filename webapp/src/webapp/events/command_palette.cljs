@@ -4,7 +4,7 @@
    [re-frame.core :as rf]
    [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]))
 
-;; Event handlers para o command palette
+;; Event handlers for command palette
 
 (rf/reg-event-fx
  :command-palette->open
@@ -18,7 +18,7 @@
             (assoc-in [:command-palette :open?] false)
             (assoc-in [:command-palette :query] "")
             (assoc-in [:command-palette :current-page] :main)
-            (assoc-in [:command-palette :selected-connection] {})
+            (assoc-in [:command-palette :context] {})
             (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}))
 
 (rf/reg-event-fx
@@ -35,27 +35,27 @@
    (let [safe-query (or query "")
          trimmed-query (clojure.string/trim safe-query)
          current-page (get-in db [:command-palette :current-page] :main)
-         ;; Busca sempre habilitada na página principal
+         ;; Search always enabled on main page
          search-enabled-pages #{:main}]
      (if (contains? search-enabled-pages current-page)
-       ;; Página principal - busca habilitada
+       ;; Main page - search enabled
        (if (< (count trimmed-query) 2)
-         ;; Query muito curta, limpar resultados
+         ;; Query too short, clear results
          {:db (-> db
                   (assoc-in [:command-palette :query] safe-query)
                   (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}
-         ;; Query válida, fazer busca imediatamente
+         ;; Valid query, search immediately
          {:db (-> db
                   (assoc-in [:command-palette :query] safe-query)
                   (assoc-in [:command-palette :search-results :status] :searching))
           :fx [[:dispatch [:command-palette->perform-search trimmed-query]]]})
-       ;; Outras páginas, só atualizar a query (sem buscar)
+       ;; Other pages, just update query (no search)
        {:db (assoc-in db [:command-palette :query] safe-query)}))))
 
 (rf/reg-event-fx
  :command-palette->perform-search
  (fn [_ [_ query]]
-   ;; Busca imediata sem debounce
+   ;; Immediate search without debounce
    {:fx [[:dispatch
           [:fetch
            {:method "GET"
@@ -80,17 +80,17 @@
                    :data {}
                    :error error})}))
 
-;; Navegação para páginas específicas
+;; Navigate to specific pages
 (rf/reg-event-fx
  :command-palette->navigate-to-page
- (fn [{:keys [db]} [_ page-type & [context]]]
+ (fn [{:keys [db]} [_ page-type context]]
    {:db (-> db
             (assoc-in [:command-palette :current-page] page-type)
             (assoc-in [:command-palette :context] context)
             (assoc-in [:command-palette :query] "")
             (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}))
 
-;; Voltar para a página principal
+;; Go back to main page
 (rf/reg-event-fx
  :command-palette->back
  (fn [{:keys [db]} [_]]
@@ -100,7 +100,7 @@
             (assoc-in [:command-palette :query] "")
             (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}))
 
-;; Executar ação baseada no tipo
+;; Execute action based on type
 (rf/reg-event-fx
  :command-palette->execute-action
  (fn [_ [_ action]]
@@ -110,7 +110,7 @@
            [:dispatch [:navigate (:route action)]]]}
 
      :web-terminal
-     ;; Mesma lógica do connection-list: localStorage + navigate
+     ;; Same logic as connection-list: localStorage + navigate
      (do
        (js/localStorage.setItem "selected-connection"
                                 (str {:name (:connection-name action)
@@ -119,14 +119,14 @@
              [:dispatch [:navigate :editor-plugin-panel]]]})
 
      :local-terminal
-     ;; Mesma lógica do connection-list: abrir modal hoop-cli
+     ;; Same logic as connection-list: open hoop-cli modal
      {:fx [[:dispatch [:command-palette->close]]
            [:dispatch [:modal->open {:content [hoop-cli-modal/main (:connection-name action)]
                                      :maxWidth "1100px"
                                      :class "overflow-hidden"}]]]}
 
      :configure
-     ;; Mesma lógica do connection-list: get plugins + navigate
+     ;; Same logic as connection-list: get plugins + navigate
      {:fx [[:dispatch [:command-palette->close]]
            [:dispatch [:plugins->get-my-plugins]]
            [:dispatch [:navigate :edit-connection {} :connection-name (:connection-name action)]]]}
@@ -137,7 +137,7 @@
      ;; Default
      {:fx [[:dispatch [:command-palette->close]]]})))
 
-;; Inicialização do command palette
+;; Command palette initialization
 (rf/reg-event-fx
  :command-palette->init
  (fn [{:keys [db]} [_]]
@@ -145,5 +145,5 @@
                {:open? false
                 :query ""
                 :current-page :main
-                :selected-connection {}
+                :context {}
                 :search-results {:status :idle :data {}}})}))

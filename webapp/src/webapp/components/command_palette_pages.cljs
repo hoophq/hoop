@@ -10,7 +10,7 @@
 (def CommandSeparator (.-CommandSeparator cmdk))
 
 (defn action-item
-  "Componente genérico para item de ação"
+  "Generic action item component"
   [{:keys [id label icon requires-upgrade?] :as item}]
   [:> CommandItem
    {:key id
@@ -30,7 +30,7 @@
        [:span {:class "text-xs text-blue-9 font-medium"} "Upgrade"])]]])
 
 (defn connection-result-item
-  "Item de resultado de busca de conexão"
+  "Connection search result item"
   [connection]
   [:> CommandItem
    {:key (:id connection)
@@ -43,7 +43,7 @@
      [:span {:class "text-sm font-medium"} (:name connection)]]]])
 
 (defn runbook-result-item
-  "Item de resultado de busca de runbook"
+  "Runbook search result item"
   [runbook-path]
   (let [filename (last (cs/split runbook-path #"/"))]
     [:> CommandItem
@@ -59,18 +59,18 @@
        [:span {:class "text-xs text-gray-11"} runbook-path]]]]))
 
 (defn main-page
-  "Página principal com todas as páginas + busca"
+  "Main page with all pages + search functionality"
   [search-results user-data]
   (let [search-status (:status search-results)
         connections (:connections (:data search-results))
         runbooks (:runbooks (:data search-results))
-        ;; Filtrar itens baseado em permissões do usuário
+        ;; Filter items based on user permissions
         filtered-items (constants/filter-items-by-permissions user-data)
-        ;; Separar itens em grupos
+        ;; Separate items into groups
         suggestions (filter #(contains? #{"Connections" "Terminal"} (:id %)) filtered-items)
         quick-access (remove #(contains? #{"Connections" "Terminal"} (:id %)) filtered-items)]
     [:<>
-     ;; Resultados de busca (se houver)
+     ;; Search results (if any)
      (when (and (= search-status :ready) (or (seq connections) (seq runbooks)))
        [:<>
         (when (seq connections)
@@ -89,7 +89,7 @@
 
         [:> CommandSeparator]])
 
-     ;; Suggestions (Connections e Terminal)
+     ;; Suggestions (Connections and Terminal)
      [:> CommandGroup
       {:heading "Suggestions"}
       (for [item suggestions]
@@ -98,7 +98,7 @@
 
      [:> CommandSeparator]
 
-     ;; Quick Access (resto das páginas)
+     ;; Quick Access (rest of the pages)
      [:> CommandGroup
       {:heading "Quick Access"}
       (for [item quick-access]
@@ -106,16 +106,16 @@
         [action-item item])]]))
 
 (defn connection-actions-page
-  "Página de ações para uma conexão específica"
+  "Connection-specific actions page"
   [connection]
   (let [connection-type (keyword (:type connection))
         all-actions (get constants/connection-actions connection-type
                          (:default constants/connection-actions))
-        ;; Separar ações principais de configurações
+        ;; Separate main actions from configuration
         main-actions (remove #(= (:id %) "configure") all-actions)
         config-actions (filter #(= (:id %) "configure") all-actions)]
     [:<>
-     ;; Ações principais
+     ;; Main actions
      (when (seq main-actions)
        [:> CommandGroup
         (for [action main-actions]
@@ -124,11 +124,11 @@
                               :connection-name (:name connection)
                               :connection-id (:id connection))])])
 
-     ;; Separador se houver ambos os grupos
+     ;; Separator if both groups exist
      (when (and (seq main-actions) (seq config-actions))
        [:> CommandSeparator])
 
-     ;; Configurações
+     ;; Configuration actions
      (when (seq config-actions)
        [:> CommandGroup
         {:heading "Settings"}

@@ -1,135 +1,84 @@
 (ns webapp.components.command-palette-constants
   (:require
-   ["lucide-react" :refer [SquareCode GalleryVerticalEnd Inbox Settings]]
+   ["lucide-react" :refer [SquareCode Settings]]
    [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
-;; Estrutura simplificada - apenas páginas diretas + busca
+;; Simplified structure - direct pages + search only
 (def main-navigation-items
-  ;; Páginas estáticas baseadas no menu lateral
+  ;; Static pages based on sidebar menu
   (concat
-   ;; Main routes do sidebar
-   (map (fn [route]
-          {:id (:name route)
-           :label (:label route)
-           :icon (fn [] [(get sidebar-constants/icons-registry (:name route)) {:size 16}])
-           :type :navigation
-           :action :navigate
-           :route (:navigate route)
-           :keywords [(:label route) (:name route)]})
-        sidebar-constants/main-routes)
+   ;; All sidebar routes flattened into single list
+   (mapcat (fn [routes]
+             (map (fn [route]
+                    {:id (:name route)
+                     :label (:label route)
+                     :icon (fn [] [(get sidebar-constants/icons-registry (:name route)
+                                        (fn [& _] [:> Settings {:size 16}])) {:size 16}])
+                     :type :navigation
+                     :action :navigate
+                     :route (:navigate route)
+                     :keywords [(:label route) (:name route)]})
+                  routes))
+           [sidebar-constants/main-routes
+            sidebar-constants/discover-routes
+            sidebar-constants/organization-routes
+            sidebar-constants/integrations-management
+            sidebar-constants/settings-management])))
 
-   ;; Discover routes do sidebar
-   (map (fn [route]
-          {:id (:name route)
-           :label (:label route)
-           :icon (fn [] [(get sidebar-constants/icons-registry (:name route)) {:size 16}])
-           :type :navigation
-           :action :navigate
-           :route (:navigate route)
-           :keywords [(:label route) (:name route)]})
-        sidebar-constants/discover-routes)
-
-   ;; Organization routes do sidebar
-   (map (fn [route]
-          {:id (:name route)
-           :label (:label route)
-           :icon (fn [] [(get sidebar-constants/icons-registry (:name route)) {:size 16}])
-           :type :navigation
-           :action :navigate
-           :route (:navigate route)
-           :keywords [(:label route) (:name route)]})
-        sidebar-constants/organization-routes)
-
-   ;; Integrations (flatten)
-   (map (fn [integration]
-          {:id (:name integration)
-           :label (:label integration)
-           :icon (fn [] [(get sidebar-constants/icons-registry (:name integration)
-                              (fn [& _] [:> Settings {:size 16}])) {:size 16}])
-           :type :navigation
-           :action :navigate
-           :route (:navigate integration)
-           :keywords [(:label integration) (:name integration) "integration"]})
-        sidebar-constants/integrations-management)
-
-   ;; Settings (flatten)
-   (map (fn [setting]
-          {:id (:name setting)
-           :label (:label setting)
-           :icon (fn [] [(get sidebar-constants/icons-registry (:name setting)
-                              (fn [& _] [:> Settings {:size 16}])) {:size 16}])
-           :type :navigation
-           :action :navigate
-           :route (:navigate setting)
-           :keywords [(:label setting) (:name setting) "settings"]})
-        sidebar-constants/settings-management)))
-
-;; Ações específicas por tipo de conexão
+;; Connection-specific actions by type
 (def connection-actions
   {:database
    [{:id "web-terminal"
      :label "Open in Web Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])
-     :type :web-terminal
      :action :web-terminal}
     {:id "local-terminal"
      :label "Open in Local Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])
-     :type :local-terminal
      :action :local-terminal}
     {:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
-     :type :configure
      :action :configure}]
 
-   :custom
+   :default
    [{:id "web-terminal"
      :label "Open in Web Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])
-     :type :web-terminal
      :action :web-terminal}
     {:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
-     :type :configure
-     :action :configure}]
-
-   :default
-   [{:id "configure"
-     :label "Configure"
-     :icon (fn [] [:> Settings {:size 16}])
-     :type :configure
      :action :configure}]})
 
-;; Função para filtrar e ajustar itens baseado em permissões e plano do usuário
+;; Filter and adjust items based on user permissions and license plan
 (defn filter-items-by-permissions [user-data]
   (let [admin? (:admin? user-data)
         selfhosted? (= (:tenancy_type user-data) "selfhosted")
         free-license? (:free-license? user-data)
-        ;; Incluir TODAS as rotas para verificação
+        ;; Include ALL routes for permission checking
         all-routes (concat sidebar-constants/main-routes
                            sidebar-constants/discover-routes
                            sidebar-constants/organization-routes
                            sidebar-constants/integrations-management
                            sidebar-constants/settings-management)]
     (->> main-navigation-items
-         ;; APENAS filtrar por permissões básicas (admin/selfhosted)
+         ;; Filter by basic permissions only (admin/selfhosted)
          (filter (fn [item]
                    (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
                      (and
-                      ;; Verificar admin-only
+                      ;; Check admin-only
                       (or (not (:admin-only? route)) admin?)
-                      ;; Verificar selfhosted-only
+                      ;; Check selfhosted-only
                       (or (not (:selfhosted-only? route)) selfhosted?)))))
-         ;; Ajustar rotas para upgrade quando necessário (SEM filtrar)
+         ;; Adjust routes for upgrade when needed (WITHOUT filtering)
          (map (fn [item]
                 (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
                   (if (and free-license? (not (:free-feature? route)))
-                    ;; Feature paga em licença gratuita - redirecionar para upgrade
+                    ;; Paid feature on free license - redirect to upgrade
                     (assoc item
                            :action :navigate
                            :route (or (:upgrade-plan-route route) :upgrade-plan)
                            :requires-upgrade? true)
-                    ;; Feature normal
+                    ;; Normal feature
                     item)))))))
