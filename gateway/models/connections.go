@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -492,10 +494,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	if err != nil {
 		return nil, err
 	}
-	userGroups := pq.StringArray{}
-	for _, group := range ctx.GetUserGroups() {
-		userGroups = append(userGroups, group)
-	}
+	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -587,9 +586,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 }
 
 // SearchBySimilarity searches connections by name, type, or subtype using a case-insensitive search.
-func SearchConnectionsBySimilarity(orgID string, searchTerm string) ([]Connection, error) {
+func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm string) ([]Connection, error) {
 	var items []Connection
 
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	userGroupsPgArray := pq.StringArray(userGroups)
 	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
 	err := DB.Raw(`
 		SELECT
@@ -602,13 +603,21 @@ func SearchConnectionsBySimilarity(orgID string, searchTerm string) ([]Connectio
 			c.access_mode_exec,
 			c.access_mode_connect
 		FROM private.connections c
+		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+		LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 		WHERE
-			c.org_id = ? AND (
+			c.org_id = ? AND
+			CASE
+				-- do not apply any access control if the plugin is not enabled or it is an admin user
+				WHEN ac.id IS NULL OR (?)::BOOL THEN true
+				-- allow if any of the input user groups are in the access control list
+				ELSE acc.config && (?)::text[]
+			END AND (
 				c.name ILIKE ? OR
 				c.type::text ILIKE ? OR
 				c.subtype ILIKE ?
 			)
-		ORDER BY c.name ASC`, orgID, likeQuery, likeQuery, likeQuery).Find(&items).Error
+		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
 
 	if err != nil {
 		return nil, err
