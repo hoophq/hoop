@@ -107,13 +107,16 @@
 
 (defn connection-actions-page
   "Connection-specific actions page"
-  [connection]
+  [connection user-data]
   (let [connection-type (keyword (:type connection))
+        admin? (:admin? user-data)
         all-actions (get constants/connection-actions connection-type
                          (:default constants/connection-actions))
         ;; Separate main actions from configuration
         main-actions (remove #(= (:id %) "configure") all-actions)
-        config-actions (filter #(= (:id %) "configure") all-actions)]
+        ;; Only show config actions for admins
+        config-actions (when admin?
+                         (filter #(= (:id %) "configure") all-actions))]
     [:<>
      ;; Main actions
      (when (seq main-actions)

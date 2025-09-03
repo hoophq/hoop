@@ -112,7 +112,7 @@
               [pages/main-page @search-results user-data]
 
               :connection-actions
-              [pages/connection-actions-page context]
+              [pages/connection-actions-page context user-data]
 
               ;; Default: main page
               [pages/main-page @search-results user-data])]]]]))))
