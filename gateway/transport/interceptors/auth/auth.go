@@ -138,10 +138,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "user is not active")
 		}
 
-		// Maintain backward compatibility with legacy user context propagation.
-		// This behavior was preserved during migration from XTDB to PostgreSQL.
-		// TODO: Refactor to implement proper user information propagation in a future release.
-		userCtx.UserID = userCtx.UserSubject
 		ctxVal = &GatewayContext{
 			UserContext: *userCtx,
 		}
@@ -222,10 +218,6 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			return status.Errorf(codes.Unauthenticated, "user is not active")
 		}
 
-		// Maintain backward compatibility with legacy user context propagation.
-		// This behavior was preserved during migration from XTDB to PostgreSQL.
-		// TODO: Refactor to implement proper user information propagation in a future release.
-		userCtx.UserID = userCtx.UserSubject
 		gwctx := &GatewayContext{
 			UserContext: *userCtx,
 		}

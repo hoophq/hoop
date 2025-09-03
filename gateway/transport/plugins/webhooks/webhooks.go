@@ -386,7 +386,7 @@ func svixSessionOpenPayload(ctx plugintypes.Context, pkt *pb.Packet, reviewInput
 	return map[string]any{
 		"event_type":         eventSessionOpenType,
 		"id":                 ctx.SID,
-		"user_id":            ctx.UserID,
+		"user_id":            ctx.UserEmail,
 		"user_email":         ctx.UserEmail,
 		"connection":         ctx.ConnectionName,
 		"connection_type":    ctx.ConnectionType,

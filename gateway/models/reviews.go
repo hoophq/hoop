@@ -198,14 +198,14 @@ func CreateReview(rev *Review, input string) error {
 }
 
 // Lookup for the latest review jit approved
-func GetApprovedReviewJit(orgID, ownerUserID, connectionID string) (*ReviewJit, error) {
+func GetApprovedReviewJit(orgID, ownerUserEmail, connectionID string) (*ReviewJit, error) {
 	var jit ReviewJit
 	err := DB.Raw(`
 	SELECT id, org_id, session_id, type, access_duration_sec, owner_email, created_at, revoked_at
 	FROM private.reviews
-	WHERE org_id = ? AND type = 'jit' AND status = 'APPROVED' AND owner_id = ? AND connection_id = ?
+	WHERE org_id = ? AND type = 'jit' AND status = 'APPROVED' AND owner_email = ? AND connection_id = ?
 	ORDER BY created_at DESC
-	LIMIT 1`, orgID, ownerUserID, connectionID).
+	LIMIT 1`, orgID, ownerUserEmail, connectionID).
 		First(&jit).
 		Error
 	if err == gorm.ErrRecordNotFound {

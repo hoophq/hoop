@@ -254,7 +254,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 		WHERE s.org_id = @org_id AND
 		(
-			COALESCE(s.user_id::text, '') LIKE @user_id AND
+			COALESCE(s.user_email::text, '') LIKE @user_email AND
 			COALESCE(s.connection::text, '') LIKE @connection AND
 			COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type AND
 			COALESCE(rv.status::text, '')::TEXT LIKE @review_status AND
@@ -274,7 +274,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			END
 		)`, map[string]any{
 			"org_id":                orgID,
-			"user_id":               opt.User,
+			"user_email":            opt.User,
 			"connection":            opt.ConnectionName,
 			"connection_type":       opt.ConnectionType,
 			"review_status":         opt.ReviewStatus,
