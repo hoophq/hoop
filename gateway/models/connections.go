@@ -494,10 +494,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	if err != nil {
 		return nil, err
 	}
-	userGroups := pq.StringArray{}
-	for _, group := range ctx.GetUserGroups() {
-		userGroups = append(userGroups, group)
-	}
+	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -593,10 +590,7 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 	var items []Connection
 
 	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
-	userGroupsPgArray := pq.StringArray{}
-	for _, group := range userGroups {
-		userGroupsPgArray = append(userGroupsPgArray, group)
-	}
+	userGroupsPgArray := pq.StringArray(userGroups)
 	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
 	err := DB.Raw(`
 		SELECT
