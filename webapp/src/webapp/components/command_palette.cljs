@@ -84,7 +84,11 @@
                             (rf/dispatch [:command-palette->close]))
            :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"}
 
-          [:div {:class "w-full max-w-2xl bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden h-96 flex flex-col"}
+          ;; Overlay manual para clique fora com blur
+          [:div {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
+                 :on-click #(rf/dispatch [:command-palette->close])}]
+
+          [:div {:class "w-full max-w-2xl bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden h-96 flex flex-col relative z-10"}
            [:div {:class "flex items-center gap-3 px-4 py-3 border-b border-gray-6"}
             [:> Search {:size 16
                         :class (str "transition-colors duration-200 "
