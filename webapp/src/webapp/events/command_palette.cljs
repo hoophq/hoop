@@ -136,14 +136,3 @@
 
      ;; Default
      {:fx [[:dispatch [:command-palette->close]]]})))
-
-;; Command palette initialization
-(rf/reg-event-fx
- :command-palette->init
- (fn [{:keys [db]} [_]]
-   {:db (assoc db :command-palette
-               {:open? false
-                :query ""
-                :current-page :main
-                :context {}
-                :search-results {:status :idle :data {}}})}))

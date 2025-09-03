@@ -9,6 +9,10 @@
 (def CommandItem (.-CommandItem cmdk))
 (def CommandSeparator (.-CommandSeparator cmdk))
 
+;; Helper function to check if user is admin
+(defn- admin? [user-data]
+  (:admin? user-data))
+
 (defn action-item
   "Generic action item component"
   [{:keys [id label icon requires-upgrade?] :as item}]
@@ -109,13 +113,13 @@
   "Connection-specific actions page"
   [connection user-data]
   (let [connection-type (keyword (:type connection))
-        admin? (:admin? user-data)
+        is-admin? (admin? user-data)
         all-actions (get constants/connection-actions connection-type
                          (:default constants/connection-actions))
         ;; Separate main actions from configuration
         main-actions (remove #(= (:id %) "configure") all-actions)
         ;; Only show config actions for admins
-        config-actions (when admin?
+        config-actions (when is-admin?
                          (filter #(= (:id %) "configure") all-actions))]
     [:<>
      ;; Main actions

@@ -3,27 +3,31 @@
    ["lucide-react" :refer [SquareCode Settings]]
    [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
 
+;; Helper function to get cmdk-compatible icons
+(defn- get-cmdk-icon [route-name]
+  (fn [] [(get sidebar-constants/icons-registry route-name
+               (fn [& _] [:> Settings {:size 16}])) {:size 16}]))
+
+;; All sidebar routes consolidated
+(def all-sidebar-routes
+  (concat sidebar-constants/main-routes
+          sidebar-constants/discover-routes
+          sidebar-constants/organization-routes
+          sidebar-constants/integrations-management
+          sidebar-constants/settings-management))
+
 ;; Simplified structure - direct pages + search only
 (def main-navigation-items
   ;; Static pages based on sidebar menu
-  (concat
-   ;; All sidebar routes flattened into single list
-   (mapcat (fn [routes]
-             (map (fn [route]
-                    {:id (:name route)
-                     :label (:label route)
-                     :icon (fn [] [(get sidebar-constants/icons-registry (:name route)
-                                        (fn [& _] [:> Settings {:size 16}])) {:size 16}])
-                     :type :navigation
-                     :action :navigate
-                     :route (:navigate route)
-                     :keywords [(:label route) (:name route)]})
-                  routes))
-           [sidebar-constants/main-routes
-            sidebar-constants/discover-routes
-            sidebar-constants/organization-routes
-            sidebar-constants/integrations-management
-            sidebar-constants/settings-management])))
+  (map (fn [route]
+         {:id (:name route)
+          :label (:label route)
+          :icon (get-cmdk-icon (:name route))
+          :type :navigation
+          :action :navigate
+          :route (:navigate route)
+          :keywords [(:label route) (:name route)]})
+       all-sidebar-routes))
 
 ;; Connection-specific actions by type
 (def connection-actions
@@ -56,12 +60,8 @@
   (let [admin? (:admin? user-data)
         selfhosted? (= (:tenancy_type user-data) "selfhosted")
         free-license? (:free-license? user-data)
-        ;; Include ALL routes for permission checking
-        all-routes (concat sidebar-constants/main-routes
-                           sidebar-constants/discover-routes
-                           sidebar-constants/organization-routes
-                           sidebar-constants/integrations-management
-                           sidebar-constants/settings-management)]
+        ;; Use consolidated routes for permission checking
+        all-routes all-sidebar-routes]
     (->> main-navigation-items
          ;; Filter by basic permissions only (admin/selfhosted)
          (filter (fn [item]

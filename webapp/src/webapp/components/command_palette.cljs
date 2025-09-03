@@ -39,8 +39,6 @@
      [:idle :connection-actions] "Choose an action for this connection"
      "No results found.")])
 
-
-
 (defn command-palette
   "Main command palette component"
   []
