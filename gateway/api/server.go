@@ -18,7 +18,6 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
-	apiconnectioncredentials "github.com/hoophq/hoop/gateway/api/connectioncredentials"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
@@ -287,7 +286,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 
 	r.POST("/connections/:nameOrID/credentials",
 		r.AuthMiddleware,
-		apiconnectioncredentials.CreateConnectionCredentials,
+		apiconnections.CreateConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",

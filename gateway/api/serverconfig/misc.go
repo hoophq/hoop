@@ -314,5 +314,5 @@ func newEd25519PrivateKey() (privateKey []byte, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
-	return keys.EncodePrivateKeyToOpenSSH(privKey)
+	return sshproxy.EncodePrivateKeyToOpenSSH(privKey)
 }
