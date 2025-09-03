@@ -6,6 +6,9 @@
 
 ;; Event handlers for command palette
 
+;; Debounce timer for search
+(def search-debounce-timer (atom nil))
+
 (rf/reg-event-fx
  :command-palette->open
  (fn [{:keys [db]} [_]]
@@ -14,6 +17,10 @@
 (rf/reg-event-fx
  :command-palette->close
  (fn [{:keys [db]} [_]]
+   ;; Cancel pending search when closing
+   (when @search-debounce-timer
+     (js/clearTimeout @search-debounce-timer)
+     (reset! search-debounce-timer nil))
    {:db (-> db
             (assoc-in [:command-palette :open?] false)
             (assoc-in [:command-palette :query] "")
@@ -37,6 +44,11 @@
          current-page (get-in db [:command-palette :current-page] :main)
          ;; Search always enabled on main page
          search-enabled-pages #{:main}]
+     ;; Cancel previous search timer
+     (when @search-debounce-timer
+       (js/clearTimeout @search-debounce-timer)
+       (reset! search-debounce-timer nil))
+
      (if (contains? search-enabled-pages current-page)
        ;; Main page - search enabled
        (if (< (count trimmed-query) 2)
@@ -44,18 +56,25 @@
          {:db (-> db
                   (assoc-in [:command-palette :query] safe-query)
                   (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}
-         ;; Valid query, search immediately
-         {:db (-> db
-                  (assoc-in [:command-palette :query] safe-query)
-                  (assoc-in [:command-palette :search-results :status] :searching))
-          :fx [[:dispatch [:command-palette->perform-search trimmed-query]]]})
+         ;; Valid query, search with debounce
+         (do
+           ;; Set new debounce timer
+           (reset! search-debounce-timer
+                   (js/setTimeout
+                    #(rf/dispatch [:command-palette->perform-search trimmed-query])
+                    300)) ; 300ms debounce
+
+           ;; Update query immediately but keep status as :searching for subtle feedback
+           {:db (-> db
+                    (assoc-in [:command-palette :query] safe-query)
+                    (assoc-in [:command-palette :search-results :status] :searching))}))
        ;; Other pages, just update query (no search)
        {:db (assoc-in db [:command-palette :query] safe-query)}))))
 
 (rf/reg-event-fx
  :command-palette->perform-search
  (fn [_ [_ query]]
-   ;; Immediate search without debounce
+   ;; Debounced search execution
    {:fx [[:dispatch
           [:fetch
            {:method "GET"

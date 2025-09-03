@@ -37,6 +37,7 @@
    (case [current-status current-page]
      [:idle :main] "Search for resources, features and more..."
      [:idle :connection-actions] "Choose an action for this connection"
+     [:searching :main] "Searching..."
      "No results found.")])
 
 
