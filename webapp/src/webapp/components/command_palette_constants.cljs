@@ -70,42 +70,37 @@
    [{:id "web-terminal"
      :label "Open in Web Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :editor-plugin}
+     :type :web-terminal
+     :action :web-terminal}
     {:id "local-terminal"
      :label "Open in Local Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])
-     :type :external
-     :action :external}
+     :type :local-terminal
+     :action :local-terminal}
     {:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :edit-connection}]
+     :type :configure
+     :action :configure}]
 
    :custom
    [{:id "web-terminal"
      :label "Open in Web Terminal"
      :icon (fn [] [:> SquareCode {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :editor-plugin}
+     :type :web-terminal
+     :action :web-terminal}
     {:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :edit-connection}]
+     :type :configure
+     :action :configure}]
 
    :default
    [{:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :edit-connection}]})
+     :type :configure
+     :action :configure}]})
 
 ;; Função para filtrar e ajustar itens baseado em permissões e plano do usuário
 (defn filter-items-by-permissions [user-data]

@@ -1,7 +1,8 @@
 (ns webapp.events.command-palette
   (:require
    [clojure.string]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]))
 
 ;; Event handlers para o command palette
 
@@ -107,6 +108,28 @@
      :navigate
      {:fx [[:dispatch [:command-palette->close]]
            [:dispatch [:navigate (:route action)]]]}
+
+     :web-terminal
+     ;; Mesma lógica do connection-list: localStorage + navigate
+     (do
+       (js/localStorage.setItem "selected-connection"
+                                (str {:name (:connection-name action)
+                                      :id (:connection-id action)}))
+       {:fx [[:dispatch [:command-palette->close]]
+             [:dispatch [:navigate :editor-plugin-panel]]]})
+
+     :local-terminal
+     ;; Mesma lógica do connection-list: abrir modal hoop-cli
+     {:fx [[:dispatch [:command-palette->close]]
+           [:dispatch [:modal->open {:content [hoop-cli-modal/main (:connection-name action)]
+                                     :maxWidth "1100px"
+                                     :class "overflow-hidden"}]]]}
+
+     :configure
+     ;; Mesma lógica do connection-list: get plugins + navigate
+     {:fx [[:dispatch [:command-palette->close]]
+           [:dispatch [:plugins->get-my-plugins]]
+           [:dispatch [:navigate :edit-connection {} :connection-name (:connection-name action)]]]}
 
      :external
      {:fx [[:dispatch [:command-palette->close]]]}
