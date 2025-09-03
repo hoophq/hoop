@@ -67,7 +67,7 @@ func Create(c *gin.Context) {
 
 	// if the user status is not managed by the client
 	// fallback using the invited status as default to
-	// ensure backward compatibility with older clients (Webapp & Hoop Cli)
+	// ensure backward compatibility with older clients that do not manage user status
 	if newUser.Status == "" {
 		newUser.Status = openapi.StatusInvited
 	}
