@@ -109,11 +109,31 @@
   "Página de ações para uma conexão específica"
   [connection]
   (let [connection-type (keyword (:type connection))
-        actions (get constants/connection-actions connection-type
-                     (:default constants/connection-actions))]
-    [:> CommandGroup
-     (for [action actions]
-       ^{:key (:id action)}
-       [action-item (assoc action
-                           :connection-name (:name connection)
-                           :connection-id (:id connection))])]))
+        all-actions (get constants/connection-actions connection-type
+                         (:default constants/connection-actions))
+        ;; Separar ações principais de configurações
+        main-actions (remove #(= (:id %) "configure") all-actions)
+        config-actions (filter #(= (:id %) "configure") all-actions)]
+    [:<>
+     ;; Ações principais
+     (when (seq main-actions)
+       [:> CommandGroup
+        (for [action main-actions]
+          ^{:key (:id action)}
+          [action-item (assoc action
+                              :connection-name (:name connection)
+                              :connection-id (:id connection))])])
+
+     ;; Separador se houver ambos os grupos
+     (when (and (seq main-actions) (seq config-actions))
+       [:> CommandSeparator])
+
+     ;; Configurações
+     (when (seq config-actions)
+       [:> CommandGroup
+        {:heading "Settings"}
+        (for [action config-actions]
+          ^{:key (:id action)}
+          [action-item (assoc action
+                              :connection-name (:name connection)
+                              :connection-id (:id connection))])])]))

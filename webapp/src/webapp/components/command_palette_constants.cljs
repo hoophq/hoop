@@ -78,23 +78,6 @@
      :icon (fn [] [:> SquareCode {:size 16}])
      :type :external
      :action :external}
-    {:id "native-client"
-     :label "Open in Native Client"
-     :icon (fn [] [:> SquareCode {:size 16}])
-     :type :external
-     :action :external}
-    {:id "recent-sessions"
-     :label "Recent Sessions"
-     :icon (fn [] [:> GalleryVerticalEnd {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :sessions}
-    {:id "reviews"
-     :label "Reviews"
-     :icon (fn [] [:> Inbox {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :reviews-plugin}
     {:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
@@ -109,12 +92,6 @@
      :type :navigate
      :action :navigate
      :route :editor-plugin}
-    {:id "recent-sessions"
-     :label "Recent Sessions"
-     :icon (fn [] [:> GalleryVerticalEnd {:size 16}])
-     :type :navigate
-     :action :navigate
-     :route :sessions}
     {:id "configure"
      :label "Configure"
      :icon (fn [] [:> Settings {:size 16}])
