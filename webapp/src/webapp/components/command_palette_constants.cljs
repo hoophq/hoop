@@ -130,21 +130,34 @@
      :action :navigate
      :route :edit-connection}]})
 
-;; Função para filtrar itens baseado em permissões do usuário
+;; Função para filtrar e ajustar itens baseado em permissões e plano do usuário
 (defn filter-items-by-permissions [user-data]
   (let [admin? (:admin? user-data)
         selfhosted? (= (:tenancy_type user-data) "selfhosted")
-        ;; Incluir TODAS as rotas para verificação de permissões
+        free-license? (:free-license? user-data)
+        ;; Incluir TODAS as rotas para verificação
         all-routes (concat sidebar-constants/main-routes
                            sidebar-constants/discover-routes
                            sidebar-constants/organization-routes
                            sidebar-constants/integrations-management
                            sidebar-constants/settings-management)]
-    (filter (fn [item]
-              (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
-                (and
-                 ;; Verificar admin-only
-                 (or (not (:admin-only? route)) admin?)
-                 ;; Verificar selfhosted-only
-                 (or (not (:selfhosted-only? route)) selfhosted?))))
-            main-navigation-items)))
+    (->> main-navigation-items
+         ;; APENAS filtrar por permissões básicas (admin/selfhosted)
+         (filter (fn [item]
+                   (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
+                     (and
+                      ;; Verificar admin-only
+                      (or (not (:admin-only? route)) admin?)
+                      ;; Verificar selfhosted-only
+                      (or (not (:selfhosted-only? route)) selfhosted?)))))
+         ;; Ajustar rotas para upgrade quando necessário (SEM filtrar)
+         (map (fn [item]
+                (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
+                  (if (and free-license? (not (:free-feature? route)))
+                    ;; Feature paga em licença gratuita - redirecionar para upgrade
+                    (assoc item
+                           :action :navigate
+                           :route (or (:upgrade-plan-route route) :upgrade-plan)
+                           :requires-upgrade? true)
+                    ;; Feature normal
+                    item)))))))

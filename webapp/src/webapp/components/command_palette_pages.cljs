@@ -11,7 +11,7 @@
 
 (defn action-item
   "Componente genérico para item de ação"
-  [{:keys [id label icon] :as item}]
+  [{:keys [id label icon requires-upgrade?] :as item}]
   [:> CommandItem
    {:key id
     :value label
@@ -22,8 +22,12 @@
     (if (fn? icon)
       [icon]
       [:> icon {:size 16 :class "text-gray-11"}])
-    [:div {:class "flex flex-col"}
-     [:span {:class "text-sm font-medium"} label]]]])
+    [:div {:class "flex justify-between items-center w-full"}
+     [:span {:class (str "text-sm font-medium"
+                         (when requires-upgrade? " text-opacity-70"))}
+      label]
+     (when requires-upgrade?
+       [:span {:class "text-xs text-blue-9 font-medium"} "Upgrade"])]]])
 
 (defn connection-result-item
   "Item de resultado de busca de conexão"
