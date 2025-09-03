@@ -65,6 +65,13 @@ func Create(c *gin.Context) {
 		return
 	}
 
+	// if the user status is not managed by the client
+	// fallback using the invited status as default to
+	// ensure backward compatibility with older clients (Webapp & Hoop Cli)
+	if newUser.Status == "" {
+		newUser.Status = openapi.StatusInvited
+	}
+
 	newUser.ID = uuid.NewString()
 	var hashedPassword string
 	// user.Subject for local auth is altered in this flow, that's
