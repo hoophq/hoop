@@ -233,10 +233,6 @@
     (rf/dispatch [:plugins->get-my-plugins])
     (rf/dispatch [:connections->get-connections])
 
-    ;; Use the tracking event to handle Canny identification
-    (when-let [user-data (:data @user)]
-      (rf/dispatch [:tracking->ensure-canny-available user-data]))
-
     (fn []
       (if (empty? (:data @user))
         [:<>]
