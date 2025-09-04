@@ -102,6 +102,7 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 		"client-version":        stream.GetMeta("version"),
 		"platform":              stream.GetMeta("platform"),
 		"user-agent":            userAgent,
+		"origin":                clientOrigin,
 		"verb":                  clientVerb,
 	})
 
