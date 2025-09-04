@@ -16,6 +16,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// these plugins are managed by the connection resource
+var pluginsManagedByConnection = []string{
+	plugintypes.PluginReviewName,
+	plugintypes.PluginDLPName,
+}
+
 type ErrNotFoundGuardRailRules struct {
 	rules []string
 }
@@ -194,8 +200,7 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 	}
 
 	// upsert plugin connection only for connection managed plugins
-	isPluginManagedByConnection := pluginName == plugintypes.PluginReviewName || pluginName == plugintypes.PluginDLPName
-	if isPluginManagedByConnection {
+	if slices.Contains(pluginsManagedByConnection, pluginName) {
 		err = tx.Exec(`
 			INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
 			VALUES ((SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name), @org_id, @connection_id, @config)
