@@ -1,11 +1,11 @@
-(ns webapp.components.command-palette
+(ns webapp.shared-ui.cmdk.command-palette
   (:require
    ["cmdk" :as cmdk]
    ["@radix-ui/themes" :refer [Text]]
    ["lucide-react" :refer [Search X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.command-palette-pages :as pages]))
+   [webapp.shared-ui.cmdk.command-palette-pages :as pages]))
 
 (def Command (.-Command cmdk))
 (def CommandDialog (.-CommandDialog cmdk))

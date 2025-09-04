@@ -1,9 +1,9 @@
-(ns webapp.components.command-palette-pages
+(ns webapp.shared-ui.cmdk.command-palette-pages
   (:require
    ["cmdk" :as cmdk]
    [clojure.string :as cs]
    [re-frame.core :as rf]
-   [webapp.components.command-palette-constants :as constants]))
+   [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
 
 (def CommandGroup (.-CommandGroup cmdk))
 (def CommandItem (.-CommandItem cmdk))

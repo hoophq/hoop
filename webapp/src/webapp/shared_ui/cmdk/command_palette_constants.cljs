@@ -1,4 +1,4 @@
-(ns webapp.components.command-palette-constants
+(ns webapp.shared-ui.cmdk.command-palette-constants
   (:require
    ["lucide-react" :refer [SquareCode Settings]]
    [webapp.shared-ui.sidebar.constants :as sidebar-constants]))

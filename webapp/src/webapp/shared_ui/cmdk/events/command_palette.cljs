@@ -1,4 +1,4 @@
-(ns webapp.events.command-palette
+(ns webapp.shared-ui.cmdk.events.command-palette
   (:require
    [clojure.string]
    [re-frame.core :as rf]
