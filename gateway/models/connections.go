@@ -193,7 +193,7 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 			Error
 	}
 
-	// add plugin connection only for managed plugins
+	// upsert plugin connection only for connection managed plugins
 	isPluginManagedByConnection := pluginName == plugintypes.PluginReviewName || pluginName == plugintypes.PluginDLPName
 	if isPluginManagedByConnection {
 		err = tx.Exec(`
