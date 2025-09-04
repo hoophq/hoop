@@ -25,31 +25,40 @@
             sidebar-constants/integrations-management
             sidebar-constants/settings-management])))
 
-;; Connection-specific actions by type
-(def connection-actions
-  {:database
-   [{:id "web-terminal"
-     :label "Open in Web Terminal"
-     :icon (fn [] [:> SquareCode {:size 16}])
-     :action :web-terminal}
-    {:id "local-terminal"
-     :label "Open in Local Terminal"
-     :icon (fn [] [:> SquareCode {:size 16}])
-     :action :local-terminal}
-    {:id "configure"
-     :label "Configure"
-     :icon (fn [] [:> Settings {:size 16}])
-     :action :configure}]
+;; Helper functions to check connection permissions (same logic as connection-list)
+(defn- can-connect? [connection]
+  (= "enabled" (:access_mode_connect connection)))
 
-   :default
-   [{:id "web-terminal"
-     :label "Open in Web Terminal"
-     :icon (fn [] [:> SquareCode {:size 16}])
-     :action :web-terminal}
-    {:id "configure"
-     :label "Configure"
-     :icon (fn [] [:> Settings {:size 16}])
-     :action :configure}]})
+(defn- can-open-web-terminal? [connection]
+  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
+    (or (= "enabled" (:access_mode_runbooks connection))
+        (= "enabled" (:access_mode_exec connection)))
+    false))
+
+;; Generate connection actions dynamically based on connection permissions
+(defn get-connection-actions [connection admin?]
+  (let [actions []]
+    (cond-> actions
+      ;; Web Terminal - only if can open web terminal
+      (can-open-web-terminal? connection)
+      (conj {:id "web-terminal"
+             :label "Open in Web Terminal"
+             :icon (fn [] [:> SquareCode {:size 16}])
+             :action :web-terminal})
+
+      ;; Local Terminal - only if can connect
+      (can-connect? connection)
+      (conj {:id "local-terminal"
+             :label "Open in Local Terminal"
+             :icon (fn [] [:> SquareCode {:size 16}])
+             :action :local-terminal})
+
+      ;; Configure - only for admins
+      admin?
+      (conj {:id "configure"
+             :label "Configure"
+             :icon (fn [] [:> Settings {:size 16}])
+             :action :configure}))))
 
 ;; Filter and adjust items based on user permissions and license plan
 (defn filter-items-by-permissions [user-data]
