@@ -69,7 +69,7 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		return nil, nil
 	}
 
-	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserEmail, pctx.ConnectionID)
+	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
 	if err != nil && err != models.ErrNotFound {
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
