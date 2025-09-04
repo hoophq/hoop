@@ -16,6 +16,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// these plugins are managed by the connection resource
+var pluginsManagedByConnection = []string{
+	plugintypes.PluginReviewName,
+	plugintypes.PluginDLPName,
+}
+
 type ErrNotFoundGuardRailRules struct {
 	rules []string
 }
@@ -192,19 +198,23 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 		}).
 			Error
 	}
-	err = tx.Exec(`
-		INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
-		VALUES ((SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name), @org_id, @connection_id, @config)
-		ON CONFLICT (plugin_id, connection_id) DO UPDATE SET config = @config, updated_at = @updated_at
-		`, map[string]any{
-		"org_id":        orgID,
-		"plugin_name":   pluginName,
-		"connection_id": connID,
-		"config":        config,
-		"updated_at":    time.Now().UTC(),
-	}).Error
-	if err != nil {
-		return fmt.Errorf("failed to create review plugin connection, reason: %v", err)
+
+	// upsert plugin connection only for connection managed plugins
+	if slices.Contains(pluginsManagedByConnection, pluginName) {
+		err = tx.Exec(`
+			INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
+			VALUES ((SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name), @org_id, @connection_id, @config)
+			ON CONFLICT (plugin_id, connection_id) DO UPDATE SET config = @config, updated_at = @updated_at
+			`, map[string]any{
+			"org_id":        orgID,
+			"plugin_name":   pluginName,
+			"connection_id": connID,
+			"config":        config,
+			"updated_at":    time.Now().UTC(),
+		}).Error
+		if err != nil {
+			return fmt.Errorf(`failed to create %q plugin connection, reason: %v`, pluginName, err)
+		}
 	}
 	return nil
 }
