@@ -208,7 +208,7 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 			"updated_at":    time.Now().UTC(),
 		}).Error
 		if err != nil {
-			return fmt.Errorf(`failed to create plugin %q connection, reason: %v`, pluginName, err)
+			return fmt.Errorf(`failed to create %q plugin connection, reason: %v`, pluginName, err)
 		}
 	}
 	return nil
