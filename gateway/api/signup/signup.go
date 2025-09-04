@@ -133,12 +133,12 @@ func identifySignup(u models.User, userAgent string) {
 	client := analytics.New()
 	client.Identify(&types.APIContext{
 		OrgID:  u.OrgID,
-		UserID: u.ID,
+		UserID: u.Subject,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(u.ID, analytics.EventSignup, map[string]any{
+		client.Track(u.Subject, analytics.EventSignup, map[string]any{
 			"user-agent": userAgent,
 		})
 	}()

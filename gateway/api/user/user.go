@@ -123,7 +123,7 @@ func Create(c *gin.Context) {
 
 	ctx.Analytics().Identify(&types.APIContext{
 		OrgID:  ctx.OrgID,
-		UserID: newUser.ID,
+		UserID: userSubject,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
@@ -131,8 +131,8 @@ func Create(c *gin.Context) {
 		properties := map[string]any{
 			"user-agent": apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		}
-		ctx.Analytics().Track(newUser.ID, analytics.EventSignup, properties)
-		ctx.Analytics().Track(newUser.ID, analytics.EventCreateInvitedUser, properties)
+		ctx.Analytics().Track(userSubject, analytics.EventSignup, properties)
+		ctx.Analytics().Track(userSubject, analytics.EventCreateInvitedUser, properties)
 	}()
 
 	c.JSON(http.StatusCreated, newUser)

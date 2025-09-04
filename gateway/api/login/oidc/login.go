@@ -424,10 +424,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 		// merge this anonymous event with the identified user
 		trackClient.Identify(&types.APIContext{
 			OrgID:           org.ID,
-			UserID:          newUser.ID,
+			UserID:          newUser.Subject,
 			UserAnonSubject: org.ID,
 		})
-		trackClient.Track(newUser.ID, analytics.EventSingleTenantFirstUserCreated, nil)
+		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
 	// add the user to the default group

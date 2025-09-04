@@ -80,10 +80,11 @@ func Register(c *gin.Context) {
 
 	adminGroupName := types.GroupAdmin
 	userID := uuid.New().String()
+	userSubject := user.Email
 
 	err = models.CreateUser(models.User{
 		ID:             userID,
-		Subject:        user.Email,
+		Subject:        userSubject,
 		OrgID:          org.ID,
 		Email:          user.Email,
 		Name:           user.Name,
@@ -106,10 +107,10 @@ func Register(c *gin.Context) {
 	trackClient := analytics.New()
 	trackClient.Identify(&types.APIContext{
 		OrgID:           org.ID,
-		UserID:          userID,
+		UserID:          userSubject,
 		UserAnonSubject: org.ID,
 	})
-	trackClient.Track(userID, analytics.EventSingleTenantFirstUserCreated, nil)
+	trackClient.Track(userSubject, analytics.EventSingleTenantFirstUserCreated, nil)
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {

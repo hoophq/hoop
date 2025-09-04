@@ -1,6 +1,9 @@
 package analytics
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
@@ -9,6 +12,11 @@ import (
 type Segment struct {
 	analytics.Client
 	environmentName string
+}
+
+func getUserIDHash(userID string) string {
+	hash := sha256.Sum256([]byte(userID))
+	return hex.EncodeToString(hash[:])
 }
 
 func New() *Segment {
@@ -27,12 +35,14 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 		return
 	}
 
+	hashedUserID := getUserIDHash(ctx.UserID)
+
 	_ = s.Client.Enqueue(analytics.Identify{
-		UserId:      ctx.UserID,
+		UserId:      hashedUserID,
 		AnonymousId: ctx.UserAnonSubject,
 		Traits: analytics.NewTraits().
 			Set("org-id", ctx.OrgID).
-			Set("user-id", ctx.UserID).
+			Set("user-id", hashedUserID).
 			Set("is-admin", ctx.IsAdminUser()).
 			Set("environment", s.environmentName).
 			Set("status", ctx.UserStatus),
@@ -41,7 +51,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 	_ = s.Client.Enqueue(analytics.Group{
 		GroupId:     ctx.OrgID,
 		AnonymousId: ctx.UserAnonSubject,
-		UserId:      ctx.UserID,
+		UserId:      hashedUserID,
 		Traits: analytics.NewTraits().
 			Set("org-id", ctx.OrgID),
 	})
@@ -78,10 +88,13 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties["user-id"] = userID
+
+	hashedUserID := getUserIDHash(userID)
+
+	properties["user-id"] = hashedUserID
 	properties["auth-method"] = appconfig.Get().AuthMethod()
 	_ = s.Client.Enqueue(analytics.Track{
-		UserId:     userID,
+		UserId:     hashedUserID,
 		Event:      eventName,
 		Properties: properties,
 	})
