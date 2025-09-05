@@ -1,17 +1,11 @@
 (ns webapp.shared-ui.cmdk.command-palette
   (:require
-   ["cmdk" :as cmdk]
+   ["cmdk" :refer [Command CommandDialog CommandInput CommandList CommandEmpty]]
    ["@radix-ui/themes" :refer [Text]]
    ["lucide-react" :refer [Search X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.shared-ui.cmdk.command-palette-pages :as pages]))
-
-(def Command (.-Command cmdk))
-(def CommandDialog (.-CommandDialog cmdk))
-(def CommandInput (.-CommandInput cmdk))
-(def CommandList (.-CommandList cmdk))
-(def CommandEmpty (.-CommandEmpty cmdk))
 
 (defn breadcrumb-tag
   "Tag showing current context"
@@ -39,8 +33,6 @@
      [:idle :connection-actions] "Choose an action for this connection"
      [:searching :main] "Searching..."
      "No results found.")])
-
-
 
 (defn command-palette
   "Main command palette component"
@@ -121,24 +113,14 @@
 (defn keyboard-listener
   "Component to capture CMD+K / Ctrl+K keyboard shortcuts"
   []
-  (r/create-class
-   {:component-did-mount
-    (fn []
-      (let [handle-keydown
-            (fn [e]
-              (when (and (or (.-metaKey e) (.-ctrlKey e))
-                         (= (.-key e) "k"))
-                (.preventDefault e)
-                (rf/dispatch [:command-palette->toggle])))]
-        (js/document.addEventListener "keydown" handle-keydown)
-        ;; Store function for cleanup
-        (set! (.-keydownHandler js/document) handle-keydown)))
+  (r/with-let [handle-keydown (fn [e]
+                                (when (and (or (.-metaKey e) (.-ctrlKey e))
+                                           (= (.-key e) "k"))
+                                  (.preventDefault e)
+                                  (rf/dispatch [:command-palette->toggle])))
+               _ (js/document.addEventListener "keydown" handle-keydown)]
 
-    :component-will-unmount
-    (fn []
-      (when (.-keydownHandler js/document)
-        (js/document.removeEventListener "keydown" (.-keydownHandler js/document))
-        (set! (.-keydownHandler js/document) nil)))
+    nil
 
-    :reagent-render
-    (fn [] nil)}))
+    (finally
+      (js/document.removeEventListener "keydown" handle-keydown))))

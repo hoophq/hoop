@@ -31,8 +31,8 @@
 (rf/reg-event-fx
  :command-palette->toggle
  (fn [{:keys [db]} [_]]
-   (let [current-state (get-in db [:command-palette :open?] false)]
-     (if current-state
+   (let [is-open? (get-in db [:command-palette :open?] false)]
+     (if is-open?
        {:fx [[:dispatch [:command-palette->close]]]}
        {:fx [[:dispatch [:command-palette->open]]]}))))
 

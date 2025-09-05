@@ -6,24 +6,22 @@
 ;; Simplified structure - direct pages + search only
 (def main-navigation-items
   ;; Static pages based on sidebar menu
-  (concat
-   ;; All sidebar routes flattened into single list
-   (mapcat (fn [routes]
-             (map (fn [route]
-                    {:id (:name route)
-                     :label (:label route)
-                     :icon (fn [] [(get sidebar-constants/icons-registry (:name route)
-                                        (fn [& _] [:> Settings {:size 16}])) {:size 16}])
-                     :type :navigation
-                     :action :navigate
-                     :route (:navigate route)
-                     :keywords [(:label route) (:name route)]})
-                  routes))
-           [sidebar-constants/main-routes
-            sidebar-constants/discover-routes
-            sidebar-constants/organization-routes
-            sidebar-constants/integrations-management
-            sidebar-constants/settings-management])))
+  (mapcat (fn [routes]
+            (map (fn [route]
+                   {:id (:name route)
+                    :label (:label route)
+                    :icon (fn [] [(get sidebar-constants/icons-registry (:name route)
+                                       (fn [& _] [:> Settings {:size 16}])) {:size 16}])
+                    :type :navigation
+                    :action :navigate
+                    :route (:navigate route)
+                    :keywords [(:label route) (:name route)]})
+                 routes))
+          [sidebar-constants/main-routes
+           sidebar-constants/discover-routes
+           sidebar-constants/organization-routes
+           sidebar-constants/integrations-management
+           sidebar-constants/settings-management]))
 
 ;; Helper functions to check connection permissions (same logic as connection-list)
 (defn- can-connect? [connection]

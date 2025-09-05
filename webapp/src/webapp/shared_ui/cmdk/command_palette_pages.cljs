@@ -1,13 +1,9 @@
 (ns webapp.shared-ui.cmdk.command-palette-pages
   (:require
-   ["cmdk" :as cmdk]
+   ["cmdk" :refer [CommandGroup CommandItem CommandSeparator]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
-
-(def CommandGroup (.-CommandGroup cmdk))
-(def CommandItem (.-CommandItem cmdk))
-(def CommandSeparator (.-CommandSeparator cmdk))
 
 (defn action-item
   "Generic action item component"
@@ -16,8 +12,7 @@
    {:key id
     :value label
     :keywords [label]
-    :onSelect (fn []
-                (rf/dispatch [:command-palette->execute-action item]))}
+    :onSelect #(rf/dispatch [:command-palette->execute-action item])}
    [:div {:class "flex items-center gap-2"}
     (if (fn? icon)
       [icon]
@@ -36,8 +31,7 @@
    {:key (:id connection)
     :value (:name connection)
     :keywords [(:type connection) (:subtype connection) (:status connection) "connection"]
-    :onSelect (fn []
-                (rf/dispatch [:command-palette->navigate-to-page :connection-actions connection]))}
+    :onSelect #(rf/dispatch [:command-palette->navigate-to-page :connection-actions connection])}
    [:div {:class "flex items-center gap-2"}
     [:div {:class "flex flex-col"}
      [:span {:class "text-sm font-medium"} (:name connection)]]]])
@@ -50,9 +44,7 @@
      {:key runbook-path
       :value filename
       :keywords ["runbook" "script" "sql"]
-      :onSelect (fn []
-                  (rf/dispatch [:command-palette->close])
-                  (js/console.log "Navigate to runbook:" runbook-path))}
+      :onSelect #(rf/dispatch [:command-palette->close])}
      [:div {:class "flex items-center gap-2"}
       [:div {:class "flex flex-col"}
        [:span {:class "text-sm font-medium"} filename]
