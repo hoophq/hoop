@@ -597,6 +597,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/datamasking-rules": {
+            "put": {
+                "description": "Update Data Masking Rule Connections",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Update Data Masking Rule Connections",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DataMaskingRuleConnectionRequest"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DataMaskingRuleConnection"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/dbaccess": {
             "post": {
                 "description": "Create Database Access",
@@ -4123,7 +4181,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Session"
+                    "Sessions"
                 ],
                 "summary": "Reviewed Exec",
                 "parameters": [
@@ -5916,6 +5974,52 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2023-08-15T14:30:45Z"
+                }
+            }
+        },
+        "openapi.DataMaskingRuleConnection": {
+            "type": "object",
+            "properties": {
+                "connection_id": {
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "rule_id": {
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ],
+                    "example": "active"
+                }
+            }
+        },
+        "openapi.DataMaskingRuleConnectionRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "rule_id": {
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "status": {
+                    "description": "The status of the data masking rule connection",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ],
+                    "example": "active"
                 }
             }
         },

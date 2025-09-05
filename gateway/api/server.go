@@ -284,6 +284,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.GetTableColumns)
+	r.PUT("/connections/:nameOrID/datamasking-rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiconnections.UpdateDataMaskingRuleConnection)
 
 	// DB Access routes
 	r.POST("/connections/:nameOrID/dbaccess",

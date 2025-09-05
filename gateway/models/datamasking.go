@@ -36,6 +36,14 @@ type CustomEntityTypesEntry struct {
 	Score    float64  `json:"score"`
 }
 
+type DataMaskingRuleConnection struct {
+	ID           string `gorm:"column:id"`
+	OrgID        string `gorm:"column:org_id"`
+	RuleID       string `gorm:"column:rule_id"`
+	ConnectionID string `gorm:"column:connection_id"`
+	Status       string `gorm:"column:status"`
+}
+
 func (r *SupportedEntityTypesList) Scan(value any) error {
 	if value == nil {
 		return nil
@@ -183,4 +191,21 @@ func DeleteDataMaskingRule(orgID, ruleID string) error {
 		Where("org_id = ? AND id = ?", orgID, ruleID).
 		Delete(&DataMaskingRule{}).
 		Error
+}
+
+func UpdateDataMaskingRuleConnection(orgID, connectionID string, items []DataMaskingRuleConnection) ([]DataMaskingRuleConnection, error) {
+	return items, DB.Table("private.datamasking_rules_connections").Transaction(func(tx *gorm.DB) error {
+		err := tx.Exec(`DELETE FROM private.datamasking_rules_connections WHERE org_id = ? AND connection_id = ?`,
+			orgID, connectionID).
+			Error
+		if err != nil {
+			return fmt.Errorf("failed deleting existing data masking rule connections: %v", err)
+		}
+		for _, resource := range items {
+			if err := tx.Create(&resource).Error; err != nil {
+				return fmt.Errorf("failed creating data masking rule connection: %v", err)
+			}
+		}
+		return nil
+	})
 }
