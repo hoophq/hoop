@@ -22,7 +22,8 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
-	"github.com/hoophq/hoop/gateway/proxyproto"
+	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -143,14 +144,27 @@ func Run() {
 		log.Fatalf("failed to get server config, reason=%v", err)
 	}
 
-	isPostgresProxyEnabled := serverConfig != nil && serverConfig.PostgresServerConfig != nil
-	if isPostgresProxyEnabled {
-		if err := proxyproto.GetPostgresServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress); err != nil {
-			log.Fatalf("failed to start postgres proxy server, reason=%v", err)
+	log.Infof("starting proxy servers")
+	if serverConfig != nil {
+		if serverConfig.PostgresServerConfig != nil {
+			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress)
+			if err != nil {
+				log.Fatalf("failed to start postgres server, reason=%v", err)
+			}
+		}
+
+		if serverConfig.SSHServerConfig != nil {
+			err := sshproxy.GetServerInstance().Start(
+				serverConfig.SSHServerConfig.ListenAddress,
+				serverConfig.SSHServerConfig.HostsKey,
+			)
+			if err != nil {
+				log.Fatalf("failed to start ssh server, reason=%v", err)
+			}
 		}
 	}
 
-	log.Infof("starting servers, env-authmethod=%v, env-api-key-set=%v",
+	log.Infof("starting api servers, env-authmethod=%v, env-api-key-set=%v",
 		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
