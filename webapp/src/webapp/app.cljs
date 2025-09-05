@@ -608,8 +608,7 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])
-        analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
     (.registerModules ModuleRegistry #js[AllCommunityModule])
@@ -621,7 +620,4 @@
 
         :else
         [:> Theme {:radius "large" :panelBackground "solid"}
-         ;; Hidden element to display analytics_tracking value for testing
-         [:div {:style {:display "none"}}
-          [:span {:id "analytics-tracking-value"} (str @analytics-tracking)]]
          [routes/panels @active-panel @gateway-public-info]]))))

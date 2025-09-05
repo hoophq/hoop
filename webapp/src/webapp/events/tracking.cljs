@@ -4,25 +4,10 @@
    [re-frame.core :as rf]
    [webapp.config :as config]))
 
-(defn- create-script-element [src id async defer]
-  (let [script-element (.createElement js/document "script")]
-    (when id (.setAttribute script-element "id" id))
-    (.setAttribute script-element "src" src)
-    (.setAttribute script-element "type" "text/javascript")
-    (when async (.setAttribute script-element "async" "true"))
-    (when defer (.setAttribute script-element "defer" "true"))
-    script-element))
-
-(defn- inject-script [src id async defer]
-  (let [script-element (create-script-element src id async defer)
-        head-element (.getElementsByTagName js/document "head")
-        head (aget head-element 0)]
-    (.appendChild head script-element)))
-
 (rf/reg-event-fx
  :tracking->initialize-if-allowed
  (fn
-   [{:keys [db]} _]
+   [_ _]
    (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
      (if (not analytics-tracking)
        ;; Tracking is disabled, ensure all tracking is stopped
@@ -64,45 +49,10 @@
    {}))
 
 (rf/reg-event-fx
- :tracking->ensure-canny-available
- (fn [{:keys [db]} [_ user-data]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
-     (if (not analytics-tracking)
-       ;; Tracking is disabled, do nothing
-       {}
-       ;; Otherwise, identify user in Canny if available
-       (do
-         (when (and (exists? js/Canny) (= (type js/Canny) js/Function))
-           (js/Canny "identify"
-                     #js{:appID config/canny-id
-                         :user #js{:email (:email user-data)
-                                   :name (:name user-data)
-                                   :id (:id user-data)}}))
-         {})))))
-
-(rf/reg-event-fx
  :tracking->load-scripts
  (fn
    [_ _]
    ;; Only inject scripts if they don't already exist
-   (when-not (.getElementById js/document "google-tag-manager")
-     (inject-script "https://www.googletagmanager.com/gtag/js?id=G-ZS8J67B1SX" "google-tag-manager" true false)
-     (let [gtag-script (.createElement js/document "script")]
-       (.setAttribute gtag-script "type" "text/javascript")
-       (set! (.-innerHTML gtag-script) "window.dataLayer = window.dataLayer || []; function gtag() { dataLayer.push(arguments); } gtag('js', new Date()); gtag('config', 'G-ZS8J67B1SX');")
-       (let [head-element (.getElementsByTagName js/document "head")
-             head (aget head-element 0)]
-         (.appendChild head gtag-script))))
-
-   (when-not (.getElementById js/document "paddle-js")
-     (inject-script "https://cdn.paddle.com/paddle/v2/paddle.js" "paddle-js" true false)
-     (let [paddle-script (.createElement js/document "script")]
-       (.setAttribute paddle-script "type" "text/javascript")
-       (set! (.-innerHTML paddle-script) "Paddle.Initialize({ token: 'live_fb0003b8e4345ffca9e35f0e34b', pwCustomer: {} });")
-       (let [head-element (.getElementsByTagName js/document "head")
-             head (aget head-element 0)]
-         (.appendChild head paddle-script))))
-
    (when-not (.getElementById js/document "clarity-script")
      (let [clarity-script (.createElement js/document "script")]
        (.setAttribute clarity-script "id" "clarity-script")
@@ -127,16 +77,6 @@
        (let [head-element (.getElementsByTagName js/document "head")
              head (aget head-element 0)]
          (.appendChild head intercom-script))))
-
-   (when-not (.getElementById js/document "canny-sdk")
-     (let [canny-script (.createElement js/document "script")]
-       (.setAttribute canny-script "id" "canny-sdk")
-       (.setAttribute canny-script "type" "text/javascript")
-       (set! (.-innerHTML canny-script) "!function (w, d, i, s) { function l() { if (!d.getElementById(i)) { var f = d.getElementsByTagName(s)[0], e = d.createElement(s); e.type = \"text/javascript\", e.async = !0, e.src = \"https://canny.io/sdk.js\", f.parentNode.insertBefore(e, f) } } if (\"function\" != typeof w.Canny) { var c = function () { c.q.push(arguments) }; c.q = [], w.Canny = c, \"complete\" === d.readyState ? l() : w.attachEvent ? w.attachEvent(\"onload\", l) : w.addEventListener(\"load\", l, !1) } }(window, document, \"canny-jssdk\", \"script\");")
-       (let [head-element (.getElementsByTagName js/document "head")
-             head (aget head-element 0)]
-         (.appendChild head canny-script))))
-
    {}))
 
 (rf/reg-event-fx
