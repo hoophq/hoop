@@ -259,7 +259,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	}
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
-	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired"))
+	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
 
 	return &sshConnection{
 		id:  connID,
@@ -323,6 +323,9 @@ func (c *sshConnection) handleClientWrite() {
 	startupCh := make(chan struct{})
 	// listen for incoming packets from the gRPC server
 	go func() {
+		// always send startup signal when the control loop ends
+		// to ensure it doesn't get stuck until it reaches the open session timeout
+		defer func() { startupCh <- struct{}{}; close(startupCh) }()
 		for {
 			pkt, err := c.grpcClient.Recv()
 			if err != nil {
@@ -338,7 +341,6 @@ func (c *sshConnection) handleClientWrite() {
 			case pbclient.SessionOpenOK:
 				log.With("sid", c.sid).Infof("session opened successfully")
 				startupCh <- struct{}{}
-
 			case pbclient.SSHConnectionWrite:
 				switch sshtypes.DecodeType(pkt.Payload) {
 				case sshtypes.DataType:
@@ -382,7 +384,6 @@ func (c *sshConnection) handleClientWrite() {
 
 			case pbclient.SessionOpenWaitingApproval:
 				c.cancelFn("session with review are not implemented yet, closing connection")
-				startupCh <- struct{}{} // I guess it needs to be removed
 				return
 
 			case pbclient.TCPConnectionClose, pbclient.SessionClose:
