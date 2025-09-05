@@ -201,10 +201,8 @@ func UpdateDataMaskingRuleConnection(orgID, connectionID string, items []DataMas
 		if err != nil {
 			return fmt.Errorf("failed deleting existing data masking rule connections: %v", err)
 		}
-		for _, resource := range items {
-			if err := tx.Create(&resource).Error; err != nil {
-				return fmt.Errorf("failed creating data masking rule connection: %v", err)
-			}
+		if err := tx.Create(&items).Error; err != nil {
+			return fmt.Errorf("failed creating data masking rule connection: %v", err)
 		}
 		return nil
 	})

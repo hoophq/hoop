@@ -11,7 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-// UpdateDataMaskingRuleConnections
+// UpdateDataMaskingRuleConnection
 //
 //	@Summary		Update Data Masking Rule Connections
 //	@Description	Update Data Masking Rule Connections
