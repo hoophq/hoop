@@ -5981,18 +5981,22 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "connection_id": {
+                    "description": "The unique identifier of the connection",
                     "type": "string",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "id": {
+                    "description": "The unique identifier of the data masking rule connection",
                     "type": "string",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "rule_id": {
+                    "description": "The unique identifier of the data masking rule",
                     "type": "string",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "status": {
+                    "description": "The status of the data masking rule connection",
                     "type": "string",
                     "enum": [
                         "active",
@@ -6009,11 +6013,12 @@ const docTemplate = `{
             ],
             "properties": {
                 "rule_id": {
+                    "description": "The unique identifier of the data masking rule",
                     "type": "string",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "status": {
-                    "description": "The status of the data masking rule connection",
+                    "description": "The status of the data masking rule",
                     "type": "string",
                     "enum": [
                         "active",
