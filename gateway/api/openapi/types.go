@@ -1538,25 +1538,21 @@ type CustomEntityTypesEntry struct {
 }
 
 type DataMaskingRuleConnectionRequest struct {
-	// The status of the data masking rule connection
+	// The unique identifier of the data masking rule
+	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The status of the data masking rule
 	Status string `json:"status" enums:"active,inactive" example:"active" binding:"required"`
-
-	// Items []DataMaskingRuleConnectionItem `json:"items" binding:"required,dive"`
-
-	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	// Status string `json:"status" enums:"active,inactive" example:"active"`
-}
-
-type DataMaskingRuleConnectionItem struct {
-	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	Status string `json:"status" enums:"active,inactive" example:"active"`
 }
 
 type DataMaskingRuleConnection struct {
-	ID           string `json:"id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	RuleID       string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the data masking rule connection
+	ID string `json:"id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the data masking rule
+	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the connection
 	ConnectionID string `json:"connection_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	Status       string `json:"status" enums:"active,inactive" example:"active"`
+	// The status of the data masking rule connection
+	Status string `json:"status" enums:"active,inactive" example:"active"`
 }
 
 type ServerMiscConfig struct {
