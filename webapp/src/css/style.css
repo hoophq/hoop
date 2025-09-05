@@ -2,6 +2,8 @@
   --separator-border: rgba(128, 128, 128, 0.35);
 }
 
+/* Smooth color transitions for search feedback */
+
 .allotment-module_splitView__L-yRc {
   height: 100%;
   overflow: hidden;
