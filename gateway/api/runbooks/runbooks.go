@@ -203,7 +203,7 @@ func RunExec(c *gin.Context) {
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      sessionID,
 		ConnectionName: connectionName,
-		BearerToken:    getAccessToken(c),
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:      userAgent,
 		Origin:         proto.ConnectionOriginClientAPIRunbooks,
 	})

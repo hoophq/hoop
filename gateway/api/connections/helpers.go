@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -162,19 +161,6 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		}
 	}
 	return
-}
-
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	apiKey := c.GetHeader("Api-Key")
-	if apiKey != "" {
-		return apiKey
-	}
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
-	}
-	return ""
 }
 
 func getString(m map[string]interface{}, key string) string {
