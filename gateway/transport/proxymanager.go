@@ -196,13 +196,12 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 		userAgent := apiutils.NormalizeUserAgent(func(key string) []string {
 			return []string{stream.GetMeta("user-agent")}
 		})
-		analytics.New().Track(pctx.UserEmail, analytics.EventGrpcConnect, map[string]any{
+		analytics.New().Track(pctx.UserID, analytics.EventGrpcConnect, map[string]any{
 			"connection-name":    req.RequestConnectionName,
 			"connection-type":    conn.Type,
 			"connection-subtype": conn.SubType,
 			"client-version":     stream.GetMeta("version"),
 			"platform":           stream.GetMeta("platform"),
-			"hostname":           stream.GetMeta("hostname"),
 			"user-agent":         userAgent,
 			"origin":             clientOrigin,
 			"verb":               pb.ClientVerbConnect,

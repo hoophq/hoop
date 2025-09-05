@@ -60,6 +60,7 @@ func (s *serverStreamWrapper) Context() context.Context {
 			}
 			if v.UserContext.OrgID != "" {
 				mdCopy.Set("org-id", v.UserContext.OrgID)
+				mdCopy.Set("user-id", v.UserContext.UserID)
 				mdCopy.Set("user-email", v.UserContext.UserEmail)
 			}
 			if v.Agent.ID != "" {
