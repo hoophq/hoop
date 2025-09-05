@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -26,33 +25,33 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-var (
-	instanceStore        = memory.New()
-	instanceKey   string = "ssh_server"
-)
-
 // from syscall.SIGWINCH, avoid syscall errors when compiling on Windows
 const SIGWINCH = syscall.Signal(0x1c)
+const instanceKey = "ssh_server"
+
+var instanceStore sync.Map
 
 type proxyServer struct {
 	listenAddress   string
-	connectionStore memory.Store
+	connectionStore sync.Map
 	listener        net.Listener
 	hostKey         ssh.Signer
 }
 
 // GetServerInstance returns the singleton instance of SSHServer.
 func GetServerInstance() *proxyServer {
-	if server, ok := instanceStore.Get(instanceKey).(*proxyServer); ok {
+	instance, _ := instanceStore.Load(instanceKey)
+	if server, ok := instance.(*proxyServer); ok {
 		return server
 	}
 	server := &proxyServer{}
-	instanceStore.Set(instanceKey, server)
+	instanceStore.Store(instanceKey, server)
 	return server
 }
 
 func (s *proxyServer) Start(listenAddr, hostsKeyB64Enc string) (err error) {
-	if _, ok := instanceStore.Get(instanceKey).(*proxyServer); ok && s.listener != nil {
+	instance, _ := instanceStore.Load(instanceKey)
+	if _, ok := instance.(*proxyServer); ok && s.listener != nil {
 		return nil
 	}
 
@@ -67,22 +66,20 @@ func (s *proxyServer) Start(listenAddr, hostsKeyB64Enc string) (err error) {
 	if err != nil {
 		return err
 	}
-	instanceStore.Set(instanceKey, server)
+	instanceStore.Store(instanceKey, server)
 	return nil
 }
 
 func (s *proxyServer) Stop() error {
-	if server, ok := instanceStore.Pop(instanceKey).(*proxyServer); ok {
-		if s.connectionStore == nil {
-			return nil
-		}
-
+	instance, _ := instanceStore.LoadAndDelete(instanceKey)
+	if server, ok := instance.(*proxyServer); ok {
 		// cancel all active connections
-		for _, obj := range s.connectionStore.List() {
-			if sshConn, ok := obj.(*sshConnection); ok {
+		s.connectionStore.Range(func(key, value any) bool {
+			if sshConn, ok := value.(*sshConnection); ok {
 				sshConn.cancelFn("proxy server is shutting down")
 			}
-		}
+			return true
+		})
 
 		// close the listener
 		if server.listener != nil {
@@ -99,7 +96,7 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
 	server := &proxyServer{
-		connectionStore: memory.New(),
+		connectionStore: sync.Map{},
 		listener:        lis,
 		listenAddress:   listenAddr,
 		hostKey:         hostKey,
@@ -132,14 +129,14 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 			}
 
 			// store the connection instance
-			server.connectionStore.Set(sessionID, conn)
+			server.connectionStore.Store(sessionID, conn)
 
 			go func() {
 				// handle the SSH connection
 				conn.handleConnection()
 
 				// remove the connection from the store once done
-				server.connectionStore.Del(sessionID)
+				server.connectionStore.Delete(sessionID)
 			}()
 		}
 	}()
@@ -341,6 +338,7 @@ func (c *sshConnection) handleClientWrite() {
 			case pbclient.SessionOpenOK:
 				log.With("sid", c.sid).Infof("session opened successfully")
 				startupCh <- struct{}{}
+
 			case pbclient.SSHConnectionWrite:
 				switch sshtypes.DecodeType(pkt.Payload) {
 				case sshtypes.DataType:
