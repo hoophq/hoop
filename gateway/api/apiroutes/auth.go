@@ -224,3 +224,17 @@ func auditApiChanges(c *gin.Context, ctx *models.Context) {
 		"content-length", c.Request.ContentLength,
 	).Info("api-audit")
 }
+
+// GetAccessTokenFromRequest extracts the access token from the request headers.
+func GetAccessTokenFromRequest(c *gin.Context) string {
+	tokenHeader := c.GetHeader("authorization")
+	apiKey := c.GetHeader("Api-Key")
+	if apiKey != "" {
+		return apiKey
+	}
+	tokenParts := strings.Split(tokenHeader, " ")
+	if len(tokenParts) > 1 {
+		return tokenParts[1]
+	}
+	return ""
+}

@@ -208,7 +208,7 @@ func Post(c *gin.Context) {
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      sid,
 		ConnectionName: conn.Name,
-		BearerToken:    getAccessToken(c),
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:      userAgent,
 	})
 	if err != nil {

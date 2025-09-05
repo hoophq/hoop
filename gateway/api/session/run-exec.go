@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,15 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
-
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
-	}
-	return ""
-}
 
 // RunReviewedExec
 // TODO: Refactor to use sessionapi.RunExec
@@ -133,7 +123,7 @@ func RunReviewedExec(c *gin.Context) {
 		OrgID:          ctx.GetOrgID(),
 		SessionID:      session.ID,
 		ConnectionName: session.Connection,
-		BearerToken:    getAccessToken(c),
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:      userAgent,
 	})
 	if err != nil {
