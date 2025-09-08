@@ -25,6 +25,7 @@
    [webapp.components.headings :as h]
    [webapp.components.modal :as modals]
    [webapp.components.snackbar :as snackbar]
+   [webapp.shared-ui.cmdk.command-palette :as command-palette]
    [webapp.connections.views.connection-list :as connections]
    [webapp.connections.views.setup.connection-update-form :as connection-update-form]
    [webapp.connections.views.setup.events.db-events]
@@ -63,6 +64,7 @@
    [webapp.events.slack-plugin]
    [webapp.events.tracking]
    [webapp.events.users]
+   [webapp.shared-ui.cmdk.events.command-palette]
    [webapp.features.access-control.events]
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.subs]
@@ -223,6 +225,8 @@
              [dialog/new-dialog]
              [snackbar/snackbar]
              [draggable-card/main]
+             [command-palette/command-palette]
+             [command-palette/keyboard-listener]
              [sidebar/main panels]]))))))
 
 (defmulti layout identity)
@@ -608,8 +612,7 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])
-        analytics-tracking (rf/subscribe [:gateway->analytics-tracking])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])]
     (rf/dispatch [:gateway->get-public-info])
     (.registerPlugin gsap Draggable)
     (.registerModules ModuleRegistry #js[AllCommunityModule])
@@ -621,7 +624,4 @@
 
         :else
         [:> Theme {:radius "large" :panelBackground "solid"}
-         ;; Hidden element to display analytics_tracking value for testing
-         [:div {:style {:display "none"}}
-          [:span {:id "analytics-tracking-value"} (str @analytics-tracking)]]
          [routes/panels @active-panel @gateway-public-info]]))))

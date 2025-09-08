@@ -1537,6 +1537,24 @@ type CustomEntityTypesEntry struct {
 	Score float64 `json:"score" binding:"required" example:"0.01"`
 }
 
+type DataMaskingRuleConnectionRequest struct {
+	// The unique identifier of the data masking rule
+	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The status of the data masking rule
+	Status string `json:"status" enums:"active,inactive" example:"active" binding:"required"`
+}
+
+type DataMaskingRuleConnection struct {
+	// The unique identifier of the data masking rule connection
+	ID string `json:"id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the data masking rule
+	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the connection
+	ConnectionID string `json:"connection_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The status of the data masking rule connection
+	Status string `json:"status" enums:"active,inactive" example:"active"`
+}
+
 type ServerMiscConfig struct {
 	// Either to enable or disable the product analytics tracking
 	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`

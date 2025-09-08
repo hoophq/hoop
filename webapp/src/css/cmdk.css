@@ -1,0 +1,55 @@
+/* Command Palette Styles */
+[cmdk-list] {
+  overflow: auto;
+  overscroll-behavior: contain;
+  transition: 200ms ease;
+  transition-property: opacity;
+}
+
+[cmdk-item] {
+  color: var(--gray-11);
+  border-radius: 9px;
+  padding: 10px 12px;
+  user-select: none;
+  will-change: background, color;
+  transition: all 150ms ease;
+  transition-property: background-color, color, transform;
+}
+
+[cmdk-item]:hover {
+  background-color: var(--gray-2);
+  color: var(--gray-12);
+  cursor: pointer;
+}
+
+[cmdk-loading] {
+  transition: opacity 200ms ease;
+}
+
+/* Smooth fade-in animation for results */
+[cmdk-group] {
+  animation: fadeIn 200ms ease-out;
+}
+
+[cmdk-group]:not(:first-child) {
+  margin-top: var(--space-3);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[cmdk-group-heading] {
+  margin-bottom: var(--space-2);
+  color: var(--gray-9);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
+  letter-spacing: var(--letter-spacing-1);
+}

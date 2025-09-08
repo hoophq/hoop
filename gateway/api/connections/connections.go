@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
@@ -386,7 +387,7 @@ ORDER BY schema_name;`
 		OrgID:                     ctx.GetOrgID(),
 		ConnectionName:            conn.Name,
 		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType, conn.Command),
-		BearerToken:               getAccessToken(c),
+		BearerToken:               apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:                 userAgent,
 		// it sets the execution to perform plain executions
 		Verb: pb.ClientVerbPlainExec,
@@ -536,7 +537,7 @@ func ListTables(c *gin.Context) {
 		OrgID:                     ctx.GetOrgID(),
 		ConnectionName:            conn.Name,
 		ConnectionCommandOverride: getConnectionCommandOverride(currentConnectionType, conn.Command),
-		BearerToken:               getAccessToken(c),
+		BearerToken:               apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:                 userAgent,
 		Verb:                      pb.ClientVerbPlainExec,
 	})
@@ -728,7 +729,7 @@ func GetTableColumns(c *gin.Context) {
 	client, err := clientexec.New(&clientexec.Options{
 		OrgID:          ctx.GetOrgID(),
 		ConnectionName: conn.Name,
-		BearerToken:    getAccessToken(c),
+		BearerToken:    apiroutes.GetAccessTokenFromRequest(c),
 		UserAgent:      userAgent,
 		Verb:           pb.ClientVerbPlainExec,
 	})

@@ -5,14 +5,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
+
+// these plugins are managed by the connection resource
+var pluginsManagedByConnection = []string{
+	plugintypes.PluginReviewName,
+	plugintypes.PluginDLPName,
+}
 
 type ErrNotFoundGuardRailRules struct {
 	rules []string
@@ -178,8 +186,9 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 	if err != nil {
 		return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
 	}
-	if pluginName == plugintypes.PluginReviewName && len(config) == 0 {
-		// if the plugin is review and no config is provided, remove the plugin connection
+
+	// remove the plugin connection if the config is empty and it's a managed plugin connection
+	if slices.Contains(pluginsManagedByConnection, pluginName) && len(config) == 0 {
 		return tx.Exec(`
 		DELETE FROM private.plugin_connections
 		WHERE plugin_id = (SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name)
@@ -190,11 +199,19 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 		}).
 			Error
 	}
+
 	err = tx.Exec(`
-		INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
-		VALUES ((SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name), @org_id, @connection_id, @config)
-		ON CONFLICT (plugin_id, connection_id) DO UPDATE SET config = @config, updated_at = @updated_at
-		`, map[string]any{
+			INSERT INTO private.plugin_connections (plugin_id, org_id, connection_id, config)
+			VALUES ((SELECT id FROM private.plugins WHERE org_id = @org_id AND name = @plugin_name), @org_id, @connection_id, @config)
+			ON CONFLICT (plugin_id, connection_id)
+			DO UPDATE SET
+				-- make sure to preserve existing config if not provided
+				config = CASE
+					WHEN (@config)::text[] IS NOT NULL THEN (@config)::text[]
+					ELSE private.plugin_connections.config
+				END,
+				updated_at = @updated_at
+			`, map[string]any{
 		"org_id":        orgID,
 		"plugin_name":   pluginName,
 		"connection_id": connID,
@@ -202,7 +219,7 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 		"updated_at":    time.Now().UTC(),
 	}).Error
 	if err != nil {
-		return fmt.Errorf("failed to create review plugin connection, reason: %v", err)
+		return fmt.Errorf(`failed to create %q plugin connection, reason: %v`, pluginName, err)
 	}
 	return nil
 }
@@ -492,10 +509,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	if err != nil {
 		return nil, err
 	}
-	userGroups := pq.StringArray{}
-	for _, group := range ctx.GetUserGroups() {
-		userGroups = append(userGroups, group)
-	}
+	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -587,9 +601,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 }
 
 // SearchBySimilarity searches connections by name, type, or subtype using a case-insensitive search.
-func SearchConnectionsBySimilarity(orgID string, searchTerm string) ([]Connection, error) {
+func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm string) ([]Connection, error) {
 	var items []Connection
 
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	userGroupsPgArray := pq.StringArray(userGroups)
 	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
 	err := DB.Raw(`
 		SELECT
@@ -602,13 +618,21 @@ func SearchConnectionsBySimilarity(orgID string, searchTerm string) ([]Connectio
 			c.access_mode_exec,
 			c.access_mode_connect
 		FROM private.connections c
+		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+		LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 		WHERE
-			c.org_id = ? AND (
+			c.org_id = ? AND
+			CASE
+				-- do not apply any access control if the plugin is not enabled or it is an admin user
+				WHEN ac.id IS NULL OR (?)::BOOL THEN true
+				-- allow if any of the input user groups are in the access control list
+				ELSE acc.config && (?)::text[]
+			END AND (
 				c.name ILIKE ? OR
 				c.type::text ILIKE ? OR
 				c.subtype ILIKE ?
 			)
-		ORDER BY c.name ASC`, orgID, likeQuery, likeQuery, likeQuery).Find(&items).Error
+		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
 
 	if err != nil {
 		return nil, err

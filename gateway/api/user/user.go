@@ -65,6 +65,13 @@ func Create(c *gin.Context) {
 		return
 	}
 
+	// if the user status is not managed by the client
+	// fallback using the invited status as default to
+	// ensure backward compatibility with older clients that do not manage user status
+	if newUser.Status == "" {
+		newUser.Status = openapi.StatusInvited
+	}
+
 	newUser.ID = uuid.NewString()
 	var hashedPassword string
 	// user.Subject for local auth is altered in this flow, that's
@@ -122,23 +129,17 @@ func Create(c *gin.Context) {
 	}
 
 	ctx.Analytics().Identify(&types.APIContext{
-		OrgID:      ctx.OrgID,
-		OrgName:    ctx.OrgName,
-		UserID:     newUser.Email,
-		UserName:   newUser.Name,
-		UserEmail:  newUser.Email,
-		UserGroups: newUser.Groups,
+		OrgID:  ctx.OrgID,
+		UserID: userSubject,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		properties := map[string]any{
 			"user-agent": apiutils.NormalizeUserAgent(c.Request.Header.Values),
-			"name":       newUser.Name,
-			"api-url":    ctx.ApiURL,
 		}
-		ctx.Analytics().Track(newUser.Email, analytics.EventSignup, properties)
-		ctx.Analytics().Track(newUser.Email, analytics.EventCreateInvitedUser, properties)
+		ctx.Analytics().Track(userSubject, analytics.EventSignup, properties)
+		ctx.Analytics().Track(userSubject, analytics.EventCreateInvitedUser, properties)
 	}()
 
 	c.JSON(http.StatusCreated, newUser)
@@ -217,15 +218,9 @@ func Update(c *gin.Context) {
 
 	analytics.New().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
-		OrgName:    ctx.OrgName,
-		UserID:     existingUser.Email,
-		UserName:   existingUser.Name,
-		UserEmail:  existingUser.Email,
-		UserGroups: req.Groups,
+		UserID:     existingUser.ID,
 		UserStatus: existingUser.Status,
 		SlackID:    existingUser.SlackID,
-		ApiURL:     ctx.ApiURL,
-		GrpcURL:    ctx.GrpcURL,
 	})
 
 	c.JSON(http.StatusOK, openapi.User{

@@ -388,27 +388,15 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 	if err != nil {
 		return false, fmt.Errorf("failed fetching default org, err=%v", err)
 	}
+
+	isFirstUserInOrg := org.TotalUsers == 0
+
 	// first user is admin
-	if org.TotalUsers == 0 {
+	if isFirstUserInOrg {
 		userGroups = append(userGroups, types.GroupAdmin)
-		trackClient := analytics.New()
-		// When the first user is created, there's already an
-		// anonymous event tracked with his org id. We need to
-		// merge this anonymous event with the identified user
-		trackClient.Identify(&types.APIContext{
-			OrgID:           org.ID,
-			OrgName:         org.Name,
-			UserName:        uinfo.Profile,
-			UserID:          uinfo.Email,
-			UserAnonSubject: org.ID,
-			UserEmail:       uinfo.Email,
-			UserGroups:      userGroups,
-			ApiURL:          appconfig.Get().ApiURL(),
-		})
-		trackClient.Track(uinfo.Email, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
-	// nutate context for analytics tracking
+	// mutate context for analytics tracking
 	ctx.OrgID = org.ID
 	ctx.UserSubject = uinfo.Subject
 	ctx.UserName = uinfo.Profile
@@ -427,6 +415,19 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 	}
 	if err := models.CreateUser(newUser); err != nil {
 		return false, fmt.Errorf("failed saving new user %s/%s, err=%v", uinfo.Subject, uinfo.Email, err)
+	}
+
+	if isFirstUserInOrg {
+		trackClient := analytics.New()
+		// When the first user is created, there's already an
+		// anonymous event tracked with his org id. We need to
+		// merge this anonymous event with the identified user
+		trackClient.Identify(&types.APIContext{
+			OrgID:           org.ID,
+			UserID:          newUser.Subject,
+			UserAnonSubject: org.ID,
+		})
+		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, nil)
 	}
 
 	// add the user to the default group
@@ -463,34 +464,26 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 	}
 	client := analytics.New()
 	if !isNewUser {
-		client.Track(ctx.UserEmail, analytics.EventLogin, map[string]any{
-			"auth-method":  appconfig.Get().AuthMethod(),
-			"user-agent":   userAgent,
-			"license-type": licenseType,
-			"name":         ctx.UserName,
-			"api-url":      h.apiURL,
-		})
-		return
-	}
-	client.Identify(&types.APIContext{
-		OrgID:      ctx.OrgID,
-		OrgName:    ctx.OrgName,
-		UserID:     ctx.UserEmail, // use user id as email
-		UserName:   ctx.UserName,
-		UserEmail:  ctx.UserEmail,
-		UserGroups: ctx.UserGroups,
-		ApiURL:     h.apiURL,
-	})
-	go func() {
-		// wait some time until the identify call get times to reach to intercom
-		time.Sleep(time.Second * 10)
-		client.Track(ctx.UserEmail, analytics.EventSignup, map[string]any{
+		client.Track(ctx.UserID, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
-			"name":         ctx.UserName,
-			"api-url":      h.apiURL,
+		})
+		return
+	}
+	client.Identify(&types.APIContext{
+		OrgID:  ctx.OrgID,
+		UserID: ctx.UserID,
+	})
+	go func() {
+		// wait some time until the identify call get times to reach to intercom
+		time.Sleep(time.Second * 10)
+		client.Track(ctx.UserID, analytics.EventSignup, map[string]any{
+			"org-id":       ctx.OrgID,
+			"auth-method":  appconfig.Get().AuthMethod(),
+			"user-agent":   userAgent,
+			"license-type": licenseType,
 		})
 	}()
 }
