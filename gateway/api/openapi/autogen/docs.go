@@ -550,6 +550,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials": {
+            "post": {
+                "description": "Create Connection Credentials",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Create Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentials"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/databases": {
             "get": {
                 "description": "List all available databases for a database connection",
@@ -632,65 +691,6 @@ const docTemplate = `{
                             "items": {
                                 "$ref": "#/definitions/openapi.DataMaskingRuleConnection"
                             }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/connections/{nameOrID}/dbaccess": {
-            "post": {
-                "description": "Create Database Access",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Connections"
-                ],
-                "summary": "Create Database Access",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Name or UUID of the connection",
-                        "name": "nameOrID",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "The request body resource",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.ConnectionDbAccessRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.ConnectionDbAccess"
                         }
                     },
                     "400": {
@@ -5353,18 +5353,7 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionDatabaseListResponse": {
-            "type": "object",
-            "properties": {
-                "databases": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "openapi.ConnectionDbAccess": {
+        "openapi.ConnectionCredentials": {
             "type": "object",
             "properties": {
                 "connection_string": {
@@ -5416,11 +5405,22 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionDbAccessRequest": {
+        "openapi.ConnectionCredentialsRequest": {
             "type": "object",
             "properties": {
                 "access_duration_seconds": {
                     "type": "integer"
+                }
+            }
+        },
+        "openapi.ConnectionDatabaseListResponse": {
+            "type": "object",
+            "properties": {
+                "databases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -7336,6 +7336,24 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SSHServerConfig": {
+            "type": "object",
+            "required": [
+                "listen_address"
+            ],
+            "properties": {
+                "hosts_key": {
+                    "description": "The hosts key used for SSH connections",
+                    "type": "string",
+                    "example": "base64-pem-encoded-hosts-key"
+                },
+                "listen_address": {
+                    "description": "The listen address to run the SSH server proxy",
+                    "type": "string",
+                    "example": "0.0.0.0:12222"
+                }
+            }
+        },
         "openapi.SchemaInfo": {
             "type": "object",
             "properties": {
@@ -7698,6 +7716,14 @@ const docTemplate = `{
                     "description": "Either to enable or disable the product analytics tracking",
                     "type": "string",
                     "example": "active"
+                },
+                "ssh_server_config": {
+                    "description": "The SSH server proxy configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SSHServerConfig"
+                        }
+                    ]
                 }
             }
         },

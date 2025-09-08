@@ -1,4 +1,4 @@
-package proxyproto
+package grpckey
 
 import (
 	"crypto/rand"

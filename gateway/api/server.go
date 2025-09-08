@@ -20,7 +20,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
-	apidbaccess "github.com/hoophq/hoop/gateway/api/dbaccess"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
@@ -289,10 +288,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
 
-	// DB Access routes
-	r.POST("/connections/:nameOrID/dbaccess",
+	r.POST("/connections/:nameOrID/credentials",
 		r.AuthMiddleware,
-		apidbaccess.CreateConnectionDbAccess,
+		apiconnections.CreateConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",
