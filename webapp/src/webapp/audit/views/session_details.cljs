@@ -319,7 +319,8 @@
                      [loaders/simple-loader {:size 2}]
                      [:> hero-outline-icon/StopIcon {:class "h-5 w-5 text-red-600"}])]]])
 
-              (when (= (:verb session) "exec")
+              (when (and (= (:verb session) "exec")
+                         (nil? (-> session :integrations_metadata :jira_issue_url)))
                 [:div {:class "relative group"}
                  [:> Tooltip {:content "Re-run session"}
                   [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer"
