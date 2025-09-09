@@ -81,8 +81,6 @@
        [button->filter-data-by-day (fn [days]
                                      (rf/dispatch [:reports->get-review-data-by-date days]))]]
 
-      (println reviews-items-map)
-
       (if (empty? reviews-items-map)
         [:> Box {:minHeight "300px" :class "content-center"}
          [:> Text {:as "label" :color "gray" :weight "light" :size "1"}
