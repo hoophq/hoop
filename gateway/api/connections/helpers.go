@@ -53,7 +53,7 @@ func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (
 			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
 			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 	case pb.ConnectionTypeOracleDB:
-		envs["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
+		envs["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_23_9`))
 		cmd = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
 	case pb.ConnectionTypeMongoDB:
 		envs["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
