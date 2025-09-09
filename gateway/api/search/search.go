@@ -20,9 +20,9 @@ import (
 //	@Description	Performs a search for connections and runbooks based on the provided criteria.
 //	@Tags			Search
 //	@Produce		json
-//	@Param			term	query	string	true	"Search term"
-//	@Success		200 {object} openapi.SearchResponse
-//	@Failure		400,422,500	{object} openapi.HTTPError
+//	@Param			term		query		string	true	"Search term"
+//	@Success		200			{object}	openapi.SearchResponse
+//	@Failure		400,422,500	{object}	openapi.HTTPError
 //	@Router			/search [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
