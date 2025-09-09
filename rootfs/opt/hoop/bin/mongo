@@ -5,7 +5,8 @@ set -eo pipefail
 [[ "$CONNECTION_DEBUG" == "1" ]] && set -x
 
 
-MONGO_BIN=/usr/bin/mongo
+# legacy mongo cli
+MONGO_BIN=/usr/local/bin/mongo
 if [ ! -f "$HOME/.mongoshrc.js" ]; then
     # https://www.mongodb.com/docs/mongodb-shell/reference/customize-prompt/#std-label-customize-the-mongosh-prompt
     echo 'prompt = function() { return ""; }' > $HOME/.mongoshrc.js
