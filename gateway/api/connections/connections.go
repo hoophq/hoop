@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -803,4 +804,93 @@ func GetTableColumns(c *gin.Context) {
 			"timeout":    "30s",
 		})
 	}
+}
+
+// Test Connection
+//
+//	@Summary		Test Connection
+//	@Description	Test resource by name or id (only for database connections, it will attempt a simple ping).
+//	@Tags				Connections
+//	@Param			nameOrID	path	string	true	"Name or UUID of the connection"
+//	@Produce		json
+//	@Success		200		{object}	openapi.ConnectionTestResponse
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/test [get]
+func TestConnection(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+
+	testConnectionErr := testConnection(ctx, apiroutes.GetAccessTokenFromRequest(c), conn)
+	if testConnectionErr != nil {
+		log.Warnf("connection ping test failed, err=%v", testConnectionErr)
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("connection test failed: %v", testConnectionErr)})
+		return
+	}
+
+	c.JSON(http.StatusOK, openapi.ConnectionTestResponse{
+		Success: true,
+	})
+}
+
+func getScriptsForTestConnection(connectionType *pb.ConnectionType) (string, error) {
+	switch *connectionType {
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL, pb.ConnectionTypeOracleDB:
+		return "SELECT 1", nil
+	case pb.ConnectionTypeMongoDB:
+		return `// Ensure verbosity is off
+if (typeof noVerbose === 'function') noVerbose();
+if (typeof config !== 'undefined') config.verbosity = 0;
+printjson(db.runCommand({ping:1}));`, nil
+	case pb.ConnectionTypeDynamoDB:
+		return "aws dynamodb list-tables --max-items 1 --output json", nil
+	case pb.ConnectionTypeCloudWatch:
+		return "aws logs describe-log-groups --output json", nil
+	default:
+		return "", fmt.Errorf("unsupported connection type: %v", connectionType.String())
+	}
+}
+
+func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Connection) error {
+	client, err := clientexec.New(&clientexec.Options{
+		OrgID:          ctx.GetOrgID(),
+		ConnectionName: conn.Name,
+		BearerToken:    bearerToken,
+		UserAgent:      "webapp.editor.testconnection",
+		Verb:           pb.ClientVerbPlainExec,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed creating client: %w", err)
+	}
+
+	defer client.Close()
+
+	currentConnectionType := pb.ToConnectionType(conn.Type, conn.SubType.String)
+	command, err := getScriptsForTestConnection(&currentConnectionType)
+	if err != nil {
+		return err
+	}
+
+	outcome := client.Run([]byte(command), nil)
+	if outcome.ExitCode != 0 {
+		return fmt.Errorf("failed issuing test command, output=%v", outcome.Output)
+	}
+
+	// Custom handling for OracleDB, as it returns always exit code 0 even if the command fails
+	if currentConnectionType == pb.ConnectionTypeOracleDB && strings.HasPrefix(strings.ToLower(outcome.Output), "error") {
+		return fmt.Errorf("failed issuing test command, output=%v", outcome.Output)
+	}
+
+	log.Infof("successful connection test for connection '%s': %v", conn.Name, outcome.Output)
+
+	return nil
 }

@@ -288,6 +288,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
 
+	r.GET("/connections/:nameOrID/test",
+		r.AuthMiddleware,
+		apiconnections.TestConnection)
 	r.POST("/connections/:nameOrID/credentials",
 		r.AuthMiddleware,
 		apiconnections.CreateConnectionCredentials,
