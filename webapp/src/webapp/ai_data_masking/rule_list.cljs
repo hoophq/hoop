@@ -10,7 +10,7 @@
   [connections connection-ids]
   (filter #(some (fn [id] (= (:id %) id)) connection-ids) connections))
 
-(defn- connections-panel [{:keys [connections]}]
+(defn- connections-panel [{:keys [connections connections-loading?]}]
   [:> Box {:px "7" :py "5" :class "border-t rounded-b-6 bg-white"}
    [:> Grid {:columns "7" :gap "7"}
     [:> Box {:grid-column "span 2 / span 2"}
@@ -20,27 +20,37 @@
       "Resources that are using this AI Data Masking rule."]]
 
     [:> Box {:class "h-fit border border-[--gray-a6] rounded-md" :grid-column "span 5 / span 5"}
-     (for [connection connections]
-       ^{:key (:name connection)}
-       [:> Flex {:p "2" :align "center" :justify "between" :class "last:border-b-0 border-b border-[--gray-a6]"}
-        [:> Flex {:gap "2" :align "center"}
-         [:> Box
-          [:figure {:class "w-4"}
-           [:img {:src  (connection-constants/get-connection-icon connection)
-                  :class "w-9"}]]]
-         [:span {:class "text-sm"} (:name connection)]]
-        [:> Button {:size "1"
-                    :variant "soft"
-                    :color "gray"
-                    :on-click (fn []
-                                (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
-                                (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
-         "Configure"]])]]])
+     (if connections-loading?
+       ;; Show loading state
+       [:> Flex {:p "4" :align "center" :justify "center"}
+        [:> Text {:size "2" :class "text-[--gray-11]"} "Loading connections..."]]
 
-(defn rule-item [{:keys [id name description supported_entity_types
-                         custom_entity_types connections on-configure total-items]}]
+       ;; Show connections list
+       (if (empty? connections)
+         [:> Flex {:p "4" :align "center" :justify "center"}
+          [:> Text {:size "2" :class "text-[--gray-11]"} "No connections found for this rule"]]
+
+         (for [connection connections]
+           ^{:key (:name connection)}
+           [:> Flex {:p "2" :align "center" :justify "between" :class "last:border-b-0 border-b border-[--gray-a6]"}
+            [:> Flex {:gap "2" :align "center"}
+             [:> Box
+              [:figure {:class "w-4"}
+               [:img {:src  (connection-constants/get-connection-icon connection)
+                      :class "w-9"}]]]
+             [:span {:class "text-sm"} (:name connection)]]
+            [:> Button {:size "1"
+                        :variant "soft"
+                        :color "gray"
+                        :on-click (fn []
+                                    (rf/dispatch [:connections->get-connection {:connection-name (:name connection)}])
+                                    (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+             "Configure"]])))]]])
+
+(defn rule-item []
   (let [show-connections? (r/atom false)]
-    (fn []
+    (fn [{:keys [id name description supported_entity_types
+                 custom_entity_types connections on-configure total-items connections-loading? connection_ids connections-results]}]
       [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
                            "border-[--gray-a6] border "
                            (when (> total-items 1) " first:border-b-0")
@@ -78,7 +88,8 @@
                      :color "gray"
                      :on-click #(on-configure id)}
           "Configure"]
-         (when-not (empty? connections)
+         ;; Always show connections button if rule has connection IDs
+         (when (seq connection_ids)
            [:> Button {:size "1"
                        :variant "ghost"
                        :color "gray"
@@ -88,19 +99,28 @@
               [:> ChevronUp {:size 14}]
               [:> ChevronDown {:size 14}])])]]
        (when @show-connections?
-         [connections-panel {:connections connections}])])))
+         [connections-panel {:connections connections
+                             :connections-loading? (or connections-loading? (nil? connections-results))}])])))
 
 (defn main [{:keys [rules on-configure]}]
   (let [connections (rf/subscribe [:connections])]
     (fn []
-      [:> Box
-       (doall
-        (for [rule rules]
-          ^{:key (:id rule)}
-          [rule-item
-           (assoc rule
-                  :total-items (count rules)
-                  :on-configure on-configure
-                  :connections (get-rule-connections
-                                (:results @connections)
-                                (:connection_ids rule)))]))])))
+      (let [connections-data @connections
+            connections-loading? (:loading connections-data)
+            connections-results (:results connections-data)]
+        [:> Box
+         (doall
+          (for [rule rules]
+            ^{:key (:id rule)}
+            [rule-item
+             (assoc rule
+                    :total-items (count rules)
+                    :on-configure on-configure
+                    :connections-loading? connections-loading?
+                    :connection_ids (:connection_ids rule)
+                    :connections-results connections-results
+                    :connections (if (and connections-results (not connections-loading?))
+                                   (get-rule-connections
+                                    connections-results
+                                    (:connection_ids rule))
+                                   []))]))]))))
