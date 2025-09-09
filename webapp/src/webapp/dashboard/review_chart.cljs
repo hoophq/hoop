@@ -14,13 +14,11 @@
 (defn sort-reviews-by-date [reviews]
   (sort-by #(parse-date (:date %)) time/before? reviews))
 
-(defn parse-date-review [date-str]
-  (subs date-str 0 10))
-
 (defn aggregate-by-date [reviews]
   (reduce
    (fn [acc review]
-     (let [date (parse-date-review (:created_at review))
+     (let [date (.toISOString
+                 (new js/Date (:created_at review)))
            status (:status review)
            update-fn (fnil inc 0)]
        (update acc date (fnil (fn [m]
@@ -75,6 +73,8 @@
          (-> @reviews :data :range-date)]]
        [button->filter-data-by-day (fn [days]
                                      (rf/dispatch [:reports->get-review-data-by-date days]))]]
+
+      (println reviews-items-map)
 
       (if (empty? reviews-items-map)
         [:> Box {:minHeight "300px" :class "content-center"}
