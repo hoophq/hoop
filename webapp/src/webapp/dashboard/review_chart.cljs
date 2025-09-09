@@ -14,24 +14,31 @@
 (defn sort-reviews-by-date [reviews]
   (sort-by #(parse-date (:date %)) time/before? reviews))
 
+(defn parse-date-review [date-str]
+  (subs date-str 0 10))
+
 (defn aggregate-by-date [reviews]
   (reduce
    (fn [acc review]
-     (let [date (.toISOString
-                 (new js/Date (:created_at review)))
+     (let [date (parse-date-review (:created_at review))
+           iso-date (.toISOString
+                     (new js/Date (:created_at review)))
            status (:status review)
            update-fn (fnil inc 0)]
        (update acc date (fnil (fn [m]
-                                (update m (cond
-                                            (= status "APPROVED") :approved
-                                            (= status "REJECTED") :rejected) update-fn))
-                              {:approved 0 :rejected 0}))))
+                                (-> m
+                                    (assoc :iso-date iso-date)
+                                    (update (cond
+                                              (= status "APPROVED") :approved
+                                              (= status "REJECTED") :rejected) update-fn)))
+                              {:approved 0 :rejected 0 :iso-date iso-date}))))
    {}
    reviews))
 
 (defn convert-to-list [aggregated-data]
   (map (fn [[date counts]]
          {:date date
+          :iso-date (:iso-date counts)
           :approved (:approved counts)
           :rejected (:rejected counts)})
        aggregated-data))
@@ -103,7 +110,7 @@
                                                           (.toLocaleDateString
                                                            (new js/Date (-> (first payload)
                                                                             :payload
-                                                                            :date))
+                                                                            :iso-date))
                                                            "en-US"
                                                            #js{:month "short",
                                                                :day "numeric",
