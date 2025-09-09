@@ -117,8 +117,8 @@
                                                                :year "numeric"}))
                                        :chartid :reviews-chart})]))}]
            [:> recharts/Bar {:dataKey "approved"
-                             :fill "var(--color-approved)"
+                             :fill "var(--accent-11)"
                              :radius 4}]
            [:> recharts/Bar {:dataKey "rejected"
-                             :fill "var(--color-rejected)"
+                             :fill "var(--accent-8)"
                              :radius 4}]]}])]]))
