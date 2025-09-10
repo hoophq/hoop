@@ -3,7 +3,9 @@ package apiserverinfo
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -86,6 +88,7 @@ func Get(c *gin.Context) {
 		tenancyType = "multitenant"
 	}
 
+	serverInfoData.IdpProviderName = parseIdpProviderName(serverConfig)
 	serverInfoData.TenancyType = tenancyType
 	serverInfoData.AuthMethod = string(ctx.ProviderType)
 	serverInfoData.GrpcURL = ctx.GrpcURL
@@ -130,4 +133,35 @@ func getAnalyticsTrackingStatus() string {
 		return string(openapi.AnalyticsTrackingDisabled)
 	}
 	return string(openapi.AnalyticsTrackingEnabled)
+}
+
+func parseIdpProviderName(conf *models.ServerAuthConfig) openapi.IdpProviderNameType {
+	// default environment variable containing the issuer url
+	issuerURL := os.Getenv("IDP_ISSUER")
+	if issuerURL == "" {
+		// optional environment variable containing the issuer url
+		issuerURL = os.Getenv("IDP_URI")
+	}
+	// auth config from server takes precedence
+	if conf != nil && conf.OidcConfig != nil {
+		issuerURL = conf.OidcConfig.IssuerURL
+	}
+	u, _ := url.Parse(issuerURL)
+	if u == nil {
+		return openapi.IdpProviderUnknown
+	}
+	switch {
+	case u.Hostname() == "accounts.google.com":
+		return openapi.IdpProviderGoogle
+	case u.Hostname() == "login.microsoftonline.com":
+		return openapi.IdpProviderMicrosoftEntraID
+	case strings.Contains(u.Hostname(), "okta.com"):
+		return openapi.IdpProviderOkta
+	case strings.Contains(u.Hostname(), "cognito"):
+		return openapi.IdpProviderAwsCognito
+	case strings.Contains(u.Hostname(), "jumpcloud"):
+		return openapi.IdpProviderJumpCloud
+	default:
+		return openapi.IdpProviderUnknown
+	}
 }

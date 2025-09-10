@@ -885,6 +885,17 @@ type PublicServerInfo struct {
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
 }
 
+type IdpProviderNameType string
+
+const (
+	IdpProviderMicrosoftEntraID IdpProviderNameType = "microsoft-entra-id"
+	IdpProviderOkta             IdpProviderNameType = "okta"
+	IdpProviderGoogle           IdpProviderNameType = "google"
+	IdpProviderAwsCognito       IdpProviderNameType = "aws-cognito"
+	IdpProviderJumpCloud        IdpProviderNameType = "jumpcloud"
+	IdpProviderUnknown          IdpProviderNameType = "unknown"
+)
+
 type ServerInfo struct {
 	// Version of the server
 	Version string `json:"version" example:"1.35.0"`
@@ -915,8 +926,11 @@ type ServerInfo struct {
 	// The GRPC_URL advertise to clients
 	GrpcURL string `json:"grpc_url" example:"127.0.0.1:8009"`
 	// The tenancy type
-	TenancyType string             `json:"tenancy_type" enums:"selfhosted,multitenant"`
+	TenancyType string `json:"tenancy_type" enums:"selfhosted,multitenant"`
+	// License information
 	LicenseInfo *ServerLicenseInfo `json:"license_info"`
+	// The provider name identified based on the configured identity provider credentials
+	IdpProviderName IdpProviderNameType `json:"idp_provider_name"`
 	// Indicates if session download functionality is disabled
 	// * true - Session download is disabled and not available to users
 	// * false - Session download is enabled and available to users

@@ -6365,6 +6365,25 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.IdpProviderNameType": {
+            "type": "string",
+            "enum": [
+                "microsoft-entra-id",
+                "okta",
+                "google",
+                "aws-cognito",
+                "jumpcloud",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "IdpProviderMicrosoftEntraID",
+                "IdpProviderOkta",
+                "IdpProviderGoogle",
+                "IdpProviderAwsCognito",
+                "IdpProviderJumpCloud",
+                "IdpProviderUnknown"
+            ]
+        },
         "openapi.JiraAssetObjectValue": {
             "type": "object",
             "properties": {
@@ -7604,8 +7623,21 @@ const docTemplate = `{
                     "description": "Report if WEBHOOK_APPKEY is set",
                     "type": "boolean"
                 },
+                "idp_provider_name": {
+                    "description": "The provider name identified based on the configured identity provider credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.IdpProviderNameType"
+                        }
+                    ]
+                },
                 "license_info": {
-                    "$ref": "#/definitions/openapi.ServerLicenseInfo"
+                    "description": "License information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ServerLicenseInfo"
+                        }
+                    ]
                 },
                 "log_level": {
                     "description": "Log level of the server",
