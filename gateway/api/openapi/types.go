@@ -1721,6 +1721,13 @@ type ConnectionSearch struct {
 }
 
 type SearchResponse struct {
+	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
-	Runbooks    []string           `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+	// Runbooks found in the search
+	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+}
+
+type ConnectionTestResponse struct {
+	// Indicates if the connection test was successful
+	Success bool `json:"success" example:"true"`
 }

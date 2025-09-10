@@ -774,6 +774,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/test": {
+            "get": {
+                "description": "Test resource by name or id (only for database connections, it will attempt a simple ping).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Test Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionTestResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{name}": {
             "delete": {
                 "description": "Delete a connection resource.",
@@ -5526,6 +5567,16 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionTestResponse": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "description": "Indicates if the connection test was successful",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "openapi.CreateDBRoleJob": {
             "type": "object",
             "required": [
@@ -7393,12 +7444,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "connections": {
+                    "description": "Connections found in the search",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ConnectionSearch"
                     }
                 },
                 "runbooks": {
+                    "description": "Runbooks found in the search",
                     "type": "array",
                     "items": {
                         "type": "string"
