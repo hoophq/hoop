@@ -825,7 +825,7 @@ func TestConnection(c *gin.Context) {
 		return
 	}
 	if conn == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		c.JSON(http.StatusNotFound, gin.H{"message": "connection not found"})
 		return
 	}
 
