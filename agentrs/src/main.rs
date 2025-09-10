@@ -1,10 +1,16 @@
 //src/main.rs
 mod gateway;
-mod tasks;
-mod rdpproxy;
-mod proxy;
-mod transport;
+mod headers;
 mod logio;
+mod protocol;
+mod proxy;
+mod rdpproxy;
+mod session;
+mod tasks;
+mod transport;
+mod token;
+mod tls;
+
 use anyhow::{Context, Result};
 use url::Url;
 use uuid::Uuid;
@@ -34,6 +40,7 @@ async fn build_signals_fut() -> anyhow::Result<()> {
 
 fn main() -> anyhow::Result<()> {
     println!("Starting Gateway Service...");
+
     let l = ListenerUrls::new(Url::parse("tcp://0.0.0.0:3389")?);
     let mut s = GatewayService::new(Uuid::new_v4(), vec![l]);
     s.start()?;
