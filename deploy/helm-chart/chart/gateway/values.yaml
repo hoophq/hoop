@@ -19,6 +19,16 @@ defaultAgent:
   imagePullPolicy: Always
   grpcHost: 127.0.0.1:8010
 
+
+# -- Enable PostgreSQL, default to host mount
+postgres:
+  enabled: false
+  storageClassName: null
+
+  # -- Size of persistent volume claim
+  size: 10Gi
+  # annotations: {}
+
 # -- Enable data masking with Presidio
 dataMasking:
   enabled: false

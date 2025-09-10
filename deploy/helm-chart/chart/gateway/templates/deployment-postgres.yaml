@@ -1,0 +1,80 @@
+{{- if and .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hoopgateway-pg
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hoopgateway-pg
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: hoopgateway-pg
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_USER
+          value: root
+        - name: POSTGRES_PASSWORD
+          value: default-pwd
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:17.6
+        name: hoopgateway-pg
+        ports:
+        - containerPort: 5432
+          name: pg
+          protocol: TCP
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+          subPath: postgres
+      volumes:
+      {{- if .Values.postgres.storageClassName }}
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: hoopgateway-postgres
+      {{- else }}
+      - name: postgres-storage
+        hostPath:
+          path: /tmp/hoopgateway-postgres-{{ .Release.Namespace }}
+          type: DirectoryOrCreate
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hoopgateway-pg
+spec:
+  ports:
+  - name: hoopgateway-pg
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: hoopgateway-pg
+---
+{{- if .Values.postgres.storageClassName }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hoopgateway-postgres
+  {{- with .Values.postgres.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  finalizers:
+  - kubernetes.io/pvc-protection
+spec:
+  accessModes:
+    - 'ReadWriteOnce'
+  resources:
+    requests:
+      storage: {{ .Values.postgres.size | quote }}
+  storageClassName: {{ .Values.postgres.storageClassName }}
+{{- end }}
+{{- end }}
