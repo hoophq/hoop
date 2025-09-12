@@ -1,7 +1,6 @@
 (ns webapp.subs
   (:require
-   [re-frame.core :as re-frame]
-   [webapp.formatters :as f]))
+   [re-frame.core :as re-frame]))
 
 (re-frame/reg-sub
  :user
@@ -12,11 +11,6 @@
  ::active-panel
  (fn [db _]
    (:active-panel db)))
-
-(re-frame/reg-sub
- ::navigation-status
- (fn [db _]
-   (or (:navigation-status db) :completed)))
 
 (re-frame/reg-sub
  :feature-flags
@@ -211,14 +205,14 @@
    (:audit->session-logs db)))
 
 (re-frame/reg-sub
- ::connections->updating-connection
- (fn [db _]
-   (:connections->updating-connection db)))
-
-(re-frame/reg-sub
  :connections->connection-connected
  (fn [db _]
    (:connections->connection-connected db)))
+
+(re-frame/reg-sub
+ :connections->test-connection
+ (fn [db _]
+   (:connections->test-connection db)))
 
 (re-frame/reg-sub
  :users->current-user

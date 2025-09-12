@@ -1,18 +1,20 @@
 (ns webapp.connections.views.setup.connection-update-form
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Heading Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.connections.constants :as constants]
+   [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.database :as database]
    [webapp.connections.views.setup.events.process-form :as helpers]
    [webapp.connections.views.setup.network :as network]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
-   [webapp.connections.views.setup.server :as server]))
+   [webapp.connections.views.setup.server :as server]
+   [webapp.connections.views.test-connection-modal :as test-connection-modal]))
 
-(defn update-form-header [{:keys [name type subtype]}]
+(defn update-form-header [{:keys [name type subtype]} test-connection-state]
   [:> Box {:class "pb-[--space-5]"}
    [:> Flex {:justify "between" :align "center"}
     [:> Box {:class "space-y-radix-3"}
@@ -23,7 +25,13 @@
                     {:type type
                      :subtype subtype})}]]
       [:> Text {:size "3" :class "text-[--gray-12]"}
-       name]]]]])
+       name]]]
+    (when (can-test-connection? {:type type :subtype subtype})
+      [:> Button {:variant "soft"
+                  :color "gray"
+                  :on-click #(rf/dispatch [:connections->test-connection name])
+                  :disabled (is-connection-testing? test-connection-state name)}
+       "Test Connection"])]])
 
 (defn loading-view []
   [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
@@ -37,6 +45,7 @@
      connection (rf/subscribe [:connections->connection-details])
      guardrails-list (rf/subscribe [:guardrails->list])
      jira-templates-list (rf/subscribe [:jira-templates->list])
+     test-connection-state (rf/subscribe [:connections->test-connection])
      initialized? (r/atom false)
      check-form-validity! (fn []
                             ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
@@ -158,68 +167,72 @@
                   (reset! initialized? true)
                   (js/setTimeout check-form-validity! 100)))
 
-              [page-wrapper/main
-               {:children
-                [:> Box {:class "min-h-screen py-8 px-6"}
-                 [update-form-header (:data @connection)]
+              [:div
+               [page-wrapper/main
+                {:children
+                 [:> Box {:class "min-h-screen py-8 px-6"}
+                  [update-form-header (:data @connection) @test-connection-state]
 
-                 [:form {:id "update-connection-form"
-                         :on-submit handle-submit}
-                  [:> Tabs.Root {:value @active-tab
-                                 :on-value-change (fn [new-tab]
-                                                    (when (and (= @active-tab "credentials")
-                                                               (not= new-tab "credentials"))
-                                                      (check-form-validity!))
-                                                    (reset! active-tab new-tab))}
-                   [:> Tabs.List {:mb "7"}
-                    [:> Tabs.Trigger {:value "credentials"} "Credentials"]
-                    [:> Tabs.Trigger {:value "configuration"} "Additional Configuration"]]
+                  [:form {:id "update-connection-form"
+                          :on-submit handle-submit}
+                   [:> Tabs.Root {:value @active-tab
+                                  :on-value-change (fn [new-tab]
+                                                     (when (and (= @active-tab "credentials")
+                                                                (not= new-tab "credentials"))
+                                                       (check-form-validity!))
+                                                     (reset! active-tab new-tab))}
+                    [:> Tabs.List {:mb "7"}
+                     [:> Tabs.Trigger {:value "credentials"} "Credentials"]
+                     [:> Tabs.Trigger {:value "configuration"} "Additional Configuration"]]
 
-                   [:> Tabs.Content {:value "credentials"}
-                    (case (:type (:data @connection))
-                      "database" [database/credentials-step
-                                  (:subtype (:data @connection))
-                                  :update]
-                      "custom" [server/credentials-step :update]
-                      "application" (if (= (:subtype (:data @connection)) "ssh")
-                                      [server/ssh-credentials]
-                                      [network/credentials-form
-                                       {:connection-type (:subtype (:data @connection))}])
-                      nil)]
+                    [:> Tabs.Content {:value "credentials"}
+                     (case (:type (:data @connection))
+                       "database" [database/credentials-step
+                                   (:subtype (:data @connection))
+                                   :update]
+                       "custom" [server/credentials-step :update]
+                       "application" (if (= (:subtype (:data @connection)) "ssh")
+                                       [server/ssh-credentials]
+                                       [network/credentials-form
+                                        {:connection-type (:subtype (:data @connection))}])
+                       nil)]
 
-                   [:> Tabs.Content {:value "configuration"}
-                    [additional-configuration/main
-                     {:show-database-schema? (or (= (:type (:data @connection)) "database")
-                                                 (= (:subtype (:data @connection)) "dynamodb")
-                                                 (= (:subtype (:data @connection)) "cloudwatch"))
-                      :selected-type (:subtype (:data @connection))
-                      :form-type :update}]]]]]
+                    [:> Tabs.Content {:value "configuration"}
+                     [additional-configuration/main
+                      {:show-database-schema? (or (= (:type (:data @connection)) "database")
+                                                  (= (:subtype (:data @connection)) "dynamodb")
+                                                  (= (:subtype (:data @connection)) "cloudwatch"))
+                       :selected-type (:subtype (:data @connection))
+                       :form-type :update}]]]]]
 
-                :footer-props
-                {:form-type :update
-                 :back-text "Back"
-                 :next-text "Save"
-                 :on-back #(js/history.back)
-                 :on-next (fn []
-                            (let [form (.getElementById js/document "update-connection-form")]
-                              (when form
-                                (.dispatchEvent form (js/Event. "submit" #js{:bubbles true :cancelable true})))))
+                 :footer-props
+                 {:form-type :update
+                  :back-text "Back"
+                  :next-text "Save"
+                  :on-back #(js/history.back)
+                  :on-next (fn []
+                             (let [form (.getElementById js/document "update-connection-form")]
+                               (when form
+                                 (.dispatchEvent form (js/Event. "submit" #js{:bubbles true :cancelable true})))))
 
-                 :on-delete #(rf/dispatch [:dialog->open
-                                           {:title "Delete connection?"
-                                            :type :danger
-                                            :text-action-button "Confirm and delete"
-                                            :action-button? true
-                                            :text [:> Box {:class "space-y-radix-4"}
-                                                   [:> Text {:as "p"}
-                                                    "This action will instantly remove your access to "
-                                                    (:name (:data @connection))
-                                                    " and can not be undone."]
-                                                   [:> Text {:as "p"}
-                                                    "Are you sure you want to delete this connection?"]]
-                                            :on-success (fn []
-                                                          (rf/dispatch [:connections->delete-connection (:name (:data @connection))])
-                                                          (rf/dispatch [:modal->close]))}])}}])))}))
+                  :on-delete #(rf/dispatch [:dialog->open
+                                            {:title "Delete connection?"
+                                             :type :danger
+                                             :text-action-button "Confirm and delete"
+                                             :action-button? true
+                                             :text [:> Box {:class "space-y-radix-4"}
+                                                    [:> Text {:as "p"}
+                                                     "This action will instantly remove your access to "
+                                                     (:name (:data @connection))
+                                                     " and can not be undone."]
+                                                    [:> Text {:as "p"}
+                                                     "Are you sure you want to delete this connection?"]]
+                                             :on-success (fn []
+                                                           (rf/dispatch [:connections->delete-connection (:name (:data @connection))])
+                                                           (rf/dispatch [:modal->close]))}])}}]
+
+               ;; Test Connection Modal
+               [test-connection-modal/test-connection-modal connection-name]])))}))
     (finally
       (rf/dispatch [:connection-setup/initialize-state nil])
       (rf/dispatch [:connections->clear-connection-details]))))
