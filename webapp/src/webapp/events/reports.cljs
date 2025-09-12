@@ -112,7 +112,9 @@
  (fn
    [{:keys [db]} [_ report days]]
    (let [parse-date (fn [date-str]
-                      (coerce/from-string date-str))
+                      (let [date (.toISOString
+                                  (new js/Date date-str))]
+                        (coerce/from-string date)))
          filter-by-days (fn [reviews days]
                           (let [cutoff-date (time/minus (time/now) (time/days days))]
                             (filter #(time/after? (parse-date (:created_at %)) cutoff-date) reviews)))]
@@ -139,7 +141,9 @@
  (fn
    [{:keys [db]} [_ report]]
    (let [parse-date (fn [date-str]
-                      (fmt/parse (fmt/formatters :date-time-no-ms) date-str))
+                      (let [date (.toISOString
+                                  (new js/Date date-str))]
+                        (fmt/parse (fmt/formatters :date-time) date)))
          filter-by-days (fn [reviews]
                           (let [today-start (time/today-at-midnight)
                                 tomorrow-start (time/plus today-start (time/days 1))]

@@ -314,6 +314,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiproxymanager.Get)
 
+	r.GET("/reviews",
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventFetchReviews),
+		reviewHandler.List,
+	)
 	r.GET("/reviews/:id",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),

@@ -21,19 +21,24 @@
   (reduce
    (fn [acc review]
      (let [date (parse-date-review (:created_at review))
+           iso-date (.toISOString
+                     (new js/Date (:created_at review)))
            status (:status review)
            update-fn (fnil inc 0)]
        (update acc date (fnil (fn [m]
-                                (update m (cond
-                                            (= status "APPROVED") :approved
-                                            (= status "REJECTED") :rejected) update-fn))
-                              {:approved 0 :rejected 0}))))
+                                (-> m
+                                    (assoc :iso-date iso-date)
+                                    (update (cond
+                                              (= status "APPROVED") :approved
+                                              (= status "REJECTED") :rejected) update-fn)))
+                              {:approved 0 :rejected 0 :iso-date iso-date}))))
    {}
    reviews))
 
 (defn convert-to-list [aggregated-data]
   (map (fn [[date counts]]
          {:date date
+          :iso-date (:iso-date counts)
           :approved (:approved counts)
           :rejected (:rejected counts)})
        aggregated-data))
@@ -103,15 +108,15 @@
                                                           (.toLocaleDateString
                                                            (new js/Date (-> (first payload)
                                                                             :payload
-                                                                            :date))
+                                                                            :iso-date))
                                                            "en-US"
                                                            #js{:month "short",
                                                                :day "numeric",
                                                                :year "numeric"}))
                                        :chartid :reviews-chart})]))}]
            [:> recharts/Bar {:dataKey "approved"
-                             :fill "var(--color-approved)"
+                             :fill "var(--accent-11)"
                              :radius 4}]
            [:> recharts/Bar {:dataKey "rejected"
-                             :fill "var(--color-rejected)"
+                             :fill "var(--accent-8)"
                              :radius 4}]]}])]]))
