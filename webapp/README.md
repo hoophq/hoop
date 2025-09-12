@@ -92,11 +92,12 @@ npm install
 
 **Configuration**
 
+**Optional**
 Copy and paste the `.env.sample` file to a `.env` file and replace the necessary values
 
 ````sh
 cp .env.sample .env
-``**
+``
 
 **Run it**
 
