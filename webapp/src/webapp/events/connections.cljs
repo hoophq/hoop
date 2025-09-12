@@ -104,6 +104,83 @@
                         :on-failure #(println :failure :connections->connection-disconnect %)}]]]})))
 
 (rf/reg-event-fx
+ :connections->test-connection
+ (fn
+   [{:keys [db]} [_ connection-name]]
+   {:db (assoc db :connections->test-connection
+               {:loading true
+                :connection-name connection-name
+                :agent-status :checking
+                :connection-status :checking})
+    :fx [;; Fetch connection details to check agent status
+         [:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/connections/" connection-name)
+                      :on-success (fn [response]
+                                    (rf/dispatch [:connections->test-agent-status-success response connection-name]))
+                      :on-failure (fn [error]
+                                    (rf/dispatch [:connections->test-agent-status-error error connection-name]))}]]
+         ;; Test connection endpoint
+         [:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/connections/" connection-name "/test")
+                      :on-success (fn [response]
+                                    (rf/dispatch [:connections->test-connection-status-success response connection-name]))
+                      :on-failure (fn [error]
+                                    (rf/dispatch [:connections->test-connection-status-error error connection-name]))}]]]}))
+
+(rf/reg-event-fx
+ :connections->test-agent-status-success
+ (fn
+   [{:keys [db]} [_ response]]
+   (let [agent-status (if (= (:status response) "online") :online :offline)
+         current-test (get db :connections->test-connection)
+         both-complete? (not= (:connection-status current-test) :checking)]
+     {:db (assoc db :connections->test-connection
+                 (assoc current-test
+                        :agent-status agent-status
+                        :loading (not both-complete?)))})))
+
+(rf/reg-event-fx
+ :connections->test-agent-status-error
+ (fn
+   [{:keys [db]} [_ _error]]
+   (let [current-test (get db :connections->test-connection)
+         both-complete? (not= (:connection-status current-test) :checking)]
+     {:db (assoc db :connections->test-connection
+                 (assoc current-test
+                        :agent-status :offline
+                        :loading (not both-complete?)))})))
+
+(rf/reg-event-fx
+ :connections->test-connection-status-success
+ (fn
+   [{:keys [db]} [_ _response]]
+   (let [current-test (get db :connections->test-connection)
+         both-complete? (not= (:agent-status current-test) :checking)]
+     {:db (assoc db :connections->test-connection
+                 (assoc current-test
+                        :connection-status :successful
+                        :loading (not both-complete?)))})))
+
+(rf/reg-event-fx
+ :connections->test-connection-status-error
+ (fn
+   [{:keys [db]} [_ _error]]
+   (let [current-test (get db :connections->test-connection)
+         both-complete? (not= (:agent-status current-test) :checking)]
+     {:db (assoc db :connections->test-connection
+                 (assoc current-test
+                        :connection-status :failed
+                        :loading (not both-complete?)))})))
+
+(rf/reg-event-fx
+ :connections->close-test-modal
+ (fn
+   [{:keys [db]} [_]]
+   {:db (assoc db :connections->test-connection nil)}))
+
+(rf/reg-event-fx
  :connections->connection-get-status
  (fn
    [{:keys [db]} [_]]
