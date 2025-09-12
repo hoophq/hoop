@@ -199,7 +199,7 @@
         (fn [panels]
           (rf/dispatch [:routes->get-route])
           (rf/dispatch [:clarity->verify-environment (:data @user)])
-          (rf/dispatch [:connections->connection-get-status])
+          ;; (rf/dispatch [:connections->connection-get-status])
 
           (cond
             (:loading @user)
