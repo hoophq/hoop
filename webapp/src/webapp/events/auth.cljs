@@ -8,7 +8,13 @@
  (fn [_ [_ {:keys [prompt-login?]}]]
    (let [on-success (fn [response]
                       (.replace js/window.location (:login_url response)))
-         base-uri (if prompt-login? "/login?prompt=login&redirect=" "/login?redirect=")
+         idp-provider-name (.getItem js/localStorage "idp-provider-name")
+         prompt-param (if (= "microsoft-entra-id" idp-provider-name)
+                        "prompt=select_account"
+                        "prompt=login")
+         base-uri (if prompt-login?
+                    (str "/login?" prompt-param "&redirect=")
+                    "/login?redirect=")
          get-email [:fetch {:method "GET"
                             :uri (str base-uri
                                       (. (. js/window -location) -origin)
@@ -44,7 +50,7 @@
 
 (rf/reg-event-fx
  :auth->logout
- (fn [{:keys [db]} [_ {:keys [idp?]}]]
+ (fn [{:keys [db]} []]
    (let [auth0-logout-url (str "https://hoophq.us.auth0.com"
                                "/v2/logout?"
                                "client_id=DatIOCxntNv8AZrQLVnLb3tr1Y3oVwGW"
