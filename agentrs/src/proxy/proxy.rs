@@ -17,14 +17,15 @@ pub struct Proxy<A, B> {
     buffer_size: Option<usize>,
 }
 
+// this is to copy_bidirectional stream from client to server
 impl<A, B> Proxy<A, B>
 where
     A: AsyncWrite + AsyncRead + Unpin,
     B: AsyncWrite + AsyncRead + Unpin,
 {
     pub async fn forward(self) -> anyhow::Result<()> {
-        let mut transport_a = LoggingIo::new(self.transport_a, "A");
-        let mut transport_b = LoggingIo::new(self.transport_b, "B");
+        let mut transport_a = self.transport_a; //LoggingIo::new(self.transport_a, "A");
+        let mut transport_b = self.transport_b; //LoggingIo::new(self.transport_b, "B");
         let notify_kill = Arc::new(Notify::new());
 
         let kill_notified = notify_kill.notified();
