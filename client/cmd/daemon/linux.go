@@ -37,6 +37,7 @@ func StartLinuxAgent() error {
 		ExecArgs:    " start agent",
 		Env: map[string]string{
 			"HOOP_KEY": cfg.Token,
+			"PATH": os.Getenv("PATH"),
 		},
 		WantedBy: "default.target",
 	}

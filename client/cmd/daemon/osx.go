@@ -21,8 +21,10 @@ func StartDarwinAgent() error {
 		ExecArgs:    " start agent",
 		Env: map[string]string{
 			"HOOP_KEY": cfg.Token,
+			"PATH":     os.Getenv("PATH"),
 		},
 	}
+
 	if err := installDarwin(opts); err != nil {
 		return err
 	}
@@ -96,7 +98,6 @@ func splitArgs(s string) []string {
 	parts := strings.Fields(s)
 	return parts
 }
-
 
 func renderLaunchAgentPlist(d launchAgentData) string {
 	var progArgs strings.Builder
@@ -224,5 +225,3 @@ func logsAgentDarwin(serviceName string) error {
 	}
 	return execRunner.Logs("tail", args...)
 }
-
-
