@@ -31,7 +31,6 @@ impl ShutdownSignal {
 }
 
 /// Aborts the running task when dropped.
-/// Also see https://github.com/tokio-rs/tokio/issues/1830 for some background.
 #[must_use]
 pub struct ChildTask<T>(JoinHandle<T>);
 

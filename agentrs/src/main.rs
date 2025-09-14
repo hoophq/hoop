@@ -1,15 +1,18 @@
 //src/main.rs
+mod conf;
+mod agent;
 mod gateway;
 mod headers;
 mod logio;
 mod protocol;
 mod proxy;
-mod rdpproxy;
 mod session;
+mod rdp;
 mod tasks;
-mod transport;
-mod token;
 mod tls;
+mod token;
+mod transport;
+mod client;
 
 use anyhow::{Context, Result};
 use url::Url;
@@ -42,7 +45,7 @@ fn main() -> anyhow::Result<()> {
     println!("Starting Gateway Service...");
 
     let l = ListenerUrls::new(Url::parse("tcp://0.0.0.0:3389")?);
-    let mut s = GatewayService::new(Uuid::new_v4(), vec![l]);
+    let mut s = GatewayService::new(vec![l]);
     s.start()?;
 
     let rt = tokio::runtime::Builder::new_current_thread()

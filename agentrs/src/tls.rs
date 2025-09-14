@@ -1,118 +1,266 @@
-use anyhow::{Context, Result};
-use rcgen::{Certificate, CertificateParams, SanType};
-use std::net::IpAddr;
-use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::pki_types::{
-    CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName,
-};
-use tokio_rustls::rustls::{ClientConfig, RootCertStore, ServerConfig};
-use tokio_rustls::{TlsAcceptor, TlsConnector};
+use std::io;
+use std::sync::{Arc, LazyLock};
 
-use tokio_rustls::rustls;
-use once_cell::sync::Lazy;
+use anyhow::Context as _;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::rustls::{self, pki_types};
 
-pub struct GatewayTls {
-    pub acceptor: TlsAcceptor,
-    pub spki: Vec<u8>, // SubjectPublicKeyInfo DER
-}
+static DEFAULT_CIPHER_SUITES: &[rustls::SupportedCipherSuite] =
+    rustls::crypto::ring::DEFAULT_CIPHER_SUITES;
 
-// Build exactly once, reuse forever.
-static GATEWAY_TLS: Lazy<Result<GatewayTls>> = Lazy::new(|| {
-    // 1) Generate a cert/key (or load from files)
-    let mut params = rcgen::CertificateParams::new(vec![
-        "proxy.local".into(),
-        "localhost".into(),
-    ]);
-    params
-        .subject_alt_names
-        .push(rcgen::SanType::IpAddress("127.0.0.1".parse().unwrap()));
+// rustls doc says:
+//
+// > Making one of these can be expensive, and should be once per process rather than once per connection.
+//
+// source: https://docs.rs/rustls/0.21.1/rustls/client/struct.ClientConfig.html
+//
+// We’ll reuse the same TLS client config for all proxy-based TLS connections.
+// (TlsConnector is just a wrapper around the config providing the `connect` method.)
+static TLS_CONNECTOR: LazyLock<tokio_rustls::TlsConnector> = LazyLock::new(|| {
+    let mut config = rustls::client::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
+        .with_no_client_auth();
 
-    let cert = rcgen::Certificate::from_params(params).context("rcgen build")?;
-    let cert_der = tokio_rustls::rustls::pki_types::CertificateDer::from(cert.serialize_der()?);
-    let key_der  = tokio_rustls::rustls::pki_types::PrivateKeyDer::Pkcs8(
-        tokio_rustls::rustls::pki_types::PrivatePkcs8KeyDer::from(cert.serialize_private_key_der())
-    );
+    // Disable TLS resumption because it’s not supported by some services such as CredSSP.
+    //
+    // > The CredSSP Protocol does not extend the TLS wire protocol. TLS session resumption is not supported.
+    //
+    // source: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/385a7489-d46b-464c-b224-f7340e308a5c
+    config.resumption = rustls::client::Resumption::disabled();
 
-    // 2) Build rustls server config
-    let server_cfg = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert_der.clone()], key_der)
-        .context("with_single_cert")?;
-
-    // 3) Extract SPKI (channel binding) from rcgen keypair (SPKI DER)
-    // rcgen’s public_key_der() returns SubjectPublicKeyInfo DER
-    let spki = cert.get_key_pair().public_key_der().to_vec();
-
-    Ok(GatewayTls {
-        acceptor: TlsAcceptor::from(Arc::new(server_cfg)),
-        spki,
-    })
+    tokio_rustls::TlsConnector::from(Arc::new(config))
 });
 
-pub fn gateway_tls() -> Result<&'static GatewayTls> {
-    GATEWAY_TLS.as_ref().map_err(|e| anyhow::anyhow!("{e:#}"))
+pub async fn connect<IO>(dns_name: String, stream: IO) -> io::Result<TlsStream<IO>>
+where
+    IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt as _;
+
+    let dns_name = pki_types::ServerName::try_from(dns_name).map_err(io::Error::other)?;
+
+    let mut tls_stream = TLS_CONNECTOR.connect(dns_name, stream).await?;
+
+    // > To keep it simple and correct, [TlsStream] will behave like `BufWriter`.
+    // > For `TlsStream<TcpStream>`, this means that data written by `poll_write`
+    // > is not guaranteed to be written to `TcpStream`.
+    // > You must call `poll_flush` to ensure that it is written to `TcpStream`.
+    //
+    // source: https://docs.rs/tokio-rustls/latest/tokio_rustls/#why-do-i-need-to-call-poll_flush
+    tls_stream.flush().await?;
+
+    Ok(tls_stream)
 }
 
-pub fn build_self_signed_acceptor() -> Result<(TlsAcceptor, Vec<u8>)> {
-    let mut params = CertificateParams::new(vec!["proxy.local".into(), "localhost".into()]);
-    params
-        .subject_alt_names
-        .push(SanType::IpAddress("127.0.0.1".parse().unwrap()));
-
-    let cert = Certificate::from_params(params).context("rcgen")?;
-
-    let cert_der_vec = cert.serialize_der().context("serialize der")?;
-    let cert_der: CertificateDer<'static> = CertificateDer::from(cert_der_vec.clone());
-    let key_der = PrivatePkcs8KeyDer::from(cert.serialize_private_key_der());
-    let key: PrivateKeyDer<'static> = PrivateKeyDer::Pkcs8(key_der);
-
-    // Extract SPKI/public-key bytes (for CredSSP channel binding)
-    let spki = {
-        use x509_cert::der::Decode;
-        let x = x509_cert::Certificate::from_der(&cert_der_vec).context("parse cert der")?;
-        x.tbs_certificate
-            .subject_public_key_info
-            .subject_public_key
-            .as_bytes()
-            .context("unaligned SPKI")?
-            .to_vec()
-    };
-
-    let server_cfg = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert_der], key)
-        .context("with_single_cert")?;
-
-    Ok((TlsAcceptor::from(Arc::new(server_cfg)), spki))
+pub enum CertificateSource {
+    External {
+        certificates: Vec<pki_types::CertificateDer<'static>>,
+        private_key: pki_types::PrivateKeyDer<'static>,
+    },
 }
 
-/// TLS client connector (proxy -> server) using the OS trust store.
-fn client_config_with_native_roots() -> Result<rustls::ClientConfig> {
-    let mut roots = RootCertStore::empty();
+pub fn build_server_config(
+    cert_source: CertificateSource,
+    strict_checks: bool,
+) -> anyhow::Result<rustls::ServerConfig> {
+    let builder = rustls::ServerConfig::builder().with_no_client_auth();
 
-    // rustls-native-certs 0.7 returns an iterator of rustls::Certificate (Vec<u8> DER inside)
-    for cert in rustls_native_certs::load_native_certs().context("load native root certs")? {
-        // cert.0 is a Cow<[u8]>. Convert to pki_types::CertificateDer and add.
-        let der = CertificateDer::from(cert.into_owned());
-        let _ = roots.add(der); // ignore dup/add errors
+    match cert_source {
+        CertificateSource::External {
+            certificates,
+            private_key,
+        } => {
+            let first_certificate = certificates.first().context("empty certificate list")?;
+            let (report, ok_r) = match check_certificate_now(first_certificate) {
+                Ok(r) => (Some(r), true),
+                Err(e) => {
+                    eprintln!("warning: failed to check the certificate: {e:?}");
+                    (None, false)
+                }
+            };
+            //TODO fix this should return error
+            let report = report.unwrap_or_else(|| CertReport {
+                serial_number: "<unknown>".to_string(),
+                subject: picky::x509::name::DirectoryName::default(),
+                issuer: picky::x509::name::DirectoryName::default(),
+                not_before: picky::x509::date::UtcDate::now(),
+                not_after: picky::x509::date::UtcDate::now(),
+                issues: CertIssues::empty(),
+            });
+
+            if strict_checks
+                && ok_r
+                && report.issues.intersects(
+                    CertIssues::MISSING_SERVER_AUTH_EXTENDED_KEY_USAGE
+                        | CertIssues::MISSING_SUBJECT_ALT_NAME,
+                )
+            {
+                let serial_number = report.serial_number;
+                let subject = report.subject;
+                let issuer = report.issuer;
+                let not_before = report.not_before;
+                let not_after = report.not_after;
+                let issues = report.issues;
+
+                anyhow::bail!(
+                    "found significant issues with the certificate: serial_number = {serial_number}, subject = {subject}, issuer = {issuer}, not_before = {not_before}, not_after = {not_after}, issues = {issues} (you can set `TlsVerifyStrict` to `false` in the gateway.json configuration file if that's intended)"
+                );
+            }
+
+            builder
+                .with_single_cert(certificates, private_key)
+                .context("failed to set server config cert")
+        }
+    }
+}
+
+pub struct CertReport {
+    pub serial_number: String,
+    pub subject: picky::x509::name::DirectoryName,
+    pub issuer: picky::x509::name::DirectoryName,
+    pub not_before: picky::x509::date::UtcDate,
+    pub not_after: picky::x509::date::UtcDate,
+    pub issues: CertIssues,
+}
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct CertIssues: u8 {
+        const NOT_YET_VALID = 0b00000001;
+        const EXPIRED = 0b00000010;
+        const MISSING_SERVER_AUTH_EXTENDED_KEY_USAGE = 0b00000100;
+        const MISSING_SUBJECT_ALT_NAME = 0b00001000;
+    }
+}
+
+impl core::fmt::Display for CertIssues {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        bitflags::parser::to_writer(self, f)
+    }
+}
+
+pub fn check_certificate_now(cert: &[u8]) -> anyhow::Result<CertReport> {
+    check_certificate(cert, time::OffsetDateTime::now_utc())
+}
+
+pub fn check_certificate(cert: &[u8], at: time::OffsetDateTime) -> anyhow::Result<CertReport> {
+    use anyhow::Context as _;
+    use core::fmt::Write as _;
+
+    let cert = picky::x509::Cert::from_der(cert).context("failed to parse certificate")?;
+    let at = picky::x509::date::UtcDate::from(at);
+
+    let mut issues = CertIssues::empty();
+
+    let serial_number = cert
+        .serial_number()
+        .0
+        .iter()
+        .fold(String::new(), |mut acc, byte| {
+            let _ = write!(acc, "{byte:X?}");
+            acc
+        });
+    let subject = cert.subject_name();
+    let issuer = cert.issuer_name();
+    let not_before = cert.valid_not_before();
+    let not_after = cert.valid_not_after();
+
+    if at < not_before {
+        issues.insert(CertIssues::NOT_YET_VALID);
+    } else if not_after < at {
+        issues.insert(CertIssues::EXPIRED);
     }
 
-    Ok(ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth())
+    let mut has_server_auth_key_purpose = false;
+    let mut has_san = false;
+
+    for ext in cert.extensions() {
+        match ext.extn_value() {
+            picky::x509::extension::ExtensionView::ExtendedKeyUsage(eku)
+                if eku.contains(picky::oids::kp_server_auth()) =>
+            {
+                has_server_auth_key_purpose = true;
+            }
+            picky::x509::extension::ExtensionView::SubjectAltName(_) => has_san = true,
+            _ => {}
+        }
+    }
+
+    if !has_server_auth_key_purpose {
+        issues.insert(CertIssues::MISSING_SERVER_AUTH_EXTENDED_KEY_USAGE);
+    }
+
+    if !has_san {
+        issues.insert(CertIssues::MISSING_SUBJECT_ALT_NAME);
+    }
+
+    Ok(CertReport {
+        serial_number,
+        subject,
+        issuer,
+        not_before,
+        not_after,
+        issues,
+    })
 }
 
-/// (Testing only) Insecure client config that accepts any server certificate.
-#[allow(dead_code)]
-fn client_config_insecure() -> rustls::ClientConfig {
-    use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-    use rustls::pki_types;
-    use rustls::{DigitallySignedStruct, Error, SignatureScheme};
+pub mod sanity {
+    use tokio_rustls::rustls;
+
+    macro_rules! check_cipher_suite {
+        ( $name:ident ) => {{
+            if !crate::tls::DEFAULT_CIPHER_SUITES.contains(&rustls::crypto::ring::cipher_suite::$name) {
+                anyhow::bail!(concat!(stringify!($name), " cipher suite is missing from default array"));
+            }
+        }};
+        ( $( $name:ident ),+ $(,)? ) => {{
+            $( check_cipher_suite!($name); )+
+        }};
+    }
+
+    macro_rules! check_protocol_version {
+        ( $name:ident ) => {{
+            if !rustls::DEFAULT_VERSIONS.contains(&&rustls::version::$name) {
+                anyhow::bail!(concat!("protocol ", stringify!($name), " is missing from default array"));
+            }
+        }};
+        ( $( $name:ident ),+ $(,)? ) => {{
+            $( check_protocol_version!($name); )+
+        }};
+    }
+
+    pub fn check_default_configuration() -> anyhow::Result<()> {
+        // Make sure we have a few TLS 1.2 cipher suites in our build.
+        // Compilation will fail if one of these is missing.
+        // Additionally, this function will returns an error if any one of these is not in the
+        // default cipher suites array.
+        check_cipher_suite![
+            TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+            TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+            TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+        ];
+
+        // Same idea, but with TLS protocol versions
+        check_protocol_version![TLS12, TLS13];
+
+        Ok(())
+    }
+}
+
+pub mod danger {
+    use tokio_rustls::rustls::client::danger::{
+        HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+    };
+    use tokio_rustls::rustls::{DigitallySignedStruct, Error, SignatureScheme, pki_types};
 
     #[derive(Debug)]
-    struct NoVerifier;
-    impl ServerCertVerifier for NoVerifier {
+    pub struct NoCertificateVerification;
+
+    impl ServerCertVerifier for NoCertificateVerification {
         fn verify_server_cert(
             &self,
             _: &pki_types::CertificateDer<'_>,
@@ -123,6 +271,7 @@ fn client_config_insecure() -> rustls::ClientConfig {
         ) -> Result<ServerCertVerified, Error> {
             Ok(ServerCertVerified::assertion())
         }
+
         fn verify_tls12_signature(
             &self,
             _: &[u8],
@@ -131,6 +280,7 @@ fn client_config_insecure() -> rustls::ClientConfig {
         ) -> Result<HandshakeSignatureValid, Error> {
             Ok(HandshakeSignatureValid::assertion())
         }
+
         fn verify_tls13_signature(
             &self,
             _: &[u8],
@@ -139,48 +289,23 @@ fn client_config_insecure() -> rustls::ClientConfig {
         ) -> Result<HandshakeSignatureValid, Error> {
             Ok(HandshakeSignatureValid::assertion())
         }
+
         fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
             vec![
+                SignatureScheme::RSA_PKCS1_SHA1,
+                SignatureScheme::ECDSA_SHA1_Legacy,
                 SignatureScheme::RSA_PKCS1_SHA256,
                 SignatureScheme::ECDSA_NISTP256_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::ECDSA_NISTP384_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::ECDSA_NISTP521_SHA512,
                 SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
                 SignatureScheme::ED25519,
+                SignatureScheme::ED448,
             ]
         }
     }
-
-    ClientConfig::builder()
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(NoVerifier))
-        .with_no_client_auth()
-}
-
-/// Convert a string to rustls `ServerName`, supporting both DNS names and IP literals.
-fn to_server_name(name: &str) -> Result<ServerName<'static>> {
-    // IP literal?
-    if let Ok(ip) = name.parse::<IpAddr>() {
-        return Ok(ServerName::IpAddress(ip.into()));
-    }
-    // DNS name
-    Ok(ServerName::try_from(name.to_owned())
-        .map_err(|_| anyhow::anyhow!("invalid DNS name for SNI: {name}"))?)
-}
-
-/// Establish a TLS client connection to `serv
-pub async fn connect<IO>(
-    server_name: String,
-    io: IO,
-) -> anyhow::Result<tokio_rustls::client::TlsStream<IO>>
-where
-    IO: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-{
-    // For production: verify against system roots
-    // let client_config = client_config_with_native_roots()?;
-
-    // For testing if the upstream cert/SAN isn't right yet:
-    let client_config = client_config_insecure(); // <— DO NOT SHIP
-
-    let connector = TlsConnector::from(Arc::new(client_config));
-    let sni = to_server_name(&server_name)?; // handles IP or DNS
-    Ok(connector.connect(sni, io).await.context("tls connect")?)
 }
