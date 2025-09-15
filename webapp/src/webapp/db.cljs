@@ -14,7 +14,7 @@
    :connections {:loading true}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
-   :db-access {:requesting? false, :current nil, :pending-connection nil}
+   :db-access {:requesting? false, :current nil}
    :aws-connect {:status :not-started
                  :current-step :credentials
                  :credentials {:type nil

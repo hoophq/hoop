@@ -4,9 +4,9 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.connections.constants.db-access :as db-access-constants]
-   [webapp.connections.helpers.db-access-validation :as db-validation]
    [webapp.connections.views.db-access-connect-dialog :as db-access-connect-dialog]
-   [webapp.connections.views.db-access-duration-dialog :as db-access-duration-dialog]))
+   [webapp.connections.views.db-access-duration-dialog :as db-access-duration-dialog]
+   [webapp.connections.views.db-access-not-available-dialog :as db-access-not-available-dialog]))
 
 ;; Get database access for a connection
 (rf/reg-event-fx
@@ -43,10 +43,15 @@
 (rf/reg-event-fx
  :db-access->request-failure
  (fn [{:keys [db]} [_ error]]
-   {:db (assoc-in db [:db-access :requesting?] false)
-    :fx [[:dispatch [:show-snackbar {:level :error
-                                     :text "Failed to request database access"
-                                     :details error}]]]}))
+   (let [is-admin? (get-in db [:users->current-user :data :admin?])
+         error-message (or (:message error)
+                           (get-in error [:response :message])
+                           "Failed to request database access")]
+     {:db (assoc-in db [:db-access :requesting?] false)
+      :fx [[:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+                                               {:error-message error-message
+                                                :user-is-admin? is-admin?}]
+                                     :maxWidth "446px"}]]]})))
 
 ;; Load database access from localStorage
 (rf/reg-event-fx
@@ -74,46 +79,14 @@
      (.removeItem js/localStorage storage-key)
      {:db (assoc-in db [:db-access :current] nil)})))
 
-;; Start database access flow - ensures infrastructure config is loaded first
+;; Start database access flow - go directly to duration selection
 (rf/reg-event-fx
  :db-access->start-flow
- (fn [{:keys [db]} [_ connection]]
-   (let [infrastructure-config (get-in db [:infrastructure :data])]
-     (if infrastructure-config
-       ;; Infrastructure config already loaded, proceed with validation
-       {:fx [[:dispatch [:db-access->validate-connection connection]]]}
-       ;; Need to load infrastructure config first, then validate
-       {:fx [[:dispatch [:infrastructure->get-config]]
-             [:dispatch [:db-access->set-pending-connection connection]]]}))))
-
-;; Set connection to be validated after infrastructure config loads
-(rf/reg-event-db
- :db-access->set-pending-connection
- (fn [db [_ connection]]
-   (assoc-in db [:db-access :pending-connection] connection)))
-
-;; Clear pending connection
-(rf/reg-event-db
- :db-access->clear-pending-connection
- (fn [db [_]]
-   (assoc-in db [:db-access :pending-connection] nil)))
-
-;; Validate connection eligibility for database access
-(rf/reg-event-fx
- :db-access->validate-connection
- (fn [{:keys [db]} [_ connection]]
-   (let [infrastructure-config (get-in db [:infrastructure :data])
-         is-admin? (get-in db [:users->current-user :data :admin?])
-         validation-result (db-validation/validate-db-access-eligibility
-                            connection infrastructure-config is-admin?)]
-
-     (if (:valid? validation-result)
-       ;; Connection is valid, proceed to access duration modal
-       {:fx [[:dispatch [:modal->open {:content [db-access-duration-dialog/main connection]
-                                       :maxWidth "446px"}]]]}
-       ;; Connection is not valid, show error
-       {:fx [[:dispatch [:show-snackbar {:level :error
-                                         :text (:error-message validation-result)}]]]}))))
+ (fn [_ [_ connection]]
+   ;; Backend will handle all validations (proxy port, review, etc.)
+   ;; Frontend just presents the UI and handles responses
+   {:fx [[:dispatch [:modal->open {:content [db-access-duration-dialog/main connection]
+                                   :maxWidth "446px"}]]]}))
 
 ;; Clear current database access session
 (rf/reg-event-fx

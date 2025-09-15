@@ -19,18 +19,12 @@
                          ;; Map API fields to UI structure
                          (assoc :analytics-enabled (= (:product_analytics data) "active"))
                          (assoc :grpc-url (:grpc_server_url data)))
-         pending-connection (get-in db [:db-access :pending-connection])
          updated-db (-> db
                         (assoc-in [:infrastructure :status] :success)
                         (assoc-in [:infrastructure :data] mapped-data))]
 
-     (if pending-connection
-       ;; If there's a pending connection, validate it now and clear the pending state
-       {:db updated-db
-        :fx [[:dispatch [:db-access->validate-connection pending-connection]]
-             [:dispatch [:db-access->clear-pending-connection]]]}
-       ;; No pending connection, just update the database
-       {:db updated-db}))))
+     ;; Just update the database - no more pending connection validation needed
+     {:db updated-db})))
 
 (rf/reg-event-fx
  :infrastructure->get-config-failure
