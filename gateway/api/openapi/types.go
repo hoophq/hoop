@@ -1589,7 +1589,7 @@ type SSHServerConfig struct {
 
 type PostgresServerConfig struct {
 	// The listen address to run the PostgreSQL server proxy
-	ListenAddress string `json:"listen_address" example:"0.0.0.0:15432" binding:"required"`
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:15432"`
 }
 
 type ServerAuthOidcConfig struct {

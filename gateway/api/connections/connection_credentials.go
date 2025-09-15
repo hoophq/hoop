@@ -55,8 +55,18 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	if conn.SubType.String != "postgres" {
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection subtype is not supported for this connection"})
+		return
+	}
+
 	if conn.AccessModeConnect != "enabled" {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access mode connect is not enabled for this connection"})
+		return
+	}
+
+	if conn.Reviewers != nil && len(conn.Reviewers) > 0 {
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection reviewers are not supported for this connection"})
 		return
 	}
 
