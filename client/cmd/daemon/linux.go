@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	agentconfig "github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 )
 
@@ -26,8 +26,9 @@ func logsAgent(serviceName string) error {
 }
 
 func StartLinuxAgent() error {
-	cfg, err := agentconfig.Load()
+	log.ReinitializeLogger()
 
+	envKeys, err := configEnvironmentVariables()
 	if err != nil {
 		return err
 	}
@@ -35,11 +36,8 @@ func StartLinuxAgent() error {
 	opts := Options{
 		ServiceName: "hoop-agent",
 		ExecArgs:    " start agent",
-		Env: map[string]string{
-			"HOOP_KEY": cfg.Token,
-			"PATH": os.Getenv("PATH"),
-		},
-		WantedBy: "default.target",
+		Env:         envKeys,
+		WantedBy:    "default.target",
 	}
 
 	if err := install(opts); err != nil {
