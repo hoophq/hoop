@@ -45,6 +45,7 @@
    [webapp.events.components.toast]
    [webapp.events.connections]
    [webapp.events.database-schema]
+   [webapp.events.db-access]
    [webapp.events.editor-plugin]
    [webapp.events.gateway-info]
    [webapp.events.guardrails]
@@ -219,7 +220,8 @@
         (fn [panels]
           (rf/dispatch [:routes->get-route])
           (rf/dispatch [:clarity->verify-environment (:data @user)])
-          ;; (rf/dispatch [:connections->connection-get-status])
+          (rf/dispatch [:connections->connection-get-status])
+          (rf/dispatch [:db-access->cleanup-all-expired])
 
           (cond
             (:loading @user)

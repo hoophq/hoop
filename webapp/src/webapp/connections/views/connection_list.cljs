@@ -264,6 +264,12 @@
                                                                   (js/localStorage.setItem "selected-connection" connection)
                                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
                                           "Open in Web Terminal"])
+                                       (when (= (:subtype connection) "postgres")
+                                         [:> DropdownMenu.Item {:on-click
+                                                                (fn []
+                                                                  ;; Start the database access flow for this connection
+                                                                  (rf/dispatch [:db-access->start-flow connection]))}
+                                          "Open in Native Client"])
                                        [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [hoop-cli-modal/main (:name connection)]
                                                                                                      :maxWidth "1100px"
                                                                                                      :class "overflow-hidden"}])}

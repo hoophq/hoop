@@ -12,16 +12,25 @@
                              :on-success #(rf/dispatch [:infrastructure->get-config-success %])
                              :on-failure #(rf/dispatch [:infrastructure->get-config-failure %])}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :infrastructure->get-config-success
- (fn [db [_ data]]
+ (fn [{:keys [db]} [_ data]]
    (let [mapped-data (-> data
                          ;; Map API fields to UI structure
                          (assoc :analytics-enabled (= (:product_analytics data) "active"))
-                         (assoc :grpc-url (:grpc_server_url data)))]
-     (-> db
-         (assoc-in [:infrastructure :status] :success)
-         (assoc-in [:infrastructure :data] mapped-data)))))
+                         (assoc :grpc-url (:grpc_server_url data)))
+         pending-connection (get-in db [:db-access :pending-connection])
+         updated-db (-> db
+                        (assoc-in [:infrastructure :status] :success)
+                        (assoc-in [:infrastructure :data] mapped-data))]
+
+     (if pending-connection
+       ;; If there's a pending connection, validate it now and clear the pending state
+       {:db updated-db
+        :fx [[:dispatch [:db-access->validate-connection pending-connection]]
+             [:dispatch [:db-access->clear-pending-connection]]]}
+       ;; No pending connection, just update the database
+       {:db updated-db}))))
 
 (rf/reg-event-fx
  :infrastructure->get-config-failure
@@ -48,9 +57,13 @@
  :infrastructure->save-config
  (fn [{:keys [db]} _]
    (let [ui-config (get-in db [:infrastructure :data])
+         postgres-proxy-port (if (:postgres-proxy-port ui-config)
+                               (str "0.0.0.0:" (:postgres-proxy-port ui-config))
+                               "")
          ;; Map UI structure back to API format
          api-payload {:grpc_server_url (:grpc-url ui-config)
-                      :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")}]
+                      :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")
+                      :postgres_server_config {:listen_address postgres-proxy-port}}]
      {:db (assoc-in db [:infrastructure :submitting?] true)
       :fx [[:dispatch [:fetch {:method "PUT"
                                :uri "/serverconfig/misc"
