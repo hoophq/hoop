@@ -1582,7 +1582,7 @@ type ServerMiscConfig struct {
 
 type SSHServerConfig struct {
 	// The listen address to run the SSH server proxy
-	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222" binding:"required"`
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222"`
 	// The hosts key used for SSH connections
 	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
 }

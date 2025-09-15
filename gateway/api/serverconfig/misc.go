@@ -226,7 +226,7 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	// postgres server configuration attribute
 	var pgServerConfig *models.PostgresServerConfig
 	if req.PostgresServerConfig != nil {
-		if _, _, found := strings.Cut(req.PostgresServerConfig.ListenAddress, ":"); !found {
+		if _, _, found := strings.Cut(req.PostgresServerConfig.ListenAddress, ":"); req.PostgresServerConfig.ListenAddress != "" && !found {
 			return nil, errListenAddrFormat
 		}
 		pgServerConfig = &models.PostgresServerConfig{
@@ -237,7 +237,7 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 	// ssh server configuration attribute
 	var sshServerConfig *models.SSHServerConfig
 	if req.SSHServerConfig != nil {
-		if _, _, found := strings.Cut(req.SSHServerConfig.ListenAddress, ":"); !found {
+		if _, _, found := strings.Cut(req.SSHServerConfig.ListenAddress, ":"); req.SSHServerConfig.ListenAddress != "" && !found {
 			return nil, errListenAddrFormat
 		}
 		sshServerConfig = &models.SSHServerConfig{

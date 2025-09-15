@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
+
+var validConnectionTypes = []string{"postgres", "ssh"}
 
 // CreateConnectionCredentials
 //
@@ -55,7 +58,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if conn.SubType.String != "postgres" {
+	if !slices.Contains(validConnectionTypes, conn.SubType.String) {
 		c.AbortWithStatusJSON(400, gin.H{"message": "connection subtype is not supported for this connection"})
 		return
 	}
@@ -65,7 +68,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	if conn.Reviewers != nil && len(conn.Reviewers) > 0 {
+	if len(conn.Reviewers) > 0 {
 		c.AbortWithStatusJSON(400, gin.H{"message": "connection reviewers are not supported for this connection"})
 		return
 	}
