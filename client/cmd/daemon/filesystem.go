@@ -118,8 +118,14 @@ func writeFileIfNotExists(path, content string, perm os.FileMode) error {
 }
 
 func configEnvironmentVariables() (map[string]string, error) {
-	cfg, err := agentconfig.Load()
+	envFile, err := envFileExist()
+	if envFile != "" {
+		log.Infof("Using existing env file: %s", envFile)
+		env, err := LoadEnvFile(envFile)
+		return env, err
+	}
 
+	cfg, err := agentconfig.Load()
 	if err != nil {
 		return nil, err
 	}
@@ -127,12 +133,6 @@ func configEnvironmentVariables() (map[string]string, error) {
 	envKeys := map[string]string{
 		"HOOP_KEY": cfg.Token,
 		"PATH":     os.Getenv("PATH"),
-	}
-	envFile, err := envFileExist()
-	if envFile != "" {
-		log.Infof("Using existing env file: %s", envFile)
-		env, err := LoadEnvFile(envFile)
-		return env, err
 	}
 
 	envFile, err = createEnvFileIfNotExists(envKeys)
