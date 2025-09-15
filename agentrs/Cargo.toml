@@ -66,3 +66,4 @@ argon2 = { version = "0.5", features = ["std"] }
 x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 
 tap = "1.0"
+hex = "0.4"

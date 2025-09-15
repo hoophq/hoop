@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use camino::{Utf8Path, Utf8PathBuf};
-use picky::key::{PrivateKey, PublicKey};
 use picky::pem::Pem;
 use serde::{Deserialize, Serialize};
 use tap::prelude::*;
@@ -28,7 +27,7 @@ pub struct ConfigHandleManager {
 }
 
 fn get_default_path() -> Utf8PathBuf {
-    Utf8PathBuf::from("~/.hoop/gateway.json")
+    Utf8PathBuf::from("/Users/chico/.hoop/gateway.json")
 }
 
 fn get_path() -> Utf8PathBuf {
@@ -50,8 +49,6 @@ impl ConfigHandleManager {
                 // do not use defaults in production
                 ConfFile {
                     hostname: None,
-                    provisioner_public_key_file: None,
-                    provisioner_private_key_file: None,
                     tls_certificate_source: Some(CertSource::External),
                     tls_certificate_file: None,
                     tls_private_key_file: None,
@@ -76,9 +73,6 @@ pub struct ConfFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
 
-    pub provisioner_public_key_file: Option<Utf8PathBuf>,
-    pub provisioner_private_key_file: Option<Utf8PathBuf>,
-
     pub tls_certificate_source: Option<CertSource>,
     pub tls_certificate_file: Option<Utf8PathBuf>,
     pub tls_private_key_file: Option<Utf8PathBuf>,
@@ -102,8 +96,6 @@ fn load_conf_file(conf_path: &Utf8Path) -> anyhow::Result<Option<ConfFile>> {
 pub struct Conf {
     pub hostname: String,
     pub tls: Option<Tls>,
-    pub provisioner_public_key: PublicKey,
-    pub provisioner_private_key: Option<PrivateKey>,
 }
 
 impl Conf {
@@ -146,20 +138,7 @@ impl Conf {
             },
         };
 
-        let provisioner_public_key = read_pub_key(conf_file.provisioner_public_key_file.as_deref())
-            .context("provisioner public key")?
-            .context("provisioner public key is missing (no path nor inlined data provided)")?;
-
-        let provisioner_private_key =
-            read_priv_key(conf_file.provisioner_private_key_file.as_deref())
-                .context("provisioner public key")?;
-
-        Ok(Conf {
-            hostname,
-            tls,
-            provisioner_public_key,
-            provisioner_private_key,
-        })
+        Ok(Conf { hostname, tls })
     }
 }
 #[derive(Clone)]
@@ -203,7 +182,7 @@ fn normalize_data_path(path: &Utf8Path, data_dir: &Utf8Path) -> Utf8PathBuf {
 }
 
 fn default_data_dir() -> Utf8PathBuf {
-    Utf8PathBuf::from("~/.hoop")
+    Utf8PathBuf::from("/Users/chico/.hoop")
 }
 
 fn get_data_dir() -> Utf8PathBuf {
@@ -365,28 +344,4 @@ fn read_rustls_priv_key(
     };
 
     Ok(Some(private_key))
-}
-
-fn read_pub_key(path: Option<&Utf8Path>) -> anyhow::Result<Option<PublicKey>> {
-    match path {
-        Some(path) => normalize_data_path(path, &get_data_dir())
-            .pipe_ref(std::fs::read_to_string)
-            .with_context(|| format!("couldn't read file at {path}"))?
-            .pipe_deref(PublicKey::from_pem_str)
-            .context("couldn't parse pem document")
-            .map(Some),
-        None => Ok(None),
-    }
-}
-
-fn read_priv_key(path: Option<&Utf8Path>) -> anyhow::Result<Option<PrivateKey>> {
-    match path {
-        Some(path) => normalize_data_path(path, &&get_data_dir())
-            .pipe_ref(std::fs::read_to_string)
-            .with_context(|| format!("couldn't read file at {path}"))?
-            .pipe_deref(PrivateKey::from_pem_str)
-            .context("couldn't parse pem document")
-            .map(Some),
-        None => Ok(None),
-    }
 }
