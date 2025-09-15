@@ -3,11 +3,6 @@
    [clojure.string :as str]
    [webapp.connections.constants.db-access :as db-access-constants]))
 
-(defn connection-has-review?
-  "Check if connection has review enabled"
-  [connection]
-  (:has_review connection))
-
 (defn proxy-port-configured?
   "Check if PostgreSQL proxy port is configured in infrastructure"
   [infrastructure-config]
@@ -16,11 +11,6 @@
     (and listen-address
          (not (str/blank? listen-address)))))
 
-(defn connection-supports-db-access?
-  "Check if connection type supports database access"
-  [connection]
-  (= (:subtype connection) "postgres"))
-
 (defn validate-db-access-eligibility
   "Validate if connection is eligible for database access
    Returns {:valid? boolean :error-type keyword :error-message string}"
@@ -28,13 +18,13 @@
 
   (cond
     ;; Check if connection type is supported
-    (not (connection-supports-db-access? connection))
+    (not (= (:subtype connection) "postgres"))
     {:valid? false
      :error-type :unsupported-type
      :error-message "Database access is only available for PostgreSQL connections."}
 
     ;; Check if review is active
-    (connection-has-review? connection)
+    (:has_review connection)
     {:valid? false
      :error-type :review-active
      :error-message (get-in db-access-constants/error-messages

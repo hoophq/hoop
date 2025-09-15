@@ -1,97 +1,89 @@
 (ns webapp.components.timer
-  (:require [clojure.string :as string]
+  (:require [clojure.string :as str]
             [reagent.core :as r]))
 
-(defn insert-0-before [number]
-  (-> number
-      (#(str "0" %))
-      (#(take-last 2 %))
-      string/join))
+;; Helper functions (pure)
+(defn- pad-zero
+  "Add leading zero to numbers < 10"
+  [number]
+  (->> number
+       str
+       (str "0")
+       (take-last 2)
+       str/join))
 
-(defn format-time [milliseconds]
-  (let [seconds (quot milliseconds 1000)
-        minutes (quot seconds 60)
-        remaining-seconds (mod seconds 60)]
-    (str (insert-0-before minutes) ":" (insert-0-before remaining-seconds))))
+(defn- format-duration
+  "Format milliseconds as MM:SS"
+  [ms]
+  (let [total-seconds (quot ms 1000)
+        minutes (quot total-seconds 60)
+        seconds (mod total-seconds 60)]
+    (str (pad-zero minutes) ":" (pad-zero seconds))))
 
-(defn decrement-time [time]
-  (Math/max 0 (- time 1000)))
 
-;; Original timer (for backward compatibility)
-(defn main [create-at access-duration on-timer-end]
-  (let [now (.getTime (new js/Date))
-        end-date (+ create-at access-duration)
-        remaining-time (r/atom (- end-date now))
-        interval-id (r/atom nil)]
+;; Hook for timer logic
+(defn- use-countdown
+  "Hook that manages countdown state and cleanup"
+  [end-timestamp-ms on-complete]
+  (r/with-let [remaining-time (r/atom (- end-timestamp-ms (.getTime (js/Date.))))
+               update-timer #(let [now (.getTime (js/Date.))
+                                   remaining (max 0 (- end-timestamp-ms now))]
+                               (reset! remaining-time remaining)
+                               (when (and (<= remaining 0) on-complete)
+                                 (on-complete)))
+               interval-id (js/setInterval update-timer 1000)]
 
-    (r/create-class
-     {:component-did-mount
-      (fn [_]
-        ;; Start the interval and store its ID for cleanup
-        (reset! interval-id
-                (js/setInterval #(swap! remaining-time decrement-time) 1000)))
+    ;; Initial update
+    (update-timer)
 
-      :component-will-unmount
-      (fn [_]
-        ;; Clean up the interval to prevent memory leaks
-        (when @interval-id
-          (js/clearInterval @interval-id)))
+    ;; Return current remaining time
+    @remaining-time
 
-      :reagent-render
-      (fn []
-        (when (<= @remaining-time 0)
-          (when @interval-id
-            (js/clearInterval @interval-id))
-          (on-timer-end))
-        [:<>
-         [:small {:class (if (<= @remaining-time 60000)
-                           "text-red-700"
-                           "text-gray-700")}
-          "Time left: "]
-         [:small {:class (str "font-bold "
-                              (if (<= @remaining-time 60000)
-                                "text-red-700"
-                                "text-gray-700"))}
-          (format-time @remaining-time)]])})))
+    ;; Cleanup on unmount
+    (finally
+      (js/clearInterval interval-id))))
 
-;; New improved timer for database access (uses expire_at directly)
-(defn expire-at-timer
-  "Timer that counts down to a specific expiration timestamp"
-  [expire-at-iso on-timer-end]
-  (let [expire-at-ms (.getTime (js/Date. expire-at-iso))
-        remaining-time (r/atom (- expire-at-ms (.getTime (js/Date.))))
-        interval-id (r/atom nil)]
+;; Modern functional timer components
+(defn countdown-timer
+  "Simple countdown timer that shows time remaining until expiration"
+  [{:keys [expire-at on-complete urgent-threshold]
+    :or {urgent-threshold 60000}}] ; Default 1 minute threshold
 
-    (r/create-class
-     {:component-did-mount
-      (fn [_]
-        ;; Start the interval and store its ID for cleanup
-        (reset! interval-id
-                (js/setInterval
-                 #(let [now (.getTime (js/Date.))
-                        remaining (- expire-at-ms now)]
-                    (reset! remaining-time remaining))
-                 1000)))
+  (let [expire-ms (.getTime (js/Date. expire-at))
+        remaining-ms (use-countdown expire-ms on-complete)
+        is-urgent? (<= remaining-ms urgent-threshold)]
 
-      :component-will-unmount
-      (fn [_]
-        ;; Clean up the interval to prevent memory leaks
-        (when @interval-id
-          (js/clearInterval @interval-id)))
+    [:div {:class "flex items-baseline gap-1"}
+     [:small {:class (if is-urgent? "text-red-700" "text-gray-700")}
+      "Time left: "]
+     [:small {:class (str "font-bold " (if is-urgent? "text-red-700" "text-gray-700"))}
+      (format-duration remaining-ms)]]))
 
-      :reagent-render
-      (fn []
-        (when (<= @remaining-time 0)
-          (when @interval-id
-            (js/clearInterval @interval-id))
-          (on-timer-end))
-        [:<>
-         [:small {:class (if (<= @remaining-time 60000)
-                           "text-red-700"
-                           "text-gray-700")}
-          "Time left: "]
-         [:small {:class (str "font-bold "
-                              (if (<= @remaining-time 60000)
-                                "text-red-700"
-                                "text-gray-700"))}
-          (format-time @remaining-time)]])})))
+(defn inline-timer
+  "Inline timer for use within text"
+  [{:keys [expire-at on-complete urgent-threshold]
+    :or {urgent-threshold 60000}}]
+
+  (let [expire-ms (.getTime (js/Date. expire-at))
+        remaining-ms (use-countdown expire-ms on-complete)
+        is-urgent? (<= remaining-ms urgent-threshold)]
+
+    [:span {:class (str "font-mono " (if is-urgent? "text-red-600" "text-gray-600"))}
+     (format-duration remaining-ms)]))
+
+(defn session-timer
+  "Timer specifically for database access sessions"
+  [{:keys [expire-at on-session-end]}]
+
+  [countdown-timer
+   {:expire-at expire-at
+    :on-complete on-session-end
+    :urgent-threshold 60000}]) ; 1 minute warning
+
+(defn main
+  "Legacy timer - use countdown-timer instead"
+  [created-at-ms duration-ms on-timer-end]
+  (let [expire-at (js/Date. (+ created-at-ms duration-ms))]
+    [countdown-timer
+     {:expire-at expire-at
+      :on-complete on-timer-end}]))

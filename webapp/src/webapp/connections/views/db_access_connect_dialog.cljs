@@ -84,13 +84,13 @@
      (:database_name db-access-data)]]
 
    [:div
-    [timer/expire-at-timer
-     (:expire_at db-access-data)
-     (fn []
-       (rf/dispatch [:db-access->clear-session])
-       (rf/dispatch [:modal->close])
-       (rf/dispatch [:show-snackbar {:level :info
-                                     :text "Database access session has expired."}]))]]])
+    [timer/session-timer
+     {:expire-at (:expire_at db-access-data)
+      :on-session-end (fn []
+                        (rf/dispatch [:db-access->clear-session])
+                        (rf/dispatch [:modal->close])
+                        (rf/dispatch [:show-snackbar {:level :info
+                                                      :text "Database access session has expired."}]))}]]])
 
 (defn minimize-modal
   "Minimize modal to draggable card"
@@ -112,13 +112,13 @@
                                     "Type: "]
                                    [:small {:class "font-bold text-gray-700"}
                                     "postgresql"]]
-                                  [timer/expire-at-timer
-                                   (:expire_at db-access-data)
-                                   (fn []
-                                     (rf/dispatch [:db-access->clear-session])
-                                     (rf/dispatch [:draggable-card->close])
-                                     (rf/dispatch [:show-snackbar {:level :info
-                                                                   :text "Database access session has expired."}]))]]]
+                                  [timer/session-timer
+                                   {:expire-at (:expire_at db-access-data)
+                                    :on-session-end (fn []
+                                                      (rf/dispatch [:db-access->clear-session])
+                                                      (rf/dispatch [:draggable-card->close])
+                                                      (rf/dispatch [:show-snackbar {:level :info
+                                                                                    :text "Database access session has expired."}]))}]]]
                      :on-click-expand (fn []
                                         (rf/dispatch [:draggable-card->close])
                                         (rf/dispatch [:db-access->reopen-connect-modal]))}]))))
@@ -191,9 +191,8 @@
             "ⓘ"]
            [:div {:class "text-blue-800 text-sm"}
             [:span "These credentials are valid for "]
-            [timer/expire-at-timer
-             (:expire_at @db-access-data)
-             (fn [])] ; No action needed here, main timer will handle expiration
+            [timer/inline-timer
+             {:expire-at (:expire_at @db-access-data)}]
             [:span " starting now"]]]]
 
          ;; Actions
