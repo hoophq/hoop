@@ -64,7 +64,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 
 	if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
-		c.AbortWithStatusJSON(400, gin.H{"message": "connection type is not configured on the server"})
+		c.AbortWithStatusJSON(400, gin.H{"message": "Listening address is not configured for this connection type"})
 		return
 	}
 
@@ -112,6 +112,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 	c.JSON(201,
 		openapi.ConnectionCredentials{
 			ID:               db.ID,
+			ConnectionName:   db.ConnectionName,
 			DatabaseName:     ptr.ToString(cred.databaseName),
 			Hostname:         cred.serverHostname,
 			Username:         cred.username,

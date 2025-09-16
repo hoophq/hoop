@@ -1662,6 +1662,8 @@ type ConnectionCredentialsRequest struct {
 type ConnectionCredentials struct {
 	// The unique identifier of the connection database access
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The name of the connection
+	ConnectionName string `json:"connection_name" example:"pgdemo"`
 	// The default database name of the connection
 	DatabaseName string `json:"database_name" example:"mydb"`
 	// The hostname to access the database instance
