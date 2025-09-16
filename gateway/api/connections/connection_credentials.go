@@ -63,6 +63,11 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection type is not configured on the server"})
+		return
+	}
+
 	if conn.AccessModeConnect != "enabled" {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access mode connect is not enabled for this connection"})
 		return
@@ -127,6 +132,22 @@ type credentialsInfo struct {
 	secretKeyHash    string
 	databaseName     *string
 	connectionString string
+}
+
+func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
+	serverConf, err := models.GetServerMiscConfig()
+	if err != nil || serverConf == nil {
+		return false
+	}
+
+	switch connType {
+	case proto.ConnectionTypePostgres:
+		return serverConf.PostgresServerConfig != nil && serverConf.PostgresServerConfig.ListenAddress != ""
+	case proto.ConnectionTypeSSH:
+		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
+	default:
+		return false
+	}
 }
 
 func getKeyPrefixAndServerPort(serverConf *models.ServerMiscConfig, connType proto.ConnectionType) (keyPrefix, portNumber string) {
