@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 )
@@ -76,11 +77,19 @@ func GetServerMisc(c *gin.Context) {
 		}
 	}
 
+	var httpServerConfig *openapi.HTTPServerConfig
+	if config.HTTPServerConfig != nil {
+		httpServerConfig = &openapi.HTTPServerConfig{
+			ListenAddress: config.HTTPServerConfig.ListenAddress,
+		}
+	}
+
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
 		ProductAnalytics:     productAnalytics,
 		GrpcServerURL:        grpcURL,
 		PostgresServerConfig: pgServerConfig,
 		SSHServerConfig:      sshServerConfig,
+		HTTPServerConfig:     httpServerConfig,
 	})
 }
 
@@ -160,11 +169,30 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	httpInstance := httpproxy.GetServerInstance()
+	httpConf, state := parseHttpConfigState(currentSrvConf, newState)
+	switch state {
+	case instanceStateStart:
+		_ = httpInstance.Stop()
+		err = httpInstance.Start(httpConf.ListenAddress)
+	case instanceStateStop:
+		err = httpInstance.Stop()
+	}
+
+	if err != nil {
+		errMsg := fmt.Sprintf("failed handling http server startup, reason=%v", err)
+		log.Errorf(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
+	}
+
+	// update the server configuration in the database
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
 		ProductAnalytics:     newState.ProductAnalytics,
 		GrpcServerURL:        newState.GrpcServerURL,
 		PostgresServerConfig: newState.PostgresServerConfig,
 		SSHServerConfig:      newState.SSHServerConfig,
+		HTTPServerConfig:     newState.HTTPServerConfig,
 	})
 	if err != nil {
 		log.Errorf("failed to update server config, reason=%v", err)
@@ -246,11 +274,23 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 		}
 	}
 
+	// http server configuration attribute
+	var httpServerConfig *models.HTTPServerConfig
+	if req.HTTPServerConfig != nil {
+		if _, _, found := strings.Cut(req.HTTPServerConfig.ListenAddress, ":"); req.HTTPServerConfig.ListenAddress != "" && !found {
+			return nil, errListenAddrFormat
+		}
+		httpServerConfig = &models.HTTPServerConfig{
+			ListenAddress: req.HTTPServerConfig.ListenAddress,
+		}
+	}
+
 	return &models.ServerMiscConfig{
 		ProductAnalytics:     &req.ProductAnalytics,
 		GrpcServerURL:        &req.GrpcServerURL,
 		PostgresServerConfig: pgServerConfig,
 		SSHServerConfig:      sshServerConfig,
+		HTTPServerConfig:     httpServerConfig,
 	}, nil
 }
 
@@ -264,7 +304,7 @@ func forbiddenOnMultiTenantSetups(c *gin.Context) (forbidden bool) {
 
 type instanceState string
 
-var (
+const (
 	instanceStateStart instanceState = "start"
 	instanceStateStop  instanceState = "stop"
 )
@@ -321,4 +361,26 @@ func newEd25519PrivateKey() (privateKey []byte, err error) {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
 	return sshproxy.EncodePrivateKeyToOpenSSH(privKey)
+}
+
+func parseHttpConfigState(currentState, newState *models.ServerMiscConfig) (newConf models.HTTPServerConfig, state instanceState) {
+	var currentConf models.HTTPServerConfig
+	if currentState != nil && currentState.HTTPServerConfig != nil {
+		currentConf = *currentState.HTTPServerConfig
+	}
+	if newState != nil && newState.HTTPServerConfig != nil {
+		newConf = *newState.HTTPServerConfig
+	}
+
+	switch {
+	// stop instance when new configuration is empty
+	case newConf.ListenAddress == "":
+		return newConf, "stop"
+	// restart on configuration drift
+	case currentConf.ListenAddress != newConf.ListenAddress:
+		return newConf, "start"
+	// noop, no configuration drift
+	default:
+		return
+	}
 }

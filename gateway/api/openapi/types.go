@@ -1578,6 +1578,8 @@ type ServerMiscConfig struct {
 	PostgresServerConfig *PostgresServerConfig `json:"postgres_server_config"`
 	// The SSH server proxy configuration
 	SSHServerConfig *SSHServerConfig `json:"ssh_server_config"`
+	// The HTTP server proxy configuration
+	HTTPServerConfig *HTTPServerConfig `json:"http_server_config"`
 }
 
 type SSHServerConfig struct {
@@ -1590,6 +1592,11 @@ type SSHServerConfig struct {
 type PostgresServerConfig struct {
 	// The listen address to run the PostgreSQL server proxy
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:15432" binding:"required"`
+}
+
+type HTTPServerConfig struct {
+	// The listen address to run the HTTP server proxy
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:8080"`
 }
 
 type ServerAuthOidcConfig struct {
