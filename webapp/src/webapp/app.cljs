@@ -131,7 +131,7 @@
 (defn- clear-cookie
   "Helper function to clear a cookie by setting it to empty with past expiration"
   [cookie-name]
-  (set! js/document.cookie (str cookie-name "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/")))
+  (set! js/document.cookie (str cookie-name "=; max-age=0; path=/")))
 
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
