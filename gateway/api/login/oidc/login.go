@@ -199,13 +199,13 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	if url.Host != proto.ClientLoginCallbackAddress {
 		redirectSuccessURL = login.Redirect
 		c.SetCookie(
-			"hoop_access_token", // cookie name
-			token.AccessToken,   // token value
-			0,                   // maxAge (0 no 'Max-Age' attribute specified)
-			"/",                 // path
-			"",                  // domain (empty uses current domain)
-			true,                // secure (HTTPS only)
-			false,               // httpOnly (not accessible via JavaScript)
+			"hoop_access_token",
+			token.AccessToken,
+			0,
+			"/",
+			"",
+			true,
+			false,
 		)
 	}
 
