@@ -28,7 +28,7 @@
            :not-margin-bottom? true
            :placeholder "Select duration"
            :on-change #(reset! selected-duration (js/parseInt %))
-           :selected (str @selected-duration)
+           :selected (:text (get-in db-access-constants/access-duration-options [:value @selected-duration]))
            :full-width? true
            :options db-access-constants/access-duration-options}]]
 

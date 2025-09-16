@@ -184,17 +184,6 @@
           [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
            [connect-uri @db-access-data]]]
 
-         ;; Info banner
-         [:div {:class "bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4"}
-          [:div {:class "flex items-start gap-2"}
-           [:div {:class "text-blue-600 text-sm"}
-            "ⓘ"]
-           [:div {:class "text-blue-800 text-sm"}
-            [:span "These credentials are valid for "]
-            [timer/inline-timer
-             {:expire-at (:expire_at @db-access-data)}]
-            [:span " starting now"]]]]
-
          ;; Actions
          [:footer {:class "flex justify-end gap-3 mt-6"}
           [button/secondary {:text "Minimize"
