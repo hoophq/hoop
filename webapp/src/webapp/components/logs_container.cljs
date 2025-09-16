@@ -66,8 +66,9 @@
      (when title [h/h3 title {:class "mb-regular"}])
      [:section
       {:class (str "relative bg-gray-900 font-mono overflow-auto h-full"
-                   " whitespace-pre text-gray-200 text-sm"
-                   " px-regular pt-regular group")
+                   " text-gray-200 text-sm"
+                   " p-radix-4 rounded-lg group"
+                   (when (:whitespace? config) " whitespace-pre"))
        :on-copy (when (:not-clipboard? config)
                   (fn [e] (.preventDefault e)))}
       (when-not (:not-clipboard? config)
@@ -75,7 +76,7 @@
       [:div
        {:id container-id
         :class (str (when (:classes config) (:classes config))
-                    " overflow-auto whitespace-pre h-full"
+                    " overflow-auto h-full"
                     (when-not (:fixed-height? config) " max-h-80")
                     (when (:not-clipboard? config) " select-none"))
         :style (when (:not-clipboard? config)

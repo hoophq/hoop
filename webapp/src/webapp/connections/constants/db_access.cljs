@@ -12,9 +12,6 @@
 (defn minutes->seconds [minutes]
   (* minutes 60))
 
-;; Get default access duration (30 minutes)
-(def default-access-duration 30)
-
 ;; localStorage key for db access data
 (defn db-access-storage-key [connection-id]
   (str "hoop-db-access-" connection-id))

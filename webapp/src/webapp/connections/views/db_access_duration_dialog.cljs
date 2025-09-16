@@ -1,47 +1,40 @@
 (ns webapp.connections.views.db-access-duration-dialog
   (:require
-   ["@radix-ui/themes" :refer [Button Heading]]
+   ["@radix-ui/themes" :refer [Button Heading Text Box]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.connections.constants.db-access :as db-access-constants]))
 
 (defn main [connection]
-  (let [selected-duration (r/atom db-access-constants/default-access-duration)
+  (let [selected-duration (r/atom 30)
         requesting? (rf/subscribe [:db-access->requesting?])]
 
     (fn [_connection]
-      [:section
+      [:> Box {:class "space-y-8"}
        [:header {:class "mb-4"}
         [:> Heading {:size "6" :as "h2"}
-         "Configure session"]]
+         "Configure session"]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+         "Specify how long you need access to this connection."]]
 
-       [:main {:class "space-y-4"}
-        [:p {:class "text-sm text-gray-600"}
-         "Specify how long you need access to this connection."]
-
-        [:div
-         [:label {:class "block text-sm font-medium text-gray-700 mb-2"}
+       [:> Box {:class "space-y-3"}
+        [:> Box
+         [:> Text {:as "label" :size "2" :weight "bold" :class "text-[--gray-12]"}
           "Access duration"]
          [forms/select
           {:size "2"
            :not-margin-bottom? true
            :placeholder "Select duration"
            :on-change #(reset! selected-duration (js/parseInt %))
-           :selected (:text (get-in db-access-constants/access-duration-options [:value @selected-duration]))
+           :selected @selected-duration
            :full-width? true
            :options db-access-constants/access-duration-options}]]
 
-        [:p {:class "text-sm text-gray-500"}
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
          "Your access will automatically expire after this period"]]
 
        [:footer {:class "flex justify-end gap-3 mt-6"}
-        [:> Button
-         {:variant "outline"
-          :disabled @requesting?
-          :on-click #(rf/dispatch [:modal->close])}
-         "Cancel"]
-
         [:> Button
          {:variant "solid"
           :loading @requesting?
@@ -49,4 +42,4 @@
           :on-click #(rf/dispatch [:db-access->request-access
                                    (:name connection)
                                    @selected-duration])}
-         (if @requesting? "Connecting..." "Confirm and Connect")]]])))
+         "Confirm and Connect"]]])))

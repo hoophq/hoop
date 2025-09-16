@@ -1,6 +1,7 @@
 (ns webapp.components.timer
   (:require [clojure.string :as str]
-            [reagent.core :as r]))
+            [reagent.core :as r]
+            ["@radix-ui/themes" :refer [Text]]))
 
 ;; Helper functions (pure)
 (defn- pad-zero
@@ -68,7 +69,7 @@
         remaining-ms (use-countdown expire-ms on-complete)
         is-urgent? (<= remaining-ms urgent-threshold)]
 
-    [:span {:class (str "font-mono " (if is-urgent? "text-red-600" "text-gray-600"))}
+    [:> Text {:size "3" :weight "bold" :class (if is-urgent? "text-[--red-11]" "text-[--gray-11]")}
      (format-duration remaining-ms)]))
 
 (defn session-timer

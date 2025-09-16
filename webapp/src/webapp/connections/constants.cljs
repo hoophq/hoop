@@ -28,7 +28,6 @@
               {:key "user" :label "User" :value "" :required true}
               {:key "pass" :label "Pass" :value "" :required true}
               {:key "port" :label "Port" :value "" :required true}
-              {:key "ld_library_path" :label "" :value "/opt/oracle/instantclient_19_24" :hidden true :required true}
               {:key "sid" :placeholder "SID or Service name" :label "SID" :value "" :required true}]
    :mongodb [{:key "connection_string"
               :label "Connection string"
