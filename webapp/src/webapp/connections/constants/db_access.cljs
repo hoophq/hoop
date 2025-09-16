@@ -16,6 +16,32 @@
 (defn db-access-storage-key [connection-id]
   (str "hoop-db-access-" connection-id))
 
+;; Get text label for a given duration value
+(defn get-duration-text [value]
+  (some-> (filter #(= (:value %) value) access-duration-options)
+          first
+          :text))
+
+;; Alternative using some (more performant)
+(defn get-duration-text-alt [value]
+  (some #(when (= (:value %) value) (:text %)) access-duration-options))
+
+;; Lookup map for O(1) access (best for frequent usage)
+(def duration-value->text
+  (->> access-duration-options
+       (map (juxt :value :text))
+       (into {})))
+
+;; Fast lookup function using the map
+(defn get-duration-text-fast [value]
+  (get duration-value->text value))
+
+;; Examples of usage:
+;; (get-duration-text 60)       => "1 hour"
+;; (get-duration-text-alt 120)  => "2 hours"
+;; (get-duration-text-fast 15)  => "15 minutes"
+;; (get-duration-text 999)      => nil (value not found)
+
 ;; Check if db access data is still valid
 (defn db-access-valid? [db-access-data]
   (when db-access-data

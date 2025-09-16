@@ -4,9 +4,8 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.connections.constants.db-access :as db-access-constants]
-   [webapp.connections.views.db-access-connect-dialog :as db-access-connect-dialog]
-   [webapp.connections.views.db-access-duration-dialog :as db-access-duration-dialog]
-   [webapp.connections.views.db-access-not-available-dialog :as db-access-not-available-dialog]))
+   [webapp.connections.views.db-access-not-available-dialog :as db-access-not-available-dialog]
+   [webapp.connections.db-access.main :as db-access-main]))
 
 ;; Get database access for a connection
 (rf/reg-event-fx
@@ -35,9 +34,8 @@
               (assoc-in [:db-access :current] response))
       :fx [[:dispatch [:show-snackbar {:level :success
                                        :text "Database access granted successfully!"}]]
-           [:dispatch [:modal->open {:content [db-access-connect-dialog/main]
-                                     :maxWidth "600px"
-                                     :custom-on-click-out db-access-connect-dialog/minimize-modal}]]]})))
+           ;; No need to open new modal - the main component handles the flow
+           ]})))
 
 ;; Handle failed database access response
 (rf/reg-event-fx
@@ -79,14 +77,14 @@
      (.removeItem js/localStorage storage-key)
      {:db (assoc-in db [:db-access :current] nil)})))
 
-;; Start database access flow - go directly to duration selection
+;; Start database access flow - use integrated layout
 (rf/reg-event-fx
  :db-access->start-flow
  (fn [_ [_ connection]]
    ;; Backend will handle all validations (proxy port, review, etc.)
-   ;; Frontend just presents the UI and handles responses
-   {:fx [[:dispatch [:modal->open {:content [db-access-duration-dialog/main connection]
-                                   :maxWidth "446px"}]]]}))
+   ;; Frontend presents the integrated UI flow
+   {:fx [[:dispatch [:modal->open {:content [db-access-main/main connection]
+                                   :maxWidth "600px"}]]]}))
 
 ;; Clear current database access session
 (rf/reg-event-fx
@@ -102,10 +100,14 @@
 ;; Reopen main connect modal (used by draggable card expand)
 (rf/reg-event-fx
  :db-access->reopen-connect-modal
- (fn [_ [_]]
-   {:fx [[:dispatch [:modal->open {:content [db-access-connect-dialog/main]
-                                   :maxWidth "600px"
-                                   :custom-on-click-out db-access-connect-dialog/minimize-modal}]]]}))
+ (fn [{:keys [db]} [_]]
+   ;; Get connection from current session data
+   (let [current-session (get-in db [:db-access :current])
+         connection {:name (:id current-session)
+                     :connection_name (:connection_name current-session)}]
+     {:fx [[:dispatch [:modal->open {:content [db-access-main/main connection]
+                                     :maxWidth "600px"
+                                     :custom-on-click-out db-access-main/minimize-modal}]]]})))
 
 ;; Auto-cleanup expired sessions on app initialization
 (rf/reg-event-fx
