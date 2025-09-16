@@ -118,20 +118,36 @@
 
 ;; Tracking initialization is now handled by :tracking->initialize-if-allowed
 ;; which is dispatched after gateway info is loaded and checks do_not_track
+(defn- get-cookie-value
+  "Helper function to extract cookie value by name"
+  [cookie-name]
+  (when-let [cookie-string (.-cookie js/document)]
+    (let [cookies (cs/split cookie-string #"; ")
+          target-cookie (some #(when (cs/starts-with? % (str cookie-name "="))
+                                 %) cookies)]
+      (when target-cookie
+        (subs target-cookie (+ (count cookie-name) 1))))))
+
+(defn- clear-cookie
+  "Helper function to clear a cookie by setting it to empty with past expiration"
+  [cookie-name]
+  (set! js/document.cookie (str cookie-name "=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/")))
 
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
   []
   (let [search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
-        token (.get url-params "token")
+        token (get-cookie-value "hoop_access_token")
         error (.get url-params "error")
         redirect-after-auth (.getItem js/localStorage "redirect-after-auth")]
 
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
 
-    (.setItem js/localStorage "jwt-token" token)
+    (when token
+      (.setItem js/localStorage "jwt-token" token)
+      (clear-cookie "hoop_access_token"))
 
     (if error
       (rf/dispatch [:navigate :login-hoop])

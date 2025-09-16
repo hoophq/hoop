@@ -205,7 +205,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 			"/",                 // path
 			"",                  // domain (empty uses current domain)
 			true,                // secure (HTTPS only)
-			true,                // httpOnly (not accessible via JavaScript)
+			false,               // httpOnly (not accessible via JavaScript)
 		)
 	}
 
