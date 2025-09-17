@@ -286,6 +286,18 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	}
 
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
+	url, _ := url.Parse(login.Redirect)
+	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
+		c.SetCookie(
+			"hoop_access_token",
+			sessionToken,
+			0,
+			"/",
+			"",
+			true,
+			false,
+		)
+	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
 }
 

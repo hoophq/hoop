@@ -196,7 +196,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
 
 	url, _ := url.Parse(login.Redirect)
-	if url.Host != proto.ClientLoginCallbackAddress {
+	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
 		redirectSuccessURL = login.Redirect
 		c.SetCookie(
 			"hoop_access_token",
