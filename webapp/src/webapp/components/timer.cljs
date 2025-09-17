@@ -62,15 +62,12 @@
 
 (defn inline-timer
   "Inline timer for use within text"
-  [{:keys [expire-at on-complete urgent-threshold]
-    :or {urgent-threshold 60000}}]
+  [{:keys [expire-at on-complete text-component]}]
 
   (let [expire-ms (.getTime (js/Date. expire-at))
-        remaining-ms (use-countdown expire-ms on-complete)
-        is-urgent? (<= remaining-ms urgent-threshold)]
+        remaining-ms (use-countdown expire-ms on-complete)]
 
-    [:> Text {:size "3" :weight "bold" :class (if is-urgent? "text-[--red-11]" "text-[--gray-11]")}
-     (format-duration remaining-ms)]))
+    (text-component (format-duration remaining-ms))))
 
 (defn session-timer
   "Timer specifically for database access sessions"

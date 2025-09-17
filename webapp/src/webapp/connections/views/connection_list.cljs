@@ -87,6 +87,10 @@
 
     false))
 
+(defn can-access-native-client? [connection]
+  (and (= "enabled" (:access_mode_connect connection))
+       (= (:subtype connection) "postgres")))
+
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
@@ -264,16 +268,19 @@
                                                                   (js/localStorage.setItem "selected-connection" connection)
                                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
                                           "Open in Web Terminal"])
-                                       (when (= (:subtype connection) "postgres")
+
+                                       [:> DropdownMenu.Item {:on-click
+                                                              #(rf/dispatch [:modal->open
+                                                                             {:content [hoop-cli-modal/main (:name connection)]
+                                                                              :maxWidth "1100px"
+                                                                              :class "overflow-hidden"}])}
+                                        "Open with Hoop CLI"]
+
+                                       (when (can-access-native-client? connection)
                                          [:> DropdownMenu.Item {:on-click
-                                                                (fn []
-                                                                  ;; Start the database access flow for this connection
-                                                                  (rf/dispatch [:db-access->start-flow connection]))}
+                                                                #(rf/dispatch [:db-access->start-flow connection])}
                                           "Open in Native Client"])
-                                       [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [hoop-cli-modal/main (:name connection)]
-                                                                                                     :maxWidth "1100px"
-                                                                                                     :class "overflow-hidden"}])}
-                                        "Open in Local Terminal"]
+
                                        (when (can-test-connection? connection)
                                          [:> DropdownMenu.Item {:on-click #(rf/dispatch [:connections->test-connection (:name connection)])
                                                                 :disabled (is-connection-testing? @test-connection-state (:name connection))}

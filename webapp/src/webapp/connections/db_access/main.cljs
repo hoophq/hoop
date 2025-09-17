@@ -38,28 +38,29 @@
 (defn- configure-session-view
   "Step 1: Configure session duration"
   [connection selected-duration requesting?]
-  [:> Box {:class "space-y-8"}
-   [:header {:class "mb-6"}
-    [:> Heading {:size "6" :as "h2" :class "text-[--gray-12] mb-2"}
-     "Configure session"]
-    [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-     "Specify how long you need access to this connection."]]
+  [:> Flex {:direction "column" :justify "between" :gap "8" :class "h-full"}
+   [:> Box {:class "space-y-8"}
+    [:header {:class "mb-6"}
+     [:> Heading {:size "6" :as "h2" :class "text-[--gray-12] mb-2"}
+      "Configure session"]
+     [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+      "Specify how long you need access to this connection."]]
 
-   [:> Box {:class "space-y-4"}
-    [:> Box
-     [:> Text {:as "label" :size "2" :weight "bold" :class "text-[--gray-12] mb-2"}
-      "Access duration"]
-     [forms/select
-      {:size "2"
-       :not-margin-bottom? true
-       :placeholder "Select duration"
-       :on-change #(reset! selected-duration (js/parseInt %))
-       :selected @selected-duration
-       :full-width? true
-       :options db-access-constants/access-duration-options}]]
+    [:> Box {:class "space-y-4"}
+     [:> Box
+      [:> Text {:as "label" :size "2" :weight "bold" :class "text-[--gray-12] mb-2"}
+       "Access duration"]
+      [forms/select
+       {:size "2"
+        :not-margin-bottom? true
+        :placeholder "Select duration"
+        :on-change #(reset! selected-duration (js/parseInt %))
+        :selected @selected-duration
+        :full-width? true
+        :options db-access-constants/access-duration-options}]]
 
-    [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-     "Your access will automatically expire after this period"]]
+     [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+      "Your access will automatically expire after this period"]]]
 
    [:footer {:class "flex justify-end gap-3 mt-8"}
     [:> Button
@@ -141,49 +142,54 @@
   "Step 2: Connection established - show credentials"
   [db-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")]
-    [:> Box {:class "space-y-6"}
-     [:header {:class "space-y-3"}
-      [:> Heading {:size "6" :as "h2" :class "text-[--gray-12]"}
-       (str "Connect to " (:connection_name db-access-data))]
 
-      [:> Flex {:align "center" :gap "2"}
-       [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-        "Connection established, time left: "]
-       [timer/inline-timer
-        {:expire-at (:expire_at db-access-data)
-         :urgent-threshold 60000
-         :on-complete (fn []
-                        (rf/dispatch [:db-access->clear-session])
-                        (rf/dispatch [:modal->close])
-                        (rf/dispatch [:show-snackbar {:level :info
-                                                      :text "Database access session has expired."}]))}]]]
+    (fn []
+      [:<>
+       [:> Box {:class "space-y-6"}
+        [:header {:class "space-y-3"}
+         [:> Heading {:size "6" :as "h2" :class "text-[--gray-12]"}
+          (str "Connect to " (:connection_name db-access-data))]
 
-     [:> Tabs.Root {:value @active-tab
-                    :onValueChange #(reset! active-tab %)}
-      [:> Tabs.List {:aria-label "Connection methods"}
-       [:> Tabs.Trigger {:value "credentials"} "Credentials"]
-       [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"]]
+         [:> Flex {:align "center" :gap "2"}
+          [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
+           "Connection established, time left: "]
+          [timer/inline-timer
+           {:expire-at (:expire_at db-access-data)
+            :text-component (fn [timer-text]
+                              [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
+                               timer-text])
+            :on-complete (fn []
+                           (rf/dispatch [:db-access->clear-session])
+                           (rf/dispatch [:modal->close])
+                           (rf/dispatch [:show-snackbar {:level :info
+                                                         :text "Database access session has expired."}]))}]]]
 
-      [:> Tabs.Content {:value "credentials" :class "mt-4"}
-       [connect-credentials-tab db-access-data]]
+        [:> Tabs.Root {:value @active-tab
+                       :onValueChange #(reset! active-tab %)}
+         [:> Tabs.List {:aria-label "Connection methods"}
+          [:> Tabs.Trigger {:value "credentials"} "Credentials"]
+          [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"]]
 
-      [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
-       [connect-uri-tab db-access-data]]]
+         [:> Tabs.Content {:value "credentials" :class "mt-4"}
+          [connect-credentials-tab db-access-data]]
 
-     ;; Actions
-     [:footer {:class "flex justify-between items-center gap-3 mt-6"}
-      [:> Button
-       {:variant "ghost"
-        :size "3"
-        :color "gray"
-        :on-click minimize-fn}
-       "Minimize"]
-      [:> Button
-       {:variant "solid"
-        :size "3"
-        :color "red"
-        :on-click disconnect-fn}
-       "Disconnect"]]]))
+         [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
+          [connect-uri-tab db-access-data]]]]
+
+       ;; Actions
+       [:footer {:class "flex justify-between items-center"}
+        [:> Button
+         {:variant "ghost"
+          :size "3"
+          :color "gray"
+          :on-click minimize-fn}
+         "Minimize"]
+        [:> Button
+         {:variant "solid"
+          :size "3"
+          :color "red"
+          :on-click disconnect-fn}
+         "Disconnect"]]])))
 
 (defn- session-expired-view
   "Fallback view for expired sessions"
@@ -206,25 +212,31 @@
     (rf/dispatch [:modal->close])
     (when db-access-data
       (rf/dispatch [:draggable-card->open
-                    {:component [:> Box {:class "p-4 min-w-64"}
+                    {:component [:> Box {:class "min-w-32"}
                                  [:> Box {:class "space-y-2"}
                                   [:> Box
-                                   [:small {:class "text-gray-700"}
+                                   [:> Text {:size "2" :class "text-[--gray-12]"}
                                     "Connected to: "]
-                                   [:small {:class "font-bold text-gray-700"}
+                                   [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
                                     (:database_name db-access-data)]]
                                   [:> Box
-                                   [:small {:class "text-gray-700"}
+                                   [:> Text {:size "2" :class "text-[--gray-12]"}
                                     "Type: "]
-                                   [:small {:class "font-bold text-gray-700"}
+                                   [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
                                     "postgresql"]]
-                                  [timer/session-timer
-                                   {:expire-at (:expire_at db-access-data)
-                                    :on-session-end (fn []
-                                                      (rf/dispatch [:db-access->clear-session])
-                                                      (rf/dispatch [:draggable-card->close])
-                                                      (rf/dispatch [:show-snackbar {:level :info
-                                                                                    :text "Database access session has expired."}]))}]]]
+                                  [:> Box
+                                   [:> Text {:size "2" :class "text-[--gray-12]"}
+                                    "Time left: "]
+                                   [timer/inline-timer
+                                    {:expire-at (:expire_at db-access-data)
+                                     :text-component (fn [timer-text]
+                                                       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+                                                        timer-text])
+                                     :on-complete (fn []
+                                                    (rf/dispatch [:db-access->clear-session])
+                                                    (rf/dispatch [:draggable-card->close])
+                                                    (rf/dispatch [:show-snackbar {:level :info
+                                                                                  :text "Database access session has expired."}]))}]]]]
                      :on-click-expand (fn []
                                         (rf/dispatch [:draggable-card->close])
                                         (rf/dispatch [:db-access->reopen-connect-modal]))}]))))
@@ -251,9 +263,8 @@
         db-access-data (rf/subscribe [:db-access->current-session])
         session-valid? (rf/subscribe [:db-access->session-valid?])]
 
-    [:> Box {:class "flex flex-col bg-white h-full min-h-[500px]"}
-     [:> Flex {:direction "column" :class "h-full p-6"}
-
+    [:> Box {:class "flex max-h-[696px] overflow-hidden -m-radix-5"}
+     [:> Flex {:direction "column" :justify "between" :gap "6" :class "w-full p-10 overflow-y-auto"}
       ;; Main content based on current state
       (cond
         ;; Step 2: Connected - show connection details
@@ -266,4 +277,9 @@
 
         ;; Fallback: Session expired
         :else
-        [session-expired-view])]]))
+        [session-expired-view])]
+
+     [:> Box {:class "min-w-[525px] bg-blue-50 max-h-[696px]"}
+      [:img {:src "/images/illustrations/cli-promotion.png"
+             :alt  "cli illustration"
+             :class "w-full h-full object-cover"}]]]))

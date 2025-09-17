@@ -84,7 +84,7 @@
    ;; Backend will handle all validations (proxy port, review, etc.)
    ;; Frontend presents the integrated UI flow
    {:fx [[:dispatch [:modal->open {:content [db-access-main/main connection]
-                                   :maxWidth "600px"}]]]}))
+                                   :maxWidth "1100px"}]]]}))
 
 ;; Clear current database access session
 (rf/reg-event-fx
@@ -106,7 +106,7 @@
          connection {:name (:id current-session)
                      :connection_name (:connection_name current-session)}]
      {:fx [[:dispatch [:modal->open {:content [db-access-main/main connection]
-                                     :maxWidth "600px"
+                                     :maxWidth "1100px"
                                      :custom-on-click-out db-access-main/minimize-modal}]]]})))
 
 ;; Auto-cleanup expired sessions on app initialization
