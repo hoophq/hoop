@@ -71,6 +71,27 @@
    [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
     "Works with DBeaver, DataGrip and most PostgreSQL clients"]])
 
+(defn minimize-modal-content [db-access-data]
+  [:> Box {:class "p-4 min-w-64"}
+   [:> Box {:class "space-y-2"}
+    [:> Box
+     [:small {:class "text-gray-700"}
+      "Connected to: "]
+     [:small {:class "font-bold text-gray-700"}
+      (:database_name db-access-data)]]
+    [:> Box
+     [:small {:class "text-gray-700"}
+      "Type: "]
+     [:small {:class "font-bold text-gray-700"}
+      "postgresql"]]
+    [timer/session-timer
+     {:expire-at (:expire_at db-access-data)
+      :on-session-end (fn []
+                        (rf/dispatch [:db-access->clear-session])
+                        (rf/dispatch [:draggable-card->close])
+                        (rf/dispatch [:show-snackbar {:level :info
+                                                      :text "Database access session has expired."}]))}]]])
+
 (defn minimize-modal
   "Minimize modal to draggable card"
   []
@@ -79,25 +100,7 @@
     (rf/dispatch [:modal->close])
     (when db-access-data
       (rf/dispatch [:draggable-card->open
-                    {:component [:> Box {:class "p-4 min-w-64"}
-                                 [:> Box {:class "space-y-2"}
-                                  [:> Box
-                                   [:small {:class "text-gray-700"}
-                                    "Connected to: "]
-                                   [:small {:class "font-bold text-gray-700"}
-                                    (:database_name db-access-data)]]
-                                  [:> Box
-                                   [:small {:class "text-gray-700"}
-                                    "Type: "]
-                                   [:small {:class "font-bold text-gray-700"}
-                                    "postgresql"]]
-                                  [timer/session-timer
-                                   {:expire-at (:expire_at db-access-data)
-                                    :on-session-end (fn []
-                                                      (rf/dispatch [:db-access->clear-session])
-                                                      (rf/dispatch [:draggable-card->close])
-                                                      (rf/dispatch [:show-snackbar {:level :info
-                                                                                    :text "Database access session has expired."}]))}]]]
+                    {:component [minimize-modal-content db-access-data]
                      :on-click-expand (fn []
                                         (rf/dispatch [:draggable-card->close])
                                         (rf/dispatch [:db-access->reopen-connect-modal]))}]))))

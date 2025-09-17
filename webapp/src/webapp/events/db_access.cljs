@@ -1,4 +1,23 @@
 (ns webapp.events.db-access
+  "Database Access Event Handlers
+
+  Error Handling Strategy:
+
+  1. AGENT OFFLINE (checked first):
+     - Admin & Non-admin: Both get error dialog with specific messages
+     - Uses db-access-not-available-dialog component
+
+  2. BACKEND ERRORS (review, proxy-port, etc.):
+     - Admin: Gets real backend error in snackbar (technical details)
+     - Non-admin: Gets friendly error dialog (user-friendly message)
+
+  Flow:
+  1. User clicks 'Open in Native Client'
+  2. Check agent status first (:db-access->agent-status-check-*)
+  3. If agent online, proceed to request access (:db-access->request-access)
+  4. Backend validates (review, proxy-port, permissions, etc.)
+  5. Success: Show integrated modal | Failure: Show error (snackbar vs dialog)
+  "
   (:require
    [cljs.reader :as reader]
    [clojure.string :as str]
@@ -23,19 +42,16 @@
 (rf/reg-event-fx
  :db-access->request-success
  (fn [{:keys [db]} [_ response]]
-   (let [connection-id (:id response)
-         storage-key (db-access-constants/db-access-storage-key connection-id)]
+   ;; Save to localStorage (replacing any existing session)
+   (.setItem js/localStorage db-access-constants/db-access-storage-key (pr-str response))
 
-     ;; Save to localStorage
-     (.setItem js/localStorage storage-key (pr-str response))
-
-     {:db (-> db
-              (assoc-in [:db-access :requesting?] false)
-              (assoc-in [:db-access :current] response))
-      :fx [[:dispatch [:show-snackbar {:level :success
-                                       :text "Database access granted successfully!"}]]
-           ;; No need to open new modal - the main component handles the flow
-           ]})))
+   {:db (-> db
+            (assoc-in [:db-access :requesting?] false)
+            (assoc-in [:db-access :current] response))
+    :fx [[:dispatch [:show-snackbar {:level :success
+                                     :text "Database access granted successfully!"}]]
+         ;; No need to open new modal - the main component handles the flow
+         ]}))
 
 ;; Handle failed database access response
 (rf/reg-event-fx
@@ -46,56 +62,74 @@
                            (get-in error [:response :message])
                            "Failed to request database access")]
      {:db (assoc-in db [:db-access :requesting?] false)
+      :fx (if is-admin?
+            ;; Admin: Show backend error in snackbar
+            [[:dispatch [:modal->close]]
+             [:dispatch [:show-snackbar {:level :error
+                                         :text (str/capitalize error-message)}]]]
+            ;; Non-admin: Show error dialog with friendly message
+            [[:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+                                                 {:error-message error-message
+                                                  :user-is-admin? is-admin?}]
+                                       :maxWidth "446px"}]]])})))
+
+;; Clean up expired or invalid database access data
+(rf/reg-event-fx
+ :db-access->cleanup-expired
+ (fn [{:keys [db]} [_]]
+   (.removeItem js/localStorage db-access-constants/db-access-storage-key)
+   {:db (assoc-in db [:db-access :current] nil)}))
+
+;; Start database access flow - use integrated layout
+(rf/reg-event-fx
+ :db-access->start-flow
+ (fn [{:keys [db]} [_ connection-name]]
+   ;; First check if agent is online before proceeding
+   {:db (assoc-in db [:db-access :checking-agent?] true)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" connection-name)
+                             :on-success #(rf/dispatch [:db-access->agent-status-check-success % connection-name])
+                             :on-failure #(rf/dispatch [:db-access->agent-status-check-failure % connection-name])}]]]}))
+
+;; Handle agent status check success
+(rf/reg-event-fx
+ :db-access->agent-status-check-success
+ (fn [{:keys [db]} [_ response connection-name]]
+   (let [is-online? (= (:status response) "online")
+         is-admin? (get-in db [:users->current-user :data :admin?])]
+     {:db (assoc-in db [:db-access :checking-agent?] false)
+      :fx [(if is-online?
+             ;; Agent is online - proceed with normal flow
+             [:dispatch [:modal->open {:content [db-access-main/main connection-name]
+                                       :custom-on-click-out db-access-main/minimize-modal
+                                       :maxWidth "1100px"}]]
+             ;; Agent is offline - show error dialog
+             (let [error-message (get-in db-access-constants/error-messages
+                                         [:agent-offline (if is-admin? :admin :non-admin)])]
+               [:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+                                                   {:error-message error-message
+                                                    :user-is-admin? is-admin?}]
+                                         :maxWidth "446px"}]]))]})))
+
+;; Handle agent status check failure
+(rf/reg-event-fx
+ :db-access->agent-status-check-failure
+ (fn [{:keys [db]} [_ _error _connection]]
+   (let [is-admin? (get-in db [:users->current-user :data :admin?])
+         error-message (get-in db-access-constants/error-messages
+                               [:agent-offline (if is-admin? :admin :non-admin)])]
+     {:db (assoc-in db [:db-access :checking-agent?] false)
       :fx [[:dispatch [:modal->open {:content [db-access-not-available-dialog/main
                                                {:error-message error-message
                                                 :user-is-admin? is-admin?}]
                                      :maxWidth "446px"}]]]})))
 
-;; Load database access from localStorage
-(rf/reg-event-fx
- :db-access->load-from-storage
- (fn [{:keys [db]} [_ connection-id]]
-   (let [storage-key (db-access-constants/db-access-storage-key connection-id)
-         stored-data (.getItem js/localStorage storage-key)]
-     (if stored-data
-       (try
-         (let [parsed-data (reader/read-string stored-data)]
-           (if (db-access-constants/db-access-valid? parsed-data)
-             {:db (assoc-in db [:db-access :current] parsed-data)}
-             ;; Data expired, clean it up
-             {:fx [[:dispatch [:db-access->cleanup-expired connection-id]]]}))
-         (catch js/Error _
-           ;; Invalid data, clean it up
-           {:fx [[:dispatch [:db-access->cleanup-expired connection-id]]]}))
-       {}))))
-
-;; Clean up expired or invalid database access data
-(rf/reg-event-fx
- :db-access->cleanup-expired
- (fn [{:keys [db]} [_ connection-id]]
-   (let [storage-key (db-access-constants/db-access-storage-key connection-id)]
-     (.removeItem js/localStorage storage-key)
-     {:db (assoc-in db [:db-access :current] nil)})))
-
-;; Start database access flow - use integrated layout
-(rf/reg-event-fx
- :db-access->start-flow
- (fn [_ [_ connection]]
-   ;; Backend will handle all validations (proxy port, review, etc.)
-   ;; Frontend presents the integrated UI flow
-   {:fx [[:dispatch [:modal->open {:content [db-access-main/main connection]
-                                   :maxWidth "1100px"}]]]}))
-
 ;; Clear current database access session
 (rf/reg-event-fx
  :db-access->clear-session
  (fn [{:keys [db]} [_]]
-   (let [current-session (get-in db [:db-access :current])
-         connection-id (:id current-session)]
-     (when connection-id
-       (let [storage-key (db-access-constants/db-access-storage-key connection-id)]
-         (.removeItem js/localStorage storage-key)))
-     {:db (assoc-in db [:db-access :current] nil)})))
+   (.removeItem js/localStorage db-access-constants/db-access-storage-key)
+   {:db (assoc-in db [:db-access :current] nil)}))
 
 ;; Reopen main connect modal (used by draggable card expand)
 (rf/reg-event-fx
@@ -109,27 +143,50 @@
                                      :maxWidth "1100px"
                                      :custom-on-click-out db-access-main/minimize-modal}]]]})))
 
-;; Auto-cleanup expired sessions on app initialization
+;; Check for active database access sessions on app initialization
+(rf/reg-event-fx
+ :db-access->check-active-sessions
+ (fn [{:keys [db]} [_]]
+   (let [stored-data (.getItem js/localStorage db-access-constants/db-access-storage-key)]
+     (if stored-data
+       (try
+         (let [parsed-data (reader/read-string stored-data)]
+           (if (db-access-constants/db-access-valid? parsed-data)
+             ;; Found active session - load it and show draggable card
+             {:db (assoc-in db [:db-access :current] parsed-data)
+              :fx [[:dispatch-later {:ms 1000 ; Wait for app to be ready
+                                     :dispatch [:db-access->show-active-session parsed-data]}]]}
+             ;; Session expired, clean it up
+             {:fx [[:dispatch [:db-access->cleanup-expired]]]}))
+         (catch js/Error _
+           ;; Invalid data, clean it up
+           {:fx [[:dispatch [:db-access->cleanup-expired]]]}))
+       ;; No stored session
+       {}))))
+
+;; Show draggable card for active session
+(rf/reg-event-fx
+ :db-access->show-active-session
+ (fn [_ [_ session-data]]
+   {:fx [[:dispatch [:draggable-card->open
+                     {:component [db-access-main/minimize-modal-content session-data]
+                      :on-click-expand (fn []
+                                         (rf/dispatch [:draggable-card->close])
+                                         (rf/dispatch [:db-access->reopen-connect-modal]))}]]]}))
+
+;; Auto-cleanup expired session on app initialization
 (rf/reg-event-fx
  :db-access->cleanup-all-expired
  (fn [_ [_]]
-   (let [local-storage-keys (for [i (range (.-length js/localStorage))]
-                              (.key js/localStorage i))
-         db-access-keys (filter #(and % (str/starts-with? % "hoop-db-access-"))
-                                local-storage-keys)]
-
-     ;; Check each stored session and remove expired ones
-     (doseq [storage-key db-access-keys]
+   (let [stored-data (.getItem js/localStorage db-access-constants/db-access-storage-key)]
+     (when stored-data
        (try
-         (let [stored-data (.getItem js/localStorage storage-key)]
-           (when stored-data
-             (let [parsed-data (reader/read-string stored-data)]
-               (when-not (db-access-constants/db-access-valid? parsed-data)
-                 (.removeItem js/localStorage storage-key)))))
+         (let [parsed-data (reader/read-string stored-data)]
+           (when-not (db-access-constants/db-access-valid? parsed-data)
+             (.removeItem js/localStorage db-access-constants/db-access-storage-key)))
          (catch js/Error _
            ;; Invalid data, remove it
-           (.removeItem js/localStorage storage-key))))
-
+           (.removeItem js/localStorage db-access-constants/db-access-storage-key))))
      {})))
 
 ;; Subscriptions
@@ -137,6 +194,11 @@
  :db-access->requesting?
  (fn [db _]
    (get-in db [:db-access :requesting?] false)))
+
+(rf/reg-sub
+ :db-access->checking-agent?
+ (fn [db _]
+   (get-in db [:db-access :checking-agent?] false)))
 
 (rf/reg-sub
  :db-access->current-session

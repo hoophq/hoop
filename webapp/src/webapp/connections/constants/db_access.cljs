@@ -12,35 +12,8 @@
 (defn minutes->seconds [minutes]
   (* minutes 60))
 
-;; localStorage key for db access data
-(defn db-access-storage-key [connection-id]
-  (str "hoop-db-access-" connection-id))
-
-;; Get text label for a given duration value
-(defn get-duration-text [value]
-  (some-> (filter #(= (:value %) value) access-duration-options)
-          first
-          :text))
-
-;; Alternative using some (more performant)
-(defn get-duration-text-alt [value]
-  (some #(when (= (:value %) value) (:text %)) access-duration-options))
-
-;; Lookup map for O(1) access (best for frequent usage)
-(def duration-value->text
-  (->> access-duration-options
-       (map (juxt :value :text))
-       (into {})))
-
-;; Fast lookup function using the map
-(defn get-duration-text-fast [value]
-  (get duration-value->text value))
-
-;; Examples of usage:
-;; (get-duration-text 60)       => "1 hour"
-;; (get-duration-text-alt 120)  => "2 hours"
-;; (get-duration-text-fast 15)  => "15 minutes"
-;; (get-duration-text 999)      => nil (value not found)
+;; localStorage key for db access data (single session)
+(def db-access-storage-key "hoop-db-access")
 
 ;; Check if db access data is still valid
 (defn db-access-valid? [db-access-data]
@@ -52,7 +25,11 @@
 
 ;; Error messages for different user types
 (def error-messages
-  {:review-active
+  {:agent-offline
+   {:admin "The Agent configured for this connection is not available at this moment. Please reach out to your organization admin to enable it before proceeding."
+    :non-admin "The Agent configured for this connection is not available at this moment. Please reach out to your organization admin to enable it before proceeding."}
+
+   :review-active
    {:admin "This connection has review enabled. Database access is not available for connections requiring review approval."
     :non-admin "This connection requires review approval and cannot be accessed directly. Please contact your administrator."}
 

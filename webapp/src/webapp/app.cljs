@@ -222,6 +222,7 @@
           (rf/dispatch [:clarity->verify-environment (:data @user)])
           (rf/dispatch [:connections->connection-get-status])
           (rf/dispatch [:db-access->cleanup-all-expired])
+          (rf/dispatch [:db-access->check-active-sessions])
 
           (cond
             (:loading @user)

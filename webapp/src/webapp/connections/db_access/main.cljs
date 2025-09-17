@@ -205,6 +205,33 @@
      :on-click #(rf/dispatch [:modal->close])}
     "Close"]])
 
+(defn minimize-modal-content [db-access-data]
+  [:> Box {:class "min-w-32"}
+   [:> Box {:class "space-y-2"}
+    [:> Box
+     [:> Text {:size "2" :class "text-[--gray-12]"}
+      "Connected to: "]
+     [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+      (:database_name db-access-data)]]
+    [:> Box
+     [:> Text {:size "2" :class "text-[--gray-12]"}
+      "Type: "]
+     [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+      "postgresql"]]
+    [:> Box
+     [:> Text {:size "2" :class "text-[--gray-12]"}
+      "Time left: "]
+     [timer/inline-timer
+      {:expire-at (:expire_at db-access-data)
+       :text-component (fn [timer-text]
+                         [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+                          timer-text])
+       :on-complete (fn []
+                      (rf/dispatch [:db-access->clear-session])
+                      (rf/dispatch [:draggable-card->close])
+                      (rf/dispatch [:show-snackbar {:level :info
+                                                    :text "Database access session has expired."}]))}]]]])
+
 (defn minimize-modal
   "Minimize modal to draggable card"
   []
@@ -212,31 +239,7 @@
     (rf/dispatch [:modal->close])
     (when db-access-data
       (rf/dispatch [:draggable-card->open
-                    {:component [:> Box {:class "min-w-32"}
-                                 [:> Box {:class "space-y-2"}
-                                  [:> Box
-                                   [:> Text {:size "2" :class "text-[--gray-12]"}
-                                    "Connected to: "]
-                                   [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-                                    (:database_name db-access-data)]]
-                                  [:> Box
-                                   [:> Text {:size "2" :class "text-[--gray-12]"}
-                                    "Type: "]
-                                   [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-                                    "postgresql"]]
-                                  [:> Box
-                                   [:> Text {:size "2" :class "text-[--gray-12]"}
-                                    "Time left: "]
-                                   [timer/inline-timer
-                                    {:expire-at (:expire_at db-access-data)
-                                     :text-component (fn [timer-text]
-                                                       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-                                                        timer-text])
-                                     :on-complete (fn []
-                                                    (rf/dispatch [:db-access->clear-session])
-                                                    (rf/dispatch [:draggable-card->close])
-                                                    (rf/dispatch [:show-snackbar {:level :info
-                                                                                  :text "Database access session has expired."}]))}]]]]
+                    {:component [minimize-modal-content db-access-data]
                      :on-click-expand (fn []
                                         (rf/dispatch [:draggable-card->close])
                                         (rf/dispatch [:db-access->reopen-connect-modal]))}]))))
