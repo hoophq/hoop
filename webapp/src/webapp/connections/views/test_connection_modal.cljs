@@ -10,7 +10,7 @@
     :offline [:> Text {:size "2" :class "text-error-11"} "Offline"]
     :successful [:> Text {:size "2" :class "text-success-11"} "Successful"]
     :failed [:> Text {:size "2" :class "text-error-11"} "Failed"]
-    [:> Text {:size "2" :class "text-gray-11"} "Unknown"]))
+    [:> Text {:size "2" :class "text-error-11"} "Failed"]))
 
 (defn connectivity-check-content [connection-name test-state]
   (let [loading? (:loading test-state)
