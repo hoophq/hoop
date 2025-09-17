@@ -29,10 +29,6 @@
    {:admin "The Agent configured for this connection is not available at this moment. Please reach out to your organization admin to enable it before proceeding."
     :non-admin "The Agent configured for this connection is not available at this moment. Please reach out to your organization admin to enable it before proceeding."}
 
-   :review-active
-   {:admin "This connection has review enabled. Database access is not available for connections requiring review approval."
-    :non-admin "This connection requires review approval and cannot be accessed directly. Please contact your administrator."}
-
-   :proxy-port-missing
-   {:admin "Database proxy port is not configured. Please configure the PostgreSQL server settings in Infrastructure > Configuration."
-    :non-admin "Database access is currently unavailable. Please contact your administrator to configure the necessary settings."}})
+   :generic
+   {:admin "This connection method is not available at this moment. Please reach out to your organization admin to enable this method."
+    :non-admin "This connection method is not available at this moment. Please reach out to your organization admin to enable this method."}})

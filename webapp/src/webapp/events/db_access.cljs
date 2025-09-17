@@ -68,10 +68,12 @@
              [:dispatch [:show-snackbar {:level :error
                                          :text (str/capitalize error-message)}]]]
             ;; Non-admin: Show error dialog with friendly message
-            [[:dispatch [:modal->open {:content [db-access-not-available-dialog/main
-                                                 {:error-message error-message
-                                                  :user-is-admin? is-admin?}]
-                                       :maxWidth "446px"}]]])})))
+            [(let [error-message (get-in db-access-constants/error-messages
+                                         [:generic :non-admin])]
+               [:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+                                                   {:error-message error-message
+                                                    :user-is-admin? is-admin?}]
+                                         :maxWidth "446px"}]])])})))
 
 ;; Clean up expired or invalid database access data
 (rf/reg-event-fx
