@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	agentconfig "github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/common/log"
 )
 
 func StartDarwinAgent() error {
-	cfg, err := agentconfig.Load()
+	log.ReinitializeLogger()
 
+	envKeys, err := configEnvironmentVariables()
 	if err != nil {
 		return err
 	}
@@ -19,10 +20,9 @@ func StartDarwinAgent() error {
 	opts := Options{
 		ServiceName: "hoop-agent",
 		ExecArgs:    " start agent",
-		Env: map[string]string{
-			"HOOP_KEY": cfg.Token,
-		},
+		Env:         envKeys,
 	}
+
 	if err := installDarwin(opts); err != nil {
 		return err
 	}
@@ -96,7 +96,6 @@ func splitArgs(s string) []string {
 	parts := strings.Fields(s)
 	return parts
 }
-
 
 func renderLaunchAgentPlist(d launchAgentData) string {
 	var progArgs strings.Builder
@@ -224,5 +223,3 @@ func logsAgentDarwin(serviceName string) error {
 	}
 	return execRunner.Logs("tail", args...)
 }
-
-
