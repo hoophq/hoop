@@ -174,12 +174,16 @@
   []
   (let [search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
-        token (.get url-params "token")
+        token (get-cookie-value "hoop_access_token")
         error (.get url-params "error")
         destiny (if error :login-hoop :signup-hoop)]
     (.removeItem js/localStorage "login_error")
     (when error (.setItem js/localStorage "login_error" error))
-    (.setItem js/localStorage "jwt-token" token)
+
+    ;; Store token from cookie in localStorage and clear the cookie for security
+    (when token
+      (.setItem js/localStorage "jwt-token" token)
+      (clear-cookie "hoop_access_token"))
 
     (js/setTimeout
      #(rf/dispatch [:navigate destiny])
