@@ -140,9 +140,20 @@
      :local-terminal
      ;; Same logic as connection-list: open hoop-cli modal
      {:fx [[:dispatch [:command-palette->close]]
-           [:dispatch [:modal->open {:content [hoop-cli-modal/main (:connection-name action)]
-                                     :maxWidth "1100px"
-                                     :class "overflow-hidden"}]]]}
+           [:dispatch-later {:ms 100
+                             :dispatch [:modal->open {:content [hoop-cli-modal/main (:connection-name action)]
+                                                      :maxWidth "1100px"
+                                                      :class "overflow-hidden"}]}]]}
+
+     :test-connection
+     {:fx [[:dispatch [:command-palette->close]]
+           [:dispatch [:connections->test-connection (:connection-name action)]]]}
+
+
+     :open-native-client
+     {:fx [[:dispatch [:command-palette->close]]
+           [:dispatch-later {:ms 100
+                             :dispatch [:db-access->start-flow (:connection-name action)]}]]}
 
      :configure
      ;; Same logic as connection-list: get plugins + navigate

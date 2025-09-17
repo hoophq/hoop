@@ -9,7 +9,9 @@
             [webapp.components.searchbox :as searchbox]
             [webapp.components.virtualized-list :as virtualized-list]
             [webapp.connections.constants :as connection-constants]
-            [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
+            [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?
+                                                can-connect? can-open-web-terminal?
+                                                can-access-native-client?]]
             [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
             [webapp.connections.views.tag-selector :as tag-selector]
             [webapp.connections.views.test-connection-modal :as test-connection-modal]
@@ -71,25 +73,6 @@
           label]
          (when (= selected-resource value)
            [:> Check {:size 16}])])]]]])
-
-(defn can-connect? [connection]
-  (not (and (= "disabled" (:access_mode_runbooks connection))
-            (= "disabled" (:access_mode_exec connection))
-            (= "disabled" (:access_mode_connect connection)))))
-
-(defn can-open-web-terminal? [connection]
-  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
-
-    (if (or (= "enabled" (:access_mode_runbooks connection))
-            (= "enabled" (:access_mode_exec connection)))
-      true
-      false)
-
-    false))
-
-(defn can-access-native-client? [connection]
-  (and (= "enabled" (:access_mode_connect connection))
-       (= (:subtype connection) "postgres")))
 
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
@@ -278,7 +261,7 @@
 
                                        (when (can-access-native-client? connection)
                                          [:> DropdownMenu.Item {:on-click
-                                                                #(rf/dispatch [:db-access->start-flow connection])}
+                                                                #(rf/dispatch [:db-access->start-flow (:name connection)])}
                                           "Open in Native Client"])
 
                                        (when (can-test-connection? connection)

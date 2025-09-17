@@ -37,7 +37,7 @@
 
 (defn- configure-session-view
   "Step 1: Configure session duration"
-  [connection selected-duration requesting?]
+  [connection-name selected-duration requesting?]
   [:> Flex {:direction "column" :justify "between" :gap "8" :class "h-full"}
    [:> Box {:class "space-y-8"}
     [:header {:class "mb-6"}
@@ -69,7 +69,7 @@
       :loading @requesting?
       :disabled @requesting?
       :on-click #(rf/dispatch [:db-access->request-access
-                               (:name connection)
+                               connection-name
                                @selected-duration])}
      "Confirm and Connect"]]])
 
@@ -257,7 +257,7 @@
 
 (defn main
   "Main database access component - manages the complete flow"
-  [connection]
+  [connection-name]
   (let [selected-duration (r/atom 30)
         requesting? (rf/subscribe [:db-access->requesting?])
         db-access-data (rf/subscribe [:db-access->current-session])
@@ -273,7 +273,7 @@
 
         ;; Step 1: Configure session duration
         (not @db-access-data)
-        [configure-session-view connection selected-duration requesting?]
+        [configure-session-view connection-name selected-duration requesting?]
 
         ;; Fallback: Session expired
         :else
