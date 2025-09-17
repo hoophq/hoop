@@ -19,7 +19,7 @@ const (
 	instanceKey      = "http_server"
 	cacheKey         = "proxy_connection_cache"
 	HoopSecretQuery  = "hoop-secret"
-	hoopSecretCookie = "hoop-secret"
+	hoopSecretCookie = "hoop-httpproxy-secret"
 )
 
 var (
