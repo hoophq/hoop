@@ -3,6 +3,11 @@ name = "agentrs"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "gw"
+path = "src/gw.rs"
+
+
 [dependencies]
 futures-core = "0.3"
 futures-sink = "0.3"
@@ -13,6 +18,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 async-trait = "0.1"
 tower = { version = "0.5", features = ["timeout"] }
 twoway = "0.2.2"
+parking_lot = "0.12"
+pin-project-lite = "0.2"
 
 hyper = "1.6"
 hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
@@ -24,10 +31,11 @@ tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 http-body-util = "0.1"
 
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.17.0", features = ["v4"] }
+uuid = { version = "1.17.0", features = ["v4", "serde"] }
 base64 = "0.22.1"
 url = "2.5.4"
 time = { version = "0.3", default-features = false, features = ["std", "serde", "formatting"] }
+
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -67,3 +75,4 @@ x509-cert = { version = "0.2", default-features = false, features = ["std"] }
 
 tap = "1.0"
 hex = "0.4"
+tracing = "0.1.41"

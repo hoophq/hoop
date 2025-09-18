@@ -15,6 +15,7 @@ use crate::proxy::proxy::Proxy;
 #[derive(TypedBuilder)]
 pub struct RdpProxy<C, S> {
     config: Arc<conf::Conf>,
+    creds: String,
     client_address: SocketAddr,
     client_stream: C,
     server_stream: S,
@@ -44,6 +45,7 @@ async fn retrieve_gateway_public_key(
     hostname: String,
     acceptor: tokio_rustls::TlsAcceptor,
 ) -> anyhow::Result<Vec<u8>> {
+    println!("Retrieving Devolutions Gateway TLS public key");
     let (client_side, server_side) = tokio::io::duplex(4096);
 
     let connect_fut = crate::tls::connect(hostname, client_side);
@@ -51,6 +53,7 @@ async fn retrieve_gateway_public_key(
 
     let (connect_res, _) = tokio::join!(connect_fut, accept_fut);
 
+    println!("Retrieved Devolutions Gateway TLS public key");
     let tls_stream = connect_res.context("connect")?;
 
     let public_key = extract_tls_server_public_key(&tls_stream)
@@ -67,11 +70,13 @@ where
     // #TODO:
     // For dev environment we can build in memory and self signed credentials
 
+    println!("RDP-TLS forwarding (credential injection) started");
     let RdpProxy {
         config,
         client_address,
         client_stream,
         server_stream,
+        creds,
         client_stream_leftover_bytes,
     } = proxy;
 
@@ -83,24 +88,26 @@ where
     // #TODO sinse this could be multipple session we can cache the public key <hostname, tls>
     let gateway_public_key_handle =
         retrieve_gateway_public_key(config.hostname.clone(), tls_config.acceptor.clone());
-
+    println!("Retrieved Devolutions Gateway TLS public key");
     // X.224 framing before any TLS
     // start the dualhandshake until the tls upgrade client - server is security
     let mut client_framed =
         ironrdp_tokio::TokioFramed::new_with_leftover(client_stream, client_stream_leftover_bytes);
     let mut server_framed = ironrdp_tokio::TokioFramed::new(server_stream);
-
+    println!("Created TokioFramed for client and server");
+    // implement get tpk cookie
     // TODO this need to be inject from the gateway to this agent
     let credential_mapping = AppCredentialMapping {
         proxy: AppCredential::UsernamePassword {
-            username: "fake".to_string(),
-            password: "fake".to_string(),
+            username: creds.to_string(),
+            password: creds.to_string(),
         },
         target: AppCredential::UsernamePassword {
             username: "chico".to_string(),
-            password: "xxxx".to_string(),
+            password: "090994".to_string(),
         },
     };
+    println!("Starting dual handshake until TLS upgrade");
     let hs = dual_handshake_until_tls_upgrade(
         &mut client_framed,
         &mut server_framed,
@@ -108,28 +115,30 @@ where
     )
     .await?;
 
+    println!("Dual handshake until TLS upgrade completed");
+
     let client_stream = client_framed.into_inner_no_leftover();
     let server_stream = server_framed.into_inner_no_leftover();
-
+    println!("Client and server streams created");
     // -- Perform the TLS upgrading for both the client and the server -- //
 
     let client_tls_upgrade_fut = tls_config.acceptor.accept(client_stream);
     let server_tls_upgrade_fut =
         crate::tls::connect("10.211.55.6".to_string().clone(), server_stream);
-
+    println!("TLS upgrade with client and server started");
     let (client_stream, server_stream) =
         tokio::join!(client_tls_upgrade_fut, server_tls_upgrade_fut);
 
     let client_stream = client_stream.context("TLS upgrade with client failed")?;
     let server_stream = server_stream.context("TLS upgrade with server failed")?;
-
+    println!("TLS upgrade with client and server completed");
     let server_public_key = extract_tls_server_public_key(&server_stream)
         .context("extract target server TLS public key")?;
     let gateway_public_key = gateway_public_key_handle.await?;
 
     let mut client_framed = ironrdp_tokio::TokioFramed::new(client_stream);
     let mut server_framed = ironrdp_tokio::TokioFramed::new(server_stream);
-
+    println!("Client and server framed created");
     let client_credssp_fut = perform_credssp_with_client(
         &mut client_framed,
         client_address.ip(),
@@ -424,6 +433,8 @@ where
         S: ironrdp_tokio::FramedRead + ironrdp_tokio::FramedWrite,
     {
         let AppCredential::UsernamePassword { username, password } = credentials;
+        println!("Performing CredSSP with client");
+        println!("Using username: {username} and password: {password}",);
 
         let username =
             ironrdp_connector::sspi::Username::parse(username).context("invalid username")?;
