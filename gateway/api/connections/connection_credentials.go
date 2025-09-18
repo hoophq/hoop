@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -129,6 +130,11 @@ func getKeyPrefixAndServerPort(serverConf *models.ServerMiscConfig, connType pro
 			listenAddr = serverConf.SSHServerConfig.ListenAddress
 		}
 		keyPrefix = "ssh"
+	case proto.ConnectionTypeHttpProxy:
+		if serverConf != nil && serverConf.HTTPServerConfig != nil {
+			listenAddr = serverConf.HTTPServerConfig.ListenAddress
+		}
+		keyPrefix = "http"
 	}
 	_, portNumber, _ = strings.Cut(listenAddr, ":")
 	return
@@ -172,6 +178,12 @@ func newAccessCredentials(serverHost string, serverConf *models.ServerMiscConfig
 			return credentialsInfo{}, fmt.Errorf("server proxy is not configured for SSH")
 		}
 		info.connectionString = fmt.Sprintf("ssh://%s@%s:%s", info.username, info.serverHostname, info.serverPort)
+	case proto.ConnectionTypeHttpProxy:
+		if serverConf == nil || serverConf.HTTPServerConfig == nil {
+			return credentialsInfo{}, fmt.Errorf("server proxy is not configured for HTTP")
+		}
+		info.username = ""
+		info.connectionString = fmt.Sprintf("http://%s:%s?%s=%s", info.serverHostname, info.serverPort, httpproxy.HoopSecretQuery, secretKey)
 	default:
 		return credentialsInfo{}, fmt.Errorf("unsupported connection type %v", connType)
 	}

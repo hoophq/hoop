@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/transport"
@@ -160,6 +161,15 @@ func Run() {
 			)
 			if err != nil {
 				log.Fatalf("failed to start ssh server, reason=%v", err)
+			}
+		}
+
+		if serverConfig.HTTPServerConfig != nil {
+			err := httpproxy.GetServerInstance().Start(
+				serverConfig.HTTPServerConfig.ListenAddress,
+			)
+			if err != nil {
+				log.Fatalf("failed to start http server, reason=%v", err)
 			}
 		}
 	}
