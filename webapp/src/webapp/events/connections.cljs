@@ -48,6 +48,26 @@
             (assoc-in [:connections :results] connections)
             (assoc-in [:connections :loading] false))}))
 
+;; Events para connections metadata
+(rf/reg-event-fx
+ :connections->load-metadata
+ (fn [{:keys [db]} [_]]
+   {:db (assoc-in db [:connections :metadata :loading] true)
+    :fx [[:dispatch [:http-request {:method "GET"
+                                    :url "/data/connections-metadata.json"
+                                    :on-success #(rf/dispatch [:connections->set-metadata %])
+                                    :on-failure #(rf/dispatch [:connections->metadata-error %])}]]]}))
+
+(rf/reg-event-db
+ :connections->set-metadata
+ (fn [db [_ metadata]]
+   (assoc-in db [:connections :metadata] {:data metadata :loading false :error nil})))
+
+(rf/reg-event-db
+ :connections->metadata-error
+ (fn [db [_ error]]
+   (assoc-in db [:connections :metadata] {:data nil :loading false :error error})))
+
 (rf/reg-event-fx
  :connections->create-connection
  (fn
