@@ -1,5 +1,6 @@
 (ns webapp.settings.infrastructure.events
   (:require
+   [clojure.string :as cs]
    [re-frame.core :as rf]))
 
 ;; Get infrastructure configuration
@@ -15,10 +16,12 @@
 (rf/reg-event-fx
  :infrastructure->get-config-success
  (fn [{:keys [db]} [_ data]]
-   (let [mapped-data (-> data
-                         ;; Map API fields to UI structure
-                         (assoc :analytics-enabled (= (:product_analytics data) "active"))
-                         (assoc :grpc-url (:grpc_server_url data)))
+   (let [mapped-data {:analytics-enabled (= (:product_analytics data) "active")
+                      :grpc-url (:grpc_server_url data)
+                      :postgres-proxy-port (some-> (:postgres_server_config data)
+                                                   :listen_address
+                                                   (cs/split #":")
+                                                   last)}
          updated-db (update db :infrastructure merge {:status :success :data mapped-data})]
 
      ;; Just update the database - no more pending connection validation needed
@@ -49,9 +52,8 @@
  :infrastructure->save-config
  (fn [{:keys [db]} _]
    (let [ui-config (get-in db [:infrastructure :data])
-         postgres-proxy-port (if (:postgres-proxy-port ui-config)
-                               (str "0.0.0.0:" (:postgres-proxy-port ui-config))
-                               "")
+         postgres-proxy-port (when-not (cs/blank? (:postgres-proxy-port ui-config))
+                               (str "0.0.0.0:" (:postgres-proxy-port ui-config)))
          ;; Map UI structure back to API format
          api-payload {:grpc_server_url (:grpc-url ui-config)
                       :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")

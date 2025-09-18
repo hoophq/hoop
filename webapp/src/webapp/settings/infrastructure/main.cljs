@@ -1,7 +1,6 @@
 (ns webapp.settings.infrastructure.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Switch Text]]
-   [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.callout-link :as callout-link]
@@ -22,12 +21,7 @@
       (let [loading? (or (= :loading (:status @infrastructure-config))
                          (not @min-loading-done))
             submitting? (:submitting? @infrastructure-config)
-            data (:data @infrastructure-config)
-            postgres-proxy-port (some-> (:listen_address (:postgres_server_config data))
-                                        (cs/split #":")
-                                        last)]
-
-        (println postgres-proxy-port)
+            data (:data @infrastructure-config)]
 
         (cond
           loading?
@@ -98,6 +92,6 @@
                 "Proxy Port"]
                [forms/input
                 {:placeholder "e.g. 5432"
-                 :value postgres-proxy-port
+                 :value (:postgres-proxy-port data)
                  :on-change #(rf/dispatch [:infrastructure->update-field
                                            :postgres-proxy-port (-> % .-target .-value)])}]]]]]])))))
