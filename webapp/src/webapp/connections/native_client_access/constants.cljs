@@ -12,15 +12,14 @@
 (defn minutes->seconds [minutes]
   (* minutes 60))
 
-;; localStorage key for db access data (single session)
-(def db-access-storage-key "hoop-db-access")
+;; localStorage key for native client access data (single session)
+(def native-client-access-storage-key "hoop-native-client-access")
 
-;; Check if db access data is still valid
-(defn db-access-valid? [db-access-data]
-  (when db-access-data
-    (let [expire-at (new js/Date (:expire_at db-access-data))
-          now (new js/Date)
-          _ (println (.getTime expire-at) (.getTime now))]
+;; Check if native client access data is still valid
+(defn native-client-access-valid? [native-client-access-data]
+  (when native-client-access-data
+    (let [expire-at (new js/Date (:expire_at native-client-access-data))
+          now (new js/Date)]
       (> (.getTime expire-at) (.getTime now)))))
 
 ;; Error messages for different user types

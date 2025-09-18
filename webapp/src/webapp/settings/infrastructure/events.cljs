@@ -19,9 +19,7 @@
                          ;; Map API fields to UI structure
                          (assoc :analytics-enabled (= (:product_analytics data) "active"))
                          (assoc :grpc-url (:grpc_server_url data)))
-         updated-db (-> db
-                        (assoc-in [:infrastructure :status] :success)
-                        (assoc-in [:infrastructure :data] mapped-data))]
+         updated-db (update db :infrastructure merge {:status :success :data mapped-data})]
 
      ;; Just update the database - no more pending connection validation needed
      {:db updated-db})))

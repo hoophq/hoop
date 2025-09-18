@@ -153,7 +153,7 @@
      :open-native-client
      {:fx [[:dispatch [:command-palette->close]]
            [:dispatch-later {:ms 100
-                             :dispatch [:db-access->start-flow (:connection-name action)]}]]}
+                             :dispatch [:native-client-access->start-flow (:connection-name action)]}]]}
 
      :configure
      ;; Same logic as connection-list: get plugins + navigate

@@ -261,7 +261,7 @@
 
                                        (when (can-access-native-client? connection)
                                          [:> DropdownMenu.Item {:on-click
-                                                                #(rf/dispatch [:db-access->start-flow (:name connection)])}
+                                                                #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
                                           "Open in Native Client"])
 
                                        (when (can-test-connection? connection)

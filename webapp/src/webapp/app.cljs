@@ -221,8 +221,8 @@
           (rf/dispatch [:routes->get-route])
           (rf/dispatch [:clarity->verify-environment (:data @user)])
           (rf/dispatch [:connections->connection-get-status])
-          (rf/dispatch [:db-access->cleanup-all-expired])
-          (rf/dispatch [:db-access->check-active-sessions])
+          (rf/dispatch [:native-client-access->cleanup-all-expired])
+          (rf/dispatch [:native-client-access->check-active-sessions])
 
           (cond
             (:loading @user)

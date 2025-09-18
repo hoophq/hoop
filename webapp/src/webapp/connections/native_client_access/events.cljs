@@ -4,44 +4,42 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.connections.native-client-access.constants :as constants]
-   [webapp.connections.native-client-access.main :as db-access-main]))
+   [webapp.connections.native-client-access.main :as native-client-access-main]))
 
-;; Get database access for a connection
+;; Get native client access for a connection
 (rf/reg-event-fx
- :db-access->request-access
+ :native-client-access->request-access
  (fn [{:keys [db]} [_ connection-name-or-id access-duration-minutes]]
    (let [access-duration-seconds (constants/minutes->seconds access-duration-minutes)]
-     {:db (assoc-in db [:db-access :requesting?] true)
+     {:db (assoc-in db [:native-client-access :requesting?] true)
       :fx [[:dispatch [:fetch {:method "POST"
                                :uri (str "/connections/" connection-name-or-id "/credentials")
                                :body {:access_duration_seconds access-duration-seconds}
-                               :on-success #(rf/dispatch [:db-access->request-success %])
-                               :on-failure #(rf/dispatch [:db-access->request-failure %])}]]]})))
+                               :on-success #(rf/dispatch [:native-client-access->request-success %])
+                               :on-failure #(rf/dispatch [:native-client-access->request-failure %])}]]]})))
 
-;; Handle successful database access response
+;; Handle successful native client access response
 (rf/reg-event-fx
- :db-access->request-success
+ :native-client-access->request-success
  (fn [{:keys [db]} [_ response]]
    ;; Save to localStorage (replacing any existing session)
-   (.setItem js/localStorage constants/db-access-storage-key (pr-str response))
+   (.setItem js/localStorage constants/native-client-access-storage-key (pr-str response))
 
-   {:db (-> db
-            (assoc-in [:db-access :requesting?] false)
-            (assoc-in [:db-access :current] response))
+   {:db (update db :native-client-access merge {:requesting? false :current response})
     :fx [[:dispatch [:show-snackbar {:level :success
-                                     :text "Database access granted successfully!"}]]
+                                     :text "Native client access granted successfully!"}]]
          ;; No need to open new modal - the main component handles the flow
          ]}))
 
-;; Handle failed database access response
+;; Handle failed native client access response
 (rf/reg-event-fx
- :db-access->request-failure
+ :native-client-access->request-failure
  (fn [{:keys [db]} [_ error]]
    (let [is-admin? (get-in db [:users->current-user :data :admin?])
          error-message (or (:message error)
                            (get-in error [:response :message])
-                           "Failed to request database access")]
-     {:db (assoc-in db [:db-access :requesting?] false)
+                           "Failed to request native client access")]
+     {:db (assoc-in db [:native-client-access :requesting?] false)
       :fx (if is-admin?
             ;; Admin: Show backend error in snackbar
             [[:dispatch [:modal->close]]
@@ -50,140 +48,140 @@
             ;; Non-admin: Show error dialog with friendly message
             [(let [error-message (get-in constants/error-messages
                                          [:generic :non-admin])]
-               [:dispatch [:modal->open {:content [db-access-main/not-available-dialog
+               [:dispatch [:modal->open {:content [native-client-access-main/not-available-dialog
                                                    {:error-message error-message
                                                     :user-is-admin? is-admin?}]
                                          :maxWidth "446px"}]])])})))
 
-;; Clean up expired or invalid database access data
+;; Clean up expired or invalid native client access data
 (rf/reg-event-fx
- :db-access->cleanup-expired
+ :native-client-access->cleanup-expired
  (fn [{:keys [db]} [_]]
-   (.removeItem js/localStorage constants/db-access-storage-key)
-   {:db (assoc-in db [:db-access :current] nil)}))
+   (.removeItem js/localStorage constants/native-client-access-storage-key)
+   {:db (assoc-in db [:native-client-access :current] nil)}))
 
-;; Start database access flow - use integrated layout
+;; Start native client access flow - use integrated layout
 (rf/reg-event-fx
- :db-access->start-flow
+ :native-client-access->start-flow
  (fn [{:keys [db]} [_ connection-name]]
    ;; First check if agent is online before proceeding
-   {:db (assoc-in db [:db-access :checking-agent?] true)
+   {:db (assoc-in db [:native-client-access :checking-agent?] true)
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/connections/" connection-name)
-                             :on-success #(rf/dispatch [:db-access->agent-status-check-success % connection-name])
-                             :on-failure #(rf/dispatch [:db-access->agent-status-check-failure % connection-name])}]]]}))
+                             :on-success #(rf/dispatch [:native-client-access->agent-status-check-success % connection-name])
+                             :on-failure #(rf/dispatch [:native-client-access->agent-status-check-failure % connection-name])}]]]}))
 
 ;; Handle agent status check success
 (rf/reg-event-fx
- :db-access->agent-status-check-success
+ :native-client-access->agent-status-check-success
  (fn [{:keys [db]} [_ response connection-name]]
    (let [is-online? (= (:status response) "online")
          is-admin? (get-in db [:users->current-user :data :admin?])]
-     {:db (assoc-in db [:db-access :checking-agent?] false)
+     {:db (assoc-in db [:native-client-access :checking-agent?] false)
       :fx [(if is-online?
              ;; Agent is online - proceed with normal flow
-             [:dispatch [:modal->open {:content [db-access-main/main connection-name]
-                                       :custom-on-click-out db-access-main/minimize-modal
+             [:dispatch [:modal->open {:content [native-client-access-main/main connection-name]
+                                       :custom-on-click-out native-client-access-main/minimize-modal
                                        :maxWidth "1100px"}]]
              ;; Agent is offline - show error dialog
              (let [error-message (get-in constants/error-messages
                                          [:agent-offline (if is-admin? :admin :non-admin)])]
-               [:dispatch [:modal->open {:content [db-access-main/not-available-dialog
+               [:dispatch [:modal->open {:content [native-client-access-main/not-available-dialog
                                                    {:error-message error-message
                                                     :user-is-admin? is-admin?}]
                                          :maxWidth "446px"}]]))]})))
 
 ;; Handle agent status check failure
 (rf/reg-event-fx
- :db-access->agent-status-check-failure
+ :native-client-access->agent-status-check-failure
  (fn [{:keys [db]} [_ _error _connection]]
    (let [is-admin? (get-in db [:users->current-user :data :admin?])
          error-message (get-in constants/error-messages
                                [:agent-offline (if is-admin? :admin :non-admin)])]
-     {:db (assoc-in db [:db-access :checking-agent?] false)
-      :fx [[:dispatch [:modal->open {:content [db-access-main/not-available-dialog
+     {:db (assoc-in db [:native-client-access :checking-agent?] false)
+      :fx [[:dispatch [:modal->open {:content [native-client-access-main/not-available-dialog
                                                {:error-message error-message
                                                 :user-is-admin? is-admin?}]
                                      :maxWidth "446px"}]]]})))
 
-;; Clear current database access session
+;; Clear current native client access session
 (rf/reg-event-fx
- :db-access->clear-session
+ :native-client-access->clear-session
  (fn [{:keys [db]} [_]]
-   (.removeItem js/localStorage constants/db-access-storage-key)
-   {:db (assoc-in db [:db-access :current] nil)}))
+   (.removeItem js/localStorage constants/native-client-access-storage-key)
+   {:db (assoc-in db [:native-client-access :current] nil)}))
 
 ;; Reopen main connect modal (used by draggable card expand)
 (rf/reg-event-fx
- :db-access->reopen-connect-modal
+ :native-client-access->reopen-connect-modal
  (fn [{:keys [db]} [_]]
    ;; Get connection from current session data
-   (let [current-session (get-in db [:db-access :current])
+   (let [current-session (get-in db [:native-client-access :current])
          connection {:name (:id current-session)
                      :connection_name (:connection_name current-session)}]
-     {:fx [[:dispatch [:modal->open {:content [db-access-main/main connection]
+     {:fx [[:dispatch [:modal->open {:content [native-client-access-main/main connection]
                                      :maxWidth "1100px"
-                                     :custom-on-click-out db-access-main/minimize-modal}]]]})))
+                                     :custom-on-click-out native-client-access-main/minimize-modal}]]]})))
 
-;; Check for active database access sessions on app initialization
+;; Check for active native client access sessions on app initialization
 (rf/reg-event-fx
- :db-access->check-active-sessions
+ :native-client-access->check-active-sessions
  (fn [{:keys [db]} [_]]
-   (let [stored-data (.getItem js/localStorage constants/db-access-storage-key)]
+   (let [stored-data (.getItem js/localStorage constants/native-client-access-storage-key)]
      (if stored-data
        (try
          (let [parsed-data (reader/read-string stored-data)]
-           (if (constants/db-access-valid? parsed-data)
+           (if (constants/native-client-access-valid? parsed-data)
              ;; Found active session - load it and show draggable card
-             {:db (assoc-in db [:db-access :current] parsed-data)
+             {:db (assoc-in db [:native-client-access :current] parsed-data)
               :fx [[:dispatch-later {:ms 1000 ; Wait for app to be ready
-                                     :dispatch [:db-access->show-active-session parsed-data]}]]}
+                                     :dispatch [:native-client-access->show-active-session parsed-data]}]]}
              ;; Session expired, clean it up
-             {:fx [[:dispatch [:db-access->cleanup-expired]]]}))
+             {:fx [[:dispatch [:native-client-access->cleanup-expired]]]}))
          (catch js/Error _
            ;; Invalid data, clean it up
-           {:fx [[:dispatch [:db-access->cleanup-expired]]]}))
+           {:fx [[:dispatch [:native-client-access->cleanup-expired]]]}))
        ;; No stored session
        {}))))
 
 ;; Show draggable card for active session
 (rf/reg-event-fx
- :db-access->show-active-session
+ :native-client-access->show-active-session
  (fn [_ [_ session-data]]
    {:fx [[:dispatch [:draggable-card->open
-                     {:component [db-access-main/minimize-modal-content session-data]
+                     {:component [native-client-access-main/minimize-modal-content session-data]
                       :on-click-expand (fn []
                                          (rf/dispatch [:draggable-card->close])
-                                         (rf/dispatch [:db-access->reopen-connect-modal]))}]]]}))
+                                         (rf/dispatch [:native-client-access->reopen-connect-modal]))}]]]}))
 
 ;; Auto-cleanup expired session on app initialization
 (rf/reg-event-fx
- :db-access->cleanup-all-expired
+ :native-client-access->cleanup-all-expired
  (fn [_ [_]]
-   (let [stored-data (.getItem js/localStorage constants/db-access-storage-key)]
+   (let [stored-data (.getItem js/localStorage constants/native-client-access-storage-key)]
      (when stored-data
        (try
          (let [parsed-data (reader/read-string stored-data)]
-           (when-not (constants/db-access-valid? parsed-data)
-             (.removeItem js/localStorage constants/db-access-storage-key)))
+           (when-not (constants/native-client-access-valid? parsed-data)
+             (.removeItem js/localStorage constants/native-client-access-storage-key)))
          (catch js/Error _
            ;; Invalid data, remove it
-           (.removeItem js/localStorage constants/db-access-storage-key))))
+           (.removeItem js/localStorage constants/native-client-access-storage-key))))
      {})))
 
 ;; Subscriptions
 (rf/reg-sub
- :db-access->requesting?
+ :native-client-access->requesting?
  (fn [db _]
-   (get-in db [:db-access :requesting?] false)))
+   (get-in db [:native-client-access :requesting?] false)))
 
 (rf/reg-sub
- :db-access->current-session
+ :native-client-access->current-session
  (fn [db _]
-   (get-in db [:db-access :current])))
+   (get-in db [:native-client-access :current])))
 
 (rf/reg-sub
- :db-access->session-valid?
+ :native-client-access->session-valid?
  (fn [db _]
-   (let [current-session (get-in db [:db-access :current])]
-     (constants/db-access-valid? current-session))))
+   (let [current-session (get-in db [:native-client-access :current])]
+     (constants/native-client-access-valid? current-session))))
