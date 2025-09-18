@@ -50,6 +50,7 @@ type (
 		DlpPresidioAnonymizerURL string
 
 		DataMaskingEntityTypesData json.RawMessage
+		GuardRailRules             json.RawMessage
 	}
 
 	// TODO: remove it later, kept for compatibility issues
