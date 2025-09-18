@@ -251,7 +251,7 @@
 
               [toggle-section
                {:title "Native"
-                :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface."
+                :description "Access from your client of preference using hoop.dev to channel connections using our Native Client or our Command Line Interface."
                 :disabled? is-tcp?
                 :checked (if is-tcp?
                            (:native default-modes)

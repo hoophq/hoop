@@ -3,8 +3,6 @@
    [clojure.edn :refer [read-string]]
    [re-frame.core :as rf]
    [webapp.connections.constants :as constants]
-   [webapp.connections.views.connection-connect :as connection-connect]
-   [webapp.connections.views.connection-review-modal :as connection-review-modal]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 (rf/reg-event-fx
@@ -90,20 +88,6 @@
                                       (rf/dispatch [:navigate :connections]))}]]]})))
 
 (rf/reg-event-fx
- :connections->connection-disconnect
- (fn
-   [{:keys [db]} [_]]
-   (let [connection-name (-> db :connections->connection-connected :data :connection_name)]
-     {:fx [[:dispatch [:fetch
-                       {:method "POST"
-                        :uri "/proxymanager/disconnect"
-                        :on-success (fn [res]
-                                      (rf/dispatch [:show-snackbar {:level :success
-                                                                    :text (str "The connection " connection-name " was disconnected!")}])
-                                      (rf/dispatch [::connections->connection-connected-success res]))
-                        :on-failure #(println :failure :connections->connection-disconnect %)}]]]})))
-
-(rf/reg-event-fx
  :connections->test-connection
  (fn
    [{:keys [db]} [_ connection-name]]
@@ -181,34 +165,6 @@
    {:db (assoc db :connections->test-connection nil)}))
 
 (rf/reg-event-fx
- :connections->connection-get-status
- (fn
-   [{:keys [db]} [_]]
-   {:fx [[:dispatch [:fetch
-                     {:method "GET"
-                      :uri "/proxymanager/status"
-                      :on-success (fn [res]
-                                    (rf/dispatch [::connections->connection-connected-success res])
-                                    (when (and (= (:status res) "connected")
-                                               (not (= (get-in db [:draggable-card :status]) :open)))
-                                      (rf/dispatch [:modal->open {:content  [connection-connect/main]
-                                                                  :maxWidth "446px"
-                                                                  :custom-on-click-out connection-connect/minimize-modal}])))
-                      :on-failure #(println :failure :connections->connection-get-status %)}]]]}))
-
-(rf/reg-event-fx
- ::connections->connection-connected-success
- (fn
-   [{:keys [db]} [_ connection]]
-   {:db (assoc db :connections->connection-connected {:data connection :status :ready})}))
-
-(rf/reg-event-fx
- ::connections->connection-connected-error
- (fn
-   [{:keys [db]} [_ err]]
-   {:db (assoc db :connections->connection-connected {:data err :status :failure})}))
-
-(rf/reg-event-fx
  ::connections->quickstart-create-connection
  (fn [{:keys [db]} [_ connection]]
    (let [body (apply merge (for [[k v] connection :when (not (= "" v))] {k v}))]
@@ -273,69 +229,3 @@ ORDER BY total_amount DESC;")
                                                                  :text "Connection deleted!"}])
                                    (rf/dispatch [:connections->get-connections])
                                    (rf/dispatch [:navigate :connections])))}]]]}))
-
-(rf/reg-event-fx
- :connections->start-connect-with-settings
- (fn [{:keys [db]} [_ {:keys [connection-name port access-duration]} connecting-status]]
-   (let [gateway-info (-> db :gateway->info)]
-     {:db (assoc-in db [:connections->connection-connected] {:data {} :status :loading})
-      :fx [[:dispatch [:hoop-app->update-my-configs {:apiUrl (-> gateway-info :data :api_url)
-                                                     :grpcUrl (-> gateway-info :data :grpc_url)
-                                                     :token (.getItem js/localStorage "jwt-token")}]]
-           [:dispatch [:hoop-app->restart]]
-           [:dispatch-later {:ms 2000 :dispatch [:connections->connection-connect-with-settings
-                                                 {:connection_name connection-name
-                                                  :port port
-                                                  :access_duration access-duration}
-                                                 connecting-status]}]]})))
-
-(rf/reg-event-fx
- :connections->connection-connect-with-settings
- (fn
-   [{:keys [db]} [_ connection connecting-status]]
-   {:db (assoc-in db [:connections->connection-connected] {:data connection :status :loading})
-    :fx [[:dispatch [:fetch
-                     {:method "POST"
-                      :uri "/proxymanager/connect"
-                      :body connection
-                      :on-failure (fn [err]
-                                    (rf/dispatch [::connections->connection-connected-error (merge connection {:error-message err})])
-                                    (rf/dispatch [:show-snackbar {:level :error
-                                                                  :text "Failed to connect to resource"
-                                                                  :details err}])
-                                    (rf/dispatch [:modal->open {:content  [connection-connect/main]
-                                                                :maxWidth "446px"
-                                                                :custom-on-click-out connection-connect/minimize-modal}])
-                                    (when connecting-status
-                                      (rf/dispatch [:reset-connecting-status connecting-status])))
-                      :on-success (fn [res]
-                                    (when connecting-status
-                                      (rf/dispatch [:reset-connecting-status connecting-status]))
-                                    (cond
-                                      ;; Case 1: Review required
-                                      (and (= (:status res) "disconnected")
-                                           (:has_review res))
-
-                                      (do
-                                        (rf/dispatch [:show-snackbar {:level :error
-                                                                      :text (str "The connection " (:connection_name connection) " requires review.")}])
-                                        (rf/dispatch [:modal->open {:content [connection-review-modal/main res]
-                                                                    :maxWidth "446px"}]))
-
-                                      ;; Case 2: Connection failure
-                                      (= (:status res) "disconnected")
-                                      (rf/dispatch [:show-snackbar {:level :error
-                                                                    :text "Failed to connect to resource"
-                                                                    :details {:connection (:connection_name connection)
-                                                                              :reason "Connection not able to be connected, please contact your admin."}}])
-
-                                      ;; Case 3: Connection success
-                                      :else
-                                      (do
-                                        (rf/dispatch [:show-snackbar {:level :success
-                                                                      :text (str "The connection " (:connection_name connection) " is connected!")}])
-                                        (rf/dispatch [::connections->connection-connected-success res])
-                                        (when (not (get-in db [:draggable-card :open?]))
-                                          (rf/dispatch [:modal->open {:content [connection-connect/main (:connection_name connection)]
-                                                                      :maxWidth "446px"
-                                                                      :custom-on-click-out connection-connect/minimize-modal}])))))}]]]}))
