@@ -23,6 +23,7 @@
                 ["/new" :new-agent]]
      "/auth/callback" :auth-callback-hoop
      "/connections" [["" :connections]
+                     ["/resource-catalog" :resource-catalog]
                      ["/details" :connection-details]
                      ["/new" :create-connection]
                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]

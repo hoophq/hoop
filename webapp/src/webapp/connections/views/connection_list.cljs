@@ -1,20 +1,21 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check]]
-            ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
-                                        Flex Text Popover]]
-            [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.loaders :as loaders]
-            [webapp.components.searchbox :as searchbox]
-            [webapp.components.virtualized-list :as virtualized-list]
-            [webapp.connections.constants :as connection-constants]
-            [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
-            [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
-            [webapp.connections.views.tag-selector :as tag-selector]
-            [webapp.connections.views.test-connection-modal :as test-connection-modal]
-            [webapp.config :as config]
-            [webapp.events.connections-filters]))
+  (:require
+   ["lucide-react" :refer [EllipsisVertical Tag Shapes Check]]
+   ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
+                               Flex Text Popover]]
+   [clojure.string :as cs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.loaders :as loaders]
+   [webapp.components.searchbox :as searchbox]
+   [webapp.components.virtualized-list :as virtualized-list]
+   [webapp.connections.constants :as connection-constants]
+   [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
+   [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
+   [webapp.connections.views.tag-selector :as tag-selector]
+   [webapp.connections.views.test-connection-modal :as test-connection-modal]
+   [webapp.config :as config]
+   [webapp.events.connections-filters]))
 
 (defn empty-list-view []
   [:div {:class "pt-x-large"}
@@ -123,6 +124,13 @@
                            (reset! searched-criteria-connections "")
                            ;; Apply the filter
                            (rf/dispatch [:connections->filter-connections filter-update]))]
+
+        ;; Carrega metadata se não estiver carregado
+        (let [connections-metadata @(rf/subscribe [:connections->metadata])]
+          (when (nil? connections-metadata)
+            (rf/dispatch [:connections->load-metadata]))
+          (when connections-metadata
+            (println "Metadata loaded! Total connections:" (count (:connections connections-metadata)))))
 
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
