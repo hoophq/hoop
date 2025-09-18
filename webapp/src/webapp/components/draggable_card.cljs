@@ -11,7 +11,7 @@
                    :reagent-render (fn [status {:keys [component on-click-expand]}]
                                      (if (= status :open)
                                        [:div {:class (str "draggable bg-white shadow-lg absolute bottom-10 "
-                                                          "left-10 z-50 rounded-lg border border-gray-200 "
+                                                          "left-10 z-50 rounded-5 border border-gray-200 "
                                                           "overflow-auto p-radix-4 space-y-radix-4")}
                                         (when on-click-expand
                                           [:> IconButton {:size "2"

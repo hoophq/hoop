@@ -8,6 +8,20 @@
    [webapp.components.timer :as timer]
    [webapp.connections.native-client-access.constants :as constants]))
 
+(defn disconnect-session
+  "Handle disconnect with confirmation"
+  []
+  (let [dialog-text "Are you sure you want to disconnect this native client session?"
+        open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
+                                                  :type :danger
+                                                  :action-button? true
+                                                  :on-success (fn []
+                                                                (rf/dispatch [:native-client-access->clear-session])
+                                                                (rf/dispatch [:draggable-card->close])
+                                                                (rf/dispatch [:modal->close]))
+                                                  :text-action-button "Disconnect"}])]
+    (open-dialog)))
+
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
   [{:keys [error-message]}]
@@ -55,7 +69,7 @@
      [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
       "Your access will automatically expire after this period"]]]
 
-   [:footer {:class "flex justify-end gap-3 mt-8"}
+   [:footer {:class "sticky bottom-0 z-30 bg-white py-10 flex justify-end items-center"}
     [:> Button
      {:variant "solid"
       :size "3"
@@ -137,8 +151,9 @@
   (let [active-tab (r/atom "credentials")]
 
     (fn []
-      [:<>
-       [:> Box {:class "space-y-6"}
+      [:> Flex {:direction "column" :class "h-full"}
+       ;; Scrollable content area
+       [:> Box {:class "flex-1 space-y-6 pb-10"}
         [:header {:class "space-y-3"}
          [:> Heading {:size "6" :as "h2" :class "text-[--gray-12]"}
           (str "Connect to " (:connection_name native-client-access-data))]
@@ -169,8 +184,8 @@
          [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
           [connect-uri-tab native-client-access-data]]]]
 
-       ;; Actions
-       [:footer {:class "flex justify-between items-center"}
+       ;; Sticky footer
+       [:footer {:class "sticky bottom-0 z-30 bg-white py-4 flex justify-between items-center"}
         [:> Button
          {:variant "ghost"
           :size "3"
@@ -223,7 +238,15 @@
                       (rf/dispatch [:native-client-access->clear-session])
                       (rf/dispatch [:draggable-card->close])
                       (rf/dispatch [:show-snackbar {:level :info
-                                                    :text "Native client access session has expired."}]))}]]]])
+                                                    :text "Native client access session has expired."}]))}]]]
+
+   [:> Box {:class "mt-4"}
+    [:> Button
+     {:variant "solid"
+      :size "1"
+      :color "red"
+      :on-click disconnect-session}
+     "Disconnect"]]])
 
 (defn minimize-modal
   "Minimize modal to draggable card"
@@ -237,20 +260,6 @@
                                         (rf/dispatch [:draggable-card->close])
                                         (rf/dispatch [:native-client-access->reopen-connect-modal]))}]))))
 
-(defn disconnect-session
-  "Handle disconnect with confirmation"
-  []
-  (let [dialog-text "Are you sure you want to disconnect this native client session?"
-        open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
-                                                  :type :danger
-                                                  :action-button? true
-                                                  :on-success (fn []
-                                                                (rf/dispatch [:native-client-access->clear-session])
-                                                                (rf/dispatch [:draggable-card->close])
-                                                                (rf/dispatch [:modal->close]))
-                                                  :text-action-button "Disconnect"}])]
-    (open-dialog)))
-
 (defn main
   "Main native client access component - manages the complete flow"
   [connection-name]
@@ -260,7 +269,7 @@
         session-valid? (rf/subscribe [:native-client-access->session-valid?])]
 
     [:> Box {:class "flex max-h-[696px] overflow-hidden -m-radix-5"}
-     [:> Flex {:direction "column" :justify "between" :gap "6" :class "w-full p-10 overflow-y-auto"}
+     [:> Flex {:direction "column" :justify "between" :gap "6" :class "w-full px-10 pt-10 overflow-y-auto"}
       ;; Main content based on current state
       (cond
         ;; Step 2: Connected - show connection details
