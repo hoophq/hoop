@@ -45,7 +45,7 @@
    [webapp.events.components.toast]
    [webapp.events.connections]
    [webapp.events.database-schema]
-   [webapp.events.db-access]
+   [webapp.connections.native-client-access.events]
    [webapp.events.editor-plugin]
    [webapp.events.gateway-info]
    [webapp.events.guardrails]

@@ -1,4 +1,4 @@
-(ns webapp.connections.constants.db-access)
+(ns webapp.connections.native-client-access.constants)
 
 ;; Access duration options (in minutes)
 (def access-duration-options

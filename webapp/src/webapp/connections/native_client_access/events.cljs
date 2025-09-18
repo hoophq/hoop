@@ -1,36 +1,16 @@
-(ns webapp.events.db-access
-  "Database Access Event Handlers
-
-  Error Handling Strategy:
-
-  1. AGENT OFFLINE (checked first):
-     - Admin & Non-admin: Both get error dialog with specific messages
-     - Uses db-access-not-available-dialog component
-
-  2. BACKEND ERRORS (review, proxy-port, etc.):
-     - Admin: Gets real backend error in snackbar (technical details)
-     - Non-admin: Gets friendly error dialog (user-friendly message)
-
-  Flow:
-  1. User clicks 'Open in Native Client'
-  2. Check agent status first (:db-access->agent-status-check-*)
-  3. If agent online, proceed to request access (:db-access->request-access)
-  4. Backend validates (review, proxy-port, permissions, etc.)
-  5. Success: Show integrated modal | Failure: Show error (snackbar vs dialog)
-  "
+(ns webapp.connections.native-client-access.events
   (:require
    [cljs.reader :as reader]
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.connections.constants.db-access :as db-access-constants]
-   [webapp.connections.views.db-access-not-available-dialog :as db-access-not-available-dialog]
-   [webapp.connections.db-access.main :as db-access-main]))
+   [webapp.connections.native-client-access.constants :as constants]
+   [webapp.connections.native-client-access.main :as db-access-main]))
 
 ;; Get database access for a connection
 (rf/reg-event-fx
  :db-access->request-access
  (fn [{:keys [db]} [_ connection-name-or-id access-duration-minutes]]
-   (let [access-duration-seconds (db-access-constants/minutes->seconds access-duration-minutes)]
+   (let [access-duration-seconds (constants/minutes->seconds access-duration-minutes)]
      {:db (assoc-in db [:db-access :requesting?] true)
       :fx [[:dispatch [:fetch {:method "POST"
                                :uri (str "/connections/" connection-name-or-id "/credentials")
@@ -43,7 +23,7 @@
  :db-access->request-success
  (fn [{:keys [db]} [_ response]]
    ;; Save to localStorage (replacing any existing session)
-   (.setItem js/localStorage db-access-constants/db-access-storage-key (pr-str response))
+   (.setItem js/localStorage constants/db-access-storage-key (pr-str response))
 
    {:db (-> db
             (assoc-in [:db-access :requesting?] false)
@@ -68,9 +48,9 @@
              [:dispatch [:show-snackbar {:level :error
                                          :text (str/capitalize error-message)}]]]
             ;; Non-admin: Show error dialog with friendly message
-            [(let [error-message (get-in db-access-constants/error-messages
+            [(let [error-message (get-in constants/error-messages
                                          [:generic :non-admin])]
-               [:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+               [:dispatch [:modal->open {:content [db-access-main/not-available-dialog
                                                    {:error-message error-message
                                                     :user-is-admin? is-admin?}]
                                          :maxWidth "446px"}]])])})))
@@ -79,7 +59,7 @@
 (rf/reg-event-fx
  :db-access->cleanup-expired
  (fn [{:keys [db]} [_]]
-   (.removeItem js/localStorage db-access-constants/db-access-storage-key)
+   (.removeItem js/localStorage constants/db-access-storage-key)
    {:db (assoc-in db [:db-access :current] nil)}))
 
 ;; Start database access flow - use integrated layout
@@ -106,9 +86,9 @@
                                        :custom-on-click-out db-access-main/minimize-modal
                                        :maxWidth "1100px"}]]
              ;; Agent is offline - show error dialog
-             (let [error-message (get-in db-access-constants/error-messages
+             (let [error-message (get-in constants/error-messages
                                          [:agent-offline (if is-admin? :admin :non-admin)])]
-               [:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+               [:dispatch [:modal->open {:content [db-access-main/not-available-dialog
                                                    {:error-message error-message
                                                     :user-is-admin? is-admin?}]
                                          :maxWidth "446px"}]]))]})))
@@ -118,10 +98,10 @@
  :db-access->agent-status-check-failure
  (fn [{:keys [db]} [_ _error _connection]]
    (let [is-admin? (get-in db [:users->current-user :data :admin?])
-         error-message (get-in db-access-constants/error-messages
+         error-message (get-in constants/error-messages
                                [:agent-offline (if is-admin? :admin :non-admin)])]
      {:db (assoc-in db [:db-access :checking-agent?] false)
-      :fx [[:dispatch [:modal->open {:content [db-access-not-available-dialog/main
+      :fx [[:dispatch [:modal->open {:content [db-access-main/not-available-dialog
                                                {:error-message error-message
                                                 :user-is-admin? is-admin?}]
                                      :maxWidth "446px"}]]]})))
@@ -130,7 +110,7 @@
 (rf/reg-event-fx
  :db-access->clear-session
  (fn [{:keys [db]} [_]]
-   (.removeItem js/localStorage db-access-constants/db-access-storage-key)
+   (.removeItem js/localStorage constants/db-access-storage-key)
    {:db (assoc-in db [:db-access :current] nil)}))
 
 ;; Reopen main connect modal (used by draggable card expand)
@@ -149,11 +129,11 @@
 (rf/reg-event-fx
  :db-access->check-active-sessions
  (fn [{:keys [db]} [_]]
-   (let [stored-data (.getItem js/localStorage db-access-constants/db-access-storage-key)]
+   (let [stored-data (.getItem js/localStorage constants/db-access-storage-key)]
      (if stored-data
        (try
          (let [parsed-data (reader/read-string stored-data)]
-           (if (db-access-constants/db-access-valid? parsed-data)
+           (if (constants/db-access-valid? parsed-data)
              ;; Found active session - load it and show draggable card
              {:db (assoc-in db [:db-access :current] parsed-data)
               :fx [[:dispatch-later {:ms 1000 ; Wait for app to be ready
@@ -180,15 +160,15 @@
 (rf/reg-event-fx
  :db-access->cleanup-all-expired
  (fn [_ [_]]
-   (let [stored-data (.getItem js/localStorage db-access-constants/db-access-storage-key)]
+   (let [stored-data (.getItem js/localStorage constants/db-access-storage-key)]
      (when stored-data
        (try
          (let [parsed-data (reader/read-string stored-data)]
-           (when-not (db-access-constants/db-access-valid? parsed-data)
-             (.removeItem js/localStorage db-access-constants/db-access-storage-key)))
+           (when-not (constants/db-access-valid? parsed-data)
+             (.removeItem js/localStorage constants/db-access-storage-key)))
          (catch js/Error _
            ;; Invalid data, remove it
-           (.removeItem js/localStorage db-access-constants/db-access-storage-key))))
+           (.removeItem js/localStorage constants/db-access-storage-key))))
      {})))
 
 ;; Subscriptions
@@ -196,11 +176,6 @@
  :db-access->requesting?
  (fn [db _]
    (get-in db [:db-access :requesting?] false)))
-
-(rf/reg-sub
- :db-access->checking-agent?
- (fn [db _]
-   (get-in db [:db-access :checking-agent?] false)))
 
 (rf/reg-sub
  :db-access->current-session
@@ -211,4 +186,4 @@
  :db-access->session-valid?
  (fn [db _]
    (let [current-session (get-in db [:db-access :current])]
-     (db-access-constants/db-access-valid? current-session))))
+     (constants/db-access-valid? current-session))))

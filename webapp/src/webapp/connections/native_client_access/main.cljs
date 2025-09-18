@@ -1,31 +1,4 @@
-(ns webapp.connections.db-access.main
-  "Integrated Database Access Flow
-
-  This component provides a unified experience for database access sessions,
-  combining both the duration selection and connection details in a single modal.
-
-  Flow:
-  1. User clicks 'Open in Native Client' from connection list
-  2. Modal opens showing duration selection form (configure-session-view)
-  3. User selects duration and clicks 'Confirm and Connect'
-  4. Backend validates and creates session
-  5. Component transitions to connection details (connection-established-view)
-  6. User can view credentials in tabs (Credentials/Connection URI)
-  7. User can minimize to draggable card or disconnect session
-
-  Key Features:
-  - Seamless transition between configuration and connection states
-  - Session timer with expiration handling
-  - Consistent UI following the features/ pattern
-  - Uses lookup functions from db-access constants for duration display
-  - Supports minimize to draggable card for multi-tasking
-
-  Integration Points:
-  - Event: :db-access->start-flow [connection] - Opens this component
-  - Event: :db-access->request-access [connection duration] - Requests backend access
-  - Event: :db-access->clear-session - Cleans up current session
-  - Subscriptions: :db-access->current-session, :db-access->session-valid?
-  "
+(ns webapp.connections.native-client-access.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
    [re-frame.core :as rf]
@@ -33,7 +6,27 @@
    [webapp.components.forms :as forms]
    [webapp.components.logs-container :as logs]
    [webapp.components.timer :as timer]
-   [webapp.connections.constants.db-access :as db-access-constants]))
+   [webapp.connections.native-client-access.constants :as constants]))
+
+(defn not-available-dialog
+  "Dialog shown when database access method is not available"
+  [{:keys [error-message]}]
+
+  [:section
+   [:header {:class "mb-4"}
+    [:> Heading {:size "6" :as "h2"}
+     "Connection method not available"]]
+
+   [:main {:class "space-y-4"}
+    [:p {:class "text-sm text-gray-600 mb-4"}
+     (or error-message
+         "This connection method is not available at this moment. Please reach out to your organization admin to enable this method.")]]
+
+   [:footer {:class "flex justify-end mt-6"}
+    [:> Button
+     {:variant "solid"
+      :on-click #(rf/dispatch [:modal->close])}
+     "Close"]]])
 
 (defn- configure-session-view
   "Step 1: Configure session duration"
@@ -57,7 +50,7 @@
         :on-change #(reset! selected-duration (js/parseInt %))
         :selected @selected-duration
         :full-width? true
-        :options db-access-constants/access-duration-options}]]
+        :options constants/access-duration-options}]]
 
      [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
       "Your access will automatically expire after this period"]]]
