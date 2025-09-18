@@ -22,6 +22,7 @@ pub enum CertSource {
     // Need to implement SystemStore for windows
 }
 
+#[derive(Clone)]
 pub struct ConfigHandleManager {
     pub conf: Arc<Conf>,
 }

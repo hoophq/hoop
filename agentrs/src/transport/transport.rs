@@ -64,7 +64,12 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Unpack self into mut refs to each field to avoid borrow check issues.
-        let CopyBidirectional { a, b, a_to_b, b_to_a } = &mut *self;
+        let CopyBidirectional {
+            a,
+            b,
+            a_to_b,
+            b_to_a,
+        } = &mut *self;
 
         let a_to_b = transfer_one_direction(cx, a_to_b, &mut *a, &mut *b)?;
         let b_to_a = transfer_one_direction(cx, b_to_a, &mut *b, &mut *a)?;
@@ -147,7 +152,11 @@ impl CopyBuffer {
         }
     }
 
-    fn poll_fill_buf<R>(&mut self, cx: &mut Context<'_>, reader: Pin<&mut R>) -> Poll<io::Result<()>>
+    fn poll_fill_buf<R>(
+        &mut self,
+        cx: &mut Context<'_>,
+        reader: Pin<&mut R>,
+    ) -> Poll<io::Result<()>>
     where
         R: AsyncRead + ?Sized,
     {
@@ -239,7 +248,10 @@ impl CopyBuffer {
             // If pos larger than cap, this loop will never stop.
             // In particular, user's wrong poll_write implementation returning
             // incorrect written length may lead to thread blocking.
-            debug_assert!(self.pos <= self.cap, "writer returned length larger than input slice");
+            debug_assert!(
+                self.pos <= self.cap,
+                "writer returned length larger than input slice"
+            );
 
             // If we've written all the data and we've seen EOF, flush out the
             // data and finish the transfer.

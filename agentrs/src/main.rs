@@ -1,24 +1,20 @@
-//src/main.rs
+mod client;
 mod conf;
-mod agent;
-mod gateway;
-mod headers;
+mod listener;
 mod logio;
 mod protocol;
 mod proxy;
-mod session;
 mod rdp;
+mod session;
 mod tasks;
 mod tls;
 mod token;
 mod transport;
-mod client;
+mod ws;
 
-use anyhow::{Context, Result};
-use url::Url;
-use uuid::Uuid;
+use anyhow::Context;
 
-use crate::gateway::gateway::{GatewayService, ListenerUrls};
+use crate::listener::Service;
 
 #[cfg(unix)]
 async fn build_signals_fut() -> anyhow::Result<()> {
@@ -42,10 +38,9 @@ async fn build_signals_fut() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    println!("Starting Gateway Service...");
+    println!("Starting Agent Service...");
 
-    let l = ListenerUrls::new(Url::parse("tcp://0.0.0.0:3389")?);
-    let mut s = GatewayService::new(vec![l]);
+    let mut s = Service::new();
     s.start()?;
 
     let rt = tokio::runtime::Builder::new_current_thread()
