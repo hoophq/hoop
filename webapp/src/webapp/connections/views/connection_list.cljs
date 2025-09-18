@@ -111,6 +111,13 @@
                            ;; Apply the filter
                            (rf/dispatch [:connections->filter-connections filter-update]))]
 
+        ;; Carrega metadata se não estiver carregado
+        (let [connections-metadata @(rf/subscribe [:connections->metadata])]
+          (when (nil? connections-metadata)
+            (rf/dispatch [:connections->load-metadata]))
+          (when connections-metadata
+            (println "Metadata loaded! Total connections:" (count (:connections connections-metadata)))))
+
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}

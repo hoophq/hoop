@@ -220,6 +220,21 @@
    (:connections->test-connection db)))
 
 (re-frame/reg-sub
+ :connections->metadata
+ (fn [db _]
+   (get-in db [:connections :metadata :data])))
+
+(re-frame/reg-sub
+ :connections->metadata-loading?
+ (fn [db _]
+   (get-in db [:connections :metadata :loading] false)))
+
+(re-frame/reg-sub
+ :connections->metadata-error
+ (fn [db _]
+   (get-in db [:connections :metadata :error])))
+
+(re-frame/reg-sub
  :users->current-user
  (fn [db _]
    (:users->current-user db)))
