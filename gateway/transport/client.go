@@ -15,6 +15,7 @@ import (
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
@@ -269,6 +270,51 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			entityTypesJsonData = nil
 		}
 
+		var guardRailRulesJsonData json.RawMessage
+		if pctx.ClientVerb != pb.ClientVerbPlainExec {
+			connGuardRailRules, err := models.GetConnectionGuardRailRules(pctx.OrgID, pctx.ConnectionName)
+			if err != nil {
+				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed getting guard rail rules, err=%v", err)
+				return status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
+			}
+
+			if connGuardRailRules != nil {
+				// Parse input rules
+				var inputRules []guardrails.DataRules
+				if connGuardRailRules.GuardRailInputRules != nil {
+					inputRules, err = guardrails.Decode(connGuardRailRules.GuardRailInputRules)
+					if err != nil {
+						log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed decoding guard rail input rules, err=%v", err)
+						return status.Errorf(codes.Internal, "failed decoding guard rail input rules, err=%v", err)
+					}
+				}
+
+				// Parse output rules
+				var outputRules []guardrails.DataRules
+				if connGuardRailRules.GuardRailOutputRules != nil {
+					outputRules, err = guardrails.Decode(connGuardRailRules.GuardRailOutputRules)
+					if err != nil {
+						log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed decoding guard rail output rules, err=%v", err)
+						return status.Errorf(codes.Internal, "failed decoding guard rail output rules, err=%v", err)
+					}
+				}
+
+				// Marshal both rules into a single json object
+				guardRailRulesJsonData, err = json.Marshal(struct {
+					InputRules  []guardrails.DataRules `json:"input_rules"`
+					OutputRules []guardrails.DataRules `json:"output_rules"`
+				}{
+					InputRules:  inputRules,
+					OutputRules: outputRules,
+				})
+
+				if err != nil {
+					log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed marshaling guard rail rules, err=%v", err)
+					return status.Errorf(codes.Internal, "failed marshaling guard rail rules, err=%v", err)
+				}
+			}
+		}
+
 		clientArgs := clientArgsDecode(pkt.Spec)
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
@@ -287,6 +333,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			DlpPresidioAnonymizerURL:   s.AppConfig.MSPresidioAnomymizerURL(),
 			DLPInfoTypes:               infoTypes,
 			DataMaskingEntityTypesData: entityTypesJsonData,
+			GuardRailRules:             guardRailRulesJsonData,
 		})
 		if err != nil {
 			return fmt.Errorf("failed encoding connection params err=%v", err)
