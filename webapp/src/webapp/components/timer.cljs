@@ -1,7 +1,6 @@
 (ns webapp.components.timer
   (:require [clojure.string :as str]
-            [reagent.core :as r]
-            ["@radix-ui/themes" :refer [Text]]))
+            [reagent.core :as r]))
 
 ;; Helper functions (pure)
 (defn- pad-zero
@@ -44,22 +43,6 @@
     (finally
       (js/clearInterval interval-id))))
 
-;; Modern functional timer components
-(defn countdown-timer
-  "Simple countdown timer that shows time remaining until expiration"
-  [{:keys [expire-at on-complete urgent-threshold]
-    :or {urgent-threshold 60000}}] ; Default 1 minute threshold
-
-  (let [expire-ms (.getTime (js/Date. expire-at))
-        remaining-ms (use-countdown expire-ms on-complete)
-        is-urgent? (<= remaining-ms urgent-threshold)]
-
-    [:div {:class "flex items-baseline gap-1"}
-     [:small {:class (if is-urgent? "text-red-700" "text-gray-700")}
-      "Time left: "]
-     [:small {:class (str "font-bold " (if is-urgent? "text-red-700" "text-gray-700"))}
-      (format-duration remaining-ms)]]))
-
 (defn inline-timer
   "Inline timer for use within text"
   [{:keys [expire-at on-complete text-component]}]
@@ -68,20 +51,3 @@
         remaining-ms (use-countdown expire-ms on-complete)]
 
     (text-component (format-duration remaining-ms))))
-
-(defn session-timer
-  "Timer specifically for database access sessions"
-  [{:keys [expire-at on-session-end]}]
-
-  [countdown-timer
-   {:expire-at expire-at
-    :on-complete on-session-end
-    :urgent-threshold 60000}]) ; 1 minute warning
-
-(defn main
-  "Legacy timer - use countdown-timer instead"
-  [created-at-ms duration-ms on-timer-end]
-  (let [expire-at (js/Date. (+ created-at-ms duration-ms))]
-    [countdown-timer
-     {:expire-at expire-at
-      :on-complete on-timer-end}]))
