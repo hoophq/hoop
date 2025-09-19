@@ -1,7 +1,7 @@
 (ns webapp.connections.views.resource-catalog
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Dialog Flex Heading
-                               ScrollArea Text]]
+                               ScrollArea Tabs Text]]
    ["lucide-react" :refer [ExternalLink Check]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -192,56 +192,52 @@
 (defn connection-detail-modal [connection open? on-close]
   (when connection
     (let [{:keys [name description overview features setupGuide]} connection
-          badge (get-connection-badge (:id connection))
-          active-tab (r/atom "overview")]
+          badge (get-connection-badge (:id connection))]
 
       [:> Dialog.Root {:open open?}
-       [:> Dialog.Content {:max-width "900px"
+       [:> Dialog.Content {:size "4"
+                           :max-width "1000px"
                            :class "max-h-[85vh] overflow-hidden"}
-        [:> Dialog.Title {:class "flex items-center gap-4 mb-2"}
-         [:> Flex {:align "center" :gap "4"}
-          [connection-icon (:icon-name connection) (:id connection)]
-          [:div
-           [:> Text {:size "6" :weight "bold" :class "text-gray-900"} name]
-           (when badge
-             [:> Badge {:color (:color badge) :size "1" :class "ml-2"}
-              (:text badge)])]]]
+        [:> Flex {:align "center" :justify "between" :gap "3"}
+         [:> Box {:class "w-[60%]"}
+          [:> Dialog.Title
+           [:> Flex {:align "center" :items "center" :gap "2"}
+            [:> Text {:size "8" :weight "bold" :class "text-gray-12"}
+             name]
+            (when badge
+              [:> Badge {:color (:color badge) :size "1"}
+               (:text badge)])]]
 
-        [:> Dialog.Description {:class "mb-6"}
-         [:> Text {:color "gray" :size "3"} description]]
+          [:> Dialog.Description {:class "mb-6"}
+           [:> Text {:color "gray" :size "3"} description]]]
 
-        [:> Flex {:gap "3" :class "mb-6"}
-         [:> Button {:variant "outline" :size "2"}
-          [:> ExternalLink {:size 16 :class "mr-2"}]
-          "View Docs"]
-         [:> Button {:color "blue" :size "2"}
-          (str "Continue with " name)]]
+         [:> Flex {:gap "3" :class "mb-6"}
+          [:> Button {:variant "soft" :size "3"}
+           "View Docs"]
+          [:> Button {:variant "solid" :size "3"}
+           (str "Continue with " name)]]]
 
-        ;; Tabs
-        [:div {:class "border-b border-gray-200 mb-6"}
-         [:div {:class "flex space-x-8"}
-          (for [[tab-id tab-name] [["overview" "Overview"]
-                                   ["setup-guide" "Setup Guide"]
-                                   ["advanced" "Advanced Configuration"]]]
-            ^{:key tab-id}
-            [:button {:class (str "pb-3 text-sm font-medium border-b-2 transition-colors "
-                                  (if (= @active-tab tab-id)
-                                    "border-blue-500 text-blue-600"
-                                    "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"))
-                      :on-click #(reset! active-tab tab-id)}
-             tab-name])]]
+        ;; Tabs with Radix UI
+        [:> Tabs.Root {:default-value "overview" :class "w-full"}
+         [:> Tabs.List {:class "border-b border-gray-200 mb-6"}
+          [:> Tabs.Trigger {:value "overview" :class "pb-3 text-sm font-medium"}
+           "Overview"]
+          [:> Tabs.Trigger {:value "setup-guide" :class "pb-3 text-sm font-medium"}
+           "Setup Guide"]
+          [:> Tabs.Trigger {:value "advanced" :class "pb-3 text-sm font-medium"}
+           "Advanced Configuration"]]
 
-        [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
-         (case @active-tab
-           "overview" [modal-overview-tab connection overview features]
-           "setup-guide" [modal-setup-tab setupGuide]
-           "advanced" [modal-advanced-tab connection])]
+         [:> Tabs.Content {:value "overview" :class "outline-none"}
+          [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
+           [modal-overview-tab connection overview features]]]
 
-        [:> Flex {:gap "3" :justify "end" :class "mt-8 pt-4 border-t border-gray-200"}
-         [:> Dialog.Close {:as-child true}
-          [:> Button {:variant "soft" :color "gray" :size "2"
-                      :on-click on-close}
-           "Close"]]]]])))
+         [:> Tabs.Content {:value "setup-guide" :class "outline-none"}
+          [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
+           [modal-setup-tab setupGuide]]]
+
+         [:> Tabs.Content {:value "advanced" :class "outline-none"}
+          [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
+           [modal-advanced-tab connection]]]]]])))
 
 (defn main-panel []
   (let [connections-metadata (rf/subscribe [:connections->metadata])
