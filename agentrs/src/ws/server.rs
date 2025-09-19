@@ -131,23 +131,44 @@ async fn process_rdp_data_for_session(
             >,
         >,
     >,
-    rdp_data_tx: &tokio::sync::mpsc::Sender<Vec<u8>>,
-    rdp_data_rx: &Arc<Mutex<Receiver<Vec<u8>>>>,
-    rdp_proxy_task: &mut Option<tokio::task::JoinHandle<()>>,
+    active_proxies: &Arc<RwLock<HashMap<Uuid, tokio::task::JoinHandle<()>>>>,
+    session_channels: &Arc<RwLock<HashMap<Uuid, (tokio::sync::mpsc::Sender<Vec<u8>>, Arc<Mutex<Receiver<Vec<u8>>>>)>>>,
 ) {
     // Check if we have session info for this session
     let sessions_read = sessions.read().await;
     if let Some(session_info) = sessions_read.get(&header.sid) {
         println!("> Found session {} in sessions map", header.sid);
 
-        // Start RDP proxy if not already started
-        if rdp_proxy_task.is_none() {
+        // Get or create per-session RDP data channel
+        let (rdp_data_tx, rdp_data_rx) = {
+            let mut channels = session_channels.write().await;
+            if let Some((tx, rx)) = channels.get(&header.sid) {
+                (tx.clone(), rx.clone())
+            } else {
+                // Create new channel for this session
+                let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
+                let rx_arc = Arc::new(Mutex::new(rx));
+                channels.insert(header.sid, (tx.clone(), rx_arc.clone()));
+                (tx, rx_arc)
+            }
+        };
+
+        // Check if RDP proxy is already running for this session
+        let proxy_exists = {
+            let proxies = active_proxies.read().await;
+            proxies.contains_key(&header.sid)
+        };
+
+        // Start RDP proxy if not already started for this session
+        if !proxy_exists {
             let config_clone = config_manager.conf.clone();
             let ws_sender_clone = ws_sender.clone();
             let session_info_clone = session_info.clone();
             let rdp_data_rx_clone = rdp_data_rx.clone();
+            let active_proxies_clone = active_proxies.clone();
+            let session_id = header.sid; // Copy the session ID to avoid lifetime issues
 
-            *rdp_proxy_task = Some(tokio::spawn(async move {
+            let proxy_task = tokio::spawn(async move {
                 match start_rdp_proxy_session(
                     session_info_clone,
                     ws_sender_clone,
@@ -156,18 +177,32 @@ async fn process_rdp_data_for_session(
                 )
                 .await
                 {
-                    Ok(_) => println!("> RDP proxy session completed"),
+                    Ok(_) => println!("> RDP proxy session completed for session {}", session_id),
                     Err(e) => {
-                        eprintln!("> RDP proxy session failed: {}", e)
+                        eprintln!("> RDP proxy session failed for session {}: {}", session_id, e)
                     }
                 }
-            }));
+                
+                // Clean up the proxy task from active_proxies when done
+                {
+                    let mut proxies = active_proxies_clone.write().await;
+                    proxies.remove(&session_id);
+                    println!("> Cleaned up RDP proxy task for session {}", session_id);
+                }
+            });
+
+            // Store the proxy task for this session
+            {
+                let mut proxies = active_proxies.write().await;
+                proxies.insert(header.sid, proxy_task);
+                println!("> Started RDP proxy task for session {}", header.sid);
+            }
         }
 
-        // Forward the RDP data to the RDP proxy through the channel
-        println!("> Forwarding RDP data to RDP proxy...");
+        // Forward the RDP data to the RDP proxy through the session-specific channel
+        println!("> Forwarding RDP data to RDP proxy for session {}...", header.sid);
         if let Err(e) = rdp_data_tx.send(rdp_data.to_vec()).await {
-            eprintln!("> Failed to forward RDP data to RDP proxy: {}", e);
+            eprintln!("> Failed to forward RDP data to RDP proxy for session {}: {}", header.sid, e);
         }
     } else {
         println!("> Received RDP data for unknown session: {}", header.sid);
@@ -214,14 +249,21 @@ impl WebSocket {
             Arc::new(RwLock::new(HashMap::new()));
         let sessions_clone = sessions.clone();
 
-        // Create a channel for forwarding RDP data to the RDP proxy
-        let (rdp_data_tx, rdp_data_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
-        let rdp_data_rx = Arc::new(Mutex::new(rdp_data_rx));
+        // We'll create per-session RDP data channels instead of a shared one
+
+        // Store active RDP proxy tasks per session
+        let active_proxies: Arc<RwLock<HashMap<Uuid, tokio::task::JoinHandle<()>>>> = 
+            Arc::new(RwLock::new(HashMap::new()));
+        let active_proxies_clone = active_proxies.clone();
+
+        // Store per-session RDP data channels
+        let session_channels: Arc<RwLock<HashMap<Uuid, (tokio::sync::mpsc::Sender<Vec<u8>>, Arc<Mutex<Receiver<Vec<u8>>>>)>>> = 
+            Arc::new(RwLock::new(HashMap::new()));
+        let session_channels_clone = session_channels.clone();
 
         let gateway_to_agent = tokio::spawn(async move {
             println!("> Starting to receive messages from gateway...");
             let mut ws_receiver = ws_receiver_clone.lock().await;
-            let mut rdp_proxy_task: Option<tokio::task::JoinHandle<()>> = None;
 
             while let Some(msg) = ws_receiver.next().await {
                 match msg {
@@ -276,9 +318,8 @@ impl WebSocket {
                                     &sessions_clone,
                                     &config_manager_clone,
                                     &ws_sender_clone,
-                                    &rdp_data_tx,
-                                    &rdp_data_rx,
-                                    &mut rdp_proxy_task,
+                                    &active_proxies_clone,
+                                    &session_channels_clone,
                                 )
                                 .await;
                             }
@@ -324,3 +365,4 @@ impl WebSocket {
         Ok(())
     }
 }
+
