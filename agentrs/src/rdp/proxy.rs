@@ -89,18 +89,13 @@ where
         .as_ref()
         .context("TLS configuration is required for credssp injection")?;
 
-    // #TODO sinse this could be multipple session we can cache the public key <hostname, tls>
     let gateway_public_key_handle =
         retrieve_gateway_public_key(config.hostname.clone(), tls_config.acceptor.clone());
     println!("Retrieved Devolutions Gateway TLS public key");
-    // X.224 framing before any TLS
-    // start the dualhandshake until the tls upgrade client - server is security
     let mut client_framed =
         ironrdp_tokio::TokioFramed::new_with_leftover(client_stream, client_stream_leftover_bytes);
     let mut server_framed = ironrdp_tokio::TokioFramed::new(server_stream);
     println!("Created TokioFramed for client and server");
-    // implement get tpk cookie
-    // TODO this need to be inject from the gateway to this agent
     let credential_mapping = AppCredentialMapping {
         proxy: AppCredential::UsernamePassword {
             username: creds.to_string(),

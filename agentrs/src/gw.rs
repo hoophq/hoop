@@ -42,6 +42,15 @@ impl DatabaseMemory {
                 "10.211.55.6".to_string(),
             ),
         );
+
+        target_map.insert(
+            "fake2".to_string(),
+            (
+                "chico".to_string(),
+                "090994".to_string(),
+                "10.211.55.7".to_string(),
+            ),
+        );
         Self {
             target_map: target_map,
         }
