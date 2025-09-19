@@ -1,5 +1,6 @@
 use crate::conf::Conf;
 use crate::rdp::proxy::RdpProxy;
+use crate::session::Header;
 use crate::ws::session::SessionInfo;
 use crate::ws::stream::ChannelWebSocketStream;
 use anyhow::Context;
@@ -56,18 +57,6 @@ pub async fn start_rdp_proxy_session(
         &first_rdp_data[..std::cmp::min(20, first_rdp_data.len())]
     );
 
-    // Extract credentials from the first RDP packet
-    let creds = match crate::client::parse_mstsc_cookie_from_x224(&first_rdp_data).await {
-        Some(claims) => {
-            println!("> Extracted credentials from RDP header: {}", claims);
-            claims
-        }
-        None => {
-            println!("> No credentials found in RDP header, using default");
-            "fake".to_string()
-        }
-    };
-
     // Create a custom stream that reads from the channel and writes to WebSocket
     // We need to create a separate channel for sending data back to the gateway
     let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
@@ -75,17 +64,34 @@ pub async fn start_rdp_proxy_session(
 
     // Create a task to forward responses back to the WebSocket
     let ws_sender_clone = ws_sender.clone();
+    let session_id = session_info.session_id;
     tokio::spawn(async move {
         while let Some(data) = response_rx.recv().await {
             println!(
                 "> Forwarding {} bytes from RDP proxy to WebSocket",
                 data.len()
             );
+
+            // Frame the RDP response data with a Header
+            let header = Header {
+                sid: session_id,
+                len: data.len() as u32,
+            };
+            let mut framed_data = Vec::with_capacity(20 + data.len());
+            framed_data.extend_from_slice(&header.encode());
+            framed_data.extend_from_slice(&data);
+
+            println!(
+                "> Framed RDP response (first 30 bytes): {:02x?}",
+                &framed_data[..std::cmp::min(30, framed_data.len())]
+            );
+
             let mut sender = ws_sender_clone.lock().await;
-            if let Err(e) = sender.send(Message::Binary(data.into())).await {
+            if let Err(e) = sender.send(Message::Binary(framed_data.into())).await {
                 eprintln!("> Failed to send response to WebSocket: {}", e);
                 break;
             }
+            println!("> Successfully sent framed RDP response to gateway");
         }
     });
 
@@ -94,7 +100,9 @@ pub async fn start_rdp_proxy_session(
         .client_stream(client_side)
         .server_stream(server_stream)
         .config(config)
-        .creds(creds)
+        .creds(session_info.proxy_user.clone())
+        .username(session_info.username.clone())
+        .password(session_info.password.clone())
         .client_address(
             session_info
                 .client_address

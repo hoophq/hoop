@@ -16,6 +16,8 @@ use crate::proxy::proxy::Proxy;
 pub struct RdpProxy<C, S> {
     config: Arc<conf::Conf>,
     creds: String,
+    username: String,
+    password: String,
     client_address: SocketAddr,
     client_stream: C,
     server_stream: S,
@@ -77,6 +79,8 @@ where
         client_stream,
         server_stream,
         creds,
+        username,
+        password,
         client_stream_leftover_bytes,
     } = proxy;
 
@@ -103,8 +107,8 @@ where
             password: creds.to_string(),
         },
         target: AppCredential::UsernamePassword {
-            username: "chico".to_string(),
-            password: "090994".to_string(),
+            username: username,
+            password: password,
         },
     };
     println!("Starting dual handshake until TLS upgrade");

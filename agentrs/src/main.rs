@@ -1,4 +1,3 @@
-mod client;
 mod conf;
 mod listener;
 mod logio;
