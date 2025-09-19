@@ -1,7 +1,9 @@
 (ns webapp.shared-ui.cmdk.command-palette-constants
   (:require
    ["lucide-react" :refer [SquareCode Settings]]
-   [webapp.shared-ui.sidebar.constants :as sidebar-constants]))
+   [webapp.shared-ui.sidebar.constants :as sidebar-constants]
+   [webapp.connections.helpers :refer [can-test-connection? can-connect? can-open-web-terminal?
+                                       can-access-native-client?]]))
 
 ;; Simplified structure - direct pages + search only
 (def main-navigation-items
@@ -23,16 +25,6 @@
            sidebar-constants/integrations-management
            sidebar-constants/settings-management]))
 
-;; Helper functions to check connection permissions (same logic as connection-list)
-(defn- can-connect? [connection]
-  (= "enabled" (:access_mode_connect connection)))
-
-(defn- can-open-web-terminal? [connection]
-  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
-    (or (= "enabled" (:access_mode_runbooks connection))
-        (= "enabled" (:access_mode_exec connection)))
-    false))
-
 ;; Generate connection actions dynamically based on connection permissions
 (defn get-connection-actions [connection admin?]
   (let [actions []]
@@ -47,9 +39,21 @@
       ;; Local Terminal - only if can connect
       (can-connect? connection)
       (conj {:id "local-terminal"
-             :label "Open in Local Terminal"
+             :label "Open with Hoop CLI"
              :icon (fn [] [:> SquareCode {:size 16}])
              :action :local-terminal})
+
+      (can-access-native-client? connection)
+      (conj {:id "open-native-client"
+             :label "Open in Native Client"
+             :icon (fn [] [:> SquareCode {:size 16}])
+             :action :open-native-client})
+
+      (can-test-connection? connection)
+      (conj {:id "test-connection"
+             :label "Test Connection"
+             :icon (fn [] [:> SquareCode {:size 16}])
+             :action :test-connection})
 
       ;; Configure - only for admins
       admin?

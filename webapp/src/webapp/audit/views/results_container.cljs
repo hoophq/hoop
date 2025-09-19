@@ -22,7 +22,7 @@
    [tabs/tabs {:on-change #(reset! log-view %)
                :tabs ["Plain text" "Table"]}]
    (case @log-view
-     "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard?}]
+     "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard? :whitespace? true}]
      "Table" [ag-grid-table/main results-heads results-body false true
               {:height "100%"
                :theme "alpine"
@@ -46,6 +46,7 @@
                         :fixed-height? fixed-height?
                         :logs results
                         :classes classes
+                        :whitespace? true
                         :not-clipboard? not-clipboard?}]])
 
 (defn main []

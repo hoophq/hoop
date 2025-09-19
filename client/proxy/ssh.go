@@ -371,7 +371,9 @@ func isAddressAvailable(addr string) bool {
 	if err != nil && strings.Contains(err.Error(), "connect: connection refused") {
 		return true
 	}
-	_ = conn.Close()
+	if conn != nil {
+		_ = conn.Close()
+	}
 	return false
 }
 

@@ -79,3 +79,22 @@
   (and test-connection-state
        (:loading test-connection-state)
        (= (:connection-name test-connection-state) connection-name)))
+
+(defn can-connect? [connection]
+  (not (and (= "disabled" (:access_mode_runbooks connection))
+            (= "disabled" (:access_mode_exec connection))
+            (= "disabled" (:access_mode_connect connection)))))
+
+(defn can-open-web-terminal? [connection]
+  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
+
+    (if (or (= "enabled" (:access_mode_runbooks connection))
+            (= "enabled" (:access_mode_exec connection)))
+      true
+      false)
+
+    false))
+
+(defn can-access-native-client? [connection]
+  (and (= "enabled" (:access_mode_connect connection))
+       (= (:subtype connection) "postgres")))

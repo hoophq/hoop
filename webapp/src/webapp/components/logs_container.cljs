@@ -1,19 +1,11 @@
 (ns webapp.components.logs-container
-  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["lucide-react" :refer [Clipboard]]
+  (:require ["lucide-react" :refer [Clipboard]]
             ["clipboard" :as clipboardjs]
             [re-frame.core :as rf]
+            [reagent.core :as r]
             [webapp.components.headings :as h]
             [webapp.config :as config]))
 
-;; TODO: move it to another component
-(defn copy-clipboard [data-clipboard-target]
-  [:div {:class (str "copy-to-clipboard absolute rounded-lg p-x-small "
-                     "top-2 right-2 cursor-pointer box-border "
-                     "opacity-0 group-hover:opacity-100 transition z-20")
-         :data-clipboard-target data-clipboard-target}
-   [:> hero-outline-icon/ClipboardIcon {:class "h-6 w-6 shrink-0 text-white"
-                                        :aria-hidden "true"}]])
 
 (defmulti logs-area identity)
 (defmethod logs-area :success [_ logs] logs)
@@ -25,62 +17,48 @@
 (defmethod logs-area :failure [_ _] "There was an error to get the logs for this task")
 (defmethod logs-area :default [_ _] "No logs to show")
 
-(defn container
-  "config is a map with the following fields:
-  :status -> possible values are :success :loading :failure. Anything different will be default to an generic error message
-  :id -> id to differentiate more than one log on the same page.
-  :logs -> the actual string with the logs"
-  [config title]
-  (let [clipboard (new clipboardjs ".copy-to-clipboard")
-        container-id (or (:id config) "task-logs")]
-    (.on clipboard "success" #(rf/dispatch [:show-snackbar {:level :success :text "Text copied to clipboard"}]))
-    [:div {:class "h-5/6"}
-     (when title [h/h3 title {:class "mb-regular"}])
-     [:section
-      {:class (str "relative rounded-lg bg-gray-100 h-full"
-                   " font-mono p-regular text-xs mb-regular"
-                   " group")}
-      (when-not (:not-clipboard? config)
-        [:div {:class (str "copy-to-clipboard absolute rounded-lg p-x-small "
-                           "top-2 right-2 cursor-pointer box-border text-[--gray-10] "
-                           "opacity-0 group-hover:opacity-100 transition z-20")
-               :data-clipboard-target (str "#" container-id)}
-         [:> Clipboard {:size 16}]])
-      [:div
-       {:id container-id
-        :class (str (when (:classe config) (:classes config))
-                    " overflow-auto h-full"
-                    (when-not (:fixed-height? config) " max-h-80"))}
-       (logs-area (:status config) (:logs config))]]]))
-
 (defn new-container
   "config is a map with the following fields:
   :status -> possible values are :success :loading :failure. Anything different will be default to an generic error message
   :id -> id to differentiate more than one log on the same page.
   :logs -> the actual string with the logs"
   [config title]
-  (let [clipboard (new clipboardjs ".copy-to-clipboard")
-        container-id (or (:id config) "task-logs")]
-    (.on clipboard "success" #(rf/dispatch [:show-snackbar {:level :success :text "Text copied to clipboard"}]))
-    [:div {:class "h-full overflow-auto"}
-     (when title [h/h3 title {:class "mb-regular"}])
-     [:section
-      {:class (str "relative bg-gray-900 font-mono overflow-auto h-full"
-                   " whitespace-pre text-gray-200 text-sm"
-                   " px-regular pt-regular group")
-       :on-copy (when (:not-clipboard? config)
-                  (fn [e] (.preventDefault e)))}
-      (when-not (:not-clipboard? config)
-        (copy-clipboard (str "#" container-id)))
-      [:div
-       {:id container-id
-        :class (str (when (:classes config) (:classes config))
-                    " overflow-auto whitespace-pre h-full"
-                    (when-not (:fixed-height? config) " max-h-80")
-                    (when (:not-clipboard? config) " select-none"))
-        :style (when (:not-clipboard? config)
-                 #js {:WebkitUserSelect "none"
-                      :MozUserSelect "none"
-                      :msUserSelect "none"
-                      :userSelect "none"})}
-       (logs-area (:status config) (:logs config))]]]))
+  (let [container-id (or (:id config) "task-logs")
+        unique-clipboard-class (str "copy-to-clipboard-" container-id)]
+
+    (r/with-let [clipboard (new clipboardjs (str "." unique-clipboard-class))]
+      ;; Setup clipboard success handler
+      (.on clipboard "success" #(rf/dispatch [:show-snackbar {:level :success :text "Text copied to clipboard"}]))
+
+      ;; Render component
+      [:div {:class "h-full overflow-auto"}
+       (when title [h/h3 title {:class "mb-regular"}])
+       [:section
+        {:class (str "relative bg-gray-900 font-mono overflow-auto h-full"
+                     " text-gray-200 text-sm"
+                     " p-radix-4 rounded-lg group"
+                     (when (:whitespace? config) " whitespace-pre"))
+         :on-copy (when (:not-clipboard? config)
+                    (fn [e] (.preventDefault e)))}
+        (when-not (:not-clipboard? config)
+          [:div {:class (str unique-clipboard-class " absolute rounded-lg p-x-small "
+                             "top-2 right-2 cursor-pointer box-border "
+                             "opacity-0 group-hover:opacity-100 transition z-20")
+                 :data-clipboard-target (str "#" container-id)}
+           [:> Clipboard {:size 16}]])
+        [:div
+         {:id container-id
+          :class (str (when (:classes config) (:classes config))
+                      " overflow-auto h-full"
+                      (when-not (:fixed-height? config) " max-h-80")
+                      (when (:not-clipboard? config) " select-none"))
+          :style (when (:not-clipboard? config)
+                   #js {:WebkitUserSelect "none"
+                        :MozUserSelect "none"
+                        :msUserSelect "none"
+                        :userSelect "none"})}
+         (logs-area (:status config) (:logs config))]]]
+
+      ;; Cleanup on unmount
+      (finally
+        (.destroy clipboard)))))

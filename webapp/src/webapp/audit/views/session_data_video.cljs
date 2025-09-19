@@ -39,7 +39,7 @@
   [:section
    {:class (str "relative bg-gray-900 font-mono overflow-auto h-[600px]"
                 " whitespace-pre text-gray-200 text-sm"
-                " px-regular py-regular group")}
+                " p-radix-4 rounded-lg group")}
    [:div
     {:class "overflow-auto whitespace-pre h-full"}
     [:> AnsiHtml {:text logs-text

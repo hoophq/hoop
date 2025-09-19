@@ -3255,6 +3255,41 @@ const docTemplate = `{
                 }
             }
         },
+        "/reviews": {
+            "get": {
+                "description": "Get all reviews resource",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reviews"
+                ],
+                "summary": "Get Review List,",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.Review"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reviews/{id}": {
             "get": {
                 "description": "Get review resource by the id or session id",
@@ -6958,9 +6993,6 @@ const docTemplate = `{
         },
         "openapi.PostgresServerConfig": {
             "type": "object",
-            "required": [
-                "listen_address"
-            ],
             "properties": {
                 "listen_address": {
                     "description": "The listen address to run the PostgreSQL server proxy",
@@ -7408,9 +7440,6 @@ const docTemplate = `{
         },
         "openapi.SSHServerConfig": {
             "type": "object",
-            "required": [
-                "listen_address"
-            ],
             "properties": {
                 "hosts_key": {
                     "description": "The hosts key used for SSH connections",
