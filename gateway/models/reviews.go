@@ -140,6 +140,42 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	return &review, err
 }
 
+func ListReviews(orgID string) (*[]Review, error) {
+	var reviews []Review
+	err := DB.Raw(`
+	SELECT
+		id, org_id, session_id, connection_name, type, access_duration_sec, status,
+		blob_input_id, input_env_vars, input_client_args,
+		owner_id, owner_email, owner_name, owner_slack_id,
+		( SELECT jsonb_agg(
+				jsonb_build_object(
+					'id', rg.id,
+					'org_id', rg.org_id,
+					'review_id', rg.review_id,
+					'group_name', rg.group_name,
+					'status', rg.status,
+					'owner_id', rg.owner_id,
+					'owner_email', rg.owner_email,
+					'owner_name', rg.owner_name,
+					'owner_slack_id', rg.owner_slack_id,
+					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+				)
+			)
+			FROM private.review_groups AS rg
+			WHERE rg.review_id = rv.id
+		) AS review_groups,
+	created_at, revoked_at
+	FROM private.reviews rv
+	WHERE org_id = ?`, orgID).
+		Find(&reviews).
+		Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &reviews, nil
+}
+
 // Create the review object, when input is not empty it generates a blob id
 // and save the input as well.
 func CreateReview(rev *Review, input string) error {

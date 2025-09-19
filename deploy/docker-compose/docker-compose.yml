@@ -2,64 +2,79 @@ name: hoop
 
 services:
   db:
-    image: postgres:16
+    image: postgres:17.6
     networks:
       - hoopdev
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: hoopdb
-      # avoid errors on healthcheck
       PGUSER: postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready", "-d", "zitadel", "-U", "postgres"]
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
       interval: "2s"
       timeout: "30s"
       retries: 10
       start_period: "20s"
   gateway:
-    image: hoophq/hooplabs
+    image: hoophq/hoop
     environment:
-      - LOG_LEVEL=info
-      - LOG_ENCODING=console
       - GIN_MODE=release
-      - PLUGIN_AUDIT_PATH=/opt/hoop/sessions
-      - PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
-      - STATIC_UI_PATH=/opt/hoop/webapp/public
-      - MIGRATION_PATH_FILES=/opt/hoop/migrations
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+      - DLP_PROVIDER=mspresidio
+      - DLP_MODE=best-effort
+      - MSPRESIDIO_ANALYZER_URL=http://presidio-analyzer:3000
+      - MSPRESIDIO_ANONYMIZER_URL=http://presidio-anonymizer:3000
     env_file: ".env"
     command: ["hoop", "start", "gateway"]
     ports:
       - "8009:8009"
       - "8010:8010"
+      - "15432:15432"
+      - "12222:12222"
     networks:
       - hoopdev
     depends_on:
       db:
         condition: "service_healthy"
     healthcheck:
-      test: "gateway-healthcheck.sh"
+      test:
+      - CMD-SHELL
+      - |
+        PROTO=http; [ -n "$$TLS_KEY" ] && PROTO=https
+        curl -k -f $$PROTO://127.0.0.1:8009/api/healthz || exit 1
       interval: "2s"
       timeout: "30s"
       retries: 10
       start_period: "20s"
   agent:
-    image: hoophq/hooplabs
-    # uncomment the following lines to test the local script
-    # volumes:
-    #   - ./rootfs/usr/local/bin/run-agent.sh:/usr/local/bin/run-agent.sh
+    image: hoophq/hoopdev
     networks:
       - hoopdev
     env_file: ".env"
     environment:
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-      - LOG_LEVEL=info
-      - LOG_ENCODING=console
+      - DEFAULT_AGENT_GRPC_HOST=gateway:8010
     depends_on:
       gateway:
         condition: "service_healthy"
-    command: run-agent.sh
+    command: hoop-default-agent.sh
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:2.2.360
+    networks:
+      - hoopdev
+    depends_on:
+      gateway:
+        condition: "service_healthy"
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:2.2.360
+    networks:
+      - hoopdev
+    depends_on:
+      gateway:
+        condition: "service_healthy"
 
 networks:
   hoopdev:

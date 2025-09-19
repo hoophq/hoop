@@ -10,10 +10,16 @@ type ServerMiscConfig struct {
 	ProductAnalytics     *string               `gorm:"column:product_analytics"`
 	GrpcServerURL        *string               `gorm:"column:grpc_server_url"`
 	PostgresServerConfig *PostgresServerConfig `gorm:"column:postgres_server_config;serializer:json"`
+	SSHServerConfig      *SSHServerConfig      `gorm:"column:ssh_server_config;serializer:json"`
 }
 
 type PostgresServerConfig struct {
 	ListenAddress string `json:"listen_address"`
+}
+
+type SSHServerConfig struct {
+	ListenAddress string `json:"listen_address"`
+	HostsKey      string `json:"hosts_key"`
 }
 
 func GetServerMiscConfig() (*ServerMiscConfig, error) {
@@ -39,6 +45,7 @@ func UpsertServerMiscConfig(newObj *ServerMiscConfig) (*ServerMiscConfig, error)
 				"product_analytics":      newObj.ProductAnalytics,
 				"grpc_server_url":        newObj.GrpcServerURL,
 				"postgres_server_config": newObj.PostgresServerConfig,
+				"ssh_server_config":      newObj.SSHServerConfig,
 			})
 		if res.Error != nil {
 			return nil, res.Error

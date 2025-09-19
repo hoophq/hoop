@@ -8,9 +8,11 @@
 
 (defn main []
   (let [auth-method @(rf/subscribe [:gateway->auth-method])
+        gateway-info @(rf/subscribe [:gateway->info])
         idp? (not= auth-method "local")]
 
     (.removeItem js/localStorage "jwt-token")
+    (.setItem js/localStorage "idp-provider-name" (get-in gateway-info [:data :idp_provider_name]))
 
     (js/setTimeout
      #(set! (.. js/window -location -href) (routes/url-for (if idp?

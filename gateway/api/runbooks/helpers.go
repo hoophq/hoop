@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -131,17 +130,4 @@ func toPtrStr(v any) *string {
 	}
 	val := fmt.Sprintf("%v", v)
 	return &val
-}
-
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	apiKey := c.GetHeader("Api-Key")
-	if apiKey != "" {
-		return apiKey
-	}
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
-	}
-	return ""
 }

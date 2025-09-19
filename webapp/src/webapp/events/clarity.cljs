@@ -4,7 +4,7 @@
 
 (rf/reg-event-fx
  :clarity->verify-environment
- (fn [{:keys [db]} [_ user]]
+ (fn [_ [_ user]]
    (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])
          hostname (.-hostname js/window.location)
          clarity-available? (and (exists? js/window.clarity)

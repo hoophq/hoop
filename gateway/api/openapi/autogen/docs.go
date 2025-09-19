@@ -550,6 +550,65 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials": {
+            "post": {
+                "description": "Create Connection Credentials",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Create Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentials"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/databases": {
             "get": {
                 "description": "List all available databases for a database connection",
@@ -597,9 +656,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/connections/{nameOrID}/dbaccess": {
-            "post": {
-                "description": "Create Database Access",
+        "/connections/{nameOrID}/datamasking-rules": {
+            "put": {
+                "description": "Update Data Masking Rule Connections",
                 "consumes": [
                     "application/json"
                 ],
@@ -609,30 +668,29 @@ const docTemplate = `{
                 "tags": [
                     "Connections"
                 ],
-                "summary": "Create Database Access",
+                "summary": "Update Data Masking Rule Connections",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Name or UUID of the connection",
-                        "name": "nameOrID",
-                        "in": "path",
-                        "required": true
-                    },
                     {
                         "description": "The request body resource",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/openapi.ConnectionDbAccessRequest"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DataMaskingRuleConnectionRequest"
+                            }
                         }
                     }
                 ],
                 "responses": {
-                    "201": {
-                        "description": "Created",
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/openapi.ConnectionDbAccess"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DataMaskingRuleConnection"
+                            }
                         }
                     },
                     "400": {
@@ -699,6 +757,47 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrID}/test": {
+            "get": {
+                "description": "Test resource by name or id (only for database connections, it will attempt a simple ping).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Test Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionTestResponse"
                         }
                     },
                     "404": {
@@ -3361,6 +3460,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/search": {
+            "get": {
+                "description": "Performs a search for connections and runbooks based on the provided criteria.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Search",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search term",
+                        "name": "term",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SearchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverconfig/auth": {
             "get": {
                 "description": "Get authentication configuration",
@@ -4076,7 +4222,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Session"
+                    "Sessions"
                 ],
                 "summary": "Reviewed Exec",
                 "parameters": [
@@ -5248,18 +5394,7 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionDatabaseListResponse": {
-            "type": "object",
-            "properties": {
-                "databases": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "openapi.ConnectionDbAccess": {
+        "openapi.ConnectionCredentials": {
             "type": "object",
             "properties": {
                 "connection_string": {
@@ -5311,11 +5446,94 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionDbAccessRequest": {
+        "openapi.ConnectionCredentialsRequest": {
             "type": "object",
             "properties": {
                 "access_duration_seconds": {
                     "type": "integer"
+                }
+            }
+        },
+        "openapi.ConnectionDatabaseListResponse": {
+            "type": "object",
+            "properties": {
+                "databases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "openapi.ConnectionSearch": {
+            "type": "object",
+            "required": [
+                "access_mode_connect",
+                "access_mode_exec",
+                "access_mode_runbooks",
+                "name",
+                "type"
+            ],
+            "properties": {
+                "access_mode_connect": {
+                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_exec": {
+                    "description": "Toggle Ad Hoc Executions\n* enabled - Enable to run ad-hoc executions for this connection\n* disabled - Disable ad-hoc executions for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_runbooks": {
+                    "description": "Toggle Ad Hoc Runbooks Executions\n* enabled - Enable to run runbooks for this connection\n* disabled - Disable runbooks execution for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "id": {
+                    "description": "Unique ID of the resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "status": {
+                    "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
+                    "type": "string",
+                    "enum": [
+                        "online",
+                        "offline"
+                    ],
+                    "readOnly": true
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
                 }
             }
         },
@@ -5346,6 +5564,16 @@ const docTemplate = `{
                     "description": "Value is the specific tag value associated with the key (e.g., \"production\", \"finance\")",
                     "type": "string",
                     "example": "production"
+                }
+            }
+        },
+        "openapi.ConnectionTestResponse": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "description": "Indicates if the connection test was successful",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -5800,6 +6028,57 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.DataMaskingRuleConnection": {
+            "type": "object",
+            "properties": {
+                "connection_id": {
+                    "description": "The unique identifier of the connection",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "id": {
+                    "description": "The unique identifier of the data masking rule connection",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "rule_id": {
+                    "description": "The unique identifier of the data masking rule",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "status": {
+                    "description": "The status of the data masking rule connection",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ],
+                    "example": "active"
+                }
+            }
+        },
+        "openapi.DataMaskingRuleConnectionRequest": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "properties": {
+                "rule_id": {
+                    "description": "The unique identifier of the data masking rule",
+                    "type": "string",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "status": {
+                    "description": "The status of the data masking rule",
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ],
+                    "example": "active"
+                }
+            }
+        },
         "openapi.DataMaskingRuleRequest": {
             "type": "object",
             "required": [
@@ -6136,6 +6415,25 @@ const docTemplate = `{
                     "example": "us-west-2"
                 }
             }
+        },
+        "openapi.IdpProviderNameType": {
+            "type": "string",
+            "enum": [
+                "microsoft-entra-id",
+                "okta",
+                "google",
+                "aws-cognito",
+                "jumpcloud",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "IdpProviderMicrosoftEntraID",
+                "IdpProviderOkta",
+                "IdpProviderGoogle",
+                "IdpProviderAwsCognito",
+                "IdpProviderJumpCloud",
+                "IdpProviderUnknown"
+            ]
         },
         "openapi.JiraAssetObjectValue": {
             "type": "object",
@@ -7108,6 +7406,24 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SSHServerConfig": {
+            "type": "object",
+            "required": [
+                "listen_address"
+            ],
+            "properties": {
+                "hosts_key": {
+                    "description": "The hosts key used for SSH connections",
+                    "type": "string",
+                    "example": "base64-pem-encoded-hosts-key"
+                },
+                "listen_address": {
+                    "description": "The listen address to run the SSH server proxy",
+                    "type": "string",
+                    "example": "0.0.0.0:12222"
+                }
+            }
+        },
         "openapi.SchemaInfo": {
             "type": "object",
             "properties": {
@@ -7121,6 +7437,29 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "openapi.SearchResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "description": "Connections found in the search",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ConnectionSearch"
+                    }
+                },
+                "runbooks": {
+                    "description": "Runbooks found in the search",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "myrunbooks/run-backup.runbook.sql",
+                        "myrunbooks/run-update.runbook.sql"
+                    ]
                 }
             }
         },
@@ -7337,8 +7676,21 @@ const docTemplate = `{
                     "description": "Report if WEBHOOK_APPKEY is set",
                     "type": "boolean"
                 },
+                "idp_provider_name": {
+                    "description": "The provider name identified based on the configured identity provider credentials",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.IdpProviderNameType"
+                        }
+                    ]
+                },
                 "license_info": {
-                    "$ref": "#/definitions/openapi.ServerLicenseInfo"
+                    "description": "License information",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ServerLicenseInfo"
+                        }
+                    ]
                 },
                 "log_level": {
                     "description": "Log level of the server",
@@ -7449,6 +7801,14 @@ const docTemplate = `{
                     "description": "Either to enable or disable the product analytics tracking",
                     "type": "string",
                     "example": "active"
+                },
+                "ssh_server_config": {
+                    "description": "The SSH server proxy configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SSHServerConfig"
+                        }
+                    ]
                 }
             }
         },

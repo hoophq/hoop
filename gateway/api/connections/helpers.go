@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -54,7 +53,7 @@ func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (
 			"sqlcmd", "--exit-on-error", "--trim-spaces", "-s\t", "-r",
 			"-S$HOST:$PORT", "-U$USER", "-d$DB", "-i/dev/stdin"}
 	case pb.ConnectionTypeOracleDB:
-		envs["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_19_24`))
+		envs["envvar:LD_LIBRARY_PATH"] = base64.StdEncoding.EncodeToString([]byte(`/opt/oracle/instantclient_23_9`))
 		cmd = []string{"sqlplus", "-s", "$USER/$PASS@$HOST:$PORT/$SID"}
 	case pb.ConnectionTypeMongoDB:
 		envs["envvar:OPTIONS"] = base64.StdEncoding.EncodeToString([]byte(`tls=true`))
@@ -162,19 +161,6 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		}
 	}
 	return
-}
-
-func getAccessToken(c *gin.Context) string {
-	tokenHeader := c.GetHeader("authorization")
-	apiKey := c.GetHeader("Api-Key")
-	if apiKey != "" {
-		return apiKey
-	}
-	tokenParts := strings.Split(tokenHeader, " ")
-	if len(tokenParts) > 1 {
-		return tokenParts[1]
-	}
-	return ""
 }
 
 func getString(m map[string]interface{}, key string) string {
@@ -584,10 +570,18 @@ func parseCloudWatchTables(output string) (openapi.TablesResponse, error) {
 	return response, nil
 }
 
-func getConnectionCommandOverride(currentConnectionType pb.ConnectionType) []string {
+func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, connectionCmd []string) []string {
+	var cmd []string
 	switch currentConnectionType {
 	case pb.ConnectionTypeCloudWatch, pb.ConnectionTypeDynamoDB:
 		return []string{"bash"}
+	case pb.ConnectionTypeMongoDB:
+		// Force the execution using the legacy mongo cli
+		// It avoids using any wrapper scripts (.e.g: /opt/hoop/bin/mongo) to perform system queries
+		if len(connectionCmd) > 1 {
+			cmd = append(cmd, "/usr/local/bin/mongo")
+			cmd = append(cmd, connectionCmd[1:]...)
+		}
 	}
-	return nil
+	return cmd
 }

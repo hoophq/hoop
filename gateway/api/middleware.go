@@ -33,11 +33,10 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 		}
 
 		properties := map[string]any{
-			"host":           c.Request.Host,
+			"org-id":         ctx.OrgID,
 			"auth-method":    appconfig.Get().AuthMethod(),
 			"license-type":   licenseType,
 			"content-length": c.Request.ContentLength,
-			"api-url":        appconfig.Get().ApiURL(),
 			"user-agent":     apiutils.NormalizeUserAgent(c.Request.Header.Values),
 		}
 		switch eventName {
@@ -83,7 +82,7 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 				properties["plugin-name"] = resourceName
 			}
 		}
-		analytics.New().Track(ctx.UserEmail, eventName, properties)
+		analytics.New().Track(ctx.UserID, eventName, properties)
 		c.Next()
 	}
 }

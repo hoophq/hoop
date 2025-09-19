@@ -52,7 +52,12 @@
            {:method "POST"
             :uri "/agents"
             :body {:name agent-name}
-            :on-success #(rf/dispatch [:agents->set-agent-key % :ready])}]]]
+            :on-success #(rf/dispatch [:agents->set-agent-key % :ready])
+            :on-failure (fn [error]
+                          (rf/dispatch [:agents->set-agent-key {} :error])
+                          (rf/dispatch [:show-snackbar {:level :error
+                                                        :text (:message error)
+                                                        :details error}]))}]]]
     :db (assoc db :agents->agent-key {:status :loading :data {}})}))
 
 (rf/reg-event-fx

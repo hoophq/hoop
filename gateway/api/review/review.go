@@ -59,12 +59,40 @@ func (h *handler) GetByIdOrSid(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
 		return
 	case nil:
-		c.JSON(http.StatusOK, topOpenApiReview(review))
+		c.JSON(http.StatusOK, toOpenApiReview(review))
 	default:
 		log.Errorf("failed fetching review %v, err=%v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+}
+
+// List
+//
+//	@Summary		Get Review List,
+//	@Description	Get all reviews resource
+//	@Tags			Reviews
+//	@Produce		json
+//	@Success		200		{object}	[]openapi.Review
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/reviews [get]
+func (h *handler) List(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	reviews, err := models.ListReviews(ctx.GetOrgID())
+
+	if err != nil {
+		log.Errorf("failed fetching reviews, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	openapiReviews := []openapi.Review{}
+	for _, r := range *reviews {
+		openapiReviews = append(openapiReviews, *toOpenApiReview(&r))
+	}
+
+	c.JSON(http.StatusOK, openapiReviews)
 }
 
 // UpdateReview
@@ -110,7 +138,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 				rev.Status.Str(),
 			)
 		}
-		c.JSON(http.StatusOK, topOpenApiReview(rev))
+		c.JSON(http.StatusOK, toOpenApiReview(rev))
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
@@ -259,7 +287,7 @@ func doReview(ctx *storagev2.Context, rev *models.Review, status models.ReviewSt
 	return rev, nil
 }
 
-func topOpenApiReview(r *models.Review) *openapi.Review {
+func toOpenApiReview(r *models.Review) *openapi.Review {
 	if r == nil {
 		return nil
 	}

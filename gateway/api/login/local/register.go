@@ -10,7 +10,6 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -81,10 +80,11 @@ func Register(c *gin.Context) {
 
 	adminGroupName := types.GroupAdmin
 	userID := uuid.New().String()
+	userSubject := user.Email
 
 	err = models.CreateUser(models.User{
 		ID:             userID,
-		Subject:        user.Email,
+		Subject:        userSubject,
 		OrgID:          org.ID,
 		Email:          user.Email,
 		Name:           user.Name,
@@ -107,15 +107,10 @@ func Register(c *gin.Context) {
 	trackClient := analytics.New()
 	trackClient.Identify(&types.APIContext{
 		OrgID:           org.ID,
-		OrgName:         org.Name,
-		UserName:        user.Name,
-		UserID:          user.Email,
+		UserID:          userSubject,
 		UserAnonSubject: org.ID,
-		UserEmail:       user.Email,
-		UserGroups:      []string{adminGroupName},
-		ApiURL:          appconfig.Get().ApiURL(),
 	})
-	trackClient.Track(user.Email, analytics.EventSingleTenantFirstUserCreated, nil)
+	trackClient.Track(userSubject, analytics.EventSingleTenantFirstUserCreated, nil)
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {

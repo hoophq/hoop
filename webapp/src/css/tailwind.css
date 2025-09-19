@@ -1,6 +1,7 @@
 @import "allotment/dist/style.css";
 @import "@radix-ui/themes/styles.css";
 @import "./highlight.css";
+@import "./cmdk.css";
 
 @tailwind base;
 @tailwind components;

@@ -885,6 +885,17 @@ type PublicServerInfo struct {
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
 }
 
+type IdpProviderNameType string
+
+const (
+	IdpProviderMicrosoftEntraID IdpProviderNameType = "microsoft-entra-id"
+	IdpProviderOkta             IdpProviderNameType = "okta"
+	IdpProviderGoogle           IdpProviderNameType = "google"
+	IdpProviderAwsCognito       IdpProviderNameType = "aws-cognito"
+	IdpProviderJumpCloud        IdpProviderNameType = "jumpcloud"
+	IdpProviderUnknown          IdpProviderNameType = "unknown"
+)
+
 type ServerInfo struct {
 	// Version of the server
 	Version string `json:"version" example:"1.35.0"`
@@ -915,8 +926,11 @@ type ServerInfo struct {
 	// The GRPC_URL advertise to clients
 	GrpcURL string `json:"grpc_url" example:"127.0.0.1:8009"`
 	// The tenancy type
-	TenancyType string             `json:"tenancy_type" enums:"selfhosted,multitenant"`
+	TenancyType string `json:"tenancy_type" enums:"selfhosted,multitenant"`
+	// License information
 	LicenseInfo *ServerLicenseInfo `json:"license_info"`
+	// The provider name identified based on the configured identity provider credentials
+	IdpProviderName IdpProviderNameType `json:"idp_provider_name"`
 	// Indicates if session download functionality is disabled
 	// * true - Session download is disabled and not available to users
 	// * false - Session download is enabled and available to users
@@ -1537,6 +1551,24 @@ type CustomEntityTypesEntry struct {
 	Score float64 `json:"score" binding:"required" example:"0.01"`
 }
 
+type DataMaskingRuleConnectionRequest struct {
+	// The unique identifier of the data masking rule
+	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The status of the data masking rule
+	Status string `json:"status" enums:"active,inactive" example:"active" binding:"required"`
+}
+
+type DataMaskingRuleConnection struct {
+	// The unique identifier of the data masking rule connection
+	ID string `json:"id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the data masking rule
+	RuleID string `json:"rule_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The unique identifier of the connection
+	ConnectionID string `json:"connection_id" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The status of the data masking rule connection
+	Status string `json:"status" enums:"active,inactive" example:"active"`
+}
+
 type ServerMiscConfig struct {
 	// Either to enable or disable the product analytics tracking
 	ProductAnalytics string `json:"product_analytics" enum:"active,inactive" example:"active"`
@@ -1544,6 +1576,15 @@ type ServerMiscConfig struct {
 	GrpcServerURL string `json:"grpc_server_url" default:"grpc://127.0.0.1:8010"`
 	// The PostgreSQL server proxy configuration
 	PostgresServerConfig *PostgresServerConfig `json:"postgres_server_config"`
+	// The SSH server proxy configuration
+	SSHServerConfig *SSHServerConfig `json:"ssh_server_config"`
+}
+
+type SSHServerConfig struct {
+	// The listen address to run the SSH server proxy
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222" binding:"required"`
+	// The hosts key used for SSH connections
+	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
 }
 
 type PostgresServerConfig struct {
@@ -1614,11 +1655,11 @@ type LocalUserRequest struct {
 	Name     string `json:"name"`
 }
 
-type ConnectionDbAccessRequest struct {
+type ConnectionCredentialsRequest struct {
 	AccessDurationSec int `json:"access_duration_seconds"`
 }
 
-type ConnectionDbAccess struct {
+type ConnectionCredentials struct {
 	// The unique identifier of the connection database access
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The default database name of the connection
@@ -1637,4 +1678,56 @@ type ConnectionDbAccess struct {
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 	// When the database access connection expires
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+}
+
+type ConnectionSearch struct {
+	// Unique ID of the resource
+	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+	// Status is a read only field that informs if the connection is available for interaction
+	// * online - The agent is connected and alive
+	// * offline - The agent is not connected
+	Status string `json:"status" readonly:"true" enums:"online,offline"`
+	// Toggle Ad Hoc Runbooks Executions
+	// * enabled - Enable to run runbooks for this connection
+	// * disabled - Disable runbooks execution for this connection
+	AccessModeRunbooks string `json:"access_mode_runbooks" binding:"required" enums:"enabled,disabled"`
+	// Toggle Ad Hoc Executions
+	// * enabled - Enable to run ad-hoc executions for this connection
+	// * disabled - Disable ad-hoc executions for this connection
+	AccessModeExec string `json:"access_mode_exec" binding:"required" enums:"enabled,disabled"`
+	// Toggle Port Forwarding
+	// * enabled - Enable to perform port forwarding for this connection
+	// * disabled - Disable port forwarding for this connection
+	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
+}
+
+type SearchResponse struct {
+	// Connections found in the search
+	Connections []ConnectionSearch `json:"connections"`
+	// Runbooks found in the search
+	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+}
+
+type ConnectionTestResponse struct {
+	// Indicates if the connection test was successful
+	Success bool `json:"success" example:"true"`
 }

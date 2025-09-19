@@ -2,8 +2,9 @@ package tracinginterceptor
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -94,11 +95,9 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	clientOrigin := commongrpc.MetaGet(md, "origin")
 	if clientOrigin == pb.ConnectionOriginAgent {
 		spanCtx, err := newBaggageMembers(context.Background(), map[string]string{
-			"hoop.gateway.environment":     monitoring.NormalizeEnvironment(os.Getenv("API_URL")),
 			"hoop.gateway.org-id":          commongrpc.MetaGet(md, "org-id"),
 			"hoop.gateway.agent-name":      commongrpc.MetaGet(md, "agent-name"),
 			"hoop.gateway.agent-mode":      commongrpc.MetaGet(md, "agent-mode"),
-			"hoop.gateway.client-hostname": commongrpc.MetaGet(md, "hostname"),
 			"hoop.gateway.client-platform": commongrpc.MetaGet(md, "platform"),
 			"hoop.gateway.client-version":  commongrpc.MetaGet(md, "version"),
 			"hoop.gateway.client-origin":   clientOrigin,
@@ -120,18 +119,19 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		return streamErr
 	}
 
+	userIDhash := sha256.Sum256([]byte(commongrpc.MetaGet(md, "user-id")))
+	userIDHashEncoded := hex.EncodeToString(userIDhash[:])
+
 	sessionID := commongrpc.MetaGet(md, "session-id")
 	spanCtx, err := newBaggageMembers(context.Background(), map[string]string{
-		"hoop.gateway.environment":           monitoring.NormalizeEnvironment(os.Getenv("API_URL")),
 		"hoop.gateway.org-id":                commongrpc.MetaGet(md, "org-id"),
 		"hoop.gateway.sid":                   sessionID,
-		"hoop.gateway.user-email":            commongrpc.MetaGet(md, "user-email"),
+		"hoop.gateway.user-id":               userIDHashEncoded,
 		"hoop.gateway.connection":            commongrpc.MetaGet(md, "connection-name"),
 		"hoop.gateway.connection-type":       commongrpc.MetaGet(md, "connection-type"),
 		"hoop.gateway.connection-subtype":    commongrpc.MetaGet(md, "connection-subtype"),
 		"hoop.gateway.connection-agent":      commongrpc.MetaGet(md, "connection-agent"),
 		"hoop.gateway.connection-agent-mode": commongrpc.MetaGet(md, "connection-agent-mode"),
-		"hoop.gateway.client-hostname":       commongrpc.MetaGet(md, "hostname"),
 		"hoop.gateway.client-platform":       commongrpc.MetaGet(md, "platform"),
 		"hoop.gateway.client-version":        commongrpc.MetaGet(md, "version"),
 		"hoop.gateway.client-origin":         clientOrigin,

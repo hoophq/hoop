@@ -20,7 +20,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
-	apidbaccess "github.com/hoophq/hoop/gateway/api/dbaccess"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
@@ -38,6 +37,7 @@ import (
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
+	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
@@ -283,11 +283,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.GetTableColumns)
-
-	// DB Access routes
-	r.POST("/connections/:nameOrID/dbaccess",
+	r.PUT("/connections/:nameOrID/datamasking-rules",
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apidbaccess.CreateConnectionDbAccess,
+		apiconnections.UpdateDataMaskingRuleConnection)
+
+	r.GET("/connections/:nameOrID/test",
+		r.AuthMiddleware,
+		apiconnections.TestConnection)
+	r.POST("/connections/:nameOrID/credentials",
+		r.AuthMiddleware,
+		apiconnections.CreateConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",
@@ -308,6 +314,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiproxymanager.Get)
 
+	r.GET("/reviews",
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventFetchReviews),
+		reviewHandler.List,
+	)
 	r.GET("/reviews/:id",
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
@@ -704,5 +715,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiserverconfig.GenerateApiKey,
+	)
+
+	r.GET("/search",
+		r.AuthMiddleware,
+		searchapi.Get,
 	)
 }

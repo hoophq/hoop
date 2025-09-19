@@ -87,18 +87,9 @@
    {:db (assoc db :dialog-status :closed)}))
 
 (rf/reg-event-fx
- :open-dialog
- (fn [{:keys [db]} [_ data]]
-   {:db (assoc db
-               :dialog-status :open
-               :dialog-on-success (:on-success data)
-               :dialog-text (:text data)
-               :dialog-title (:title data))}))
-
-(rf/reg-event-fx
  :initialize-intercom
  (fn
-   [{:keys [db]} [_ user]]
+   [_ [_ user]]
    (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
      (if (not analytics-tracking)
        ;; If analytics tracking is disabled, don't initialize Intercom

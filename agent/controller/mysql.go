@@ -47,11 +47,12 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 
 	log.Infof("session=%v - starting mysql connection at %v:%v", sessionID, connenv.host, connenv.port)
 	opts := map[string]string{
-		"sid":      sessionID,
-		"hostname": connenv.host,
-		"port":     connenv.port,
-		"username": connenv.user,
-		"password": connenv.pass,
+		"sid":           sessionID,
+		"hostname":      connenv.host,
+		"port":          connenv.port,
+		"username":      connenv.user,
+		"password":      connenv.pass,
+		"connection_id": clientConnectionID,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MySQL()
 	if err != nil {
