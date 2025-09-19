@@ -3,20 +3,19 @@ use crate::rdp::proxy::RdpProxy;
 use crate::session::Header;
 use crate::ws::session::SessionInfo;
 use crate::ws::stream::ChannelWebSocketStream;
+use crate::ws::types::WsWriter;
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 
 use futures::SinkExt;
-use futures::stream::SplitSink;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 // Start a persistent RDP proxy session
 pub async fn start_rdp_proxy_session(
     session_info: SessionInfo,
-    ws_sender: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+    ws_sender: WsWriter,
     rdp_data_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>>,
     config: Arc<Conf>,
 ) -> anyhow::Result<()> {

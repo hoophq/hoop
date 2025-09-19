@@ -37,6 +37,7 @@ fn get_path() -> Utf8PathBuf {
         .unwrap_or_else(|_| get_default_path())
 }
 
+
 impl ConfigHandleManager {
     pub fn init() -> anyhow::Result<Self> {
         let path = get_path();
