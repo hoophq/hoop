@@ -299,18 +299,20 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 					}
 				}
 
-				// Marshal both rules into a single json object
-				guardRailRulesJsonData, err = json.Marshal(struct {
-					InputRules  []guardrails.DataRules `json:"input_rules"`
-					OutputRules []guardrails.DataRules `json:"output_rules"`
-				}{
-					InputRules:  inputRules,
-					OutputRules: outputRules,
-				})
+				if inputRules != nil || outputRules != nil {
+					// Marshal both rules into a single json object
+					guardRailRulesJsonData, err = json.Marshal(struct {
+						InputRules  []guardrails.DataRules `json:"input_rules"`
+						OutputRules []guardrails.DataRules `json:"output_rules"`
+					}{
+						InputRules:  inputRules,
+						OutputRules: outputRules,
+					})
 
-				if err != nil {
-					log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed marshaling guard rail rules, err=%v", err)
-					return status.Errorf(codes.Internal, "failed marshaling guard rail rules, err=%v", err)
+					if err != nil {
+						log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed marshaling guard rail rules, err=%v", err)
+						return status.Errorf(codes.Internal, "failed marshaling guard rail rules, err=%v", err)
+					}
 				}
 			}
 		}
