@@ -24,7 +24,7 @@ use uuid::Uuid;
 use ironrdp_core::{Decode, ReadCursor};
 use ironrdp_pdu::tpkt::TpktHeader;
 use std::io;
-use tokio::io::{AsyncRead};
+use tokio::io::AsyncRead;
 mod protocol;
 mod session;
 use session::Header;

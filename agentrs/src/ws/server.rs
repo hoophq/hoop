@@ -8,13 +8,10 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
-use futures::stream::SplitSink;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::sync::RwLock;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
@@ -27,7 +24,6 @@ pub struct WebSocket {
     pub reconnect_interval: Duration,
     pub max_reconnection_attempts: usize,
 }
-
 
 #[async_trait]
 impl Task for WebSocket {
