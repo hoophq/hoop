@@ -1,3 +1,7 @@
+// Copyright (c) 2023-2024, Chico <
+// this is a test file for a gateway server that accepts TCP RDP connections and bridges them over WebSocket to the agent
+// this will be move and implemented in the ../../gateway/ folder in golang
+//
 use axum::{
     Router,
     extract::State,
@@ -5,7 +9,6 @@ use axum::{
     response::IntoResponse,
     routing::get,
 };
-use base64::Engine;
 use futures::{SinkExt, StreamExt};
 use ironrdp_pdu::nego::{ConnectionRequest, NegoRequestData};
 use ironrdp_pdu::tpdu::{TpduCode, TpduHeader};
@@ -16,12 +19,12 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::{Notify, RwLock, mpsc},
 };
-use uuid::{Uuid, uuid};
+use uuid::Uuid;
 
 use ironrdp_core::{Decode, ReadCursor};
 use ironrdp_pdu::tpkt::TpktHeader;
 use std::io;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead};
 mod protocol;
 mod session;
 use session::Header;
