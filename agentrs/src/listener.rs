@@ -1,5 +1,5 @@
 use crate::tasks::tasks::*;
-use crate::ws::server::WebSocketServer;
+use crate::ws::server::WebSocket;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
@@ -12,7 +12,7 @@ pub struct Service {
 async fn build_tasks() -> anyhow::Result<Tasks, anyhow::Error> {
     let mut tasks = Tasks::new();
 
-    let ws = WebSocketServer::new()?;
+    let ws = WebSocket::new()?;
 
     tasks.register(ws);
     Ok(tasks)
