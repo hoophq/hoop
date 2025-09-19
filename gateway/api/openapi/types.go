@@ -1664,22 +1664,42 @@ type ConnectionCredentials struct {
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The name of the connection
 	ConnectionName string `json:"connection_name" example:"pgdemo"`
-	// The default database name of the connection
-	DatabaseName string `json:"database_name" example:"mydb"`
+	// Connection type
+	ConnectionType string `json:"connection_type" example:"postgres"`
+	// The connection information
+	ConnectionInfo any `json:"connection_info"`
+	// When the database access connection expires
+	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the resource was created
+	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
+}
+
+type PostgresConnectionInfo struct {
 	// The hostname to access the database instance
 	Hostname string `json:"hostname" example:"db.example.com"`
+	// The port of the database instance
+	Port string `json:"port" example:"5432"`
 	// The username of the database instance
 	Username string `json:"username" example:"noop"`
 	// The password of the database instance
 	Password string `json:"password" example:"noop"`
-	// The port of the database instance
-	Port string `json:"port" example:"5432"`
+	// The default database name of the connection
+	DatabaseName string `json:"database_name" example:"mydb"`
 	// The connection string to access the database instance
 	ConnectionString string `json:"connection_string" example:"postgres://noop:noop@db.example.com:5432/mydb?sslmode=disable"`
-	// When the resource was created
-	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
-	// When the database access connection expires
-	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+}
+
+type SSHConnectionInfo struct {
+	// The hostname to access the SSH instance
+	Hostname string `json:"hostname" example:"ssh.example.com"`
+	// The port of the SSH instance
+	Port string `json:"port" example:"22"`
+	// The username of the SSH instance
+	Username string `json:"username" example:"noop"`
+	// The password of the SSH instance
+	Password string `json:"password" example:"noop"`
+	// The command to access the SSH instance
+	Command string `json:"command" example:"ssh -p 22"`
 }
 
 type ConnectionSearch struct {
