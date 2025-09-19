@@ -109,6 +109,12 @@ func CreateConnectionCredentials(c *gin.Context) {
 		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
 		return
 	}
+
+	// swap username and secret key for Proxy Postgres connections
+	if conn.SubType.String == proto.ConnectionTypePostgres.String() {
+		cred.username, cred.secretKey = cred.secretKey, cred.username
+	}
+
 	c.JSON(201,
 		openapi.ConnectionCredentials{
 			ID:               db.ID,
