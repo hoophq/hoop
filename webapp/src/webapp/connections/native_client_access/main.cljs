@@ -179,10 +179,10 @@
           [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"]]
 
          [:> Tabs.Content {:value "credentials" :class "mt-4"}
-          [connect-credentials-tab native-client-access-data]]
+          [connect-credentials-tab (:connection_credentials native-client-access-data)]]
 
          [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
-          [connect-uri-tab native-client-access-data]]]]
+          [connect-uri-tab (:connection_credentials native-client-access-data)]]]]
 
        ;; Sticky footer
        [:footer {:class "sticky bottom-0 z-30 bg-white py-4 flex justify-between items-center"}

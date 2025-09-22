@@ -28,7 +28,7 @@ var validConnectionTypes = []string{"postgres", "ssh"}
 //	@Produce		json
 //	@Param			nameOrID	path		string									true	"Name or UUID of the connection"
 //	@Param			request		body		openapi.ConnectionCredentialsRequest	true	"The request body resource"
-//	@Success		201			{object}	openapi.ConnectionCredentials
+//	@Success		201			{object}	openapi.ConnectionCredentialsResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/credentials [post]
 func CreateConnectionCredentials(c *gin.Context) {
@@ -107,10 +107,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey))
 }
 
-func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn *models.Connection, serverConf *models.ServerMiscConfig, secretKey string) *openapi.ConnectionCredentials {
+func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn *models.Connection, serverConf *models.ServerMiscConfig, secretKey string) *openapi.ConnectionCredentialsResponse {
 	const dummyString = "hoop"
 
-	base := openapi.ConnectionCredentials{
+	base := openapi.ConnectionCredentialsResponse{
 		ID:             cred.ID,
 		ConnectionType: cred.ConnectionType,
 		ConnectionName: cred.ConnectionName,
@@ -133,7 +133,7 @@ func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn
 			databaseName = "postgres"
 		}
 
-		base.ConnectionInfo = &openapi.PostgresConnectionInfo{
+		base.ConnectionCredentials = &openapi.PostgresConnectionInfo{
 			Hostname:     serverHost,
 			Port:         serverPort,
 			Username:     secretKey,
@@ -143,7 +143,7 @@ func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn
 				secretKey, dummyString, serverHost, serverPort, databaseName),
 		}
 	case proto.ConnectionTypeSSH:
-		base.ConnectionInfo = &openapi.SSHConnectionInfo{
+		base.ConnectionCredentials = &openapi.SSHConnectionInfo{
 			Hostname: serverHost,
 			Port:     serverPort,
 			Username: dummyString,

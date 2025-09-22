@@ -1659,7 +1659,7 @@ type ConnectionCredentialsRequest struct {
 	AccessDurationSec int `json:"access_duration_seconds"`
 }
 
-type ConnectionCredentials struct {
+type ConnectionCredentialsResponse struct {
 	// The unique identifier of the connection database access
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The name of the connection
@@ -1667,7 +1667,7 @@ type ConnectionCredentials struct {
 	// Connection type
 	ConnectionType string `json:"connection_type" example:"postgres"`
 	// The connection information
-	ConnectionInfo any `json:"connection_info"`
+	ConnectionCredentials any `json:"connection_credentials"`
 	// When the database access connection expires
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
