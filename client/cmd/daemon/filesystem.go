@@ -159,3 +159,20 @@ func configEnvironmentVariables() (map[string]string, error) {
 
 	return LoadEnvFile(envFile)
 }
+
+func removeConfigFile() error {
+	envPath, _, err := getEnvFilePath()
+	if err != nil {
+		log.Infof("There is  no envPath: .config/hoop.conf %v", err)
+		return err
+	}
+
+	if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+		log.Errorf("error removing config file %s: %v", envPath, err)
+		return err
+	} else {
+		log.Infof("deleted config file: %s", envPath)
+	}
+
+	return nil
+}

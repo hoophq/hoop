@@ -134,6 +134,12 @@ func remove(serviceName string) error {
 	if out, err := execRunner.Run("systemctl", "--user", "daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload failed: %v\n%s", err, out)
 	}
+
+	err = removeConfigFile()
+	if err != nil {
+		log.Errorf("failed to remove config file: %v", err)
+	}
+
 	return nil
 }
 

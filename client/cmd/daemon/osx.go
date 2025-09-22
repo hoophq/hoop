@@ -195,6 +195,12 @@ func removeDarwin(serviceName string) error {
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove plist: %w", err)
 	}
+
+	err = removeConfigFile()
+	if err != nil {
+		log.Errorf("failed to remove config file: %v", err)
+	}
+
 	return nil
 }
 
