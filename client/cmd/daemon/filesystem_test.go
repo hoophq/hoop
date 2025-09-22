@@ -365,6 +365,17 @@ CUSTOM_VAR=custom_value
 	})
 
 	t.Run("should return error when agentconfig.Load fails", func(t *testing.T) {
+		// Create a temporary home directory without .config/hoop.conf
+		tmpHome, err := os.MkdirTemp("", "test_home")
+		require.NoError(t, err)
+		defer os.RemoveAll(tmpHome)
+
+		// Mock os.UserHomeDir to return our temp directory
+		originalHome := os.Getenv("HOME")
+		os.Setenv("HOME", tmpHome)
+		defer os.Setenv("HOME", originalHome)
+
+		// Remove HOOP_KEY to make agentconfig.Load fail
 		originalHoopKey := os.Getenv("HOOP_KEY")
 		os.Unsetenv("HOOP_KEY")
 		defer os.Setenv("HOOP_KEY", originalHoopKey)
