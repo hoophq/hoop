@@ -31,12 +31,22 @@ func envFileAlreadyExist(path string) bool {
 	return false
 }
 
-func envFileExist() (string, error) {
+func getEnvFilePath() (string, string, error) {
 	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", err
+	}
+	envDir := filepath.Join(home, ".config")
+	envPath := filepath.Join(envDir, "hoop.conf")
+	return envPath, envDir, nil
+}
+
+func envFileExist() (string, error) {
+	envPath, _, err := getEnvFilePath()
 	if err != nil {
 		return "", err
 	}
-	envPath := filepath.Join(home, ".config", "hoop.conf")
+
 	if envFileAlreadyExist(envPath) {
 		return envPath, nil
 	}
@@ -51,9 +61,9 @@ func LoadEnvFile(path string) (map[string]string, error) {
 	defer f.Close()
 
 	env := make(map[string]string)
-	scanner := bufio.NewScanner(f)
 	home, _ := os.UserHomeDir()
 
+	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -79,13 +89,11 @@ func LoadEnvFile(path string) (map[string]string, error) {
 }
 
 func createEnvFileIfNotExists(env map[string]string) (string, error) {
-	home, err := os.UserHomeDir()
+	envPath, envDir, err := getEnvFilePath()
 	if err != nil {
-		log.Errorf("error getting user home dir: %v", err)
+		log.Errorf("error getting getEnvFilePath: %v", err)
 		return "", err
 	}
-	envDir := filepath.Join(home, ".config")
-	envPath := filepath.Join(envDir, "hoop.conf")
 
 	if err := os.MkdirAll(envDir, 0o755); err != nil {
 		log.Errorf("error creating config dir: %v", err)
@@ -105,15 +113,24 @@ func createEnvFileIfNotExists(env map[string]string) (string, error) {
 }
 
 func writeFileIfNotExists(path, content string, perm os.FileMode) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := os.WriteFile(path, []byte(content), perm); err != nil {
-			log.Errorf("Error writing the file %s: %v", path, err)
-			return err
-		}
-	} else if err != nil {
-		log.Errorf("Error stat file %s: %v", path, err)
+
+	_, err := os.Stat(path)
+
+	if err == nil {
+		log.Infof("File %s already exists, skipping creation", path)
+		return nil
+	}
+
+	if !os.IsNotExist(err) {
+		log.Errorf("Error checking if file %s exists: %v", path, err)
 		return err
 	}
+
+	if err := os.WriteFile(path, []byte(content), perm); err != nil {
+		log.Errorf("Error writing the file %s: %v", path, err)
+		return err
+	}
+
 	return nil
 }
 
