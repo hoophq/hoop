@@ -113,7 +113,6 @@ func createEnvFileIfNotExists(env map[string]string) (string, error) {
 }
 
 func writeFileIfNotExists(path, content string, perm os.FileMode) error {
-
 	_, err := os.Stat(path)
 
 	if err == nil {
