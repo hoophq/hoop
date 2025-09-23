@@ -13,6 +13,32 @@
                            "ssh" "tcp" "httpproxy"
                            "nodejs" "python-scripts" "ruby-on-rails" "clojure"})
 
+;; Conexões custom que não estão no metadata.json
+(def custom-connections
+  [{:id "linux-vm"
+    :name "Linux VM or Container"
+    :description "Connect to Linux virtual machines, Docker containers, or any remote server via SSH."
+    :category "infrastructure-access"
+    :icon-name "ssh"
+    :tags ["linux" "vm" "container" "ssh" "infrastructure"]
+    :overview {:description "Connect to any Linux-based system including virtual machines, Docker containers, bare metal servers, and cloud instances."
+               :features ["Secure SSH-based access"
+                          "Terminal session recording"
+                          "Multi-user access control"
+                          "Session sharing and collaboration"]
+               :useCases ["Development environment access"
+                          "Production server administration"
+                          "Container debugging and management"
+                          "Infrastructure maintenance and monitoring"]}
+    :setupGuide {:accessMethods {:webapp true :cli true :runbooks true}
+                 :requirements ["SSH server running on target system"
+                                "Valid SSH credentials (password or key-based)"
+                                "Network connectivity to port 22"
+                                "Proper firewall configuration"]}
+    :resourceConfiguration {:type "server"
+                            :subtype "custom"
+                            :credentials {}}}])
+
 ;; Mapeamento connection-id → setup flow
 (def connection-setup-mapping
   {"postgres" {:type "database" :subtype "postgres"}
@@ -26,10 +52,12 @@
    "nodejs" {:type "server" :subtype "console" :app-type "nodejs"}
    "python-scripts" {:type "server" :subtype "console" :app-type "python"}
    "ruby-on-rails" {:type "server" :subtype "console" :app-type "ruby-on-rails"}
-   "clojure" {:type "server" :subtype "console" :app-type "clojure"}})
+   "clojure" {:type "server" :subtype "console" :app-type "clojure"}
+   ;; Custom connections
+   "linux-vm" {:type "server" :subtype "custom"}})
 
 ;; Mock data
-(def mock-popular-connections #{"aws-cli" "mysql" "postgres" "kubernetes" "mongodb"})
+(def mock-popular-connections #{"mysql" "postgres" "ssh" "mongodb" "linux-vm"})
 (def mock-new-connections #{"postgres"})
 (def mock-beta-connections #{"mongodb"})
 
@@ -283,10 +311,12 @@
         [:> Box {:class "flex items-center justify-center h-screen bg-gray-50"}
          [:> Text {:size "4"} "Loading resource catalog..."]]
 
-        (let [all-connections (:connections @connections-metadata)
-              ;; Aplicar whitelist - apenas conexões permitidas
-              connections (->> all-connections
-                               (filter #(allowed-connections (:id %))))
+        (let [metadata-connections (:connections @connections-metadata)
+              ;; Aplicar whitelist - apenas conexões permitidas do metadata
+              filtered-metadata-connections (->> metadata-connections
+                                                 (filter #(allowed-connections (:id %))))
+              ;; Combinar metadata + custom connections
+              connections (concat filtered-metadata-connections custom-connections)
               all-categories (->> connections
                                   (map :category)
                                   (remove nil?)
