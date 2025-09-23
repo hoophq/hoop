@@ -48,6 +48,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	connenv.httpProxyHeaders["remote_url"] = connenv.httpProxyRemoteURL
 	connenv.httpProxyHeaders["connection_id"] = clientConnectionID
 	connenv.httpProxyHeaders["sid"] = sessionID
+	connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.insecure)
 	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
 	if err != nil {
 		log.Infof("failed connecting to %v, err=%v", sessionID, connenv.host, err)
