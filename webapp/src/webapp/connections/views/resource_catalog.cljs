@@ -433,11 +433,17 @@
            [:> Box {:class "flex-1 flex flex-col overflow-hidden"}
             [:> Box {:class "p-8 flex-1 overflow-y-auto"}
              [:> Box {:class "max-w-7xl space-y-radix-9 mx-auto"}
-              [:> Box {:class "mb-12"}
-               [:> Heading {:as "h2" :size "6" :weight "bold" :class "mb-3 text-[--gray-12]"}
-                "Getting Started"]
-               [:> Text {:as "p" :size "3" :class "text-[--gray-12]"}
-                "Setup your environment by selecting your Resource type:"]]
+              [:> Box {:class "space-y-radix-6 mb-12"}
+               (when is-onboarding?
+                 [:figure
+                  [:img {:src "/images/hoop-branding/PNG/hoop-symbol_black@4x.png"
+                         :alt "Hoop Logo"
+                         :class "w-16"}]])
+               [:> Box
+                [:> Heading {:as "h2" :size "6" :weight "bold" :class "mb-3 text-[--gray-12]"}
+                 "Getting Started"]
+                [:> Text {:as "p" :size "3" :class "text-[--gray-12]"}
+                 "Setup your environment by selecting your Resource type:"]]]
 
               ;; Popular section
               (when (seq popular-connections)
