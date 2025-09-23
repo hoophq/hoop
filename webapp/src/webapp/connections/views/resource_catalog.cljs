@@ -1,12 +1,17 @@
 (ns webapp.connections.views.resource-catalog
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Card Dialog Flex Heading
-                               ScrollArea Tabs Text]]
-   ["lucide-react" :refer [Check]]
+   ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Dialog Flex Link
+                               Heading ScrollArea Tabs Text]]
+   ["lucide-react" :refer [Check Monitor BookMarked SquareTerminal]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]))
+
+;; Whitelist - apenas estas conexões aparecerão no catálogo
+(def allowed-connections #{"postgres" "mysql" "mongodb" "mssql" "oracle"
+                           "ssh" "tcp" "httpproxy"
+                           "nodejs" "python-scripts" "ruby-on-rails" "clojure"})
 
 ;; Mock data
 (def mock-popular-connections #{"aws-cli" "mysql" "postgres" "kubernetes" "mongodb"})
@@ -22,6 +27,7 @@
 (defn connection-icon [icon-name connection-id]
   (let [image-failed? (r/atom false)]
     (fn []
+      (println "icon-name" icon-name)
       (if @image-failed?
         ;; Show fallback - no more image loading, just CSS
         [:div {:class "w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center shadow-sm"}
@@ -103,44 +109,12 @@
                  :on-click #(on-tag-change tag)}
        tag])]])
 
-(defn modal-overview-tab [_connection overview _features]
+(defn modal-overview-tab [overview setupGuide]
   [:div {:class "space-y-6"}
    (when (:description overview)
      [:div
       [:> Text {:class "text-gray-700 leading-relaxed"}
        (:description overview)]])
-
-   [:div
-    [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
-     "Security Features"]
-    [:ul {:class "list-disc list-inside space-y-2 text-gray-700"}
-     [:li [:> Text {:size "2"} "Zero-Copy Data Loss Prevention"]]
-     [:li [:> Text {:size "2"} "AI-powered data masking automatically redacts sensitive fields in real-time"]]
-     [:li [:> Text {:size "2"} "No more rules or manual configuration required"]]
-     [:li [:> Text {:size "2"} "Support for data masking at the protocol layer"]]]]
-
-   [:div
-    [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
-     "Complete Audit Trail"]
-    [:ul {:class "list-disc list-inside space-y-2 text-gray-700"}
-     [:li [:> Text {:size "2"} "Every query is logged with full context"]]
-     [:li [:> Text {:size "2"} "Session recordings capture all database interactions"]]
-     [:li [:> Text {:size "2"} "Searchable audit logs for compliance and debugging"]]
-     [:li [:> Text {:size "2"} "Request-time-based access to production databases"]]
-     [:li [:> Text {:size "2"} "Multi-party approval workflows"]]
-     [:li [:> Text {:size "2"} "Automatic access revocation after specified duration"]]]]
-
-   (when (:useCases overview)
-     [:div
-      [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
-       "Use Cases"]
-      [:ul {:class "list-disc list-inside space-y-2 text-gray-700"}
-       (for [use-case (:useCases overview)]
-         ^{:key use-case}
-         [:li [:> Text {:size "2"} use-case]])]])])
-
-(defn modal-setup-tab [setupGuide connection]
-  [:div {:class "space-y-6"}
 
    (when-let [access-methods (get-in setupGuide [:accessMethods])]
      [:div
@@ -148,90 +122,75 @@
        "Connection Methods"]
       [:div {:class "grid grid-cols-2 gap-4"}
        (when (:webapp access-methods)
-         [:> Card {:size "2" :class "p-4"}
+         [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :gap "2"}
-            [:div {:class "w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center"}
-             [:span {:class "text-blue-600 font-semibold text-sm"} "W"]]
-            [:> Text {:size "3" :weight "bold"} "Web App"]]
-           [:> Text {:size "2" :color "gray"}
-            "Access resources and execute commands directly from Web UI."]]])
+            [:> Avatar {:size "4"
+                        :variant "soft"
+                        :color "gray"
+                        :fallback (r/as-element [:> Monitor {:size 18}])}]
+            [:> Box
+             [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-gray-12"} "Web App"]
+             [:> Text {:as "p" :size "2" :class "text-gray-11"}
+              "Access resources and execute commands directly from Web UI."]]]]])
 
        (when (:runbooks access-methods)
-         [:> Card {:size "2" :class "p-4"}
+         [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :gap "2"}
-            [:div {:class "w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center"}
-             [:span {:class "text-purple-600 font-semibold text-sm"} "R"]]
-            [:> Text {:size "3" :weight "bold"} "Runbooks"]]
-           [:> Text {:size "2" :color "gray"}
-            "Execute securely git-based predefined scripts in your resources."]]])
+            [:> Avatar {:size "4"
+                        :variant "soft"
+                        :color "gray"
+                        :fallback (r/as-element [:> BookMarked {:size 18}])}]
+            [:> Box
+             [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-gray-12"} "Runbooks"]
+             [:> Text {:as "p" :size "2" :class "text-gray-11"}
+              "Execute securely git-based predefined scripts in your resources."]]]]])
 
        (when (:cli access-methods)
-         [:> Card {:size "2" :class "p-4"}
+         [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :gap "2"}
-            [:div {:class "w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center"}
-             [:span {:class "text-green-600 font-semibold text-sm"} "H"]]
-            [:> Text {:size "3" :weight "bold"} "Hoop CLI"]]
-           [:> Text {:size "2" :color "gray"}
-            "Access resources and execute commands natively in your favorite apps."]]])]])
+            [:> Avatar {:size "4"
+                        :variant "soft"
+                        :color "gray"
+                        :fallback (r/as-element [:> SquareTerminal {:size 18}])}]
+            [:> Box
+             [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-gray-12"} "Hoop CLI"]
+             [:> Text {:as "p" :size "2" :class "text-gray-11"}
+              "Access resources and execute commands natively in your favorite apps."]]]]])]])])
+
+(defn modal-setup-tab [connection]
+  [:div {:class "space-y-6"}
 
    ;; Required Configuration (moved from Advanced)
    (when-let [credentials (get-in connection [:resourceConfiguration :credentials])]
      [:div
       [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
-       "Required Configuration"]
+       "Configuration"]
       [:div {:class "space-y-3"}
        (for [[credential-key credential-info] credentials]
          ^{:key credential-key}
-         [:> Card {:size "1" :class "p-4"}
+         [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "2"}
            [:> Flex {:align "center" :justify "between"}
             [:> Flex {:align "center" :gap "2"}
-             [:> Text {:size "2" :weight "bold" :class "font-mono text-blue-600"}
+             [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-gray-12"}
               (:name credential-info)]
              (when (:required credential-info)
-               [:> Badge {:color "red" :size "1"} "Required"])]
+               [:> Badge {:size "1"} "Required"])]
             [:> Badge {:variant "soft" :color "gray" :size "1"}
              (case (:type credential-info)
                "env-var" "Environment Variable"
                "filesystem" "File Path"
                "textarea" "Text Content"
                (:type credential-info))]]
-           [:> Text {:size "2" :color "gray"}
-            (:description credential-info)]
-           (when (:placeholder credential-info)
-             [:> Text {:size "1" :class "font-mono bg-gray-100 px-2 py-1 rounded text-gray-600"}
-              (:placeholder credential-info)])]])]])])
-
-(defn modal-advanced-tab [connection]
-  [:div {:class "space-y-6"}
-   ;; Connection String Format
-   [:div
-    [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
-     "Connection String Format"]
-    [:> Text {:size "2" :class "font-mono bg-gray-100 px-3 py-2 rounded text-gray-800 block"}
-     (or (get-in connection [:advancedConfiguration :connectionString])
-         "connection://user:password@host:port/database")]]
-
-   ;; Feature Configuration
-   [:div
-    [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
-     "Additional Features"]
-    [:ul {:class "list-disc list-inside space-y-2 text-gray-700"}
-     (let [configs (or (get-in connection [:advancedConfiguration :featureConfiguration])
-                       ["SSL/TLS encryption setup"
-                        "Connection pooling configuration"
-                        "Performance optimization settings"
-                        "Authentication and authorization"])]
-       (for [config configs]
-         ^{:key config}
-         [:li [:> Text {:size "2"} config]]))]]])
+           [:> Text {:as "p" :size "2" :class "text-gray-11"}
+            (:description credential-info)]]])]])])
 
 (defn connection-detail-modal [connection open? on-close]
   (when connection
-    (let [{:keys [name description overview features setupGuide]} connection
+    (let [{:keys [name description overview setupGuide]} connection
           badge (get-connection-badge (:id connection))]
 
       [:> Dialog.Root {:open open?
@@ -253,8 +212,12 @@
            [:> Text {:color "gray" :size "3"} description]]]
 
          [:> Flex {:gap "3" :class "mb-6"}
-          [:> Button {:variant "soft" :size "3"}
-           "View Docs"]
+          [:> Link {:href (str "https://hoop.dev/docs/"
+                               (get-in connection [:documentationConfig :path]))
+                    :target "_blank"}
+           [:> Button {:variant "soft"
+                       :size "3"}
+            "View Docs"]]
           [:> Button {:variant "solid" :size "3"}
            (str "Continue with " name)]]]
 
@@ -268,11 +231,11 @@
 
          [:> Tabs.Content {:value "overview" :class "outline-none"}
           [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
-           [modal-overview-tab connection overview features]]]
+           [modal-overview-tab overview setupGuide]]]
 
          [:> Tabs.Content {:value "setup-guide" :class "outline-none"}
           [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
-           [modal-setup-tab setupGuide connection]]]]]])))
+           [modal-setup-tab connection]]]]]])))
 
 (defn main-panel []
   (let [connections-metadata (rf/subscribe [:connections->metadata])
@@ -291,7 +254,10 @@
         [:> Box {:class "flex items-center justify-center h-screen bg-gray-50"}
          [:> Text {:size "4"} "Loading resource catalog..."]]
 
-        (let [connections (:connections @connections-metadata)
+        (let [all-connections (:connections @connections-metadata)
+              ;; Aplicar whitelist - apenas conexões permitidas
+              connections (->> all-connections
+                               (filter #(allowed-connections (:id %))))
               all-categories (->> connections
                                   (map :category)
                                   (remove nil?)
