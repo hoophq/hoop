@@ -203,8 +203,12 @@
                    (do (.back js/history -1) {}))
        :additional-config {:db (assoc-in db [:connection-setup :current-step] :credentials)}
        :credentials (if from-catalog?
-                      ;; Se veio do catálogo, volta para o catálogo
-                      {:fx [[:dispatch [:navigate :resource-catalog]]]}
+                      ;; Se veio do catálogo, verifica contexto para voltar ao lugar certo
+                      (let [current-path (.. js/window -location -pathname)
+                            is-onboarding? (str/includes? current-path "/onboarding")]
+                        (if is-onboarding?
+                          {:fx [[:dispatch [:navigate :onboarding-setup]]]}
+                          {:fx [[:dispatch [:navigate :resource-catalog]]]}))
                       ;; Senão, limpa type/subtype e volta para resource
                       {:db (-> db
                                (assoc-in [:connection-setup :current-step] :resource)
