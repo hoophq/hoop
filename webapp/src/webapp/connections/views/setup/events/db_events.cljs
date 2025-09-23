@@ -192,20 +192,27 @@
  (fn [db [_ next-step]]
    (assoc-in db [:connection-setup :current-step] (or next-step :resource))))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :connection-setup/go-back
- (fn [db [_]]
-   (let [current-step (get-in db [:connection-setup :current-step])]
+ (fn [{:keys [db]} [_]]
+   (let [current-step (get-in db [:connection-setup :current-step])
+         from-catalog? (get-in db [:connection-setup :from-catalog?])]
      (case current-step
-       :resource (.back js/history -1)
-       :additional-config (assoc-in db [:connection-setup :current-step] :credentials)
-       :credentials (-> db
-                        (assoc-in [:connection-setup :current-step] :resource)
-                        (assoc-in [:connection-setup :type] nil)
-                        (assoc-in [:connection-setup :subtype] nil))
-       :installation (-> db
-                         (assoc-in [:connection-setup :current-step] :additional-config))
-       (.back js/history -1)))))
+       :resource (if from-catalog?
+                   {:fx [[:dispatch [:navigate :resource-catalog]]]}
+                   (do (.back js/history -1) {}))
+       :additional-config {:db (assoc-in db [:connection-setup :current-step] :credentials)}
+       :credentials (if from-catalog?
+                      ;; Se veio do catálogo, volta para o catálogo
+                      {:fx [[:dispatch [:navigate :resource-catalog]]]}
+                      ;; Senão, limpa type/subtype e volta para resource
+                      {:db (-> db
+                               (assoc-in [:connection-setup :current-step] :resource)
+                               (assoc-in [:connection-setup :type] nil)
+                               (assoc-in [:connection-setup :subtype] nil))})
+       :installation {:db (assoc-in db [:connection-setup :current-step] :additional-config)}
+       ;; Default: volta uma página na história
+       (do (.back js/history -1) {})))))
 
 (rf/reg-event-db
  :connection-setup/set-agent-id

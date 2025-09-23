@@ -76,6 +76,9 @@
       (do
         ;; Inicializa o setup com configurações do catálogo
         (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
+        ;; Se tem app-type, seleciona também
+        (when (:app-type setup-config)
+          (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
         ;; Navega para a página de criação
         (rf/dispatch [:navigate :create-connection]))
       (js/console.warn "No setup mapping found for connection:" connection-id))))
