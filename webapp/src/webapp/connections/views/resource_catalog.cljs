@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Dialog Flex Heading
                                ScrollArea Tabs Text]]
-   ["lucide-react" :refer [ExternalLink Check]]
+   ["lucide-react" :refer [Check]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -139,36 +139,75 @@
          ^{:key use-case}
          [:li [:> Text {:size "2"} use-case]])]])])
 
-(defn modal-setup-tab [setupGuide]
+(defn modal-setup-tab [setupGuide connection]
   [:div {:class "space-y-6"}
-   [:div
-    [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
-     "Setup Requirements"]
-    [:div {:class "space-y-3"}
-     (let [requirements (or (:requirements setupGuide)
-                            ["Network connectivity to service"
-                             "Valid authentication credentials"
-                             "Appropriate access permissions"])]
-       (for [req requirements]
-         ^{:key req}
-         [:div {:class "flex items-start gap-3"}
-          [:div {:class "w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"}]
-          [:> Text {:size "2" :class "text-gray-700"} req]]))]]
 
    (when-let [access-methods (get-in setupGuide [:accessMethods])]
      [:div
       [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
-       "Access Methods"]
-      [:div {:class "flex gap-3"}
+       "Connection Methods"]
+      [:div {:class "grid grid-cols-2 gap-4"}
        (when (:webapp access-methods)
-         [:> Badge {:color "green" :size "2"} "Web App"])
-       (when (:cli access-methods)
-         [:> Badge {:color "blue" :size "2"} "CLI"])
+         [:> Card {:size "2" :class "p-4"}
+          [:> Flex {:direction "column" :gap "3"}
+           [:> Flex {:align "center" :gap "2"}
+            [:div {:class "w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center"}
+             [:span {:class "text-blue-600 font-semibold text-sm"} "W"]]
+            [:> Text {:size "3" :weight "bold"} "Web App"]]
+           [:> Text {:size "2" :color "gray"}
+            "Access resources and execute commands directly from Web UI."]]])
+
        (when (:runbooks access-methods)
-         [:> Badge {:color "purple" :size "2"} "Runbooks"])]])])
+         [:> Card {:size "2" :class "p-4"}
+          [:> Flex {:direction "column" :gap "3"}
+           [:> Flex {:align "center" :gap "2"}
+            [:div {:class "w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center"}
+             [:span {:class "text-purple-600 font-semibold text-sm"} "R"]]
+            [:> Text {:size "3" :weight "bold"} "Runbooks"]]
+           [:> Text {:size "2" :color "gray"}
+            "Execute securely git-based predefined scripts in your resources."]]])
+
+       (when (:cli access-methods)
+         [:> Card {:size "2" :class "p-4"}
+          [:> Flex {:direction "column" :gap "3"}
+           [:> Flex {:align "center" :gap "2"}
+            [:div {:class "w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center"}
+             [:span {:class "text-green-600 font-semibold text-sm"} "H"]]
+            [:> Text {:size "3" :weight "bold"} "Hoop CLI"]]
+           [:> Text {:size "2" :color "gray"}
+            "Access resources and execute commands natively in your favorite apps."]]])]])
+
+   ;; Required Configuration (moved from Advanced)
+   (when-let [credentials (get-in connection [:resourceConfiguration :credentials])]
+     [:div
+      [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
+       "Required Configuration"]
+      [:div {:class "space-y-3"}
+       (for [[credential-key credential-info] credentials]
+         ^{:key credential-key}
+         [:> Card {:size "1" :class "p-4"}
+          [:> Flex {:direction "column" :gap "2"}
+           [:> Flex {:align "center" :justify "between"}
+            [:> Flex {:align "center" :gap "2"}
+             [:> Text {:size "2" :weight "bold" :class "font-mono text-blue-600"}
+              (:name credential-info)]
+             (when (:required credential-info)
+               [:> Badge {:color "red" :size "1"} "Required"])]
+            [:> Badge {:variant "soft" :color "gray" :size "1"}
+             (case (:type credential-info)
+               "env-var" "Environment Variable"
+               "filesystem" "File Path"
+               "textarea" "Text Content"
+               (:type credential-info))]]
+           [:> Text {:size "2" :color "gray"}
+            (:description credential-info)]
+           (when (:placeholder credential-info)
+             [:> Text {:size "1" :class "font-mono bg-gray-100 px-2 py-1 rounded text-gray-600"}
+              (:placeholder credential-info)])]])]])])
 
 (defn modal-advanced-tab [connection]
   [:div {:class "space-y-6"}
+   ;; Connection String Format
    [:div
     [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
      "Connection String Format"]
@@ -176,9 +215,10 @@
      (or (get-in connection [:advancedConfiguration :connectionString])
          "connection://user:password@host:port/database")]]
 
+   ;; Feature Configuration
    [:div
     [:> Text {:size "3" :weight "bold" :class "block mb-3 text-gray-900"}
-     "Feature Configuration"]
+     "Additional Features"]
     [:ul {:class "list-disc list-inside space-y-2 text-gray-700"}
      (let [configs (or (get-in connection [:advancedConfiguration :featureConfiguration])
                        ["SSL/TLS encryption setup"
@@ -194,7 +234,8 @@
     (let [{:keys [name description overview features setupGuide]} connection
           badge (get-connection-badge (:id connection))]
 
-      [:> Dialog.Root {:open open?}
+      [:> Dialog.Root {:open open?
+                       :onOpenChange #(when-not % (on-close))}
        [:> Dialog.Content {:size "4"
                            :max-width "1000px"
                            :class "max-h-[85vh] overflow-hidden"}
@@ -223,9 +264,7 @@
           [:> Tabs.Trigger {:value "overview" :class "pb-3 text-sm font-medium"}
            "Overview"]
           [:> Tabs.Trigger {:value "setup-guide" :class "pb-3 text-sm font-medium"}
-           "Setup Guide"]
-          [:> Tabs.Trigger {:value "advanced" :class "pb-3 text-sm font-medium"}
-           "Advanced Configuration"]]
+           "Setup Guide"]]
 
          [:> Tabs.Content {:value "overview" :class "outline-none"}
           [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
@@ -233,11 +272,7 @@
 
          [:> Tabs.Content {:value "setup-guide" :class "outline-none"}
           [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
-           [modal-setup-tab setupGuide]]]
-
-         [:> Tabs.Content {:value "advanced" :class "outline-none"}
-          [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}
-           [modal-advanced-tab connection]]]]]])))
+           [modal-setup-tab setupGuide connection]]]]]])))
 
 (defn main-panel []
   (let [connections-metadata (rf/subscribe [:connections->metadata])
