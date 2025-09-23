@@ -46,7 +46,6 @@
     :description "Access a preloaded database to see it in action."
     :category "quickstart"
     :icon-name "postgres"
-    :badge {:text "NEW" :color "green"}
     :tags ["demo" "quickstart" "postgresql"]
     :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])
     :special-type :action}
@@ -56,7 +55,6 @@
     :category "quickstart"
     :icon-name "aws"
     :tags ["aws" "discovery" "automatic" "beta"]
-    :badge {:text "BETA" :color "blue"}
     :action #(rf/dispatch [:navigate :onboarding-resource-providers])
     :special-type :action}])
 
@@ -80,17 +78,15 @@
 ;; Mock data
 (def mock-popular-connections #{"mysql" "postgres" "ssh" "linux-vm"
                                 "postgres-demo" "aws-discovery"})
-(def mock-new-connections #{""})
-(def mock-beta-connections #{"mongodb"})
+(def mock-new-connections #{"postgres-demo"})
+(def mock-beta-connections #{"mongodb" "aws-discovery"})
 
 (defn get-connection-badge [connection]
   (let [connection-id (if (map? connection) (:id connection) connection)]
     (cond
-      ;; Badge customizado da conexão (para onboarding specials)
-      (:badge connection) (:badge connection)
       ;; Mock badges
       (mock-new-connections connection-id) {:text "NEW" :color "green"}
-      (mock-beta-connections connection-id) {:text "BETA" :color "blue"}
+      (mock-beta-connections connection-id) {:text "BETA" :color "indigo"}
       :else nil)))
 
 (defn navigate-to-setup
@@ -394,18 +390,22 @@
                                                    ;; Tags filter
                                                    (if (empty? @selected-tags)
                                                      true
-                                                     (some @selected-tags (:tags conn)))))))
+                                                     (some #(contains? @selected-tags %) (:tags conn)))))))
 
-              ;; Popular connections - inclui specials no onboarding
-              base-popular-connections (->> filtered-connections
+              ;; Popular connections - apenas quando não há filtros ativos
+              has-any-filter? (or (not (cs/blank? @search-term))
+                                  (not-empty @selected-categories)
+                                  (not-empty @selected-tags))
+              base-popular-connections (->> connections  ; Usa connections originais
                                             (filter #(mock-popular-connections (:id %)))
                                             (take 5))
-              popular-connections (if is-onboarding?
-                                    ;; No onboarding: specials primeiro, depois populares normais
-                                    (concat onboarding-special-connections
-                                            (take 3 base-popular-connections))
-                                    ;; Fora do onboarding: apenas populares normais
-                                    base-popular-connections)
+              popular-connections (when-not has-any-filter?  ; Só mostra sem filtros
+                                    (if is-onboarding?
+                                      ;; No onboarding: specials primeiro, depois populares normais
+                                      (concat onboarding-special-connections
+                                              (take 3 base-popular-connections))
+                                      ;; Fora do onboarding: apenas populares normais
+                                      base-popular-connections))
 
               connections-by-category (->> filtered-connections
                                            (group-by :category)
