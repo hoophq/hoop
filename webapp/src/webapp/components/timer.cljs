@@ -1,40 +1,53 @@
 (ns webapp.components.timer
-  (:require [clojure.string :as string]
+  (:require [clojure.string :as str]
             [reagent.core :as r]))
 
-(defn insert-0-before [number]
-  (-> number
-      (#(str "0" %))
-      (#(take-last 2 %))
-      string/join))
+;; Helper functions (pure)
+(defn- pad-zero
+  "Add leading zero to numbers < 10"
+  [number]
+  (->> number
+       str
+       (str "0")
+       (take-last 2)
+       str/join))
 
-(defn format-time [milliseconds]
-  (let [seconds (quot milliseconds 1000)
-        minutes (quot seconds 60)
-        remaining-seconds (mod seconds 60)]
-    (str (insert-0-before minutes) ":" (insert-0-before remaining-seconds))))
+(defn- format-duration
+  "Format milliseconds as MM:SS"
+  [ms]
+  (let [total-seconds (quot ms 1000)
+        minutes (quot total-seconds 60)
+        seconds (mod total-seconds 60)]
+    (str (pad-zero minutes) ":" (pad-zero seconds))))
 
-(defn decrement-time [time]
-  (Math/max 0 (- time 1000)))
 
-(defn main [create-at access-duration on-timer-end]
-  (let [now (.getTime (js/Date.))
-        end-date (+ create-at access-duration)
-        remaining-time (r/atom (- end-date now))]
-    (js/setInterval #(swap! remaining-time decrement-time) 1000)
-    (r/create-class
-     {:component-did-mount (fn [_]
-                             (js/setTimeout #(swap! remaining-time decrement-time) (.-getTime (js/Date.)) create-at))
-      :reagent-render (fn []
-                        (when (<= @remaining-time 0)
-                          (on-timer-end))
-                        [:<>
-                         [:small {:class (if (<= @remaining-time 60000)
-                                           "text-red-700"
-                                           "text-gray-700")}
-                          "Time left: "]
-                         [:small {:class (str "font-bold "
-                                              (if (<= @remaining-time 60000)
-                                                "text-red-700"
-                                                "text-gray-700"))}
-                          (format-time @remaining-time)]])})))
+;; Hook for timer logic
+(defn- use-countdown
+  "Hook that manages countdown state and cleanup"
+  [end-timestamp-ms on-complete]
+  (r/with-let [remaining-time (r/atom (- end-timestamp-ms (.getTime (js/Date.))))
+               update-timer #(let [now (.getTime (js/Date.))
+                                   remaining (max 0 (- end-timestamp-ms now))]
+                               (reset! remaining-time remaining)
+                               (when (and (<= remaining 0) on-complete)
+                                 (on-complete)))
+               interval-id (js/setInterval update-timer 1000)]
+
+    ;; Initial update
+    (update-timer)
+
+    ;; Return current remaining time
+    @remaining-time
+
+    ;; Cleanup on unmount
+    (finally
+      (js/clearInterval interval-id))))
+
+(defn inline-timer
+  "Inline timer for use within text"
+  [{:keys [expire-at on-complete text-component]}]
+
+  (let [expire-ms (.getTime (js/Date. expire-at))
+        remaining-ms (use-countdown expire-ms on-complete)]
+
+    (text-component (format-duration remaining-ms))))

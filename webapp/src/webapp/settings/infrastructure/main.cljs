@@ -78,4 +78,20 @@
                 {:placeholder "e.g. grpcs://yourgateway-domain.tld:443"
                  :value (:grpc-url data)
                  :on-change #(rf/dispatch [:infrastructure->update-field
-                                           :grpc-url (-> % .-target .-value)])}]]]]]])))))
+                                           :grpc-url (-> % .-target .-value)])}]]]
+
+             [:> Grid {:columns "7" :gap "7"}
+              [:> Box {:grid-column "span 2 / span 2"}
+               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                "PostgreSQL Proxy Port"]
+               [:> Text {:size "3" :class "text-[--gray-11]"}
+                "Organization-wide default for local PostgreSQL proxy port forwarding."]]
+
+              [:> Box {:grid-column "span 5 / span 5"}
+               [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}
+                "Proxy Port"]
+               [forms/input
+                {:placeholder "e.g. 5432"
+                 :value (:postgres-proxy-port data)
+                 :on-change #(rf/dispatch [:infrastructure->update-field
+                                           :postgres-proxy-port (-> % .-target .-value)])}]]]]]])))))

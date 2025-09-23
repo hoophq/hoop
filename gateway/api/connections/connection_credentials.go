@@ -3,20 +3,21 @@ package apiconnections
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
+
+var validConnectionTypes = []string{"postgres", "ssh"}
 
 // CreateConnectionCredentials
 //
@@ -27,7 +28,7 @@ import (
 //	@Produce		json
 //	@Param			nameOrID	path		string									true	"Name or UUID of the connection"
 //	@Param			request		body		openapi.ConnectionCredentialsRequest	true	"The request body resource"
-//	@Success		201			{object}	openapi.ConnectionCredentials
+//	@Success		201			{object}	openapi.ConnectionCredentialsResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/connections/{nameOrID}/credentials [post]
 func CreateConnectionCredentials(c *gin.Context) {
@@ -55,17 +56,28 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	if !slices.Contains(validConnectionTypes, conn.SubType.String) {
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection subtype is not supported for this connection"})
+		return
+	}
+
+	if !isConnectionTypeConfigured(proto.ConnectionType(conn.SubType.String)) {
+		c.AbortWithStatusJSON(400, gin.H{"message": "Listening address is not configured for this connection type"})
+		return
+	}
+
 	if conn.AccessModeConnect != "enabled" {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access mode connect is not enabled for this connection"})
 		return
 	}
 
-	serverHostname := appconfig.Get().ApiHostname()
-	if serverHostname == "localhost" {
-		serverHostname = "127.0.0.1"
+	if len(conn.Reviewers) > 0 {
+		c.AbortWithStatusJSON(400, gin.H{"message": "connection reviewers are not supported for this connection"})
+		return
 	}
 
-	cred, err := newAccessCredentials(serverHostname, serverConf, conn)
+	connType := proto.ConnectionType(conn.SubType.String)
+	secretKey, secretKeyHash, err := generateSecretKey(connType)
 	if err != nil {
 		log.Warnf("failed to create access credentials, err=%v", err)
 		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
@@ -83,7 +95,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		UserSubject:    ctx.UserID,
 		ConnectionName: conn.Name,
 		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-		SecretKeyHash:  cred.secretKeyHash,
+		SecretKeyHash:  secretKeyHash,
 		CreatedAt:      time.Now().UTC(),
 		ExpireAt:       expireAt,
 	})
@@ -91,89 +103,106 @@ func CreateConnectionCredentials(c *gin.Context) {
 		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(201,
-		openapi.ConnectionCredentials{
-			ID:               db.ID,
-			DatabaseName:     ptr.ToString(cred.databaseName),
-			Hostname:         cred.serverHostname,
-			Username:         cred.username,
-			Password:         cred.secretKey,
-			Port:             cred.serverPort,
-			ConnectionString: cred.connectionString,
-			CreatedAt:        db.CreatedAt,
-			ExpireAt:         db.ExpireAt,
-		},
-	)
+
+	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey))
 }
 
-type credentialsInfo struct {
-	serverHostname   string
-	serverPort       string
-	username         string
-	secretKey        string
-	secretKeyHash    string
-	databaseName     *string
-	connectionString string
+func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn *models.Connection, serverConf *models.ServerMiscConfig, secretKey string) *openapi.ConnectionCredentialsResponse {
+	const dummyString = "hoop"
+
+	base := openapi.ConnectionCredentialsResponse{
+		ID:             cred.ID,
+		ConnectionType: cred.ConnectionType,
+		ConnectionName: cred.ConnectionName,
+		CreatedAt:      cred.CreatedAt,
+		ExpireAt:       cred.ExpireAt,
+	}
+
+	connectionType := proto.ConnectionType(cred.ConnectionType)
+	serverHost, serverPort := getServerHostAndPort(serverConf, connectionType)
+
+	switch connectionType {
+	case proto.ConnectionTypePostgres:
+		var databaseName string
+		defaultDBEnc := conn.Envs["envvar:DB"]
+		if defaultDBEnc != "" {
+			defaultDBBytes, _ := base64.RawStdEncoding.DecodeString(defaultDBEnc)
+			databaseName = string(defaultDBBytes)
+		}
+		if databaseName == "" {
+			databaseName = "postgres"
+		}
+
+		base.ConnectionCredentials = &openapi.PostgresConnectionInfo{
+			Hostname:     serverHost,
+			Port:         serverPort,
+			Username:     secretKey,
+			Password:     dummyString,
+			DatabaseName: databaseName,
+			ConnectionString: fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+				secretKey, dummyString, serverHost, serverPort, databaseName),
+		}
+	case proto.ConnectionTypeSSH:
+		base.ConnectionCredentials = &openapi.SSHConnectionInfo{
+			Hostname: serverHost,
+			Port:     serverPort,
+			Username: dummyString,
+			Password: secretKey,
+			Command:  fmt.Sprintf("sshpass -p '%s' ssh %s@%s -p %s", dummyString, secretKey, serverHost, serverPort),
+		}
+	default:
+		return nil
+	}
+
+	return &base
 }
 
-func getKeyPrefixAndServerPort(serverConf *models.ServerMiscConfig, connType proto.ConnectionType) (keyPrefix, portNumber string) {
+func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
+	serverConf, err := models.GetServerMiscConfig()
+	if err != nil || serverConf == nil {
+		return false
+	}
+
+	switch connType {
+	case proto.ConnectionTypePostgres:
+		return serverConf.PostgresServerConfig != nil && serverConf.PostgresServerConfig.ListenAddress != ""
+	case proto.ConnectionTypeSSH:
+		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
+	default:
+		return false
+	}
+}
+
+func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.ConnectionType) (host, portNumber string) {
 	var listenAddr string
 	switch connType {
 	case proto.ConnectionTypePostgres:
 		if serverConf != nil && serverConf.PostgresServerConfig != nil {
 			listenAddr = serverConf.PostgresServerConfig.ListenAddress
 		}
-		keyPrefix = "pg"
 	case proto.ConnectionTypeSSH:
 		if serverConf != nil && serverConf.SSHServerConfig != nil {
 			listenAddr = serverConf.SSHServerConfig.ListenAddress
 		}
-		keyPrefix = "ssh"
 	}
-	_, portNumber, _ = strings.Cut(listenAddr, ":")
+
+	host, portNumber, _ = strings.Cut(listenAddr, ":")
+	if host == "localhost" {
+		host = "127.0.0.1"
+	}
+
 	return
 }
 
-func newAccessCredentials(serverHost string, serverConf *models.ServerMiscConfig, conn *models.Connection) (credentialsInfo, error) {
-	connType := proto.ConnectionType(conn.SubType.String)
+func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
+	const keySize = 32
 
-	keyPrefix, serverPort := getKeyPrefixAndServerPort(serverConf, connType)
-	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey(keyPrefix, 32)
-	if err != nil {
-		return credentialsInfo{}, fmt.Errorf("failed to generate credentials: %w", err)
-	}
-	info := credentialsInfo{
-		serverHostname:   serverHost,
-		serverPort:       serverPort,
-		username:         "hoop",
-		secretKey:        secretKey,
-		secretKeyHash:    secretKeyHash,
-		databaseName:     nil,
-		connectionString: "",
-	}
-
-	defaultDBEnc := conn.Envs["envvar:DB"]
-	if defaultDBEnc != "" {
-		defaultDBBytes, _ := base64.RawStdEncoding.DecodeString(defaultDBEnc)
-		info.databaseName = ptr.String(string(defaultDBBytes))
-	}
 	switch connType {
 	case proto.ConnectionTypePostgres:
-		if serverConf == nil || serverConf.PostgresServerConfig == nil {
-			return credentialsInfo{}, fmt.Errorf("server proxy is not configured for Postgres")
-		}
-		if info.databaseName == nil {
-			info.databaseName = ptr.String("postgres")
-		}
-		info.connectionString = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-			secretKey, info.username, serverHost, serverPort, ptr.ToString(info.databaseName))
+		return keys.GenerateSecureRandomKey("pg", keySize)
 	case proto.ConnectionTypeSSH:
-		if serverConf == nil || serverConf.SSHServerConfig == nil {
-			return credentialsInfo{}, fmt.Errorf("server proxy is not configured for SSH")
-		}
-		info.connectionString = fmt.Sprintf("ssh://%s@%s:%s", info.username, info.serverHostname, info.serverPort)
+		return keys.GenerateSecureRandomKey("ssh", keySize)
 	default:
-		return credentialsInfo{}, fmt.Errorf("unsupported connection type %v", connType)
+		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}
-	return info, nil
 }

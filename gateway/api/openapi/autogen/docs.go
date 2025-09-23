@@ -585,7 +585,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.ConnectionCredentials"
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsResponse"
                         }
                     },
                     "400": {
@@ -3255,6 +3255,41 @@ const docTemplate = `{
                 }
             }
         },
+        "/reviews": {
+            "get": {
+                "description": "Get all reviews resource",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reviews"
+                ],
+                "summary": "Get Review List,",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.Review"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reviews/{id}": {
             "get": {
                 "description": "Get review resource by the id or session id",
@@ -5394,33 +5429,39 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.ConnectionCredentials": {
+        "openapi.ConnectionCredentialsRequest": {
             "type": "object",
             "properties": {
-                "connection_string": {
-                    "description": "The connection string to access the database instance",
+                "access_duration_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ConnectionCredentialsResponse": {
+            "type": "object",
+            "properties": {
+                "connection_credentials": {
+                    "description": "The connection information"
+                },
+                "connection_name": {
+                    "description": "The name of the connection",
                     "type": "string",
-                    "example": "postgres://noop:noop@db.example.com:5432/mydb?sslmode=disable"
+                    "example": "pgdemo"
+                },
+                "connection_type": {
+                    "description": "Connection type",
+                    "type": "string",
+                    "example": "postgres"
                 },
                 "created_at": {
                     "description": "When the resource was created",
                     "type": "string",
                     "example": "2025-08-25T12:00:00Z"
                 },
-                "database_name": {
-                    "description": "The default database name of the connection",
-                    "type": "string",
-                    "example": "mydb"
-                },
                 "expire_at": {
                     "description": "When the database access connection expires",
                     "type": "string",
                     "example": "2025-08-25T13:00:00Z"
-                },
-                "hostname": {
-                    "description": "The hostname to access the database instance",
-                    "type": "string",
-                    "example": "db.example.com"
                 },
                 "id": {
                     "description": "The unique identifier of the connection database access",
@@ -5428,29 +5469,6 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                },
-                "password": {
-                    "description": "The password of the database instance",
-                    "type": "string",
-                    "example": "noop"
-                },
-                "port": {
-                    "description": "The port of the database instance",
-                    "type": "string",
-                    "example": "5432"
-                },
-                "username": {
-                    "description": "The username of the database instance",
-                    "type": "string",
-                    "example": "noop"
-                }
-            }
-        },
-        "openapi.ConnectionCredentialsRequest": {
-            "type": "object",
-            "properties": {
-                "access_duration_seconds": {
-                    "type": "integer"
                 }
             }
         },
@@ -6958,9 +6976,6 @@ const docTemplate = `{
         },
         "openapi.PostgresServerConfig": {
             "type": "object",
-            "required": [
-                "listen_address"
-            ],
             "properties": {
                 "listen_address": {
                     "description": "The listen address to run the PostgreSQL server proxy",
@@ -7408,9 +7423,6 @@ const docTemplate = `{
         },
         "openapi.SSHServerConfig": {
             "type": "object",
-            "required": [
-                "listen_address"
-            ],
             "properties": {
                 "hosts_key": {
                     "description": "The hosts key used for SSH connections",
