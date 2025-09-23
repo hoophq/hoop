@@ -9,13 +9,13 @@
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
    (if initial-data
-     (assoc db :connection-setup (assoc initial-data 
+     (assoc db :connection-setup (assoc initial-data
                                         :ssh-auth-method (get initial-data :ssh-auth-method "password")
                                         :command-args (get initial-data :command-args [{"value" "bash" "label" "bash"}])
                                         :command "bash"))
      (assoc db :connection-setup {:ssh-auth-method "password"
-                                 :command-args [{"value" "bash" "label" "bash"}]
-                                 :command "bash"}))))
+                                  :command-args [{"value" "bash" "label" "bash"}]
+                                  :command "bash"}))))
 
 (defn filter-valid-tags
   [tags]
@@ -31,6 +31,18 @@
  (fn [{:keys [db]} [_ connection-type]]
    {:db (assoc-in db [:connection-setup :type] connection-type)
     :fx [[:dispatch [:connection-setup/next-step :credentials]]]}))
+
+;; Event para inicializar setup a partir do catálogo
+(rf/reg-event-fx
+ :connection-setup/initialize-from-catalog
+ (fn [{:keys [db]} [_ {:keys [type subtype app-type]}]]
+   {:db (update db :connection-setup merge {:type type
+                                            :subtype subtype
+                                            :app-type app-type
+                                            :current-step
+                                            :credentials
+                                            :from-catalog? true})
+    :fx [[:dispatch [:connection-setup/select-connection type subtype]]]}))
 
 (rf/reg-event-fx
  :connection-tags/fetch

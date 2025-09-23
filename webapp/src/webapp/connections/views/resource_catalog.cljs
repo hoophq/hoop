@@ -13,6 +13,21 @@
                            "ssh" "tcp" "httpproxy"
                            "nodejs" "python-scripts" "ruby-on-rails" "clojure"})
 
+;; Mapeamento connection-id → setup flow
+(def connection-setup-mapping
+  {"postgres" {:type "database" :subtype "postgres"}
+   "mysql" {:type "database" :subtype "mysql"}
+   "mongodb" {:type "database" :subtype "mongodb"}
+   "mssql" {:type "database" :subtype "mssql"}
+   "oracle" {:type "database" :subtype "oracledb"}
+   "ssh" {:type "server" :subtype "ssh"}
+   "tcp" {:type "network" :subtype "tcp"}
+   "httpproxy" {:type "network" :subtype "httpproxy"}
+   "nodejs" {:type "server" :subtype "console" :app-type "nodejs"}
+   "python-scripts" {:type "server" :subtype "console" :app-type "python"}
+   "ruby-on-rails" {:type "server" :subtype "console" :app-type "ruby-on-rails"}
+   "clojure" {:type "server" :subtype "console" :app-type "clojure"}})
+
 ;; Mock data
 (def mock-popular-connections #{"aws-cli" "mysql" "postgres" "kubernetes" "mongodb"})
 (def mock-new-connections #{"postgres"})
@@ -23,6 +38,19 @@
     (mock-new-connections connection-id) {:text "NEW" :color "green"}
     (mock-beta-connections connection-id) {:text "BETA" :color "blue"}
     :else nil))
+
+(defn navigate-to-setup
+  "Navega para o setup flow com o tipo de conexão pré-selecionado"
+  [connection]
+  (let [connection-id (:id connection)
+        setup-config (get connection-setup-mapping connection-id)]
+    (if setup-config
+      (do
+        ;; Inicializa o setup com configurações do catálogo
+        (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
+        ;; Navega para a página de criação
+        (rf/dispatch [:navigate :create-connection]))
+      (js/console.warn "No setup mapping found for connection:" connection-id))))
 
 (defn connection-icon [icon-name connection-id]
   (let [image-failed? (r/atom false)]
@@ -218,7 +246,8 @@
            [:> Button {:variant "soft"
                        :size "3"}
             "View Docs"]]
-          [:> Button {:variant "solid" :size "3"}
+          [:> Button {:variant "solid" :size "3"
+                      :on-click #(navigate-to-setup connection)}
            (str "Continue with " name)]]]
 
         ;; Tabs with Radix UI
