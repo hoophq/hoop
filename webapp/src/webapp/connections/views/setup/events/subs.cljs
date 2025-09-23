@@ -20,6 +20,11 @@
    (get-in db [:connection-setup :subtype])))
 
 (rf/reg-sub
+ :connection-setup/from-catalog?
+ (fn [db _]
+   (get-in db [:connection-setup :from-catalog?] false)))
+
+(rf/reg-sub
  :connection-setup/name
  (fn [db]
    (get-in db [:connection-setup :name])))

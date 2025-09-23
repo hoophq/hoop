@@ -13,11 +13,15 @@
     (fn [form-type]
       [page-wrapper/main
        {:children [:> Box {:class "min-h-screen bg-gray-1"}
-                           ;; Main content
-                   (case @connection-type
-                     "database" [database/main form-type]
-                     "server" [server/main form-type]
-                     "network" [network/main form-type]
+                   ;; Main content - pula type selector se veio do catálogo
+                   (if @connection-type
+                     ;; Se há connection-type (normal ou do catálogo), vai direto
+                     (case @connection-type
+                       "database" [database/main form-type]
+                       "server" [server/main form-type]
+                       "network" [network/main form-type]
+                       [type-selector/main form-type])
+                     ;; Senão, mostra type selector
                      [type-selector/main form-type])]
         :footer-props {:form-type form-type
                        :next-hidden? true
