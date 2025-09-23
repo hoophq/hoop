@@ -79,8 +79,13 @@
         ;; Se tem app-type, seleciona também
         (when (:app-type setup-config)
           (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
-        ;; Navega para a página de criação
-        (rf/dispatch [:navigate :create-connection]))
+        ;; Detecta se estamos no contexto de onboarding pela URL atual
+        (let [current-path (.. js/window -location -pathname)
+              is-onboarding? (cs/includes? current-path "/onboarding")]
+          ;; Navega para o lugar certo baseado no contexto
+          (if is-onboarding?
+            (rf/dispatch [:navigate :onboarding-setup-resource])
+            (rf/dispatch [:navigate :create-connection]))))
       (js/console.warn "No setup mapping found for connection:" connection-id))))
 
 (defn connection-icon [icon-name connection-id]
