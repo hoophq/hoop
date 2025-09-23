@@ -379,6 +379,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			HashedPassword: ptr.ToString(ctx.UserHashedPassword),
 		}
 
+		if uinfo.MustSyncGroups && ctx.IsAdmin() {
+			userGroups = append(userGroups, types.GroupAdmin)
+		}
+
 		newUserGroups := []models.UserGroup{}
 		for i := range userGroups {
 			newUserGroups = append(newUserGroups, models.UserGroup{
