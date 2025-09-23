@@ -39,6 +39,27 @@
                             :subtype "custom"
                             :credentials {}}}])
 
+;; Conexões especiais apenas para onboarding (executam ações diretas)
+(def onboarding-special-connections
+  [{:id "postgres-demo"
+    :name "Demo PostgresSQL"
+    :description "Access a preloaded database to see it in action."
+    :category "quickstart"
+    :icon-name "postgres"
+    :badge {:text "NEW" :color "green"}
+    :tags ["demo" "quickstart" "postgresql"]
+    :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])
+    :special-type :action}
+   {:id "aws-discovery"
+    :name "Automatic resource discovery"
+    :description "Access your resources through your infrastructure providers."
+    :category "quickstart"
+    :icon-name "aws"
+    :tags ["aws" "discovery" "automatic" "beta"]
+    :badge {:text "BETA" :color "blue"}
+    :action #(rf/dispatch [:navigate :onboarding-resource-providers])
+    :special-type :action}])
+
 ;; Mapeamento connection-id → setup flow
 (def connection-setup-mapping
   {"postgres" {:type "database" :subtype "postgres"}
@@ -57,36 +78,45 @@
    "linux-vm" {:type "server" :subtype "custom"}})
 
 ;; Mock data
-(def mock-popular-connections #{"mysql" "postgres" "ssh" "mongodb" "linux-vm"})
-(def mock-new-connections #{"postgres"})
+(def mock-popular-connections #{"mysql" "postgres" "ssh" "linux-vm"
+                                "postgres-demo" "aws-discovery"})
+(def mock-new-connections #{""})
 (def mock-beta-connections #{"mongodb"})
 
-(defn get-connection-badge [connection-id]
-  (cond
-    (mock-new-connections connection-id) {:text "NEW" :color "green"}
-    (mock-beta-connections connection-id) {:text "BETA" :color "blue"}
-    :else nil))
+(defn get-connection-badge [connection]
+  (let [connection-id (if (map? connection) (:id connection) connection)]
+    (cond
+      ;; Badge customizado da conexão (para onboarding specials)
+      (:badge connection) (:badge connection)
+      ;; Mock badges
+      (mock-new-connections connection-id) {:text "NEW" :color "green"}
+      (mock-beta-connections connection-id) {:text "BETA" :color "blue"}
+      :else nil)))
 
 (defn navigate-to-setup
   "Navega para o setup flow com o tipo de conexão pré-selecionado"
   [connection]
-  (let [connection-id (:id connection)
-        setup-config (get connection-setup-mapping connection-id)]
-    (if setup-config
-      (do
-        ;; Inicializa o setup com configurações do catálogo
-        (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
-        ;; Se tem app-type, seleciona também
-        (when (:app-type setup-config)
-          (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
-        ;; Detecta se estamos no contexto de onboarding pela URL atual
-        (let [current-path (.. js/window -location -pathname)
-              is-onboarding? (cs/includes? current-path "/onboarding")]
-          ;; Navega para o lugar certo baseado no contexto
-          (if is-onboarding?
-            (rf/dispatch [:navigate :onboarding-setup-resource])
-            (rf/dispatch [:navigate :create-connection]))))
-      (js/console.warn "No setup mapping found for connection:" connection-id))))
+  ;; Se é uma conexão especial com ação direta, executa a ação
+  (if (= (:special-type connection) :action)
+    ((:action connection))
+    ;; Senão, segue o fluxo normal de setup
+    (let [connection-id (:id connection)
+          setup-config (get connection-setup-mapping connection-id)]
+      (if setup-config
+        (do
+          ;; Inicializa o setup com configurações do catálogo
+          (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
+          ;; Se tem app-type, seleciona também
+          (when (:app-type setup-config)
+            (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
+          ;; Detecta se estamos no contexto de onboarding pela URL atual
+          (let [current-path (.. js/window -location -pathname)
+                is-onboarding? (cs/includes? current-path "/onboarding")]
+            ;; Navega para o lugar certo baseado no contexto
+            (if is-onboarding?
+              (rf/dispatch [:navigate :onboarding-setup-resource])
+              (rf/dispatch [:navigate :create-connection]))))
+        (js/console.warn "No setup mapping found for connection:" connection-id)))))
 
 (defn connection-icon [icon-name connection-id]
   (let [image-failed? (r/atom false)]
@@ -107,7 +137,7 @@
 
 (defn connection-card [connection on-click]
   (let [{:keys [id name icon-name]} connection
-        badge (get-connection-badge id)]
+        badge (get-connection-badge connection)]
     [:> Box {:height "110px" :width "165px"}
      [:> Card {:size "2"
                :class "h-full w-full cursor-pointer"
@@ -119,6 +149,7 @@
 
         (when badge
           [:> Badge {:color (:color badge)
+                     :variant "solid"
                      :size "1"}
            (:text badge)])]
 
@@ -133,7 +164,7 @@
      [:> Flex {:direction "row" :wrap "wrap" :gap "4"}
       (for [connection connections]
         ^{:key (:id connection)}
-        [connection-card connection on-connection-click])]]))
+        [connection-card connection (or (:action connection) on-connection-click)])]]))
 
 (defn search-section [search-term on-search-change]
   [:> Box {:class "space-y-radix-4"}
@@ -323,8 +354,13 @@
               ;; Aplicar whitelist - apenas conexões permitidas do metadata
               filtered-metadata-connections (->> metadata-connections
                                                  (filter #(allowed-connections (:id %))))
-              ;; Combinar metadata + custom connections
-              connections (concat filtered-metadata-connections custom-connections)
+              ;; Detectar se estamos no onboarding
+              current-path (.. js/window -location -pathname)
+              is-onboarding? (cs/includes? current-path "/onboarding")
+              ;; Combinar metadata + custom + specials (se onboarding)
+              connections (concat filtered-metadata-connections
+                                  custom-connections
+                                  (when is-onboarding? onboarding-special-connections))
               all-categories (->> connections
                                   (map :category)
                                   (remove nil?)
@@ -360,9 +396,16 @@
                                                      true
                                                      (some @selected-tags (:tags conn)))))))
 
-              popular-connections (->> filtered-connections
-                                       (filter #(mock-popular-connections (:id %)))
-                                       (take 5))
+              ;; Popular connections - inclui specials no onboarding
+              base-popular-connections (->> filtered-connections
+                                            (filter #(mock-popular-connections (:id %)))
+                                            (take 5))
+              popular-connections (if is-onboarding?
+                                    ;; No onboarding: specials primeiro, depois populares normais
+                                    (concat onboarding-special-connections
+                                            (take 3 base-popular-connections))
+                                    ;; Fora do onboarding: apenas populares normais
+                                    base-popular-connections)
 
               connections-by-category (->> filtered-connections
                                            (group-by :category)
