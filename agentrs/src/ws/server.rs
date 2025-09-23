@@ -45,7 +45,7 @@ impl WebSocket {
             conf::ConfigHandleManager::init().context("Failed to init config manager")?;
 
         let gateway_url =
-            std::env::var("GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8080/ws".to_string());
+            std::env::var("GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009/api/ws".to_string());
         Ok(WebSocket {
             gateway_url: gateway_url.to_string(),
             config_manager: config_manager,

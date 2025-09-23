@@ -45,6 +45,7 @@ import (
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
+	ws "github.com/hoophq/hoop/gateway/api/websocket"
 	"github.com/hoophq/hoop/gateway/appconfig"
 )
 
@@ -721,4 +722,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		searchapi.Get,
 	)
+
+	r.GET("/ws", ws.HandleWebSocket)
+
 }

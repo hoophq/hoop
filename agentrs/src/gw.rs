@@ -177,11 +177,11 @@ async fn main() {
 
     let db = DatabaseMemory::new();
     let app = Router::new()
-        .route("/ws", get(ws_handler))
+        .route("/api/ws", get(ws_handler))
         .with_state(shared.clone());
 
-    let http_listener = TcpListener::bind("0.0.0.0:8080").await.expect("bind 8080");
-    println!("> WebSocket server listening on :8080 (path /ws)");
+    let http_listener = TcpListener::bind("0.0.0.0:8009").await.expect("bind 8009");
+    println!("> WebSocket server listening on :8009 (path /ws)");
 
     tokio::spawn(run_tcp_acceptor(shared.clone(), "0.0.0.0:3389", db));
 

@@ -24,6 +24,7 @@ import (
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
+	"github.com/hoophq/hoop/gateway/rdp"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -162,6 +163,14 @@ func Run() {
 				log.Fatalf("failed to start ssh server, reason=%v", err)
 			}
 		}
+	}
+
+	//move to serverconfig if above
+	err = rdp.GetServerInstance().Start("0.0.0.0:3389")
+	fmt.Println("Starting RDP Proxy on 0.0.0.0:3389")
+	if err != nil {
+		fmt.Println(err)
+		log.Fatalf("failed to start rdp server, reason=%v", err)
 	}
 
 	log.Infof("starting api servers, env-authmethod=%v, env-api-key-set=%v",
