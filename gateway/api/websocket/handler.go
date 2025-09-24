@@ -3,13 +3,15 @@ package ws
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	//"github.com/hoophq/hoop/common/dsnkeys"
+
+	"github.com/hoophq/hoop/common/dsnkeys"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/broker"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 // WebSocket upgrader
@@ -19,30 +21,60 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+func validateTokenWs(token string) (*models.Agent, error) {
+	dsn, err := dsnkeys.Parse(token)
+	if err != nil {
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, agent-token=%v, err=%v", len(token), token, err)
+		log.With("token_length", len(token)).Errorf("invalid agent authentication (dsn), err=%v", err)
+		return nil, fmt.Errorf("invalid authentication")
+	}
+
+	ag, err := models.GetAgentByToken(dsn.SecretKeyHash)
+	if err != nil {
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, agent-token=%v, err=%v", len(token), token, err)
+		return nil, fmt.Errorf("invalid authentication")
+	}
+	if ag.Name != dsn.Name {
+		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
+			ag.ID, dsn.Name, dsn.AgentMode)
+		return nil, fmt.Errorf("invalid authentication, mismatch dsn attributes")
+	}
+	return ag, nil
+}
+
 func HandleWebSocket(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	defer conn.Close()
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	//TODO I need to get the hoop_key from a agent header
-	// parse this and get the agent information from the hoop_key
+	// this could be a ws middleware
 	key := c.Request.Header.Get("HOOP_KEY")
-	fmt.Println("Received HOOP_KEY:", key)
-	//_,  := dsnkeys.Parse(key)
 
-	// for example get the hoop_key id
-	// hoop_key -> agent id -> 1
+	if key == "" {
+		errMsg := "missing HOOP_KEY header"
+		log.Errorf(errMsg)
+		conn.WriteMessage(websocket.TextMessage, []byte(errMsg))
+		conn.Close()
+		return
+	}
+	validateAgent, err := validateTokenWs(key)
+	if err != nil {
+		errMsg := "invalid authentication"
+		log.Errorf("%v: %v", errMsg, err)
+		conn.WriteMessage(websocket.TextMessage, []byte(errMsg))
+		conn.Close()
+		return
+	}
+	fmt.Printf("Agent %v connected via WebSocket\n", validateAgent.Name)
 
-	defer conn.Close()
-	// check  if there is a agent already running
-	// before create
-	broker.CreateAgent("1", conn)
+	broker.CreateAgent(validateAgent.Name, conn)
 
 	log.Println("WebSocket connection established")
 
 	// Handle incoming messages
-	client, found := broker.GetAgent("1")
+	client, found := broker.GetAgent(validateAgent.Name)
 	if !found || client == nil {
 		log.Printf("Agent not found or nil")
 		return

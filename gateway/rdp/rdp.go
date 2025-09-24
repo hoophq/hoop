@@ -1,12 +1,16 @@
 package rdp
 
 import (
+	"context"
+	"fmt"
 	"net"
 
-	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 var (
@@ -14,21 +18,10 @@ var (
 	instanceKey = "rdp_instance"
 )
 
-type RDPSessionInfo struct {
-	SessionID           uuid.UUID
-	Username            string
-	TargetAddress       string
-	OrgID               string
-	Password            string
-	DataChannel         chan []byte
-	CredentialsReceived chan bool
-}
-
 type RDPProxy struct {
-	connectionStore memory.Store
-	listener        net.Listener
-	listenAddr      string
-	sessions        map[uuid.UUID]*RDPSessionInfo
+	listener   net.Listener
+	ctx        context.Context
+	listenAddr string
 }
 
 // GetServerInstance returns the singleton instance of PGServer.
@@ -58,12 +51,15 @@ func (r *RDPProxy) Start(listenAddr string) error {
 
 func (r *RDPProxy) Stop() error {
 	if server, ok := store.Pop(instanceKey).(*RDPProxy); ok {
-		if r.connectionStore == nil {
-			return nil
-		}
 
+		for _, session := range broker.GetSessions() {
+			if session != nil {
+				log.Infof("closing session %v", session.ID)
+				session.Close()
+			}
+		}
 		if server.listener != nil {
-			log.Infof("stopping postgres server proxy at %v", server.listener.Addr().String())
+			log.Infof("stopping rdp server proxy at %v", server.listener.Addr().String())
 			_ = server.listener.Close()
 		}
 	}
@@ -74,13 +70,12 @@ func (r *RDPProxy) Stop() error {
 func runRDPProxyServer(listenAddr string) (*RDPProxy, error) {
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start RDP proxy server at %v, reason=%v", listenAddr, err)
 	}
 
 	proxy := &RDPProxy{
-		connectionStore: memory.New(),
-		listener:        listener,
-		listenAddr:      listenAddr,
+		listener:   listener,
+		listenAddr: listenAddr,
 	}
 
 	go func() {
@@ -89,7 +84,7 @@ func runRDPProxyServer(listenAddr string) (*RDPProxy, error) {
 			conn, err := listener.Accept()
 			if err != nil {
 				log.Errorf("RDP accept error: %v", err)
-				continue
+				break
 			}
 
 			go proxy.handleRDPClient(conn, conn.RemoteAddr())
@@ -125,12 +120,36 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
+	secretKeyHash, err := keys.Hash256Key(extractedCreds)
 	log.Printf("Extracted credentials: %s", extractedCreds)
+	dba, err := models.GetValidConnectionCredentialsBySecretKey(
+		pb.ConnectionTypeRDP.String(),
+		secretKeyHash)
+	if err != nil {
+		if err == models.ErrNotFound {
+			log.Errorf("invalid secret access key credentials")
+			return
+		}
+		log.Errorf("failed obtaining secret access key, reason=%v", err)
+		return
+	}
+	fmt.Println("obtained db access by id, id=", dba.ID, ", subject=", dba.UserSubject, ", connection=", dba.ConnectionName)
 
-	// extract agent from the db for this connection keys
+	userCtx, err := models.GetUserContext(dba.UserSubject)
+	if err != nil {
+		log.Errorf("failed fetching user context, reason=%v", err)
+		return
+	}
+	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
+	if err != nil {
+		log.Errorf("failed fetching connection by name or id, reason=%v", err)
+		return
+	}
+
 	session, err := broker.CreateSession(
 		connection,
-		broker.MockConnection(),
+		*connectionModel,
+		extractedCreds,
 		peerAddr.String())
 
 	if err != nil {

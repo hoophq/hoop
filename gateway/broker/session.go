@@ -2,6 +2,7 @@ package broker
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/lib/pq"
 )
-
-// agent struct
 
 type Broker struct {
 	agents   sync.Map // map[string]*Connection
@@ -186,60 +185,16 @@ func (s *Session) SendAgentToTCP() {
 
 }
 
-func MockConnection() models.Connection {
-	return models.Connection{
-		OrgID:   "org-12345",
-		ID:      "conn-67890",
-		AgentID: sql.NullString{String: "1", Valid: true},
-		Name:    "Mock RDP connection",
-		Command: pq.StringArray{},
-		Type:    "rdp",
-		SubType: sql.NullString{String: "rdpproxy", Valid: true},
-		Status:  "active",
-
-		ManagedBy: sql.NullString{String: "admin@company.com", Valid: true},
-		Tags:      pq.StringArray{"production", "critical", "replicated"},
-
-		AccessModeRunbooks: "enabled",
-		AccessModeExec:     "restricted",
-		AccessModeConnect:  "enabled",
-		AccessSchema:       "public",
-
-		JiraIssueTemplateID: sql.NullString{String: "JIRA-123", Valid: true},
-
-		// Read-only fields
-		RedactEnabled: false,
-		Reviewers:     pq.StringArray{"alice@company.com", "bob@company.com"},
-		RedactTypes:   pq.StringArray{"password", "token"},
-		AgentMode:     "inline",
-		AgentName:     "Main Agent",
-		JiraTransitionNameOnClose: sql.NullString{
-			String: "Done",
-			Valid:  true,
-		},
-		Envs: map[string]string{
-			"Username":  "chico",
-			"Address":   "10.211.55.6:3389",
-			"Password":  "090994",
-			"ProxyUser": "fake",
-		},
-		GuardRailRules: pq.StringArray{},
-		ConnectionTags: map[string]string{
-			"team": "platform",
-			"tier": "gold",
-		},
-	}
-}
-
 func CreateSession(
 	connTcp *Connection,
 	connectionInfo models.Connection,
+	proxyuser string,
 	clientAddr string) (*Session, error) {
 
 	sessionID := uuid.New()
 	fmt.Println("Creating session with ID:", sessionID)
-	fmt.Println("Connection Info:", connectionInfo.AgentID.String)
-	client, _ := GetAgent(connectionInfo.AgentID.String)
+	fmt.Println("Connection Info:", connectionInfo.AgentName)
+	client, _ := GetAgent(connectionInfo.AgentName)
 	fmt.Println("Agent found:", client != nil)
 
 	dataChannel := make(chan []byte, 1024)
@@ -257,17 +212,27 @@ func CreateSession(
 	// Store session immediately so it can be found by WebSocket handler
 	BrokerInstance.sessions.Store(sessionID, session)
 
+	// Decode base64 env variables
+	secrets := make(map[string]string)
+	for k, v := range connectionInfo.Envs {
+		value, _ := base64.StdEncoding.DecodeString(v)
+		secrets[k] = string(value)
+
+	}
+	fmt.Println("Decoded secrets:", secrets)
 	// Send session info to agent
 	handshakeInfo := map[string]interface{}{
 		"session_id":     sessionID.String(),
 		"client_address": clientAddr,
-		"username":       connectionInfo.Envs["Username"],
-		"password":       connectionInfo.Envs["Password"],
-		"target_address": connectionInfo.Envs["Address"],
-		"proxy_user":     connectionInfo.Envs["ProxyUser"],
+		"username":       secrets["envvar:USER"],
+		"password":       secrets["envvar:PASS"],
+		"target_address": secrets["envvar:HOST"],
+		"proxy_user":     proxyuser,
 		"message_type":   "session_started",
 		"protocol":       "rdp",
 	}
+
+	fmt.Println("Handshake Info:", handshakeInfo)
 	handshakeData, err := json.Marshal(handshakeInfo)
 
 	if err != nil {
@@ -332,4 +297,17 @@ func GetSession(sessionId uuid.UUID) *Session {
 		}
 	}
 	return nil
+}
+
+func GetSessions() map[uuid.UUID]*Session {
+	sessions := make(map[uuid.UUID]*Session)
+	BrokerInstance.sessions.Range(func(key, value any) bool {
+		if sessionID, ok := key.(uuid.UUID); ok {
+			if session, valid := value.(*Session); valid {
+				sessions[sessionID] = session
+			}
+		}
+		return true
+	})
+	return sessions
 }

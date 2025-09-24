@@ -50,6 +50,7 @@ const (
 	ConnectionTypeTCP         ConnectionType = "tcp"
 	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
 	ConnectionTypeSSH         ConnectionType = "ssh"
+	ConnectionTypeRDP         ConnectionType = "rdp"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"
