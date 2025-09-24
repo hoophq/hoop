@@ -1,7 +1,6 @@
 package broker
 
 import (
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/lib/pq"
 )
 
 type Broker struct {
