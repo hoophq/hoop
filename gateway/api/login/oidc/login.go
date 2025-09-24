@@ -344,6 +344,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 	userGroups := ctx.UserGroups
 	if uinfo.MustSyncGroups {
 		userGroups = uinfo.Groups
+
+		if !ctx.IsEmpty() && ctx.IsAdmin() {
+			userGroups = append(userGroups, types.GroupAdmin)
+		}
 	}
 	// dedupe duplicates from userGroups
 	encountered := make(map[string]bool)
@@ -377,10 +381,6 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			Status:         string(types.UserStatusActive),
 			SlackID:        ctx.UserSlackID,
 			HashedPassword: ptr.ToString(ctx.UserHashedPassword),
-		}
-
-		if uinfo.MustSyncGroups && ctx.IsAdmin() {
-			userGroups = append(userGroups, types.GroupAdmin)
 		}
 
 		newUserGroups := []models.UserGroup{}
