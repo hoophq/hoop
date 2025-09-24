@@ -344,6 +344,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 	userGroups := ctx.UserGroups
 	if uinfo.MustSyncGroups {
 		userGroups = uinfo.Groups
+
+		if !ctx.IsEmpty() && ctx.IsAdmin() {
+			userGroups = append(userGroups, types.GroupAdmin)
+		}
 	}
 	// dedupe duplicates from userGroups
 	encountered := make(map[string]bool)
