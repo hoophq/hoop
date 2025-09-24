@@ -7,7 +7,6 @@ mod rdp;
 mod session;
 mod tasks;
 mod tls;
-mod token;
 mod transport;
 mod ws;
 

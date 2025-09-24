@@ -2,11 +2,13 @@ package ws
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	//"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/gateway/broker"
 )
 
@@ -25,7 +27,10 @@ func HandleWebSocket(c *gin.Context) {
 	}
 	//TODO I need to get the hoop_key from a agent header
 	// parse this and get the agent information from the hoop_key
-	// c.Request.Header.Get("HOOP_KEY")
+	key := c.Request.Header.Get("HOOP_KEY")
+	fmt.Println("Received HOOP_KEY:", key)
+	//_,  := dsnkeys.Parse(key)
+
 	// for example get the hoop_key id
 	// hoop_key -> agent id -> 1
 

@@ -37,20 +37,32 @@ fn get_path() -> Utf8PathBuf {
         .unwrap_or_else(|_| get_default_path())
 }
 
-
 impl ConfigHandleManager {
     pub fn init() -> anyhow::Result<Self> {
+        let hoop_key = std::env::var("HOOP_KEY").ok();
+        if hoop_key.is_none() {
+            // TODO change to a error the agent needs to have a hoop key
+            //=http://test:xagt-3OLn4uUMdpdYMDxMr5bwBCsZwPgQkEncGQojMjEqSHw@127.0.0.1:8010\?mode\=standard
+            // format: <scheme>://<agent-name>:<secret-key>@<host>:<port>?mode=<agent-mode>
+            println!(
+                "Warning: HOOP_KEY environment variable is not set. This may lead to insecure configurations."
+            );
+        }
         let path = get_path();
         let conf = load_conf_file(&path)
             .unwrap_or_else(|e| panic!("failed to load config file at {path}: {e}"));
         let conf_file = match conf {
-            Some(c) => c,
+            Some(c) => ConfFile {
+                token: hoop_key,
+                ..c
+            },
             None => {
                 println!("No config file found at {path}, using defaults");
                 // Default configuration implment this for development only
                 // do not use defaults in production
                 ConfFile {
                     hostname: None,
+                    token: hoop_key,
                     tls_certificate_source: Some(CertSource::External),
                     tls_certificate_file: None,
                     tls_private_key_file: None,
@@ -66,6 +78,10 @@ impl ConfigHandleManager {
 
         Ok(config_handler)
     }
+
+    pub fn get_token(&self) -> String {
+        self.conf.token.clone().unwrap_or_default()
+    }
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +91,7 @@ pub struct ConfFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
 
+    pub token: Option<String>,
     pub tls_certificate_source: Option<CertSource>,
     pub tls_certificate_file: Option<Utf8PathBuf>,
     pub tls_private_key_file: Option<Utf8PathBuf>,
@@ -97,6 +114,7 @@ fn load_conf_file(conf_path: &Utf8Path) -> anyhow::Result<Option<ConfFile>> {
 #[derive(Clone, Debug)]
 pub struct Conf {
     pub hostname: String,
+    pub token: Option<String>,
     pub tls: Option<Tls>,
 }
 
@@ -140,7 +158,11 @@ impl Conf {
             },
         };
 
-        Ok(Conf { hostname, tls })
+        Ok(Conf {
+            hostname,
+            tls,
+            token: conf_file.token.clone(),
+        })
     }
 }
 #[derive(Clone)]

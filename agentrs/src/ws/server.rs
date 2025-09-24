@@ -8,10 +8,12 @@ use crate::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
+use axum::http::HeaderValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tungstenite::{client::IntoClientRequest, handshake::client::Request};
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
@@ -20,7 +22,8 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 #[derive(Clone)]
 pub struct WebSocket {
     pub config_manager: conf::ConfigHandleManager,
-    pub gateway_url: String,
+    //pub gateway_url: String,
+    pub request: Request,
     pub reconnect_interval: Duration,
     pub max_reconnection_attempts: usize,
 }
@@ -44,10 +47,20 @@ impl WebSocket {
         let config_manager =
             conf::ConfigHandleManager::init().context("Failed to init config manager")?;
 
-        let gateway_url =
-            std::env::var("GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009/api/ws".to_string());
+        let gateway_url = std::env::var("GATEWAY_URL")
+            .unwrap_or_else(|_| "ws://localhost:8009/api/ws".to_string());
+        let mut request = gateway_url.into_client_request().unwrap();
+
+        // Insert a custom header
+        let token = config_manager.clone().get_token();
+        // convert String to &'static str
+        let token: &'static str = Box::leak(token.into_boxed_str());
+        request.headers_mut().insert(
+            "HOOP_KEY",
+            HeaderValue::from_static(token),
+        );
         Ok(WebSocket {
-            gateway_url: gateway_url.to_string(),
+            request: request,
             config_manager: config_manager,
             reconnect_interval: Duration::from_secs(5),
             max_reconnection_attempts: 10,
@@ -85,7 +98,7 @@ impl WebSocket {
     }
 
     async fn run(self) -> anyhow::Result<()> {
-        let (ws_stream, _) = connect_async(self.gateway_url.clone())
+        let (ws_stream, _) = connect_async(self.request.clone())
             .await
             .expect("Failed to connect to gateway");
 
