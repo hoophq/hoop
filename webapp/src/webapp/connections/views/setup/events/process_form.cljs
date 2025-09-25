@@ -67,6 +67,14 @@
         guardrails (get-in db [:connection-setup :config :guardrails])
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
         all-env-vars (cond
+                       (= connection-subtype "rdp")
+                       (let [rdp-credentials (get-in db [:connection-setup :rdp-credentials])
+                             rdp-env-vars (filterv #(not (str/blank? (:value %)))
+                                                   [{:key "HOST" :value (get rdp-credentials "host")}
+                                                    {:key "PORT" :value (get rdp-credentials "port")}
+                                                    {:key "USER" :value (get rdp-credentials "user")}
+                                                    {:key "PASS" :value (get rdp-credentials "pass")}])]
+                         (concat rdp-env-vars env-vars))
                        (= api-type "database")
                        (let [database-credentials (get-in db [:connection-setup :database-credentials])
                              credentials-as-env-vars (mapv (fn [[k v]]

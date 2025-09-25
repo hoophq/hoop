@@ -21,6 +21,10 @@
   {"custom" {:icon (r/as-element [:> SquareTerminal {:size 18}])
              :title "Linux VM or Container"
              :subtitle "Secure shell protocol (SSH) for remote access."}
+   "rdp"  {:icon (r/as-element [:> SquareTerminal {:size 18}])
+           :title "Remode Desktop Protocol (RDP)"
+           :subtitle "Secure proxy for Windows servers."}
+
    "ssh" {:icon (r/as-element [:> SquareTerminal {:size 18}])
           :title "Secure Shell Protocol (SSH)"
           :subtitle "Access and manage with terminal commands."}
@@ -137,6 +141,11 @@
  (fn [db [_ method]]
    (assoc-in db [:connection-setup :ssh-auth-method] method)))
 
+(rf/reg-event-db
+ :connection-setup/set-rdp-auth-credentials
+ (fn [db [_ key value]]
+   (assoc-in db [:connection-setup :rdp-credentials key] value)))
+
 ;; Registrar um subscription para acessar o método de autenticação
 (rf/reg-sub
  :connection-setup/ssh-auth-method
@@ -184,6 +193,37 @@
 
         [agent-selector/main]]]]]))
 
+(defn render-field [{:keys [key label value required hidden placeholder]}]
+  (let [base-props {:label label
+                    :placeholder (or placeholder (str "e.g. " key))
+                    :value value
+                    :required required
+                    :type "password"
+                    :hidden hidden
+                    :on-change #(rf/dispatch [:connection-setup/set-rdp-auth-credentials
+                                              key
+                                              (-> % .-target .-value)])}]
+    [forms/input base-props]))
+
+(defn rdp-credentials [selected-type]
+  (let [configs (get connection-configs-required (keyword selected-type))
+        credentials @(rf/subscribe [:connection-setup/rdp-credentials])]
+
+    [:form {:class "max-w-[600px]"
+            :id "credentials-form"
+            :on-submit (fn [e]
+                         (.preventDefault e)
+                         (rf/dispatch [:connection-setup/next-step :additional-config]))}
+     [:> Box {:class "space-y-5"}
+      [:> Text {:size "4" :weight "bold" :mt "6"} "Environment credentials"]
+
+      [:> Grid {:columns "1" :gap "4"}
+       (for [field configs]
+         ^{:key (:key field)}
+         [render-field (assoc field
+                              :value (get credentials (:key field) (:value field)))])]
+      [agent-selector/main]]]))
+
 (defn resource-step []
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         app-type @(rf/subscribe [:connection-setup/app-type])
@@ -211,6 +251,9 @@
              [:> Text {:size "3" :weight "medium" :color "gray-12"} title]
              [:> Text {:size "2" :color "gray-11"} subtitle]]]]))]
 
+     (when (= connection-subtype "rdp")
+       [rdp-credentials  connection-subtype])
+
      (when (= connection-subtype "custom")
        [credentials-step])
 
@@ -222,7 +265,6 @@
 
      (when (and app-type (not os-type))
        [operating-system-step])]))
-
 
 (defn main [form-type]
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
@@ -280,9 +322,11 @@
                      (let [form (.getElementById js/document
                                                  (cond
                                                    (= current-step :credentials)
-                                                   (if (= connection-subtype "ssh")
-                                                     "ssh-credentials-form"
-                                                     "credentials-form")
+                                                   (if (= connection-subtype "rdp")
+                                                     "credentials-form"
+                                                     (if (= connection-subtype "ssh")
+                                                       "ssh-credentials-form"
+                                                       "credentials-form"))
 
                                                    :else
                                                    "additional-config-form"))]
