@@ -146,7 +146,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	session, err := broker.CreateSession(
+	session, err := broker.CreateRDPSession(
 		connection,
 		*connectionModel,
 		extractedCreds,

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 )
 
@@ -22,14 +22,8 @@ type Broker struct {
 
 var BrokerInstance = &Broker{}
 
-//type Connection interface {
-//	Send(data []byte) error
-//	Receive() ([]byte, error)
-//}
-
 type Connection struct {
 	ID string `validate:"required,uuid4"`
-	//Kind       string `validate:"required,oneof=agent consumer"`
 	ConnType   string `validate:"required,oneof=websocket tcp"`
 	Connection any
 }
@@ -111,12 +105,12 @@ func (s *Session) Close() {
 		}
 	}
 	BrokerInstance.sessions.Delete(s.ID)
-	log.Printf("Session %s closed", s.ID)
+	log.Infof("Session %s closed", s.ID)
 }
 
 // forward data from agent to tcp
 func (s *Session) ForwardToTCP(data []byte) {
-	log.Printf("Forwarded %d bytes to TCP session %s", len(data), s.ID)
+	log.Infof("Forwarded %d bytes to TCP session %s", len(data), s.ID)
 	s.dataChannel <- data
 }
 
@@ -131,11 +125,11 @@ func (s *Session) StartingForwardind(data []byte) error {
 	framedData := append(header.Encode(), data...)
 
 	if err := s.SendToAgent(framedData); err != nil {
-		log.Printf("Failed to send first RDP packet: %v", err)
+		log.Infof("Failed to send first RDP packet: %v", err)
 		return nil
 	}
 
-	log.Printf("Sent first RDP packet: %d bytes", len(data))
+	log.Infof("Sent first RDP packet: %d bytes", len(data))
 
 	// Continue reading from TCP connection (not from agent!)
 	if tcpConn, ok := s.Consumer.Connection.(net.Conn); ok {
@@ -144,13 +138,13 @@ func (s *Session) StartingForwardind(data []byte) error {
 			n, err := tcpConn.Read(buffer)
 			if err != nil {
 				if err != io.EOF {
-					log.Printf("TCP read error: %v", err)
+					log.Infof("TCP read error: %v", err)
 				}
 				break
 			}
 
 			if n > 0 {
-				log.Printf("TCP -> Agent: %d bytes for session %s", n, s.ID)
+				log.Infof("TCP -> Agent: %d bytes for session %s", n, s.ID)
 
 				header := &Header{
 					SID: s.ID,
@@ -159,7 +153,7 @@ func (s *Session) StartingForwardind(data []byte) error {
 				framedData := append(header.Encode(), buffer[:n]...)
 
 				if err := s.SendToAgent(framedData); err != nil {
-					log.Printf("Failed to send RDP data to agent: %v", err)
+					log.Infof("Failed to send RDP data to agent: %v", err)
 					break
 				}
 			}
@@ -170,20 +164,19 @@ func (s *Session) StartingForwardind(data []byte) error {
 
 // this will forward data from agent to tcp
 func (s *Session) SendAgentToTCP() {
-
 	for data := range s.dataChannel {
-		log.Printf("Agent -> TCP: %d bytes for session %s", len(data), s.ID)
+		log.Infof("Agent -> TCP: %d bytes for session %s", len(data), s.ID)
 
 		conn, _ := s.Consumer.Connection.(net.Conn)
 		if _, err := conn.Write(data); err != nil {
-			log.Printf("TCP write error: %v", err)
+			log.Infof("TCP write error: %v", err)
 			break
 		}
 	}
 
 }
 
-func CreateSession(
+func CreateRDPSession(
 	connTcp *Connection,
 	connectionInfo models.Connection,
 	proxyuser string,
@@ -234,7 +227,7 @@ func CreateSession(
 	handshakeData, err := json.Marshal(handshakeInfo)
 
 	if err != nil {
-		log.Printf("Failed to marshal handshake info: %v", err)
+		log.Infof("Failed to marshal handshake info: %v", err)
 		return nil, err
 	}
 
@@ -246,19 +239,19 @@ func CreateSession(
 	framedData := append(header.Encode(), handshakeData...)
 
 	if err := session.SendToAgent(framedData); err != nil {
-		log.Printf("Failed to send handshake to agent: %v", err)
+		log.Infof("Failed to send handshake to agent: %v", err)
 		return nil, err
 	}
 
-	log.Printf("Sent handshake to agent for session %s: %d bytes", sessionID, len(handshakeData))
+	log.Infof("Sent handshake to agent for session %s: %d bytes", sessionID, len(handshakeData))
 
 	// Wait for RDP started response
 	select {
 	case <-credentialsReceived:
-		log.Printf("Received RDP started response for session %s", sessionID)
+		log.Infof("Received RDP started response for session %s", sessionID)
 		return session, nil
 	case <-time.After(5 * time.Second):
-		log.Printf("Timeout waiting for RDP started response for session %s", sessionID)
+		log.Infof("Timeout waiting for RDP started response for session %s", sessionID)
 		// Clean up session on timeout
 		BrokerInstance.sessions.Delete(sessionID)
 		return nil, fmt.Errorf("timeout waiting for RDP started response")

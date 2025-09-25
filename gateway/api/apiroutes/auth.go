@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
+	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -180,6 +181,42 @@ func (r *Router) validateTokenWithUserInfo(tokenVerifier idp.UserInfoTokenVerifi
 		return nil, err
 	}
 	return tokenVerifier.VerifyAccessTokenWithUserInfo(accessToken)
+}
+
+// validate hoop key from coonectoin websocket
+func (r *Router) VerifyWebsocketToken(c *gin.Context) {
+	token := c.Request.Header.Get("HOOP_KEY")
+	if token == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing HOOP_KEY header"})
+		return
+	}
+	dsn, err := dsnkeys.Parse(token)
+
+	if err != nil {
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, agent-token=%v, err=%v", len(token), token, err)
+		log.With("token_length", len(token)).Errorf("invalid agent authentication (dsn), err=%v", err)
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
+		return
+	}
+
+	ag, err := models.GetAgentByToken(dsn.SecretKeyHash)
+	if err != nil {
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, agent-token=%v, err=%v", len(token), token, err)
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
+		return
+	}
+	if ag.Name != dsn.Name {
+		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
+			ag.ID, dsn.Name, dsn.AgentMode)
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
+		return
+	}
+
+	c.Set("x-agent-name", ag.Name)
+	c.Set("x-agent-id", ag.ID)
+	c.Set("x-agent-org-id", ag.OrgID)
+	c.Set("x-agent-address", dsn.Address)
+	c.Next()
 }
 
 func parseToken(c *gin.Context) (string, error) {
