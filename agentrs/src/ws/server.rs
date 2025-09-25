@@ -52,13 +52,12 @@ impl WebSocket {
         let mut request = gateway_url.into_client_request().unwrap();
 
         // Insert a custom header
-        let token = config_manager.clone().get_token();
-        // convert String to &'static str
+        let token = config_manager.conf.token.clone().unwrap();
         let token: &'static str = Box::leak(token.into_boxed_str());
-        request.headers_mut().insert(
-            "HOOP_KEY",
-            HeaderValue::from_static(token),
-        );
+        request
+            .headers_mut()
+            .insert("HOOP_KEY", HeaderValue::from_static(token));
+
         Ok(WebSocket {
             request: request,
             config_manager: config_manager,

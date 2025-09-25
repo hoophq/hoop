@@ -9,6 +9,7 @@ mod tasks;
 mod tls;
 mod transport;
 mod ws;
+mod certs;
 
 use anyhow::Context;
 

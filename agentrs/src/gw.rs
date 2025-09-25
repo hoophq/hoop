@@ -1,7 +1,5 @@
-// Copyright (c) 2023-2024, Chico <
 // this is a test file for a gateway server that accepts TCP RDP connections and bridges them over WebSocket to the agent
 // this will be move and implemented in the ../../gateway/ folder in golang
-//
 use axum::{
     Router,
     extract::State,
@@ -25,9 +23,9 @@ use ironrdp_core::{Decode, ReadCursor};
 use ironrdp_pdu::tpkt::TpktHeader;
 use std::io;
 use tokio::io::AsyncRead;
-mod protocol;
-mod session;
-use session::Header;
+use crate::protocol;
+use crate::session;
+use crate::session::Header;
 
 #[derive(Clone)]
 struct DatabaseMemory {

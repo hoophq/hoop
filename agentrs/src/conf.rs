@@ -1,7 +1,7 @@
-use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
+use std::{fmt, net::IpAddr};
 
 use anyhow::Context;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -38,15 +38,61 @@ fn get_path() -> Utf8PathBuf {
 }
 
 impl ConfigHandleManager {
-    pub fn init() -> anyhow::Result<Self> {
-        let hoop_key = std::env::var("HOOP_KEY").ok();
+    pub fn auto_gen_conf() -> anyhow::Result<Self> {
+        println!("Auto-generating TLS certificate for gateway...");
+        let hoop_key = get_token();
         if hoop_key.is_none() {
-            // TODO change to a error the agent needs to have a hoop key
-            //=http://test:xagt-3OLn4uUMdpdYMDxMr5bwBCsZwPgQkEncGQojMjEqSHw@127.0.0.1:8010\?mode\=standard
-            // format: <scheme>://<agent-name>:<secret-key>@<host>:<port>?mode=<agent-mode>
-            println!(
-                "Warning: HOOP_KEY environment variable is not set. This may lead to insecure configurations."
-            );
+            Err(anyhow::anyhow!(
+                "HOOP_KEY environment variable is not set. This may lead to insecure configurations."
+            ))?;
+        }
+        let ip_addresses = vec!["127.0.0.1".parse::<IpAddr>()?, "::1".parse::<IpAddr>()?];
+        let cert_key_pair = crate::certs::x509::generate_gateway_cert(ip_addresses);
+        let tls = match cert_key_pair {
+            Ok(cert_key_pair) => {
+                let (certificates, private_key) = cert_key_pair.to_rustls();
+                let certificates = vec![certificates];
+                let cert_source = crate::tls::CertificateSource::External {
+                    certificates,
+                    private_key,
+                };
+                Some(Tls::init(cert_source, true)?)
+            }
+            Err(e) => {
+                println!("Failed to generate certificate: {e}");
+                None
+            }
+        };
+        let conf = Conf {
+            hostname: "gateway.hoop".to_string(),
+            tls,
+            token: hoop_key,
+        };
+
+        let config_handler = Self {
+            conf: Arc::new(conf),
+        };
+        Ok(config_handler)
+    }
+
+    pub fn init() -> anyhow::Result<Self> {
+        let hoop_auto_gencert = std::env::var("HOOP_CERT")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse::<bool>()
+            .unwrap_or(true);
+        let conf_manager = match hoop_auto_gencert {
+            true => Self::auto_gen_conf(),
+            false => Self::init_from_files(),
+        }?;
+        return Ok(conf_manager);
+    }
+
+    pub fn init_from_files() -> anyhow::Result<Self> {
+        let hoop_key = get_token();
+        if hoop_key.is_none() {
+            Err(anyhow::anyhow!(
+                "HOOP_KEY environment variable is not set. This may lead to insecure configurations."
+            ))?;
         }
         let path = get_path();
         let conf = load_conf_file(&path)
@@ -78,10 +124,15 @@ impl ConfigHandleManager {
 
         Ok(config_handler)
     }
+}
 
-    pub fn get_token(&self) -> String {
-        self.conf.token.clone().unwrap_or_default()
+fn get_token() -> Option<String> {
+    let hoop_key = std::env::var("HOOP_KEY").ok();
+    if hoop_key.is_none() {
+        // format: <scheme>://<agent-name>:<secret-key>@<host>:<port>?mode=<agent-mode>
     }
+
+    return hoop_key;
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +182,7 @@ impl Conf {
             CertSource::External => match conf_file.tls_certificate_file.as_ref() {
                 None => None,
                 Some(certificate_path) => {
+                    println!("Using TLS certificate from file: {}", certificate_path);
                     let (certificates, private_key) = match certificate_path.extension() {
                         None | Some(_) => {
                             let certificates = read_rustls_certificate_file(certificate_path)
