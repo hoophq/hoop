@@ -1,11 +1,12 @@
-use crate::ws::types::{ChannelMap, ProxyMap, SessionMap, WsWriter};
-use crate::{conf, session::Header};
 use crate::ws::proxy::start_rdp_proxy_session;
 use crate::ws::session::SessionInfo;
+use crate::ws::types::{ChannelMap, ProxyMap, SessionMap, WsWriter};
+use crate::{conf, session::Header};
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_tungstenite::WebSocketStream;
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 use futures::{SinkExt, StreamExt};
@@ -13,6 +14,7 @@ use serde_json::{self, Value};
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
+#[derive(Clone, Debug)]
 pub struct MessageProcessor {
     pub ws_sender: WsWriter,
     pub sessions: SessionMap,
@@ -28,29 +30,29 @@ impl MessageProcessor {
             WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
         >,
     ) -> anyhow::Result<()> {
-        println!("> Starting to receive messages from gateway...");
+        info!("> Starting to receive messages from gateway...");
 
         while let Some(msg) = ws_receiver.next().await {
             match msg? {
                 Message::Binary(data) => {
                     if let Err(e) = self.handle_binary_message(data.into()).await {
-                        eprintln!("> Error handling binary message: {}", e);
+                        error!("> Error handling binary message: {}", e);
                     }
                 }
                 Message::Text(text) => {
-                    println!("> Text from gateway: {}", text);
+                    debug!("> Text from gateway: {}", text);
                 }
                 Message::Close(frame) => {
-                    println!("> Gateway closed connection: {:?}", frame);
+                    debug!("> Gateway closed connection: {:?}", frame);
                     break;
                 }
                 Message::Ping(data) => {
                     if let Err(e) = self.handle_ping(data.into()).await {
-                        eprintln!("> Failed to respond to ping: {}", e);
+                        error!("> Failed to respond to ping: {}", e);
                     }
                 }
                 Message::Pong(_) => {
-                    println!("> Pong from gateway");
+                    debug!("> Pong from gateway");
                 }
                 Message::Frame(_) => {
                     // Handle raw frames if needed
@@ -63,12 +65,12 @@ impl MessageProcessor {
 
     async fn handle_binary_message(&self, data: Vec<u8>) -> anyhow::Result<()> {
         let Some((header, header_len)) = Header::decode(&data) else {
-            println!("> Received data without valid header, ignoring");
+            info!("> Received data without valid header, ignoring");
             return Ok(());
         };
 
         if header_len > data.len() {
-            eprintln!("> Invalid header length: {} > {}", header_len, data.len());
+            error!("> Invalid header length: {} > {}", header_len, data.len());
             return Ok(());
         }
 
@@ -76,7 +78,8 @@ impl MessageProcessor {
 
         // Try to parse as JSON message first
         if let Ok(message) = serde_json::from_slice::<Value>(payload) {
-            if let Some(message_type) = message.clone().get("message_type").and_then(|v| v.as_str()) {
+            if let Some(message_type) = message.clone().get("message_type").and_then(|v| v.as_str())
+            {
                 return self
                     .handle_json_message(header, message_type, message)
                     .await;
@@ -95,19 +98,21 @@ impl MessageProcessor {
     ) -> anyhow::Result<()> {
         match message_type {
             "session_started" => {
-                println!(
+                info!(
                     "> Session {} started, processing connection info...",
                     header.sid
                 );
                 self.handle_session_started(header, message).await
             }
             _ => {
-                println!("> Unknown message type: {}", message_type);
+                info!("> Unknown message type: {}", message_type);
                 Ok(())
             }
         }
     }
 
+    //TODO message should be more strongly typed for the protocol
+    #[instrument(level = "debug", skip(self, message))]
     async fn handle_session_started(&self, header: Header, message: Value) -> anyhow::Result<()> {
         let session_info = SessionInfo {
             session_id: header.sid,
@@ -143,7 +148,7 @@ impl MessageProcessor {
         {
             let mut sessions = self.sessions.write().await;
             sessions.insert(header.sid, session_info);
-            println!("> Stored session {} in sessions map", header.sid);
+            debug!("> Stored session {} in sessions map", header.sid);
         }
 
         // Send response
@@ -171,15 +176,16 @@ impl MessageProcessor {
             .await
             .context("Failed to send rdp_started response")?;
 
-        println!(
+        debug!(
             "> Successfully sent rdp_started response for session {}",
             session_id
         );
         Ok(())
     }
 
+    #[instrument(level = "debug")]
     async fn handle_rdp_data(&self, header: Header, rdp_data: &[u8]) -> anyhow::Result<()> {
-        println!(
+        debug!(
             "> Received RDP data for session: {} ({} bytes)",
             header.sid,
             rdp_data.len()
@@ -188,7 +194,7 @@ impl MessageProcessor {
         // Check if we have session info
         let sessions = self.sessions.read().await;
         let Some(session_info) = sessions.get(&header.sid) else {
-            println!("> Received RDP data for unknown session: {}", header.sid);
+            debug!("> Received RDP data for unknown session: {}", header.sid);
             return Ok(());
         };
 
@@ -247,8 +253,8 @@ impl MessageProcessor {
                 start_rdp_proxy_session(session_info, ws_sender, rdp_data_rx, config).await;
 
             match result {
-                Ok(_) => println!("> RDP proxy session completed for session {}", session_id),
-                Err(e) => eprintln!(
+                Ok(_) => info!("> RDP proxy session completed for session {}", session_id),
+                Err(e) => error!(
                     "> RDP proxy session failed for session {}: {}",
                     session_id, e
                 ),
@@ -257,19 +263,19 @@ impl MessageProcessor {
             // Cleanup
             let mut proxies = active_proxies.write().await;
             proxies.remove(&session_id);
-            println!("> Cleaned up RDP proxy task for session {}", session_id);
+            info!("> Cleaned up RDP proxy task for session {}", session_id);
         });
 
         // Store the proxy task
         let mut proxies = self.active_proxies.write().await;
         proxies.insert(session_id, proxy_task);
-        println!("> Started RDP proxy task for session {}", session_id);
+        debug!("> Started RDP proxy task for session {}", session_id);
 
         Ok(())
     }
 
     async fn handle_ping(&self, data: Vec<u8>) -> anyhow::Result<()> {
-        println!("> Ping from gateway, sending pong");
+        debug!("> Ping from gateway, sending pong");
         let mut sender = self.ws_sender.lock().await;
         sender
             .send(Message::Pong(data.into()))

@@ -4,6 +4,7 @@ use std::sync::{Arc, LazyLock};
 use anyhow::Context as _;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::{self, pki_types};
+use tracing::error;
 
 static DEFAULT_CIPHER_SUITES: &[rustls::SupportedCipherSuite] =
     rustls::crypto::ring::DEFAULT_CIPHER_SUITES;
@@ -75,7 +76,7 @@ pub fn build_server_config(
             let (report, ok_r) = match check_certificate_now(first_certificate) {
                 Ok(r) => (Some(r), true),
                 Err(e) => {
-                    eprintln!("warning: failed to check the certificate: {e:?}");
+                    error!("warning: failed to check the certificate: {e:?}");
                     (None, false)
                 }
             };

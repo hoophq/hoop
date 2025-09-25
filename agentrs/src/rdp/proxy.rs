@@ -5,6 +5,9 @@ use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tracing::debug;
+use tracing::info;
+use tracing::instrument;
 use typed_builder::TypedBuilder;
 
 use ironrdp_tokio::FramedWrite as _;
@@ -18,6 +21,7 @@ pub struct RdpProxy<C, S> {
     creds: String,
     username: String,
     password: String,
+    server_target: String,
     client_address: SocketAddr,
     client_stream: C,
     server_stream: S,
@@ -47,7 +51,7 @@ async fn retrieve_gateway_public_key(
     hostname: String,
     acceptor: tokio_rustls::TlsAcceptor,
 ) -> anyhow::Result<Vec<u8>> {
-    println!("Retrieving Devolutions Gateway TLS public key");
+    debug!("Retrieving Devolutions Gateway TLS public key");
     let (client_side, server_side) = tokio::io::duplex(4096);
 
     let connect_fut = crate::tls::connect(hostname, client_side);
@@ -55,7 +59,7 @@ async fn retrieve_gateway_public_key(
 
     let (connect_res, _) = tokio::join!(connect_fut, accept_fut);
 
-    println!("Retrieved Devolutions Gateway TLS public key");
+    debug!("Retrieved Devolutions Gateway TLS public key");
     let tls_stream = connect_res.context("connect")?;
 
     let public_key = extract_tls_server_public_key(&tls_stream)
@@ -69,12 +73,10 @@ where
     C: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
     S: AsyncRead + AsyncWrite + Unpin + Send + Sync + 'static,
 {
-    // #TODO:
-    // For dev environment we can build in memory and self signed credentials
-
-    println!("RDP-TLS forwarding (credential injection) started");
+    info!("RDP-TLS forwarding (credential injection) started");
     let RdpProxy {
         config,
+        server_target,
         client_address,
         client_stream,
         server_stream,
@@ -91,11 +93,13 @@ where
 
     let gateway_public_key_handle =
         retrieve_gateway_public_key(config.hostname.clone(), tls_config.acceptor.clone());
-    println!("Retrieved Devolutions Gateway TLS public key");
+    debug!("Retrieved Devolutions Gateway TLS public key");
+
     let mut client_framed =
         ironrdp_tokio::TokioFramed::new_with_leftover(client_stream, client_stream_leftover_bytes);
     let mut server_framed = ironrdp_tokio::TokioFramed::new(server_stream);
-    println!("Created TokioFramed for client and server");
+
+    debug!("Created TokioFramed for client and server");
     let credential_mapping = AppCredentialMapping {
         proxy: AppCredential::UsernamePassword {
             username: creds.to_string(),
@@ -106,7 +110,8 @@ where
             password: password,
         },
     };
-    println!("Starting dual handshake until TLS upgrade");
+
+    debug!("Starting dual handshake until TLS upgrade");
     let hs = dual_handshake_until_tls_upgrade(
         &mut client_framed,
         &mut server_framed,
@@ -114,30 +119,35 @@ where
     )
     .await?;
 
-    println!("Dual handshake until TLS upgrade completed");
+    debug!("Dual handshake until TLS upgrade completed");
 
     let client_stream = client_framed.into_inner_no_leftover();
     let server_stream = server_framed.into_inner_no_leftover();
-    println!("Client and server streams created");
+    debug!("Client and server streams created");
     // -- Perform the TLS upgrading for both the client and the server -- //
+    let server_target = if server_target.contains(':') {
+        server_target.split_once(':').unwrap().0.to_string()
+    } else {
+        server_target.clone()
+    };
 
     let client_tls_upgrade_fut = tls_config.acceptor.accept(client_stream);
-    let server_tls_upgrade_fut =
-        crate::tls::connect("10.211.55.6".to_string().clone(), server_stream);
-    println!("TLS upgrade with client and server started");
+    let server_tls_upgrade_fut = crate::tls::connect(server_target.clone(), server_stream);
+
+    debug!("TLS upgrade with client and server started");
     let (client_stream, server_stream) =
         tokio::join!(client_tls_upgrade_fut, server_tls_upgrade_fut);
 
     let client_stream = client_stream.context("TLS upgrade with client failed")?;
     let server_stream = server_stream.context("TLS upgrade with server failed")?;
-    println!("TLS upgrade with client and server completed");
+    debug!("TLS upgrade with client and server completed");
     let server_public_key = extract_tls_server_public_key(&server_stream)
         .context("extract target server TLS public key")?;
     let gateway_public_key = gateway_public_key_handle.await?;
 
     let mut client_framed = ironrdp_tokio::TokioFramed::new(client_stream);
     let mut server_framed = ironrdp_tokio::TokioFramed::new(server_stream);
-    println!("Client and server framed created");
+
     let client_credssp_fut = perform_credssp_with_client(
         &mut client_framed,
         client_address.ip(),
@@ -148,7 +158,7 @@ where
 
     let server_credssp_fut = perform_credssp_with_server(
         &mut server_framed,
-        "10.211.55.6".to_string(),
+        server_target.clone(),
         server_public_key,
         hs.server_security_protocol,
         &credential_mapping.target,
@@ -173,7 +183,7 @@ where
 
     // -- here we will forwarding -- //
 
-    println!("RDP-TLS forwarding (credential injection)");
+    info!("RDP-TLS forwarding (credential injection)");
 
     client_stream
         .write_all(&server_leftover)
@@ -196,6 +206,12 @@ where
     Ok(())
 }
 
+#[instrument(
+    name = "dual_handshake_until_tls_upgrade",
+    level = "debug",
+    skip_all,
+    ret
+)]
 async fn dual_handshake_until_tls_upgrade<C, S>(
     client_framed: &mut ironrdp_tokio::TokioFramed<C>,
     server_framed: &mut ironrdp_tokio::TokioFramed<S>,
@@ -376,6 +392,7 @@ where
     Ok(())
 }
 
+#[instrument(level = "debug", ret, skip_all)]
 async fn perform_credssp_with_client<S>(
     framed: &mut ironrdp_tokio::Framed<S>,
     client_addr: IpAddr,
@@ -421,6 +438,7 @@ where
 
     return result;
 
+    #[instrument(level = "debug", ret, skip_all)]
     async fn credssp_loop<S>(
         framed: &mut ironrdp_tokio::Framed<S>,
         buf: &mut ironrdp_pdu::WriteBuf,
@@ -432,8 +450,7 @@ where
         S: ironrdp_tokio::FramedRead + ironrdp_tokio::FramedWrite,
     {
         let AppCredential::UsernamePassword { username, password } = credentials;
-        println!("Performing CredSSP with client");
-        println!("Using username: {username} and password: {password}",);
+        debug!("Performing CredSSP with client");
 
         let username =
             ironrdp_connector::sspi::Username::parse(username).context("invalid username")?;
@@ -482,6 +499,7 @@ where
 }
 
 // ---------- Connect-Confirm patch (post CredSSP) ----------
+#[instrument(level = "debug", ret, skip_all)]
 async fn intercept_connect_confirm<C, S>(
     client_framed: &mut ironrdp_tokio::TokioFramed<C>,
     server_framed: &mut ironrdp_tokio::TokioFramed<S>,

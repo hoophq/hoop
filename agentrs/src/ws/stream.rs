@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::task::Poll;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
+use tracing::{debug, error};
 
 pub struct ChannelWebSocketStream {
     rdp_data_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>>,
@@ -48,7 +49,7 @@ impl AsyncRead for ChannelWebSocketStream {
 
         match receiver.try_recv() {
             Ok(data) => {
-                println!(
+                debug!(
                     "> ChannelWebSocketStream: Received {} bytes from channel",
                     data.len()
                 );
@@ -83,7 +84,7 @@ impl AsyncWrite for ChannelWebSocketStream {
         // Send data to response channel
         match this.response_tx.try_send(buf.to_vec()) {
             Ok(()) => {
-                println!(
+                debug!(
                     "> ChannelWebSocketStream: Sent {} bytes to response channel",
                     buf.len()
                 );
@@ -95,7 +96,7 @@ impl AsyncWrite for ChannelWebSocketStream {
                 Poll::Pending
             }
             Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                eprintln!("> Response channel is closed");
+                error!("> Response channel is closed");
                 Poll::Ready(Err(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
                     "Response channel closed",

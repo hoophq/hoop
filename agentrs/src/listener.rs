@@ -1,7 +1,8 @@
 use crate::tasks::tasks::*;
-use crate::ws::server::WebSocket;
+use crate::ws::client::WebSocket;
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use tracing::{error, info};
 
 use tokio::runtime;
 
@@ -38,11 +39,8 @@ impl Service {
             .enable_all()
             .build()
             .expect("failed to create runtime");
-        println!("Runtime created");
 
         let tasks = runtime.block_on(build_tasks())?;
-
-        println!("Tasks created");
 
         let mut join_all = futures::future::select_all(
             tasks.inner.into_iter().map(|child| Box::pin(child.join())),
@@ -54,8 +52,8 @@ impl Service {
 
                 match result {
                     Ok(Ok(())) => println!("A task terminated gracefully"),
-                    Ok(Err(error)) => eprintln!("A task failed"),
-                    Err(error) => eprintln!("Something went very wrong with a task"),
+                    Ok(Err(error)) => error!("A task failed {:?}", error),
+                    Err(error) => error!("Something went very wrong with a task {:?}", error),
                 }
 
                 if rest.is_empty() {
@@ -76,13 +74,13 @@ impl Service {
     pub fn stop(&mut self) {
         match std::mem::replace(&mut self.state, State::Stopped) {
             State::Stopped => {
-                println!("Gateway service is already stopped");
+                info!("Gateway service is already stopped");
             }
             State::Running {
                 shutdown_handle,
                 runtime,
             } => {
-                println!("Stopping gateway service...");
+                error!("Stopping gateway service...");
 
                 // Send shutdown signals to all tasks
                 shutdown_handle.signal();
@@ -94,17 +92,17 @@ impl Service {
                     loop {
                         tokio::select! {
                             _ = shutdown_handle.all_closed() => {
-                                println!("All tasks have terminated gracefully");
+                                info!("All tasks have terminated gracefully");
                                 break;
                             }
                             _ = tokio::time::sleep(Duration::from_secs(10)) => {
                                 count += 1;
 
                                 if count >= MAX_COUNT {
-                                    eprintln!("Some tasks are not terminating, forcing shutdown");
+                                    error!("Some tasks are not terminating, forcing shutdown");
                                     break;
                                 } else {
-                                    eprintln!("Waiting for tasks to terminate... (attempt {}/{})", count, MAX_COUNT);
+                                    error!("Waiting for tasks to terminate... (attempt {}/{})", count, MAX_COUNT);
                                 }
                             }
                         }

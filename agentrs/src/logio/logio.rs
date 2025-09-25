@@ -1,4 +1,5 @@
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tracing::error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -24,7 +25,7 @@ impl<T: AsyncRead + Unpin> AsyncRead for LoggingIo<T> {
         if let Poll::Ready(Ok(())) = &poll {
             let filled = &buf.filled()[pre_len..];
             if !filled.is_empty() {
-                eprintln!("{} READ: {:02X?}", self.prefix, filled);
+                error!("{} READ: {:02X?}", self.prefix, filled);
             }
         }
         poll
@@ -37,7 +38,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for LoggingIo<T> {
         cx: &mut Context<'_>,
         data: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        eprintln!("{} WRITE: {:02X?}", self.prefix, data);
+        error!("{} WRITE: {:02X?}", self.prefix, data);
         Pin::new(&mut self.inner).poll_write(cx, data)
     }
 

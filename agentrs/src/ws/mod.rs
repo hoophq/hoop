@@ -1,7 +1,6 @@
 mod proxy;
-pub mod server;
+pub mod client;
 mod session;
 mod stream;
-mod rdp;
 mod rdp_message_processor;
 mod types;

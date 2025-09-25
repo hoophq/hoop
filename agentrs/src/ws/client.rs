@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tracing::{debug, error, info};
 use tungstenite::{client::IntoClientRequest, handshake::client::Request};
 
 use futures::{SinkExt, StreamExt};
@@ -71,20 +72,20 @@ impl WebSocket {
         loop {
             match self.clone().run().await {
                 Ok(_) => {
-                    println!("> WebSocket connection closed gracefully");
+                    debug!("> WebSocket connection closed gracefully");
                     return Ok(());
                 }
                 Err(e) if e.to_string().contains("connection closed") => {
-                    println!("> WebSocket connection closed by server");
+                    debug!("> WebSocket connection closed by server");
                     return Ok(());
                 }
                 Err(e) if attempts >= self.max_reconnection_attempts => {
-                    eprintln!("> Max reconnection attempts reached, giving up: {}", e);
+                    debug!("> Max reconnection attempts reached, giving up: {}", e);
                     return Err(e);
                 }
                 Err(e) => {
                     attempts += 1;
-                    eprintln!(
+                    error!(
                         "> Connection failed (attempt {}/{}): {}",
                         attempts, self.max_reconnection_attempts, e
                     );
@@ -102,7 +103,6 @@ impl WebSocket {
             .expect("Failed to connect to gateway");
 
         let (ws_sender, ws_receiver) = ws_stream.split();
-        println!("> Connected to gateway");
 
         // Clone config manager and sessions for use in the async task
         let ws_sender = Arc::new(Mutex::new(ws_sender));
@@ -128,13 +128,13 @@ impl WebSocket {
         tokio::select! {
             result = processor_task => {
                 match result {
-                    Ok(Ok(())) => println!("> Message processor completed normally"),
-                    Ok(Err(e)) => eprintln!("> Message processor error: {}", e),
-                    Err(e) => eprintln!("> Message processor task panicked: {}", e),
+                    Ok(Ok(())) => info!("> Message processor completed normally"),
+                    Ok(Err(e)) => error!("> Message processor error: {}", e),
+                    Err(e) => error!("> Message processor task panicked: {}", e),
                 }
             }
             _ = heartbeat_task => {
-                println!("> Heartbeat task completed");
+                debug!("> Heartbeat task completed");
             }
         }
 
@@ -152,7 +152,7 @@ impl WebSocket {
 
                 let mut sender = ws_sender.lock().await;
                 if sender.send(Message::Ping(vec![].into())).await.is_err() {
-                    eprintln!("> Failed to send heartbeat ping");
+                    error!("> Failed to send heartbeat ping");
                     break;
                 }
             }
@@ -165,19 +165,19 @@ impl WebSocket {
         active_proxies: ProxyMap,
         session_channels: ChannelMap,
     ) {
-        println!("> Cleaning up resources...");
+        debug!("> Cleaning up resources...");
 
         // Cancel all active proxy tasks
         let mut proxies = active_proxies.write().await;
         for (session_id, handle) in proxies.drain() {
             handle.abort();
-            println!("> Cancelled proxy task for session {}", session_id);
+            debug!("> Cancelled proxy task for session {}", session_id);
         }
 
         // Clear sessions and channels
         sessions.write().await.clear();
         session_channels.write().await.clear();
 
-        println!("> Resource cleanup complete");
+        debug!("> Resource cleanup complete");
     }
 }

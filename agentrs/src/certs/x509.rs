@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use rcgen::{Certificate, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SanType};
+use rcgen::{
+    Certificate, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
+    KeyUsagePurpose, SanType,
+};
 use std::fs;
 use std::time::{Duration, SystemTime};
 use tokio_rustls::rustls::pki_types;
@@ -47,19 +50,23 @@ pub struct CertKeyPair {
 }
 
 impl CertKeyPair {
-    /// Save the certificate and private key to files
     pub fn save_to_files(&self, cert_path: &Utf8PathBuf, key_path: &Utf8PathBuf) -> Result<()> {
         fs::write(cert_path, &self.certificate_pem)
             .with_context(|| format!("Failed to write certificate to {}", cert_path))?;
-        
+
         fs::write(key_path, &self.private_key_pem)
             .with_context(|| format!("Failed to write private key to {}", key_path))?;
-        
+
         Ok(())
     }
 
     /// Convert to rustls-compatible types
-    pub fn to_rustls(&self) -> (pki_types::CertificateDer<'static>, pki_types::PrivateKeyDer<'static>) {
+    pub fn to_rustls(
+        &self,
+    ) -> (
+        pki_types::CertificateDer<'static>,
+        pki_types::PrivateKeyDer<'static>,
+    ) {
         let cert = pki_types::CertificateDer::from(self.certificate_der.clone());
         let key = pki_types::PrivateKeyDer::Pkcs8(self.private_key_der.clone().into());
         (cert, key)
@@ -71,58 +78,59 @@ pub fn generate_self_signed_cert(config: CertConfig) -> Result<CertKeyPair> {
     // Create distinguished name
     let mut distinguished_name = DistinguishedName::new();
     distinguished_name.push(DnType::CommonName, &config.common_name);
-    
+
     // Set subject alternative names
     let mut san_names = Vec::new();
-    
+
     // Add DNS names
     for dns_name in &config.dns_names {
         san_names.push(SanType::DnsName(dns_name.clone()));
     }
-    
+
     // Add IP addresses
     for ip_addr in &config.ip_addresses {
         san_names.push(SanType::IpAddress(*ip_addr));
     }
-    
+
     // Set validity period
     let now = SystemTime::now();
     let not_after = now + Duration::from_secs(config.validity_days as u64 * 24 * 60 * 60);
-    
+
     // Create certificate parameters
     let mut params = CertificateParams::default();
     params.distinguished_name = distinguished_name;
     params.subject_alt_names = san_names;
     params.not_before = now.into();
     params.not_after = not_after.into();
-    
+
     // Set key usage extensions
     params.key_usages = vec![
         KeyUsagePurpose::DigitalSignature,
         KeyUsagePurpose::KeyEncipherment,
     ];
-    
+
     // Set extended key usage
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
-    
+
     // Set basic constraints (not a CA)
     params.is_ca = IsCa::NoCa;
-    
+
     // Generate the certificate
-    let cert = Certificate::from_params(params)
-        .context("Failed to generate certificate")?;
-    
+    let cert = Certificate::from_params(params).context("Failed to generate certificate")?;
+
     // Get PEM encodings
-    let certificate_pem = cert.serialize_pem()
+    let certificate_pem = cert
+        .serialize_pem()
         .context("Failed to serialize certificate to PEM")?;
     let private_key_pem = cert.serialize_private_key_pem();
-    
+
     // Get DER encodings for rustls compatibility
-    let certificate_der = cert.serialize_der()
+    let certificate_der = cert
+        .serialize_der()
         .context("Failed to serialize certificate to DER")?;
-    
+
     let private_key_der = cert.serialize_private_key_der();
-    
+
     Ok(CertKeyPair {
         certificate_pem,
         private_key_pem,
@@ -140,7 +148,7 @@ pub fn generate_gateway_cert(ip_addresses: Vec<std::net::IpAddr>) -> Result<Cert
         validity_days: 365,
         key_size: 2048,
     };
-    
+
     generate_self_signed_cert(config)
 }
 
@@ -176,7 +184,7 @@ mod tests {
         let config = CertConfig::default();
         let result = generate_self_signed_cert(config);
         assert!(result.is_ok());
-        
+
         let cert_key_pair = result.unwrap();
         assert!(!cert_key_pair.certificate_pem.is_empty());
         assert!(!cert_key_pair.private_key_pem.is_empty());
@@ -190,10 +198,10 @@ mod tests {
             "127.0.0.1".parse::<IpAddr>().unwrap(),
             "::1".parse::<IpAddr>().unwrap(),
         ];
-        
+
         let result = generate_gateway_cert(ip_addresses);
         assert!(result.is_ok());
-        
+
         let cert_key_pair = result.unwrap();
         assert!(!cert_key_pair.certificate_pem.is_empty());
         assert!(!cert_key_pair.private_key_pem.is_empty());
@@ -204,10 +212,10 @@ mod tests {
         let config = CertConfig::default();
         let cert_key_pair = generate_self_signed_cert(config).unwrap();
         let (cert, key) = cert_key_pair.to_rustls();
-        
+
         // Verify the types are correct for rustls
         match key {
-            pki_types::PrivateKeyDer::Pkcs8(_) => {},
+            pki_types::PrivateKeyDer::Pkcs8(_) => {}
             _ => panic!("Expected PKCS8 private key"),
         }
     }

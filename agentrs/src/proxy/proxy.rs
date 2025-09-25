@@ -18,6 +18,8 @@ pub struct Proxy<A, B> {
 }
 
 // this is to copy_bidirectional stream from client to server
+// we could here latter sending metrics about the traffic
+// copy the bitmaps from the rdp
 impl<A, B> Proxy<A, B>
 where
     A: AsyncWrite + AsyncRead + Unpin,

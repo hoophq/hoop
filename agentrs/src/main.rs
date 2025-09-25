@@ -1,7 +1,7 @@
+mod certs;
 mod conf;
 mod listener;
 mod logio;
-mod protocol;
 mod proxy;
 mod rdp;
 mod session;
@@ -9,9 +9,9 @@ mod tasks;
 mod tls;
 mod transport;
 mod ws;
-mod certs;
 
 use anyhow::Context;
+use tracing::info;
 
 use crate::listener::Service;
 
@@ -37,7 +37,8 @@ async fn build_signals_fut() -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    println!("Starting Agent Service...");
+    tracing_subscriber::fmt::init();
+    info!("Starting Agent Service...");
 
     let mut s = Service::new();
     s.start()?;

@@ -8,8 +8,8 @@ use camino::{Utf8Path, Utf8PathBuf};
 use picky::pem::Pem;
 use serde::{Deserialize, Serialize};
 use tap::prelude::*;
-//use tokio::sync::Notify;
 use tokio_rustls::rustls::pki_types;
+use tracing::{error, info};
 
 const CERTIFICATE_LABELS: &[&str] = &["CERTIFICATE", "X509 CERTIFICATE", "TRUSTED CERTIFICATE"];
 const PRIVATE_KEY_LABELS: &[&str] = &["PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY"];
@@ -22,13 +22,14 @@ pub enum CertSource {
     // Need to implement SystemStore for windows
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ConfigHandleManager {
     pub conf: Arc<Conf>,
 }
 
 fn get_default_path() -> Utf8PathBuf {
-    Utf8PathBuf::from("/Users/chico/.hoop/gateway.json")
+    let path = get_data_dir();
+    path.join("gateway.json")
 }
 
 fn get_path() -> Utf8PathBuf {
@@ -39,7 +40,7 @@ fn get_path() -> Utf8PathBuf {
 
 impl ConfigHandleManager {
     pub fn auto_gen_conf() -> anyhow::Result<Self> {
-        println!("Auto-generating TLS certificate for gateway...");
+        info!("Auto-generating TLS certificate for gateway...");
         let hoop_key = get_token();
         if hoop_key.is_none() {
             Err(anyhow::anyhow!(
@@ -59,10 +60,14 @@ impl ConfigHandleManager {
                 Some(Tls::init(cert_source, true)?)
             }
             Err(e) => {
-                println!("Failed to generate certificate: {e}");
+                error!("Failed to generate certificate: {e}");
                 None
             }
         };
+        if tls.is_none() {
+            Err(anyhow::anyhow!("TLS error generating certificates."))?;
+        }
+
         let conf = Conf {
             hostname: "gateway.hoop".to_string(),
             tls,
@@ -103,9 +108,9 @@ impl ConfigHandleManager {
                 ..c
             },
             None => {
-                println!("No config file found at {path}, using defaults");
-                // Default configuration implment this for development only
-                // do not use defaults in production
+                Err(anyhow::anyhow!(
+                    "No config file found at {path}. Please create a configuration file or set HOOP_CERT=true to auto-generate certificates."
+                ))?;
                 ConfFile {
                     hostname: None,
                     token: hoop_key,
@@ -127,11 +132,8 @@ impl ConfigHandleManager {
 }
 
 fn get_token() -> Option<String> {
+    // format: <scheme>://<agent-name>:<secret-key>@<host>:<port>?mode=<agent-mode>
     let hoop_key = std::env::var("HOOP_KEY").ok();
-    if hoop_key.is_none() {
-        // format: <scheme>://<agent-name>:<secret-key>@<host>:<port>?mode=<agent-mode>
-    }
-
     return hoop_key;
 }
 
@@ -182,7 +184,6 @@ impl Conf {
             CertSource::External => match conf_file.tls_certificate_file.as_ref() {
                 None => None,
                 Some(certificate_path) => {
-                    println!("Using TLS certificate from file: {}", certificate_path);
                     let (certificates, private_key) = match certificate_path.extension() {
                         None | Some(_) => {
                             let certificates = read_rustls_certificate_file(certificate_path)
@@ -257,15 +258,30 @@ fn normalize_data_path(path: &Utf8Path, data_dir: &Utf8Path) -> Utf8PathBuf {
     }
 }
 
-fn default_data_dir() -> Utf8PathBuf {
-    Utf8PathBuf::from("/Users/chico/.hoop")
+fn default_data_dir() -> anyhow::Result<Utf8PathBuf> {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+
+    match home.is_empty() {
+        false => return Ok(Utf8PathBuf::from(home).join(".hoop")),
+        true => {
+            error!(
+                "Could not determine home directory. Please set the HOOP_DATA_DIR environment variable or HOME"
+            );
+            Err(anyhow::anyhow!(
+                "Could not determine home directory. Please set the HOOP_DATA_DIR environment variable or HOME"
+            ))
+        }
+    }
 }
 
 fn get_data_dir() -> Utf8PathBuf {
-    //#TODO change this
     std::env::var("HOOP_DATA_DIR")
         .map(Utf8PathBuf::from)
-        .unwrap_or_else(|_| default_data_dir())
+        .unwrap_or_else(|_| {
+            default_data_dir()
+                .context("couldn't determine data directory")
+                .unwrap()
+        })
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Serialize, Deserialize)]

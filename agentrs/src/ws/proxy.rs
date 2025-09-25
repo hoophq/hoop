@@ -7,24 +7,27 @@ use crate::ws::types::WsWriter;
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::net::TcpStream;
+use tracing::{debug, error, info, instrument};
 
 use futures::SinkExt;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 // Start a persistent RDP proxy session
+#[instrument]
 pub async fn start_rdp_proxy_session(
     session_info: SessionInfo,
     ws_sender: WsWriter,
     rdp_data_rx: Arc<Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>>,
     config: Arc<Conf>,
 ) -> anyhow::Result<()> {
-    println!(
+    info!(
         "> Starting persistent RDP proxy for target: {}",
         session_info.target_address
     );
-    println!("> Using client address: {}", session_info.client_address);
+    debug!("> Using client address: {}", session_info.client_address);
 
+    let server_target = session_info.target_address.clone();
     // Connect to target RDP server
     let target_addr = session_info
         .target_address
@@ -34,7 +37,7 @@ pub async fn start_rdp_proxy_session(
         .await
         .context("Failed to connect to target RDP server")?;
 
-    println!(
+    debug!(
         "> Connected to target RDP server: {}",
         session_info.target_address
     );
@@ -47,11 +50,7 @@ pub async fn start_rdp_proxy_session(
         .context("Failed to receive first RDP data")?;
     drop(rdp_data_rx_guard); // Release the lock
 
-    println!(
-        "> Received first RDP packet: {} bytes",
-        first_rdp_data.len()
-    );
-    println!(
+    debug!(
         "> First RDP data (first 20 bytes): {:02x?}",
         &first_rdp_data[..std::cmp::min(20, first_rdp_data.len())]
     );
@@ -66,7 +65,7 @@ pub async fn start_rdp_proxy_session(
     let session_id = session_info.session_id;
     tokio::spawn(async move {
         while let Some(data) = response_rx.recv().await {
-            println!(
+            debug!(
                 "> Forwarding {} bytes from RDP proxy to WebSocket",
                 data.len()
             );
@@ -80,22 +79,23 @@ pub async fn start_rdp_proxy_session(
             framed_data.extend_from_slice(&header.encode());
             framed_data.extend_from_slice(&data);
 
-            println!(
+            debug!(
                 "> Framed RDP response (first 30 bytes): {:02x?}",
                 &framed_data[..std::cmp::min(30, framed_data.len())]
             );
 
             let mut sender = ws_sender_clone.lock().await;
             if let Err(e) = sender.send(Message::Binary(framed_data.into())).await {
-                eprintln!("> Failed to send response to WebSocket: {}", e);
+                error!("> Failed to send response to WebSocket: {}", e);
                 break;
             }
-            println!("> Successfully sent framed RDP response to gateway");
+            debug!("> Successfully sent framed RDP response to gateway");
         }
     });
 
     // Create RDP proxy with extracted credentials
     let proxy = RdpProxy::builder()
+        .server_target(server_target)
         .client_stream(client_side)
         .server_stream(server_stream)
         .config(config)
@@ -112,16 +112,16 @@ pub async fn start_rdp_proxy_session(
         .build();
 
     // Run the proxy
-    println!("> Starting RDP proxy run...");
-    println!("> WebSocket stream adapter created, starting RDP proxy...");
+    info!("> Starting RDP proxy run...");
+    info!("> WebSocket stream adapter created, starting RDP proxy...");
     match proxy.run().await {
         Ok(_) => {
-            println!("> RDP proxy session completed successfully");
+            info!("> RDP proxy session completed successfully");
             Ok(())
         }
         Err(e) => {
-            eprintln!("> RDP proxy failed: {}", e);
-            eprintln!("> Error details: {:?}", e);
+            error!("> RDP proxy failed: {}", e);
+            error!("> Error details: {:?}", e);
             Err(e.context("RDP proxy failed"))
         }
     }

@@ -2,16 +2,9 @@ use std::sync::Arc;
 
 use futures::stream::SplitSink;
 use tokio_tungstenite::WebSocketStream;
-use tracing::info;
 use uuid::Uuid;
 
-use std::collections::HashMap;
-use tokio::sync::RwLock;
-use tokio::sync::mpsc::{Receiver, Sender};
-
-use tokio::sync::Mutex;
-
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SessionInfo {
     pub session_id: Uuid,
     pub target_address: String,
@@ -29,4 +22,4 @@ pub struct SessionInfo {
     >,
 }
 
-// TODO implement session manager to handle cleanup on shutdown later
+// TODO implement session manager to handle cleanup in a better way in shutdowns
