@@ -18,7 +18,7 @@
                   :onCheckedChange #(rf/dispatch [:editor-plugin/toggle-keep-metadata])}]]
      [:div {:class "grid grid-cols-2 gap-small"}
       (for [index (range (count @metadata))]
-        ^{:key (:val (get @metadata-value index))}
+        ^{:key (str (:val (get @metadata index)) "-" index)}
         [:<>
          [forms/input {:on-change #(rf/dispatch [:editor-plugin/update-metadata-at-index
                                                  index
@@ -59,8 +59,7 @@
                              (when (and @metadata-key @metadata-value)
                                (rf/dispatch [:editor-plugin/add-metadata
                                              {:key @metadata-key
-                                              :value @metadata-value}])
-                               (rf/dispatch [:editor-plugin/clear-metadata-inputs])))
+                                              :value @metadata-value}])))
                   :variant "soft"
                   :size "1"
                   :color "gray"}
