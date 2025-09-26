@@ -884,4 +884,4 @@ Outputs:
     Value: !Sub "${AppLB.DNSName}"
   VERSION:
     Description: The hoop gateway version for this template
-    Value: 'LATEST_HOOP_VERSION'
+    Value: LATEST_HOOP_VERSION
