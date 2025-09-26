@@ -35,12 +35,12 @@
 ;; Event para inicializar setup a partir do catálogo
 (rf/reg-event-fx
  :connection-setup/initialize-from-catalog
- (fn [{:keys [db]} [_ {:keys [type subtype app-type]}]]
+ (fn [{:keys [db]} [_ {:keys [type subtype app-type command]}]]
    {:db (update db :connection-setup merge {:type type
                                             :subtype subtype
                                             :app-type app-type
-                                            :current-step
-                                            :credentials
+                                            :metadata-command-args command
+                                            :current-step :credentials
                                             :from-catalog? true})
     :fx [[:dispatch [:connection-setup/select-connection type subtype]]]}))
 
