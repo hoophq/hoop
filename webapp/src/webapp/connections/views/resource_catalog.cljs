@@ -9,11 +9,12 @@
    [webapp.components.forms :as forms]))
 
 ;; Denylist - conexões que NÃO aparecerão no catálogo
-(def denied-connections #{"jump-hosts" "webapps-and-apis"})
+(def denied-connections #{})
 
 ;; Conexões custom que não estão no metadata.json
 (def custom-connections
-  [{:id "linux-vm"
+  [;; Infrastructure
+   {:id "linux-vm"
     :name "Linux VM or Container"
     :description "Connect to Linux virtual machines, Docker containers, or any remote server via SSH."
     :category "infrastructure-access"
@@ -60,18 +61,16 @@
 (defn connection-setup-mapping [connection]
   (let [connection-id (:id connection)
         resource-configuration (:resourceConfiguration connection)
-        connection-mapped {"postgres" {:type "database" :subtype "postgres"}
+        connection-mapped {;; Database hardcoded (fluxo atual)
+                           "postgres" {:type "database" :subtype "postgres"}
                            "mysql" {:type "database" :subtype "mysql"}
                            "mongodb" {:type "database" :subtype "mongodb"}
                            "mssql" {:type "database" :subtype "mssql"}
                            "oracle" {:type "database" :subtype "oracledb"}
+                           ;; Network hardcoded (fluxo atual)
                            "ssh" {:type "server" :subtype "ssh"}
                            "tcp" {:type "network" :subtype "tcp"}
                            "httpproxy" {:type "network" :subtype "httpproxy"}
-                           "nodejs" {:type "server" :subtype "console" :app-type "nodejs"}
-                           "python-scripts" {:type "server" :subtype "console" :app-type "python"}
-                           "ruby-on-rails" {:type "server" :subtype "console" :app-type "ruby-on-rails"}
-                           "clojure" {:type "server" :subtype "console" :app-type "clojure"}
                            ;; Custom connections
                            "linux-vm" {:type "server" :subtype "custom"}}]
 
