@@ -21,6 +21,7 @@ require (
 	github.com/hoophq/hoop/agent v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
 	github.com/lib/pq v1.10.9
+	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.37.0
 	google.golang.org/grpc v1.71.1
 	mvdan.cc/sh/v3 v3.8.0
@@ -65,6 +66,7 @@ require (
 	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/coreos/go-oidc/v3 v3.14.1 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
 	github.com/getkin/kin-openapi v0.131.0 // indirect
@@ -129,6 +131,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russellhaering/gosaml2 v0.10.0 // indirect
