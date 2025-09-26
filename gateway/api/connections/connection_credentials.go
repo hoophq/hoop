@@ -17,7 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp"}
 
 // CreateConnectionCredentials
 //
@@ -47,6 +47,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 
 	connNameOrID := c.Param("nameOrID")
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+
 	if err != nil {
 		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
 		return
@@ -89,6 +90,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
 		return
 	}
+
 	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
 		ID:             uuid.NewString(),
 		OrgID:          ctx.OrgID,
@@ -150,6 +152,14 @@ func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn
 			Password: secretKey,
 			Command:  fmt.Sprintf("sshpass -p '%s' ssh %s@%s -p %s", dummyString, secretKey, serverHost, serverPort),
 		}
+	case proto.ConnectionTypeRDP:
+		base.ConnectionCredentials = &openapi.RDPConnectionInfo{
+			Hostname: serverHost,
+			Port:     serverPort,
+			Username: secretKey,
+			Password: secretKey,
+			Command:  fmt.Sprintf("xfreerdp /v:%s:%s /u:%s /p:%s", serverHost, serverPort, secretKey, secretKey),
+		}
 	default:
 		return nil
 	}
@@ -168,6 +178,8 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.PostgresServerConfig != nil && serverConf.PostgresServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeSSH:
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
+	case proto.ConnectionTypeRDP:
+		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
 	default:
 		return false
 	}
@@ -183,6 +195,10 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 	case proto.ConnectionTypeSSH:
 		if serverConf != nil && serverConf.SSHServerConfig != nil {
 			listenAddr = serverConf.SSHServerConfig.ListenAddress
+		}
+	case proto.ConnectionTypeRDP:
+		if serverConf != nil && serverConf.RDPServerConfig != nil {
+			listenAddr = serverConf.RDPServerConfig.ListenAddress
 		}
 	}
 
@@ -202,6 +218,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("pg", keySize)
 	case proto.ConnectionTypeSSH:
 		return keys.GenerateSecureRandomKey("ssh", keySize)
+	case proto.ConnectionTypeRDP:
+		return keys.GenerateSecureRandomKey("rdp", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

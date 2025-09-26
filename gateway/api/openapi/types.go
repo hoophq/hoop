@@ -1578,6 +1578,8 @@ type ServerMiscConfig struct {
 	PostgresServerConfig *PostgresServerConfig `json:"postgres_server_config"`
 	// The SSH server proxy configuration
 	SSHServerConfig *SSHServerConfig `json:"ssh_server_config"`
+	// The RDP server proxy configuration
+	RDPServerConfig *RDPServerConfig `json:"rdp_server_config"`
 }
 
 type SSHServerConfig struct {
@@ -1585,6 +1587,11 @@ type SSHServerConfig struct {
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:12222"`
 	// The hosts key used for SSH connections
 	HostsKey string `json:"hosts_key" example:"base64-pem-encoded-hosts-key"`
+}
+
+type RDPServerConfig struct {
+	// The listen address to run the RDP server proxy
+	ListenAddress string `json:"listen_address" example:"0.0.0.0:3389"`
 }
 
 type PostgresServerConfig struct {
@@ -1672,6 +1679,19 @@ type ConnectionCredentialsResponse struct {
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
+}
+
+type RDPConnectionInfo struct {
+	// The hostname to access the rdp server pinstance
+	Hostname string `json:"hostname" example:"example.com/198.22.2.2"`
+	// The port of the rdp server instance
+	Port string `json:"port" example:"3389"`
+	// The username of the rdp server instance
+	Username string `json:"username" example:"noop"`
+	// The password of the rdp server instance
+	Password string `json:"password" example:"noop"`
+	// The command to access the rdp instance
+	Command string `json:"command" example:"xfreerdp /v:0.0.0.0:3389 /u:fake /p:fake"`
 }
 
 type PostgresConnectionInfo struct {

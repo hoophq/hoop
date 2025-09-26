@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
+	"github.com/hoophq/hoop/gateway/rdp"
 )
 
 const defaultGrpcServerURL = "grpc://127.0.0.1:8010"
@@ -114,6 +115,24 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	//rdp server
+	rdpInstance := rdp.GetServerInstance()
+	rdpConf, state := parserRdpsConfigState(currentSrvConf, newState)
+	switch state {
+	case instanceStateStart:
+		_ = rdpInstance.Stop()
+		err = rdpInstance.Start(rdpConf.ListenAddress)
+	case instanceStateStop:
+		err = rdpInstance.Stop()
+	}
+
+	if err != nil {
+		errMsg := fmt.Sprintf("failed handling rdp server startup, reason=%v", err)
+		log.Errorf(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
+	}
+
 	pgInstance := postgresproxy.GetServerInstance()
 	pgConf, state := parsePostgresConfigState(currentSrvConf, newState)
 	switch state {
@@ -165,6 +184,7 @@ func UpdateServerMisc(c *gin.Context) {
 		GrpcServerURL:        newState.GrpcServerURL,
 		PostgresServerConfig: newState.PostgresServerConfig,
 		SSHServerConfig:      newState.SSHServerConfig,
+		RDPServerConfig:      newState.RDPServerConfig,
 	})
 	if err != nil {
 		log.Errorf("failed to update server config, reason=%v", err)
@@ -187,11 +207,19 @@ func UpdateServerMisc(c *gin.Context) {
 		}
 	}
 
+	var rdpServerConfig *openapi.RDPServerConfig
+	if updatedConfig.RDPServerConfig != nil {
+		rdpServerConfig = &openapi.RDPServerConfig{
+			ListenAddress: updatedConfig.RDPServerConfig.ListenAddress,
+		}
+	}
+
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
 		ProductAnalytics:     ptr.ToString(updatedConfig.ProductAnalytics),
 		GrpcServerURL:        ptr.ToString(updatedConfig.GrpcServerURL),
 		PostgresServerConfig: pgServerConfig,
 		SSHServerConfig:      sshServerConfig,
+		RDPServerConfig:      rdpServerConfig,
 	})
 }
 
@@ -246,11 +274,23 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 		}
 	}
 
+	//rdp server configuration attribute
+	var rdpServerConfig *models.RDPServerConfig
+	if req.RDPServerConfig != nil {
+		if _, _, found := strings.Cut(req.RDPServerConfig.ListenAddress, ":"); req.RDPServerConfig.ListenAddress != "" && !found {
+			return nil, errListenAddrFormat
+		}
+		rdpServerConfig = &models.RDPServerConfig{
+			ListenAddress: req.RDPServerConfig.ListenAddress,
+		}
+	}
+
 	return &models.ServerMiscConfig{
 		ProductAnalytics:     &req.ProductAnalytics,
 		GrpcServerURL:        &req.GrpcServerURL,
 		PostgresServerConfig: pgServerConfig,
 		SSHServerConfig:      sshServerConfig,
+		RDPServerConfig:      rdpServerConfig,
 	}, nil
 }
 
@@ -277,6 +317,28 @@ func parsePostgresConfigState(currentState, newState *models.ServerMiscConfig) (
 
 	if newState != nil && newState.PostgresServerConfig != nil {
 		newConf = *newState.PostgresServerConfig
+	}
+
+	switch {
+	// stop instance when new configuration is empty
+	case newConf.ListenAddress == "":
+		return newConf, "stop"
+	// restart on configuration drift
+	case currentConf.ListenAddress != newConf.ListenAddress:
+		return newConf, "start"
+	// noop, no configuration drift
+	default:
+		return
+	}
+}
+
+func parserRdpsConfigState(currentState, newState *models.ServerMiscConfig) (newConf models.RDPServerConfig, state instanceState) {
+	var currentConf models.RDPServerConfig
+	if currentState != nil && currentState.RDPServerConfig != nil {
+		currentConf = *currentState.RDPServerConfig
+	}
+	if newState != nil && newState.RDPServerConfig != nil {
+		newConf = *newState.RDPServerConfig
 	}
 
 	switch {

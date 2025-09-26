@@ -182,6 +182,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeDynamoDB)
 		case "cloudwatch":
 			return ConnectionType(ConnectionTypeCloudWatch)
+		case "rdp":
+			return ConnectionType(ConnectionTypeRDP)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
