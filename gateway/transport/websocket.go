@@ -6,8 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/broker"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 var upgrader = websocket.Upgrader{
@@ -18,8 +20,40 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// validate hoop key from coonectoin websocket
+func verifyWebsocketToken(token string) (*models.Agent, error) {
+	dsn, err := dsnkeys.Parse(token)
+
+	if err != nil {
+		log.With("token_length", len(token)).Errorf("invalid agent authentication (dsn), err=%v", err)
+		return nil, err
+	}
+
+	ag, err := models.GetAgentByToken(dsn.SecretKeyHash)
+	if err != nil {
+		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, agent-token=%v, err=%v", len(token), token, err)
+		return nil, err
+	}
+	if ag.Name != dsn.Name {
+		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
+			ag.ID, dsn.Name, dsn.AgentMode)
+		return nil, err
+	}
+
+	return ag, nil
+}
+
 func HandlerSocket(c *gin.Context) {
-	agent := c.MustGet("x-agent-name")
+	token := c.Request.Header.Get("HOOP_KEY")
+	if token == "" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing HOOP_KEY header"})
+		return
+	}
+	agent, err := verifyWebsocketToken(token)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
+		return
+	}
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	defer conn.Close()
 	if err != nil {
@@ -27,13 +61,12 @@ func HandlerSocket(c *gin.Context) {
 		return
 	}
 
-	agentName, _ := agent.(string)
-	broker.CreateAgent(agentName, conn)
+	broker.CreateAgent(agent.Name, conn)
 
 	log.Println("WebSocket connection established")
 
 	// Handle incoming messages
-	client, found := broker.GetAgent(agentName)
+	client, found := broker.GetAgent(agent.Name)
 	if !found || client == nil {
 		log.Printf("Agent not found or nil")
 		return

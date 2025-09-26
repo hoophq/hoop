@@ -26,7 +26,6 @@ pub struct WebSocket {
     //pub gateway_url: String,
     pub request: Request,
     pub reconnect_interval: Duration,
-    pub max_reconnection_attempts: usize,
 }
 
 #[async_trait]
@@ -63,7 +62,6 @@ impl WebSocket {
             request: request,
             config_manager: config_manager,
             reconnect_interval: Duration::from_secs(5),
-            max_reconnection_attempts: 10,
         })
     }
 
@@ -75,20 +73,13 @@ impl WebSocket {
                     debug!("> WebSocket connection closed gracefully");
                     return Ok(());
                 }
-                Err(e) if e.to_string().contains("connection closed") => {
-                    debug!("> WebSocket connection closed by server");
-                    return Ok(());
-                }
-                Err(e) if attempts >= self.max_reconnection_attempts => {
-                    debug!("> Max reconnection attempts reached, giving up: {}", e);
+                Err(e) if e.to_string().contains("401 Unauthorized") => {
+                    error!("> Unauthorized: Invalid token provided. Please check your HOOP_KEY.");
                     return Err(e);
                 }
                 Err(e) => {
                     attempts += 1;
-                    error!(
-                        "> Connection failed (attempt {}/{}): {}",
-                        attempts, self.max_reconnection_attempts, e
-                    );
+                    error!("> Connection failed (attempt {}): {}", attempts, e);
 
                     tokio::time::sleep(self.reconnect_interval).await;
                     continue;
@@ -98,9 +89,7 @@ impl WebSocket {
     }
 
     async fn run(self) -> anyhow::Result<()> {
-        let (ws_stream, _) = connect_async(self.request.clone())
-            .await
-            .expect("Failed to connect to gateway");
+        let (ws_stream, _) = connect_async(self.request.clone()).await?;
 
         let (ws_sender, ws_receiver) = ws_stream.split();
 
