@@ -1,0 +1,63 @@
+(ns webapp.connections.views.resource-catalog.category-section
+  (:require
+   ["@radix-ui/themes" :refer [Box Card Flex Heading Badge Text]]
+   [clojure.string :as cs]
+   [reagent.core :as r]))
+
+(def mock-new-connections #{"postgres-demo"})
+(def mock-beta-connections #{"mongodb" "aws-discovery"})
+
+(defn get-connection-badge [connection]
+  (let [connection-id (if (map? connection) (:id connection) connection)]
+    (cond
+      ;; Mock badges
+      (mock-new-connections connection-id) {:text "NEW" :color "green"}
+      (mock-beta-connections connection-id) {:text "BETA" :color "indigo"}
+      :else nil)))
+
+(defn connection-icon [icon-name connection-id]
+  (let [image-failed? (r/atom false)]
+    (fn []
+      (if @image-failed?
+        ;; Show fallback - no more image loading, just CSS
+        [:div {:class "w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center shadow-sm"}
+         [:span {:class "text-white font-bold text-sm"}
+          (cs/upper-case (first (str connection-id)))]]
+        ;; Try to load image
+        [:img {:src (str "/icons/connections/" (or icon-name connection-id) "-default.svg")
+               :alt connection-id
+               :class "w-6 h-6"
+               :on-error (fn [_]
+                           ;; Only set flag, no more image attempts
+                           (reset! image-failed? true))}]))))
+
+(defn connection-card [connection on-click]
+  (let [{:keys [id name icon-name]} connection
+        badge (get-connection-badge connection)]
+    [:> Box {:height "110px" :width "165px"}
+     [:> Card {:size "2"
+               :class "h-full w-full cursor-pointer"
+               :on-click #(on-click connection)}
+      [:> Flex {:direction "column" :justify "between" :gap "2" :class "h-full w-full"}
+       [:> Flex {:align "center" :justify "between" :gap "2"}
+        [:> Box
+         [connection-icon icon-name id]]
+
+        (when badge
+          [:> Badge {:color (:color badge)
+                     :variant "solid"
+                     :size "1"}
+           (:text badge)])]
+
+       [:> Text {:size "2" :weight "medium" :align "left" :class "text-[--gray-12]"}
+        name]]]]))
+
+(defn main [title connections on-connection-click]
+  (when (seq connections)
+    [:> Box {:class "space-y-radix-5"}
+     [:> Heading {:as "h3" :size "5" :weight "bold" :class "mb-6 text-[--gray-12]"}
+      title]
+     [:> Flex {:direction "row" :wrap "wrap" :gap "4"}
+      (for [connection connections]
+        ^{:key (:id connection)}
+        [connection-card connection (or (:action connection) on-connection-click)])]]))

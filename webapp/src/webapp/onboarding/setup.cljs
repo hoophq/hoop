@@ -6,7 +6,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]
-   [webapp.connections.views.resource-catalog :as resource-catalog]))
+   [webapp.connections.views.resource-catalog.main :as resource-catalog]))
 
 (def setup-options
   [{:id "demo"
@@ -156,4 +156,4 @@
 
           ;; If the agents are available and the delay has ended
           (and agents-available? (= @transition-state :ready))
-          [resource-catalog/panel])))))
+          [resource-catalog/main])))))
