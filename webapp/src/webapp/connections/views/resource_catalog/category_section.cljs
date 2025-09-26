@@ -34,7 +34,7 @@
 (defn connection-card [connection on-click]
   (let [{:keys [id name icon-name]} connection
         badge (get-connection-badge connection)]
-    [:> Box {:height "110px" :width "165px"}
+    [:> Box {:height "110px" :width "176px"}
      [:> Card {:size "2"
                :class "h-full w-full cursor-pointer"
                :on-click #(on-click connection)}

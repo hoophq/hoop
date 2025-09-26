@@ -41,16 +41,19 @@
                             vec)]
             fields))))))
 
-(defn render-field [{:keys [key label value required placeholder type]}]
+(defn render-field [{:keys [key label value required placeholder type description]}]
   (let [base-props {:label label
                     :placeholder (or placeholder (str "e.g. " key))
                     :value value
                     :required required
+                    :helper-text description
                     :type (or type "password")
                     :on-change #(rf/dispatch [:connection-setup/update-metadata-credentials
                                               key
                                               (-> % .-target .-value)])}]
-    [forms/input base-props]))
+    (if (= type "textarea")
+      [forms/textarea base-props]
+      [forms/input base-props])))
 
 (defn metadata-credentials [connection-subtype]
   (let [configs (get-metadata-credentials-config connection-subtype)

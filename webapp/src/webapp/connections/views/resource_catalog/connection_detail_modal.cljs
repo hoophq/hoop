@@ -119,15 +119,14 @@
 
 (defn modal-setup-tab [connection]
   [:div {:class "space-y-6"}
-
    ;; Required Configuration (moved from Advanced)
    (when-let [credentials (get-in connection [:resourceConfiguration :credentials])]
      [:div
       [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
        "Configuration"]
       [:div {:class "space-y-3"}
-       (for [[credential-key credential-info] credentials]
-         ^{:key credential-key}
+       (for [credential-info credentials]
+         ^{:key (:name credential-info)}
          [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "2"}
            [:> Flex {:align "center" :justify "between"}
@@ -139,7 +138,7 @@
             [:> Badge {:variant "soft" :color "gray" :size "1"}
              (case (:type credential-info)
                "env-var" "Environment Variable"
-               "filesystem" "File Path"
+               "filesystem" "File Content"
                "textarea" "Text Content"
                (:type credential-info))]]
            [:> Text {:as "p" :size "2" :class "text-gray-11"}
