@@ -1,7 +1,8 @@
 use crate::ws::proxy::start_rdp_proxy_session;
 use crate::ws::session::SessionInfo;
 use crate::ws::types::{ChannelMap, ProxyMap, SessionMap, WsWriter};
-use crate::{conf, session::Header};
+use crate::ws::message::{WebSocketMessage, Header, MESSAGE_TYPE_SESSION_STARTED, MESSAGE_TYPE_DATA, PROTOCOL_RDP};
+use crate::conf;
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -10,7 +11,6 @@ use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 use futures::{SinkExt, StreamExt};
-use serde_json::{self, Value};
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -64,111 +64,103 @@ impl MessageProcessor {
     }
 
     async fn handle_binary_message(&self, data: Vec<u8>) -> anyhow::Result<()> {
-        let Some((header, header_len)) = Header::decode(&data) else {
-            info!("> Received data without valid header, ignoring");
-            return Ok(());
-        };
-
-        if header_len > data.len() {
-            error!("> Invalid header length: {} > {}", header_len, data.len());
-            return Ok(());
-        }
-
-        let payload = &data[header_len..];
-
-        // Try to parse as JSON message first
-        if let Ok(message) = serde_json::from_slice::<Value>(payload) {
-            if let Some(message_type) = message.clone().get("message_type").and_then(|v| v.as_str())
-            {
-                return self
-                    .handle_json_message(header, message_type, message)
-                    .await;
+        // Try to decode as WebSocketMessage first (for control messages)
+        if let Ok((session_id, message)) = WebSocketMessage::decode_with_header(&data) {
+            // Handle different message types
+            match message.message_type.as_str() {
+                MESSAGE_TYPE_SESSION_STARTED => {
+                    info!("> Session {} started, processing connection info...", session_id);
+                    self.handle_session_started(session_id, message).await
+                }
+                MESSAGE_TYPE_DATA => {
+                    debug!("> Received data for session: {} ({} bytes)", session_id, message.payload.len());
+                    self.handle_rdp_data(session_id, &message.payload).await
+                }
+                _ => {
+                    info!("> Unknown message type: {} for session: {}", message.message_type, session_id);
+                    Ok(())
+                }
             }
-        }
-
-        // Otherwise treat as RDP data
-        self.handle_rdp_data(header, payload).await
-    }
-
-    async fn handle_json_message(
-        &self,
-        header: Header,
-        message_type: &str,
-        message: Value,
-    ) -> anyhow::Result<()> {
-        match message_type {
-            "session_started" => {
-                info!(
-                    "> Session {} started, processing connection info...",
-                    header.sid
-                );
-                self.handle_session_started(header, message).await
-            }
-            _ => {
-                info!("> Unknown message type: {}", message_type);
+        } else {
+            // Try to decode as raw data with header (for RDP data)
+            if let Some((header, header_len)) = Header::decode(&data) {
+                if data.len() >= header_len {
+                    let rdp_data = &data[header_len..];
+                    debug!("> Received raw RDP data for session: {} ({} bytes)", header.sid, rdp_data.len());
+                    self.handle_rdp_data(header.sid, rdp_data).await
+                } else {
+                    info!("> Insufficient data for payload, ignoring");
+                    Ok(())
+                }
+            } else {
+                info!("> Failed to decode message as WebSocketMessage or raw data, ignoring");
                 Ok(())
             }
         }
     }
 
-    //TODO message should be more strongly typed for the protocol
     #[instrument(level = "debug", skip(self, message))]
-    async fn handle_session_started(&self, header: Header, message: Value) -> anyhow::Result<()> {
+    async fn handle_session_started(&self, session_id: Uuid, message: WebSocketMessage) -> anyhow::Result<()> {
+        // Debug: print the metadata to see what we're receiving
+        debug!("> Received session_started for {} with metadata: {:?}", session_id, message.metadata);
+        
+        // Check if session already exists to prevent duplicate processing
+        {
+            let sessions = self.sessions.read().await;
+            if sessions.contains_key(&session_id) {
+                debug!("> Session {} already exists, ignoring duplicate", session_id);
+                return Ok(());
+            }
+        }
+        
         let session_info = SessionInfo {
-            session_id: header.sid,
-            target_address: message
+            session_id,
+            target_address: message.metadata
                 .get("target_address")
-                .and_then(|v| v.as_str())
                 .context("Missing target_address")?
-                .to_string(),
-            username: message
+                .clone(),
+            username: message.metadata
                 .get("username")
-                .and_then(|v| v.as_str())
                 .context("Missing username")?
-                .to_string(),
-            password: message
+                .clone(),
+            password: message.metadata
                 .get("password")
-                .and_then(|v| v.as_str())
                 .context("Missing password")?
-                .to_string(),
-            proxy_user: message
+                .clone(),
+            proxy_user: message.metadata
                 .get("proxy_user")
-                .and_then(|v| v.as_str())
                 .context("Missing proxy_user")?
-                .to_string(),
-            client_address: message
+                .clone(),
+            client_address: message.metadata
                 .get("client_address")
-                .and_then(|v| v.as_str())
-                .unwrap_or("127.0.0.1:0")
-                .to_string(),
+                .unwrap_or(&"127.0.0.1:0".to_string())
+                .clone(),
             sender: self.ws_sender.clone(),
         };
 
         // Store session info
         {
             let mut sessions = self.sessions.write().await;
-            sessions.insert(header.sid, session_info);
-            debug!("> Stored session {} in sessions map", header.sid);
+            sessions.insert(session_id, session_info);
+            debug!("> Stored session {} in sessions map", session_id);
         }
 
         // Send response
-        self.send_rdp_started_response(header.sid).await
+        self.send_rdp_started_response(session_id).await
     }
 
     async fn send_rdp_started_response(&self, session_id: Uuid) -> anyhow::Result<()> {
-        let response = serde_json::json!({
-            "message_type": "rdp_started",
-        });
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("protocol".to_string(), PROTOCOL_RDP.to_string());
+        
+        let response = WebSocketMessage::new(
+            MESSAGE_TYPE_SESSION_STARTED.to_string(),
+            metadata,
+            Vec::new(),
+        );
 
-        let response_str = response.to_string();
-        let response_header = Header {
-            sid: session_id,
-            len: response_str.len() as u32,
-        };
-
-        let mut response_framed = Vec::with_capacity(20 + response_str.len());
-        response_framed.extend_from_slice(&response_header.encode());
-        response_framed.extend_from_slice(response_str.as_bytes());
+        let response_framed = response.encode_with_header(session_id)
+            .context("Failed to encode rdp_started response")?;
 
         let mut sender = self.ws_sender.lock().await;
         sender
@@ -184,17 +176,17 @@ impl MessageProcessor {
     }
 
     #[instrument(level = "debug")]
-    async fn handle_rdp_data(&self, header: Header, rdp_data: &[u8]) -> anyhow::Result<()> {
+    async fn handle_rdp_data(&self, session_id: Uuid, rdp_data: &[u8]) -> anyhow::Result<()> {
         debug!(
             "> Received RDP data for session: {} ({} bytes)",
-            header.sid,
+            session_id,
             rdp_data.len()
         );
 
         // Check if we have session info
         let sessions = self.sessions.read().await;
-        let Some(session_info) = sessions.get(&header.sid) else {
-            debug!("> Received RDP data for unknown session: {}", header.sid);
+        let Some(session_info) = sessions.get(&session_id) else {
+            debug!("> Received RDP data for unknown session: {}", session_id);
             return Ok(());
         };
 
@@ -202,11 +194,11 @@ impl MessageProcessor {
         drop(sessions);
 
         // Get or create RDP data channel for this session
-        let (tx, rx) = self.get_or_create_session_channel(header.sid).await;
+        let (tx, rx) = self.get_or_create_session_channel(session_id).await;
 
         // Start RDP proxy if not already running
-        if !self.is_proxy_running(header.sid).await {
-            self.start_rdp_proxy(header.sid, session_info, rx).await?;
+        if !self.is_proxy_running(session_id).await {
+            self.start_rdp_proxy(session_id, session_info, rx).await?;
         }
 
         // Forward RDP data to proxy

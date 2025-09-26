@@ -1,14 +1,13 @@
 package broker
 
 import (
-	"context"
-	"encoding/base64"
-	"encoding/json"
+//	"context"
+//	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"sync"
-	"time"
+//	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -37,6 +36,8 @@ type Session struct {
 	clientAddr          string
 	dataChannel         chan []byte
 	credentialsReceived chan bool
+	closed              bool
+	mu                  sync.Mutex
 }
 
 func (s *Session) AcknowledgeCredentials() {
@@ -86,12 +87,27 @@ func (s *Session) ReadFromAgent() (int, []byte, error) {
 }
 
 func (s *Session) Close() {
-	close(s.dataChannel)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if s.closed {
+		return // Already closed
+	}
+	s.closed = true
+	
+	// Close data channel safely
+	if s.dataChannel != nil {
+		close(s.dataChannel)
+	}
+	
+	// Close consumer connection
 	if s.Consumer != nil {
 		if conn, ok := s.Consumer.Connection.(net.Conn); ok {
 			conn.Close()
 		}
 	}
+	
+	// Close agent connection
 	if s.Agent != nil {
 		switch s.Agent.ConnType {
 		case "websocket":
@@ -104,18 +120,33 @@ func (s *Session) Close() {
 			}
 		}
 	}
+	
+	// Remove from sessions map
 	BrokerInstance.sessions.Delete(s.ID)
 }
 
 // forward data from agent to tcp
 func (s *Session) ForwardToTCP(data []byte) {
+	s.mu.Lock()
+	if s.closed || s.dataChannel == nil {
+		s.mu.Unlock()
+		return // Session is closed
+	}
+	s.mu.Unlock()
+	
 	log.Infof("Forwarded %d bytes to TCP session %s", len(data), s.ID)
-	s.dataChannel <- data
+	select {
+	case s.dataChannel <- data:
+		// Successfully sent
+	default:
+		// Channel is full or closed, ignore
+		log.Infof("Failed to forward data to TCP session %s (channel full or closed)", s.ID)
+	}
 }
 
 // this will spam data from tcp to agent wsconn
 func (s *Session) StartingForwardind(data []byte) error {
-
+	// Send first RDP packet using simple header format (not WebSocketMessage)
 	header := &Header{
 		SID: s.ID,
 		Len: uint32(len(data)),
@@ -125,7 +156,7 @@ func (s *Session) StartingForwardind(data []byte) error {
 
 	if err := s.SendToAgent(framedData); err != nil {
 		log.Infof("Failed to send first RDP packet: %v", err)
-		return nil
+		return err
 	}
 
 	log.Infof("Sent first RDP packet: %d bytes", len(data))
@@ -175,83 +206,6 @@ func (s *Session) SendAgentToTCP() {
 
 }
 
-func CreateRDPSession(
-	connTcp *Connection,
-	connectionInfo models.Connection,
-	proxyuser string,
-	clientAddr string) (*Session, error) {
-
-	sessionID := uuid.New()
-
-	client, ok := GetAgent(connectionInfo.AgentName)
-
-	if !ok {
-		return nil, fmt.Errorf("agent %s not found", connectionInfo.AgentName)
-	}
-
-	dataChannel := make(chan []byte, 1024)
-	credentialsReceived := make(chan bool, 1)
-
-	session := &Session{
-		ID:                  sessionID,
-		Consumer:            connTcp,
-		Agent:               client,
-		clientAddr:          clientAddr,
-		dataChannel:         dataChannel,
-		credentialsReceived: credentialsReceived,
-	}
-
-	// Store session immediately so it can be found by WebSocket handler
-	BrokerInstance.sessions.Store(sessionID, session)
-
-	// Decode base64 env variables
-	secrets := map[string]string{}
-	for k, v := range connectionInfo.Envs {
-		value, _ := base64.StdEncoding.DecodeString(v)
-		secrets[k] = string(value)
-
-	}
-	// Send session info to agent
-	handshakeInfo := map[string]interface{}{
-		"session_id":     sessionID.String(),
-		"client_address": clientAddr,
-		"username":       secrets["envvar:USER"],
-		"password":       secrets["envvar:PASS"],
-		"target_address": secrets["envvar:HOST"],
-		"proxy_user":     proxyuser,
-		"message_type":   "session_started",
-		"protocol":       "rdp",
-	}
-
-	handshakeData, err := json.Marshal(handshakeInfo)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal handshake info: %v", err)
-	}
-
-	header := &Header{
-		SID: sessionID,
-		Len: uint32(len(handshakeData)),
-	}
-
-	framedData := append(header.Encode(), handshakeData...)
-
-	if err := session.SendToAgent(framedData); err != nil {
-		return nil, err
-	}
-
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancelFn()
-
-	select {
-	case <-credentialsReceived:
-		return session, nil
-	case <-timeoutCtx.Done():
-		BrokerInstance.sessions.Delete(sessionID)
-		return nil, fmt.Errorf("timeout waiting for RDP started response")
-	}
-
-}
 
 func CreateAgent(agentId string, conn any) error {
 	client := &Connection{

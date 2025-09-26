@@ -135,9 +135,6 @@ func sendGenericRdpError(conn net.Conn) error {
 func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	defer conn.Close()
 
-	log.Printf("TCP connection from %s", peerAddr)
-
-	// Generate session ID
 	connection := &broker.Connection{
 		ConnType:   "tcp",
 		Connection: conn,
@@ -146,14 +143,14 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	// Read first RDP packet
 	firstRDPData, err := ReadFirstRDPPacket(conn)
 	if err != nil {
-		log.Printf("Failed to read first RDP packet: %v", err)
+		log.Errorf("Failed to read first RDP packet: %v", err)
 		return
 	}
 
-	// Extract credentials
+	// Extract credentials from headers
 	extractedCreds, err := ExtractCredentialsFromRDP(firstRDPData)
 	if err != nil {
-		log.Printf("Failed to extract credentials: %v", err)
+		log.Errorf("Failed to extract credentials: %v", err)
 		return
 	}
 
@@ -180,11 +177,12 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	session, err := broker.CreateRDPSession(
+	session, err := broker.CreateSessionWithProtocol(
 		connection,
 		*connectionModel,
-		extractedCreds,
-		peerAddr.String())
+		peerAddr.String(),
+		broker.ProtocolRDP,
+		extractedCreds)
 
 	if err != nil {
 		log.Printf("Failed to create session: %v", err)

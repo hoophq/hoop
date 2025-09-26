@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -81,7 +80,15 @@ func HandlerSocket(c *gin.Context) {
 	for {
 		messageType, data, err := conn.ReadMessage()
 		if err != nil {
-			log.Errorf("WebSocket read error: %v", err)
+			// Check if it's a normal closure or EOF
+			//TODO this can be just agent is down or shutdown
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Debugf("WebSocket connection closed normally: %v", err)
+			} else if err.Error() == "EOF" {
+				log.Debugf("WebSocket connection closed by client (EOF)")
+			} else {
+				log.Errorf("WebSocket read error: %v", err)
+			}
 			break
 		}
 
@@ -90,35 +97,42 @@ func HandlerSocket(c *gin.Context) {
 		}
 	}
 
+	// Cleanup: Close all sessions for this agent when WebSocket disconnects
+	sessions := broker.GetSessions()
+	for sessionID, session := range sessions {
+		if session.Agent != nil {
+			if wsConn, ok := session.Agent.Connection.(*websocket.Conn); ok && wsConn == conn {
+				log.Debugf("Closing session %s due to agent disconnect", sessionID)
+				session.Close()
+			}
+		}
+	}
+
 }
 
 // handleWebSocketMessage handles incoming WebSocket messages
 func handleWebSocketMessage(data []byte) {
-	// Try to decode as header + JSON message
-	if header, headerLen, err := broker.DecodeHeader(data); err == nil && headerLen <= len(data) {
-		session := broker.GetSession(header.SID)
-
-		if session == nil {
-			log.Printf("No session found for SID: %s", header.SID)
-			return
-		}
-
-		jsonData := data[headerLen:]
-		if len(jsonData) > 0 {
-			var response map[string]interface{}
-			if err := json.Unmarshal(jsonData, &response); err == nil {
-				// Check if it's an RDP started response
-				// TODO improve this to by defining message types (RDP, SSH,... etc) in the future
-				if messageType, ok := response["message_type"].(string); ok && messageType == "rdp_started" {
-					log.Printf("Received RDP started response for session: %s", header.SID)
-					session.AcknowledgeCredentials()
-					return
+	// Try to decode as WebSocketMessage first (for control messages)
+	if _, _, err := broker.DecodeWebSocketMessage(data); err == nil {
+		// This is a control message, handle it normally
+		broker.HandleWebSocketMessage(data)
+	} else {
+		// This might be raw RDP data, try to decode as raw data with header
+		if header, headerLen, err := broker.DecodeHeader(data); err == nil {
+			if len(data) >= headerLen {
+				// This is raw RDP data, forward it to the session
+				session := broker.GetSession(header.SID)
+				if session != nil {
+					rdpData := data[headerLen:]
+					session.ForwardToTCP(rdpData)
+				} else {
+					log.Printf("No session found for raw RDP data, SID: %s", header.SID)
 				}
+			} else {
+				log.Printf("Insufficient data for raw RDP payload")
 			}
+		} else {
+			log.Printf("Failed to decode message as WebSocketMessage or raw data: %v", err)
 		}
-
-		// Forward RDP data to TCP session
-		rdpData := data[headerLen:]
-		session.ForwardToTCP(rdpData)
 	}
 }
