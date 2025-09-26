@@ -3,7 +3,6 @@ name = "agentrs"
 version = "0.1.0"
 edition = "2024"
 
-
 [dependencies]
 futures-core = "0.3"
 futures-sink = "0.3"

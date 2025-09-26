@@ -1,7 +1,7 @@
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tracing::error;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tracing::error;
 
 pub struct LoggingIo<T> {
     inner: T,
@@ -42,17 +42,11 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for LoggingIo<T> {
         Pin::new(&mut self.inner).poll_write(cx, data)
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }

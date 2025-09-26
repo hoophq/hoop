@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio_tungstenite::{WebSocketStream};
+use tokio_tungstenite::WebSocketStream;
 use uuid::Uuid;
 
 use tokio::sync::Mutex;

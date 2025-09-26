@@ -1,8 +1,10 @@
+use crate::conf;
+use crate::ws::message::{
+    Header, MESSAGE_TYPE_DATA, MESSAGE_TYPE_SESSION_STARTED, PROTOCOL_RDP, WebSocketMessage,
+};
 use crate::ws::proxy::start_rdp_proxy_session;
 use crate::ws::session::SessionInfo;
 use crate::ws::types::{ChannelMap, ProxyMap, SessionMap, WsWriter};
-use crate::ws::message::{WebSocketMessage, Header, MESSAGE_TYPE_SESSION_STARTED, MESSAGE_TYPE_DATA, PROTOCOL_RDP};
-use crate::conf;
 use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -69,15 +71,25 @@ impl MessageProcessor {
             // Handle different message types
             match message.message_type.as_str() {
                 MESSAGE_TYPE_SESSION_STARTED => {
-                    info!("> Session {} started, processing connection info...", session_id);
+                    info!(
+                        "> Session {} started, processing connection info...",
+                        session_id
+                    );
                     self.handle_session_started(session_id, message).await
                 }
                 MESSAGE_TYPE_DATA => {
-                    debug!("> Received data for session: {} ({} bytes)", session_id, message.payload.len());
+                    debug!(
+                        "> Received data for session: {} ({} bytes)",
+                        session_id,
+                        message.payload.len()
+                    );
                     self.handle_rdp_data(session_id, &message.payload).await
                 }
                 _ => {
-                    info!("> Unknown message type: {} for session: {}", message.message_type, session_id);
+                    info!(
+                        "> Unknown message type: {} for session: {}",
+                        message.message_type, session_id
+                    );
                     Ok(())
                 }
             }
@@ -86,7 +98,11 @@ impl MessageProcessor {
             if let Some((header, header_len)) = Header::decode(&data) {
                 if data.len() >= header_len {
                     let rdp_data = &data[header_len..];
-                    debug!("> Received raw RDP data for session: {} ({} bytes)", header.sid, rdp_data.len());
+                    debug!(
+                        "> Received raw RDP data for session: {} ({} bytes)",
+                        header.sid,
+                        rdp_data.len()
+                    );
                     self.handle_rdp_data(header.sid, rdp_data).await
                 } else {
                     info!("> Insufficient data for payload, ignoring");
@@ -100,38 +116,53 @@ impl MessageProcessor {
     }
 
     #[instrument(level = "debug", skip(self, message))]
-    async fn handle_session_started(&self, session_id: Uuid, message: WebSocketMessage) -> anyhow::Result<()> {
+    async fn handle_session_started(
+        &self,
+        session_id: Uuid,
+        message: WebSocketMessage,
+    ) -> anyhow::Result<()> {
         // Debug: print the metadata to see what we're receiving
-        debug!("> Received session_started for {} with metadata: {:?}", session_id, message.metadata);
-        
+        debug!(
+            "> Received session_started for {} with metadata: {:?}",
+            session_id, message.metadata
+        );
+
         // Check if session already exists to prevent duplicate processing
         {
             let sessions = self.sessions.read().await;
             if sessions.contains_key(&session_id) {
-                debug!("> Session {} already exists, ignoring duplicate", session_id);
+                debug!(
+                    "> Session {} already exists, ignoring duplicate",
+                    session_id
+                );
                 return Ok(());
             }
         }
-        
+
         let session_info = SessionInfo {
             session_id,
-            target_address: message.metadata
+            target_address: message
+                .metadata
                 .get("target_address")
                 .context("Missing target_address")?
                 .clone(),
-            username: message.metadata
+            username: message
+                .metadata
                 .get("username")
                 .context("Missing username")?
                 .clone(),
-            password: message.metadata
+            password: message
+                .metadata
                 .get("password")
                 .context("Missing password")?
                 .clone(),
-            proxy_user: message.metadata
+            proxy_user: message
+                .metadata
                 .get("proxy_user")
                 .context("Missing proxy_user")?
                 .clone(),
-            client_address: message.metadata
+            client_address: message
+                .metadata
                 .get("client_address")
                 .unwrap_or(&"127.0.0.1:0".to_string())
                 .clone(),
@@ -152,14 +183,15 @@ impl MessageProcessor {
     async fn send_rdp_started_response(&self, session_id: Uuid) -> anyhow::Result<()> {
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("protocol".to_string(), PROTOCOL_RDP.to_string());
-        
+
         let response = WebSocketMessage::new(
             MESSAGE_TYPE_SESSION_STARTED.to_string(),
             metadata,
             Vec::new(),
         );
 
-        let response_framed = response.encode_with_header(session_id)
+        let response_framed = response
+            .encode_with_header(session_id)
             .context("Failed to encode rdp_started response")?;
 
         let mut sender = self.ws_sender.lock().await;
