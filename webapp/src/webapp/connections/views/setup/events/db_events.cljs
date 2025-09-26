@@ -54,6 +54,12 @@
  (fn [db [_ field value]]
    (assoc-in db [:connection-setup :database-credentials field] value)))
 
+;; Metadata-driven specific events
+(rf/reg-event-db
+ :connection-setup/update-metadata-credentials
+ (fn [db [_ field value]]
+   (assoc-in db [:connection-setup :metadata-credentials field] value)))
+
 ;; Configuration toggles
 (rf/reg-event-db
  :connection-setup/toggle-review

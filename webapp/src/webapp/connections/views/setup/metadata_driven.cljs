@@ -1,6 +1,6 @@
 (ns webapp.connections.views.setup.metadata-driven
   (:require
-   ["@radix-ui/themes" :refer [Box Grid Text]]
+   ["@radix-ui/themes" :refer [Box Grid Heading]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
@@ -14,7 +14,7 @@
   [{:keys [name type required description placeholder]}]
   (let [form-key (cs/lower-case (cs/replace name #"[^a-zA-Z0-9]" ""))]
     {:key form-key
-     :env-var-name name  ; Mantém nome original para backend
+     :env-var-name name
      :label name
      :value ""
      :required required
@@ -35,15 +35,15 @@
                             first)
             credentials (get-in connection [:resourceConfiguration :credentials])]
 
-        (when (seq credentials)  ; credentials agora é array
+        (when (seq credentials)
           (let [fields (->> credentials
-                            (map metadata-credential->form-field)  ; mapeia cada objeto do array
+                            (map metadata-credential->form-field)
                             vec)]
             fields))))))
 
-(defn render-field [{:keys [key label value required placeholder type description]}]
+(defn render-field [{:keys [key label value required placeholder type]}]
   (let [base-props {:label label
-                    :placeholder (or placeholder description (str "e.g. " key))
+                    :placeholder (or placeholder (str "e.g. " key))
                     :value value
                     :required required
                     :type (or type "password")
@@ -57,9 +57,8 @@
         credentials @(rf/subscribe [:connection-setup/metadata-credentials])]
     (if configs
       [:> Box {:class "space-y-5"}
-       [:> Text {:size "4" :weight "bold" :mt "6"} "Environment credentials"]
-       [:> Text {:size "2" :class "text-[--gray-11] mb-4"}
-        "Configure the required credentials for this connection."]
+       [:> Heading {:as "h3" :size "4" :weight "bold"}
+        "Environment credentials"]
 
        [:> Grid {:columns "1" :gap "4"}
         (for [field configs]
@@ -68,15 +67,13 @@
                                :value (get credentials (:key field) (:value field)))])]]
 
       ;; Debug fallback
-      [:> Box {:class "p-4 bg-red-100 text-red-800"}
-       [:> Text "No configuration found for: " connection-subtype]])))
+      nil)))
 
 (defn credentials-step [connection-subtype _form-type]
   [:form {:class "max-w-[600px]"
           :id "metadata-credentials-form"
           :on-submit (fn [e]
                        (.preventDefault e)
-                       (println "Form submitted - moving to additional-config")
                        (rf/dispatch [:connection-setup/next-step :additional-config]))}
    [:> Box {:class "space-y-7"}
 
@@ -114,18 +111,14 @@
                      :next-disabled? (and (= current-step :credentials)
                                           (not agent-id))
                      :on-next (fn []
-                                (println "Footer Next clicked - step:" current-step "agent-id:" agent-id)
                                 (let [form (.getElementById js/document
                                                             (if (= current-step :credentials)
                                                               "metadata-credentials-form"
                                                               "additional-config-form"))]
-                                  (println "Form found:" (boolean form))
                                   (when form
                                     (let [is-valid (.reportValidity form)]
-                                      (println "Form valid:" is-valid "Agent selected:" (boolean agent-id))
                                       (if (and is-valid agent-id)
                                         (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
-                                          (println "Dispatching form submit event")
                                           (.dispatchEvent form event))
                                         (js/console.warn "Form validation failed or agent not selected!"))))))
                      :next-hidden? (= current-step :installation)
