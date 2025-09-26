@@ -23,7 +23,6 @@ type Broker struct {
 var BrokerInstance = &Broker{}
 
 type Connection struct {
-	ID string `validate:"required,uuid4"`
 	ConnType   string `validate:"required,oneof=websocket tcp"`
 	Connection any
 }
@@ -58,9 +57,9 @@ func (s *Session) SendToAgent(data []byte) error {
 			return err
 		}
 	default:
-		return nil
+		return fmt.Errorf("unsupported agent connection type: %s", s.Agent.ConnType)
 	}
-	return nil
+	return fmt.Errorf("invalid agent connection")
 }
 
 func (s *Session) ReadFromAgent() (int, []byte, error) {
@@ -80,9 +79,9 @@ func (s *Session) ReadFromAgent() (int, []byte, error) {
 			return n, buffer, nil
 		}
 	default:
-		return 0, nil, nil
+		return 0, nil, fmt.Errorf("unsupported agent connection type: %s", s.Agent.ConnType)
 	}
-	return 0, nil, nil
+	return 0, nil, fmt.Errorf("invalid agent connection")
 }
 
 func (s *Session) Close() {
@@ -105,7 +104,6 @@ func (s *Session) Close() {
 		}
 	}
 	BrokerInstance.sessions.Delete(s.ID)
-	log.Infof("Session %s closed", s.ID)
 }
 
 // forward data from agent to tcp
@@ -183,10 +181,12 @@ func CreateRDPSession(
 	clientAddr string) (*Session, error) {
 
 	sessionID := uuid.New()
-	fmt.Println("Creating session with ID:", sessionID)
-	fmt.Println("Connection Info:", connectionInfo.AgentName)
-	client, _ := GetAgent(connectionInfo.AgentName)
-	fmt.Println("Agent found:", client != nil)
+
+	client, ok := GetAgent(connectionInfo.AgentName)
+
+	if !ok {
+		return nil, fmt.Errorf("agent %s not found", connectionInfo.AgentName)
+	}
 
 	dataChannel := make(chan []byte, 1024)
 	credentialsReceived := make(chan bool, 1)
@@ -204,13 +204,12 @@ func CreateRDPSession(
 	BrokerInstance.sessions.Store(sessionID, session)
 
 	// Decode base64 env variables
-	secrets := make(map[string]string)
+	secrets := map[string]string{}
 	for k, v := range connectionInfo.Envs {
 		value, _ := base64.StdEncoding.DecodeString(v)
 		secrets[k] = string(value)
 
 	}
-	fmt.Println("Decoded secrets:", secrets)
 	// Send session info to agent
 	handshakeInfo := map[string]interface{}{
 		"session_id":     sessionID.String(),
@@ -223,12 +222,10 @@ func CreateRDPSession(
 		"protocol":       "rdp",
 	}
 
-	fmt.Println("Handshake Info:", handshakeInfo)
 	handshakeData, err := json.Marshal(handshakeInfo)
 
 	if err != nil {
-		log.Infof("Failed to marshal handshake info: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal handshake info: %v", err)
 	}
 
 	header := &Header{
@@ -243,32 +240,26 @@ func CreateRDPSession(
 		return nil, err
 	}
 
-	log.Infof("Sent handshake to agent for session %s: %d bytes", sessionID, len(handshakeData))
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFn()
 
-	// Wait for RDP started response
 	select {
 	case <-credentialsReceived:
-		log.Infof("Received RDP started response for session %s", sessionID)
 		return session, nil
-	case <-time.After(5 * time.Second):
-		log.Infof("Timeout waiting for RDP started response for session %s", sessionID)
-		// Clean up session on timeout
+	case <-timeoutCtx.Done():
 		BrokerInstance.sessions.Delete(sessionID)
 		return nil, fmt.Errorf("timeout waiting for RDP started response")
 	}
-	//try to do the handshake here
 
 }
 
 func CreateAgent(agentId string, conn any) error {
-
 	client := &Connection{
-		ID:         agentId,
 		ConnType:   "websocket",
 		Connection: conn,
 	}
 
-	BrokerInstance.agents.Store(client.ID, client)
+	BrokerInstance.agents.Store(agentId, client)
 	return nil
 }
 
@@ -291,7 +282,7 @@ func GetSession(sessionId uuid.UUID) *Session {
 }
 
 func GetSessions() map[uuid.UUID]*Session {
-	sessions := make(map[uuid.UUID]*Session)
+	sessions := map[uuid.UUID]*Session{}
 	BrokerInstance.sessions.Range(func(key, value any) bool {
 		if sessionID, ok := key.(uuid.UUID); ok {
 			if session, valid := value.(*Session); valid {

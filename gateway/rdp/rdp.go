@@ -11,6 +11,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
@@ -54,7 +55,6 @@ func (r *RDPProxy) Stop() error {
 
 		for _, session := range broker.GetSessions() {
 			if session != nil {
-				log.Infof("closing session %v", session.ID)
 				session.Close()
 			}
 		}
@@ -94,6 +94,44 @@ func runRDPProxyServer(listenAddr string) (*RDPProxy, error) {
 	return proxy, nil
 }
 
+// sendGenericRdpError tells the RDP client "something went wrong".
+// Most clients (mstsc, FreeRDP) will show a generic protocol/security error dialog.
+func sendGenericRdpError(conn net.Conn) error {
+	// It depends on the client to show specific error messages.
+	// X.224 Connection Confirm header
+	x224 := []byte{
+		0x0e,       // length of header
+		0xd0,       // type=CC
+		0x00, 0x00, // dstRef
+		0x12, 0x34, // srcRef (arbitrary)
+		0x00, // class/options
+	}
+
+	// RDP_NEG_FAILURE { type=0x03, flags=0, length=8, failureCode=0x00000002 }
+	// 0x00000002 => SSL_NOT_ALLOWED_BY_SERVER (common generic error)
+	neg := []byte{
+		0x03, 0x00, 0x08, 0x00,
+		0x02, 0x00, 0x00, 0x00,
+	}
+
+	userData := append(x224, neg...)
+
+	// TPKT header: version=3, reserved=0, total length
+	totalLen := 4 + len(userData)
+	tpkt := []byte{
+		0x03, 0x00,
+		byte(totalLen >> 8), byte(totalLen & 0xff),
+	}
+
+	packet := append(tpkt, userData...)
+
+	// Write the failure once, then close
+	if _, err := conn.Write(packet); err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
 func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	defer conn.Close()
 
@@ -101,7 +139,6 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 
 	// Generate session ID
 	connection := &broker.Connection{
-		ID:         "connection-id",
 		ConnType:   "tcp",
 		Connection: conn,
 	}
@@ -121,26 +158,23 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	}
 
 	secretKeyHash, err := keys.Hash256Key(extractedCreds)
-	log.Printf("Extracted credentials: %s", extractedCreds)
+
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
 		pb.ConnectionTypeRDP.String(),
 		secretKeyHash)
+
 	if err != nil {
 		if err == models.ErrNotFound {
-			log.Errorf("invalid secret access key credentials")
+			// it is possible use just mapped errors for client responses
+			log.Errorf("invalid credentials provided by rdp client, reason=%v", err)
+			_ = sendGenericRdpError(conn)
 			return
 		}
 		log.Errorf("failed obtaining secret access key, reason=%v", err)
 		return
 	}
-	fmt.Println("obtained db access by id, id=", dba.ID, ", subject=", dba.UserSubject, ", connection=", dba.ConnectionName)
 
-	userCtx, err := models.GetUserContext(dba.UserSubject)
-	if err != nil {
-		log.Errorf("failed fetching user context, reason=%v", err)
-		return
-	}
-	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
+	connectionModel, err := models.GetConnectionByNameOrID(storagev2.NewOrganizationContext(dba.OrgID), dba.ConnectionName)
 	if err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
 		return
