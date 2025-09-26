@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -236,7 +237,6 @@ func CreateRDPSession(
 	framedData := append(header.Encode(), handshakeData...)
 
 	if err := session.SendToAgent(framedData); err != nil {
-		log.Infof("Failed to send handshake to agent: %v", err)
 		return nil, err
 	}
 

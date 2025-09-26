@@ -1,3 +1,6 @@
+use crate::run::run_agent;
+
+pub mod run;
 pub mod certs;
 pub mod conf;
 pub mod listener;

@@ -72,10 +72,16 @@ func HandlerSocket(c *gin.Context) {
 		return
 	}
 
+	conn, ok := client.Connection.(*websocket.Conn)
+	if !ok {
+		log.Errorf("Invalid WebSocket connection type")
+		return
+	}
+
 	for {
-		messageType, data, err := client.Connection.(*websocket.Conn).ReadMessage()
+		messageType, data, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("WebSocket read error: %v", err)
+			log.Errorf("WebSocket read error: %v", err)
 			break
 		}
 
@@ -84,14 +90,10 @@ func HandlerSocket(c *gin.Context) {
 		}
 	}
 
-	log.Println("WebSocket connection closed")
-
 }
 
 // handleWebSocketMessage handles incoming WebSocket messages
 func handleWebSocketMessage(data []byte) {
-	log.Printf("Received %d bytes from agent", len(data))
-
 	// Try to decode as header + JSON message
 	if header, headerLen, err := broker.DecodeHeader(data); err == nil && headerLen <= len(data) {
 		session := broker.GetSession(header.SID)

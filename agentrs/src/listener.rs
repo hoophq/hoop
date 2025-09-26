@@ -50,8 +50,11 @@ impl Service {
             loop {
                 let (result, _, rest) = join_all.await;
 
+                //get the tasks name
                 match result {
-                    Ok(Ok(())) => println!("A task terminated gracefully"),
+                    Ok(Ok(())) => {
+                        println!("A task terminated gracefully")
+                    }
                     Ok(Err(error)) => error!("A task failed {:?}", error),
                     Err(error) => error!("Something went very wrong with a task {:?}", error),
                 }
