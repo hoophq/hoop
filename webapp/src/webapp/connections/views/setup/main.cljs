@@ -3,6 +3,7 @@
    ["@radix-ui/themes" :refer [Box]]
    [re-frame.core :as rf]
    [webapp.connections.views.setup.database :as database]
+   [webapp.connections.views.setup.metadata-driven :as metadata-driven]
    [webapp.connections.views.setup.network :as network]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.setup.server :as server]
@@ -20,6 +21,7 @@
                        "database" [database/main form-type]
                        "server" [server/main form-type]
                        "network" [network/main form-type]
+                       "custom" [metadata-driven/main form-type]
                        [type-selector/main form-type])
                      ;; Senão, mostra type selector
                      [type-selector/main form-type])]

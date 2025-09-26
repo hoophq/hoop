@@ -8,10 +8,8 @@
    [reagent.core :as r]
    [webapp.components.forms :as forms]))
 
-;; Whitelist - apenas estas conexões aparecerão no catálogo
-(def allowed-connections #{"postgres" "mysql" "mongodb" "mssql" "oracle"
-                           "ssh" "tcp" "httpproxy"
-                           "nodejs" "python-scripts" "ruby-on-rails" "clojure"})
+;; Denylist - conexões que NÃO aparecerão no catálogo
+(def denied-connections #{"jump-hosts" "webapps-and-apis"})
 
 ;; Conexões custom que não estão no metadata.json
 (def custom-connections
@@ -59,25 +57,34 @@
     :special-type :action}])
 
 ;; Mapeamento connection-id → setup flow
-(def connection-setup-mapping
-  {"postgres" {:type "database" :subtype "postgres"}
-   "mysql" {:type "database" :subtype "mysql"}
-   "mongodb" {:type "database" :subtype "mongodb"}
-   "mssql" {:type "database" :subtype "mssql"}
-   "oracle" {:type "database" :subtype "oracledb"}
-   "ssh" {:type "server" :subtype "ssh"}
-   "tcp" {:type "network" :subtype "tcp"}
-   "httpproxy" {:type "network" :subtype "httpproxy"}
-   "nodejs" {:type "server" :subtype "console" :app-type "nodejs"}
-   "python-scripts" {:type "server" :subtype "console" :app-type "python"}
-   "ruby-on-rails" {:type "server" :subtype "console" :app-type "ruby-on-rails"}
-   "clojure" {:type "server" :subtype "console" :app-type "clojure"}
-   ;; Custom connections
-   "linux-vm" {:type "server" :subtype "custom"}})
+(defn connection-setup-mapping [connection]
+  (let [connection-id (:id connection)
+        resource-configuration (:resourceConfiguration connection)
+        connection-mapped {"postgres" {:type "database" :subtype "postgres"}
+                           "mysql" {:type "database" :subtype "mysql"}
+                           "mongodb" {:type "database" :subtype "mongodb"}
+                           "mssql" {:type "database" :subtype "mssql"}
+                           "oracle" {:type "database" :subtype "oracledb"}
+                           "ssh" {:type "server" :subtype "ssh"}
+                           "tcp" {:type "network" :subtype "tcp"}
+                           "httpproxy" {:type "network" :subtype "httpproxy"}
+                           "nodejs" {:type "server" :subtype "console" :app-type "nodejs"}
+                           "python-scripts" {:type "server" :subtype "console" :app-type "python"}
+                           "ruby-on-rails" {:type "server" :subtype "console" :app-type "ruby-on-rails"}
+                           "clojure" {:type "server" :subtype "console" :app-type "clojure"}
+                           ;; Custom connections
+                           "linux-vm" {:type "server" :subtype "custom"}}]
+
+    (if (get connection-mapped connection-id)
+      (get connection-mapped connection-id)
+
+      {:type (:type resource-configuration)
+       :subtype (:subtype resource-configuration)
+       :command (:command resource-configuration)})))
 
 ;; Mock data
-(def mock-popular-connections #{"mysql" "postgres" "ssh" "linux-vm"
-                                "postgres-demo" "aws-discovery"})
+(def mock-popular-connections #{"postgres" "mysql" "mongodb" "ssh" "linux-vm"
+                                "postgres-demo"})
 (def mock-new-connections #{"postgres-demo"})
 (def mock-beta-connections #{"mongodb" "aws-discovery"})
 
@@ -96,8 +103,7 @@
   (if (= (:special-type connection) :action)
     ((:action connection))
     ;; Senão, segue o fluxo normal de setup
-    (let [connection-id (:id connection)
-          setup-config (get connection-setup-mapping connection-id)]
+    (let [setup-config (connection-setup-mapping connection)]
       (if setup-config
         (do
           ;; Inicializa o setup com configurações do catálogo
@@ -112,12 +118,11 @@
             (if is-onboarding?
               (rf/dispatch [:navigate :onboarding-setup-resource])
               (rf/dispatch [:navigate :create-connection]))))
-        (js/console.warn "No setup mapping found for connection:" connection-id)))))
+        (js/console.warn "No setup mapping found for connection:" (:id connection))))))
 
 (defn connection-icon [icon-name connection-id]
   (let [image-failed? (r/atom false)]
     (fn []
-      (println "icon-name" icon-name)
       (if @image-failed?
         ;; Show fallback - no more image loading, just CSS
         [:div {:class "w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center shadow-sm"}
@@ -311,7 +316,7 @@
             "View Docs"]]
           [:> Button {:variant "solid" :size "3"
                       :on-click #(navigate-to-setup connection)}
-           (str "Continue with " name)]]]
+           "Continue Setup"]]]
 
         ;; Tabs with Radix UI
         [:> Tabs.Root {:default-value "overview" :class "w-full"}
@@ -347,9 +352,9 @@
          [:> Text {:size "4"} "Loading resource catalog..."]]
 
         (let [metadata-connections (:connections @connections-metadata)
-              ;; Aplicar whitelist - apenas conexões permitidas do metadata
+              ;; Aplicar denylist - remove conexões não desejadas
               filtered-metadata-connections (->> metadata-connections
-                                                 (filter #(allowed-connections (:id %))))
+                                                 (remove #(denied-connections (:id %))))
               ;; Detectar se estamos no onboarding
               current-path (.. js/window -location -pathname)
               is-onboarding? (cs/includes? current-path "/onboarding")

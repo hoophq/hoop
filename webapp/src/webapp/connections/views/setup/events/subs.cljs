@@ -46,6 +46,11 @@
    (get-in db [:connection-setup :database-credentials])))
 
 (rf/reg-sub
+ :connection-setup/metadata-credentials
+ (fn [db _]
+   (get-in db [:connection-setup :metadata-credentials])))
+
+(rf/reg-sub
  :connection-setup/command
  (fn [db]
    (get-in db [:connection-setup :command] "")))

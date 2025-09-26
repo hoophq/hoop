@@ -1,6 +1,7 @@
 (ns webapp.connections.views.setup.events.process-form
   (:require
    [clojure.string :as str]
+   [re-frame.core :as rf]
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]
    [webapp.connections.views.setup.tags-utils :as tags-utils]))
@@ -75,6 +76,26 @@
                                                            (seq database-credentials))]
                          (concat credentials-as-env-vars env-vars))
 
+                       (and (= ui-type "custom") connection-subtype (get-in db [:connection-setup :metadata-credentials]))
+                       (let [metadata-credentials (get-in db [:connection-setup :metadata-credentials])
+                             ;; Para metadata, busca o nome original da env-var
+                             connections-metadata @(rf/subscribe [:connections->metadata])
+                             connection (->> (:connections connections-metadata)
+                                             (filter #(= (get-in % [:resourceConfiguration :subtype]) connection-subtype))
+                                             first)
+                             credentials-config (get-in connection [:resourceConfiguration :credentials])  ; agora é array
+                             credentials-as-env-vars (mapv (fn [[field-key field-value]]
+                                                             (let [;; Busca config original no array por field-key
+                                                                   form-key-normalized (str/lower-case (str/replace (name field-key) #"[^a-zA-Z0-9]" ""))
+                                                                   original-config (->> credentials-config
+                                                                                        (filter #(= (str/lower-case (str/replace (:name %) #"[^a-zA-Z0-9]" ""))
+                                                                                                    form-key-normalized))
+                                                                                        first)]
+                                                               {:key (or (:name original-config) (name field-key))
+                                                                :value field-value}))
+                                                           (seq metadata-credentials))]
+                         (concat credentials-as-env-vars env-vars))
+
                        (= connection-subtype "tcp")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
                              tcp-env-vars [{:key "HOST" :value (:host network-credentials)}
@@ -122,8 +143,11 @@
 
         command-string (get-in db [:connection-setup :command])
         command-args (get-in db [:connection-setup :command-args] [])
+        command-args-from-metadata (get-in db [:connection-setup :metadata-command-args] [])
         command-array (if (seq command-args)
                         (mapv #(get % "value") command-args)
+
+                        ;; Deprecated
                         (when-not (empty? command-string)
                           (or (re-seq #"'.*?'|\".*?\"|\S+|\t" command-string) [])))
         resource-subtype-override (get-in db [:connection-setup :resource-subtype-override])
@@ -139,8 +163,10 @@
                  :connection_tags tags
                  :tags old-tags
                  :secret secret
-                 :command (if (= api-type "database")
-                            []
+                 :command (cond
+                            (= api-type "database") []
+                            (seq command-args-from-metadata) command-args-from-metadata
+                            :else
                             command-array)
                  :guardrail_rules guardrails-processed
                  :jira_issue_template_id jira-template-id-processed

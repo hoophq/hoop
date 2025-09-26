@@ -74,7 +74,15 @@
    :googlecloud (str config/webapp-url "/icons/connections/googlecloud-rounded.svg")
    :helm (str config/webapp-url "/icons/connections/helm-rounded.svg")
    :git (str config/webapp-url "/icons/connections/git-rounded.svg")
-   :sentry (str config/webapp-url "/icons/connections/sentry-rounded.svg")})
+   :sentry (str config/webapp-url "/icons/connections/sentry-rounded.svg")
+   :django (str config/webapp-url "/icons/connections/django-rounded.svg")
+   :elixir (str config/webapp-url "/icons/connections/elixir-rounded.svg")
+   :cloudwatch (str config/webapp-url "/icons/connections/aws-cloudwatch-default.svg")
+   :dynamodb (str config/webapp-url "/icons/connections/aws-dynamodb-default.svg")
+   :bigquery (str config/webapp-url "/icons/connections/google-bigquery-default.svg")
+   :laravel (str config/webapp-url "/icons/connections/laravel-default.svg")
+   :cassandra (str config/webapp-url "/icons/connections/cassandra-default.svg")
+   :redis (str config/webapp-url "/icons/connections/redis-default.svg")})
 
 (def connection-icons-default-dictionary
   {:postgres (str config/webapp-url "/icons/connections/postgres-default.svg")
@@ -104,7 +112,15 @@
    :googlecloud (str config/webapp-url "/icons/connections/googlecloud-default.svg")
    :helm (str config/webapp-url "/icons/connections/helm-default.svg")
    :git (str config/webapp-url "/icons/connections/git-default.svg")
-   :sentry (str config/webapp-url "/icons/connections/sentry-default.svg")})
+   :sentry (str config/webapp-url "/icons/connections/sentry-default.svg")
+   :django (str config/webapp-url "/icons/connections/django-default.svg")
+   :elixir (str config/webapp-url "/icons/connections/elixir-default.svg")
+   :cloudwatch (str config/webapp-url "/icons/connections/aws-cloudwatch-default.svg")
+   :dynamodb (str config/webapp-url "/icons/connections/aws-dynamodb-default.svg")
+   :bigquery (str config/webapp-url "/icons/connections/google-bigquery-default.svg")
+   :laravel (str config/webapp-url "/icons/connections/laravel-default.svg")
+   :cassandra (str config/webapp-url "/icons/connections/cassandra-default.svg")
+   :redis (str config/webapp-url "/icons/connections/redis-default.svg")})
 
 (def command-to-icon-key
   {"aws" :aws
@@ -128,17 +144,22 @@
    "sentry-cli" :sentry
    "yarn" :yarn
    "ssh" :ssh
-   "bash" :custom})
+   "bash" :custom
+   "php" :laravel
+   "cqlsh" :apache-cassandra
+   "redis-cli" :redis})
 
 (defn get-connection-icon [connection & [icon-style]]
   (let [icon-key (cond
+                   (not (cs/blank? (:subtype connection))) (keyword (:subtype connection))
                    (and (= "custom" (:type connection)) (not (cs/blank? (:command connection))))
                    (let [command-first-term (first (:command connection))]
                      (get command-to-icon-key command-first-term :custom))
-                   (not (cs/blank? (:subtype connection))) (keyword (:subtype connection))
                    (not (cs/blank? (:icon_name connection))) (keyword (:icon_name connection))
                    (not (cs/blank? (:type connection))) (keyword (:type connection))
                    :else :custom)]
+
+    (println icon-key "icon-key")
     (cond
       (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key)
       (= icon-style "default") (get connection-icons-default-dictionary icon-key)
