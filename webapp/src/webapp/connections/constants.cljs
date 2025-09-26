@@ -82,7 +82,12 @@
    :bigquery (str config/webapp-url "/icons/connections/google-bigquery-default.svg")
    :laravel (str config/webapp-url "/icons/connections/laravel-default.svg")
    :cassandra (str config/webapp-url "/icons/connections/cassandra-default.svg")
-   :redis (str config/webapp-url "/icons/connections/redis-default.svg")})
+   :redis (str config/webapp-url "/icons/connections/redis-default.svg")
+   :kubernetes-admin (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
+   :kubernetes-exec (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
+   :kubernetes-interactive (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
+   :aws-cli (str config/webapp-url "/icons/connections/aws-rounded.svg")
+   :aws-ecs (str config/webapp-url "/icons/connections/aws-rounded.svg")})
 
 (def connection-icons-default-dictionary
   {:postgres (str config/webapp-url "/icons/connections/postgres-default.svg")
@@ -120,7 +125,12 @@
    :bigquery (str config/webapp-url "/icons/connections/google-bigquery-default.svg")
    :laravel (str config/webapp-url "/icons/connections/laravel-default.svg")
    :cassandra (str config/webapp-url "/icons/connections/cassandra-default.svg")
-   :redis (str config/webapp-url "/icons/connections/redis-default.svg")})
+   :redis (str config/webapp-url "/icons/connections/redis-default.svg")
+   :kubernetes-admin (str config/webapp-url "/icons/connections/kubernetesdefault.svg")
+   :kubernetes-exec (str config/webapp-url "/icons/connections/kubernetes-default.svg")
+   :kubernetes-interactive (str config/webapp-url "/icons/connections/kubernetes-default.svg")
+   :aws-cli (str config/webapp-url "/icons/connections/aws-default.svg")
+   :aws-ecs (str config/webapp-url "/icons/connections/aws-default.svg")})
 
 (def command-to-icon-key
   {"aws" :aws
