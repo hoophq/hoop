@@ -35,13 +35,16 @@ func CreateRDPSession(
 	extractedCreds string) (*Session, error) {
 
 	sessionID := uuid.New()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	client, _ := GetAgent(connectionInfo.AgentName)
 	if client == nil {
+		cancel()
 		return nil, fmt.Errorf("agent not found: %s", connectionInfo.AgentName)
 	}
 
-	dataChannel := make(chan []byte, 1024)
+	// 8192 is the maximum number of messages that can be queued without blocking
+	dataChannel := make(chan []byte, 8192)
 	credentialsReceived := make(chan bool, 1)
 
 	session := &Session{
@@ -52,6 +55,8 @@ func CreateRDPSession(
 		dataChannel:         dataChannel,
 		Protocol:            ProtocolRDP,
 		credentialsReceived: credentialsReceived,
+		ctx:                 ctx,
+		cancel:              cancel,
 	}
 
 	// Store session immediately so it can be found by WebSocket handler

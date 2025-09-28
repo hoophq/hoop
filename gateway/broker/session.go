@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"context"
 	"io"
 	"sync"
 
@@ -28,6 +29,8 @@ type Session struct {
 	dataChannel         chan []byte
 	credentialsReceived chan bool
 	closed              bool
+	ctx                 context.Context
+	cancel              context.CancelFunc
 	mu                  sync.Mutex
 }
 
@@ -60,6 +63,9 @@ func (s *Session) Close() {
 		return // Already closed
 	}
 	s.closed = true
+	if s.cancel != nil {
+		s.cancel()
+	}
 
 	// Close data channel safely
 	if s.dataChannel != nil {
@@ -89,13 +95,15 @@ func (s *Session) ForwardToTCP(data []byte) {
 	}
 	s.mu.Unlock()
 
-	log.Infof("Forwarded %d bytes to TCP session %s", len(data), s.ID)
 	select {
+	// the data is create with a buffer size buffer size of 1024
+	// Up to 1024 messages can be queued without blocking
+	//If the buffer is full, new data is dropped rather than blocking
 	case s.dataChannel <- data:
 		// Successfully sent
-	default:
-		// Channel is full or closed, ignore
-		log.Infof("Failed to forward data to TCP session %s (channel full or closed)", s.ID)
+	case <-s.ctx.Done():
+		// Session is being closed, don't send
+		log.Infof("Session %s closed, dropping data", s.ID)
 	}
 }
 
@@ -114,8 +122,7 @@ func (s *Session) StartingForwardind(data []byte) error {
 		return err
 	}
 
-	log.Infof("Sent first RDP packet: %d bytes", len(data))
-
+	// sending first packet done
 	// Continue reading from TCP connection (not from agent!)
 	for {
 		n, buffer, err := s.ClientCommunicator.Read()
@@ -127,7 +134,6 @@ func (s *Session) StartingForwardind(data []byte) error {
 		}
 
 		if n > 0 {
-			log.Infof("TCP -> Agent: %d bytes for session %s", n, s.ID)
 
 			header := &Header{
 				SID: s.ID,
@@ -147,7 +153,6 @@ func (s *Session) StartingForwardind(data []byte) error {
 // this will forward data from agent to tcp
 func (s *Session) SendAgentToTCP() {
 	for data := range s.dataChannel {
-		log.Infof("Agent -> TCP: %d bytes for session %s", len(data), s.ID)
 
 		// Write directly to TCP connection
 		if err := s.ClientCommunicator.Send(data); err != nil {

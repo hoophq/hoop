@@ -21,11 +21,6 @@ type WebSocketMessage struct {
 	Payload  []byte            `json:"payload"`
 }
 
-// Protocol types
-const (
-	ProtocolRDP = "rdp"
-)
-
 // Message types
 const (
 	MessageTypeSessionStarted = "session_started"
