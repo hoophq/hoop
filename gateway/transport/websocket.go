@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -12,17 +13,17 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	//ReadBufferSize:  32 << 10, // 32 KiB (tune as needed)
+	//WriteBufferSize: 32 << 10,
 	CheckOrigin: func(r *http.Request) bool {
-		//TODO : improve origin check for future version
-		// Allow all connections by default
+		// TODO: tighten origin checks later
 		return true
 	},
+	EnableCompression: true,
 }
 
-// validate hoop key from coonectoin websocket
 func verifyWebsocketToken(token string) (*models.Agent, error) {
 	dsn, err := dsnkeys.Parse(token)
-
 	if err != nil {
 		log.With("token_length", len(token)).Errorf("invalid agent authentication (dsn), err=%v", err)
 		return nil, err
@@ -36,103 +37,130 @@ func verifyWebsocketToken(token string) (*models.Agent, error) {
 	if ag.Name != dsn.Name {
 		log.Errorf("failed authenticating agent (agent dsn), mismatch dsn attributes. id=%v, name=%v, mode=%v",
 			ag.ID, dsn.Name, dsn.AgentMode)
-		return nil, err
+		return nil, fmt.Errorf("agent dsn mismatch")
 	}
-
 	return ag, nil
 }
 
-func HandlerSocket(c *gin.Context) {
+func HandleConnection(c *gin.Context) {
 	token := c.Request.Header.Get("HOOP_KEY")
 	if token == "" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing HOOP_KEY header"})
 		return
 	}
+
 	agent, err := verifyWebsocketToken(token)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authentication"})
 		return
 	}
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	defer conn.Close()
+
+	wsConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		log.Errorf("WebSocket upgrade error: %v", err)
+		return
+	}
+	defer wsConn.Close()
+
+	// Register this agent's communicator inside the broker
+	if err := broker.CreateAgent(agent.Name, wsConn); err != nil {
+		log.Errorf("failed to register agent communicator: %v", err)
 		return
 	}
 
-	broker.CreateAgent(agent.Name, conn)
-
-	log.Println("WebSocket connection established")
-
-	// Handle incoming messages
-	client, found := broker.GetAgent(agent.Name)
-	if !found || client == nil {
-		log.Printf("Agent not found or nil")
-		return
-	}
-
-	conn, ok := client.Connection.(*websocket.Conn)
-	if !ok {
-		log.Errorf("Invalid WebSocket connection type")
-		return
-	}
+	log.Infof("WebSocket connection established for agent=%s", agent.Name)
 
 	for {
-		messageType, data, err := conn.ReadMessage()
+		messageType, data, err := wsConn.ReadMessage()
 		if err != nil {
-			// Check if it's a normal closure or EOF
-			//TODO this can be just agent is down or shutdown
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				log.Debugf("WebSocket connection closed normally: %v", err)
-			} else if err.Error() == "EOF" {
-				log.Debugf("WebSocket connection closed by client (EOF)")
+			if websocket.IsCloseError(err,
+				websocket.CloseNormalClosure,
+				websocket.CloseGoingAway,
+				websocket.CloseNoStatusReceived,
+			) {
+				log.Debugf("WebSocket closed for agent=%s: %v", agent.Name, err)
 			} else {
-				log.Errorf("WebSocket read error: %v", err)
+				log.Infof("WebSocket read error for agent=%s: %v", agent.Name, err)
+				break
 			}
 			break
 		}
-
-		if messageType == websocket.BinaryMessage {
-			handleWebSocketMessage(data)
+		if messageType != websocket.BinaryMessage {
+			continue
 		}
+		handleWebSocketMessage(data)
 	}
 
-	// Cleanup: Close all sessions for this agent when WebSocket disconnects
-	sessions := broker.GetSessions()
-	for sessionID, session := range sessions {
-		if session.Agent != nil {
-			if wsConn, ok := session.Agent.Connection.(*websocket.Conn); ok && wsConn == conn {
-				log.Debugf("Closing session %s due to agent disconnect", sessionID)
-				session.Close()
-			}
+	// Cleanup: close all sessions that belong to this agent ===
+	for id, s := range broker.GetSessions() {
+		if s.Connection.AgentName == agent.Name {
+			log.Debugf("Closing session %s due to agent=%s disconnect", id, agent.Name)
+			s.Close()
 		}
 	}
-
 }
 
-// handleWebSocketMessage handles incoming WebSocket messages
 func handleWebSocketMessage(data []byte) {
-	// Try to decode as WebSocketMessage first (for control messages)
-	if _, _, err := broker.DecodeWebSocketMessage(data); err == nil {
-		// This is a control message, handle it normally
-		broker.HandleWebSocketMessage(data)
-	} else {
-		// This might be raw RDP data, try to decode as raw data with header
-		if header, headerLen, err := broker.DecodeHeader(data); err == nil {
-			if len(data) >= headerLen {
-				// This is raw RDP data, forward it to the session
-				session := broker.GetSession(header.SID)
-				if session != nil {
-					rdpData := data[headerLen:]
-					session.ForwardToTCP(rdpData)
-				} else {
-					log.Printf("No session found for raw RDP data, SID: %s", header.SID)
-				}
-			} else {
-				log.Printf("Insufficient data for raw RDP payload")
-			}
-		} else {
-			log.Printf("Failed to decode message as WebSocketMessage or raw data: %v", err)
+	// 1) Try CONTROL frame first (JSON-like)
+	if sid, msg, err := broker.DecodeWebSocketMessage(data); err == nil {
+		s := broker.GetSession(sid)
+		if s == nil {
+			log.Infof("Control message for unknown SID=%s", sid)
+			return
 		}
+		handler, ok := broker.ProtocolManagerInstance.GetHandler(s.Protocol)
+		if !ok {
+			log.Infof("No protocol handler for %q (SID=%s)", s.Protocol, sid)
+			return
+		}
+
+		switch msg.Type {
+		case broker.MessageTypeSessionStarted: // can add more case to handle session start acknowledgement, or initial connection
+			// for multiple protocols
+			_ = handler.HandleSessionStarted(s, msg) // handler decides when to ack via session.AcknowledgeCredentials()
+		case broker.MessageTypeData:
+			// Some agents might send data via control envelope. Let handler decide.
+			_ = handler.HandleData(s, msg)
+		default:
+			log.Infof("Unhandled control message type=%q for SID=%s", msg.Type, sid)
+		}
+		return
 	}
+
+	// 2) Try FRAMED BINARY (stream data for ANY TCP-like protocol)
+	if header, headerLen, err := broker.DecodeHeader(data); err == nil {
+		if len(data) < headerLen {
+			log.Infof("Framed payload truncated (len=%d < headerLen=%d)", len(data), headerLen)
+			return
+		}
+		payload := data[headerLen:]
+
+		s := broker.GetSession(header.SID)
+		if s == nil {
+			log.Infof("Binary payload for unknown SID=%s", header.SID)
+			return
+		}
+
+		handler, ok := broker.ProtocolManagerInstance.GetHandler(s.Protocol)
+		if ok {
+			// Wrap as a data message for a uniform handler entrypoint.
+			dm := &broker.WebSocketMessage{
+				Type:     broker.MessageTypeData,
+				Metadata: map[string]string{"transport": "binary"},
+				Payload:  payload,
+			}
+			if err := handler.HandleData(s, dm); err == nil {
+				return // handler consumed it
+			}
+			// else fallthrough to generic forwarding or add error
+			log.Infof("Protocol handler %q failed to handle binary data: %v", s.Protocol, err)
+		}
+
+		// Generic default: stream bytes to the client TCP
+		s.ForwardToTCP(payload)
+		return
+	}
+
+	// 3) Unknown/invalid
+	log.Infof("Unhandled WS message: neither control nor framed-binary")
 }

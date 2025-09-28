@@ -73,7 +73,7 @@ func runRDPProxyServer(listenAddr string) (*RDPProxy, error) {
 		return nil, fmt.Errorf("failed to start RDP proxy server at %v, reason=%v", listenAddr, err)
 	}
 
-	proxy := &RDPProxy{
+	rdpProxyInstance := &RDPProxy{
 		listener:   listener,
 		listenAddr: listenAddr,
 	}
@@ -87,11 +87,11 @@ func runRDPProxyServer(listenAddr string) (*RDPProxy, error) {
 				break
 			}
 
-			go proxy.handleRDPClient(conn, conn.RemoteAddr())
+			go rdpProxyInstance.handleRDPClient(conn, conn.RemoteAddr())
 		}
 	}()
 
-	return proxy, nil
+	return rdpProxyInstance, nil
 }
 
 // sendGenericRdpError tells the RDP client "something went wrong".
@@ -135,10 +135,7 @@ func sendGenericRdpError(conn net.Conn) error {
 func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	defer conn.Close()
 
-	connection := &broker.Connection{
-		ConnType:   "tcp",
-		Connection: conn,
-	}
+	connection := broker.NewClientCommunicator(conn)
 
 	// Read first RDP packet
 	firstRDPData, err := ReadFirstRDPPacket(conn)
@@ -177,7 +174,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	session, err := broker.CreateSessionWithProtocol(
+	session, err := broker.CreateRDPSession(
 		connection,
 		*connectionModel,
 		peerAddr.String(),

@@ -723,6 +723,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		searchapi.Get,
 	)
 
-	r.GET("/ws", transport.HandlerSocket)
+	r.GET("/ws", transport.HandleConnection)
 
 }
