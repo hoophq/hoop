@@ -27,15 +27,9 @@ pub struct ConfigHandleManager {
     pub conf: Arc<Conf>,
 }
 
-fn get_default_path() -> Utf8PathBuf {
-    let path = get_data_dir();
-    path.join("gateway.json")
-}
-
 fn get_path() -> Utf8PathBuf {
-    std::env::var("HOOP_PATH")
-        .map(Utf8PathBuf::from)
-        .unwrap_or_else(|_| get_default_path())
+    let hoop_dir = get_data_dir();
+    hoop_dir.join("config.toml")
 }
 
 impl ConfigHandleManager {
@@ -153,10 +147,13 @@ pub struct ConfFile {
 
 fn load_conf_file(conf_path: &Utf8Path) -> anyhow::Result<Option<ConfFile>> {
     match File::open(conf_path) {
-        Ok(file) => BufReader::new(file)
-            .pipe(serde_json::from_reader)
-            .map(Some)
-            .with_context(|| format!("invalid config file at {conf_path}")),
+        Ok(file) => {
+            let content = std::io::read_to_string(file)
+                .with_context(|| format!("couldn't read config file at {conf_path}"))?;
+            toml::from_str(&content)
+                .map(Some)
+                .with_context(|| format!("invalid config file at {conf_path}"))
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => {
             Err(anyhow::anyhow!(e).context(format!("couldn't open config file at {conf_path}")))
@@ -258,30 +255,19 @@ fn normalize_data_path(path: &Utf8Path, data_dir: &Utf8Path) -> Utf8PathBuf {
     }
 }
 
-fn default_data_dir() -> anyhow::Result<Utf8PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-
-    match home.is_empty() {
-        false => return Ok(Utf8PathBuf::from(home).join(".hoop")),
-        true => {
-            error!(
-                "Could not determine home directory. Please set the HOOP_DATA_DIR environment variable or HOME"
-            );
-            Err(anyhow::anyhow!(
-                "Could not determine home directory. Please set the HOOP_DATA_DIR environment variable or HOME"
-            ))
-        }
-    }
-}
-
 fn get_data_dir() -> Utf8PathBuf {
-    std::env::var("HOOP_DATA_DIR")
-        .map(Utf8PathBuf::from)
-        .unwrap_or_else(|_| {
-            default_data_dir()
-                .context("couldn't determine data directory")
-                .unwrap()
-        })
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let default_path = Utf8PathBuf::from(home_dir).join(".hoop");
+    if default_path.exists() {
+        return default_path;
+    }
+    if let Err(e) = std::fs::create_dir_all(&default_path) {
+        error!(
+            "Warning: Failed to create directory {}: {}",
+            default_path, e
+        );
+    }
+    default_path
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Default, Serialize, Deserialize)]
