@@ -8,48 +8,38 @@ use uuid::Uuid;
 pub struct Header {
     pub sid: Uuid,
     pub len: u32,
+    pub data_size: usize,
 }
-
 const UUID_LEN: usize = 16;
 const DATA_SIZE_LEN: usize = size_of::<u32>();
 const HEADER_LEN: usize = UUID_LEN + DATA_SIZE_LEN;
 
 impl Header {
-    pub fn encode(self) -> [u8; 20] {
-        let mut buf = [0u8; 20];
-        buf[..16].copy_from_slice(self.sid.as_bytes());
-        buf[16..].copy_from_slice(&self.len.to_be_bytes());
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.data_size);
+
+        // Add SID (16 bytes)
+        buf.extend_from_slice(self.sid.as_bytes());
+        // Add length (4 bytes, big endian)
+        buf.extend_from_slice(&self.len.to_be_bytes());
+
         buf
     }
 
-    pub fn decode(buf: &[u8]) -> Option<(Header, usize)> {
-        if buf.len() < HEADER_LEN {
-            //#TODO should we return an error here
+    pub fn decode(data: &[u8]) -> Option<Self> {
+        if data.len() < 20 {
             return None;
         }
 
-        let uuid_bytes = buf.get(..UUID_LEN);
+        let sid_bytes: [u8; 16] = data[0..16].try_into().ok()?;
+        let sid = Uuid::from_bytes(sid_bytes);
 
-        if uuid_bytes.unwrap_or(&[]).len() < UUID_LEN {
-            return None;
-        }
+        let len = u32::from_be_bytes([data[16], data[17], data[18], data[19]]);
 
-        let sid = match Uuid::from_slice(uuid_bytes?) {
-            Ok(s) => s,
-            Err(_) => return None,
-        }; // #TODO should we return an error here
-        //
-        if sid.is_nil() {
-            return None;
-        }
-
-        let len_bytes = buf.get(UUID_LEN..HEADER_LEN);
-        let len = u32::from_be_bytes(len_bytes?.try_into().unwrap()); // slice size is guaranteed
-
-        if len == 0 {
-            return None;
-        }
-
-        Some((Header { sid, len }, HEADER_LEN))
+        Some(Header {
+            sid,
+            len,
+            data_size: HEADER_LEN,
+        })
     }
 }

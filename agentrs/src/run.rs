@@ -4,7 +4,7 @@ use crate::listener::Service;
 use anyhow::Context;
 
 #[cfg(unix)]
-async fn build_signals_fut() -> anyhow::Result<()> {
+async fn wait_shutdown() -> anyhow::Result<()> {
     use tokio::signal::unix::{SignalKind, signal};
 
     let mut terminate_signal =
@@ -14,12 +14,11 @@ async fn build_signals_fut() -> anyhow::Result<()> {
     let mut interrupt_signal = signal(SignalKind::interrupt())
         .context("failed to create interrupt signal stream failed")?;
 
-    futures::future::select_all(vec![
-        Box::pin(terminate_signal.recv()),
-        Box::pin(quit_signal.recv()),
-        Box::pin(interrupt_signal.recv()),
-    ])
-    .await;
+    tokio::select! {
+        _ = terminate_signal.recv() => {},
+        _ = quit_signal.recv() => {},
+        _ = interrupt_signal.recv() => {},
+    }
 
     Ok(())
 }
@@ -34,7 +33,7 @@ pub fn run_agent() -> anyhow::Result<()> {
         .enable_io()
         .build()
         .context("failed to build the async runtime")?;
-    rt.block_on(build_signals_fut())?;
+    rt.block_on(wait_shutdown())?;
 
     s.stop();
     Ok(())

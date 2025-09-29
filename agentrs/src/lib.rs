@@ -7,6 +7,5 @@ pub mod run;
 pub mod session;
 pub mod tasks;
 pub mod tls;
-pub mod transport;
 pub mod ws;
 pub mod x509;

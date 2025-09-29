@@ -1,7 +1,7 @@
 use crate::conf;
-use crate::ws::message::{
-    Header, MESSAGE_TYPE_DATA, MESSAGE_TYPE_SESSION_STARTED, PROTOCOL_RDP, WebSocketMessage,
-};
+use crate::session::Header;
+use crate::ws::message::{PROTOCOL_RDP, WebSocketMessage};
+use crate::ws::message_types::MessageType;
 use crate::ws::proxy::start_rdp_proxy_session;
 use crate::ws::session::SessionInfo;
 use crate::ws::types::{ChannelMap, ProxyMap, SessionMap, WsWriter};
@@ -71,15 +71,15 @@ impl MessageProcessor {
         // Try to decode as WebSocketMessage first (for control messages)
         if let Ok((session_id, message)) = WebSocketMessage::decode_with_header(&data) {
             // Handle different message types
-            match message.message_type.as_str() {
-                MESSAGE_TYPE_SESSION_STARTED => {
+            match message.message_type {
+                MessageType::SessionStarted => {
                     info!(
                         "> Session {} started, processing connection info...",
                         session_id
                     );
                     self.handle_session_started(session_id, message).await
                 }
-                MESSAGE_TYPE_DATA => {
+                MessageType::Data => {
                     debug!(
                         "> Received data for session: {} ({} bytes)",
                         session_id,
@@ -87,9 +87,9 @@ impl MessageProcessor {
                     );
                     self.handle_rdp_data(session_id, &message.payload).await
                 }
-                _ => {
+                MessageType::Unknown => {
                     info!(
-                        "> Unknown message type: {} for session: {}",
+                        "> Unknown message type: {:#?} for session: {}",
                         message.message_type, session_id
                     );
                     Ok(())
@@ -97,9 +97,9 @@ impl MessageProcessor {
             }
         } else {
             // Try to decode as raw data with header (for RDP data)
-            if let Some((header, header_len)) = Header::decode(&data) {
-                if data.len() >= header_len {
-                    let rdp_data = &data[header_len..];
+            if let Some(header) = Header::decode(&data) {
+                if data.len() >= header.data_size {
+                    let rdp_data = &data[header.data_size..];
                     debug!(
                         "> Received raw RDP data for session: {} ({} bytes)",
                         header.sid,
@@ -195,11 +195,7 @@ impl MessageProcessor {
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("protocol".to_string(), PROTOCOL_RDP.to_string());
 
-        let response = WebSocketMessage::new(
-            MESSAGE_TYPE_SESSION_STARTED.to_string(),
-            metadata,
-            Vec::new(),
-        );
+        let response = WebSocketMessage::new(MessageType::SessionStarted, metadata, Vec::new());
 
         let response_framed = response
             .encode_with_header(session_id)

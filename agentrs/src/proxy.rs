@@ -1,20 +1,13 @@
-use futures::future::Either;
 use std::io;
-use std::pin::pin;
-use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _};
-use tokio::sync::Notify;
 use typed_builder::TypedBuilder;
 
 use crate::logio::LoggingIo;
-use crate::transport::copy_bidirectional;
 
 #[derive(TypedBuilder)]
 pub struct Proxy<A, B> {
     transport_a: A,
     transport_b: B,
-    #[builder(default = None)]
-    buffer_size: Option<usize>,
 }
 
 // this is to copy_bidirectional stream from client to server
@@ -28,23 +21,11 @@ where
     pub async fn forward(self) -> anyhow::Result<()> {
         let mut transport_a = self.transport_a; //LoggingIo::new(self.transport_a, "A");
         let mut transport_b = self.transport_b; //LoggingIo::new(self.transport_b, "B");
-        let notify_kill = Arc::new(Notify::new());
 
-        let kill_notified = notify_kill.notified();
-
-        let res = if let Some(buffer_size) = self.buffer_size {
-            let forward_fut =
-                copy_bidirectional(&mut transport_a, &mut transport_b, buffer_size, buffer_size);
-            match futures::future::select(pin!(forward_fut), pin!(kill_notified)).await {
-                Either::Left((res, _)) => res.map(|_| ()),
-                Either::Right(_) => Ok(()),
-            }
-        } else {
-            let forward_fut = tokio::io::copy_bidirectional(&mut transport_a, &mut transport_b);
-            match futures::future::select(pin!(forward_fut), pin!(kill_notified)).await {
-                Either::Left((res, _)) => res.map(|_| ()),
-                Either::Right(_) => Ok(()),
-            }
+        let fwd_fut = tokio::io::copy_bidirectional(&mut transport_a, &mut transport_b).await;
+        let res = match fwd_fut {
+            Ok((_n1, _n2)) => Ok(()),
+            Err(e) => Err(e),
         };
 
         // Ensure we close the transports cleanly at the end (ignore errors at this point)
@@ -52,17 +33,8 @@ where
 
         match res {
             Ok(()) => Ok(()),
-            Err(error) => {
-                let really_an_error = is_error(&error);
-
-                let error = anyhow::Error::new(error);
-
-                if really_an_error {
-                    Err(error.context("forward"))
-                } else {
-                    Ok(())
-                }
-            }
+            Err(error) if is_error(&error) => Err(anyhow::Error::new(error).context("forward")),
+            Err(_) => Ok(()),
         }
     }
 }

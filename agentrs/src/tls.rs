@@ -6,9 +6,6 @@ use tokio_rustls::client::TlsStream;
 use tokio_rustls::rustls::{self, pki_types};
 use tracing::error;
 
-static DEFAULT_CIPHER_SUITES: &[rustls::SupportedCipherSuite] =
-    rustls::crypto::ring::DEFAULT_CIPHER_SUITES;
-
 // rustls doc says:
 //
 // > Making one of these can be expensive, and should be once per process rather than once per connection.
@@ -80,7 +77,7 @@ pub fn build_server_config(
                     (None, false)
                 }
             };
-            //TODO fix this should return error
+
             let report = report.unwrap_or_else(|| CertReport {
                 serial_number: "<unknown>".to_string(),
                 subject: picky::x509::name::DirectoryName::default(),
@@ -204,52 +201,6 @@ pub fn check_certificate(cert: &[u8], at: time::OffsetDateTime) -> anyhow::Resul
         not_after,
         issues,
     })
-}
-
-pub mod sanity {
-    use tokio_rustls::rustls;
-
-    macro_rules! check_cipher_suite {
-        ( $name:ident ) => {{
-            if !crate::tls::DEFAULT_CIPHER_SUITES.contains(&rustls::crypto::ring::cipher_suite::$name) {
-                anyhow::bail!(concat!(stringify!($name), " cipher suite is missing from default array"));
-            }
-        }};
-        ( $( $name:ident ),+ $(,)? ) => {{
-            $( check_cipher_suite!($name); )+
-        }};
-    }
-
-    macro_rules! check_protocol_version {
-        ( $name:ident ) => {{
-            if !rustls::DEFAULT_VERSIONS.contains(&&rustls::version::$name) {
-                anyhow::bail!(concat!("protocol ", stringify!($name), " is missing from default array"));
-            }
-        }};
-        ( $( $name:ident ),+ $(,)? ) => {{
-            $( check_protocol_version!($name); )+
-        }};
-    }
-
-    pub fn check_default_configuration() -> anyhow::Result<()> {
-        // Make sure we have a few TLS 1.2 cipher suites in our build.
-        // Compilation will fail if one of these is missing.
-        // Additionally, this function will returns an error if any one of these is not in the
-        // default cipher suites array.
-        check_cipher_suite![
-            TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-            TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-            TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-            TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-            TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-            TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-        ];
-
-        // Same idea, but with TLS protocol versions
-        check_protocol_version![TLS12, TLS13];
-
-        Ok(())
-    }
 }
 
 pub mod danger {

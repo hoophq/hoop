@@ -234,9 +234,9 @@ async fn handle_socket(shared: Shared, socket: WebSocket) {
                         );
 
                         // Try to decode as ACK or credentials response first
-                        if let Some((header, header_len)) = Header::decode(&b) {
-                            if header_len <= b.len() {
-                                let json_data = &b[header_len..];
+                        if let Some(header) = Header::decode(&b) {
+                            if header.data_size <= b.len() {
+                                let json_data = &b[header.data_size..];
                                 if let Ok(response) =
                                     serde_json::from_slice::<serde_json::Value>(json_data)
                                 {
@@ -265,9 +265,9 @@ async fn handle_socket(shared: Shared, socket: WebSocket) {
                         }
 
                         // If not a control message, it's RDP data with header - forward to TCP
-                        if let Some((header, header_len)) = Header::decode(&b) {
-                            if header_len <= b.len() {
-                                let rdp_data = &b[header_len..];
+                        if let Some(header) = Header::decode(&b) {
+                            if header.data_size <= b.len() {
+                                let rdp_data = &b[header.data_size..];
                                 let sessions = shared.sessions.read().await;
                                 if let Some(session) = sessions.get(&header.sid) {
                                     println!(
@@ -419,6 +419,7 @@ async fn handle_tcp_client(
     let handshake_header = Header {
         sid: session_id,
         len: handshake_info.len() as u32,
+        data_size: 20,
     };
 
     let mut handshake_framed = Vec::with_capacity(20 + handshake_info.len());
@@ -480,6 +481,7 @@ async fn handle_tcp_client(
         let header = Header {
             sid: session_id,
             len: first_rdp_data.len() as u32,
+            data_size: 20,
         };
         let mut framed_data = Vec::with_capacity(20 + first_rdp_data.len());
         framed_data.extend_from_slice(&header.encode());
@@ -517,6 +519,7 @@ async fn handle_tcp_client(
                     let header = Header {
                         sid: session_id,
                         len: rdp_data.len() as u32,
+                        data_size: 20,
                     };
 
                     // Frame the RDP data with header
