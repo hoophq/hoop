@@ -1,4 +1,4 @@
-use crate::tasks::tasks::*;
+use crate::tasks::*;
 use crate::ws::client::WebSocket;
 use std::time::Duration;
 use tokio::runtime::Runtime;

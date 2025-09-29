@@ -1,6 +1,6 @@
 use crate::{
     conf,
-    tasks::tasks::*,
+    tasks::*,
     ws::{
         rdp_message_processor::MessageProcessor,
         types::{ChannelMap, ProxyMap, SessionMap, WsWriter},

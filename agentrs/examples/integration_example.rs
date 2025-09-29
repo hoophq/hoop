@@ -1,5 +1,5 @@
-use agentrs::certs::x509::{CertKeyPair, generate_gateway_cert};
 use agentrs::conf::ConfigHandleManager;
+use agentrs::x509::{CertKeyPair, generate_gateway_cert};
 use camino::Utf8PathBuf;
 use std::net::IpAddr;
 

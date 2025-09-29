@@ -13,7 +13,7 @@ use typed_builder::TypedBuilder;
 use ironrdp_tokio::FramedWrite as _;
 
 use crate::conf;
-use crate::proxy::proxy::Proxy;
+use crate::proxy::Proxy;
 
 #[derive(TypedBuilder)]
 pub struct RdpProxy<C, S> {

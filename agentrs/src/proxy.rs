@@ -6,8 +6,8 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _};
 use tokio::sync::Notify;
 use typed_builder::TypedBuilder;
 
-use crate::logio::logio::LoggingIo;
-use crate::transport::transport::copy_bidirectional;
+use crate::logio::LoggingIo;
+use crate::transport::copy_bidirectional;
 
 #[derive(TypedBuilder)]
 pub struct Proxy<A, B> {

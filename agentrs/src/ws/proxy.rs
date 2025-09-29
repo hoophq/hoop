@@ -1,5 +1,5 @@
 use crate::conf::Conf;
-use crate::rdp::proxy::RdpProxy;
+use crate::rdp_proxy::RdpProxy;
 use crate::session::Header;
 use crate::ws::session::SessionInfo;
 use crate::ws::stream::ChannelWebSocketStream;

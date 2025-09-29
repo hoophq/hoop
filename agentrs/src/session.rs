@@ -28,10 +28,7 @@ impl Header {
             return None;
         }
 
-        let uuid_bytes = match buf.get(..UUID_LEN) {
-            Some(b) => Some(b),
-            _ => None,
-        }; // #TODO should never happen due to length check above
+        let uuid_bytes = buf.get(..UUID_LEN);
 
         if uuid_bytes.unwrap_or(&[]).len() < UUID_LEN {
             return None;

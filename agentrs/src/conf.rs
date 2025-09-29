@@ -42,7 +42,7 @@ impl ConfigHandleManager {
             ))?;
         }
         let ip_addresses = vec!["127.0.0.1".parse::<IpAddr>()?, "::1".parse::<IpAddr>()?];
-        let cert_key_pair = crate::certs::x509::generate_gateway_cert(ip_addresses);
+        let cert_key_pair = crate::x509::generate_gateway_cert(ip_addresses);
         let tls = match cert_key_pair {
             Ok(cert_key_pair) => {
                 let (certificates, private_key) = cert_key_pair.to_rustls();
