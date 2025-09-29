@@ -12,6 +12,8 @@ OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(su
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
 POSTREST_ARCH_SUFFIX := $(if $(filter $(GOARCH),amd64),linux-static-x64.tar.xz,$(if $(filter $(GOARCH),arm64),ubuntu-aarch64.tar.xz,$(ARCH)))
 
+RUST_TARGET := $(if $(filter $(GOOS),linux),$(if $(filter $(GOARCH),amd64),x86_64-unknown-linux-gnu,$(if $(filter $(GOARCH),arm64),aarch64-unknown-linux-gnu)),$(if $(filter $(GOOS),darwin),$(if $(filter $(GOARCH),amd64),x86_64-apple-darwin,$(if $(filter $(GOARCH),arm64),aarch64-apple-darwin))))
+
 LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
 -X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
@@ -20,6 +22,12 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/monitoring.sentryDSN=${SENTRY_DSN} \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
+
+setup-rust-targets:
+	rustup target add x86_64-unknown-linux-gnu
+	rustup target add aarch64-unknown-linux-gnu
+	rustup target add x86_64-apple-darwin
+	rustup target add aarch64-apple-darwin
 
 run-dev:
 	./scripts/dev/run.sh
@@ -57,9 +65,19 @@ swag-fmt:
 publish:
 	./scripts/publish-release.sh
 
+build-rust:
+	cd agentrs && cross build --release --target ${RUST_TARGET}
+	cd agentrs && if [ -f "target/${RUST_TARGET}/release/agentrs" ]; then \
+		BINARY_PATH="target/${RUST_TARGET}/release/agentrs"; \
+	else \
+		BINARY_PATH=$$(find . -name "agentrs" -type f | head -1); \
+	fi && \
+	cp "$$BINARY_PATH" ../${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/hoop_rs 
+
 build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+	$(MAKE) build-rust
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
@@ -126,4 +144,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt setup-rust-targets build-rust
