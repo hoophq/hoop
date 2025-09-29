@@ -23,11 +23,13 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
-setup-rust-targets:
-	rustup target add x86_64-unknown-linux-gnu
-	rustup target add aarch64-unknown-linux-gnu
-	rustup target add x86_64-apple-darwin
-	rustup target add aarch64-apple-darwin
+build-dev-rust:
+	cd agentrs && cargo build --release
+	mkdir -p ${HOME}/.hoop/bin
+	cp agentrs/target/release/agentrs ${HOME}/.hoop/bin/hoop_rs
+
+install-rust:
+	./scripts/install-rust.sh
 
 run-dev:
 	./scripts/dev/run.sh
@@ -144,4 +146,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt setup-rust-targets build-rust
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt build-rust build-dev-rust install-rust

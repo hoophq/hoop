@@ -44,6 +44,20 @@ if [[ $WEBAPP_BUILD == "1" ]]; then
   exit 1
 fi
 
+# Build Rust agent for development
+echo "Checking for Rust installation..."
+if command -v cargo >/dev/null 2>&1; then
+    echo "Rust found. Building Rust agent for development..."
+    cd agentrs && cargo build --release && cd ../
+    mkdir -p ./dist/dev/bin
+    cp agentrs/target/release/agentrs ./dist/dev/bin/hoop_rs
+    echo "Rust agent built successfully as hoop_rs"
+else
+    echo "Warning: Rust/cargo not found. Skipping Rust agent build."
+    echo "To build the Rust agent, install Rust from https://rustup.rs/"
+    echo "Then run: cd agentrs && cargo build --release"
+fi
+
 docker build -t hoopdev -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
