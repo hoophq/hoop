@@ -141,33 +141,42 @@ impl MessageProcessor {
             }
         }
 
+        let target_address = message
+            .metadata
+            .get("target_address")
+            .context("Missing target_address")?
+            .clone();
+        let username = message
+            .metadata
+            .get("username")
+            .context("Missing username")?
+            .clone();
+
+        let password = message
+            .metadata
+            .get("password")
+            .context("Missing password")?
+            .clone();
+
+        let proxy_user = message
+            .metadata
+            .get("proxy_user")
+            .context("Missing proxy_user")?
+            .clone();
+
+        let client_address = message
+            .metadata
+            .get("client_address")
+            .context("Missing client_address")?
+            .clone();
+
         let session_info = SessionInfo {
             session_id,
-            target_address: message
-                .metadata
-                .get("target_address")
-                .context("Missing target_address")?
-                .clone(),
-            username: message
-                .metadata
-                .get("username")
-                .context("Missing username")?
-                .clone(),
-            password: message
-                .metadata
-                .get("password")
-                .context("Missing password")?
-                .clone(),
-            proxy_user: message
-                .metadata
-                .get("proxy_user")
-                .context("Missing proxy_user")?
-                .clone(),
-            client_address: message
-                .metadata
-                .get("client_address")
-                .unwrap_or(&"127.0.0.1:0".to_string())
-                .clone(),
+            target_address,
+            username,
+            password,
+            proxy_user,
+            client_address,
             sender: self.ws_sender.clone(),
         };
 

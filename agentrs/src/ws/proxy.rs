@@ -75,7 +75,8 @@ pub async fn start_rdp_proxy_session(
                 sid: session_id,
                 len: data.len() as u32,
             };
-            let mut framed_data = Vec::with_capacity(20 + data.len());
+            let header_size = 20;
+            let mut framed_data = Vec::with_capacity(header_size + data.len());
             framed_data.extend_from_slice(&header.encode());
             framed_data.extend_from_slice(&data);
 

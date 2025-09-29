@@ -11,8 +11,8 @@ pub struct Header {
 }
 
 const UUID_LEN: usize = 16;
-const LEN_LEN: usize = size_of::<u32>();
-const HEADER_LEN: usize = UUID_LEN + LEN_LEN;
+const DATA_SIZE_LEN: usize = size_of::<u32>();
+const HEADER_LEN: usize = UUID_LEN + DATA_SIZE_LEN;
 
 impl Header {
     pub fn encode(self) -> [u8; 20] {

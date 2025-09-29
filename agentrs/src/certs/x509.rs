@@ -141,9 +141,11 @@ pub fn generate_self_signed_cert(config: CertConfig) -> Result<CertKeyPair> {
 
 /// Generate a self-signed certificate with default settings for gateway.hoop
 pub fn generate_gateway_cert(ip_addresses: Vec<std::net::IpAddr>) -> Result<CertKeyPair> {
+    let common_name = "gateway.hoop".to_string();
+
     let config = CertConfig {
-        common_name: "gateway.hoop".to_string(),
-        dns_names: vec!["gateway.hoop".to_string()],
+        common_name: common_name.clone(),
+        dns_names: vec![common_name.clone()],
         ip_addresses,
         validity_days: 365,
         key_size: 2048,
