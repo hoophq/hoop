@@ -106,8 +106,8 @@ where
             password: creds.to_string(),
         },
         target: AppCredential::UsernamePassword {
-            username: username,
-            password: password,
+            username,
+            password,
         },
     };
 

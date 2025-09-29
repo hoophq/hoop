@@ -2,8 +2,6 @@ use std::io;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _};
 use typed_builder::TypedBuilder;
 
-use crate::logio::LoggingIo;
-
 #[derive(TypedBuilder)]
 pub struct Proxy<A, B> {
     transport_a: A,
