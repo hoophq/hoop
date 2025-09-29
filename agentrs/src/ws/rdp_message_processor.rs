@@ -46,7 +46,7 @@ impl MessageProcessor {
                 }
                 Message::Close(frame) => {
                     debug!("> Gateway closed connection: {:?}", frame);
-                    break;
+                    return Err(anyhow::anyhow!("Gateway closed connection: {:?}", frame));
                 }
                 Message::Ping(data) => {
                     if let Err(e) = self.handle_ping(data.into()).await {
@@ -62,7 +62,9 @@ impl MessageProcessor {
             }
         }
 
-        Ok(())
+        // If we exit the loop, it means the stream ended unexpectedly
+        error!("> WebSocket stream ended unexpectedly");
+        Err(anyhow::anyhow!("WebSocket stream ended unexpectedly"))
     }
 
     async fn handle_binary_message(&self, data: Vec<u8>) -> anyhow::Result<()> {

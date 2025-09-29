@@ -77,6 +77,7 @@ pub trait Task {
     const NAME: &'static str;
 
     async fn run(self, shutdown_signal: ShutdownSignal) -> Self::Output;
+    fn get_name(&self) -> &'static str;
 }
 
 fn spawn_task<T>(task: T, shutdown_signal: ShutdownSignal) -> ChildTask<T::Output>

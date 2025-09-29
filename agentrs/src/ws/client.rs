@@ -23,7 +23,6 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 #[derive(Clone)]
 pub struct WebSocket {
     pub config_manager: conf::ConfigHandleManager,
-    //pub gateway_url: String,
     pub request: Request,
     pub reconnect_interval: Duration,
 }
@@ -32,13 +31,17 @@ pub struct WebSocket {
 impl Task for WebSocket {
     type Output = anyhow::Result<()>;
 
-    const NAME: &'static str = "agent listener";
+    const NAME: &'static str = "agent";
 
     async fn run(self, mut shutdown_signal: ShutdownSignal) -> Self::Output {
         tokio::select! {
             result = self.run_with_reconnect() => result,
             _ = shutdown_signal.wait() => Ok(()),
         }
+    }
+
+    fn get_name(&self) -> &'static str {
+        Self::NAME
     }
 }
 
@@ -117,19 +120,33 @@ impl WebSocket {
         tokio::select! {
             result = processor_task => {
                 match result {
-                    Ok(Ok(())) => info!("> Message processor completed normally"),
-                    Ok(Err(e)) => error!("> Message processor error: {}", e),
-                    Err(e) => error!("> Message processor task panicked: {}", e),
+                    Ok(Ok(())) => {
+                        info!("> Message processor completed normally");
+                        // This is a graceful closure, return Ok to exit reconnection loop
+                        self.cleanup_resources(sessions, active_proxies, session_channels).await;
+                        return Ok(());
+                    }
+                    Ok(Err(e)) => {
+                        error!("> Message processor error: {}", e);
+                        // This is a connection error, return it to trigger reconnection
+                        self.cleanup_resources(sessions, active_proxies, session_channels).await;
+                        return Err(e);
+                    }
+                    Err(e) => {
+                        error!("> Message processor task panicked: {}", e);
+                        // Task panic indicates connection issues, return error to trigger reconnection
+                        self.cleanup_resources(sessions, active_proxies, session_channels).await;
+                        return Err(anyhow::anyhow!("Message processor task panicked: {}", e));
+                    }
                 }
             }
             _ = heartbeat_task => {
-                debug!("> Heartbeat task completed");
+                debug!("> Heartbeat task completed - connection likely lost");
+                // Heartbeat task completion indicates connection loss, return error to trigger reconnection
+                self.cleanup_resources(sessions, active_proxies, session_channels).await;
+                return Err(anyhow::anyhow!("Heartbeat task completed - connection lost"));
             }
         }
-
-        self.cleanup_resources(sessions, active_proxies, session_channels)
-            .await;
-        Ok(())
     }
 
     fn spawn_heartbeat_task(&self, ws_sender: WsWriter) -> tokio::task::JoinHandle<()> {

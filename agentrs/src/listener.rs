@@ -49,8 +49,6 @@ impl Service {
         runtime.spawn(async {
             loop {
                 let (result, _, rest) = join_all.await;
-
-                //get the tasks name
                 match result {
                     Ok(Ok(())) => {
                         println!("A task terminated gracefully")
