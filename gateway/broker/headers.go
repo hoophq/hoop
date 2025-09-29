@@ -28,6 +28,10 @@ const (
 )
 
 func (h *Header) Encode() []byte {
+	if h.SID == uuid.Nil {
+		panic("cannot encode nil UUID")
+	}
+
 	buf := make([]byte, 20) // 16 bytes for UUID + 4 bytes for length
 	copy(buf[:16], h.SID[:])
 	binary.BigEndian.PutUint32(buf[16:20], h.Len)
@@ -40,8 +44,21 @@ func DecodeHeader(data []byte) (*Header, int, error) {
 		return nil, 0, fmt.Errorf("insufficient data for header")
 	}
 
-	var sid uuid.UUID
-	copy(sid[:], data[:16])
+	// Use FromBytes to validate the UUID bytes
+	sid, err := uuid.FromBytes(data[:16])
+	if err != nil {
+		return nil, 0, fmt.Errorf("invalid UUID in header: %w", err)
+	}
+
+	if sid == uuid.Nil {
+		return nil, 0, fmt.Errorf("nil UUID not allowed")
+	}
+
+	// Validate UUID version (optional)
+	if sid.Version() == 0 {
+		return nil, 0, fmt.Errorf("invalid UUID: version 0 not allowed")
+	}
+
 	len := binary.BigEndian.Uint32(data[16:20])
 
 	return &Header{
