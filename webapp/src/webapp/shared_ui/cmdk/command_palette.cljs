@@ -1,27 +1,11 @@
 (ns webapp.shared-ui.cmdk.command-palette
   (:require
-   ["cmdk" :refer [Command CommandDialog CommandInput CommandList CommandEmpty]]
-   ["@radix-ui/themes" :refer [Text]]
-   ["lucide-react" :refer [Search X]]
+   ["cmdk" :refer [CommandEmpty]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.components.command-dialog :as command-dialog]
    [webapp.shared-ui.cmdk.command-palette-pages :as pages]))
 
-(defn breadcrumb-tag
-  "Tag showing current context"
-  [current-page context]
-  (let [label (case current-page
-                :connection-actions (:name context)
-                (str current-page))]
-    [:div {:class "flex items-center gap-2 bg-gray-3 px-2 py-1 rounded-full"}
-     [:> Text
-      {:size "1"
-       :weight "medium"
-       :class "text-[--gray-11]"}
-      label]
-     [:button {:class "hover:bg-gray-5 rounded p-0.5 transition-colors"
-               :on-click #(rf/dispatch [:command-palette->back])}
-      [:> X {:size 12}]]]))
 
 (defn enhanced-empty-state
   "Enhanced empty state with contextual messages"
@@ -52,63 +36,43 @@
                           :main "Search for resources, features and more..."
                           :connection-actions "Select or search an action"
                           "Search...")]
-        [:> Command
-         {:shouldFilter false  ; Use manual filtering for async search
-          :onKeyDown (fn [e]
-                       ;; Keyboard navigation
-                       (when (or (= (.-key e) "Escape")
-                                 (and (= (.-key e) "Backspace")
-                                      (empty? (or (:query @palette-state) ""))))
-                         (when (not= current-page :main)
-                           (.preventDefault e)
-                           (rf/dispatch [:command-palette->back]))))}
+        [command-dialog/command-dialog
+         {:open? (:open? @palette-state)
+          :on-open-change #(if %
+                             (rf/dispatch [:command-palette->open])
+                             (rf/dispatch [:command-palette->close]))
+          :title "Command Palette"
+          :search-config {:show-search-icon true
+                          :show-input true
+                          :is-searching? is-searching?
+                          :placeholder placeholder
+                          :value (:query @palette-state)
+                          :on-value-change #(rf/dispatch [:command-palette->search (or % "")])
+                          :on-key-down (fn [e]
+                                         (when (or (= (.-key e) "Escape")
+                                                   (and (= (.-key e) "Backspace")
+                                                        (empty? (or (:query @palette-state) ""))))
+                                           (when (not= current-page :main)
+                                             (.preventDefault e)
+                                             (rf/dispatch [:command-palette->back]))))}
+          :breadcrumb-config (when (not= current-page :main)
+                               {:current-page current-page
+                                :context context
+                                :on-close #(rf/dispatch [:command-palette->back])})
+          :content
+          [:<>
+           [enhanced-empty-state status current-page]
+           
+           ;; Render content based on current page
+           (case current-page
+             :main
+             [pages/main-page @search-results user-data]
 
-         [:> CommandDialog
-          {:open (:open? @palette-state)
-           :label "Command Palette"
-           :container (js/document.querySelector ".radix-themes")
-           :onOpenChange #(if %
-                            (rf/dispatch [:command-palette->open])
-                            (rf/dispatch [:command-palette->close]))
-           :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"}
+             :connection-actions
+             [pages/connection-actions-page context user-data]
 
-          ;; Manual overlay for click outside with blur effect
-          [:div {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
-                 :on-click #(rf/dispatch [:command-palette->close])}]
-
-          [:div {:class "w-full max-w-2xl bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden h-96 flex flex-col relative z-10"}
-           [:div {:class "flex items-center gap-3 px-4 py-3 border-b border-gray-6"}
-            [:> Search {:size 16
-                        :class (str "transition-colors duration-200 "
-                                    (if is-searching?
-                                      "text-blue-9"
-                                      "text-gray-11"))}]
-            [:div {:class "flex items-center gap-2 flex-1"}
-             [:> CommandInput
-              {:placeholder placeholder
-               :value (or (:query @palette-state) "")
-               :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
-               :onValueChange #(rf/dispatch [:command-palette->search (or % "")])}]
-
-             ;; Breadcrumb when not on main page
-             (when (not= current-page :main)
-               [breadcrumb-tag current-page context])]]
-
-           [:> CommandList
-            {:className "flex-1 overflow-y-auto p-4"}
-
-            [enhanced-empty-state status current-page]
-
-            ;; Render content based on current page
-            (case current-page
-              :main
-              [pages/main-page @search-results user-data]
-
-              :connection-actions
-              [pages/connection-actions-page context user-data]
-
-              ;; Default: main page
-              [pages/main-page @search-results user-data])]]]]))))
+             ;; Default: main page
+             [pages/main-page @search-results user-data])]}]))))
 
 (defn keyboard-listener
   "Component to capture CMD+K / Ctrl+K keyboard shortcuts"

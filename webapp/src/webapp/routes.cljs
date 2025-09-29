@@ -28,11 +28,12 @@
                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]
                      [["/edit/" :connection-name] :edit-connection]]
      "/client" :editor-plugin
+     "/runbooks" :runbooks
      "/dashboard" :dashboard
      "/features" [["/access-control" :access-control]
                   ["/access-control/new" :access-control-new]
                   ["/access-control/edit" :access-control-edit]
-                  ["/runbooks" :runbooks]
+                  ["/runbooks/setup" :runbooks-setup]
                   [["/runbooks/edit/" :connection-id] :runbooks-edit]
                   ["/data-masking" :ai-data-masking]
                   ["/data-masking/new" :create-ai-data-masking]
@@ -63,8 +64,6 @@
      "/register" :register-hoop
      "/reviews" [["" :reviews-plugin]
                  [["/" :review-id] :review-details]]
-     "/runbooks" [["" :runbooks-plugin]
-                  [["/" :runbooks-file] :runbooks-plugin]]
      "/slack" [[["/user" "/new/" :slack-id] :slack-new-user]
                [["/organization" "/new"] :slack-new-organization]]
      "/sessions" [["" :sessions]

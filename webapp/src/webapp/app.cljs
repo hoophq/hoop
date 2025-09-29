@@ -73,6 +73,9 @@
    [webapp.features.runbooks.main :as runbooks]
    [webapp.features.runbooks.subs]
    [webapp.features.runbooks.views.runbook-form :as runbook-form]
+   [webapp.features.runbooks.runner.events]
+   [webapp.features.runbooks.runner.main :as runbooks-runner]
+   [webapp.features.runbooks.runner.subs]
    [webapp.features.users.events]
    [webapp.features.users.main :as users]
    [webapp.features.users.subs]
@@ -412,6 +415,11 @@
   [layout :application-hoop [:div {:class "h-full"}
                              [webclient/main]]])
 
+(defmethod routes/panels :runbooks-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop [:div {:class "h-full"}
+                             [runbooks-runner/main]]])
+
 (defmethod routes/panels :reviews-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
@@ -558,7 +566,7 @@
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [group-form/main :edit {:group-id group-id}]]]]))
 
-(defmethod routes/panels :runbooks-panel []
+(defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
    [routes/wrap-admin-only

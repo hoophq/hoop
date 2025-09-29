@@ -8,7 +8,7 @@
 
 (defn back-button []
   [:a {:class "inline-flex items-center text-sm text-gray-600 mb-6 hover:text-gray-900"
-       :on-click #(rf/dispatch [:navigate :runbooks])}
+       :on-click #(rf/dispatch [:navigate :runbooks-setup])}
    [:> hero-outline/ArrowLeftIcon {:class "h-4 w-4 mr-1"}]
    "Back"])
 
@@ -47,7 +47,7 @@
                                                  :connection-id connection-id}])
                                   (js/setTimeout
                                    #(do
-                                      (rf/dispatch [:navigate :runbooks])
+                                      (rf/dispatch [:navigate :runbooks-setup])
                                       (rf/dispatch [:show-snackbar
                                                     {:level :success
                                                      :text (str "Path "
@@ -62,7 +62,7 @@
                                   (rf/dispatch [:runbooks/delete-path path-id])
                                   (js/setTimeout
                                    #(do
-                                      (rf/dispatch [:navigate :runbooks])
+                                      (rf/dispatch [:navigate :runbooks-setup])
                                       (rf/dispatch [:show-snackbar
                                                     {:level :success
                                                      :text (str "Path '" path-id "' deleted successfully!")}]))
