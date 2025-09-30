@@ -35,15 +35,13 @@ if [ -n "$AWS_SESSION_TOKEN_JSON" ]; then
   ec2-metadata-mock --hostname 169.254.169.254 --port 80 -c /tmp/metadata-mock-config.json &
 fi
 
+
 psql $POSTGRES_DB_URI <<EOT
 INSERT INTO private.agents (org_id, id, name, mode, key_hash, status)
     VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'default', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED')
     ON CONFLICT DO NOTHING;
-
-INSERT INTO private.agents (org_id, id, name, mode, key_hash, status)
-    VALUES ((SELECT id from private.orgs), 'a3a4c6d6-db7d-5e84-881e-a360eca782a4', 'rdpagent', 'standard', 'ee0c29868c274034d4182b32edfa603bdc4ba4a2524f7e1860a3f7e0e6854bb9', 'DISCONNECTED')
-    ON CONFLICT DO NOTHING;
 EOT
+
 export RUST_LOG=debug
 # inside the docker container the hoop_rs binary is located in /app/bin/hoop_rs
 export HOOP_RS_BIN_PATH=./bin/hoop_rs
@@ -51,7 +49,7 @@ export HOOP_RS_BIN_PATH=./bin/hoop_rs
 echo "--> STARTING AGENT ..."
 # get digest of the agent secret key
 # echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg |sha256sum
-HOOP_KEY="grpc://rdpagent:xagt-C2Fr6Ah38dN2x9sKwTn1bgiw9BfwY6xd_gWJYtzGea0@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
+HOOP_KEY="grpc://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
 
 export GATEWAY_URL="ws://127.0.0.1:8009/api/ws"  # Explicitly set the gateway URL
 
