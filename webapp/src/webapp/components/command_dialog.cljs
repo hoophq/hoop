@@ -1,7 +1,7 @@
 (ns webapp.components.command-dialog
   (:require
    ["cmdk" :refer [Command CommandDialog CommandInput CommandList]]
-   ["@radix-ui/themes" :refer [Text]]
+   ["@radix-ui/themes" :refer [Text Box Flex]]
    ["lucide-react" :refer [Search X]]))
 
 (defn breadcrumb-tag
@@ -10,7 +10,10 @@
   (let [label (case current-page
                 :connection-actions (:name context)
                 (str current-page))]
-    [:div {:class "flex items-center gap-2 bg-gray-3 px-2 py-1 rounded-full"}
+    [:> Flex
+     {:align "center"
+      :gap "2"
+      :class "bg-gray-3 px-2 py-1 rounded-full"}
      [:> Text
       {:size "1"
        :weight "medium"
@@ -41,19 +44,30 @@
      :onOpenChange on-open-change
      :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"}
 
-    [:div {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
-           :on-click #(when on-open-change (on-open-change false))}]
+    [:> Box
+     {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
+      :on-click #(when on-open-change (on-open-change false))}]
 
-    [:div {:class (str "w-full " max-width " bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden " height " flex flex-col relative z-10 " class-name)}
+    [:> Box
+     {:class (str "w-full "
+                  max-width " bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden "
+                  height " flex flex-col relative z-10 "
+                  class-name)}
      (when search-config
-       [:div {:class "flex items-center gap-3 px-4 py-3 border-b border-gray-6"}
+       [:> Flex
+        {:align "center"
+         :gap "3"
+         :class "px-4 py-3 border-b border-gray-6"}
         (when (:show-search-icon search-config)
           [:> Search {:size 16
                       :class (str "transition-colors duration-200 "
                                   (if (:is-searching? search-config)
                                     "text-blue-9"
                                     "text-gray-11"))}])
-        [:div {:class "flex items-center gap-2 flex-1"}
+        [:> Flex
+         {:align "center"
+          :gap "2"
+          :class "flex-1"}
          (when (:show-input search-config)
            [:> CommandInput
             {:placeholder (:placeholder search-config "Search...")
@@ -65,7 +79,6 @@
            [breadcrumb-tag {:current-page (:current-page breadcrumb-config)
                             :context (:context breadcrumb-config)
                             :on-close (:on-close breadcrumb-config)}])]])
-
      [:> CommandList
       {:className "flex-1 overflow-y-auto p-4"}
       (or content children)]]]])
