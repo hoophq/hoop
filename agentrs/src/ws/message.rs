@@ -15,6 +15,7 @@ pub struct WebSocketMessage {
     )]
     pub payload: Vec<u8>,
 }
+const DATA_SIZE_HEADER: usize = 20;
 
 fn serialize_payload<S>(payload: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -56,16 +57,15 @@ impl WebSocketMessage {
         // Serialize the message to JSON
         let json_data = serde_json::to_vec(self)?;
 
-        let data_size_header = 20;
         // Create header
         let header = Header {
             sid: session_id,
             len: json_data.len() as u32,
-            data_size: data_size_header,
+            data_size: DATA_SIZE_HEADER,
         };
 
         // Combine header + JSON data
-        let mut result = Vec::with_capacity(data_size_header + json_data.len());
+        let mut result = Vec::with_capacity(DATA_SIZE_HEADER + json_data.len());
         result.extend_from_slice(&header.encode());
         result.extend_from_slice(&json_data);
 

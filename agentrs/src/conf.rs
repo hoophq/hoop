@@ -35,37 +35,29 @@ fn get_path() -> Utf8PathBuf {
 impl ConfigHandleManager {
     pub fn auto_gen_conf() -> anyhow::Result<Self> {
         info!("Auto-generating TLS certificate for gateway...");
-        let hoop_key = get_token();
-        if hoop_key.is_none() {
-            Err(anyhow::anyhow!(
-                "HOOP_KEY environment variable is not set. This may lead to insecure configurations."
-            ))?;
-        }
+        let hoop_key = get_token().context("HOOP_KEY environment variable is not set")?;
+
         let ip_addresses = vec!["127.0.0.1".parse::<IpAddr>()?, "::1".parse::<IpAddr>()?];
         let cert_key_pair = crate::x509::generate_gateway_cert(ip_addresses);
-        let tls = match cert_key_pair {
-            Ok(cert_key_pair) => {
+        let tls = cert_key_pair
+            .map_err(|e| {
+                error!("Failed to generate certificate: {e}");
+                anyhow::anyhow!("TLS error generating certificates.")
+            })
+            .and_then(|cert_key_pair| {
                 let (certificates, private_key) = cert_key_pair.to_rustls();
                 let certificates = vec![certificates];
                 let cert_source = crate::tls::CertificateSource::External {
                     certificates,
                     private_key,
                 };
-                Some(Tls::init(cert_source, true)?)
-            }
-            Err(e) => {
-                error!("Failed to generate certificate: {e}");
-                None
-            }
-        };
-        if tls.is_none() {
-            Err(anyhow::anyhow!("TLS error generating certificates."))?;
-        }
+                Tls::init(cert_source, true)
+            })?;
 
         let conf = Conf {
             hostname: "gateway.hoop".to_string(),
-            tls,
-            token: hoop_key,
+            tls: Some(tls),
+            token: Some(hoop_key),
         };
 
         let config_handler = Self {
@@ -96,25 +88,10 @@ impl ConfigHandleManager {
         let path = get_path();
         let conf = load_conf_file(&path)
             .unwrap_or_else(|e| panic!("failed to load config file at {path}: {e}"));
-        let conf_file = match conf {
-            Some(c) => ConfFile {
-                token: hoop_key,
-                ..c
-            },
-            None => {
-                Err(anyhow::anyhow!(
-                    "No config file found at {path}. Please create a configuration file or set HOOP_CERT=true to auto-generate certificates."
-                ))?;
-                ConfFile {
-                    hostname: None,
-                    token: hoop_key,
-                    tls_certificate_source: Some(CertSource::External),
-                    tls_certificate_file: None,
-                    tls_private_key_file: None,
-                    tls_verify_strict: Some(true),
-                }
-            }
-        };
+
+        let conf_file = conf.ok_or_else(|| {
+            anyhow::anyhow!("No config file found at {path}. Please create a configuration file or set HOOP_CERT=true to auto-generate certificates.")
+        })?;
 
         let conf = Conf::from_conf_file(&conf_file).context("invalid configuration file")?;
         let config_handler = Self {

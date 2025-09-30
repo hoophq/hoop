@@ -44,7 +44,11 @@ impl AsyncRead for ChannelWebSocketStream {
         // Try to receive data from the channel
         let mut receiver = match this.rdp_data_rx.try_lock() {
             Ok(guard) => guard,
-            Err(_) => return Poll::Pending, // Lock is held, try again later
+            Err(_) => {
+                // Lock is held, register for wakeup and return Pending
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
         };
 
         match receiver.try_recv() {
