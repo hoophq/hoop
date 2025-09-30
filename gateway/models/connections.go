@@ -42,6 +42,7 @@ const (
 type Connection struct {
 	OrgID               string         `gorm:"column:org_id"`
 	ID                  string         `gorm:"column:id"`
+	ResourceName        string         `gorm:"column:resource_name"`
 	AgentID             sql.NullString `gorm:"column:agent_id"`
 	Name                string         `gorm:"column:name"`
 	Command             pq.StringArray `gorm:"column:command;type:text[]"`
@@ -120,7 +121,21 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 	var newConnection *Connection
 	sess := &gorm.Session{FullSaveAssociations: true}
 	return newConnection, DB.Session(sess).Transaction(func(tx *gorm.DB) error {
-		err := tx.Table(tableConnections).
+		if c.ResourceName == "" {
+			c.ResourceName = c.Name
+		}
+
+		err := UpsertResource(tx, &Resources{
+			OrgID: c.OrgID,
+			Type:  c.SubType.String,
+			Name:  c.ResourceName,
+		}, false)
+
+		if err != nil {
+			return fmt.Errorf("failed upserting resource, reason=%v", err)
+		}
+
+		err = tx.Table(tableConnections).
 			Save(c).
 			Error
 		if err != nil {
@@ -390,7 +405,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	var conn Connection
 	err := tx.Raw(`
 	SELECT
-		c.id, c.org_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,

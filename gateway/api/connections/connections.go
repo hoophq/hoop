@@ -75,6 +75,7 @@ func Post(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  req.ID,
 		OrgID:               ctx.OrgID,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                req.Name,
 		Command:             req.Command,
@@ -154,6 +155,7 @@ func Put(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                conn.Name,
 		Command:             req.Command,
@@ -293,6 +295,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	return openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
+		ResourceName:        conn.ResourceName,
 		Command:             conn.Command,
 		Type:                conn.Type,
 		SubType:             conn.SubType.String,
