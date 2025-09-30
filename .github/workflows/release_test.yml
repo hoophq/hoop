@@ -1,0 +1,313 @@
+name: Hoop Release
+
+on:
+  push:
+    branches:
+      - feat/rs-injectcreds
+    tags:
+      - "*.*.*"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ">=1.23.8"
+      - name: Test
+        run: make test
+
+  darwin-amd64:
+    runs-on: ubuntu-latest
+    name: Build Darwin Amd64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: amd64
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=amd64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  darwin-arm64:
+    runs-on: ubuntu-latest
+    name: Build Darwin Arm64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=arm64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  windows-amd64:
+    runs-on: ubuntu-latest
+    name: Build Windows Amd64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=windows GOARCH=amd64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  windows-arm64:
+    runs-on: ubuntu-latest
+    name: Build Windows Arm64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=windows GOARCH=arm64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  linux-amd64:
+    runs-on: ubuntu-latest
+    name: Build Linux Amd64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
+        run: GOOS=linux GOARCH=amd64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  linux-arm64:
+    runs-on: ubuntu-latest
+    name: Build Linux Arm64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
+        run: GOOS=linux GOARCH=arm64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  build-webapp:
+    runs-on: ubuntu-latest
+    name: Build Webapp
+    environment: production
+    needs: [test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "zulu"
+          java-version: "21"
+      - name: Install clojure tools
+        uses: DeLaGuardo/setup-clojure@12.5
+        with:
+          cli: 1.12.0.1479 # releases: https://clojure.org/releases/tools
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: webapp/package-lock.json
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build
+        run: make build-webapp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/

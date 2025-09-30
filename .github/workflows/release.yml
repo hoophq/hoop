@@ -2,8 +2,6 @@ name: Hoop Release
 
 on:
   push:
-    branches:
-      - feat/rs-injectcreds
     tags:
       - "*.*.*"
 

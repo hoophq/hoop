@@ -3,6 +3,9 @@ VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
 
+# Sanitize VERSION by replacing forward slashes with underscores
+SANITIZED_VERSION := $(shell echo "${VERSION}" | sed 's|/|_|g')
+
 DATE ?= $(shell date -u "+%Y-%m-%dT%H:%M:%SZ")
 
 GOOS ?= linux
@@ -88,10 +91,10 @@ build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
 	$(MAKE) build-rust
-	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
-	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
-	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
-	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
+	tar -czvf ${DIST_FOLDER}/binaries/hoop_${SANITIZED_VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
+	tar -czvf ${DIST_FOLDER}/binaries/hoop_${SANITIZED_VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
+	sha256sum ${DIST_FOLDER}/binaries/hoop_${SANITIZED_VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${SANITIZED_VERSION}_${OS}_${GOARCH}_checksum.txt
+	sha256sum ${DIST_FOLDER}/binaries/hoop_${SANITIZED_VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${SANITIZED_VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
 build-webapp:
