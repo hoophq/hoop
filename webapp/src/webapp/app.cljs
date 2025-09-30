@@ -410,7 +410,6 @@
 
 (defmethod routes/panels :editor-plugin-panel []
   (rf/dispatch [:destroy-page-loader])
-  (rf/dispatch [:plugins->get-plugin-by-name "editor"])
   [layout :application-hoop [:div {:class "h-full"}
                              [webclient/main]]])
 
