@@ -1,6 +1,7 @@
 (ns webapp.shared-ui.cmdk.command-palette-pages
   (:require
    ["cmdk" :refer [CommandGroup CommandItem CommandSeparator]]
+   ["lucide-react" :refer [File ChevronRight]] 
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
@@ -39,16 +40,26 @@
 (defn runbook-result-item
   "Runbook search result item"
   [runbook-path]
-  (let [filename (last (cs/split runbook-path #"/"))]
+  (let [[folder filename] (if (re-find #"/" runbook-path)
+                            (let [parts (cs/split runbook-path #"/" 2)]
+                              [(str (first parts) "/") (second parts)])
+                            [nil runbook-path])]
     [:> CommandItem
-     {:key runbook-path
-      :value filename
-      :keywords ["runbook" "script" "sql"]
-      :onSelect #(rf/dispatch [:command-palette->close])}
+     {:key (:id runbook-path)
+      :value runbook-path
+      :keywords (filterv some? [(:category runbook-path) (:tags runbook-path) "runbook"])
+      :onSelect #(do
+                   (rf/dispatch [:runbooks-plugin->set-active-runbook-by-name runbook-path])
+                   (rf/dispatch [:navigate :runbooks])
+                   (rf/dispatch [:command-palette->close]))}
      [:div {:class "flex items-center gap-2"}
+      [:> File {:size 16 :class "text-gray-9"}]
       [:div {:class "flex flex-col"}
-       [:span {:class "text-sm font-medium"} filename]
-       [:span {:class "text-xs text-gray-11"} runbook-path]]]]))
+       [:span {:class "text-sm font-medium"}
+        (when folder
+          [:span {:class "text-gray-9"} folder " "])
+        filename]]
+      [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]]))
 
 (defn main-page
   "Main page with all pages + search functionality"

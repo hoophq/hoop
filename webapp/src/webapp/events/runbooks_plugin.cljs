@@ -77,6 +77,23 @@
                                                          :connections (:connections template)}})))
 
 (rf/reg-event-db
+ :runbooks-plugin->set-active-runbook-by-name
+ (fn
+   [db [_ runbook-name]]
+   (let [runbooks (get-in db [:runbooks-plugin->runbooks :data])
+         runbook  (some (fn [r] (when (= (:name r) runbook-name) r)) runbooks)]
+     (if runbook
+       (assoc db :runbooks-plugin->selected-runbooks
+              {:status :ready
+               :data {:name        (:name runbook)
+                      :error       (:error runbook)
+                      :params      (keys (:metadata runbook))
+                      :file_url    (:file_url runbook)
+                      :metadata    (:metadata runbook)
+                      :connections (:connections runbook)}})
+       (assoc db :runbooks-plugin->selected-runbooks {:status :error :data nil})))))
+
+(rf/reg-event-db
  :runbooks-plugin->clear-active-runbooks
  (fn
    [db [_ template]]
