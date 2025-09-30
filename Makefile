@@ -70,9 +70,11 @@ publish:
 	./scripts/publish-release.sh
 
 build-rust:
-	@if [ -n "${RUST_TARGET}" ]; then \
+	@if [ "${GOOS}" = "windows" ] || [ "${GOOS}" = "darwin" ]; then \
+		echo "Skipping Rust build for ${GOOS} - not supported"; \
+	elif [ -n "${RUST_TARGET}" ]; then \
 		cd agentrs && cross build --release --target ${RUST_TARGET} && \
-		cd agentrs && if [ -f "target/${RUST_TARGET}/release/agentrs" ]; then \
+		if [ -f "target/${RUST_TARGET}/release/agentrs" ]; then \
 			BINARY_PATH="target/${RUST_TARGET}/release/agentrs"; \
 		else \
 			BINARY_PATH=$$(find . -name "agentrs" -type f | head -1); \
