@@ -297,14 +297,6 @@ jobs:
           node-version: 20
           cache: "npm"
           cache-dependency-path: webapp/package-lock.json
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          override: true
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
       - name: Build
         run: make build-webapp
       - uses: actions/upload-artifact@v4
