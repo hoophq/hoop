@@ -157,23 +157,24 @@
     "Loading runbooks"]
    [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
-
+    
 (defn- empty-templates-view []
-  [:div {:class "text-center"}
-   [:div {:class "text-gray-12 text-xs"}
-    "There are no Runbooks available for this connection."]])
+  [:> Flex {:class "h-full text-center flex-col justify-center items-center"}
+   [:> Text {:size "1" :class "text-gray-8"}
+    "No Runbooks available"]
+   [:> Text {:size "1" :class "text-gray-8"}
+    "Contact your Admin for more information"]])
 
 (defn- no-integration-templates-view []
-  [:div {:class "pt-large"}
-   [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-gray-12 text-xs mb-large"}
-     "Configure your Git repository to enable your Runbooks."]
-    [:> Button {:color "indigo"
-                :size "3"
-                :variant "ghost"
-                :radius "medium"
-                :on-click #(rf/dispatch [:navigate :runbooks-setup {:tab "configurations"}])}
-     "Go to Configurations"]]])
+  [:> Flex {:class "h-full text-center flex-col justify-center items-center" :gap "4"}
+   [:> Text {:size "1" :class "text-gray-8"}
+    "No Runbooks configured on your Organization yet"]
+   [:> Button {:color "indigo"
+               :size "2"
+               :variant "soft"
+               :radius "medium"
+               :on-click #(rf/dispatch [:navigate :runbooks-setup {:tab "configurations"}])}
+    "Go to Runbooks Configuration"]])
 
 (defn main []
   (fn [templates filtered-templates]

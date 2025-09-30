@@ -95,7 +95,7 @@
                            (if collapsed? "w-16" "w-full"))}
        [:> Flex {:align "center"
                  :justify "between"
-                 :class "w-full h-10 px-3 py-2 border-b border-gray-3"}
+                 :class "w-full h-10 p-2 border-b border-gray-3"}
         [:> Flex {:align "center" :gap "2"}
          [:> LibraryBig {:size 16}]
          [:div {:class (when collapsed? "hidden")}
@@ -105,7 +105,7 @@
                         :onClick on-toggle-collapse}
          [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
        (when-not collapsed?
-         [:> Box {:class "flex-1 p-2"} [runbooks-list/main templates filtered-templates]])])))
+         [:> Box {:class "flex-1 p-2 h-full"} [runbooks-list/main templates filtered-templates]])])))
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
