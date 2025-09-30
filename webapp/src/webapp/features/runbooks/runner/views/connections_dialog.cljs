@@ -15,7 +15,7 @@
     :value (:name connection)
     :keywords [(:type connection) (:subtype connection) (:status connection) "connection"]
     :onSelect #(do
-                 (rf/dispatch [:primary-connection/set-selected connection])
+                 (rf/dispatch [:runbooks/set-selected-connection connection])
                  (rf/dispatch [:runbooks/toggle-connection-dialog false]))}
    [:div {:class "flex items-center gap-2"}
     [:figure {:class "w-4"}
@@ -40,7 +40,7 @@
 
 (defn connections-dialog []
   (let [open (rf/subscribe [:runbooks/connection-dialog-open?])
-        connections (rf/subscribe [:connections])
+        connections (rf/subscribe [:runbooks/filtered-connections])
         search-term (r/atom "")]
     (fn []
       [command-dialog/command-dialog
@@ -55,7 +55,7 @@
                         :value @search-term
                         :on-value-change (fn [value]
                                            (reset! search-term value)
-                                           (rf/dispatch [:primary-connection/set-filter value]))
+                                           (rf/dispatch [:runbooks/set-connection-filter value]))
                         :on-key-down (fn [e]
                                        (when (= (.-key e) "Escape")
                                          (.preventDefault e)
@@ -63,4 +63,4 @@
                                          (reset! search-term "")))}
         :breadcrumb-config {:context "Runbooks" :current-page "Connections"}
         :content
-        [connections-list {:status :ready :data {:connections (:results @connections)}}]}])))
+        [connections-list {:status :ready :data {:connections @connections}}]}])))

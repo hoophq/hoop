@@ -21,17 +21,16 @@
         metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
-        primary-connection (rf/subscribe [:primary-connection/selected])
-        selected-connections (rf/subscribe [:multiple-connections/selected])]
+        runbooks-connection (rf/subscribe [:runbooks/selected-connection])]
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
       (let [has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
                               (seq @metadata-value))
-            no-connection-selected? (and (empty? @selected-connections) (not @primary-connection))
-            runbooks-enabled? (= "enabled" (:access_mode_runbooks @primary-connection))
-            exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
+            no-connection-selected? (not @runbooks-connection)
+            runbooks-enabled? (= "enabled" (:access_mode_runbooks @runbooks-connection))
+            exec-enabled? (= "enabled" (:access_mode_exec @runbooks-connection))
             disable-run-button? (or no-connection-selected?
-                                    (not (seq @selected-template))
+                                    (empty? (@selected-template :data))
                                     (not runbooks-enabled?)
                                     (not exec-enabled?))]
 
@@ -42,11 +41,11 @@
             "Runbooks"]
            [:> Badge
             {:radius "full"
-             :color (if @primary-connection "indigo" "gray")
+             :color (if @runbooks-connection "indigo" "gray")
              :class "cursor-pointer"
              :onClick (fn [] (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
-            (if @primary-connection
-              (:name @primary-connection)
+            (if @runbooks-connection
+              (:name @runbooks-connection)
               "Connection")
             [:> ChevronDown {:size 12}]]]
 
@@ -110,8 +109,7 @@
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
         search-term (rf/subscribe [:search/term])
-        primary-connection (rf/subscribe [:primary-connection/selected])
-        selected-connections (rf/subscribe [:multiple-connections/selected])
+        runbooks-connection (rf/subscribe [:runbooks/selected-connection])
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
@@ -124,11 +122,8 @@
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]
     
     (fn []
-      (when (not= :ready (:status @templates))
-        (rf/dispatch [:runbooks-plugin->get-runbooks
-                      (map :name (concat
-                                  (when @primary-connection [@primary-connection])
-                                  @selected-connections))]))
+      (when (not= :success @(rf/subscribe [:runbooks/connections-status]))
+        (rf/dispatch [:runbooks/initialize-connections]))
 
       (when (and (seq @search-term)
                  (= :ready (:status @templates)))
@@ -159,11 +154,11 @@
            [:> Box {:class "h-full flex-1"}
             [connections-dialog/connections-dialog]
             [runbook-form/main {:runbook @selected-template
-                                :preselected-connection (:name @primary-connection)
+                                :preselected-connection (:name @runbooks-connection)
                                 :selected-connections @(rf/subscribe [:execution/target-connections])}]]
            [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
             [log-area/main
-             (discover-connection-type @primary-connection)
+             (discover-connection-type @runbooks-connection)
              true
              @dark-mode?]]]]]
         (when @metadata-open?

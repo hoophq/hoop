@@ -94,4 +94,6 @@
                      :current-page :main
                      :context {}
                      :search-results {:status :idle :data {}}}
-   :connection-dialog-open? false})
+   :runbooks {:connection-dialog-open? false
+              :execute-trigger false
+              :selected-connection nil}})
