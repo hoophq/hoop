@@ -94,7 +94,7 @@ func CreateRDPSession(
 		return nil, err
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancelFn()
 
 	// Wait for protocol-specific started response

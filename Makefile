@@ -24,9 +24,11 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
 build-dev-rust:
-	cd agentrs && cargo build --release
+	echo "Building hoop_rs for dev"
+	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
 	mkdir -p ${HOME}/.hoop/bin
-	cp agentrs/target/release/agentrs ${HOME}/.hoop/bin/hoop_rs
+	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOME}/.hoop/bin/hoop_rs
+	chmod +x ${HOME}/.hoop/bin/hoop_rs
 
 install-rust:
 	./scripts/install-rust.sh
