@@ -70,13 +70,17 @@ publish:
 	./scripts/publish-release.sh
 
 build-rust:
-	cd agentrs && cross build --release --target ${RUST_TARGET}
-	cd agentrs && if [ -f "target/${RUST_TARGET}/release/agentrs" ]; then \
-		BINARY_PATH="target/${RUST_TARGET}/release/agentrs"; \
+	@if [ -n "${RUST_TARGET}" ]; then \
+		cd agentrs && cross build --release --target ${RUST_TARGET} && \
+		cd agentrs && if [ -f "target/${RUST_TARGET}/release/agentrs" ]; then \
+			BINARY_PATH="target/${RUST_TARGET}/release/agentrs"; \
+		else \
+			BINARY_PATH=$$(find . -name "agentrs" -type f | head -1); \
+		fi && \
+		cp "$$BINARY_PATH" ../${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/hoop_rs; \
 	else \
-		BINARY_PATH=$$(find . -name "agentrs" -type f | head -1); \
-	fi && \
-	cp "$$BINARY_PATH" ../${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/hoop_rs 
+		echo "Skipping Rust build for ${GOOS} - no RUST_TARGET defined"; \
+	fi 
 
 build:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
