@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.events
+(ns webapp.features.runbooks.setup.events
   (:require
    [re-frame.core :as rf]))
 

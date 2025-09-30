@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.views.configuration-view
+(ns webapp.features.runbooks.setup.views.configuration-view
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Link
                                RadioGroup Text]]

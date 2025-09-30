@@ -69,10 +69,10 @@
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.subs]
    [webapp.features.access-control.views.group-form :as group-form]
-   [webapp.features.runbooks.events]
-   [webapp.features.runbooks.main :as runbooks]
-   [webapp.features.runbooks.subs]
-   [webapp.features.runbooks.views.runbook-form :as runbook-form]
+   [webapp.features.runbooks.setup.events]
+   [webapp.features.runbooks.setup.main :as runbooks-setup]
+   [webapp.features.runbooks.setup.subs]
+   [webapp.features.runbooks.setup.views.runbook-form :as runbook-form]
    [webapp.features.runbooks.runner.events]
    [webapp.features.runbooks.runner.main :as runbooks-runner]
    [webapp.features.runbooks.runner.subs]
@@ -570,7 +570,7 @@
   (rf/dispatch [:destroy-page-loader])
   [layout :application-hoop
    [routes/wrap-admin-only
-    [runbooks/main]]])
+    [runbooks-setup/main]]])
 
 (defmethod routes/panels :runbooks-edit-panel []
   (let [pathname (.. js/window -location -pathname)

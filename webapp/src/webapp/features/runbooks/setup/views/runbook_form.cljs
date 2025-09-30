@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.views.runbook-form
+(ns webapp.features.runbooks.setup.views.runbook-form
   (:require
    ["@radix-ui/themes" :refer [Box Flex Text Button Heading Grid]]
    ["@heroicons/react/24/outline" :as hero-outline]

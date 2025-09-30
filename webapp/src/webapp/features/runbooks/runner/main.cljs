@@ -31,9 +31,9 @@
             runbooks-enabled? (= "enabled" (:access_mode_runbooks @primary-connection))
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or no-connection-selected?
-                        (not (seq @selected-template))
-                        (not runbooks-enabled?)
-                        (not exec-enabled?))]
+                                    (not (seq @selected-template))
+                                    (not runbooks-enabled?)
+                                    (not exec-enabled?))]
 
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
          [:> Flex {:class "h-full px-4 items-center justify-between"}
@@ -116,8 +116,9 @@
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
-        x-panel-sizes (mapv js/parseInt    (cs/split
-                                            (or (.getItem js/localStorage "runbook-x-panel-sizes") "270,950") ","))
+        x-panel-sizes (mapv js/parseInt
+                            (cs/split
+                             (or (.getItem js/localStorage "runbook-x-panel-sizes") "270,950") ","))
         y-panel-sizes (mapv js/parseInt
                             (cs/split
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]

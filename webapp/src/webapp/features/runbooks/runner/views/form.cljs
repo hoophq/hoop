@@ -106,14 +106,12 @@
                 (when (nil? (get @state param))
                   (swap! state assoc param (or (:default metadata) "")))))
 
-            (let [perform-submit (fn []
-                                   (when (and @form-ref
-                                              (not (.reportValidity @form-ref)))
-                                     (do nil))
+            (let [handle-submit (fn []
+                                   (when (and @form-ref (not (.reportValidity @form-ref))) nil)
 
                                    (when (or (nil? @form-ref) (.reportValidity @form-ref))
                                      (if (> (count selected-connections) 1)
-                                       (let [has-jira-template? (some #(not (empty? (:jira_issue_template_id %)))
+                                       (let [has-jira-template? (some #(seq (:jira_issue_template_id %))
                                                                       selected-connections)
                                              jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
                                                                               :data
@@ -129,7 +127,7 @@
                                        (let [connection (first (filter #(= (:name %) connection-name)
                                                                        selected-connections))
                                              has-jira-template? (and connection
-                                                                     (not (empty? (:jira_issue_template_id connection))))
+                                                                     (seq (:jira_issue_template_id connection)))
                                              jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
                                                                               :data
                                                                               :status)
@@ -149,7 +147,7 @@
               (let [execute-req-sub (rf/subscribe [:runbooks/execute-trigger])
                     execute? @execute-req-sub]
                 (when (and (not= @prev-execute execute?) execute?)
-                  (perform-submit)
+                  (handle-submit)
                   (rf/dispatch [:runbooks/execute-handled]))
                 (reset! prev-execute execute?))
 

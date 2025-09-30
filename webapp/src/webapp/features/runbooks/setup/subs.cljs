@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.subs
+(ns webapp.features.runbooks.setup.subs
   (:require
    [re-frame.core :as rf]))
 
