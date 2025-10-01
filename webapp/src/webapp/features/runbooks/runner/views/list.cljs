@@ -59,7 +59,7 @@
              (when (pos? level) "pl-4"))
        :on-click (fn []
              (let [template (filter-template-selected filename)]
-               (rf/dispatch [:runbooks-plugin->set-active-runbook template])))}
+               (rf/dispatch [:runbooks/set-active-runbook template])))}
     [:> Flex {:class (str "w-fit gap-2 items-center py-1.5 px-2" (when selected?  " bg-[--indigo-a3] rounded-2"))} 
     [:> File {:size 16
           :class "text-[--gray-11]"}]

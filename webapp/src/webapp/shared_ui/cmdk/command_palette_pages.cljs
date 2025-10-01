@@ -49,7 +49,7 @@
       :value runbook-path
       :keywords (filterv some? [(:category runbook-path) (:tags runbook-path) "runbook"])
       :onSelect #(do
-                   (rf/dispatch [:runbooks-plugin->set-active-runbook-by-name runbook-path])
+                   (rf/dispatch [:runbooks/set-active-runbook-by-name runbook-path])
                    (rf/dispatch [:navigate :runbooks])
                    (rf/dispatch [:command-palette->close]))}
      [:div {:class "flex items-center gap-2"}
