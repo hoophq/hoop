@@ -120,11 +120,10 @@
         y-panel-sizes (mapv js/parseInt
                             (cs/split
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]
-    
-    (fn []
-      (when (not= :success @(rf/subscribe [:runbooks/connections-status]))
-        (rf/dispatch [:runbooks/initialize-connections]))
 
+    (rf/dispatch [:runbooks/load-persisted-connection])
+
+    (fn []
       (when (and (seq @search-term)
                  (= :ready (:status @templates)))
         (rf/dispatch [:search/filter-runbooks @search-term]))

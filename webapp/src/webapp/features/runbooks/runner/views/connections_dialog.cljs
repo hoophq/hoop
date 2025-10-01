@@ -40,7 +40,7 @@
 
 (defn connections-dialog []
   (let [open (rf/subscribe [:runbooks/connection-dialog-open?])
-        connections (rf/subscribe [:runbooks/filtered-connections])
+        connections (rf/subscribe [:connections])
         search-term (r/atom "")]
     (fn []
       [command-dialog/command-dialog
@@ -54,8 +54,7 @@
                         :placeholder "Select or search a connection"
                         :value @search-term
                         :on-value-change (fn [value]
-                                           (reset! search-term value)
-                                           (rf/dispatch [:runbooks/set-connection-filter value]))
+                                           (reset! search-term value))
                         :on-key-down (fn [e]
                                        (when (= (.-key e) "Escape")
                                          (.preventDefault e)
@@ -63,4 +62,4 @@
                                          (reset! search-term "")))}
         :breadcrumb-config {:context "Runbooks" :current-page "Connections"}
         :content
-        [connections-list {:status :ready :data {:connections @connections}}]}])))
+        [connections-list {:status :ready :data {:connections (:results @connections)}}]}])))
