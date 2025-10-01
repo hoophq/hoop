@@ -1,13 +1,11 @@
 use crate::{
     conf,
-    tasks::*,
     ws::{
         rdp_message_processor::MessageProcessor,
         types::{ChannelMap, ProxyMap, SessionMap, WsWriter},
     },
 };
 use anyhow::Context;
-use async_trait::async_trait;
 use axum::http::HeaderValue;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -25,24 +23,6 @@ pub struct WebSocket {
     pub config_manager: conf::ConfigHandleManager,
     pub request: Request,
     pub reconnect_interval: Duration,
-}
-
-#[async_trait]
-impl Task for WebSocket {
-    type Output = anyhow::Result<()>;
-
-    const NAME: &'static str = "agent";
-
-    async fn run(self, mut shutdown_signal: ShutdownSignal) -> Self::Output {
-        tokio::select! {
-            result = self.run_with_reconnect() => result,
-            _ = shutdown_signal.wait() => Ok(()),
-        }
-    }
-
-    fn get_name(&self) -> &'static str {
-        Self::NAME
-    }
 }
 
 impl WebSocket {
@@ -67,7 +47,7 @@ impl WebSocket {
         })
     }
 
-    async fn run_with_reconnect(self) -> anyhow::Result<()> {
+    pub async fn run_with_reconnect(self) -> anyhow::Result<()> {
         let mut attempts = 0;
         loop {
             match self.clone().run().await {
