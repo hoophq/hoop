@@ -56,10 +56,9 @@ impl WebSocket {
 
         // Insert a custom header
         let token = config_manager.conf.token.clone().unwrap();
-        let token: &'static str = Box::leak(token.into_boxed_str());
         request
             .headers_mut()
-            .insert("HOOP_KEY", HeaderValue::from_static(token));
+            .insert("HOOP_KEY", HeaderValue::from_str(token.as_str())?);
 
         Ok(WebSocket {
             request,

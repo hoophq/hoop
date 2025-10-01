@@ -58,9 +58,11 @@ impl AsyncRead for ChannelWebSocketStream {
                     data.len()
                 );
                 let to_read = std::cmp::min(buf.remaining(), data.len());
-                buf.put_slice(&data[..to_read]);
+
                 if data.len() > to_read {
-                    this.read_buffer.extend_from_slice(&data[to_read..]);
+                    this.read_buffer.extend_from_slice(&data);
+                } else {
+                    buf.put_slice(&data[..to_read]);
                 }
                 Poll::Ready(Ok(()))
             }
