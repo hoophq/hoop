@@ -1,7 +1,8 @@
 (ns webapp.features.runbooks.runner.views.connections-dialog
   (:require 
-   ["lucide-react" :refer [ChevronRight]] 
-   ["cmdk" :refer [CommandGroup CommandItem]]
+   ["cmdk" :refer [CommandGroup CommandItem]] 
+   ["lucide-react" :refer [ChevronRight]]
+   ["@radix-ui/themes" :refer [Flex Text]]
    [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]
@@ -17,13 +18,12 @@
     :onSelect #(do
                  (rf/dispatch [:runbooks/set-selected-connection connection])
                  (rf/dispatch [:runbooks/toggle-connection-dialog false]))}
-   [:div {:class "flex items-center gap-2"}
-    [:figure {:class "w-4"}
-     [:img {:src (connection-constants/get-connection-icon connection)
-            :class "w-9"
-            :loading "lazy"}]]
-    [:div {:class "flex flex-col"}
-     [:span {:class "text-sm font-medium"} (:name connection)]]
+   [:> Flex {:align "center" :gap "2"}
+    [:img {:src (connection-constants/get-connection-icon connection)
+           :class "w-4"
+           :loading "lazy"}]
+    [:> Flex {:direction "column"}
+     [:> Text {:size "2" :class "text-[--gray-11]"} (:name connection)]]
     [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
 
 (defn- connections-list
