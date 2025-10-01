@@ -123,19 +123,16 @@ impl WebSocket {
                     Ok(Ok(())) => {
                         info!("> Message processor completed normally");
                         // This is a graceful closure, return Ok to exit reconnection loop
-                        self.cleanup_resources(sessions, active_proxies, session_channels).await;
                         Ok(())
                     }
                     Ok(Err(e)) => {
                         error!("> Message processor error: {}", e);
                         // This is a connection error, return it to trigger reconnection
-                        self.cleanup_resources(sessions, active_proxies, session_channels).await;
                         Err(anyhow::anyhow!(e))
                     }
                     Err(e) => {
                         error!("> Message processor task panicked: {}", e);
                         // Task panic indicates connection issues, return error to trigger reconnection
-                        self.cleanup_resources(sessions, active_proxies, session_channels).await;
                         Err(anyhow::anyhow!("Message processor task panicked: {}", e))
                     }
                 }
@@ -143,10 +140,11 @@ impl WebSocket {
             _ = heartbeat_task => {
                 debug!("> Heartbeat task completed - connection likely lost");
                 // Heartbeat task completion indicates connection loss, return error to trigger reconnection
-                self.cleanup_resources(sessions, active_proxies, session_channels).await;
                 Err(anyhow::anyhow!("Heartbeat task completed - connection lost"))
             }
         };
+        self.cleanup_resources(sessions, active_proxies, session_channels)
+            .await;
         result
     }
 
