@@ -3,6 +3,7 @@
    ["cmdk" :refer [CommandGroup CommandItem]] 
    ["lucide-react" :refer [ChevronRight]]
    ["@radix-ui/themes" :refer [Flex Text]]
+   [clojure.string :as cs]
    [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]
@@ -29,10 +30,9 @@
 (defn- connections-list
   "Connections-only list with search results"
   [search-results]
-  (let [search-status (:status search-results)
-        connections (:connections (:data search-results))]
+  (let [connections (:connections (:data search-results))]
     [:<>
-     (when (and (= search-status :ready) (seq connections))
+     (when (seq connections)
        [:> CommandGroup
         (for [connection connections]
           ^{:key (:id connection)}
@@ -43,23 +43,34 @@
         connections (rf/subscribe [:connections])
         search-term (r/atom "")]
     (fn []
-      [command-dialog/command-dialog
-       {:open? @open
-        :on-open-change (fn [open?]
-                          (rf/dispatch [:runbooks/toggle-connection-dialog open?])
-                          (when-not open? (reset! search-term "")))
-        :title "Select or search a connection"
-        :search-config {:show-search-icon true
-                        :show-input true
-                        :placeholder "Select or search a connection"
-                        :value @search-term
-                        :on-value-change (fn [value]
-                                           (reset! search-term value))
-                        :on-key-down (fn [e]
-                                       (when (= (.-key e) "Escape")
-                                         (.preventDefault e)
-                                         (rf/dispatch [:runbooks/toggle-connection-dialog false])
-                                         (reset! search-term "")))}
-        :breadcrumb-config {:context "Runbooks" :current-page "Connections"}
-        :content
-        [connections-list {:status :ready :data {:connections (:results @connections)}}]}])))
+      (let [all-connections (or (:results @connections) [])
+            query (-> @search-term (or "") cs/trim cs/lower-case)
+            matches? (fn [connection]
+                       (let [candidates [(some-> (:name connection) cs/lower-case)
+                                         (some-> (:type connection) name cs/lower-case)
+                                         (some-> (:subtype connection) name cs/lower-case)
+                                         "connection"]]
+                         (some #(and % (cs/includes? % query)) candidates)))
+            filtered-connections (if (cs/blank? query)
+                                   all-connections
+                                   (filter matches? all-connections))]
+        [command-dialog/command-dialog
+         {:open? @open
+          :on-open-change (fn [open?]
+                            (rf/dispatch [:runbooks/toggle-connection-dialog open?])
+                            (when-not open? (reset! search-term "")))
+          :title "Select or search a connection"
+          :search-config {:show-search-icon true
+                          :show-input true
+                          :placeholder "Select or search a connection"
+                          :value @search-term
+                          :on-value-change (fn [value]
+                                             (reset! search-term value))
+                          :on-key-down (fn [e]
+                                         (when (= (.-key e) "Escape")
+                                           (.preventDefault e)
+                                           (rf/dispatch [:runbooks/toggle-connection-dialog false])
+                                           (reset! search-term "")))}
+          :breadcrumb-config {:context "Runbooks" :current-page "Connections"}
+          :content
+          [connections-list {:data {:connections filtered-connections}}]}]))))

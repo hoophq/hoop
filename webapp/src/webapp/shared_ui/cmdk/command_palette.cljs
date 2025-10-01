@@ -62,7 +62,7 @@
           :content
           [:<>
            [enhanced-empty-state status current-page]
-           
+
            ;; Render content based on current page
            (case current-page
              :main
