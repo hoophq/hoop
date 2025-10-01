@@ -2,24 +2,14 @@
   (:require
    ["@radix-ui/themes" :refer [Box Card Flex Heading Badge Text]]
    [clojure.string :as cs]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.connections.views.resource-catalog.helpers :as helpers]))
 
-(def mock-new-connections #{"postgres-demo"})
-(def mock-beta-connections #{"mongodb" "aws-discovery"})
-
-(defn get-connection-badge [connection]
-  (let [connection-id (if (map? connection) (:id connection) connection)]
-    (cond
-      ;; Mock badges
-      (mock-new-connections connection-id) {:text "NEW" :color "green"}
-      (mock-beta-connections connection-id) {:text "BETA" :color "indigo"}
-      :else nil)))
 
 (defn connection-icon [icon-name connection-id]
   (let [image-failed? (r/atom false)]
     (fn []
       (if @image-failed?
-        ;; Show fallback - no more image loading, just CSS
         [:div {:class "w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center shadow-sm"}
          [:span {:class "text-white font-bold text-sm"}
           (cs/upper-case (first (str connection-id)))]]
@@ -28,12 +18,11 @@
                :alt connection-id
                :class "w-6 h-6"
                :on-error (fn [_]
-                           ;; Only set flag, no more image attempts
                            (reset! image-failed? true))}]))))
 
 (defn connection-card [connection on-click]
   (let [{:keys [id name icon-name]} connection
-        badge (get-connection-badge connection)]
+        badge (helpers/get-connection-badge (:id connection))]
     [:> Box {:height "110px" :width "176px"}
      [:> Card {:size "2"
                :class "h-full w-full cursor-pointer"

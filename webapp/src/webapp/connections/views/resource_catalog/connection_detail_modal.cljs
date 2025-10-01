@@ -3,68 +3,23 @@
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Dialog Flex
                                Heading Link ScrollArea Tabs Text]]
    ["lucide-react" :refer [BookMarked Monitor SquareTerminal]]
-   [clojure.string :as cs]
-   [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.text-with-markdown-link :as text-with-markdown-link]))
+   [webapp.components.text-with-markdown-link :as text-with-markdown-link]
+   [webapp.connections.views.resource-catalog.helpers :as helpers]))
 
-(def mock-new-connections #{"postgres-demo"})
-(def mock-beta-connections #{"mongodb" "aws-discovery"})
-
-(defn get-connection-badge [connection]
-  (let [connection-id (if (map? connection) (:id connection) connection)]
-    (cond
-      ;; Mock badges
-      (mock-new-connections connection-id) {:text "NEW" :color "green"}
-      (mock-beta-connections connection-id) {:text "BETA" :color "indigo"}
-      :else nil)))
-
-;; Mapeamento connection-id → setup flow
-(defn connection-setup-mapping [connection]
-  (let [connection-id (:id connection)
-        resource-configuration (:resourceConfiguration connection)
-        connection-mapped {;; Database hardcoded (fluxo atual)
-                           "postgres" {:type "database" :subtype "postgres"}
-                           "mysql" {:type "database" :subtype "mysql"}
-                           "mongodb" {:type "database" :subtype "mongodb"}
-                           "mssql" {:type "database" :subtype "mssql"}
-                           "oracle" {:type "database" :subtype "oracledb"}
-                           ;; Network hardcoded (fluxo atual)
-                           "ssh" {:type "server" :subtype "ssh"}
-                           "tcp" {:type "network" :subtype "tcp"}
-                           "httpproxy" {:type "network" :subtype "httpproxy"}
-                           ;; Custom connections
-                           "linux-vm" {:type "server" :subtype "custom"}}]
-
-    (if (get connection-mapped connection-id)
-      (get connection-mapped connection-id)
-
-      {:type (:type resource-configuration)
-       :subtype (:subtype resource-configuration)
-       :command (:command resource-configuration)})))
 
 (defn navigate-to-setup
-  "Navega para o setup flow com o tipo de conexão pré-selecionado"
+  "Navigate to setup flow with pre-selected connection type"
   [connection]
-  ;; Se é uma conexão especial com ação direta, executa a ação
-  (if (= (:special-type connection) :action)
-    ((:action connection))
-    ;; Senão, segue o fluxo normal de setup
-    (let [setup-config (connection-setup-mapping connection)]
+  (if-let [action-result (helpers/execute-special-action connection)]
+
+    action-result
+
+    (let [setup-config (helpers/get-setup-config connection)]
       (if setup-config
-        (do
-          ;; Inicializa o setup com configurações do catálogo
-          (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
-          ;; Se tem app-type, seleciona também
-          (when (:app-type setup-config)
-            (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
-          ;; Detecta se estamos no contexto de onboarding pela URL atual
-          (let [current-path (.. js/window -location -pathname)
-                is-onboarding? (cs/includes? current-path "/onboarding")]
-            ;; Navega para o lugar certo baseado no contexto
-            (if is-onboarding?
-              (rf/dispatch [:navigate :onboarding-setup-resource])
-              (rf/dispatch [:navigate :create-connection]))))
+        (helpers/dispatch-setup-navigation
+         setup-config
+         (helpers/is-onboarding-context?))
         (js/console.warn "No setup mapping found for connection:" (:id connection))))))
 
 (defn modal-overview-tab [overview setupGuide]
@@ -152,7 +107,7 @@
 (defn main [connection open? on-close]
   (when connection
     (let [{:keys [name description overview setupGuide]} connection
-          badge (get-connection-badge (:id connection))]
+          badge (helpers/get-connection-badge (:id connection))]
 
       [:> Dialog.Root {:open open?
                        :onOpenChange #(when-not % (on-close))}
