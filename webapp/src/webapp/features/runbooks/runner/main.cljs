@@ -96,7 +96,7 @@
                  :justify "between"
                  :class "w-full h-10 p-2 border-b border-gray-3"}
         [:> Flex {:align "center" :gap "2"}
-         [:> LibraryBig {:size 16}]
+         [:> LibraryBig {:size 16 :class "text-[--gray-12]"}]
          [:div {:class (when collapsed? "hidden")}
           [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Library"]]]
         [:> IconButton {:variant "ghost"
