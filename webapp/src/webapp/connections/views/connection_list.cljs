@@ -9,8 +9,12 @@
             [webapp.components.searchbox :as searchbox]
             [webapp.components.virtualized-list :as virtualized-list]
             [webapp.connections.constants :as connection-constants]
+            [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?
+                                                can-connect? can-open-web-terminal?
+                                                can-access-native-client?]]
             [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
             [webapp.connections.views.tag-selector :as tag-selector]
+            [webapp.connections.views.test-connection-modal :as test-connection-modal]
             [webapp.config :as config]
             [webapp.events.connections-filters]))
 
@@ -70,24 +74,10 @@
          (when (= selected-resource value)
            [:> Check {:size 16}])])]]]])
 
-(defn can-connect? [connection]
-  (not (and (= "disabled" (:access_mode_runbooks connection))
-            (= "disabled" (:access_mode_exec connection))
-            (= "disabled" (:access_mode_connect connection)))))
-
-(defn can-open-web-terminal? [connection]
-  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
-
-    (if (or (= "enabled" (:access_mode_runbooks connection))
-            (= "enabled" (:access_mode_exec connection)))
-      true
-      false)
-
-    false))
-
 (defn panel [_]
   (let [connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
+        test-connection-state (rf/subscribe [:connections->test-connection])
         search-focused (r/atom false)
         searched-connections (r/atom nil)
         searched-criteria-connections (r/atom "")
@@ -203,6 +193,9 @@
                               (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
                               resource (assoc :subtype resource))))]]]
 
+         ;; Test Connection Modal
+         [test-connection-modal/test-connection-modal (get-in @test-connection-state [:connection-name])]
+
          (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
            [loading-list-view]
 
@@ -221,7 +214,7 @@
                  {:items (vec connections-search-results)
                   :item-height 72
                   :container-height 800
-                  :render-item (fn [connection index]
+                  :render-item (fn [connection _index]
                                  [:> Box {:class (str "bg-white border border-[--gray-3] "
                                                       "text-[--gray-12] "
                                                       "first:rounded-t-lg last:rounded-b-lg "
@@ -258,10 +251,23 @@
                                                                   (js/localStorage.setItem "selected-connection" connection)
                                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
                                           "Open in Web Terminal"])
-                                       [:> DropdownMenu.Item {:on-click #(rf/dispatch [:modal->open {:content [hoop-cli-modal/main (:name connection)]
-                                                                                                     :maxWidth "1100px"
-                                                                                                     :class "overflow-hidden"}])}
-                                        "Open in Local Terminal"]]])
+
+                                       [:> DropdownMenu.Item {:on-click
+                                                              #(rf/dispatch [:modal->open
+                                                                             {:content [hoop-cli-modal/main (:name connection)]
+                                                                              :maxWidth "1100px"
+                                                                              :class "overflow-hidden"}])}
+                                        "Open with Hoop CLI"]
+
+                                       (when (can-access-native-client? connection)
+                                         [:> DropdownMenu.Item {:on-click
+                                                                #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
+                                          "Open in Native Client"])
+
+                                       (when (can-test-connection? connection)
+                                         [:> DropdownMenu.Item {:on-click #(rf/dispatch [:connections->test-connection (:name connection)])
+                                                                :disabled (is-connection-testing? @test-connection-state (:name connection))}
+                                          "Test Connection"])]])
 
                                    (when (-> @user :data :admin?)
                                      [:> DropdownMenu.Root {:dir "rtl"}

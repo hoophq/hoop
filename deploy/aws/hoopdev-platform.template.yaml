@@ -33,6 +33,14 @@ Parameters:
     - m6g2xLarge2TB
     Default: t4gSmall50GB
 
+  DataMasking:
+    Type: String
+    Description: 'Whether to enable Data Masking feature. Selecting "mspresidio" will deploy Presidio on the same instance as the gateway'
+    AllowedValues:
+    - 'mspresidio'
+    - 'none'
+    Default: 'none'
+
   AwsCertificateArn:
     Type: String
     Description: '(REQUIRED) The certificate arn for the load balancer. Example: arn:aws:acm:<region>:<account-id>:certificate/<cert-id>'
@@ -87,6 +95,7 @@ Mappings:
 
 Conditions:
   IsDefaultIDP: !Equals ["", !Ref AppIDPURI]
+  IsDataMaskingEnabled: !Equals ["mspresidio", !Ref DataMasking]
 
 Resources:
 
@@ -513,14 +522,22 @@ Resources:
         InstanceType: !Ref AwsAppInstanceType
         SecurityGroupIds: [!GetAtt LaunchTemplateSecurityGroup.GroupId]
         ImageId: !Ref ImageId
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 20
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
             yum update -y && yum install -y \
               aws-cfn-bootstrap \
-              amazon-ssm-agent
+              amazon-ssm-agent \
+              docker
             # force recreate
-            echo "LATEST_HOOP_VERSION ${AppIDPURI} ${AppPublicDNS}" >/dev/null
+            echo "LATEST_HOOP_VERSION ${AppIDPURI} ${AppPublicDNS} ${DataMasking}" >/dev/null
             cfn-init -v --stack ${AWS::StackId} --resource LaunchTemplate --region ${AWS::Region}
             cfn-signal -e $? --stack ${AWS::StackId} --resource GatewayServerGroup --region ${AWS::Region}
     Metadata:
@@ -605,6 +622,10 @@ Resources:
                   API_URL=https://${AppPublicDNS}
                   GRPC_URL=https://${AppPublicDNS}:8443
                   POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
+                  DLP_PROVIDER=${DataMasking}
+                  DLP_MODE=best-effort
+                  MSPRESIDIO_ANALYZER_URL=http://127.0.0.1:5001
+                  MSPRESIDIO_ANONYMIZER_URL=http://127.0.0.1:5002
                 - !Sub |
                   PLUGIN_AUDIT_PATH=/opt/hoop/sessions
                   PLUGIN_INDEX_PATH=/opt/hoop/sessions/indexes
@@ -616,9 +637,67 @@ Resources:
                   GRPC_URL=https://${AppPublicDNS}:8443
                   POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
                   IDP_URI=${AppIDPURI}
+                  DLP_PROVIDER=${DataMasking}
+                  DLP_MODE=best-effort
+                  MSPRESIDIO_ANALYZER_URL=http://127.0.0.1:5001
+                  MSPRESIDIO_ANONYMIZER_URL=http://127.0.0.1:5002
               mode: "000400"
               owner: root
               group: root
+            /lib/systemd/system/presidio-analyzer.service:
+              content: |
+                [Unit]
+                Description=Presidio Analyzer
+                Documentation=https://microsoft.github.io/presidio/
+                After=docker.service
+                Requires=docker.service
+                StartLimitIntervalSec=0
+
+                [Service]
+                Type=simple
+                Restart=on-failure
+                RestartSec=5
+                TimeoutStartSec=0
+                ExecStartPre=-/usr/bin/docker stop presidio-analyzer
+                ExecStartPre=-/usr/bin/docker rm presidio-analyzer
+                ExecStartPre=/usr/bin/docker pull mcr.microsoft.com/presidio-analyzer:2.2.360
+                ExecStart=/usr/bin/docker run \
+                    --name presidio-analyzer \
+                    --rm \
+                    -p 5001:3000 \
+                    mcr.microsoft.com/presidio-analyzer:2.2.360
+                ExecStop=/usr/bin/docker stop presidio-analyzer
+                ExecStopPost=-/usr/bin/docker rm presidio-analyzer
+
+                [Install]
+                WantedBy=multi-user.target
+            /lib/systemd/system/presidio-anonymizer.service:
+              content: |
+                [Unit]
+                Description=Presidio Anonymizer
+                Documentation=https://microsoft.github.io/presidio/
+                After=docker.service
+                Requires=docker.service
+                StartLimitIntervalSec=0
+
+                [Service]
+                Type=simple
+                Restart=on-failure
+                RestartSec=5
+                TimeoutStartSec=0
+                ExecStartPre=-/usr/bin/docker stop presidio-anonymizer
+                ExecStartPre=-/usr/bin/docker rm presidio-anonymizer
+                ExecStartPre=/usr/bin/docker pull mcr.microsoft.com/presidio-anonymizer:2.2.360
+                ExecStart=/usr/bin/docker run \
+                    --name presidio-anonymizer \
+                    --rm \
+                    -p 5002:3000 \
+                    mcr.microsoft.com/presidio-anonymizer:2.2.360
+                ExecStop=/usr/bin/docker stop presidio-anonymizer
+                ExecStopPost=-/usr/bin/docker rm presidio-anonymizer
+
+                [Install]
+                WantedBy=multi-user.target
           commands:
             install_gateway:
               cwd: '~'
@@ -687,20 +766,54 @@ Resources:
                   sleep 5;
                 done
           services:
-            systemd:
-              amazon-ssm-agent:
-                enabled: true
-                ensureRunning: true
-              hoopgateway:
-                enabled: true
-                ensureRunning: true
-                files:
-                - /etc/hoopgateaway.d/config
-              hoopagent:
-                enabled: true
-                ensureRunning: true
-                files:
-                - /etc/hoopgateaway.d/config
+            systemd: !If
+              - IsDataMaskingEnabled
+              -
+                amazon-ssm-agent:
+                  enabled: true
+                  ensureRunning: true
+                hoopgateway:
+                  enabled: true
+                  ensureRunning: true
+                  files:
+                  - /etc/hoopgateaway.d/config
+                hoopagent:
+                  enabled: true
+                  ensureRunning: true
+                  files:
+                  - /etc/hoopgateaway.d/config
+                docker:
+                  enabled: true
+                  ensureRunning: true
+                presidio-analyzer:
+                  enabled: true
+                  ensureRunning: true
+                presidio-anonymizer:
+                  enabled: true
+                  ensureRunning: true
+              - # Default case, no data masking
+                amazon-ssm-agent:
+                  enabled: true
+                  ensureRunning: true
+                hoopgateway:
+                  enabled: true
+                  ensureRunning: true
+                  files:
+                  - /etc/hoopgateaway.d/config
+                hoopagent:
+                  enabled: true
+                  ensureRunning: true
+                  files:
+                  - /etc/hoopgateaway.d/config
+                docker:
+                  enabled: false
+                  ensureRunning: false
+                presidio-analyzer:
+                  enabled: false
+                  ensureRunning: false
+                presidio-anonymizer:
+                  enabled: false
+                  ensureRunning: false
 
   ####
   # EC2 Security Groups

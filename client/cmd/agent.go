@@ -10,23 +10,28 @@ import (
 
 var (
 	startByOS = map[string]func() error{
-		"linux": daemon.StartLinuxAgent,
+		"linux":  daemon.StartLinuxAgent,
 		"darwin": daemon.StartDarwinAgent,
 	}
 
 	removeByOS = map[string]func() error{
-		"linux": daemon.RemoveLinuxAgent,
+		"linux":  daemon.RemoveLinuxAgent,
 		"darwin": daemon.RemoveDarwinAgent,
 	}
 
 	stopByOS = map[string]func() error{
-		"linux": daemon.StopLinuxAgent,
+		"linux":  daemon.StopLinuxAgent,
 		"darwin": daemon.StopDarwinAgent,
 	}
 
 	logsByOS = map[string]func() error{
-		"linux": daemon.LogsLinuxAgent,
+		"linux":  daemon.LogsLinuxAgent,
 		"darwin": daemon.LogsDarwinAgent,
+	}
+
+	envFilesByOS = map[string]func() error{
+		"linux":  daemon.EnvFilesAgent,
+		"darwin": daemon.EnvFilesAgent,
 	}
 )
 
@@ -78,6 +83,18 @@ func Logs(cmd *cobra.Command) error {
 	return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 }
 
+func EnvFiles(cmd *cobra.Command) error {
+	if fn, ok := envFilesByOS[runtime.GOOS]; ok {
+		err := fn()
+		if err != nil {
+			return fmt.Errorf("failed to get agent env file: %w", err)
+		}
+		cmd.Printf("✓ Showing hoop-agent env file path\n")
+		return nil
+	}
+	return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+}
+
 var (
 	agentCmd = &cobra.Command{
 		Use:     "agent [COMMAND ..]",
@@ -121,10 +138,20 @@ var (
 		},
 	}
 
+	envFilesCmd = &cobra.Command{
+		Use:     "env",
+		Example: "hoop agent env",
+		Short:   "Show Hoop agent environment file keys",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return EnvFiles(cmd)
+		},
+	}
 )
 
 func init() {
 	rootCmd.AddCommand(agentCmd)
+	agentCmd.AddCommand(envFilesCmd)
+
 	agentCmd.AddCommand(startLinuxAgentCmd)
 	agentCmd.AddCommand(removeLinuxAgentCmd)
 	agentCmd.AddCommand(stopLinuxAgentCmd)
