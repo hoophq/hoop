@@ -2,7 +2,7 @@ use crate::tasks::*;
 use crate::ws::client::WebSocket;
 use std::time::Duration;
 use tokio::runtime::Runtime;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use tokio::runtime;
 
@@ -88,30 +88,25 @@ impl Service {
 
                 runtime.block_on(async move {
                     const MAX_COUNT: usize = 3;
-                    let mut count = 0;
 
-                    loop {
+                    let all_closed = shutdown_handle.all_closed();
+                    tokio::pin!(all_closed);
+
+                    for attempt in 1..=MAX_COUNT {
+                        let timeout = tokio::time::sleep(Duration::from_secs(5));
+                        tokio::pin!(timeout);
+
                         tokio::select! {
-                            _ = shutdown_handle.all_closed() => {
-                                info!("All tasks have terminated gracefully");
-                                break;
+                            _ = &mut all_closed => {
+                                info!("All tasks have shut down gracefully.");
+                                return;
                             }
-                            _ = tokio::time::sleep(Duration::from_secs(10)) => {
-                                count += 1;
-
-                                if count >= MAX_COUNT {
-                                    error!("Some tasks are not terminating, forcing shutdown");
-                                    break;
-                                } else {
-                                    error!("Waiting for tasks to terminate... (attempt {}/{})", count, MAX_COUNT);
-                                }
+                            _ = &mut timeout => {
+                                warn!("Timeout waiting for tasks to shut down (attempt {}/{})", attempt, MAX_COUNT);
                             }
                         }
                     }
                 });
-
-                // Wait for 1 more second before forcefully shutting down the runtime
-                runtime.shutdown_timeout(Duration::from_secs(1));
 
                 self.state = State::Stopped;
             }

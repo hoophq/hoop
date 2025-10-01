@@ -105,10 +105,7 @@ where
             username: creds.to_string(),
             password: creds.to_string(),
         },
-        target: AppCredential::UsernamePassword {
-            username,
-            password,
-        },
+        target: AppCredential::UsernamePassword { username, password },
     };
 
     debug!("Starting dual handshake until TLS upgrade");

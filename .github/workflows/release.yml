@@ -196,7 +196,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -246,7 +246,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt, clippy
