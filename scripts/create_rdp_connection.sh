@@ -90,7 +90,7 @@ RESPONSE=$(curl -s -w "\n%{http_code}" \
     -H "Authorization: Bearer $TOKEN" \
     -d "{
         \"name\": \"$CONNECTION_NAME\",
-        \"type\": \"custom\",
+        \"type\": \"application\",
         \"subtype\": \"rdp\",
         \"agent_id\": \"$AGENT_ID\",
         \"command\": [\"$COMMAND\"],
