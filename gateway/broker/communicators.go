@@ -12,25 +12,21 @@ type ConnectionCommunicator interface {
 	Close()
 }
 
-type AgentCommunicator struct{ conn *websocket.Conn }
-type ClientCommunicator struct{ conn net.Conn }
+type agentCommunicator struct{ conn *websocket.Conn }
 
-func NewClientCommunicator(conn net.Conn) ConnectionCommunicator { // return interface
-	return &ClientCommunicator{conn: conn}
-}
-func NewAgentCommunicator(conn *websocket.Conn) ConnectionCommunicator {
-	return &AgentCommunicator{conn: conn}
+func NewAgentCommunicator(conn *websocket.Conn) *agentCommunicator {
+	return &agentCommunicator{conn: conn}
 }
 
-func (a *AgentCommunicator) Send(data []byte) error {
+func (a *agentCommunicator) Send(data []byte) error {
 	return a.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
-func (a *AgentCommunicator) Close() {
+func (a *agentCommunicator) Close() {
 	a.conn.Close()
 }
 
-func (a *AgentCommunicator) Read() (int, []byte, error) {
+func (a *agentCommunicator) Read() (int, []byte, error) {
 	_, message, err := a.conn.ReadMessage()
 	if err != nil {
 		return 0, nil, err
@@ -38,7 +34,13 @@ func (a *AgentCommunicator) Read() (int, []byte, error) {
 	return len(message), message, nil
 }
 
-func (c *ClientCommunicator) Read() (int, []byte, error) {
+type clientCommunicator struct{ conn net.Conn }
+
+func NewClientCommunicator(conn net.Conn) *clientCommunicator {
+	return &clientCommunicator{conn: conn}
+}
+
+func (c *clientCommunicator) Read() (int, []byte, error) {
 	buffer := make([]byte, 16*1024)
 	n, err := c.conn.Read(buffer)
 	if err != nil {
@@ -47,11 +49,11 @@ func (c *ClientCommunicator) Read() (int, []byte, error) {
 	return n, buffer, nil
 }
 
-func (c *ClientCommunicator) Send(data []byte) error {
+func (c *clientCommunicator) Send(data []byte) error {
 	_, err := c.conn.Write(data)
 	return err
 }
 
-func (c *ClientCommunicator) Close() {
+func (c *clientCommunicator) Close() {
 	c.conn.Close()
 }
