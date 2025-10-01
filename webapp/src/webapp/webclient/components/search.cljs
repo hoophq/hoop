@@ -35,9 +35,9 @@
                                (let [value (-> e .-target .-value)]
                                  (reset! has-text? (not (empty? value)))
                                  (rf/dispatch [:search/set-term value])
-                                 (rf/dispatch [:primary-connection/set-filter value])
-                                 (when (= @active-panel :runbooks)
-                                   (rf/dispatch [:search/filter-runbooks value]))))}]
+                                 (if (= @active-panel :runbooks)
+                                   (rf/dispatch [:search/filter-runbooks value])
+                                   (rf/dispatch [:primary-connection/set-filter value]))))}]
          (if @has-text?
            [:> IconButton
             {:class (str " absolute top-0 right-0 w-8 h-8 "
@@ -50,10 +50,10 @@
 
                         (set! (.-value (.getElementById js/document input-id)) "")
                         (rf/dispatch [:search/clear-term])
-                        (rf/dispatch [:primary-connection/set-filter ""])
 
-                        (when (= @active-panel :runbooks)
-                          (rf/dispatch [:search/filter-runbooks ""])))}
+                        (if (= @active-panel :runbooks)
+                          (rf/dispatch [:search/filter-runbooks ""])
+                          (rf/dispatch [:primary-connection/set-filter ""])))}
             [:> X {:size 16}]]
 
            [:> IconButton

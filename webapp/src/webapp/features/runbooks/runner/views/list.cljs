@@ -55,7 +55,7 @@
     (into folder-tree root-files)))
 
 (defn file [filename filter-template-selected level selected?]
-  [:div {:class (str "flex items-center gap-2 pb-3 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre overflow-x-hidden "
+  [:> Flex {:class (str "items-center gap-2 pb-3 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre overflow-x-hidden "
              (when (pos? level) "pl-4"))
        :on-click (fn []
              (let [template (filter-template-selected filename)]
@@ -79,29 +79,26 @@
 
         (if (is-file? items)
           [file current-path filter-template-selected level (= current-path (get-in @selected-template [:data :name]))]
-          [:div {:class (str "text-xs text-gray-12 " (when (pos? level) "pl-4"))}
-           [:div {:class "flex pb-4 items-center gap-small cursor-pointer"
-                  :on-click #(swap! dropdown-status
-                                    assoc-in [name]
-                                    (if (= (get @dropdown-status name) :open) :closed :open))}
+          [:> Box {:class (str "text-xs text-gray-12 " (when (pos? level) "pl-4"))}
+           [:> Flex {:class "flex pb-4 items-center gap-small cursor-pointer"
+                     :on-click #(swap! dropdown-status
+                                       assoc-in [name]
+                                       (if (= (get @dropdown-status name) :open) :closed :open))}
             (if (= (get @dropdown-status name) :open)
-              [:div
-               [:> FolderOpen {:size 16
-                               :class "text-[--gray-11]"}]]
-              [:div
-               [:> Folder {:size 16
-                           :class "text-[--gray-11]"}]])
-            [:span {:class "hover:underline"}
-             [:> Text {:size "2" :weight "medium"} name]]
-            [:div
+              [:> FolderOpen {:size 16
+                              :class "text-[--gray-11]"}]
+              [:> Folder {:size 16
+                          :class "text-[--gray-11]"}])
+            [:> Text {:size "2" :weight "medium" :class "hover:underline"} name]
+            [:> Box
              (if (= (get @dropdown-status name) :open)
                [:> ChevronUp {:size 16
                               :class "text-[--gray-11]"}]
                [:> ChevronDown {:size 16
                                 :class "text-[--gray-11]"}])]]
 
-           [:div {:class (when (not= (get @dropdown-status name) :open)
-                           "h-0 overflow-hidden")}
+           [:> Box {:class (when (not= (get @dropdown-status name) :open)
+                             "h-0 overflow-hidden")}
             (if (map? items)
               (let [subfolders-and-files (group-by (fn [[_ subcontents]]
                                                      (if (or (map? subcontents)
@@ -152,10 +149,10 @@
        [directory filename contents 0 filter-template-selected nil])]))
 
 (defn- loading-list-view []
-  [:div {:class "flex gap-small items-center py-regular text-xs text-gray-12"}
-   [:span {:class "italic"}
+  [:> Flex {:class "h-full text-center flex-col justify-center items-center"}
+   [:> Text {:size "1" :class "text-gray-8"}
     "Loading runbooks"]
-   [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+   [:> Box {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
     
 (defn- empty-templates-view []
@@ -181,14 +178,21 @@
     (let [filter-template-selected (fn [template-name]
                                      (first (filter #(= (:name %) template-name) (:data @templates))))
           search-term (rf/subscribe [:search/term])
-          transformed-payload (sort-tree (transform-payload @filtered-templates))]
+          templates-data (:data @templates)
+          filtered-data (or @filtered-templates [])
+          has-search? (seq @search-term)
+          display-templates (if has-search?
+                              filtered-data
+                              (or templates-data []))
+          transformed-payload (sort-tree (transform-payload display-templates))]
 
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
-        (and (empty? (:data @templates)) (= :ready (:status @templates))) [empty-templates-view]
-        (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-12 font-normal"}
-                                      (if (empty? @search-term)
-                                        "There are no runbooks available."
-                                        (str "No runbooks matching \"" @search-term "\"."))]
+        (and (empty? templates-data) (= :ready (:status @templates))) [empty-templates-view]
+        (empty? display-templates) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
+                                    [:> Text {:size "1" :class "text-gray-8"}
+                                     (if has-search?
+                                       (str "No runbooks matching \"" @search-term "\".")
+                                       "There are no runbooks available.")]]
         :else [directory-tree transformed-payload filter-template-selected]))))
