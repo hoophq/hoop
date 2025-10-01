@@ -5,7 +5,8 @@
    ["lucide-react" :refer [BookMarked Monitor SquareTerminal]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.components.text-with-markdown-link :as text-with-markdown-link]))
 
 (def mock-new-connections #{"postgres-demo"})
 (def mock-beta-connections #{"mongodb" "aws-discovery"})
@@ -67,11 +68,13 @@
         (js/console.warn "No setup mapping found for connection:" (:id connection))))))
 
 (defn modal-overview-tab [overview setupGuide]
-  [:div {:class "space-y-6"}
+  [:> Box {:class "space-y-6"}
    (when (:description overview)
-     [:div
-      [:> Text {:class "text-gray-700 leading-relaxed"}
-       (:description overview)]])
+     [:> Box
+      [text-with-markdown-link/main
+       (:description overview)
+       {:size "3" :class "text-gray-12"}
+       {:size "3" :target "_blank" :class "text-blue-12"}]])
 
    (when-let [access-methods (get-in setupGuide [:accessMethods])]
      [:div
@@ -141,8 +144,10 @@
                "filesystem" "File Content"
                "textarea" "Text Content"
                (:type credential-info))]]
-           [:> Text {:as "p" :size "2" :class "text-gray-11"}
-            (:description credential-info)]]])]])])
+           [text-with-markdown-link/main
+            (:description credential-info)
+            {:size "2" :class "text-gray-11"}
+            {:size "2" :target "_blank" :class "text-blue-11"}]]])]])])
 
 (defn main [connection open? on-close]
   (when connection
@@ -183,8 +188,9 @@
          [:> Tabs.List {:class "border-b border-gray-200 mb-6"}
           [:> Tabs.Trigger {:value "overview" :class "pb-3 text-sm font-medium"}
            "Overview"]
-          [:> Tabs.Trigger {:value "setup-guide" :class "pb-3 text-sm font-medium"}
-           "Setup Guide"]]
+          (when (get-in connection [:resourceConfiguration :credentials])
+            [:> Tabs.Trigger {:value "setup-guide" :class "pb-3 text-sm font-medium"}
+             "Setup Guide"])]
 
          [:> Tabs.Content {:value "overview" :class "outline-none"}
           [:> ScrollArea {:class "max-h-[400px] overflow-auto pr-4"}

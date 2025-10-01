@@ -35,8 +35,7 @@
                                 "Network connectivity to port 22"
                                 "Proper firewall configuration"]}
     :resourceConfiguration {:type "server"
-                            :subtype "custom"
-                            :credentials {}}}])
+                            :subtype "custom"}}])
 
 ;; Conexões especiais apenas para onboarding (executam ações diretas)
 (def onboarding-special-connections
