@@ -108,7 +108,7 @@ func (s *Session) ForwardToTCP(data []byte) {
 }
 
 // this will spam data from tcp to agent wsconn
-func (s *Session) StartingForwardind(data []byte) error {
+func (s *Session) ForwardToAgent(data []byte) error {
 	// Send first RDP packet using simple header format (not WebSocketMessage)
 	header := &Header{
 		SID: s.ID,
@@ -151,7 +151,7 @@ func (s *Session) StartingForwardind(data []byte) error {
 }
 
 // this will forward data from agent to tcp
-func (s *Session) SendAgentToTCP() {
+func (s *Session) ForwardToClient() {
 	for data := range s.dataChannel {
 
 		// Write directly to TCP connection

@@ -200,7 +200,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	}()
 
 	// Start data forwarding
-	go session.StartingForwardind(firstRDPData)
-	session.SendAgentToTCP()
+	go session.ForwardToAgent(firstRDPData)
+	session.ForwardToClient()
 
 }
