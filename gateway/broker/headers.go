@@ -27,22 +27,22 @@ const (
 	MessageTypeData           = "data"
 )
 
-const HEADER_SIZE = 20 // 16 bytes for UUID + 4 bytes for length
+const HeaderSize = 20 // 16 bytes for UUID + 4 bytes for length
 
 func (h *Header) Encode() []byte {
 	if h.SID == uuid.Nil {
 		panic("cannot encode nil UUID")
 	}
 
-	buf := make([]byte, HEADER_SIZE) // 16 bytes for UUID + 4 bytes for length
+	buf := make([]byte, HeaderSize) // 16 bytes for UUID + 4 bytes for length
 	copy(buf[:16], h.SID[:])
-	binary.BigEndian.PutUint32(buf[16:HEADER_SIZE], h.Len)
+	binary.BigEndian.PutUint32(buf[16:HeaderSize], h.Len)
 	return buf
 }
 
 // Decode decodes a header from bytes
 func DecodeHeader(data []byte) (*Header, int, error) {
-	if len(data) < HEADER_SIZE {
+	if len(data) < HeaderSize {
 		return nil, 0, fmt.Errorf("insufficient data for header")
 	}
 
@@ -61,12 +61,12 @@ func DecodeHeader(data []byte) (*Header, int, error) {
 		return nil, 0, fmt.Errorf("invalid UUID: version 0 not allowed")
 	}
 
-	len := binary.BigEndian.Uint32(data[16:HEADER_SIZE])
+	len := binary.BigEndian.Uint32(data[16:HeaderSize])
 
 	return &Header{
 		SID: sid,
 		Len: len,
-	}, HEADER_SIZE, nil
+	}, HeaderSize, nil
 }
 
 // EncodeWebSocketMessage encodes a WebSocketMessage to bytes with header
@@ -83,9 +83,9 @@ func EncodeWebSocketMessage(sessionID uuid.UUID, msg *WebSocketMessage) ([]byte,
 	}
 
 	// Combine header + JSON data
-	result := make([]byte, HEADER_SIZE+len(jsonData))
-	copy(result[:HEADER_SIZE], header.Encode())
-	copy(result[HEADER_SIZE:], jsonData)
+	result := make([]byte, HeaderSize+len(jsonData))
+	copy(result[:HeaderSize], header.Encode())
+	copy(result[HeaderSize:], jsonData)
 
 	return result, nil
 }
