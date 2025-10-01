@@ -232,6 +232,11 @@ func (p *Provider) VerifyIDTokenForCode(code string) (token *oauth2.Token, uinfo
 	}
 
 	debugClaims(idToken.Subject, idTokenClaims, token)
+	// The go-oidc library doesn't validate the "azp" claim.
+	// https://github.com/coreos/go-oidc/issues/355
+	if err := p.validateOidcAzpClaim(idTokenClaims); err != nil {
+		return nil, uinfo, err
+	}
 
 	uinfo = p.parseUserInfo(idTokenClaims)
 
@@ -300,29 +305,16 @@ func (p *Provider) VerifyAccessToken(accessToken string) (string, error) {
 		if !ok || subject == "" {
 			return "", fmt.Errorf("'sub' not found or has an empty value")
 		}
-		if err := p.validateAuthorizedParty(claims); err != nil {
-			return "", err
-		}
 		return subject, nil
 	}
 	return "", fmt.Errorf("failed type casting token.Claims (%T) to jwt.MapClaims", token.Claims)
 }
 
-func (p *Provider) validateAuthorizedParty(claims jwt.MapClaims) error {
-	// Auth0 specific claim, not part of the spec
-	// do not check the authorized party in this case
-	gty := fmt.Sprintf("%v", claims["gty"])
-	if gty == "client-credentials" {
-		return nil
-	}
-
-	authorizedParty, hasField := claims["azp"].(string)
-	if !hasField {
-		authorizedParty, hasField = claims["client_id"].(string)
-	}
-
-	if hasField && authorizedParty != p.ClientID {
-		return fmt.Errorf("it's not an authorized party: %v", authorizedParty)
+// validateOidcAzpClaim against registered client id
+// It follows the OIDC section 3.1.3.7 (ID Token Validation)
+func (p *Provider) validateOidcAzpClaim(claims jwt.MapClaims) error {
+	if azp, hasField := claims["azp"].(string); hasField && azp != p.ClientID {
+		return fmt.Errorf("it's not an authorized party, azp=%q, client_id=%q", azp, p.ClientID)
 	}
 	return nil
 }
