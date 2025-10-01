@@ -1,6 +1,5 @@
 pub mod conf;
 pub mod listener;
-pub mod logio;
 pub mod proxy;
 pub mod rdp_proxy;
 pub mod run;
