@@ -301,59 +301,60 @@
                                                                key)
                                                         :value value})
                                                      (remove remote-url? headers))]
-                          processed-headers))]
+                          processed-headers))
 
-    (let [connection-type (:type connection)
-          connection-subtype (:subtype connection)
-          is-custom-with-override? (and (= connection-type "custom")
-                                        (contains? #{"dynamodb" "cloudwatch"} connection-subtype))
-          resource-subtype-override (when is-custom-with-override? connection-subtype)]
-      {:type connection-type
-       :subtype (if is-custom-with-override? "custom" connection-subtype)
-       :name (:name connection)
-       :agent-id (:agent_id connection)
-       :resource-subtype-override resource-subtype-override
-       :database-credentials (when (= connection-type "database") credentials)
-       :network-credentials (or network-credentials http-credentials)
-       :ssh-credentials ssh-credentials
-       :ssh-auth-method (or ssh-auth-method "password")
-       :command (if (empty? (:command connection))
-                  (get constants/connection-commands connection-subtype)
-                  (str/join " " (:command connection)))
-       :command-args (if (empty? (:command connection))
-                       []
-                       (mapv #(hash-map "value" % "label" %) (:command connection)))
-       :credentials {:environment-variables (cond
-                                              (= connection-type "custom")
-                                              (process-connection-envvars (:secret connection) "envvar")
+        connection-type (:type connection)
+        connection-subtype (:subtype connection)
+        is-custom-with-override? (and (= connection-type "custom")
+                                      (contains? #{"dynamodb" "cloudwatch"} connection-subtype))
+        resource-subtype-override (when is-custom-with-override? connection-subtype)]
 
-                                              (and (= connection-type "application")
-                                                   (= connection-subtype "httpproxy"))
-                                              http-env-vars
+    {:type connection-type
+     :subtype (if is-custom-with-override? "custom" connection-subtype)
+     :name (:name connection)
+     :agent-id (:agent_id connection)
+     :resource-subtype-override resource-subtype-override
+     :database-credentials (when (= connection-type "database") credentials)
+     :network-credentials (or network-credentials http-credentials)
+     :ssh-credentials ssh-credentials
+     :ssh-auth-method (or ssh-auth-method "password")
+     :command (if (empty? (:command connection))
+                (get constants/connection-commands connection-subtype)
+                (str/join " " (:command connection)))
+     :command-args (if (empty? (:command connection))
+                     []
+                     (mapv #(hash-map "value" % "label" %) (:command connection)))
+     :credentials {:environment-variables (cond
+                                            (= connection-type "custom")
+                                            (process-connection-envvars (:secret connection) "envvar")
 
-                                              :else [])
-                     :configuration-files (when (= connection-type "custom")
-                                            (process-connection-envvars (:secret connection) "filesystem"))}
-       :tags {:data valid-tags}
-       :old-tags (:tags connection)
+                                            (and (= connection-type "application")
+                                                 (= connection-subtype "httpproxy"))
+                                            http-env-vars
 
-       :config {:review (seq (:reviewers connection))
-                :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
-                :data-masking (:redact_enabled connection)
-                :data-masking-types (if (:redact_enabled connection)
-                                      (mapv #(hash-map "value" % "label" %) (:redact_types connection))
-                                      [])
-                :database-schema (= (:access_schema connection) "enabled")
-                :access-modes {:runbooks (= (:access_mode_runbooks connection) "enabled")
-                               :native (= (:access_mode_connect connection) "enabled")
-                               :web (= (:access_mode_exec connection) "enabled")}
-                :guardrails (if (empty? (:guardrail_rules connection))
-                              []
-                              (transform-filtered-guardrails-selected
-                               guardrails-list
-                               (:guardrail_rules connection)))
-                :jira-template-id (if (:jira_issue_template_id connection)
-                                    (transform-filtered-jira-template-selected
-                                     jira-templates-list
-                                     (:jira_issue_template_id connection))
-                                    "")}})))
+                                            :else [])
+                   :configuration-files (when (= connection-type "custom")
+                                          (process-connection-envvars (:secret connection) "filesystem"))}
+     :tags {:data valid-tags}
+     :old-tags (:tags connection)
+
+     :config {:review (seq (:reviewers connection))
+              :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
+              :data-masking (:redact_enabled connection)
+              :data-masking-types (if (:redact_enabled connection)
+                                    (mapv #(hash-map "value" % "label" %) (:redact_types connection))
+                                    [])
+              :database-schema (= (:access_schema connection) "enabled")
+              :access-modes {:runbooks (= (:access_mode_runbooks connection) "enabled")
+                             :native (= (:access_mode_connect connection) "enabled")
+                             :web (= (:access_mode_exec connection) "enabled")}
+              :guardrails (if (empty? (:guardrail_rules connection))
+                            []
+                            (transform-filtered-guardrails-selected
+                             guardrails-list
+                             (:guardrail_rules connection)))
+              :jira-template-id (if (:jira_issue_template_id connection)
+                                  (transform-filtered-jira-template-selected
+                                   jira-templates-list
+                                   (:jira_issue_template_id connection))
+                                  "")}}))
