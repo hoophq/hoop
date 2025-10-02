@@ -43,6 +43,11 @@
  (fn [db [_ value]]
    (assoc-in db [:connection-setup :network-credentials :remote_url] value)))
 
+(rf/reg-event-db
+ :connection-setup/toggle-network-insecure
+ (fn [db [_ enabled?]]
+   (assoc-in db [:connection-setup :network-credentials :insecure] enabled?)))
+
 ;; Database specific events
 (rf/reg-event-db
  :connection-setup/update-database-credentials

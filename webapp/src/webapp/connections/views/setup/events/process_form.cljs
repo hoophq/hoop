@@ -83,7 +83,9 @@
 
                        (= connection-subtype "httpproxy")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
-                             http-env-vars [{:key "REMOTE_URL" :value (:remote_url network-credentials)}]
+                             insecure-value (if (:insecure network-credentials) "true" "false")
+                             http-env-vars [{:key "REMOTE_URL" :value (:remote_url network-credentials)}
+                                            {:key "INSECURE" :value insecure-value}]
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])
                              processed-headers (process-http-headers headers)]
                          (concat http-env-vars processed-headers))
@@ -240,9 +242,10 @@
    "authorized_server_keys" (get credentials "authorized_server_keys")})
 
 (defn extract-http-credentials
-  "Retrieves remote_url from secrets for http credentials"
+  "Retrieves remote_url and insecure flag from secrets for http credentials"
   [credentials]
-  {:remote_url (get credentials "remote_url")})
+  {:remote_url (get credentials "remote_url")
+   :insecure (= (get credentials "insecure") "true")})
 
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"

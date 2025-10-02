@@ -1,6 +1,6 @@
 (ns webapp.connections.views.setup.network
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Grid RadioGroup Text Heading]]
+   ["@radix-ui/themes" :refer [Box Flex Grid RadioGroup Text Heading Switch]]
    ["lucide-react" :refer [Network]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
@@ -26,7 +26,7 @@
        [:> Box {:class "space-y-4"}
         [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
-       ;; Remote URL input
+        ;; Remote URL input
         [forms/input
          {:label "Remote URL"
           :placeholder "e.g. https://example.com"
@@ -40,6 +40,17 @@
         {:title "HTTP headers"
          :subtitle "Add HTTP headers that will be used in your requests."
          :hide-default-title true}]
+
+       ;; Allow insecure SSL switch
+       [:> Flex {:align "center" :gap "3"}
+        [:> Switch {:checked (get credentials :insecure false)
+                    :size "3"
+                    :onCheckedChange #(rf/dispatch [:connection-setup/toggle-network-insecure %])}]
+        [:> Box
+         [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+          "Allow insecure SSL"]
+         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+          "Skip SSL certificate verification for HTTPS connections."]]]
 
        [agent-selector/main]]]]))
 
