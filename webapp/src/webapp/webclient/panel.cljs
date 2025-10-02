@@ -29,12 +29,10 @@
    [webapp.webclient.components.language-select :as language-select]
    [webapp.webclient.components.panels.multiple-connections :as multiple-connections-panel]
    [webapp.webclient.components.panels.metadata :as metadata-panel]
-   [webapp.webclient.components.panels.runbooks :as runbooks-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
    [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
    [webapp.webclient.log-area.main :as log-area]
-   [webapp.webclient.quickstart :as quickstart]
-   [webapp.webclient.runbooks.form :as runbooks-form]))
+   [webapp.webclient.quickstart :as quickstart]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -206,8 +204,6 @@
         gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
         multi-selected-connections (rf/subscribe [:multiple-connections/selected])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
-        runbooks (rf/subscribe [:runbooks-plugin->runbooks])
         multi-exec (rf/subscribe [:multiple-connection-execution/modal])
         primary-connection (rf/subscribe [:primary-connection/selected])
 
@@ -217,23 +213,9 @@
 
         handle-connection-modes! (fn [current-connection]
                                    (when current-connection
-                                     (let [runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
-                                           exec-enabled? (= "enabled" (:access_mode_exec current-connection))
-                                           only-runbooks? (and runbooks-enabled? (not exec-enabled?))
-                                           current-panel @active-panel]
-
-                                       (when only-runbooks?
-                                         (when (nil? current-panel)
-                                           (reset! active-panel :runbooks))
-
-                                         (when (and (not= :ready (:status @selected-template))
-                                                    (= :ready (:status @runbooks))
-                                                    (seq (:data @runbooks)))
-                                           (rf/dispatch [:runbooks-plugin->set-active-runbook (first (:data @runbooks))])))
-
-                                       (when (and exec-enabled? (not runbooks-enabled?) (= @active-panel :runbooks))
-                                         (reset! active-panel nil)
-                                         (rf/dispatch [:runbooks-plugin->clear-active-runbooks])))))
+                                     (let [exec-enabled? (= "enabled" (:access_mode_exec current-connection))]
+                                       (when (not exec-enabled?)
+                                         (reset! active-panel nil)))))
 
         vertical-pane-sizes (mapv js/parseInt
                                   (cs/split
@@ -245,7 +227,6 @@
         metadata (r/atom [])
         metadata-key (r/atom "")
         metadata-value (r/atom "")]
-    (rf/dispatch [:runbooks-plugin->clear-active-runbooks])
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
@@ -256,16 +237,10 @@
             current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
-            runbooks-enabled? (= "enabled" (:access_mode_runbooks current-connection))
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
-            has-runbook? (some? (:data @selected-template))
             no-connection-selected? (and (empty? @multi-selected-connections)
                                          (not @primary-connection))
-            run-disabled? (or (and (not exec-enabled?)
-                                   runbooks-enabled?)
-                              no-connection-selected?
-                              has-runbook?)
-            only-runbooks? (and runbooks-enabled? (not exec-enabled?))
+            run-disabled? (or (not exec-enabled?) no-connection-selected?)
             reset-metadata (fn []
                              (reset! metadata [])
                              (reset! metadata-key "")
@@ -322,7 +297,7 @@
                              feature-ai-ask
                              is-one-connection-selected?
                              (:subtype current-connection)
-                             (= (:status @selected-template) :ready))
+                             false)
 
             optimized-change-handler (fn [value _]
                                        (reset! script value)
@@ -338,7 +313,6 @@
 
 
             panel-content (case @active-panel
-                            :runbooks (runbooks-panel/main)
                             :metadata (metadata-panel/main {:metadata metadata
                                                             :metadata-key metadata-key
                                                             :metadata-value metadata-value})
@@ -365,32 +339,25 @@
               [:> (.-Pane Allotment) {:minSize 270}
                [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3]"}
                 (if @multi-run-panel?
-                  [multiple-connections-panel/main dark-mode? (some? (:data @selected-template))]
+                  [multiple-connections-panel/main dark-mode? false]
                   [primary-connection-list/main dark-mode?])]]
 
               [:> Allotment {:defaultSizes horizontal-pane-sizes
                              :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                              :vertical true}
                [:div {:class "relative w-full h-full"}
-                (if (= (:status @selected-template) :ready)
-                  [:section {:class "h-full p-3 overflow-auto"}
-                   [runbooks-form/main {:runbook @selected-template
-                                        :preselected-connection (:name current-connection)
-                                        :selected-connections @(rf/subscribe [:execution/target-connections])
-                                        :only-runbooks? only-runbooks?}]]
-
-                  [:div {:class "h-full flex flex-col"}
-                   (when (and
-                          (empty? @multi-selected-connections)
-                          (= "custom" (:type current-connection)))
-                     [connection-state-indicator @dark-mode? (:command current-connection)])
-                   [codemirror-editor
-                    {:value @script
-                     :theme (if @dark-mode?
-                              materialDark
-                              materialLight)
-                     :extensions codemirror-exts
-                     :on-change optimized-change-handler}]])]
+                [:div {:class "h-full flex flex-col"}
+                 (when (and
+                        (empty? @multi-selected-connections)
+                        (= "custom" (:type current-connection)))
+                   [connection-state-indicator @dark-mode? (:command current-connection)])
+                 [codemirror-editor
+                  {:value @script
+                   :theme (if @dark-mode?
+                            materialDark
+                            materialLight)
+                   :extensions codemirror-exts
+                   :on-change optimized-change-handler}]]]
 
                [:> Flex {:direction "column" :justify "between" :class "h-full"}
                 [log-area/main

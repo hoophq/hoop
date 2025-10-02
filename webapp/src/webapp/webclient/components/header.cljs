@@ -1,58 +1,33 @@
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [BookUp2 CircleHelp FastForward PackagePlus Play Sun Moon]]
+   ["lucide-react" :refer [CircleHelp FastForward PackagePlus Play Sun Moon]]
    [re-frame.core :as rf]
+   [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.webclient.components.search :as search]))
 
-(defn notification-badge [icon on-click active? has-data? disabled?]
-  [:div {:class "relative"}
-   [:> IconButton
-    {:class (str (when active? "bg-gray-8 text-gray-12 ")
-                 (when disabled? "cursor-not-allowed "))
-     :size "2"
-     :color "gray"
-     :variant "soft"
-     :disabled disabled?
-     :on-click on-click}
-    icon]
-   (when has-data?
-     [:div {:class (str "absolute -top-1 -right-1 w-2 h-2 "
-                        "rounded-full bg-red-500")}])])
 
 (defn main []
-  (let [selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
-        metadata (rf/subscribe [:editor-plugin/metadata])
+  (let [metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         primary-connection (rf/subscribe [:primary-connection/selected])
         selected-connections (rf/subscribe [:multiple-connections/selected])]
     (fn [active-panel multi-run-panel? dark-mode? submit]
-      (let [has-runbook? (some? (:data @selected-template))
-            has-metadata? (or (seq @metadata)
+      (let [has-metadata? (or (seq @metadata)
                               (not (empty? @metadata-key))
                               (not (empty? @metadata-value)))
             no-connection-selected? (and (empty? @selected-connections)
                                          (not @primary-connection))
             has-multirun? (seq @selected-connections)
-            runbooks-enabled? (= "enabled" (:access_mode_runbooks @primary-connection))
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
-            disable-run-button? (or (and (not exec-enabled?)
-                                         runbooks-enabled?)
-                                    no-connection-selected?
-                                    has-runbook?)
-            disable-runbooks-button? (and exec-enabled? (not runbooks-enabled?))
+            disable-run-button? (or (not exec-enabled?)
+                                    no-connection-selected?)
             on-click-icon-button (fn [type]
                                    (reset! active-panel (when-not (= @active-panel type) type))
                                    (cond
                                      (= type :connections)
-                                     (rf/dispatch [:multiple-connections/clear])
-
-                                     (= type :runbooks)
-                                     (rf/dispatch [:runbooks-plugin->get-runbooks
-                                                   (map :name (concat
-                                                               (when @primary-connection [@primary-connection])
-                                                               @selected-connections))])))]
+                                     (rf/dispatch [:multiple-connections/clear])))]
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
          [:> Flex {:align "center"
                    :justify "between"
@@ -88,34 +63,25 @@
                [:> Sun {:size 16}]
                [:> Moon {:size 16}])]]
 
-           [:> Tooltip {:content "Runbooks"}
-            [:div
-             [notification-badge
-              [:> BookUp2 {:size 16}]
-              #(on-click-icon-button :runbooks)
-              (= @active-panel :runbooks)
-              has-runbook?
-              disable-runbooks-button?]]]
-
            [:> Tooltip {:content "Metadata"}
             [:div
              [notification-badge
-              [:> PackagePlus {:size 16}]
-              #(on-click-icon-button :metadata)
-              (= @active-panel :metadata)
-              has-metadata?
-              false]]]
+              {:icon [:> PackagePlus {:size 16}]
+               :on-click #(on-click-icon-button :metadata)
+               :active? (= @active-panel :metadata)
+               :has-notification? has-metadata?
+               :disabled? false}]]]
 
            [:> Tooltip {:content "MultiRun"}
             [:div
              [notification-badge
-              [:> FastForward {:size 16}]
-              #(do
-                 (reset! multi-run-panel? (not @multi-run-panel?))
-                 (rf/dispatch [:multiple-connections/clear]))
-              @multi-run-panel?
-              has-multirun?
-              false]]]
+              {:icon [:> FastForward {:size 16}]
+               :on-click #(do
+                            (reset! multi-run-panel? (not @multi-run-panel?))
+                            (rf/dispatch [:multiple-connections/clear]))
+               :active? @multi-run-panel?
+               :has-notification? has-multirun?
+               :disabled? false}]]]
 
            [:> Tooltip {:content "Run"}
             [:> Button

@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.views.empty-state
+(ns webapp.features.runbooks.setup.views.empty-state
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Text]]
    [re-frame.core :as rf]

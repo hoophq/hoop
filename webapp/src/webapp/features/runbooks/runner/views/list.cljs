@@ -1,8 +1,7 @@
-(ns webapp.webclient.runbooks.list
+(ns webapp.features.runbooks.runner.views.list
   (:require
-   ["@heroicons/react/20/solid" :as hero-solid-icon]
-   ["@radix-ui/themes" :refer [Box Button]]
-   ["lucide-react" :refer [File FolderClosed FolderOpen]]
+   ["@radix-ui/themes" :refer [Box Button Flex Text]]
+   ["lucide-react" :refer [ChevronDown ChevronUp File Folder FolderOpen]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -55,57 +54,59 @@
 
     (into folder-tree root-files)))
 
-(defn file [filename filter-template-selected level]
-  [:div {:class (str "flex items-center gap-2 pb-4 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre "
-                     (when (pos? level)
-                       "pl-4"))
-         :on-click (fn []
-                     (let [template (filter-template-selected filename)]
-                       (rf/dispatch [:runbooks-plugin->set-active-runbook template])))}
-   [:div
-    [:> File {:size 14
-              :class "text-[--gray-11]"}]]
-   [:span {:class "block truncate"}
-    [tooltip/truncate-tooltip {:text (last (split-path filename))}]]])
+(defn file [filename filter-template-selected level selected?]
+  [:> Flex {:class (str "items-center gap-2 pb-3 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre overflow-x-hidden "
+             (when (pos? level) "pl-4"))
+       :on-click (fn []
+             (let [template (filter-template-selected filename)]
+               (rf/dispatch [:runbooks/set-active-runbook template])))}
+    [:> Flex {:class (str "w-fit gap-2 items-center py-1.5 px-2" (when selected?  " bg-[--indigo-a3] rounded-2"))} 
+    [:> File {:size 16
+          :class "text-[--gray-11]"}]
+    [:> Text {:size "2" :weight "medium" :class "flex items-center block truncate"}
+     [tooltip/truncate-tooltip {:text (last (split-path filename))}]]]])
 
 (defn directory []
   (let [dropdown-status (r/atom {})
-        search-term (rf/subscribe [:search/term])]
+        search-term (rf/subscribe [:search/term])
+        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
 
     (fn [name items level filter-template-selected parent-path]
-      (let [current-path (if parent-path (str parent-path "/" name) name)]
-        (when (and (not (empty? @search-term))
+      (let [current-path (if parent-path (str parent-path "/" name) name)
+            selected-name (get-in @selected-template [:data :name])]
+
+        (when (and (seq @search-term)
                    (not= (get @dropdown-status name) :open))
           (swap! dropdown-status assoc name :open))
 
+        (when (and selected-name
+                   (not= (get @dropdown-status name) :open)
+                   (or (= selected-name current-path)
+                       (cs/starts-with? selected-name (str current-path "/"))))
+          (swap! dropdown-status assoc name :open))
+
         (if (is-file? items)
-          [file current-path filter-template-selected level]
-
-          [:div {:class (str "text-xs text-gray-12 "
-                             (when (pos? level)
-                               "pl-4"))}
-           [:div {:class "flex pb-4 items-center gap-small"}
+          [file current-path filter-template-selected level (= current-path (get-in @selected-template [:data :name]))]
+          [:> Box {:class (str "text-xs text-gray-12 " (when (pos? level) "pl-4"))}
+           [:> Flex {:class "flex pb-4 items-center gap-small cursor-pointer"
+                     :on-click #(swap! dropdown-status
+                                       assoc-in [name]
+                                       (if (= (get @dropdown-status name) :open) :closed :open))}
             (if (= (get @dropdown-status name) :open)
-              [:div
-               [:> FolderOpen {:size 14
-                               :class "text-[--gray-11]"}]]
-              [:div
-               [:> FolderClosed {:size 14
-                                 :class "text-[--gray-11]"}]])
-            [:span {:class (str "hover:underline cursor-pointer "
-                                "flex items-center")
-                    :on-click #(swap! dropdown-status
-                                      assoc-in [name]
-                                      (if (= (get @dropdown-status name) :open) :closed :open))}
-             [:span name]
+              [:> FolderOpen {:size 16
+                              :class "text-[--gray-11]"}]
+              [:> Folder {:size 16
+                          :class "text-[--gray-11]"}])
+            [:> Text {:size "2" :weight "medium" :class "hover:underline"} name]
+            [:> Box
              (if (= (get @dropdown-status name) :open)
-               [:> hero-solid-icon/ChevronUpIcon {:class "h-4 w-4 shrink-0 text-white"
-                                                  :aria-hidden "true"}]
-               [:> hero-solid-icon/ChevronDownIcon {:class "h-4 w-4 shrink-0 text-white"
-                                                    :aria-hidden "true"}])]]
+               [:> ChevronUp {:size 16
+                              :class "text-[--gray-11]"}]
+               [:> ChevronDown {:size 16
+                                :class "text-[--gray-11]"}])]]
 
-           [:div {:class (when (not= (get @dropdown-status name) :open)
-                           "h-0 overflow-hidden")}
+           [:> Box {:class (when (not= (get @dropdown-status name) :open)
+                             "h-0 overflow-hidden")}
             (if (map? items)
               (let [subfolders-and-files (group-by (fn [[_ subcontents]]
                                                      (if (or (map? subcontents)
@@ -131,7 +132,7 @@
 
               (for [item items]
                 ^{:key item}
-                [file item filter-template-selected (inc level)]))]])))))
+                [file item filter-template-selected (inc level) (= item (get-in @selected-template [:data :name]))]))]])))))
 
 (defn directory-tree [tree filter-template-selected]
   (let [folders-and-files (group-by (fn [[_ contents]]
@@ -156,42 +157,50 @@
        [directory filename contents 0 filter-template-selected nil])]))
 
 (defn- loading-list-view []
-  [:div {:class "flex gap-small items-center py-regular text-xs text-gray-12"}
-   [:span {:class "italic"}
+  [:> Flex {:class "h-full text-center flex-col justify-center items-center"}
+   [:> Text {:size "1" :class "text-gray-8"}
     "Loading runbooks"]
-   [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
+   [:> Box {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
-
+    
 (defn- empty-templates-view []
-  [:div {:class "text-center"}
-   [:div {:class "text-gray-12 text-xs"}
-    "There are no Runbooks available for this connection."]])
+  [:> Flex {:class "h-full text-center flex-col justify-center items-center"}
+   [:> Text {:size "1" :class "text-gray-8"}
+    "No Runbooks available"]
+   [:> Text {:size "1" :class "text-gray-8"}
+    "Contact your Admin for more information"]])
 
 (defn- no-integration-templates-view []
-  [:div {:class "pt-large"}
-   [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class "text-gray-12 text-xs mb-large"}
-     "Configure your Git repository to enable your Runbooks."]
-    [:> Button {:color "indigo"
-                :size "3"
-                :variant "ghost"
-                :radius "medium"
-                :on-click #(rf/dispatch [:navigate :runbooks {:tab "configurations"}])}
-     "Go to Configurations"]]])
+  [:> Flex {:class "h-full text-center flex-col justify-center items-center" :gap "4"}
+   [:> Text {:size "1" :class "text-gray-8"}
+    "No Runbooks configured on your Organization yet"]
+   [:> Button {:color "indigo"
+               :size "2"
+               :variant "soft"
+               :radius "medium"
+               :on-click #(rf/dispatch [:navigate :runbooks-setup {:tab "configurations"}])}
+    "Go to Runbooks Configuration"]])
 
 (defn main []
   (fn [templates filtered-templates]
     (let [filter-template-selected (fn [template-name]
                                      (first (filter #(= (:name %) template-name) (:data @templates))))
           search-term (rf/subscribe [:search/term])
-          transformed-payload (sort-tree (transform-payload @filtered-templates))]
+          templates-data (:data @templates)
+          filtered-data (or @filtered-templates [])
+          has-search? (seq @search-term)
+          display-templates (if has-search?
+                              filtered-data
+                              (or templates-data []))
+          transformed-payload (sort-tree (transform-payload display-templates))]
 
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
-        (and (empty? (:data @templates)) (= :ready (:status @templates))) [empty-templates-view]
-        (empty? @filtered-templates) [:div {:class "text-center text-xs text-gray-12 font-normal"}
-                                      (if (empty? @search-term)
-                                        "There are no runbooks available."
-                                        (str "No runbooks matching \"" @search-term "\"."))]
+        (and (empty? templates-data) (= :ready (:status @templates))) [empty-templates-view]
+        (empty? display-templates) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
+                                    [:> Text {:size "1" :class "text-gray-8"}
+                                     (if has-search?
+                                       (str "No runbooks matching \"" @search-term "\".")
+                                       "There are no runbooks available.")]]
         :else [directory-tree transformed-payload filter-template-selected]))))

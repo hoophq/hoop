@@ -201,7 +201,7 @@
     :on-primary-click (if (= mode :empty-state)
                         (fn []
                           (.setItem (.-localStorage js/window) "runbooks-promotion-seen" "true")
-                          (rf/dispatch [:navigate :runbooks {:tab "configuration"}])
+                          (rf/dispatch [:navigate :runbooks-setup {:tab "configuration"}])
                           (rf/dispatch [:plugins->get-plugin-by-name "runbooks"]))
                         #(js/window.Intercom
                           "showNewMessage"
