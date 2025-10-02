@@ -1,0 +1,73 @@
+(ns webapp.features.runbooks.runner.views.connections-dialog
+  (:require 
+   ["cmdk" :refer [CommandGroup CommandItem]] 
+   ["lucide-react" :refer [ChevronRight]]
+   ["@radix-ui/themes" :refer [Flex Text]]
+   [clojure.string :as cs]
+   [reagent.core :as r]
+   [re-frame.core :as rf]
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.command-dialog :as command-dialog]))
+
+(defn- connection-result-item
+  "Connection search result item"
+  [connection]
+  [:> CommandItem
+   {:key (:id connection)
+    :value (:name connection)
+    :keywords [(:type connection) (:subtype connection) (:status connection) "connection"]
+    :onSelect #(do
+                 (rf/dispatch [:runbooks/set-selected-connection connection])
+                 (rf/dispatch [:runbooks/toggle-connection-dialog false]))}
+   [:> Flex {:align "center" :gap "2"}
+    [:img {:src (connection-constants/get-connection-icon connection)
+           :class "w-4"
+           :loading "lazy"}]
+    [:> Flex {:direction "column"}
+     [:> Text {:size "2" :class "text-[--gray-11]"} (:name connection)]]
+    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
+
+(defn- connections-list
+  "Connections-only list with search results"
+  [search-results]
+  (let [connections (:connections (:data search-results))]
+    [:<>
+     (when (seq connections)
+       [:> CommandGroup
+        (for [connection connections]
+          ^{:key (:id connection)}
+          [connection-result-item connection])])]))
+
+(defn connections-dialog []
+  (let [open (rf/subscribe [:runbooks/connection-dialog-open?])
+        connections (rf/subscribe [:connections])
+        search-term (r/atom "")]
+    (fn []
+      (let [all-connections (or (:results @connections) [])
+            query (-> @search-term (or "") cs/trim cs/lower-case)
+            matches? (fn [connection]
+                       (let [name (some-> (:name connection) cs/lower-case)]
+                         (and name (cs/includes? name query))))
+            filtered-connections (if (cs/blank? query)
+                                   all-connections
+                                   (filter matches? all-connections))]
+        [command-dialog/command-dialog
+         {:open? @open
+          :on-open-change (fn [open?]
+                            (rf/dispatch [:runbooks/toggle-connection-dialog open?])
+                            (when-not open? (reset! search-term "")))
+          :title "Select or search a connection"
+          :search-config {:show-search-icon true
+                          :show-input true
+                          :placeholder "Select or search a connection"
+                          :value @search-term
+                          :on-value-change (fn [value]
+                                             (reset! search-term value))
+                          :on-key-down (fn [e]
+                                         (when (= (.-key e) "Escape")
+                                           (.preventDefault e)
+                                           (rf/dispatch [:runbooks/toggle-connection-dialog false])
+                                           (reset! search-term "")))}
+          :breadcrumb-config {:context "Runbooks" :current-page "Connections"}
+          :content
+          [connections-list {:data {:connections filtered-connections}}]}]))))

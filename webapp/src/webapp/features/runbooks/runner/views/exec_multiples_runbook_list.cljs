@@ -1,4 +1,4 @@
-(ns webapp.webclient.runbooks.exec-multiples-runbook-list
+(ns webapp.features.runbooks.runner.views.exec-multiples-runbook-list
   (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
             ["@heroicons/react/24/solid" :as hero-solid-icon]
             [clojure.string :as cs]

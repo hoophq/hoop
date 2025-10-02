@@ -3,8 +3,7 @@
    ["@radix-ui/themes" :refer [Badge Flex Text]]
    ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Rotate3d Search
-                           ShieldCheck SquareCode UserRoundCheck VenetianMask]]
-   [re-frame.core :as rf]
+                           ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
@@ -16,11 +15,13 @@
                  [:> LayoutDashboard {:size size}])
    "Terminal" (fn [& [{:keys [size] :or {size 24}}]]
                 [:> SquareCode {:size size}])
+   "Runbooks" (fn [& [{:keys [size] :or {size 24}}]]
+                [:> BookUp2 {:size size}])
    "Sessions" (fn [& [{:keys [size] :or {size 24}}]]
                 [:> GalleryVerticalEnd {:size size}])
    "Reviews" (fn [& [{:keys [size] :or {size 24}}]]
                [:> Inbox {:size size}])
-   "Runbooks" (fn [& [{:keys [size] :or {size 24}}]]
+   "RunbooksSetup" (fn [& [{:keys [size] :or {size 24}}]]
                 [:> BookMarked {:size size}])
    "Guardrails" (fn [& [{:keys [size] :or {size 24}}]]
                   [:> ShieldCheck {:size size}])
@@ -85,6 +86,13 @@
     :navigate :editor-plugin
     :free-feature? true
     :admin-only? false}
+   {:name "Runbooks"
+    :label "Runbooks"
+    :icon (get icons-registry "Runbooks")
+    :uri (routes/url-for :runbooks)
+    :navigate :runbooks
+    :free-feature? true
+    :admin-only? false}
    {:name "Sessions"
     :label "Sessions"
     :icon (get icons-registry "Sessions")
@@ -113,11 +121,11 @@
 
 ;; Seção Discover
 (def discover-routes
-  [{:name "Runbooks"
-    :label "Runbooks"
-    :icon (get icons-registry "Runbooks")
-    :uri (routes/url-for :runbooks)
-    :navigate :runbooks
+  [{:name "RunbooksSetup"
+    :label "Runbooks Setup"
+    :icon (get icons-registry "RunbooksSetup")
+    :uri (routes/url-for :runbooks-setup)
+    :navigate :runbooks-setup
     :free-feature? true
     :admin-only? true}
    {:name "Guardrails"

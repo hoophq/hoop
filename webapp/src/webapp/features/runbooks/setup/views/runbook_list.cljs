@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.views.runbook-list
+(ns webapp.features.runbooks.setup.views.runbook-list
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading]]
    [re-frame.core :as rf]

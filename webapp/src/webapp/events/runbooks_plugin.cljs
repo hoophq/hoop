@@ -65,18 +65,6 @@
    (assoc db :runbooks-plugin->runbooks {:status :error :data nil})))
 
 (rf/reg-event-db
- :runbooks-plugin->set-active-runbook
- (fn
-   [db [_ template]]
-   (assoc db :runbooks-plugin->selected-runbooks {:status :ready
-                                                  :data {:name (:name template)
-                                                         :error (:error template)
-                                                         :params (keys (:metadata template))
-                                                         :file_url (:file_url template)
-                                                         :metadata (:metadata template)
-                                                         :connections (:connections template)}})))
-
-(rf/reg-event-db
  :runbooks-plugin->clear-active-runbooks
  (fn
    [db [_ template]]

@@ -1,4 +1,4 @@
-(ns webapp.features.runbooks.main
+(ns webapp.features.runbooks.setup.main
   (:require
    ["@radix-ui/themes" :refer [Box Flex Separator Tabs Text]]
    [clojure.string :as cs]
@@ -6,9 +6,9 @@
    [reagent.core :as r]
    [webapp.components.headings :as h]
    [webapp.features.promotion :as promotion]
-   [webapp.features.runbooks.views.configuration-view :as config-view]
-   [webapp.features.runbooks.views.empty-state :as empty-state]
-   [webapp.features.runbooks.views.runbook-list :as runbook-list]))
+   [webapp.features.runbooks.setup.views.configuration-view :as config-view]
+   [webapp.features.runbooks.setup.views.empty-state :as empty-state]
+   [webapp.features.runbooks.setup.views.runbook-list :as runbook-list]))
 
 (defn parse-params [params]
   (let [params (js/decodeURIComponent params)

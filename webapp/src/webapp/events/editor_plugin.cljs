@@ -7,6 +7,21 @@
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]))
 
+(defn discover-connection-type [connection]
+  (cond
+    (not (cs/blank? (:subtype connection))) (:subtype connection)
+    (not (cs/blank? (:icon_name connection))) (:icon_name connection)
+    :else (:type connection)))
+
+(defn metadata->json-stringify
+  [metadata]
+  (->> metadata
+       (filter (fn [{:keys [key value]}]
+                 (not (or (cs/blank? key) (cs/blank? value)))))
+       (map (fn [{:keys [key value]}] {key value}))
+       (reduce into {})
+       (clj->js)))
+
 (rf/reg-event-fx
  :editor-plugin->get-run-connection-list
  (fn
@@ -113,6 +128,11 @@
          selected-db (.getItem js/localStorage "selected-database")
          is-dynamodb? (= (:subtype primary-connection) "dynamodb")
          is-cloudwatch? (= (:subtype primary-connection) "cloudwatch")
+         keep-metadata? (get-in db [:editor-plugin :keep-metadata?])
+         current-metadatas (get-in db [:editor-plugin :metadata])
+         current-metadata-key (get-in db [:editor-plugin :metadata-key])
+         current-metadata-value (get-in db [:editor-plugin :metadata-value])
+         metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
          env-vars (cond
                     (and is-dynamodb? selected-db)
                     {"envvar:TABLE_NAME" (js/btoa selected-db)}
@@ -123,7 +143,8 @@
                     :else nil)
          payload (cond-> {:file_name file-name
                           :parameters params
-                          :env_vars env-vars}
+                          :env_vars env-vars
+                          :metadata (metadata->json-stringify metadata)}
                    jira_fields (assoc :jira_fields jira_fields)
                    cmdb_fields (assoc :cmdb_fields cmdb_fields))
          on-failure (fn [error-message error]
@@ -135,13 +156,20 @@
                       (rf/dispatch
                        [:show-snackbar {:level :success
                                         :text "Runbook was executed!"}])
-                      (rf/dispatch [::editor-plugin->set-script-success res file-name]))]
-     {:db (assoc db :editor-plugin->script {:status :loading :data nil})
-      :fx [[:dispatch [:fetch {:method "POST"
-                               :uri (str "/plugins/runbooks/connections/" connection-name "/exec")
-                               :on-success on-success
-                               :on-failure on-failure
-                               :body payload}]]]})))
+                      (rf/dispatch [::editor-plugin->set-script-success res file-name]))
+         base-db (assoc db :editor-plugin->script {:status :loading :data nil})
+         fx [[:dispatch [:fetch {:method "POST"
+                                 :uri (str "/plugins/runbooks/connections/" connection-name "/exec")
+                                 :on-success on-success
+                                 :on-failure on-failure
+                                 :body payload}]]]]
+     (merge {:db base-db
+             :fx fx}
+            (when-not keep-metadata?
+              {:db (-> base-db
+                       (assoc-in [:editor-plugin :metadata] [])
+                       (assoc-in [:editor-plugin :metadata-key] "")
+                       (assoc-in [:editor-plugin :metadata-value] ""))})))))
 
 (rf/reg-event-fx
  :editor-plugin->multiple-connections-run-runbook
@@ -375,21 +403,6 @@
  :editor-plugin/keep-metadata?
  (fn [db]
    (get-in db [:editor-plugin :keep-metadata?] false)))
-
-(defn discover-connection-type [connection]
-  (cond
-    (not (cs/blank? (:subtype connection))) (:subtype connection)
-    (not (cs/blank? (:icon_name connection))) (:icon_name connection)
-    :else (:type connection)))
-
-(defn metadata->json-stringify
-  [metadata]
-  (->> metadata
-       (filter (fn [{:keys [key value]}]
-                 (not (or (cs/blank? key) (cs/blank? value)))))
-       (map (fn [{:keys [key value]}] {key value}))
-       (reduce into {})
-       (clj->js)))
 
 ;; Submit task event
 (rf/reg-event-fx
