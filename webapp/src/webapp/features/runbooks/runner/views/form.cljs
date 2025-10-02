@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.views.form
   (:require [clojure.string :as cs]
-            ["@radix-ui/themes" :refer [Box Heading]]
+            ["@radix-ui/themes" :refer [Box Flex Heading Text]]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.forms :as forms]
@@ -22,7 +22,7 @@
                 helper-text
                 options
                 default-value]}]
-  [:div
+  [:> Box
    (case type
      "select" [forms/select (merge
                              {:label label
@@ -67,11 +67,11 @@
                      {:required true}))])])
 
 (defn- error-view [error]
-  [:div {:class "pt-large flex flex-col gap-regular items-center"}
-   [:div {:class "flex flex-col items-center text-center"}
-    [:div {:class " text-base font-bold"}
+  [:> Flex {:class "pt-large flex-col gap-regular items-center"}
+   [:> Flex {:class "flex-col items-center text-center"}
+    [:> Heading {:class " text-base font-bold"}
      "Error found."]
-    [:div {:class " text-sm mb-large"}
+    [:> Box {:class " text-sm mb-large"}
      error]]])
 
 (defmulti template-view identity)
@@ -88,9 +88,9 @@
         ;; TODO: This implementation was made to fix the behavior of defmethod not accepting the re-rendering
         ;; based on its own key.
         (if (nil? (:data template))
-          [:div {:class "flex items-center justify-center h-full"}
-           [:span {:class "text-gray-400 text-xl"}
-            "No Runbook selected"]]
+          [:> Flex {:class "items-center justify-center h-full"}
+             [:> Text {:size "5" :class "text-gray-11"}
+              "No Runbook selected"]]
 
           (do
             ;; Reset state when template changes
@@ -151,23 +151,24 @@
                   (rf/dispatch [:runbooks/execute-handled]))
                 (reset! prev-execute execute?))
 
-              [:div {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
-               [:section
+              [:> Box {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
+               [:> Box
                 [:form
                  {:ref (fn [el] (reset! form-ref el))
                   :on-submit (fn [e] (.preventDefault e))}
-                 [:header {:class "h-10 flex items-center px-3 py-2 border-b border-gray-3 bg-gray-1"}
+                 [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-1"}
                   [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
                    (let [parts (cs/split (-> template :data :name) #"/")
                          file-name (last parts)
                          path (cs/join " / " (butlast parts))]
-                     [:span
-                      [:span {:class "font-normal text-xs"} (when path (str path " / "))]
-                      [:span {:class "font-bold"} file-name]])]]
+                     [:> Box
+                      [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
+                      [:> Text {:size "3" :class "font-bold"} file-name]])]]
                  [:> Box {:class "p-3 space-y-6 h-[calc(100vh-40px)]"}
-                  [:span {:class " text-xs"}
+                  [:> Text
+                   {:size "1" :class "text-gray-11"}
                    "Fill the params below for this Runbook"]
-                  
+
                   (doall (for [param (-> template :data :params)
                                :let [metadata ((keyword param) (-> template :data :metadata))]]
                            ^{:key param}
@@ -197,22 +198,22 @@
                                                          selected-connections)])])))))))
 
 (defmethod template-view :loading []
-  [:div {:class "flex items-center justify-center h-full"}
+  [:> Flex {:class "items-center justify-center h-full"}
    [:figure {:class "w-8"}
     [:img {:class "animate-spin"
            :src (str config/webapp-url "/icons/icon-loader-circle.svg")}]]])
 
 (defmethod template-view :default []
-  [:div {:class "flex items-center justify-center h-full"}
-   [:span
-    {:class "text-gray-400 text-sm"}
+  [:> Flex {:class "items-center justify-center h-full"}
+   [:> Text
+    {:size "1" :class "text-gray-11"}
     "Select an available Runbook on your Library to begin"]])
 
 (defn main []
   (fn [{:keys [runbook selected-connections preselected-connection only-runbooks?]}]
     [:<>
      (when-not only-runbooks?
-       [:div {:class "absolute right-4 top-4 transition cursor-pointer z-10"
+       [:> Box {:class "absolute right-4 top-4 transition cursor-pointer z-10"
               :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}])
      [template-view (:status runbook) runbook selected-connections preselected-connection]]))
 

@@ -51,8 +51,7 @@
 
           [:> Flex {:class "items-center gap-2"}
            [:> Tooltip {:content "Search"}
-            [:div
-             [search/main :runbooks]]]
+            [search/main :runbooks]]
 
            [:> Tooltip {:content "Theme"}
             [:> IconButton
@@ -69,13 +68,12 @@
                [:> Moon {:size 16}])]]
 
            [:> Tooltip {:content "Metadata"}
-            [:div
-             [notification-badge
-              {:icon [:> PackagePlus {:size 16}]
-               :on-click toggle-metadata-open
-               :active? metadata-open?
-               :has-notification? has-metadata?
-               :disabled? false}]]]
+            [notification-badge
+             {:icon [:> PackagePlus {:size 16}]
+              :on-click toggle-metadata-open
+              :active? metadata-open?
+              :has-notification? has-metadata?
+              :disabled? false}]]
 
            [:> Tooltip {:content "Run"}
             [:> Button
@@ -97,7 +95,7 @@
                  :class "w-full h-10 p-2 border-b border-gray-3"}
         [:> Flex {:align "center" :gap "2"}
          [:> LibraryBig {:size 16 :class "text-[--gray-12]"}]
-         [:div {:class (when collapsed? "hidden")}
+         [:> Box {:class (when collapsed? "hidden")}
           [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} "Library"]]]
         [:> IconButton {:variant "ghost"
                         :color "gray"
