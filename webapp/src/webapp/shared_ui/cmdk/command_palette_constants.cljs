@@ -74,10 +74,11 @@
                            sidebar-constants/integrations-management
                            sidebar-constants/settings-management)]
     (->> main-navigation-items
-         ;; Filter by basic permissions only (admin/selfhosted)
+         ;; Filter by basic permissions only (admin/selfhosted) and exclude "Search"
          (filter (fn [item]
                    (let [route (first (filter #(= (:name %) (:id item)) all-routes))]
                      (and
+                      (not= (:id item) "Search")
                       ;; Check admin-only
                       (or (not (:admin-only? route)) admin?)
                       ;; Check selfhosted-only

@@ -2,7 +2,8 @@
   (:require
    ["cmdk" :refer [CommandDialog CommandInput CommandList]]
    ["@radix-ui/themes" :refer [Box Flex Text]]
-   ["lucide-react" :refer [Search X]]))
+   ["lucide-react" :refer [Search X]]
+   [webapp.components.theme-provider :refer [theme-provider]]))
 
 (defn breadcrumb-tag
   "Tag showing current context"
@@ -39,45 +40,45 @@
       {:onKeyDown (:on-key-down search-config)})
     {:open open?
      :label title
-     :container (js/document.querySelector ".radix-themes")
      :onOpenChange on-open-change
-     :className "radix-themes fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"})
+     :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"})
+   [theme-provider
+    [:<>
+     ;; Manual overlay for click outside with blur effect
+     [:> Box {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
+              :on-click #(when on-open-change (on-open-change false))}]
 
-   ;; Manual overlay for click outside with blur effect
-   [:> Box {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
-            :on-click #(when on-open-change (on-open-change false))}]
+     [:> Box
+      {:class (str "w-[96vw] "
+                   max-width " bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden "
+                   height " flex flex-col relative z-10 "
+                   class-name)}
+      (when search-config
+        [:> Flex
+         {:align "center"
+          :gap "3"
+          :class "px-4 py-3 border-b border-gray-6"}
+         (when (:show-search-icon search-config)
+           [:> Search {:size 16
+                       :class (str "transition-colors duration-200 "
+                                   (if (:is-searching? search-config)
+                                     "text-blue-9"
+                                     "text-gray-11"))}])
+         [:> Flex
+          {:align "center"
+           :gap "2"
+           :class "flex-1"}
+          (when (:show-input search-config)
+            [:> CommandInput
+             {:placeholder (:placeholder search-config "Search...")
+              :value (or (:value search-config) "")
+              :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
+              :onValueChange (:on-value-change search-config)}])
 
-   [:> Box
-    {:class (str "w-full "
-                 max-width " bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden "
-                 height " flex flex-col relative z-10 "
-                 class-name)}
-    (when search-config
-      [:> Flex
-       {:align "center"
-        :gap "3"
-        :class "px-4 py-3 border-b border-gray-6"}
-       (when (:show-search-icon search-config)
-         [:> Search {:size 16
-                     :class (str "transition-colors duration-200 "
-                                 (if (:is-searching? search-config)
-                                   "text-blue-9"
-                                   "text-gray-11"))}])
-       [:> Flex
-        {:align "center"
-         :gap "2"
-         :class "flex-1"}
-        (when (:show-input search-config)
-          [:> CommandInput
-           {:placeholder (:placeholder search-config "Search...")
-            :value (or (:value search-config) "")
-            :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
-            :onValueChange (:on-value-change search-config)}])
-
-        (when breadcrumb-config
-          [breadcrumb-tag {:current-page (:current-page breadcrumb-config)
-                           :context (:context breadcrumb-config)
-                           :on-close (:on-close breadcrumb-config)}])]])
-    [:> CommandList
-     {:className "flex-1 overflow-y-auto p-4"}
-     (or content children)]]])
+          (when breadcrumb-config
+            [breadcrumb-tag {:current-page (:current-page breadcrumb-config)
+                             :context (:context breadcrumb-config)
+                             :on-close (:on-close breadcrumb-config)}])]])
+      [:> CommandList
+       {:className "flex-1 overflow-y-auto p-4"}
+       (or content children)]]]]])
