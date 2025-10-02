@@ -133,8 +133,7 @@
                 :submit (fn [] (rf/dispatch [:runbooks/trigger-execute]))
                 :metadata-open? @metadata-open?
                 :toggle-metadata-open #(swap! metadata-open? not)}]
-       [:> Allotment {:key (str "allotment-" @metadata-open?)
-                      :defaultSizes [950 250]
+       [:> Allotment {:key "outer-allotment"
                       :horizontal true
                       :separator false}
         [:> Flex {:class "h-[calc(100%-4rem)]"}
@@ -161,11 +160,12 @@
              true
              @dark-mode?]]]]]
         (when @metadata-open?
-          [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"}
-           [:> Flex {:justify "between"
-                     :align "center"
-                     :class "px-4 py-3 border-b border-gray-3"}
-            [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Metadata"]]
-           [:> Box {:class "p-4"}
-            [metadata-panel/content]]])]])))
+          [:> (.-Pane Allotment) {:minSize 250 :maxSize 370}
+           [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"}
+            [:> Flex {:justify "between"
+                      :align "center"
+                      :class "px-4 py-3 border-b border-gray-3"}
+             [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Metadata"]]
+            [:> Box {:class "p-4"}
+             [metadata-panel/content]]]])]])))
 
