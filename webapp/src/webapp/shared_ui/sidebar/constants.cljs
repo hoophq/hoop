@@ -4,6 +4,7 @@
    ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Rotate3d Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
+   [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
