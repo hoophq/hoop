@@ -1,7 +1,7 @@
 (ns webapp.components.command-dialog
   (:require
    ["cmdk" :refer [CommandDialog CommandInput CommandList]]
-   ["@radix-ui/themes" :refer [Text Flex]]
+   ["@radix-ui/themes" :refer [Box Flex Text]]
    ["lucide-react" :refer [Search X]]))
 
 (defn breadcrumb-tag
@@ -42,12 +42,12 @@
      :container (js/document.querySelector ".radix-themes")
      :onOpenChange on-open-change
      :className "radix-themes fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"})
-   
-   ;; Manual overlay for click outside with blur effect
-   [:div {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
-          :on-click #(when on-open-change (on-open-change false))}]
 
-   [:div
+   ;; Manual overlay for click outside with blur effect
+   [:> Box {:class "fixed inset-0 bg-black/10 backdrop-blur-sm"
+            :on-click #(when on-open-change (on-open-change false))}]
+
+   [:> Box
     {:class (str "w-full "
                  max-width " bg-white rounded-lg shadow-2xl border border-gray-6 overflow-hidden "
                  height " flex flex-col relative z-10 "
