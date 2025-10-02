@@ -4,6 +4,7 @@
             ["lucide-react" :refer [ChevronsRight ChevronsLeft Puzzle Settings]]
             ["react" :as react]
             [re-frame.core :as rf]
+            [webapp.components.theme-provider :refer [theme-provider]]
             [webapp.components.user-icon :as user-icon]
             [webapp.config :as config]
             [webapp.shared-ui.sidebar.constants :as constants]
@@ -23,40 +24,42 @@
           [:> ui/Dialog {:as "div"
                          :class "relative z-40 lg:hidden"
                          :onClose #(rf/dispatch [:sidebar-mobile->close])}
-           [:> (.-Child ui/Transition) {:as react/Fragment
-                                        :enter (:mobile-enter styles/transitions)
-                                        :enterFrom (:mobile-enter-from styles/transitions)
-                                        :enterTo (:mobile-enter-to styles/transitions)
-                                        :leave (:mobile-leave styles/transitions)
-                                        :leaveFrom (:mobile-leave-from styles/transitions)
-                                        :leaveTo (:mobile-leave-to styles/transitions)}
-            [:div {:class "fixed inset-0 bg-[#182449] bg-opacity-80"}]]
+           [theme-provider
+            [:<>
+             [:> (.-Child ui/Transition) {:as react/Fragment
+                                          :enter (:mobile-enter styles/transitions)
+                                          :enterFrom (:mobile-enter-from styles/transitions)
+                                          :enterTo (:mobile-enter-to styles/transitions)
+                                          :leave (:mobile-leave styles/transitions)
+                                          :leaveFrom (:mobile-leave-from styles/transitions)
+                                          :leaveTo (:mobile-leave-to styles/transitions)}
+              [:div {:class "fixed inset-0 bg-[#182449] bg-opacity-80"}]]
 
-           [:div {:class (:mobile styles/sidebar-container)}
-            [:> (.-Child ui/Transition) {:as react/Fragment
-                                         :enter (:slide-enter styles/transitions)
-                                         :enterFrom (:slide-enter-from styles/transitions)
-                                         :enterTo (:slide-enter-to styles/transitions)
-                                         :leave (:slide-leave styles/transitions)
-                                         :leaveFrom (:slide-leave-from styles/transitions)
-                                         :leaveTo (:slide-leave-to styles/transitions)}
-             [:> (.-Panel ui/Dialog) {:class "relative mr-16 flex w-full max-w-xs flex-1"}
+             [:div {:class (:mobile styles/sidebar-container)}
               [:> (.-Child ui/Transition) {:as react/Fragment
-                                           :enter "transition ease-in-out duration-700 transform"
-                                           :enterFrom "opacity-0"
-                                           :enterTo "opacity-100"
-                                           :leave "transition ease-in-out duration-700 transform"
-                                           :leaveFrom "opacity-100"
-                                           :leaveTo "opacity-0"}
-               [:div {:class "absolute left-full top-0 flex w-16 justify-center pt-5"}
-                [:button {:type "button"
-                          :class "-m-2.5 p-2.5"
-                          :onClick #(rf/dispatch [:sidebar-mobile->close])}
-                 [:span.sr-only "Close sidebar"]
-                 [:> hero-outline-icon/XMarkIcon {:class "h-6 w-6 shrink-0 text-white"
-                                                  :aria-hidden "true"}]]]]
-              [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-[#182449] px-6 pb-4 ring-1 ring-white ring-opacity-10"}
-               [navigation/main user my-plugins]]]]]]]
+                                           :enter (:slide-enter styles/transitions)
+                                           :enterFrom (:slide-enter-from styles/transitions)
+                                           :enterTo (:slide-enter-to styles/transitions)
+                                           :leave (:slide-leave styles/transitions)
+                                           :leaveFrom (:slide-leave-from styles/transitions)
+                                           :leaveTo (:slide-leave-to styles/transitions)}
+               [:> (.-Panel ui/Dialog) {:class "relative mr-16 flex w-full max-w-xs flex-1"}
+                [:> (.-Child ui/Transition) {:as react/Fragment
+                                             :enter "transition ease-in-out duration-700 transform"
+                                             :enterFrom "opacity-0"
+                                             :enterTo "opacity-100"
+                                             :leave "transition ease-in-out duration-700 transform"
+                                             :leaveFrom "opacity-100"
+                                             :leaveTo "opacity-0"}
+                 [:div {:class "absolute left-full top-0 flex w-16 justify-center pt-5"}
+                  [:button {:type "button"
+                            :class "-m-2.5 p-2.5"
+                            :onClick #(rf/dispatch [:sidebar-mobile->close])}
+                   [:span.sr-only "Close sidebar"]
+                   [:> hero-outline-icon/XMarkIcon {:class "h-6 w-6 shrink-0 text-white"
+                                                    :aria-hidden "true"}]]]]
+                [:div {:class "flex grow flex-col gap-y-5 overflow-y-auto bg-[#182449] px-6 pb-4 ring-1 ring-white ring-opacity-10"}
+                 [navigation/main user my-plugins]]]]]]]]]
          ;; end sidebar opened
 
          ;; sidebar closed

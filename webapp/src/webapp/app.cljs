@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Spinner Theme]]
+   ["@radix-ui/themes" :refer [Box Heading Spinner]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
    ["sonner" :refer [Toaster]]
@@ -25,6 +25,7 @@
    [webapp.components.headings :as h]
    [webapp.components.modal :as modals]
    [webapp.components.snackbar :as snackbar]
+   [webapp.components.theme-provider :refer [theme-provider]]
    [webapp.shared-ui.cmdk.command-palette :as command-palette]
    [webapp.connections.views.connection-list :as connections]
    [webapp.connections.views.setup.connection-update-form :as connection-update-form]
@@ -644,5 +645,5 @@
         [loading-transition]
 
         :else
-        [:> Theme {:radius "large" :panelBackground "solid"}
+        [theme-provider
          [routes/panels @active-panel @gateway-public-info]]))))
