@@ -72,9 +72,17 @@
         selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
 
     (fn [name items level filter-template-selected parent-path]
-      (let [current-path (if parent-path (str parent-path "/" name) name)]
+      (let [current-path (if parent-path (str parent-path "/" name) name)
+            selected-name (get-in @selected-template [:data :name])]
+
         (when (and (seq @search-term)
                    (not= (get @dropdown-status name) :open))
+          (swap! dropdown-status assoc name :open))
+
+        (when (and selected-name
+                   (not= (get @dropdown-status name) :open)
+                   (or (= selected-name current-path)
+                       (cs/starts-with? selected-name (str current-path "/"))))
           (swap! dropdown-status assoc name :open))
 
         (if (is-file? items)

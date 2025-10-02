@@ -46,11 +46,8 @@
       (let [all-connections (or (:results @connections) [])
             query (-> @search-term (or "") cs/trim cs/lower-case)
             matches? (fn [connection]
-                       (let [candidates [(some-> (:name connection) cs/lower-case)
-                                         (some-> (:type connection) name cs/lower-case)
-                                         (some-> (:subtype connection) name cs/lower-case)
-                                         "connection"]]
-                         (some #(and % (cs/includes? % query)) candidates)))
+                       (let [name (some-> (:name connection) cs/lower-case)]
+                         (and name (cs/includes? name query))))
             filtered-connections (if (cs/blank? query)
                                    all-connections
                                    (filter matches? all-connections))]
