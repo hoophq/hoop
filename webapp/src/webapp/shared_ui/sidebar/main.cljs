@@ -131,11 +131,14 @@
                                (:uri route))
                        :on-click (fn []
                                    (when (and free-license? (not (:free-feature? route)))
-                                     (rf/dispatch [:navigate :upgrade-plan])))
+                                     (rf/dispatch [:navigate :upgrade-plan]))
+                                   (when (:action route)
+                                     ((:action route))))
                        :class (str (styles/hover-side-menu-link (:uri route) current-route)
                                    "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
                                    (when (and free-license? (not (:free-feature? route)))
-                                     " text-opacity-30"))}
+                                     " text-opacity-30")
+                                   (when (some? (:action route)) " cursor-pointer"))}
                    [(:icon route) {:class (str (:standard styles/icon-styles)
                                                (when (and free-license? (not (:free-feature? route)))
                                                  " opacity-30"))

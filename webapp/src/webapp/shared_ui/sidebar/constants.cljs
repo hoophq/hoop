@@ -1,8 +1,10 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
+   ["@radix-ui/themes" :refer [Badge Flex Text]]
    ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
-                           Inbox LayoutDashboard PackageSearch Rotate3d
+                           Inbox LayoutDashboard PackageSearch Rotate3d Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask]]
+   [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
@@ -55,7 +57,9 @@
    "license" (fn [& [{:keys [size] :or {size 24}}]]
                [:> ShieldCheck {:size size}])
    "users" (fn [& [{:keys [size] :or {size 24}}]]
-             [:> UserRoundCheck {:size size}])})
+             [:> UserRoundCheck {:size size}])
+   "Search" (fn [& [{:keys [size] :or {size 24}}]]
+              [:> Search {:size size}])})
 
 ;; Menu principal
 (def main-routes
@@ -94,7 +98,18 @@
     :uri (routes/url-for :reviews-plugin)
     :free-feature? true
     :navigate :reviews-plugin
-    :admin-only? false}])
+    :admin-only? false}
+   {:name "Search"
+    :label "Search"
+    :icon (get icons-registry "Search")
+    :action #(rf/dispatch [:command-palette->open])
+    :free-feature? true
+    :admin-only? false
+    :badge (fn []
+             [:> Flex {:gap "3"}
+              [:> Text {:weight "regular"} "cmd + k"]
+              [:> Badge {:variant "solid" :color "green"}
+               "NEW"]])}])
 
 ;; Seção Discover
 (def discover-routes

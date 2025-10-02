@@ -14,7 +14,8 @@
 
 (defn main [_ _]
   (let [gateway-info (rf/subscribe [:gateway->info])
-        current-route (rf/subscribe [:routes->route])]
+        current-route (rf/subscribe [:routes->route])
+        sidebar-mobile (rf/subscribe [:sidebar-mobile])]
     (fn [user]
       (let [gateway-version (:version (:data @gateway-info))
             auth-method (:auth_method (:data @gateway-info))
@@ -22,13 +23,17 @@
             admin? (:admin? user-data)
             selfhosted? (= (:tenancy_type user-data) "selfhosted")
             free-license? (:free-license? user-data)
-            current-route @current-route]
+            current-route @current-route
+            is-mobile? (= :opened (:status @sidebar-mobile))]
         [:<>
          [:div {:class "flex my-8 shrink-0 items-center"}
           [:figure {:class "w-40 cursor-pointer"}
            [:img {:src (str config/webapp-url
                             "/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png")
-                  :on-click #(rf/dispatch [:navigate :home])}]]]
+                  :on-click #(do
+                               (rf/dispatch [:navigate :home])
+                               (when is-mobile?
+                                 (rf/dispatch [:sidebar-mobile->close])))}]]]
          [:nav {:class "flex flex-1 flex-col"}
           [:ul {:role "list"
                 :class "flex flex-1 flex-col gap-y-8"}
@@ -46,7 +51,13 @@
                           :admin? admin?
                           :current-route current-route
                           :free-license? free-license?
-                          :navigate (:navigate route)}])]]
+                          :action (when (:action route)
+                                    (fn []
+                                      ((:action route))
+                                      (when is-mobile?
+                                        (rf/dispatch [:sidebar-mobile->close]))))
+                          :navigate (:navigate route)
+                          :badge (:badge route)}])]]
 
            (when admin?
              [:li
@@ -56,14 +67,14 @@
                      :when (not (and (:admin-only? route) (not admin?)))]
                  ^{:key (:name route)}
                  [:li
-                  [:a {:href (if (and free-license? (not (:free-feature? route)))
-                               "#"
-                               (:uri route))
+                  [:a {:href "#"
                        :on-click (fn [e]
                                    (.preventDefault e)
                                    (if (and free-license? (not (:free-feature? route)))
                                      (rf/dispatch [:navigate (:upgrade-plan-route route)])
-                                     (rf/dispatch [:navigate (:navigate route)])))
+                                     (rf/dispatch [:navigate (:navigate route)]))
+                                   (when is-mobile?
+                                     (rf/dispatch [:sidebar-mobile->close])))
                        :class (str (styles/hover-side-menu-link (:uri route) current-route)
                                    (:enabled styles/link-styles)
                                    (when (and free-license? (not (:free-feature? route)))
@@ -88,14 +99,14 @@
                      :when (not (and (:admin-only? route) (not admin?)))]
                  ^{:key (:name route)}
                  [:li
-                  [:a {:href (if (and free-license? (not (:free-feature? route)))
-                               "#"
-                               (:uri route))
+                  [:a {:href "#"
                        :on-click (fn [e]
                                    (.preventDefault e)
                                    (if (and free-license? (not (:free-feature? route)))
                                      (rf/dispatch [:navigate (:upgrade-plan-route route)])
-                                     (rf/dispatch [:navigate (:navigate route)])))
+                                     (rf/dispatch [:navigate (:navigate route)]))
+                                   (when is-mobile?
+                                     (rf/dispatch [:sidebar-mobile->close])))
                        :class (str (styles/hover-side-menu-link (:uri route) current-route)
                                    (:enabled styles/link-styles)
                                    (when (and free-license? (not (:free-feature? route)))
@@ -136,7 +147,9 @@
                                                (rf/dispatch [:navigate (:upgrade-plan-route plugin)])
                                                (if (:plugin? plugin)
                                                  (rf/dispatch [:plugins->navigate->manage-plugin (:name plugin)])
-                                                 (rf/dispatch [:navigate (:navigate plugin)]))))
+                                                 (rf/dispatch [:navigate (:navigate plugin)])))
+                                             (when is-mobile?
+                                               (rf/dispatch [:sidebar-mobile->close])))
                                  :href "#"
                                  :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                              "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
@@ -173,10 +186,10 @@
                                              (.preventDefault e)
                                              (if (and free-license? (not (:free-feature? route)))
                                                (rf/dispatch [:navigate (:upgrade-plan-route route)])
-                                               (rf/dispatch [:navigate (:navigate route)])))
-                                 :href (if (and free-license? (not (:free-feature? route)))
-                                         "#"
-                                         (:uri route))
+                                               (rf/dispatch [:navigate (:navigate route)]))
+                                             (when is-mobile?
+                                               (rf/dispatch [:sidebar-mobile->close])))
+                                 :href "#"
                                  :class (str "flex justify-between items-center text-gray-300 hover:text-white hover:bg-white/5 "
                                              "block rounded-md py-2 pr-2 pl-9 text-sm leading-6"
                                              (when (and free-license? (not (:free-feature? route)))

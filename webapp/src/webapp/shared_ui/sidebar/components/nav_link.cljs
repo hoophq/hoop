@@ -14,25 +14,31 @@
      - :admin? - se o usuário é admin
      - :current-route - rota atual
      - :free-license? - se o usuário tem licença gratuita
-     - :navigate - keyword para navegação via re-frame"
-  [{:keys [uri icon label free-feature? admin-only? admin? current-route free-license? navigate]}]
+     - :navigate - keyword para navegação via re-frame
+     - :action - ação alternativa à navegação
+     - :badge - componente opcional para badge"
+  [{:keys [uri icon label free-feature? admin-only? admin? current-route free-license? navigate action badge]}]
   (when-not (and admin-only? (not admin?))
     [:li
-     [:a {:href (if (and free-license? (not free-feature?))
-                  "#"
-                  uri)
-          :on-click (fn []
+     [:a {:href "#"
+          :on-click (fn [e]
+                      (.preventDefault e)
                       (when (and free-license? (not free-feature?))
                         (rf/dispatch [:navigate :upgrade-plan]))
                       (when (and navigate (not (and free-license? (not free-feature?))))
-                        (rf/dispatch [:navigate navigate])))
+                        (rf/dispatch [:navigate navigate]))
+                      (when action (action)))
           :class (str (styles/hover-side-menu-link uri current-route)
                       (:enabled styles/link-styles)
                       (when (and free-license? (not free-feature?))
-                        " text-opacity-30"))}
+                        " text-opacity-30")
+                      (when (some? action) " cursor-pointer"))}
       [:div {:class "flex gap-3 items-center"}
        [icon]
        label]
-      (when (and free-license? (not free-feature?))
+      (cond
+        (and free-license? (not free-feature?))
         [:div {:class styles/badge-upgrade}
-         "Upgrade"])]]))
+         "Upgrade"]
+        badge
+        [badge])]]))
