@@ -4,6 +4,10 @@
 
 (def connection-configs-required
   {:command-line []
+   :rdp [{:key "host" :label "Host" :value "" :required true}
+         {:key "user" :label "User" :value "" :required true}
+         {:key "pass" :label "Pass" :value "" :required true}
+         {:key "port" :label "Port" :value "3389" :required false}]
    :custom []
    :tcp [{:key "host" :label "Host" :value "" :required true}
          {:key "port" :label "Port" :value "" :required true}]
@@ -44,7 +48,6 @@
           :required true
           :placeholder "Enter your private key"
           :type "textarea"}]})
-
 
 (def connection-icons-rounded-dictionary
   {:postgres (str config/webapp-url "/icons/connections/postgres-rounded.svg")
