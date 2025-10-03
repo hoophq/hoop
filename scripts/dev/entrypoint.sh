@@ -35,11 +35,15 @@ if [ -n "$AWS_SESSION_TOKEN_JSON" ]; then
   ec2-metadata-mock --hostname 169.254.169.254 --port 80 -c /tmp/metadata-mock-config.json &
 fi
 
+
 psql $POSTGRES_DB_URI <<EOT
 INSERT INTO private.agents (org_id, id, name, mode, key_hash, status)
     VALUES ((SELECT id from private.orgs), '75122BCE-F957-49EB-A812-2AB60977CD9F', 'default', 'standard', '7854115b1ae448fec54d8bf50d3ce223e30c1c933edcd12767692574f326df57', 'DISCONNECTED')
     ON CONFLICT DO NOTHING;
 EOT
+
+export RUST_LOG=debug
+# inside the docker container the hoop_rs binary is located in /app/bin/hoop_rs
 
 echo "--> STARTING AGENT ..."
 # get digest of the agent secret key

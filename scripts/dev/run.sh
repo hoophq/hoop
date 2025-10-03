@@ -48,6 +48,17 @@ docker build -t hoopdev -f ./scripts/dev/Dockerfile .
 mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
 
+# Build Rust agent for development
+echo "Checking for Rust installation..."
+if command -v cargo >/dev/null 2>&1; then
+    make build-dev-rust
+    cp ${HOME}/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
+else
+    echo "Warning: Rust/cargo not found. Skipping Rust agent build."
+    echo "To build the Rust agent, install Rust from https://rustup.rs/"
+    echo "Then run: cd agentrs && make build-dev-rust."
+fi
+
 VERSION="${VERSION:-unknown}"
 CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" \
@@ -56,8 +67,10 @@ docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true
 
 docker run --rm --name hoopdev \
+  --network host \
   -p 2225:22 \
   -p 8009:8009 \
+  -p 3389:3389 \
   -p 8010:8010 \
   -p 15432:15432 \
   -p 12222:12222 \

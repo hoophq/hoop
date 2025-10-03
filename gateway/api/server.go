@@ -46,6 +46,7 @@ import (
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/transport"
 )
 
 type Api struct {
@@ -721,4 +722,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		searchapi.Get,
 	)
+
+	r.GET("/ws", transport.HandleConnection)
+
 }

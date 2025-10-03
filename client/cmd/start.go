@@ -53,6 +53,9 @@ var startAgentCmd = &cobra.Command{
 
 		log.ReinitializeLogger()
 
+		//TODO for now we will start the rust agent if hoop_rs binary is found
+		// if something goes wrong we will fallback we will skill but alwys run the go agent
+		RunAgentrs()
 		agent.Run()
 	},
 }

@@ -195,6 +195,16 @@ jobs:
           go-version: ">=1.23.8"
           cache-dependency-path: "**/go.sum"
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
@@ -234,6 +244,16 @@ jobs:
         with:
           go-version: ">=1.23.8"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV

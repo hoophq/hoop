@@ -22,6 +22,7 @@ common/.idea/*
 .clj-kondo/*
 .lsp/*
 .calva
+.bacon-locations
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

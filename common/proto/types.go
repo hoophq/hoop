@@ -173,6 +173,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeHttpProxy)
 		case "ssh":
 			return ConnectionType(ConnectionTypeSSH)
+		case "rdp":
+			return ConnectionType(ConnectionTypeRDP)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
