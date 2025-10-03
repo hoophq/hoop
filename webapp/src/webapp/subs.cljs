@@ -17,13 +17,10 @@
  (fn [db _]
    (:feature-flags db)))
 
-;; Feature flag for compact terminal UI
 (re-frame/reg-sub
  :webclient/use-compact-ui?
  (fn [_db _]
-   ;; Temporariamente usa localStorage para testes
-   ;; Depois pode vir de gateway-info ou user features
-   (= "true" (.getItem js/localStorage "compact-terminal-ui"))))
+   (= "enabled" (.getItem js/localStorage "compact-terminal-ui"))))
 
 (re-frame/reg-sub
  :users

@@ -73,8 +73,12 @@
               :color "gray"
               :variant "soft"
               :onClick (fn []
-                         (let [new-value (not @use-compact-ui?)]
-                           (.setItem js/localStorage "compact-terminal-ui" (str new-value))
+                         (let [is-compact-ui-enabled? (not @use-compact-ui?)]
+                           (.setItem js/localStorage
+                                     "compact-terminal-ui"
+                                     (if is-compact-ui-enabled?
+                                       "enabled"
+                                       "disabled"))
                            (.reload js/location)))}
              (if @use-compact-ui?
                [:> PanelLeft {:size 16}]

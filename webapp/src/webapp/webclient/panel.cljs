@@ -330,8 +330,6 @@
            [:> Box {:class (str "h-full bg-gray-2 overflow-hidden "
                                 (when @dark-mode?
                                   "dark"))}
-
-            ;; Connection dialog (apenas se compact UI)
             (when @use-compact-ui?
               [connection-dialog/connection-dialog])
 
