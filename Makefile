@@ -1,5 +1,6 @@
 PUBLIC_IMAGE := "hoophq/hoop"
-VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
+#VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
+VERSION  = "1.42.0-citest1"
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
 
@@ -84,10 +85,9 @@ build-rust:
 		echo "Skipping Rust build for ${GOOS} - no RUST_TARGET defined"; \
 	fi 
 
-build:
+build: build-rust
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
-	$(MAKE) build-rust
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
@@ -108,8 +108,8 @@ build-helm-chart:
 	helm package ./deploy/helm-chart/chart/agent/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm package ./deploy/helm-chart/chart/gateway/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	helm registry login ghcr.io --username ${GITHUB_USERNAME} --password ${GITHUB_CONTAINER_REGISTRY_TOKEN}
-	helm push ${DIST_FOLDER}/hoop-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
-	helm push ${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
+#	helm push ${DIST_FOLDER}/hoop-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
+#	helm push ${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 
 build-gateway-bundle:
 	rm -rf ${DIST_FOLDER}/hoopgateway
@@ -121,13 +121,13 @@ build-gateway-bundle:
 	tar -xf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/hoopgateway/opt/hoop/webapp --strip 1 && \
 	tar -czf ${DIST_FOLDER}/hoopgateway_${VERSION}-Linux_${GOARCH}.tar.gz -C ${DIST_FOLDER}/ hoopgateway
 
-release: release-aws-cf-templates
+release:
 	./scripts/generate-changelog.sh ${VERSION} > ${DIST_FOLDER}/CHANGELOG.txt
 	find ${DIST_FOLDER}/binaries/ -name *_checksum.txt -exec cat '{}' \; > ${DIST_FOLDER}/checksums.txt
 	mv ${DIST_FOLDER}/binaries/*.tar.gz ${DIST_FOLDER}/
 	echo -n "${VERSION}" > ${DIST_FOLDER}/latest.txt
 	aws s3 cp ${DIST_FOLDER}/ s3://hoopartifacts/release/${VERSION}/ --exclude "*" --exclude webapp.tar.gz --include checksums.txt --include "*.tgz" --include "*.tar.gz" --recursive
-	aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt
+	#aws s3 cp ${DIST_FOLDER}/latest.txt s3://hoopartifacts/release/latest.txt
 	aws s3 cp ./scripts/install-cli.sh s3://hoopartifacts/release/install-cli.sh
 	aws s3 cp ${DIST_FOLDER}/CHANGELOG.txt s3://hoopartifacts/release/${VERSION}/CHANGELOG.txt
 
