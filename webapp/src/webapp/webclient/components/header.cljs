@@ -1,7 +1,7 @@
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [CircleHelp FastForward PackagePlus Play Sun Moon ChevronDown]]
+   ["lucide-react" :refer [CircleHelp FastForward PackagePlus Play Sun Moon ChevronDown PanelLeft LayoutList]]
    [re-frame.core :as rf]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.webclient.components.search :as search]))
@@ -63,6 +63,21 @@
               :onClick (fn []
                          (js/window.open "https://help.hoop.dev" "_blank"))}
              [:> CircleHelp {:size 16}]]]
+
+           [:> Tooltip {:content (if @use-compact-ui? "Classic Layout" "Compact Layout")}
+            [:> IconButton
+             {:class (when @use-compact-ui?
+                       "bg-gray-8 text-gray-12")
+              :size "2"
+              :color "gray"
+              :variant "soft"
+              :onClick (fn []
+                         (let [new-value (not @use-compact-ui?)]
+                           (.setItem js/localStorage "compact-terminal-ui" (str new-value))
+                           (.reload js/location)))}
+             (if @use-compact-ui?
+               [:> PanelLeft {:size 16}]
+               [:> LayoutList {:size 16}])]]
 
            [:> Tooltip {:content "Theme"}
             [:> IconButton
