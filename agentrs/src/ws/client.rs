@@ -30,9 +30,25 @@ impl WebSocket {
         let config_manager =
             conf::ConfigHandleManager::init().context("Failed to init config manager")?;
 
-        let gateway_url = std::env::var("GATEWAY_URL")
-            .unwrap_or_else(|_| "ws://localhost:8009/api/ws".to_string());
-        let mut request = gateway_url.into_client_request().unwrap();
+        let gateway_url =
+            std::env::var("HOOP_GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009".to_string());
+        let gateway_url = match gateway_url.as_str() {
+            url if url.starts_with("ws://") || url.starts_with("wss://") => url.to_string(),
+            url if url.starts_with("http://") => {
+                format!("ws://{}", url.trim_start_matches("http://"))
+            }
+            url if url.starts_with("https://") => {
+                format!("wss://{}", url.trim_start_matches("https://"))
+            }
+            url => format!("ws://{}", url), // no scheme, default to ws://
+        };
+        // Ensure no trailing slash before appending
+        let gateway_url = gateway_url.trim_end_matches('/');
+
+        let ws_url = format!("{}/api/ws", gateway_url);
+        debug!("WebSocket URL: {}", ws_url);
+
+        let mut request = ws_url.into_client_request().unwrap();
 
         // Insert a custom header
         let token = config_manager.conf.token.clone().unwrap();

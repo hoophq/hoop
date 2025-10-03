@@ -41,7 +41,7 @@ func RunAgentrs() {
 	// if the user has set HOOP_RS_BIN_PATH we will use that instead this is useful for development
 	// and testing and make run-dev
 	path := os.Getenv("HOOP_RS_BIN_PATH")
-	fmt.Printf("Checking hoop_rs binary at path: %s\n", path)
+	log.Infof("Checking hoop_rs binary at path: %s\n", path)
 	binaryPath := defaultPath
 
 	if path != "" {
