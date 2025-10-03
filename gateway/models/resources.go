@@ -17,7 +17,8 @@ type Resources struct {
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 
-	Envs map[string]string `gorm:"column:envs;serializer:json;->"` // read-only
+	// read-only fields from related tables
+	Envs map[string]string `gorm:"column:envs;serializer:json;->"`
 }
 
 func GetResourceByName(db *gorm.DB, orgID, name string, isAdminOrInternal bool) (*Resources, error) {
@@ -51,7 +52,7 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool) ([]Resourc
 	return resources, err
 }
 
-func UpsertResource(db *gorm.DB, resource *Resources, updateEnvVars bool) error {
+func UpsertResource(db *gorm.DB, resource *Resources, updateDependentTables bool) error {
 	// try to find existing resource
 	existing, err := GetResourceByName(db, resource.OrgID, resource.Name, true)
 	switch err {
@@ -75,7 +76,7 @@ func UpsertResource(db *gorm.DB, resource *Resources, updateEnvVars bool) error 
 		return err
 	}
 
-	if updateEnvVars {
+	if updateDependentTables {
 		err = UpsertEnvVar(db, &EnvVar{
 			ID:        resource.ID,
 			OrgID:     resource.OrgID,

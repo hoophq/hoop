@@ -135,13 +135,13 @@ func UpdateResource(c *gin.Context) {
 		return
 	}
 
-	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
+	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Errorf("failed to get resource by name: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
-	if resource == nil {
+	if existing == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 		return
 	}
@@ -152,23 +152,27 @@ func UpdateResource(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
-	if len(connections) > 0 && resource.Type != req.Type {
+	if len(connections) > 0 && existing.Type != req.Type {
 		c.JSON(http.StatusForbidden, gin.H{"message": "cannot change resource type with existing connections"})
 		return
 	}
 
-	resource.Name = req.Name
-	resource.Type = req.Type
-	resource.Envs = req.EnvVars
+	resource := models.Resources{
+		ID:    existing.ID,
+		OrgID: ctx.OrgID,
+		Name:  req.Name,
+		Type:  req.Type,
+		Envs:  req.EnvVars,
+	}
 
-	err = models.UpsertResource(models.DB, resource, true)
+	err = models.UpsertResource(models.DB, &resource, true)
 	if err != nil {
 		log.Errorf("failed to upsert resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, toOpenApi(resource))
+	c.JSON(http.StatusOK, toOpenApi(&resource))
 }
 
 // DeleteResource

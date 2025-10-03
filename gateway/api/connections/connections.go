@@ -270,7 +270,7 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
+	conn, err := models.GetBareConnectionByNameOrID(ctx, c.Param("nameOrID"), models.DB)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -279,11 +279,6 @@ func Get(c *gin.Context) {
 	if conn == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
-	}
-
-	if !ctx.IsAdmin() {
-		// it should return empty to avoid leaking sensitive content
-		conn.Envs = map[string]string{}
 	}
 
 	c.JSON(http.StatusOK, toOpenApi(conn))
