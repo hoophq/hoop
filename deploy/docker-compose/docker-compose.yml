@@ -32,6 +32,7 @@ services:
       - "8010:8010"
       - "15432:15432"
       - "12222:12222"
+      - "13389:13389"
     networks:
       - hoopdev
     depends_on:
@@ -55,6 +56,7 @@ services:
     environment:
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
       - DEFAULT_AGENT_GRPC_HOST=gateway:8010
+      - HOOP_GATEWAY_URL=ws://gateway:8009
     depends_on:
       gateway:
         condition: "service_healthy"
