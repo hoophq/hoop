@@ -71,6 +71,7 @@ publish:
 	./scripts/publish-release.sh
 
 build-rust:
+	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	@if [ "${GOOS}" = "windows" ] || [ "${GOOS}" = "darwin" ]; then \
 		echo "Skipping Rust build for ${GOOS} - not supported"; \
 	elif [ -n "${RUST_TARGET}" ]; then \
@@ -86,7 +87,6 @@ build-rust:
 	fi 
 
 build: build-rust
-	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .

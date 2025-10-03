@@ -89,9 +89,7 @@ func RunAgentrs() {
 	cmd.Stdin = os.Stdin
 
 	// Set process group to ensure child processes are terminated
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setPgid(cmd)
 
 	if err := cmd.Start(); err != nil {
 		log.Errorf("Failed to start hoop_rs: %v", err)
@@ -118,7 +116,7 @@ func RunAgentrs() {
 
 		// Force kill if graceful termination doesn't work
 		if cmd.Process != nil {
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			killPid(cmd.Process.Pid)
 		}
 	}()
 
