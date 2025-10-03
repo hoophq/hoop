@@ -26,25 +26,6 @@ func checkHoopKeyExists() bool {
 	return true
 }
 
-func checkHoopRsExists(path string) bool {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		log.Errorf("hoop_rs binary not found at %s: %v", path, err)
-		return false
-	}
-	return true
-}
-
-func checkIsExecutable(path string) bool {
-	// Check if it's executable
-	if info, err := os.Stat(path); err == nil {
-		if info.Mode()&0111 == 0 {
-			log.Errorf("hoop_rs binary is not executable: %s", path)
-			return false
-		}
-	}
-	return true
-}
-
 // for temporary start we will run hoop_rs if it exists in PATH or at a specified location
 // and if hoop_rs exist we will try to run if fails we will run the go agent anyway
 func RunAgentrs() {
@@ -65,15 +46,6 @@ func RunAgentrs() {
 
 	if path != "" {
 		binaryPath = path
-	}
-
-	if _, err := exec.LookPath(binaryPath); err != nil {
-		log.Infof("hoop_rs binary not found in PATH or at %s: %v", binaryPath, err)
-		return
-	}
-
-	if checkHoopRsExists(binaryPath) == false || checkIsExecutable(binaryPath) == false {
-		return
 	}
 
 	log.Infof("Starting hoop_rs from: %s", binaryPath)
