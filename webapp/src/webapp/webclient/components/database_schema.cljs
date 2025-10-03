@@ -1,5 +1,5 @@
 (ns webapp.webclient.components.database-schema
-  (:require ["@radix-ui/themes" :refer [Text]]
+  (:require ["@radix-ui/themes" :refer [Box Text]]
             ["lucide-react" :refer [ChevronDown ChevronRight Database File
                                     FolderClosed FolderOpen Table]]
             [reagent.core :as r]
@@ -52,8 +52,8 @@
                   "cloudwatch" "No log groups found"
                   "No data found")]
     [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
-     [:> Text {:size "2" :mb "2"} message]
-     [:> Text {:size "1"}
+     [:> Text {:size "2" :mb "2" :weight "medium"} message]
+     [:> Text {:size "1" :weight "medium"}
       "We couldn't find any "
       (case connection-type
         "postgres" "databases"
@@ -77,7 +77,7 @@
           (if (= current-columns-status :closed)
             [:> FolderClosed {:size 12}]
             [:> FolderOpen {:size 12}])
-          [:> Text {:size "1"
+          [:> Text {:size "1" :weight "medium"
                     :class "hover:underline cursor-pointer flex items-center"
                     :on-click #(reset! dropdown-columns-status
                                        (if (= current-columns-status :open) :closed :open))}
@@ -97,7 +97,7 @@
                         :on-click #(swap! dropdown-status
                                           assoc-in [field]
                                           (if (= (get current-status field) :open) :closed :open))}
-                 [:> Text {:size "1"} field]
+                 [:> Text {:size "1" :weight "medium"} field]
                  (if (= (get current-status field) :open)
                    [:> ChevronDown {:size 12}]
                    [:> ChevronRight {:size 12}])]]
@@ -118,7 +118,8 @@
               ^{:key table}
               [:div
                [:div {:class "flex items-center gap-small mb-2"}
-                [:> Table {:size 12}]
+                [:> Box
+                 [:> Table {:size 12}]]
                 [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
                                     (when is-loading "opacity-50 ")
                                     "flex items-center")
@@ -134,7 +135,7 @@
                                                      current-database
                                                      table
                                                      schema-name])))}
-                 [:> Text {:size "1"} table]
+                 [:> Text {:size "1" :weight "medium"} table]
                  (if (= (get current-status table) :open)
                    [:> ChevronDown {:size 12}]
                    [:> ChevronRight {:size 12}])]]
@@ -172,7 +173,7 @@
           [:> Database {:size 12}]
           [:span {:class "hover:text-blue-500 hover:underline cursor-pointer flex items-center"
                   :on-click #(reset! dropdown-status (if (= @dropdown-status :open) :closed :open))}
-           [:> Text {:size "1"} schema-name]
+           [:> Text {:size "1" :weight "medium"} schema-name]
            (if (= @dropdown-status :open)
              [:> ChevronDown {:size 12}]
              [:> ChevronRight {:size 12}])]]
@@ -240,7 +241,7 @@
           ;; Special case for CloudWatch - just show selection message
           (= type "cloudwatch")
           [:div
-           [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+           [:> Text {:as "p" :weight "medium" :size "1" :mb "2" :ml "2"}
             (str "✓ Selected log group: " db)]]
 
           ;; Special case for DynamoDB when columns were loaded
@@ -266,7 +267,7 @@
 
           :else
           (if (and (= :error database-schema-status) (:error current-schema))
-            [:> Text {:as "p" :size "1" :mb "2" :ml "2"}
+            [:> Text {:as "p" :weight "medium" :size "1" :mb "2" :ml "2"}
              (:error current-schema)]
             [empty-state type]))])]))
 
@@ -331,13 +332,16 @@
         [:> Text {:size "1"}
          "Couldn't load the schema"]))))
 
-(defn tree-view-status [{:keys [status
+(defn tree-view-status [{:keys [use-compact-ui?
+                                status
                                 databases
                                 schema
                                 connection
                                 current-schema
                                 database-schema-status]}]
-  [:div {:class "text-gray-200"}
+  [:> Box {:class (if use-compact-ui?
+                    "text-gray-12"
+                    "text-gray-2")}
    (cond
      (and (= status :loading) (empty? schema) (empty? databases))
      [loading-indicator "Loading schema"]
@@ -359,6 +363,7 @@
 ;; Simplification of the main component - removing all the complexity of the lifecycle methods
 (defn main []
   (let [database-schema (rf/subscribe [::subs/database-schema])
+        use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])
         ;; Flag to control if we've started loading
         loading-started (r/atom false)
         ;; Track current connection to detect changes
@@ -410,7 +415,8 @@
 
         ;; Direct rendering without additional complexity
         [tree-view-status
-         {:status (:status current-schema)
+         {:use-compact-ui? @use-compact-ui?
+          :status (:status current-schema)
           :databases (:databases current-schema)
           :schema (:schema-tree current-schema)
           :connection connection
