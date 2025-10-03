@@ -65,6 +65,7 @@ type Connection struct {
 	AgentName                 string            `gorm:"column:agent_name;->"`
 	JiraTransitionNameOnClose sql.NullString    `gorm:"column:issue_transition_name_on_close;->"`
 	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
+	EnvsResources             map[string]string `gorm:"column:envs_resources;serializer:json;->"`
 	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
 }
@@ -125,14 +126,25 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 			c.ResourceName = c.Name
 		}
 
-		err := UpsertResource(tx, &Resources{
-			OrgID: c.OrgID,
-			Type:  c.SubType.String,
-			Name:  c.ResourceName,
-		}, false)
+		// Get resource for the connection
+		resource, err := GetResourceByName(tx, c.OrgID, c.ResourceName, true)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("failed to get resource, reason=%v", err)
+		}
 
-		if err != nil {
-			return fmt.Errorf("failed upserting resource, reason=%v", err)
+		if resource == nil {
+			// Create new resource if it doesn't exist
+			err = UpsertResource(tx, &Resources{
+				OrgID: c.OrgID,
+				Type:  c.SubType.String,
+				Name:  c.ResourceName,
+			}, false)
+			if err != nil {
+				return fmt.Errorf("failed upserting resource, reason=%v", err)
+			}
+		} else if resource.Type != c.SubType.String {
+			// Validate resource type matches connection subtype
+			return fmt.Errorf("resource name %q already exists with a different type", c.ResourceName)
 		}
 
 		err = tx.Table(tableConnections).
@@ -417,6 +429,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 			WHERE cta.connection_id = c.id
 			GROUP BY cta.connection_id ), '{}'
 		) AS connection_tags,
+		COALESCE (( SELECT envs FROM private.env_vars WHERE id = (SELECT res.id FROM private.resources res WHERE res.org_id = c.org_id AND res.name = c.resource_name) ), '{}') ||
 		COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,

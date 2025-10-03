@@ -35,6 +35,7 @@ import (
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
+	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
@@ -725,4 +726,22 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 
 	r.GET("/ws", transport.HandleConnection)
 
+	r.GET("/resources",
+		r.AuthMiddleware,
+		resourcesapi.ListResources)
+	r.GET("/resources/:name",
+		r.AuthMiddleware,
+		resourcesapi.GetResource)
+	r.POST("/resources",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.CreateResource)
+	r.PUT("/resources/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.UpdateResource)
+	r.DELETE("/resources/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.DeleteResource)
 }

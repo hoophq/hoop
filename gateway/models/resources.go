@@ -20,16 +20,16 @@ type Resources struct {
 	Envs map[string]string `gorm:"column:envs;serializer:json;->"` // read-only
 }
 
-func GetResourceByName(db *gorm.DB, orgID, name string) (*Resources, error) {
+func GetResourceByName(db *gorm.DB, orgID, name string, isAdminOrInternal bool) (*Resources, error) {
 	var resource Resources
 	err := db.Raw(`
 	SELECT
 		r.*,
-		COALESCE((SELECT envs FROM private.env_vars WHERE id = r.id), '{}') AS envs
+		COALESCE((SELECT envs FROM private.env_vars WHERE (? AND id = r.id)), '{}') AS envs
 	FROM private.resources r
 	WHERE org_id = ? AND name = ?
 	LIMIT 1
-	`, orgID, name).First(&resource).Error
+	`, isAdminOrInternal, orgID, name).First(&resource).Error
 	if err != nil {
 		return nil, err
 	}
@@ -37,9 +37,23 @@ func GetResourceByName(db *gorm.DB, orgID, name string) (*Resources, error) {
 	return &resource, nil
 }
 
+func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool) ([]Resources, error) {
+	var resources []Resources
+	err := db.Raw(`
+	SELECT
+		r.*,
+		COALESCE((SELECT envs FROM private.env_vars WHERE (? AND id = r.id)), '{}') AS envs
+	FROM private.resources r
+	WHERE org_id = ?
+	ORDER BY created_at DESC
+	`, isAdminOrInternal, orgID).Find(&resources).Error
+
+	return resources, err
+}
+
 func UpsertResource(db *gorm.DB, resource *Resources, updateEnvVars bool) error {
 	// try to find existing resource
-	existing, err := GetResourceByName(db, resource.OrgID, resource.Name)
+	existing, err := GetResourceByName(db, resource.OrgID, resource.Name, true)
 	switch err {
 	case nil:
 		resource.ID = existing.ID
@@ -79,4 +93,8 @@ func GetResourceConnections(db *gorm.DB, orgID, resourceName string) ([]Connecti
 		Where("org_id = ? AND resource_name = ?", orgID, resourceName).
 		Find(&connections).Error
 	return connections, err
+}
+
+func DeleteResource(db *gorm.DB, orgID, name string) error {
+	return db.Where("org_id = ? AND name = ?", orgID, name).Delete(&Resources{}).Error
 }

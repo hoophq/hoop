@@ -1775,3 +1775,27 @@ type ConnectionTestResponse struct {
 	// Indicates if the connection test was successful
 	Success bool `json:"success" example:"true"`
 }
+
+type ResourceRequest struct {
+	// The resource name
+	Name string `json:"name" binding:"required" example:"my-resource"`
+	// The resource type
+	Type string `json:"type" binding:"required" example:"mysql"`
+	// The resource environment variables
+	EnvVars map[string]string `json:"env_vars" binding:"required"`
+}
+
+type ResourceResponse struct {
+	// The resource ID
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The resource name
+	Name string `json:"name" example:"my-resource"`
+	// The resource type
+	Type string `json:"type" example:"mysql"`
+	// The resource environment variables
+	EnvVars map[string]string `json:"env_vars"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}

@@ -280,6 +280,12 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
+
+	if !ctx.IsAdmin() {
+		// it should return empty to avoid leaking sensitive content
+		conn.Envs = map[string]string{}
+	}
+
 	c.JSON(http.StatusOK, toOpenApi(conn))
 }
 
