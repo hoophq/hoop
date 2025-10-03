@@ -1,7 +1,7 @@
 (ns webapp.webclient.components.header
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [CircleHelp FastForward PackagePlus Play Sun Moon]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Tooltip]]
+   ["lucide-react" :refer [CircleHelp FastForward PackagePlus Play Sun Moon ChevronDown FolderTree]]
    [re-frame.core :as rf]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.webclient.components.search :as search]))
@@ -12,17 +12,23 @@
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         primary-connection (rf/subscribe [:primary-connection/selected])
-        selected-connections (rf/subscribe [:multiple-connections/selected])]
-    (fn [active-panel multi-run-panel? dark-mode? submit]
+        selected-connections (rf/subscribe [:multiple-connections/selected])
+        use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])]
+    (fn [active-panel multi-run-panel? dark-mode? submit show-db-schema-panel?]
       (let [has-metadata? (or (seq @metadata)
-                              (not (empty? @metadata-key))
-                              (not (empty? @metadata-value)))
+                              (seq @metadata-key)
+                              (seq @metadata-value))
             no-connection-selected? (and (empty? @selected-connections)
                                          (not @primary-connection))
             has-multirun? (seq @selected-connections)
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or (not exec-enabled?)
                                     no-connection-selected?)
+            ;; Verificar se connection suporta schema
+            supports-schema? (and @primary-connection
+                                  (or (= "database" (:type @primary-connection))
+                                      (= "dynamodb" (:subtype @primary-connection))
+                                      (= "cloudwatch" (:subtype @primary-connection))))
             on-click-icon-button (fn [type]
                                    (reset! active-panel (when-not (= @active-panel type) type))
                                    (cond
@@ -32,8 +38,34 @@
          [:> Flex {:align "center"
                    :justify "between"
                    :class "h-full px-4"}
-          [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
-           "Terminal"]
+          [:> Flex {:align "center" :gap "2"}
+           [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+            "Terminal"]
+
+           ;; Badge de conexão (apenas se compact UI)
+           (when @use-compact-ui?
+             [:> Badge
+              {:radius "full"
+               :color (if @primary-connection "blue" "gray")
+               :class "cursor-pointer"
+               :onClick (fn [] (rf/dispatch [:primary-connection/toggle-dialog true]))}
+              (if @primary-connection
+                (:name @primary-connection)
+                "Connection")
+              [:> ChevronDown {:size 12}]])
+
+           ;; Botão Database Schema (apenas se compact UI e suporta schema)
+           (when (and @use-compact-ui? supports-schema?)
+             [:> Tooltip {:content (if (= "cloudwatch" (:subtype @primary-connection))
+                                     "Log Groups"
+                                     "Database Schema")}
+              [:> IconButton
+               {:size "2"
+                :color "gray"
+                :variant "soft"
+                :class (when @show-db-schema-panel? "bg-gray-8 text-gray-12")
+                :onClick #(swap! show-db-schema-panel? not)}
+               [:> FolderTree {:size 16}]]])]
           [:> Flex {:align "center" :gap "2"}
 
            [:> Tooltip {:content "Search"}
@@ -72,16 +104,18 @@
                :has-notification? has-metadata?
                :disabled? false}]]]
 
-           [:> Tooltip {:content "MultiRun"}
-            [:div
-             [notification-badge
-              {:icon [:> FastForward {:size 16}]
-               :on-click #(do
-                            (reset! multi-run-panel? (not @multi-run-panel?))
-                            (rf/dispatch [:multiple-connections/clear]))
-               :active? @multi-run-panel?
-               :has-notification? has-multirun?
-               :disabled? false}]]]
+           ;; Botão MultiRun apenas se NÃO for compact UI
+           (when-not @use-compact-ui?
+             [:> Tooltip {:content "MultiRun"}
+              [:div
+               [notification-badge
+                {:icon [:> FastForward {:size 16}]
+                 :on-click #(do
+                              (reset! multi-run-panel? (not @multi-run-panel?))
+                              (rf/dispatch [:multiple-connections/clear]))
+                 :active? @multi-run-panel?
+                 :has-notification? has-multirun?
+                 :disabled? false}]]])
 
            [:> Tooltip {:content "Run"}
             [:> Button

@@ -116,6 +116,12 @@
                                    (when primary-connection [primary-connection])
                                    selected-connections))]]]})))
 
+;; Dialog Events (for compact UI)
+(rf/reg-event-db
+ :primary-connection/toggle-dialog
+ (fn [db [_ open?]]
+   (assoc-in db [:editor :connections :dialog-open?] open?)))
+
 ;; Subscriptions
 (rf/reg-sub
  :primary-connection/status
@@ -153,3 +159,8 @@
                (string/lower-case (:name %))
                (string/lower-case filter-text))
              connections))))
+
+(rf/reg-sub
+ :primary-connection/dialog-open?
+ (fn [db]
+   (get-in db [:editor :connections :dialog-open?])))

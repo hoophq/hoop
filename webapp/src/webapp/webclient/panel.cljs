@@ -25,6 +25,7 @@
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.webclient.codemirror.extensions :as extensions]
    [webapp.webclient.components.primary-connection-list :as primary-connection-list]
+   [webapp.webclient.components.connection-dialog :as connection-dialog]
    [webapp.webclient.components.header :as header]
    [webapp.webclient.components.language-select :as language-select]
    [webapp.webclient.components.panels.multiple-connections :as multiple-connections-panel]
@@ -206,10 +207,12 @@
         multi-selected-connections (rf/subscribe [:multiple-connections/selected])
         multi-exec (rf/subscribe [:multiple-connection-execution/modal])
         primary-connection (rf/subscribe [:primary-connection/selected])
+        use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])
 
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
+        show-db-schema-panel? (r/atom false)
 
         handle-connection-modes! (fn [current-connection]
                                    (when current-connection
@@ -322,65 +325,121 @@
                  (not (:loading @db-connections)))
           [quickstart/main]
 
-          [:> Box {:class (str "h-full bg-gray-2 overflow-hidden "
-                               (when @dark-mode?
-                                 "dark"))}
+          [:<>
+           [:> Box {:class (str "h-full bg-gray-2 overflow-hidden "
+                                (when @dark-mode?
+                                  "dark"))}
 
-           [header/main
-            active-panel
-            multi-run-panel?
-            dark-mode?
-            #(rf/dispatch [:editor-plugin/submit-task {:script @script}])]
-           [with-panel
-            (boolean @active-panel)
-            [:> Box {:class "flex h-terminal-content overflow-hidden"}
-             [:> Allotment {:defaultSizes vertical-pane-sizes
-                            :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
-              [:> (.-Pane Allotment) {:minSize 270}
-               [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3]"}
-                (if @multi-run-panel?
-                  [multiple-connections-panel/main dark-mode? false]
-                  [primary-connection-list/main dark-mode?])]]
+            ;; Connection dialog (apenas se compact UI)
+            (when @use-compact-ui?
+              [connection-dialog/connection-dialog])
 
-              [:> Allotment {:defaultSizes horizontal-pane-sizes
-                             :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
-                             :vertical true}
-               [:div {:class "relative w-full h-full"}
-                [:div {:class "h-full flex flex-col"}
-                 (when (and
-                        (empty? @multi-selected-connections)
-                        (= "custom" (:type current-connection)))
-                   [connection-state-indicator @dark-mode? (:command current-connection)])
-                 [codemirror-editor
-                  {:value @script
-                   :theme (if @dark-mode?
-                            materialDark
-                            materialLight)
-                   :extensions codemirror-exts
-                   :on-change optimized-change-handler}]]]
+            [header/main
+             active-panel
+             multi-run-panel?
+             dark-mode?
+             #(rf/dispatch [:editor-plugin/submit-task {:script @script}])
+             show-db-schema-panel?]
 
-               [:> Flex {:direction "column" :justify "between" :class "h-full"}
-                [log-area/main
-                 connection-type
-                 is-one-connection-selected?
-                 @dark-mode?
-                 (not disabled-download)]
+            ;; Decidir qual layout renderizar baseado na feature flag
+            (if @use-compact-ui?
+              ;; LAYOUT COMPACTO - Sem sidebar, mais espaço para editor
+              [with-panel
+               (boolean @active-panel)
+               [:> Box {:class "flex h-terminal-content overflow-hidden"}
+                ;; Layout apenas com split horizontal (editor + logs) - SEM sidebar vertical
+                [:> Allotment {:defaultSizes horizontal-pane-sizes
+                               :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
+                               :vertical true}
+                 ;; Editor area (agora ocupa largura completa)
+                 [:div {:class "relative w-full h-full"}
+                  [:div {:class "h-full flex flex-col"}
+                   (when (and (empty? @multi-selected-connections)
+                              (= "custom" (:type current-connection)))
+                     [connection-state-indicator @dark-mode? (:command current-connection)])
+                   [codemirror-editor
+                    {:value @script
+                     :theme (if @dark-mode?
+                              materialDark
+                              materialLight)
+                     :extensions codemirror-exts
+                     :on-change optimized-change-handler}]]]
 
-                [:div {:class "bg-gray-1"}
-                 [:footer {:class "flex justify-between items-center p-2 gap-small"}
-                  [:div {:class "flex items-center gap-small"}
-                   [saved-status-el @code-saved-status]
-                   (when (:execution_time (:data @script-output))
+                 ;; Log area (mantém igual)
+                 [:> Flex {:direction "column" :justify "between" :class "h-full"}
+                  [log-area/main
+                   connection-type
+                   is-one-connection-selected?
+                   @dark-mode?
+                   (not disabled-download)]
+
+                  [:div {:class "bg-gray-1"}
+                   [:footer {:class "flex justify-between items-center p-2 gap-small"}
+                    [:div {:class "flex items-center gap-small"}
+                     [saved-status-el @code-saved-status]
+                     (when (:execution_time (:data @script-output))
+                       [:div {:class "flex items-center gap-small"}
+                        [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
+                                                       :aria-hidden "true"}]
+                        [:span {:class "text-xs text-gray-11"}
+                         (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
+                    [:div {:class "flex-end items-center gap-regular pr-4 flex"}
+                     [:div {:class "mr-3"}
+                      [keyboard-shortcuts/keyboard-shortcuts-button]]
+                     [language-select/main current-connection]]]]]]]
+               panel-content]
+
+              ;; LAYOUT CLÁSSICO - Com sidebar (código original)
+              [with-panel
+               (boolean @active-panel)
+               [:> Box {:class "flex h-terminal-content overflow-hidden"}
+                [:> Allotment {:defaultSizes vertical-pane-sizes
+                               :onDragEnd #(.setItem js/localStorage "editor-vertical-pane-sizes" (str %))}
+                 [:> (.-Pane Allotment) {:minSize 270}
+                  [:aside {:class "h-full flex flex-col gap-8 border-r-2 border-[--gray-3]"}
+                   (if @multi-run-panel?
+                     [multiple-connections-panel/main dark-mode? false]
+                     [primary-connection-list/main dark-mode?])]]
+
+                 [:> Allotment {:defaultSizes horizontal-pane-sizes
+                                :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
+                                :vertical true}
+                  [:div {:class "relative w-full h-full"}
+                   [:div {:class "h-full flex flex-col"}
+                    (when (and
+                           (empty? @multi-selected-connections)
+                           (= "custom" (:type current-connection)))
+                      [connection-state-indicator @dark-mode? (:command current-connection)])
+                    [codemirror-editor
+                     {:value @script
+                      :theme (if @dark-mode?
+                               materialDark
+                               materialLight)
+                      :extensions codemirror-exts
+                      :on-change optimized-change-handler}]]]
+
+                  [:> Flex {:direction "column" :justify "between" :class "h-full"}
+                   [log-area/main
+                    connection-type
+                    is-one-connection-selected?
+                    @dark-mode?
+                    (not disabled-download)]
+
+                   [:div {:class "bg-gray-1"}
+                    [:footer {:class "flex justify-between items-center p-2 gap-small"}
                      [:div {:class "flex items-center gap-small"}
-                      [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
-                                                     :aria-hidden "true"}]
-                      [:span {:class "text-xs text-gray-11"}
-                       (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
-                  [:div {:class "flex-end items-center gap-regular pr-4 flex"}
-                   [:div {:class "mr-3"}
-                    [keyboard-shortcuts/keyboard-shortcuts-button]]
-                   [language-select/main current-connection]]]]]]]]
-            panel-content]
+                      [saved-status-el @code-saved-status]
+                      (when (:execution_time (:data @script-output))
+                        [:div {:class "flex items-center gap-small"}
+                         [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
+                                                        :aria-hidden "true"}]
+                         [:span {:class "text-xs text-gray-11"}
+                          (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
+                     [:div {:class "flex-end items-center gap-regular pr-4 flex"}
+                      [:div {:class "mr-3"}
+                       [keyboard-shortcuts/keyboard-shortcuts-button]]
+                      [language-select/main current-connection]]]]]]]]
+               panel-content])]
 
            (when (seq (:data @multi-exec))
              [multiple-connections-exec-list-component/main
