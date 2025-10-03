@@ -29,7 +29,7 @@
      (when (= (:status connection) "offline")
        [:> Text {:size "1" :color "gray"} "Offline"])]
     (when selected?
-      [:> Badge {:color "blue" :size "1"} "Selected"])
+      [:> Badge {:color "indigo" :size "1"} "Selected"])
     [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
 
 (defn- connections-list

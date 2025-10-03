@@ -213,6 +213,7 @@
         active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
+        db-schema-collapsed? (r/atom false)
 
         handle-connection-modes! (fn [current-connection]
                                    (when current-connection
@@ -347,15 +348,19 @@
                (boolean @active-panel)
                [:> Box {:class "flex h-terminal-content overflow-hidden"}
                 ;; Allotment principal para separar painel de schema + área de trabalho
-                [:> Allotment {:separator false}
+                [:> Allotment {:key (str "compact-allotment-" @db-schema-collapsed?)
+                               :separator false}
 
                  ;; Painel lateral Database Schema à ESQUERDA (condicional)
                  (when (and current-connection
                             (or (= "database" (:type current-connection))
                                 (= "dynamodb" (:subtype current-connection))
                                 (= "cloudwatch" (:subtype current-connection))))
-                   [:> (.-Pane Allotment) {:minSize 250 :maxSize 400}
-                    [database-schema-panel/main current-connection]])
+                   [:> (.-Pane Allotment) {:minSize (if @db-schema-collapsed? 64 250)
+                                           :maxSize (if @db-schema-collapsed? 64 400)}
+                    [database-schema-panel/main {:connection current-connection
+                                                 :collapsed? @db-schema-collapsed?
+                                                 :on-toggle-collapse #(swap! db-schema-collapsed? not)}]])
 
                  ;; Área principal (editor + logs)
                  [:> (.-Pane Allotment)

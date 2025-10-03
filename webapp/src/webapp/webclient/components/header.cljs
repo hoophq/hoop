@@ -41,7 +41,7 @@
            (when @use-compact-ui?
              [:> Badge
               {:radius "full"
-               :color (if @primary-connection "blue" "gray")
+               :color (if @primary-connection "indigo" "gray")
                :class "cursor-pointer"
                :onClick (fn [] (rf/dispatch [:primary-connection/toggle-dialog true]))}
               (if @primary-connection
@@ -64,7 +64,9 @@
                          (js/window.open "https://help.hoop.dev" "_blank"))}
              [:> CircleHelp {:size 16}]]]
 
-           [:> Tooltip {:content (if @use-compact-ui? "Classic Layout" "Compact Layout")}
+           [:> Tooltip {:content (if @use-compact-ui?
+                                   "Classic Layout"
+                                   "Compact Layout")}
             [:> IconButton
              {:class (when @use-compact-ui?
                        "bg-gray-8 text-gray-12")
