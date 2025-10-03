@@ -44,15 +44,11 @@ EOT
 
 export RUST_LOG=debug
 # inside the docker container the hoop_rs binary is located in /app/bin/hoop_rs
-export HOOP_RS_BIN_PATH=./bin/hoop_rs
 
 echo "--> STARTING AGENT ..."
 # get digest of the agent secret key
 # echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg |sha256sum
 HOOP_KEY="grpc://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
-
-export GATEWAY_URL="ws://127.0.0.1:8009/api/ws"  # Explicitly set the gateway URL
-
 
 echo "--> STARTING SSHD SERVER ..."
 
