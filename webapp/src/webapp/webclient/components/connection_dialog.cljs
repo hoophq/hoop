@@ -47,12 +47,11 @@
         connections (rf/subscribe [:primary-connection/list])
         selected (rf/subscribe [:primary-connection/selected])
         search-term (r/atom "")]
-    ;; Initialize connections and load persisted selection
+
     (rf/dispatch [:primary-connection/initialize-with-persistence])
 
     (fn []
       (let [all-connections (or @connections [])
-            ;; Filtrar connections válidas (mesmo filtro da sidebar atual)
             valid-connections (filter #(and
                                         (not (#{"tcp" "httpproxy" "ssh"} (:subtype %)))
                                         (or (= "enabled" (:access_mode_exec %))

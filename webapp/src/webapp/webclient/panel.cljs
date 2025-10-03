@@ -341,17 +341,14 @@
              dark-mode?
              #(rf/dispatch [:editor-plugin/submit-task {:script @script}])]
 
-            ;; Decidir qual layout renderizar baseado na feature flag
             (if @use-compact-ui?
-              ;; LAYOUT COMPACTO - Sem sidebar, com painel lateral de schema à esquerda
+              ;; Compact layout
               [with-panel
                (boolean @active-panel)
                [:> Box {:class "flex h-terminal-content overflow-hidden"}
-                ;; Allotment principal para separar painel de schema + área de trabalho
                 [:> Allotment {:key (str "compact-allotment-" @db-schema-collapsed?)
                                :separator false}
 
-                 ;; Painel lateral Database Schema à ESQUERDA (condicional)
                  (when (and current-connection
                             (or (= "database" (:type current-connection))
                                 (= "dynamodb" (:subtype current-connection))
@@ -362,12 +359,10 @@
                                                  :collapsed? @db-schema-collapsed?
                                                  :on-toggle-collapse #(swap! db-schema-collapsed? not)}]])
 
-                 ;; Área principal (editor + logs)
                  [:> (.-Pane Allotment)
                   [:> Allotment {:defaultSizes horizontal-pane-sizes
                                  :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                                  :vertical true}
-                   ;; Editor area
                    [:div {:class "relative w-full h-full"}
                     [:div {:class "h-full flex flex-col"}
                      (when (and (empty? @multi-selected-connections)
@@ -381,7 +376,6 @@
                        :extensions codemirror-exts
                        :on-change optimized-change-handler}]]]
 
-                   ;; Log area
                    [:> Flex {:direction "column" :justify "between" :class "h-full"}
                     [log-area/main
                      connection-type
@@ -405,7 +399,7 @@
                        [language-select/main current-connection]]]]]]]]]
                panel-content]
 
-              ;; LAYOUT CLÁSSICO - Com sidebar (código original)
+              ;; Classic layout
               [with-panel
                (boolean @active-panel)
                [:> Box {:class "flex h-terminal-content overflow-hidden"}

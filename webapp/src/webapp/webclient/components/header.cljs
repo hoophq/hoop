@@ -37,7 +37,6 @@
            [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
             "Terminal"]
 
-           ;; Badge de conexão (apenas se compact UI)
            (when @use-compact-ui?
              [:> Badge
               {:radius "full"
@@ -104,7 +103,6 @@
                :has-notification? has-metadata?
                :disabled? false}]]]
 
-           ;; Botão MultiRun apenas se NÃO for compact UI
            (when-not @use-compact-ui?
              [:> Tooltip {:content "MultiRun"}
               [:div

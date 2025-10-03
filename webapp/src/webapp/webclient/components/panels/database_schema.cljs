@@ -20,11 +20,11 @@
         title (if (= "cloudwatch" (:subtype connection))
                 "Log Groups"
                 "Database Schema")]
-    ;; Força light theme com a classe "light" igual à sidebar clássica
+
     [:> Box {:as "aside"
              :class (str "h-full transition-all duration-300 border-r border-gray-3 bg-gray-1 "
                          (if collapsed? "w-16" "w-full"))}
-     ;; Header com ícone + título + botão toggle
+
      [:> Flex {:align "center"
                :justify "between"
                :class "w-full h-10 p-2 border-b border-gray-3"}
@@ -37,7 +37,6 @@
                       :onClick on-toggle-collapse}
        [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
 
-     ;; Conteúdo - só renderiza quando não está collapsed
      (when-not collapsed?
        [:> Box {:class "p-4 overflow-y-auto"}
         (if access-disabled?
