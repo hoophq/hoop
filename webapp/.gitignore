@@ -37,3 +37,6 @@ src/webapp/version.js
 # generated files
 /src/gen/
 **/gen/
+
+# connection metadata
+/resources/public/data/connections-metadata.json

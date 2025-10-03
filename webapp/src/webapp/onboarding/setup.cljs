@@ -1,10 +1,12 @@
 (ns webapp.onboarding.setup
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Spinner Text]]
-   ["lucide-react" :refer [DatabaseZap BrainCog PackageSearch PackagePlus]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Heading Spinner
+                               Text]]
+   ["lucide-react" :refer [BrainCog DatabaseZap PackagePlus PackageSearch]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.connections.views.resource-catalog.main :as resource-catalog]))
 
 (def setup-options
   [{:id "demo"
@@ -125,7 +127,7 @@
        ;; Cards
        [:> Box {:class "space-y-radix-4 max-w-[600px]"}
         [setup-card {:icon (r/as-element
-                             [:> BrainCog {:size 18 :class "group-hover:text-[--gray-1]"}])
+                            [:> BrainCog {:size 18 :class "group-hover:text-[--gray-1]"}])
                      :title "Setup an Agent"
                      :description "Create an agent to start using hoop"
                      :action #(rf/dispatch [:navigate :onboarding-setup-agent])}]]]]]]])
@@ -154,4 +156,4 @@
 
           ;; If the agents are available and the delay has ended
           (and agents-available? (= @transition-state :ready))
-          [setup-content])))))
+          [resource-catalog/main])))))

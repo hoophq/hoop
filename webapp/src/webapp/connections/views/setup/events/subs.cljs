@@ -20,6 +20,11 @@
    (get-in db [:connection-setup :subtype])))
 
 (rf/reg-sub
+ :connection-setup/from-catalog?
+ (fn [db _]
+   (get-in db [:connection-setup :from-catalog?] false)))
+
+(rf/reg-sub
  :connection-setup/name
  (fn [db]
    (get-in db [:connection-setup :name])))
@@ -39,6 +44,16 @@
  :connection-setup/database-credentials
  (fn [db _]
    (get-in db [:connection-setup :database-credentials])))
+
+(rf/reg-sub
+ :connection-setup/metadata-credentials
+ (fn [db _]
+   (get-in db [:connection-setup :metadata-credentials])))
+
+(rf/reg-sub
+ :connection-setup/metadata-credentials
+ (fn [db _]
+   (get-in db [:connection-setup :metadata-credentials])))
 
 (rf/reg-sub
  :connection-setup/command

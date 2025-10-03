@@ -34,6 +34,7 @@
    [webapp.connections.views.setup.events.subs]
    [webapp.connections.views.setup.main :as connection-setup]
    [webapp.dashboard.main :as dashboard]
+   [webapp.connections.views.resource-catalog.main :as resource-catalog]
    [webapp.events]
    [webapp.events.agents]
    [webapp.events.ask-ai]
@@ -295,6 +296,10 @@
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
     [routes/wrap-admin-only
      [create-agent/main]]]])
+
+(defmethod routes/panels :resource-catalog-panel []
+  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 h-full space-y-radix-7"}
+                             [resource-catalog/main]]])
 
 (defmethod routes/panels :home-panel []
   [layout :application-hoop [home/home-panel-hoop]])
