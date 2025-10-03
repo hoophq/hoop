@@ -111,7 +111,6 @@
                            ;; Apply the filter
                            (rf/dispatch [:connections->filter-connections filter-update]))]
 
-        ;; Carrega metadata se não estiver carregado
         (let [connections-metadata @(rf/subscribe [:connections->metadata])]
           (when (nil? connections-metadata)
             (rf/dispatch [:connections->load-metadata]))

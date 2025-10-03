@@ -77,7 +77,6 @@
 
 (defn modal-setup-tab [connection]
   [:div {:class "space-y-6"}
-   ;; Required Configuration (moved from Advanced)
    (when-let [credentials (get-in connection [:resourceConfiguration :credentials])]
      [:div
       [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
@@ -138,7 +137,6 @@
                       :on-click #(navigate-to-setup connection)}
            "Continue Setup"]]]
 
-        ;; Tabs with Radix UI
         [:> Tabs.Root {:default-value "overview" :class "w-full"}
          [:> Tabs.List {:class "border-b border-gray-200 mb-6"}
           [:> Tabs.Trigger {:value "overview" :class "pb-3 text-sm font-medium"}

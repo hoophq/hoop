@@ -32,7 +32,6 @@
    {:db (assoc-in db [:connection-setup :type] connection-type)
     :fx [[:dispatch [:connection-setup/next-step :credentials]]]}))
 
-;; Event para inicializar setup a partir do catálogo
 (rf/reg-event-fx
  :connection-setup/initialize-from-catalog
  (fn [{:keys [db]} [_ {:keys [type subtype app-type command]}]]
@@ -89,8 +88,7 @@
 (rf/reg-event-fx
  :connection-setup/submit
  (fn [{:keys [db]} _]
-   (let [;; Valores atuais de credenciais
-         current-env-key (get-in db [:connection-setup :credentials :current-key])
+   (let [current-env-key (get-in db [:connection-setup :credentials :current-key])
          current-env-value (get-in db [:connection-setup :credentials :current-value])
          current-file-name (get-in db [:connection-setup :credentials :current-file-name])
          current-file-content (get-in db [:connection-setup :credentials :current-file-content])

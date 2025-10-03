@@ -169,7 +169,6 @@
                    (not (cs/blank? (:type connection))) (keyword (:type connection))
                    :else :custom)]
 
-    (println icon-key "icon-key")
     (cond
       (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key)
       (= icon-style "default") (get connection-icons-default-dictionary icon-key)

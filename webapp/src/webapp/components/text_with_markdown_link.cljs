@@ -12,20 +12,18 @@
     (if-not has-links?
       [:> Text text-props text]
 
-      ;; Estratégia: split por regex capturadora
       (let [parts (cs/split text #"(\[[^\]]+\]\([^)]+\))")]
 
         (into [:div {:class "inline"}]
               (map-indexed
                (fn [_idx part]
                  (if (re-matches markdown-link-pattern part)
-                   ;; É um link
                    (let [[_ link-text link-url] (re-find markdown-link-pattern part)]
                      [:> Link (merge {:href link-url
                                       :target "_blank"}
                                      link-props)
                       link-text])
-                   ;; É texto normal
+
                    (when (pos? (count part))
                      [:> Text text-props part])))
                parts))))))

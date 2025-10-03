@@ -78,15 +78,13 @@
 
                        (and (= ui-type "custom") connection-subtype (get-in db [:connection-setup :metadata-credentials]))
                        (let [metadata-credentials (get-in db [:connection-setup :metadata-credentials])
-                             ;; Para metadata, busca o nome original da env-var
                              connections-metadata @(rf/subscribe [:connections->metadata])
                              connection (->> (:connections connections-metadata)
                                              (filter #(= (get-in % [:resourceConfiguration :subtype]) connection-subtype))
                                              first)
-                             credentials-config (get-in connection [:resourceConfiguration :credentials])  ; agora é array
+                             credentials-config (get-in connection [:resourceConfiguration :credentials])
                              credentials-as-env-vars (mapv (fn [[field-key field-value]]
-                                                             (let [;; Busca config original no array por field-key
-                                                                   form-key-normalized (str/lower-case (str/replace (name field-key) #"[^a-zA-Z0-9]" ""))
+                                                             (let [form-key-normalized (str/lower-case (str/replace (name field-key) #"[^a-zA-Z0-9]" ""))
                                                                    original-config (->> credentials-config
                                                                                         (filter #(= (str/lower-case (str/replace (:name %) #"[^a-zA-Z0-9]" ""))
                                                                                                     form-key-normalized))

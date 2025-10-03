@@ -49,7 +49,6 @@
     :action #(rf/dispatch [:navigate :onboarding-resource-providers])
     :special-type :action}])
 
-;; Data for popular connections
 (def popular-connections #{"postgres" "mysql" "mongodb" "ssh" "linux-vm"
                            "postgres-demo"})
 
@@ -61,8 +60,7 @@
 (defn compose-connections
   "Compose all connections: metadata + custom + specials (if onboarding)"
   [metadata-connections is-onboarding?]
-  (let [;; Apply denylist - remove unwanted connections
-        filtered-metadata-connections (->> metadata-connections
+  (let [filtered-metadata-connections (->> metadata-connections
                                            (remove #(denied-connections (:id %))))]
     (concat filtered-metadata-connections
             custom-connections
@@ -103,15 +101,13 @@
 (defn get-popular-connections
   "Get popular connections based on context and filters"
   [connections is-onboarding? has-filters?]
-  (when-not has-filters? ; Only show when no filters are active
-    (let [base-popular-connections (->> connections ; Use original connections
+  (when-not has-filters?
+    (let [base-popular-connections (->> connections
                                         (filter #(popular-connections (:id %)))
                                         (take 5))]
       (if is-onboarding?
-        ;; In onboarding: specials first, then normal popular
         (concat onboarding-connections
                 (take 3 base-popular-connections))
-        ;; Outside onboarding: only normal popular
         base-popular-connections))))
 
 (defn extract-metadata

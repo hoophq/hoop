@@ -48,7 +48,6 @@
             (assoc-in [:connections :results] connections)
             (assoc-in [:connections :loading] false))}))
 
-;; Events para connections metadata
 (rf/reg-event-fx
  :connections->load-metadata
  (fn [{:keys [db]} [_]]
