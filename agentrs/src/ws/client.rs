@@ -1,5 +1,5 @@
 use crate::{
-    conf,
+    conf, tls,
     ws::{
         rdp_message_processor::MessageProcessor,
         types::{ChannelMap, ProxyMap, SessionMap, WsWriter},
@@ -13,6 +13,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use tungstenite::{client::IntoClientRequest, handshake::client::Request};
+use x509_cert::request;
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
@@ -20,9 +21,29 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 #[derive(Clone)]
 pub struct WebSocket {
+    pub gateway_url: String,
     pub config_manager: conf::ConfigHandleManager,
     pub request: Request,
     pub reconnect_interval: Duration,
+}
+
+fn build_websocket_url() -> String {
+    let gateway_url =
+        std::env::var("HOOP_GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009".to_string());
+
+    let gateway_url = match gateway_url.as_str() {
+        url if url.starts_with("ws://") || url.starts_with("wss://") => url.to_string(),
+        url if url.starts_with("http://") => {
+            format!("ws://{}", url.trim_start_matches("http://"))
+        }
+        url if url.starts_with("https://") => {
+            format!("wss://{}", url.trim_start_matches("https://"))
+        }
+        url => format!("ws://{}", url), // no scheme, default to ws://
+    };
+
+    let gateway_url = gateway_url.trim_end_matches('/');
+    gateway_url.to_string()
 }
 
 impl WebSocket {
@@ -30,20 +51,7 @@ impl WebSocket {
         let config_manager =
             conf::ConfigHandleManager::init().context("Failed to init config manager")?;
 
-        let gateway_url =
-            std::env::var("HOOP_GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009".to_string());
-        let gateway_url = match gateway_url.as_str() {
-            url if url.starts_with("ws://") || url.starts_with("wss://") => url.to_string(),
-            url if url.starts_with("http://") => {
-                format!("ws://{}", url.trim_start_matches("http://"))
-            }
-            url if url.starts_with("https://") => {
-                format!("wss://{}", url.trim_start_matches("https://"))
-            }
-            url => format!("ws://{}", url), // no scheme, default to ws://
-        };
-        // Ensure no trailing slash before appending
-        let gateway_url = gateway_url.trim_end_matches('/');
+        let gateway_url = build_websocket_url();
 
         let ws_url = format!("{}/api/ws", gateway_url);
         debug!("WebSocket URL: {}", ws_url);
@@ -61,10 +69,20 @@ impl WebSocket {
             .insert("HOOP_KEY", HeaderValue::from_str(token.as_str())?);
 
         Ok(WebSocket {
+            gateway_url,
             request,
             config_manager,
             reconnect_interval: Duration::from_secs(5),
         })
+    }
+    fn is_localhost(&self) -> bool {
+        self.gateway_url.contains("localhost")
+            || self.gateway_url.contains("127.0.0.0")
+            || self.gateway_url.contains("::1")
+            || self.gateway_url.contains("0.0.0.0")
+    }
+    fn is_tls_enabled(&self) -> bool {
+        self.gateway_url.starts_with("wss://")
     }
 
     pub async fn run_with_reconnect(self) -> anyhow::Result<()> {
@@ -90,9 +108,75 @@ impl WebSocket {
         }
     }
 
-    async fn run(self) -> anyhow::Result<()> {
-        let (ws_stream, _) = connect_async(self.request.clone()).await?;
+    async fn connect_locall_with_custom_tls(
+        &self,
+    ) -> anyhow::Result<(
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::handshake::client::Response,
+    )> {
+        let url = url::Url::parse(&self.request.uri().to_string())?;
 
+        let connector = match url.scheme() {
+            "ws" => Some(tokio_tungstenite::Connector::Plain),
+            "wss" => {
+                // Create a TLS connector that accepts any certificate
+                // This is to inside localhost we do not need to validade the certificate
+                // if TLS is enable locally and the user is running make run-dev
+                // inside the docker it is try to validate the authorithy
+
+                let config = tokio_rustls::rustls::client::ClientConfig::builder()
+                    .dangerous()
+                    .with_custom_certificate_verifier(Arc::new(
+                        tls::danger::NoCertificateVerification,
+                    ))
+                    .with_no_client_auth();
+
+                Some(tokio_tungstenite::Connector::Rustls(Arc::new(config)))
+            }
+            other => {
+                error!("Scheme {} is not supported! Use either ws or wss", other);
+                return Err(anyhow::anyhow!("Unsupported scheme: {}", other));
+            }
+        };
+
+        let (ws_stream, response) =
+            tokio_tungstenite::connect_async_tls_with_config(self.request.clone(), None, false, connector)
+                .await?;
+
+        Ok((ws_stream, response))
+    }
+    async fn connect(
+        &self,
+    ) -> anyhow::Result<(
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::handshake::client::Response,
+    )> {
+        let connection_timeout = Duration::from_secs(30); // 30 second timeout
+        let is_localhost = self.is_localhost();
+        let tls_enabled = self.is_tls_enabled();
+
+        if is_localhost || !tls_enabled {
+            let (ws_stream, response) =
+                tokio::time::timeout(connection_timeout, self.connect_locall_with_custom_tls())
+                    .await
+                    .context("WebSocket connection timeout")??;
+            return Ok((ws_stream, response));
+        }
+
+        let (ws_stream, response) =
+            tokio::time::timeout(connection_timeout, connect_async(self.request.clone()))
+                .await
+                .context("WebSocket connection timeout")??;
+        return Ok((ws_stream, response));
+    }
+
+    async fn run(self) -> anyhow::Result<()> {
+
+        let (ws_stream, _) = self.connect().await?;
         let (ws_sender, ws_receiver) = ws_stream.split();
 
         // Clone config manager and sessions for use in the async task
