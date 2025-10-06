@@ -77,7 +77,7 @@ impl WebSocket {
     }
     fn is_localhost(&self) -> bool {
         self.gateway_url.contains("localhost")
-            || self.gateway_url.contains("127.0.0.0")
+            || self.gateway_url.contains("127.0.0.1")
             || self.gateway_url.contains("::1")
             || self.gateway_url.contains("0.0.0.0")
     }
