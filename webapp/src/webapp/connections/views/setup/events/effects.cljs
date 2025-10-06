@@ -9,13 +9,13 @@
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
    (if initial-data
-     (assoc db :connection-setup (assoc initial-data 
+     (assoc db :connection-setup (assoc initial-data
                                         :ssh-auth-method (get initial-data :ssh-auth-method "password")
                                         :command-args (get initial-data :command-args [{"value" "bash" "label" "bash"}])
                                         :command "bash"))
      (assoc db :connection-setup {:ssh-auth-method "password"
-                                 :command-args [{"value" "bash" "label" "bash"}]
-                                 :command "bash"}))))
+                                  :command-args [{"value" "bash" "label" "bash"}]
+                                  :command "bash"}))))
 
 (defn filter-valid-tags
   [tags]
@@ -31,6 +31,17 @@
  (fn [{:keys [db]} [_ connection-type]]
    {:db (assoc-in db [:connection-setup :type] connection-type)
     :fx [[:dispatch [:connection-setup/next-step :credentials]]]}))
+
+(rf/reg-event-fx
+ :connection-setup/initialize-from-catalog
+ (fn [{:keys [db]} [_ {:keys [type subtype app-type command]}]]
+   {:db (update db :connection-setup merge {:type type
+                                            :subtype subtype
+                                            :app-type app-type
+                                            :metadata-command-args command
+                                            :current-step :credentials
+                                            :from-catalog? true})
+    :fx [[:dispatch [:connection-setup/select-connection type subtype]]]}))
 
 (rf/reg-event-fx
  :connection-tags/fetch
@@ -77,8 +88,7 @@
 (rf/reg-event-fx
  :connection-setup/submit
  (fn [{:keys [db]} _]
-   (let [;; Valores atuais de credenciais
-         current-env-key (get-in db [:connection-setup :credentials :current-key])
+   (let [current-env-key (get-in db [:connection-setup :credentials :current-key])
          current-env-value (get-in db [:connection-setup :credentials :current-value])
          current-file-name (get-in db [:connection-setup :credentials :current-file-name])
          current-file-content (get-in db [:connection-setup :credentials :current-file-content])

@@ -111,11 +111,15 @@
                            ;; Apply the filter
                            (rf/dispatch [:connections->filter-connections filter-update]))]
 
+        (let [connections-metadata @(rf/subscribe [:connections->metadata])]
+          (when (nil? connections-metadata)
+            (rf/dispatch [:connections->load-metadata])))
+
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
             [:> Button {:on-click (fn []
-                                    (rf/dispatch [:navigate :create-connection]))}
+                                    (rf/dispatch [:navigate :resource-catalog]))}
              "Add Connection"]])
          [:> Flex {:as "header"
                    :direction "column"
