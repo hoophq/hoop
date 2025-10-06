@@ -32,7 +32,9 @@
    {:key (:id connection)
     :value (:name connection)
     :keywords [(:type connection) (:subtype connection) (:status connection) "connection"]
-    :onSelect #(rf/dispatch [:command-palette->navigate-to-page :connection-actions connection])}
+    :onSelect #(do
+                (rf/dispatch [:database-schema->clear-schema])
+                (rf/dispatch [:command-palette->navigate-to-page :connection-actions connection]))}
    [:div {:class "flex items-center gap-2"}
     [:div {:class "flex flex-col"}
      [:span {:class "text-sm font-medium"} (:name connection)]]]])
