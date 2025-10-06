@@ -1,7 +1,6 @@
 (ns webapp.connections.views.resource-catalog.category-section
   (:require
-   ["@radix-ui/themes" :refer [Box Card Flex Heading Badge Text]]
-   [clojure.string :as cs]
+   ["@radix-ui/themes" :refer [Box Card Flex Avatar Heading Badge Text]]
    [reagent.core :as r]
    [webapp.connections.views.resource-catalog.helpers :as helpers]))
 
@@ -10,9 +9,9 @@
   (let [image-failed? (r/atom false)]
     (fn []
       (if @image-failed?
-        [:div {:class "w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-md flex items-center justify-center shadow-sm"}
-         [:span {:class "text-white font-bold text-sm"}
-          (cs/upper-case (first (str connection-id)))]]
+        [:> Avatar {:size "1"
+                    :variant "solid"
+                    :fallback (first (str connection-id))}]
         ;; Try to load image
         [:img {:src (str "/icons/connections/" (or icon-name connection-id) "-default.svg")
                :alt connection-id

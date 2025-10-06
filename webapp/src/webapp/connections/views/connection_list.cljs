@@ -113,9 +113,7 @@
 
         (let [connections-metadata @(rf/subscribe [:connections->metadata])]
           (when (nil? connections-metadata)
-            (rf/dispatch [:connections->load-metadata]))
-          (when connections-metadata
-            (println "Metadata loaded! Total connections:" (count (:connections connections-metadata)))))
+            (rf/dispatch [:connections->load-metadata])))
 
         [:div {:class "flex flex-col h-full overflow-y-auto"}
          (when (-> @user :data :admin?)
