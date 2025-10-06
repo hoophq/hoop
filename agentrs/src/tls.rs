@@ -14,7 +14,7 @@ use tracing::error;
 //
 // We’ll reuse the same TLS client config for all proxy-based TLS connections.
 // (TlsConnector is just a wrapper around the config providing the `connect` method.)
-static TLS_CONNECTOR: LazyLock<tokio_rustls::TlsConnector> = LazyLock::new(|| {
+pub static TLS_CONNECTOR: LazyLock<tokio_rustls::TlsConnector> = LazyLock::new(|| {
     let mut config = rustls::client::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(danger::NoCertificateVerification))
