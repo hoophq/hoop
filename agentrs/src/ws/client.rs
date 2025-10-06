@@ -52,6 +52,10 @@ impl WebSocket {
 
         // Insert a custom header
         let token = config_manager.conf.token.clone().unwrap();
+        request.headers_mut().insert(
+            "User-Agent",
+            HeaderValue::from_static("Hoop-Agent-Rust/0.1"),
+        );
         request
             .headers_mut()
             .insert("HOOP_KEY", HeaderValue::from_str(token.as_str())?);
