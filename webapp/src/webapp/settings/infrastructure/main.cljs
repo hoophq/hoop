@@ -94,4 +94,20 @@
                 {:placeholder "e.g. 5432"
                  :value (:postgres-proxy-port data)
                  :on-change #(rf/dispatch [:infrastructure->update-field
-                                           :postgres-proxy-port (-> % .-target .-value)])}]]]]]])))))
+                                           :postgres-proxy-port (-> % .-target .-value)])}]]]
+
+             [:> Grid {:columns "7" :gap "7"}
+              [:> Box {:grid-column "span 2 / span 2"}
+               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                "RDP Proxy Port"]
+               [:> Text {:size "3" :class "text-[--gray-11]"}
+                "Organization-wide default for local Remote Desktop Protocol proxy port forwarding."]]
+
+              [:> Box {:grid-column "span 5 / span 5"}
+               [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}
+                "Proxy Port"]
+               [forms/input
+                {:placeholder "e.g. 3389"
+                 :value (:rdp-proxy-port data)
+                 :on-change #(rf/dispatch [:infrastructure->update-field
+                                           :rdp-proxy-port (-> % .-target .-value)])}]]]]]])))))

@@ -21,7 +21,12 @@
                       :postgres-proxy-port (some-> (:postgres_server_config data)
                                                    :listen_address
                                                    (cs/split #":")
-                                                   last)}
+                                                   last)
+                      :rdp-proxy-port (some-> (:rdp_server_config data)
+                                              :listen_address
+                                              (cs/split #":")
+                                              last)}
+
          updated-db (update db :infrastructure merge {:status :success :data mapped-data})]
 
      ;; Just update the database - no more pending connection validation needed
@@ -54,10 +59,13 @@
    (let [ui-config (get-in db [:infrastructure :data])
          postgres-proxy-port (when-not (cs/blank? (:postgres-proxy-port ui-config))
                                (str "0.0.0.0:" (:postgres-proxy-port ui-config)))
+         rdp-proxy-port (when-not (cs/blank? (:rdp-proxy-port ui-config))
+                          (str "0.0.0.0:" (:rdp-proxy-port ui-config)))
          ;; Map UI structure back to API format
          api-payload {:grpc_server_url (:grpc-url ui-config)
                       :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")
-                      :postgres_server_config {:listen_address postgres-proxy-port}}]
+                      :postgres_server_config {:listen_address postgres-proxy-port}
+                      :rdp_server_config {:listen_address rdp-proxy-port}}]
      {:db (assoc-in db [:infrastructure :submitting?] true)
       :fx [[:dispatch [:fetch {:method "PUT"
                                :uri "/serverconfig/misc"
