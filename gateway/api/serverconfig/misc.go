@@ -76,12 +76,19 @@ func GetServerMisc(c *gin.Context) {
 			HostsKey:      config.SSHServerConfig.HostsKey,
 		}
 	}
+	var rdpServerConfig *openapi.RDPServerConfig
+	if config.RDPServerConfig != nil {
+		rdpServerConfig = &openapi.RDPServerConfig{
+			ListenAddress: config.RDPServerConfig.ListenAddress,
+		}
+	}
 
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
 		ProductAnalytics:     productAnalytics,
 		GrpcServerURL:        grpcURL,
 		PostgresServerConfig: pgServerConfig,
 		SSHServerConfig:      sshServerConfig,
+		RDPServerConfig:      rdpServerConfig,
 	})
 }
 
