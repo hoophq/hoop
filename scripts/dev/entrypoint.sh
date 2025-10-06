@@ -44,6 +44,7 @@ EOT
 
 export RUST_LOG=debug
 # inside the docker container the hoop_rs binary is located in /app/bin/hoop_rs
+export PATH="/app/bin:$PATH"
 
 echo "--> STARTING AGENT ..."
 # get digest of the agent secret key
