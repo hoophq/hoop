@@ -101,7 +101,7 @@
                [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
                 "RDP Proxy Port"]
                [:> Text {:size "3" :class "text-[--gray-11]"}
-                "Organization-wide default for local RDP proxy port forwarding."]]
+                "Organization-wide default for local Remote Desktop Protocol proxy port forwarding."]]
 
               [:> Box {:grid-column "span 5 / span 5"}
                [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}
