@@ -136,7 +136,10 @@
               (not (empty? current-value)))
        (-> db
            (update-in [:connection-setup :credentials :environment-variables]
-                      #(conj (or % []) {:key current-key :value current-value}))
+                      (fn [value]
+                        (if (seq value)
+                          (conj value {:key current-key :value current-value})
+                          [{:key current-key :value current-value}])))
            (assoc-in [:connection-setup :credentials :current-key] "")
            (assoc-in [:connection-setup :credentials :current-value] ""))
        db))))
