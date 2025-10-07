@@ -399,6 +399,28 @@ jobs:
           name: dist-artifacts-linux-arm64
           path: dist/binaries/linux_arm64/
           
+      - name: Download Rust Binaries Darwin
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-binaries-darwin
+          path: dist/binaries/
+          
+      - name: Download Rust Binaries Linux
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-binaries-linux
+          path: dist/binaries/
+          
+      - name: Copy Rust Binaries to Architecture Directories
+        run: |
+          # Copy Darwin Rust binaries to their respective architecture directories
+          cp dist/binaries/darwin_amd64/hoop_rs dist/binaries/darwin_amd64/ 2>/dev/null || true
+          cp dist/binaries/darwin_arm64/hoop_rs dist/binaries/darwin_arm64/ 2>/dev/null || true
+          
+          # Copy Linux Rust binaries to their respective architecture directories  
+          cp dist/binaries/linux_amd64/hoop_rs dist/binaries/linux_amd64/ 2>/dev/null || true
+          cp dist/binaries/linux_arm64/hoop_rs dist/binaries/linux_arm64/ 2>/dev/null || true
+          
       - name: Build Tar Files for All Architectures
         run: |
           # Create tar.gz for Darwin AMD64
