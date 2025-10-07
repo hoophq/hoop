@@ -90,7 +90,6 @@ publish:
 build-rust-darwin-all:
 	GOOS=darwin GOARCH=amd64 $(MAKE) build-rust-single
 	GOOS=darwin GOARCH=arm64 $(MAKE) build-rust-single
-
 # Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH  
 build-rust-linux-all:
 	GOOS=linux GOARCH=amd64 $(MAKE) build-rust-single
@@ -105,6 +104,7 @@ build-clean-folder:
 	mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
 build-tar-files:
+	mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt

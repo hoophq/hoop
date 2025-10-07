@@ -134,7 +134,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/
+          path: dist/binaries/darwin_amd64/
 
   darwin-arm64:
     runs-on: ubuntu-latest
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/
+          path: dist/binaries/darwin_arm64/
 
   windows-amd64:
     runs-on: ubuntu-latest
@@ -206,7 +206,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/
+          path: dist/binaries/windows_amd64/
 
   windows-arm64:
     runs-on: ubuntu-latest
@@ -242,7 +242,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/
+          path: dist/binaries/windows_arm64/
 
   linux-amd64:
     runs-on: ubuntu-latest
@@ -282,7 +282,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/
+          path: dist/binaries/linux_amd64/
 
   linux-arm64:
     runs-on: ubuntu-latest
@@ -322,7 +322,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/
+          path: dist/binaries/linux_arm64/
 
   build-webapp:
     runs-on: ubuntu-latest
@@ -363,11 +363,41 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
         
-      - name: Downlaod Dist Artifacts for All Architectures
+      - name: Download Darwin AMD64
         uses: actions/download-artifact@v4
         with:
-          pattern: dist-artifacts-*
-          path: dist/
+          name: dist-artifacts-darwin-amd64
+          path: dist/binaries/darwin_amd64/
+          
+      - name: Download Darwin ARM64
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-darwin-arm64
+          path: dist/binaries/darwin_arm64/
+          
+      - name: Download Windows AMD64
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-windows-amd64
+          path: dist/binaries/windows_amd64/
+          
+      - name: Download Windows ARM64
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-windows-arm64
+          path: dist/binaries/windows_arm64/
+          
+      - name: Download Linux AMD64
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-linux-amd64
+          path: dist/binaries/linux_amd64/
+          
+      - name: Download Linux ARM64
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts-linux-arm64
+          path: dist/binaries/linux_arm64/
           
       - name: Build Tar Files for All Architectures
         run: |
