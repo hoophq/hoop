@@ -1,5 +1,6 @@
 PUBLIC_IMAGE := "hoophq/hoop"
-VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
+#VERSION ?= $(or ${GIT_TAG},${GIT_TAG},v0)
+VERSION ?= "1.42.1-cittest1"
 GITCOMMIT ?= $(shell git rev-parse HEAD)
 DIST_FOLDER ?= ./dist
 
@@ -12,7 +13,7 @@ OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(su
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
 POSTREST_ARCH_SUFFIX := $(if $(filter $(GOARCH),amd64),linux-static-x64.tar.xz,$(if $(filter $(GOARCH),arm64),ubuntu-aarch64.tar.xz,$(ARCH)))
 
-RUST_TARGET := $(if $(filter $(GOOS),linux),$(if $(filter $(GOARCH),amd64),x86_64-unknown-linux-gnu,$(if $(filter $(GOARCH),arm64),aarch64-unknown-linux-gnu)),$(if $(filter $(GOOS),windows),$(if $(filter $(GOARCH),amd64),x86_64-pc-windows-gnu,$(if $(filter $(GOARCH),arm64),aarch64-pc-windows-gnu))))
+RUST_TARGET := $(if $(filter $(GOOS),linux),$(if $(filter $(GOARCH),amd64),x86_64-unknown-linux-gnu,$(if $(filter $(GOARCH),arm64),aarch64-unknown-linux-gnu)),$(if $(filter $(GOOS),windows),$(if $(filter $(GOARCH),amd64),x86_64-pc-windows-gnu,$(if $(filter $(GOARCH),arm64),aarch64-pc-windows-gnu)),$(if $(filter $(GOOS),darwin),$(if $(filter $(GOARCH),amd64),x86_64-apple-darwin,$(if $(filter $(GOARCH),arm64),aarch64-apple-darwin)))))
 
 LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
@@ -71,7 +72,7 @@ publish:
 
 build-rust:
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
-	@if [ "${GOOS}" = "windows" ] || [ "${GOOS}" = "darwin" ]; then \
+	@if [ "${GOOS}" = "windows" ]; then \
 		echo "Skipping Rust build for ${GOOS} - not supported"; \
 	elif [ -n "${RUST_TARGET}" ]; then \
 		cd agentrs && cross build --release --target ${RUST_TARGET} && \
