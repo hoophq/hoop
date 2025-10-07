@@ -1,7 +1,7 @@
 (ns webapp.reviews.panel
   (:require
-   ["@headlessui/react" :as ui]
    ["@heroicons/react/16/solid" :as hero-micro-icon]
+   ["@radix-ui/themes" :refer [Popover Button]]
    ["lucide-react" :refer [ArrowRightLeft Check ListFilter]]
    ["react-tailwindcss-datepicker" :as Datepicker]
    [clojure.string :as string]
@@ -102,191 +102,167 @@
         [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
          [:div {:class "mb-regular flex items-center gap-2"}
           ;; User Filter
-          [:> ui/Popover {:class "relative"}
-           (fn [params]
-             (r/as-element
-              [:<>
-               [:> ui/Popover.Button {:class (str (if (not (string/blank? @review-user))
-                                                    "bg-gray-50 text-gray-600 border-gray-400 "
-                                                    "text-gray-500 border-gray-300 ")
-                                                  "w-full flex gap-small items-center cursor-pointer "
-                                                  "border rounded-md px-3 py-2 "
-                                                  "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400")}
-                [:> hero-micro-icon/UserIcon {:class "w-4 h-4"}]
-                [:span {:class "text-sm font-semibold"}
-                 "User"]
-                (when (not (string/blank? @review-user))
-                  [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
-                   [:span {:class "text-white text-xxs font-bold"}
-                    "1"]])]
-               [:> ui/Popover.Panel {:class (str "absolute mt-2 z-10 w-96 max-h-96 "
-                                                 "overflow-y-auto bg-white border border-gray-300 "
-                                                 "rounded-lg shadow-lg p-4")}
-                [:div {:class (str "absolute w-2 h-2 "
-                                   "left-4 -top-1 border-gray-300 "
-                                   "bg-white border-t border-l "
-                                   "rounded transform rotate-45")}]
-                [:div
-                 [:div {:class "mb-2"}
-                  [searchbox/main
-                   {:options (users-options @users)
-                    :display-key :text
-                    :variant :small
-                    :searchable-keys [:value :text]
-                    :on-change-results-cb #(reset! searched-users %)
-                    :hide-results-list true
-                    :placeholder "Search"
-                    :name "users-search"
-                    :on-change #(reset! searched-criteria-users %)
-                    :loading? (empty? (users-options @users))
-                    :size :small}]]
+          [:> Popover.Root
+           [:> Popover.Trigger {:asChild true}
+            [:> Button {:size "3"
+                        :variant (if (not (string/blank? @review-user)) "soft" "surface")
+                        :color "gray"
+                        :on-click (fn []
+                                    (reset! searched-users nil)
+                                    (reset! searched-criteria-users ""))}
+             [:> hero-micro-icon/UserIcon {:class "w-4 h-4"}]
+             [:span {:class "text-sm font-semibold"}
+              "User"]
+             (when (not (string/blank? @review-user))
+               [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
+                [:span {:class "text-white text-xxs font-bold"}
+                 "1"]])]]
+           [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
+            [:div {:class "w-full max-h-96 overflow-y-auto"}
+             [:div
+              [:div {:class "mb-2"}
+               [searchbox/main
+                {:options (users-options @users)
+                 :display-key :text
+                 :variant :small
+                 :searchable-keys [:value :text]
+                 :on-change-results-cb #(reset! searched-users %)
+                 :hide-results-list true
+                 :placeholder "Search"
+                 :name "users-search"
+                 :on-change #(reset! searched-criteria-users %)
+                 :loading? (empty? (users-options @users))
+                 :size :small}]]
 
-                 (if (and (empty? @searched-users)
-                          (> (count @searched-criteria-users) 0))
-                   [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
-                    "No user with this criteria"]
+              (if (and (empty? @searched-users)
+                       (> (count @searched-criteria-users) 0))
+                [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
+                 "No user with this criteria"]
 
-                   [:div {:class "relative"}
-                    [:ul
-                     (doall
-                      (for [user users-search-results]
-                        ^{:key (:text user)}
-                        [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                          "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                              :on-click (fn []
-                                          (reset! review-user (:value user))
-                                          (rf/dispatch [:reviews-plugin->get-reviews
-                                                        {:status @review-status
-                                                         :user (:value user)
-                                                         :connection @review-connection
-                                                         :start_date (iso-date "start_date" (.-startDate @date))
-                                                         :end_date (iso-date "end_date" (.-endDate @date))}])
-                                          (.close params))}
-                         [:div {:class "w-full flex justify-between items-center gap-regular"}
-                          [:span {:class "block truncate"}
-                           (:text user)]
-                          (when (= (:value user) @review-user)
-                            [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]))]
+                [:div {:class "relative"}
+                 [:ul
+                  (doall
+                   (for [user users-search-results]
+                     ^{:key (:text user)}
+                     [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                       "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                           :on-click (fn []
+                                       (reset! review-user (:value user))
+                                       (rf/dispatch [:reviews-plugin->get-reviews
+                                                     {:status @review-status
+                                                      :user (:value user)
+                                                      :connection @review-connection
+                                                      :start_date (iso-date "start_date" (.-startDate @date))
+                                                      :end_date (iso-date "end_date" (.-endDate @date))}]))}
+                      [:div {:class "w-full flex justify-between items-center gap-regular"}
+                       [:span {:class "block truncate"}
+                        (:text user)]
+                       (when (= (:value user) @review-user)
+                         [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]]
 
           ;; Status Filter
-          [:> ui/Popover {:class "relative"}
-           (fn [params]
-             (r/as-element
-              [:<>
-               [:> ui/Popover.Button {:class (str (if (not (string/blank? @review-status))
-                                                    "bg-gray-50 text-gray-600 border-gray-400 "
-                                                    "text-gray-500 border-gray-300 ")
-                                                  "w-full flex gap-small items-center cursor-pointer "
-                                                  "border rounded-md px-3 py-2 "
-                                                  "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400")}
-                [:> ListFilter {:size 16}]
-                [:span {:class "text-sm font-semibold"}
-                 "Status"]
-                (when (not (string/blank? @review-status))
-                  [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
-                   [:span {:class "text-white text-xxs font-bold"}
-                    "1"]])]
-               [:> ui/Popover.Panel {:class (str "absolute mt-2 z-10 w-96 max-h-96 "
-                                                 "overflow-y-auto bg-white border border-gray-300 "
-                                                 "rounded-lg shadow-lg p-4")}
-                [:div {:class (str "absolute w-2 h-2 "
-                                   "left-4 -top-1 border-gray-300 "
-                                   "bg-white border-t border-l "
-                                   "rounded transform rotate-45")}]
-                [:div
-                 [:div {:class "relative"}
-                  [:ul
-                   (doall
-                    (for [status review-status-options]
-                      ^{:key (:text status)}
-                      [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                        "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                            :on-click (fn []
-                                        (reset! review-status (:value status))
-                                        (rf/dispatch [:reviews-plugin->get-reviews
-                                                      {:status (:value status)
-                                                       :user @review-user
-                                                       :connection @review-connection
-                                                       :start_date (iso-date "start_date" (.-startDate @date))
-                                                       :end_date (iso-date "end_date" (.-endDate @date))}])
-                                        (.close params))}
-                       [:div {:class "w-full flex justify-between items-center gap-regular"}
-                        [:div {:class "flex items-center gap-small"}
-                         [:span {:class "block truncate"}
-                          (:text status)]]
-                        (when (= (:value status) @review-status)
-                          [:> Check {:size 16}])]]))]]]]]))]
+          [:> Popover.Root
+           [:> Popover.Trigger {:asChild true}
+            [:> Button {:size "3"
+                        :variant (if (not (string/blank? @review-status)) "soft" "surface")
+                        :color "gray"
+                        :on-click (fn []
+                                    (reset! searched-connections nil)
+                                    (reset! searched-criteria-connections ""))}
+             [:> ListFilter {:size 16}]
+             [:span {:class "text-sm font-semibold"}
+              "Status"]
+             (when (not (string/blank? @review-status))
+               [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
+                [:span {:class "text-white text-xxs font-bold"}
+                 "1"]])]]
+           [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
+            [:div {:class "w-full max-h-96 overflow-y-auto"}
+             [:div
+              [:div {:class "relative"}
+               [:ul
+                (doall
+                 (for [status review-status-options]
+                   ^{:key (:text status)}
+                   [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                     "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                         :on-click (fn []
+                                     (reset! review-status (:value status))
+                                     (rf/dispatch [:reviews-plugin->get-reviews
+                                                   {:status (:value status)
+                                                    :user @review-user
+                                                    :connection @review-connection
+                                                    :start_date (iso-date "start_date" (.-startDate @date))
+                                                    :end_date (iso-date "end_date" (.-endDate @date))}]))}
+                    [:div {:class "w-full flex justify-between items-center gap-regular"}
+                     [:div {:class "flex items-center gap-small"}
+                      [:span {:class "block truncate"}
+                       (:text status)]]
+                     (when (= (:value status) @review-status)
+                       [:> Check {:size 16}])]]))]]]]]]
 
           ;; Connection Filter
-          [:> ui/Popover {:class "relative"}
-           (fn [params]
-             (r/as-element
-              [:<>
-               [:> ui/Popover.Button {:class (str (if (not (string/blank? @review-connection))
-                                                    "bg-gray-50 text-gray-600 border-gray-400 "
-                                                    "text-gray-500 border-gray-300 ")
-                                                  "w-full flex gap-small items-center cursor-pointer "
-                                                  "border rounded-md px-3 py-2 "
-                                                  "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400")}
-                [:> ArrowRightLeft {:size 16}]
-                [:span {:class "text-sm font-semibold"}
-                 "Connection"]
-                (when (not (string/blank? @review-connection))
-                  [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
-                   [:span {:class "text-white text-xxs font-bold"}
-                    "1"]])]
-               [:> ui/Popover.Panel {:class (str "absolute mt-2 z-10 w-96 max-h-96 "
-                                                 "overflow-y-auto bg-white border border-gray-300 "
-                                                 "rounded-lg shadow-lg p-4")}
-                [:div {:class (str "absolute w-2 h-2 "
-                                   "left-4 -top-1 border-gray-300 "
-                                   "bg-white border-t border-l "
-                                   "rounded transform rotate-45")}]
-                [:div
-                 [:div {:class "mb-2"}
-                  [searchbox/main
-                   {:options (:results @connections)
-                    :display-key :name
-                    :variant :small
-                    :searchable-keys [:name :type :tags]
-                    :on-change-results-cb #(reset! searched-connections %)
-                    :hide-results-list true
-                    :placeholder "Search"
-                    :name "connection-search"
-                    :on-change #(reset! searched-criteria-connections %)
-                    :loading? (empty? (:results @connections))
-                    :size :small}]]
+          [:> Popover.Root
+           [:> Popover.Trigger {:asChild true}
+            [:> Button {:size "3"
+                        :variant (if (not (string/blank? @review-connection)) "soft" "surface")
+                        :color "gray"
+                        :on-click (fn []
+                                    (reset! searched-connections nil)
+                                    (reset! searched-criteria-connections ""))}
+             [:> ArrowRightLeft {:size 16}]
+             [:span {:class "text-sm font-semibold"}
+              "Connection"]
+             (when (not (string/blank? @review-connection))
+               [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
+                [:span {:class "text-white text-xxs font-bold"}
+                 "1"]])]]
+           [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
+            [:div {:class "w-full max-h-96 overflow-y-auto"}
+             [:div
+              [:div {:class "mb-2"}
+               [searchbox/main
+                {:options (:results @connections)
+                 :display-key :name
+                 :variant :small
+                 :searchable-keys [:name :type :tags]
+                 :on-change-results-cb #(reset! searched-connections %)
+                 :hide-results-list true
+                 :placeholder "Search"
+                 :name "connection-search"
+                 :on-change #(reset! searched-criteria-connections %)
+                 :loading? (empty? (:results @connections))
+                 :size :small}]]
 
-                 (if (and (empty? @searched-connections)
-                          (> (count @searched-criteria-connections) 0))
-                   [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
-                    "No connections with this criteria"]
+              (if (and (empty? @searched-connections)
+                       (> (count @searched-criteria-connections) 0))
+                [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
+                 "No connections with this criteria"]
 
-                   [:div {:class "relative"}
-                    [:ul
-                     (doall
-                      (for [connection connections-search-results]
-                        ^{:key (:name connection)}
-                        [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                          "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                              :on-click (fn []
-                                          (reset! review-connection (:name connection))
-                                          (rf/dispatch [:reviews-plugin->get-reviews
-                                                        {:status @review-status
-                                                         :user @review-user
-                                                         :connection (:name connection)
-                                                         :start_date (iso-date "start_date" (.-startDate @date))
-                                                         :end_date (iso-date "end_date" (.-endDate @date))}])
-                                          (.close params))}
-                         [:div {:class "w-full flex justify-between items-center gap-regular"}
-                          [:div {:class "flex items-center gap-small"}
-                           [:figure {:class "w-5"}
-                            [:img {:src  (connection-constants/get-connection-icon connection)
-                                   :class "w-9"}]]
-                           [:span {:class "block truncate"}
-                            (:name connection)]]
-                          (when (= (:name connection) @review-connection)
-                            [:> Check {:size 16}])]]))]])]]]))]
+                [:div {:class "relative"}
+                 [:ul
+                  (doall
+                   (for [connection connections-search-results]
+                     ^{:key (:name connection)}
+                     [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                       "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                           :on-click (fn []
+                                       (reset! review-connection (:name connection))
+                                       (rf/dispatch [:reviews-plugin->get-reviews
+                                                     {:status @review-status
+                                                      :user @review-user
+                                                      :connection (:name connection)
+                                                      :start_date (iso-date "start_date" (.-startDate @date))
+                                                      :end_date (iso-date "end_date" (.-endDate @date))}]))}
+                      [:div {:class "w-full flex justify-between items-center gap-regular"}
+                       [:div {:class "flex items-center gap-small"}
+                        [:figure {:class "w-5"}
+                         [:img {:src  (connection-constants/get-connection-icon connection)
+                                :class "w-9"}]]
+                        [:span {:class "block truncate"}
+                         (:name connection)]]
+                       (when (= (:name connection) @review-connection)
+                         [:> Check {:size 16}])]]))]])]]]]
 
           ;; Date Filter
           [:div
@@ -301,10 +277,12 @@
                                                  "focus:outline-none disabled:opacity-40 "
                                                  "disabled:cursor-not-allowed")
                            :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
-                                                  "bg-gray-50 text-gray-600 border-gray-400 "
-                                                  "text-gray-500 border-gray-300 ")
-                                                "pl-10 py-2 rounded-md text-sm font-semibold "
-                                                "w-full border "
+                                                  " border-gray-300 "
+                                                  " border-gray-400 ")
+                                                "pl-10 py-2 w-full rounded-lg text-gray-600 "
+                                                "font-semibold text-sm focus:ring-0 "
+                                                "border h-[40px] "
+                                                "placeholder:text-gray-500 "
                                                 "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
                                                 "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
                            :useRange false
