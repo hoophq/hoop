@@ -363,42 +363,11 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
         
-      - name: Download Darwin AMD64
+      - name: Downlaod Dist Artifacts for All Architectures
         uses: actions/download-artifact@v4
         with:
-          name: dist-artifacts-darwin-amd64
-          path: dist/darwin-amd64/
-          
-      - name: Download Darwin ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-darwin-arm64
-          path: dist/darwin-arm64/
-          
-      - name: Download Windows AMD64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-windows-amd64
-          path: dist/windows-amd64/
-          
-      - name: Download Windows ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-windows-arm64
-          path: dist/windows-arm64/
-          
-      - name: Download Linux AMD64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-linux-amd64
-          path: dist/linux-amd64/
-          
-      - name: Download Linux ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-linux-arm64
-          path: dist/linux-arm64/
-
+          pattern: dist-artifacts-*
+          path: dist/
           
       - name: Build Tar Files for All Architectures
         run: |
