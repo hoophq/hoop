@@ -318,13 +318,16 @@
                                  (= (:subtype connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
+                              insecure? #(= (:key %) "INSECURE")
                               header? #(str/starts-with? % "HEADER_")
-                              processed-headers (map (fn [{:keys [key value]}]
-                                                       {:key (if (header? key)
-                                                               (str/replace key "HEADER_" "")
-                                                               key)
-                                                        :value value})
-                                                     (remove remote-url? headers))]
+                              processed-headers (mapv (fn [{:keys [key value]}]
+                                                        {:key (if (header? key)
+                                                                (str/replace key "HEADER_" "")
+                                                                key)
+                                                         :value value})
+                                                      (->> headers
+                                                           (remove remote-url?)
+                                                           (remove insecure?)))]
                           processed-headers))
 
         connection-type (:type connection)
