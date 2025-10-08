@@ -8,8 +8,9 @@
 (defn main []
   (let [has-text? (r/atom false)
         search-term (rf/subscribe [:search/term])]
-    (fn [active-panel]
-      (let [input-id "header-search"]
+    (fn []
+      (let [input-id "header-search"
+            active-panel @(rf/subscribe [:webclient/active-panel])]
         (reset! has-text? (not (empty? @search-term)))
 
         [:div {:class "relative w-8 h-8"}
@@ -35,7 +36,7 @@
                                (let [value (-> e .-target .-value)]
                                  (reset! has-text? (not (empty? value)))
                                  (rf/dispatch [:search/set-term value])
-                                 (if (= @active-panel :runbooks)
+                                 (if (= active-panel :runbooks)
                                    (rf/dispatch [:search/filter-runbooks value])
                                    (rf/dispatch [:primary-connection/set-filter value]))))}]
          (if @has-text?
@@ -51,7 +52,7 @@
                         (set! (.-value (.getElementById js/document input-id)) "")
                         (rf/dispatch [:search/clear-term])
 
-                        (if (= @active-panel :runbooks)
+                        (if (= active-panel :runbooks)
                           (rf/dispatch [:search/filter-runbooks ""])
                           (rf/dispatch [:primary-connection/set-filter ""])))}
             [:> X {:size 16}]]

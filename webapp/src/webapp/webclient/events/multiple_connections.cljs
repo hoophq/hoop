@@ -29,8 +29,7 @@
                                     (filterv #(not= (:name %) (:name connection)) current-selections)
                                     (conj current-selections connection))]
            {:db (assoc-in db [:editor :multi-connections :selected] updated-selections)
-            :fx [[:dispatch [:multiple-connections/persist]]
-                 [:dispatch [:primary-connection/update-runbooks]]]}))))))
+            :fx [[:dispatch [:multiple-connections/persist]]]}))))))
 
 ;; Persist selections to localStorage
 (rf/reg-event-fx
@@ -76,8 +75,7 @@
  :multiple-connections/clear
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :multi-connections :selected] [])
-    :fx [[:dispatch [:multiple-connections/persist]]
-         [:dispatch [:primary-connection/update-runbooks]]]}))
+    :fx [[:dispatch [:multiple-connections/persist]]]}))
 
 ;; -- Subscriptions --
 

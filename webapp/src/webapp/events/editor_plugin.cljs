@@ -1,7 +1,6 @@
 (ns webapp.events.editor-plugin
   (:require
    [cljs.core :as c]
-   [clojure.edn :refer [read-string]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
@@ -21,112 +20,6 @@
        (map (fn [{:keys [key value]}] {key value}))
        (reduce into {})
        (clj->js)))
-
-(rf/reg-event-fx
- :editor-plugin->get-run-connection-list
- (fn
-   [{:keys [db]} [_]]
-   {:db (assoc db :editor-plugin->run-connection-list {:status :loading :data {}}
-               :editor-plugin->run-connection-list-selected
-               (or (read-string
-                    (.getItem js/localStorage "run-connection-list-selected")) nil))
-    :fx [[:dispatch [:connections->get-connections
-                     {:on-success [:editor-plugin->process-connections]
-                      :on-failure [:editor-plugin->connections-error]}]]]}))
-
-;; New event to process connections for editor plugin
-(rf/reg-event-fx
- :editor-plugin->process-connections
- (fn [{:keys [db]} [_ connections]]
-   {:fx [[:dispatch [::editor-plugin->set-run-connection-list connections]]
-         [:dispatch [:editor-plugin->set-filtered-run-connection-list connections]]]}))
-
-;; New error handler for connections
-(rf/reg-event-fx
- :editor-plugin->connections-error
- (fn [{:keys [db]} [_ _error]]
-   {:db (assoc db :editor-plugin->run-connection-list {:status :error :data {}})}))
-
-(rf/reg-event-fx
- ::editor-plugin->set-run-connection-list
- (fn
-   [{:keys [db]} [_ connections]]
-   (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
-         is-cached? (fn [current-connection-name]
-                      (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status access_schema default_database jira_issue_template_id]}]
-                                    {:name name
-                                     :type type
-                                     :subtype subtype
-                                     :status status
-                                     :jira_issue_template_id jira_issue_template_id
-                                     :access_schema access_schema
-                                     :database_name (when (and (= type "database")
-                                                               (= subtype "postgres"))
-                                                      default_database)
-                                     :selected (if (is-cached? name)
-                                                 true
-                                                 false)})
-                                  connections)]
-     {:db (assoc db :editor-plugin->run-connection-list {:data connections-parsed :status :ready}
-                 :editor-plugin->filtered-run-connection-list connections-parsed)})))
-
-(rf/reg-event-db
- :editor-plugin->set-filtered-run-connection-list
- (fn
-   [db [_ connections]]
-   (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
-         is-cached? (fn [current-connection-name]
-                      (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached)))
-         connections-parsed (mapv (fn [{:keys [name type subtype status selected access_schema default_database jira_issue_template_id]}]
-                                    {:name name
-                                     :type type
-                                     :subtype subtype
-                                     :status status
-                                     :jira_issue_template_id jira_issue_template_id
-                                     :access_schema access_schema
-                                     :database_name (when (and (= type "database")
-                                                               (= subtype "postgres"))
-                                                      default_database)
-                                     :selected (if (is-cached? name)
-                                                 true
-                                                 selected)})
-                                  connections)]
-     (assoc db :editor-plugin->filtered-run-connection-list connections-parsed))))
-
-(rf/reg-event-fx
- :editor-plugin->toggle-select-run-connection
- (fn
-   [{:keys [db]} [_ current-connection-name]]
-   (let [connection-list-cached (read-string (.getItem js/localStorage "run-connection-list-selected"))
-         connections (:data (:editor-plugin->run-connection-list db))
-         current-connection (first (filter #(= (:name %) current-connection-name) (:data (:editor-plugin->run-connection-list db))))
-         is-cached? (not-empty (filter #(= (:name %) current-connection-name) connection-list-cached))
-         new-connection-list (mapv (fn [connection]
-                                     (if (= (:name connection) current-connection-name)
-                                       (assoc connection :selected (if is-cached?
-                                                                     false
-                                                                     (not (:selected connection))))
-                                       connection))
-                                   connections)
-         new-connection-list-selected (if (or (:selected current-connection)
-                                              is-cached?)
-                                        (remove #(= (:name %) current-connection-name)
-                                                (:editor-plugin->run-connection-list-selected db))
-
-                                        (concat (:editor-plugin->run-connection-list-selected db)
-                                                [current-connection]))]
-     (.setItem js/localStorage "run-connection-list-selected"
-               (pr-str new-connection-list-selected))
-     (let [primary-connection (first (filter #(:selected %) connections))
-           selected-connections new-connection-list-selected
-           combined-connections (map :name (concat
-                                            (when primary-connection [primary-connection])
-                                            selected-connections))]
-       {:fx [[:dispatch [:runbooks-plugin->get-runbooks combined-connections]]]
-        :db (assoc db :editor-plugin->run-connection-list {:data new-connection-list :status :ready}
-                   :editor-plugin->filtered-run-connection-list new-connection-list
-                   :editor-plugin->run-connection-list-selected new-connection-list-selected)}))))
 
 (rf/reg-event-fx
  :editor-plugin->run-runbook
@@ -285,29 +178,6 @@
                                :body payload}]]]})))
 
 (rf/reg-event-fx
- :editor-plugin->multiple-connections-exec-script
- (fn
-   [{:keys [db]} [_ exec-list]]
-   (let [on-failure (fn [error exec]
-                      (rf/dispatch [::editor-plugin->set-connection-script-failure error exec]))
-         on-success (fn [res exec]
-                      (rf/dispatch [::editor-plugin->set-connection-script-success res exec]))
-         dispatchs (mapv (fn [exec]
-                           [:dispatch-later {:ms 1000
-                                             :dispatch [:fetch {:method "POST"
-                                                                :uri "/sessions"
-                                                                :on-success (fn [res]
-                                                                              (on-success res exec))
-                                                                :on-failure (fn [error]
-                                                                              (on-failure error exec))
-                                                                :body {:script (:script exec)
-                                                                       :connection (:connection-name exec)
-                                                                       :metadata (:metadata exec)}}]}])
-                         exec-list)]
-     {:db (assoc db :editor-plugin->connections-exec-list {:data exec-list :status :running})
-      :fx dispatchs})))
-
-(rf/reg-event-fx
  :editor-plugin->multiple-connections-update-metadata
  (fn
    [{:keys [db]} [_ exec-list]]
@@ -326,54 +196,6 @@
                                                                       (cs/join "," (mapv :session-id exec-list)))}}}]}])
                          exec-list)]
      {:fx dispatchs})))
-
-(rf/reg-event-fx
- ::editor-plugin->set-connection-script-success
- (fn
-   [{:keys [db]} [_ data current-exec]]
-   (let [current-exec-parsed {:connection-name (:connection-name current-exec)
-                              :subtype (:subtype current-exec)
-                              :type (:type current-exec)
-                              :session-id (:session_id data)
-                              :status (if (:has_review data)
-                                        :waiting-review
-                                        :completed)}
-         new-connections-exec-list (mapv (fn [exec]
-                                           (if (= (:connection-name exec) (:connection-name current-exec))
-                                             current-exec-parsed
-                                             exec))
-                                         (:data (:editor-plugin->connections-exec-list db)))
-         finished? (every? #(or (= :completed (:status %))
-                                (= :waiting-review (:status %))
-                                (= :error (:status %))) new-connections-exec-list)]
-
-     {:db (assoc db :editor-plugin->connections-exec-list {:data new-connections-exec-list
-                                                           :status (if finished?
-                                                                     :completed
-                                                                     :running)})})))
-
-(rf/reg-event-fx
- ::editor-plugin->set-connection-script-failure
- (fn
-   [{:keys [db]} [_ data current-exec]]
-   (let [current-exec-parsed {:name (:name current-exec)
-                              :subtype (:subtype current-exec)
-                              :type (:type current-exec)
-                              :session-id (:session-id data)
-                              :status :error}
-         new-connections-exec-list (mapv (fn [exec]
-                                           (if (= (:name exec) (:name current-exec))
-                                             current-exec-parsed
-                                             exec))
-                                         (:data (:editor-plugin->connections-exec-list db)))
-         finished? (every? #(or (= :completed (:status %))
-                                (= :waiting-review (:status %))
-                                (= :error (:status %))) new-connections-exec-list)]
-
-     {:db (assoc db :editor-plugin->connections-exec-list {:data new-connections-exec-list
-                                                           :status (if finished?
-                                                                     :completed
-                                                                     :running)})})))
 
 (rf/reg-event-fx
  :editor-plugin->clear-connection-script
@@ -396,11 +218,6 @@
  :editor-plugin->clear-script
  (fn [{:keys [db]} [_]]
    {:db (assoc-in db [:editor-plugin->script] nil)}))
-
-(rf/reg-event-fx
- :editor-plugin->set-select-language
- (fn [{:keys [db]} [_ language]]
-   {:db (assoc-in db [:editor-plugin->select-language] language)}))
 
 (rf/reg-event-db
  :editor-plugin/toggle-keep-metadata
@@ -684,7 +501,7 @@
  :runbooks-plugin/handle-template-submit
  (fn [{:keys [db]} [_ {:keys [form-data file-name params connection-name]}]]
    (let [connection (first (filter #(= (:name %) connection-name)
-                                   (get-in db [:editor-plugin->run-connection-list :data])))
+                                   (get-in db [:connections :results])))
          is-dynamodb? (= (:subtype connection) "dynamodb")
          is-cloudwatch? (= (:subtype connection) "cloudwatch")
          selected-db (.getItem js/localStorage "selected-database")

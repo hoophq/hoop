@@ -208,16 +208,9 @@
         multi-exec (rf/subscribe [:multiple-connection-execution/modal])
         primary-connection (rf/subscribe [:primary-connection/selected])
 
-        active-panel (r/atom nil)
         multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
-
-        handle-connection-modes! (fn [current-connection]
-                                   (when current-connection
-                                     (let [exec-enabled? (= "enabled" (:access_mode_exec current-connection))]
-                                       (when (not exec-enabled?)
-                                         (reset! active-panel nil)))))
         horizontal-pane-sizes (mapv js/parseInt
                                     (cs/split
                                      (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,210") ","))
@@ -228,8 +221,6 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
-      (handle-connection-modes! @primary-connection)
-
       (let [is-one-connection-selected? @(rf/subscribe [:execution/is-single-mode])
             feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
             current-connection @primary-connection
@@ -310,7 +301,8 @@
                                                 editor-debounce-time)))
 
 
-            panel-content (case @active-panel
+            active-panel @(rf/subscribe [:webclient->active-panel])
+            panel-content (case active-panel
                             :metadata (metadata-panel/main {:metadata metadata
                                                             :metadata-key metadata-key
                                                             :metadata-value metadata-value})
@@ -327,14 +319,13 @@
             [connection-dialog/connection-dialog]
 
             [header/main
-             active-panel
              multi-run-panel?
              dark-mode?
              #(rf/dispatch [:editor-plugin/submit-task {:script @script}])]
 
             ;; Compact layout (now the only layout)
             [with-panel
-             (or (boolean @active-panel) @multi-run-panel?)
+             (or (boolean active-panel) @multi-run-panel?)
              [:> Box {:class "flex h-terminal-content overflow-hidden"}
               [:> Allotment {:key (str "compact-allotment-" @db-schema-collapsed?)
                              :separator false}
@@ -390,7 +381,7 @@
              (cond
                @multi-run-panel? {:title "MultiRun"
                                   :content [multiple-connections-panel/main dark-mode? false]}
-               @active-panel panel-content
+               active-panel panel-content
                :else nil)]]
 
            (when (seq (:data @multi-exec))
@@ -409,7 +400,7 @@
 (def main
   (r/create-class
    {:component-will-unmount
-    (fn [this]
+    (fn [_this]
       (js/window.Intercom "update" #js{:hide_default_launcher false}))
 
     :reagent-render
@@ -422,7 +413,6 @@
         (rf/dispatch [:jira-templates->get-all])
         (rf/dispatch [:jira-integration->get])
         (rf/dispatch [:search/clear-term])
-        (rf/dispatch [:editor-plugin->get-run-connection-list])
 
         (js/window.Intercom "update" #js{:hide_default_launcher true})
         (fn []

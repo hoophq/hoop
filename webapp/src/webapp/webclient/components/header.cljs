@@ -13,7 +13,7 @@
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         primary-connection (rf/subscribe [:primary-connection/selected])
         selected-connections (rf/subscribe [:multiple-connections/selected])]
-    (fn [active-panel multi-run-panel? dark-mode? submit]
+    (fn [multi-run-panel? dark-mode? submit]
       (let [has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
                               (seq @metadata-value))
@@ -23,11 +23,9 @@
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or (not exec-enabled?)
                                     no-connection-selected?)
+            active-panel @(rf/subscribe [:webclient->active-panel])
             on-click-icon-button (fn [type]
-                                   (reset! active-panel (when-not (= @active-panel type) type))
-                                   (cond
-                                     (= type :connections)
-                                     (rf/dispatch [:multiple-connections/clear])))]
+                                   (rf/dispatch [:webclient/set-active-panel type]))]
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
          [:> Flex {:align "center"
                    :justify "between"
@@ -88,7 +86,7 @@
              [notification-badge
               {:icon [:> PackagePlus {:size 16}]
                :on-click #(on-click-icon-button :metadata)
-               :active? (= @active-panel :metadata)
+               :active? (= active-panel :metadata)
                :has-notification? has-metadata?
                :disabled? false}]]]
 

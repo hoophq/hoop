@@ -344,20 +344,35 @@
  (fn [db _]
    (:gateway->public-info db)))
 
+;; Editor plugin selected connections come from MultiRun system
 (re-frame/reg-sub
- :editor-plugin->run-connection-list
- (fn [db _]
-   (:editor-plugin->run-connection-list db)))
+ :editor-plugin->selected-connections
+ :<- [:multiple-connections/selected]
+ (fn [selected-connections]
+   (set (map :name selected-connections))))
 
+;; Selector para conexões disponíveis (filtradas)
 (re-frame/reg-sub
- :editor-plugin->run-connection-list-selected
- (fn [db _]
-   (:editor-plugin->run-connection-list-selected db)))
+ :editor-plugin/available-connections
+ :<- [:connections]
+ (fn [connections]
+   (filterv #(and (not (#{"tcp" "httpproxy"} (:subtype %)))
+                  (or (= "enabled" (:access_mode_exec %))
+                      (= "enabled" (:access_mode_runbooks %))))
+            (:results connections))))
 
+;; Selector para buscar conexão por nome
 (re-frame/reg-sub
- :editor-plugin->filtered-run-connection-list
+ :editor-plugin/connection-by-name
+ :<- [:editor-plugin/available-connections]
+ (fn [connections [_ connection-name]]
+   (first (filter #(= (:name %) connection-name) connections))))
+
+;; Active panel state
+(re-frame/reg-sub
+ :webclient->active-panel
  (fn [db _]
-   (:editor-plugin->filtered-run-connection-list db)))
+   (get db :webclient->active-panel nil)))
 
 (re-frame/reg-sub
  :editor-plugin->connections-exec-list

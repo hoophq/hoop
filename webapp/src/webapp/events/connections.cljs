@@ -46,8 +46,6 @@
                        :or {on-success [:connections->set-connections]
                             on-failure [:connections->set-connections-error]}}]]
 
-   (println "get-connections" filters force-refresh? (:connections db))
-
    (cond
      filters
      ;; If filters are provided, delegate to filter-connections

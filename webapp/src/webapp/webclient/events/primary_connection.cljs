@@ -18,8 +18,7 @@
    {:db (assoc-in db [:editor :connections :status] :loading)
     :fx [[:fetch-connections]
          [:dispatch-later {:ms 500 :dispatch [:primary-connection/load-persisted]}]
-         [:dispatch-later {:ms 600 :dispatch [:multiple-connections/load-persisted]}]
-         [:dispatch-later {:ms 2000 :dispatch [:primary-connection/update-runbooks]}]]}))
+         [:dispatch-later {:ms 600 :dispatch [:multiple-connections/load-persisted]}]]}))
 
 (rf/reg-event-db
  :primary-connection/set-error
