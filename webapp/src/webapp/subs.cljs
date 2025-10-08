@@ -18,11 +18,6 @@
    (:feature-flags db)))
 
 (re-frame/reg-sub
- :webclient/use-compact-ui?
- (fn [_db _]
-   (= "enabled" (.getItem js/localStorage "compact-terminal-ui"))))
-
-(re-frame/reg-sub
  :users
  (fn [db _]
    (:users db)))

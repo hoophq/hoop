@@ -1,10 +1,10 @@
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [CircleHelp FastForward PackagePlus Play Sun Moon ChevronDown PanelLeft LayoutList]]
+   ["lucide-react" :refer [CircleHelp FastForward PackagePlus
+                           Play Sun Moon ChevronDown Search]]
    [re-frame.core :as rf]
-   [webapp.components.notification-badge :refer [notification-badge]]
-   [webapp.webclient.components.search :as search]))
+   [webapp.components.notification-badge :refer [notification-badge]]))
 
 
 (defn main []
@@ -12,8 +12,7 @@
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         primary-connection (rf/subscribe [:primary-connection/selected])
-        selected-connections (rf/subscribe [:multiple-connections/selected])
-        use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])]
+        selected-connections (rf/subscribe [:multiple-connections/selected])]
     (fn [active-panel multi-run-panel? dark-mode? submit]
       (let [has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
@@ -37,24 +36,28 @@
            [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
             "Terminal"]
 
-           (when @use-compact-ui?
-             [:> Badge
-              {:radius "full"
-               :color (if @primary-connection "indigo" "gray")
-               :class "cursor-pointer"
-               :onClick (fn []
-                          (rf/dispatch [:connections->get-connections])
-                          (rf/dispatch [:primary-connection/toggle-dialog true]))}
-              (if @primary-connection
-                (:name @primary-connection)
-                "Connection")
-              [:> ChevronDown {:size 12}]])]
+           [:> Badge
+            {:radius "full"
+             :color (if @primary-connection "indigo" "gray")
+             :class "cursor-pointer"
+             :onClick (fn []
+                        (rf/dispatch [:connections->get-connections])
+                        (rf/dispatch [:primary-connection/toggle-dialog true]))}
+            (if @primary-connection
+              (:name @primary-connection)
+              "Connection")
+            [:> ChevronDown {:size 12}]]]
           [:> Flex {:align "center" :gap "2"}
 
-           (when-not @use-compact-ui?
-             [:> Tooltip {:content "Search"}
-              [:div
-               [search/main active-panel]]])
+           [:> Tooltip {:content "Search"}
+            [:> IconButton
+             {:size "2"
+              :variant "soft"
+              :color "gray"
+              :onClick (fn []
+                         (rf/dispatch [:connections->get-connections])
+                         (rf/dispatch [:primary-connection/toggle-dialog true]))}
+             [:> Search {:size 16}]]]
 
            [:> Tooltip {:content "Help"}
             [:> IconButton
@@ -65,26 +68,6 @@
                          (js/window.open "https://help.hoop.dev" "_blank"))}
              [:> CircleHelp {:size 16}]]]
 
-           [:> Tooltip {:content (if @use-compact-ui?
-                                   "Classic Layout"
-                                   "Compact Layout")}
-            [:> IconButton
-             {:class (when @use-compact-ui?
-                       "bg-gray-8 text-gray-12")
-              :size "2"
-              :color "gray"
-              :variant "soft"
-              :onClick (fn []
-                         (let [is-compact-ui-enabled? (not @use-compact-ui?)]
-                           (.setItem js/localStorage
-                                     "compact-terminal-ui"
-                                     (if is-compact-ui-enabled?
-                                       "enabled"
-                                       "disabled"))
-                           (.reload js/location)))}
-             (if @use-compact-ui?
-               [:> PanelLeft {:size 16}]
-               [:> LayoutList {:size 16}])]]
 
            [:> Tooltip {:content "Theme"}
             [:> IconButton
@@ -109,17 +92,16 @@
                :has-notification? has-metadata?
                :disabled? false}]]]
 
-           (when-not @use-compact-ui?
-             [:> Tooltip {:content "MultiRun"}
-              [:div
-               [notification-badge
-                {:icon [:> FastForward {:size 16}]
-                 :on-click #(do
-                              (reset! multi-run-panel? (not @multi-run-panel?))
-                              (rf/dispatch [:multiple-connections/clear]))
-                 :active? @multi-run-panel?
-                 :has-notification? has-multirun?
-                 :disabled? false}]]])
+           [:> Tooltip {:content "MultiRun"}
+            [:div
+             [notification-badge
+              {:icon [:> FastForward {:size 16}]
+               :on-click #(do
+                            (reset! multi-run-panel? (not @multi-run-panel?))
+                            (rf/dispatch [:multiple-connections/clear]))
+               :active? @multi-run-panel?
+               :has-notification? has-multirun?
+               :disabled? false}]]]
 
            [:> Tooltip {:content "Run"}
             [:> Button

@@ -332,16 +332,13 @@
         [:> Text {:size "1"}
          "Couldn't load the schema"]))))
 
-(defn tree-view-status [{:keys [use-compact-ui?
-                                status
+(defn tree-view-status [{:keys [status
                                 databases
                                 schema
                                 connection
                                 current-schema
                                 database-schema-status]}]
-  [:> Box {:class (if use-compact-ui?
-                    "text-gray-12"
-                    "text-gray-2")}
+  [:> Box {:class "text-gray-12"}
    (cond
      (and (= status :loading) (empty? schema) (empty? databases))
      [loading-indicator "Loading schema"]
@@ -363,7 +360,6 @@
 ;; Simplification of the main component - removing all the complexity of the lifecycle methods
 (defn main []
   (let [database-schema (rf/subscribe [::subs/database-schema])
-        use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])
         ;; Flag to control if we've started loading
         loading-started (r/atom false)
         ;; Track current connection to detect changes
@@ -415,8 +411,7 @@
 
         ;; Direct rendering without additional complexity
         [tree-view-status
-         {:use-compact-ui? @use-compact-ui?
-          :status (:status current-schema)
+         {:status (:status current-schema)
           :databases (:databases current-schema)
           :schema (:schema-tree current-schema)
           :connection connection
