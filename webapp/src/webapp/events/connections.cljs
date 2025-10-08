@@ -5,6 +5,19 @@
    [webapp.connections.constants :as constants]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
+;; Cache configuration
+(def cache-ttl-ms (* 5 60 1000)) ; 5 minutes in milliseconds
+
+;; Helper functions for cache management
+(defn cache-valid? [db]
+  (let [{:keys [cache-timestamp]} (:connections db)
+        now (.now js/Date)]
+    (and cache-timestamp
+         (< (- now cache-timestamp) cache-ttl-ms))))
+
+(defn get-cached-connections [db]
+  (get-in db [:connections :results]))
+
 (rf/reg-event-fx
  :connections->get-connection-details
  (fn
@@ -29,16 +42,40 @@
 
 (rf/reg-event-fx
  :connections->get-connections
- (fn
-   [{:keys [db]} [_ filters]]
-   (if filters
+ (fn [{:keys [db]} [_ {:keys [filters on-success on-failure force-refresh?]
+                       :or {on-success [:connections->set-connections]
+                            on-failure [:connections->set-connections-error]}}]]
+
+   (println "get-connections" filters force-refresh? (:connections db))
+
+   (cond
+     filters
      ;; If filters are provided, delegate to filter-connections
      {:fx [[:dispatch [:connections->filter-connections filters]]]}
-     ;; Otherwise use the simple original implementation
+
+     (and (not force-refresh?) (cache-valid? db))
+     ;; Use cached data if valid
+     (let [cached-connections (get-cached-connections db)]
+       {:fx [[:dispatch (conj on-success cached-connections)]]})
+
+     :else
+     ;; Make fresh request
      {:db (assoc-in db [:connections :loading] true)
       :fx [[:dispatch [:fetch {:method "GET"
                                :uri "/connections"
-                               :on-success #(rf/dispatch [:connections->set-connections %])}]]]})))
+                               :on-success #(rf/dispatch [:connections->cache-and-notify % on-success])
+                               :on-failure #(rf/dispatch (conj on-failure %))}]]]})))
+
+;; New event to cache connections and notify callback
+(rf/reg-event-fx
+ :connections->cache-and-notify
+ (fn [{:keys [db]} [_ connections on-success]]
+   (let [updated-db (-> db
+                        (assoc-in [:connections :results] connections)
+                        (assoc-in [:connections :loading] false)
+                        (assoc-in [:connections :cache-timestamp] (.now js/Date)))]
+     {:db updated-db
+      :fx [[:dispatch (conj on-success connections)]]})))
 
 (rf/reg-event-fx
  :connections->set-connections
@@ -46,7 +83,16 @@
    [{:keys [db]} [_ connections]]
    {:db (-> db
             (assoc-in [:connections :results] connections)
-            (assoc-in [:connections :loading] false))}))
+            (assoc-in [:connections :loading] false)
+            (assoc-in [:connections :cache-timestamp] (.now js/Date)))}))
+
+;; Error event for connections
+(rf/reg-event-fx
+ :connections->set-connections-error
+ (fn [{:keys [db]} [_ error]]
+   {:db (-> db
+            (assoc-in [:connections :loading] false)
+            (assoc-in [:connections :error] error))}))
 
 (rf/reg-event-fx
  :connections->load-metadata

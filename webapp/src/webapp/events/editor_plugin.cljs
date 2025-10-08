@@ -30,14 +30,22 @@
                :editor-plugin->run-connection-list-selected
                (or (read-string
                     (.getItem js/localStorage "run-connection-list-selected")) nil))
-    :fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri "/connections"
-                   :on-success (fn [connections]
-                                 (rf/dispatch [::editor-plugin->set-run-connection-list
-                                               connections])
-                                 (rf/dispatch [:editor-plugin->set-filtered-run-connection-list
-                                               connections]))}]]]}))
+    :fx [[:dispatch [:connections->get-connections
+                     {:on-success [:editor-plugin->process-connections]
+                      :on-failure [:editor-plugin->connections-error]}]]]}))
+
+;; New event to process connections for editor plugin
+(rf/reg-event-fx
+ :editor-plugin->process-connections
+ (fn [{:keys [db]} [_ connections]]
+   {:fx [[:dispatch [::editor-plugin->set-run-connection-list connections]]
+         [:dispatch [:editor-plugin->set-filtered-run-connection-list connections]]]}))
+
+;; New error handler for connections
+(rf/reg-event-fx
+ :editor-plugin->connections-error
+ (fn [{:keys [db]} [_ _error]]
+   {:db (assoc db :editor-plugin->run-connection-list {:status :error :data {}})}))
 
 (rf/reg-event-fx
  ::editor-plugin->set-run-connection-list

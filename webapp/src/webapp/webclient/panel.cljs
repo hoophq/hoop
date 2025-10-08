@@ -470,17 +470,21 @@
 
     :reagent-render
     (fn []
-      (let [script-response (rf/subscribe [:editor-plugin->script])]
+      (let [script-response (rf/subscribe [:editor-plugin->script])
+            use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])]
         (rf/dispatch [:editor-plugin->clear-script])
         (rf/dispatch [:editor-plugin->clear-connection-script])
-        (rf/dispatch [:connections->get-connections])
         (rf/dispatch [:audit->clear-session])
         (rf/dispatch [:plugins->get-my-plugins])
         (rf/dispatch [:jira-templates->get-all])
         (rf/dispatch [:jira-integration->get])
         (rf/dispatch [:search/clear-term])
+        (rf/dispatch [:editor-plugin->get-run-connection-list])
+
+        (when-not @use-compact-ui?
+          (rf/dispatch [:connections->get-connections]))
+
         (js/window.Intercom "update" #js{:hide_default_launcher true})
         (fn []
           (clearLocalCache)
-          (rf/dispatch [:editor-plugin->get-run-connection-list])
           [editor {:script-output script-response}])))}))

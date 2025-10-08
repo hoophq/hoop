@@ -42,7 +42,9 @@
               {:radius "full"
                :color (if @primary-connection "indigo" "gray")
                :class "cursor-pointer"
-               :onClick (fn [] (rf/dispatch [:primary-connection/toggle-dialog true]))}
+               :onClick (fn []
+                          (rf/dispatch [:connections->get-connections])
+                          (rf/dispatch [:primary-connection/toggle-dialog true]))}
               (if @primary-connection
                 (:name @primary-connection)
                 "Connection")

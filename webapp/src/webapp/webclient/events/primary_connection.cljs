@@ -7,11 +7,9 @@
 (rf/reg-fx
  :fetch-connections
  (fn [_]
-   (rf/dispatch [:fetch
-                 {:method "GET"
-                  :uri "/connections"
-                  :on-success #(rf/dispatch [:primary-connection/set-list %])
-                  :on-failure #(rf/dispatch [:primary-connection/set-error %])}])))
+   (rf/dispatch [:connections->get-connections
+                 {:on-success [:primary-connection/set-list]
+                  :on-failure [:primary-connection/set-error]}])))
 
 ;; Events
 (rf/reg-event-fx
