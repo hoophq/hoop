@@ -207,8 +207,8 @@
         multi-selected-connections (rf/subscribe [:multiple-connections/selected])
         multi-exec (rf/subscribe [:multiple-connection-execution/modal])
         primary-connection (rf/subscribe [:primary-connection/selected])
+        active-panel (rf/subscribe [:webclient->active-panel])
 
-        multi-run-panel? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
         horizontal-pane-sizes (mapv js/parseInt
@@ -300,13 +300,15 @@
                                                   (save-code-to-localstorage value))
                                                 editor-debounce-time)))
 
-
-            active-panel @(rf/subscribe [:webclient->active-panel])
-            panel-content (case active-panel
-                            :metadata (metadata-panel/main {:metadata metadata
-                                                            :metadata-key metadata-key
-                                                            :metadata-value metadata-value})
-                            nil)]
+            panel-content (fn [active-panel]
+                            (println "active-panel" active-panel)
+                            (case active-panel
+                              :metadata {:title "Metadata"
+                                         :content [metadata-panel/main {:metadata metadata
+                                                                        :metadata-key metadata-key
+                                                                        :metadata-value metadata-value}]}
+                              :multiple-connections {:content [multiple-connections-panel/main dark-mode?]}
+                              nil))]
 
         (if (and (empty? (:results @db-connections))
                  (not (:loading @db-connections)))
@@ -319,13 +321,12 @@
             [connection-dialog/connection-dialog]
 
             [header/main
-             multi-run-panel?
              dark-mode?
              #(rf/dispatch [:editor-plugin/submit-task {:script @script}])]
 
             ;; Compact layout (now the only layout)
             [with-panel
-             (or (boolean active-panel) @multi-run-panel?)
+             (boolean @active-panel)
              [:> Box {:class "flex h-terminal-content overflow-hidden"}
               [:> Allotment {:key (str "compact-allotment-" @db-schema-collapsed?)
                              :separator false}
@@ -378,11 +379,8 @@
                      [:div {:class "mr-3"}
                       [keyboard-shortcuts/keyboard-shortcuts-button]]
                      [language-select/main current-connection]]]]]]]]]
-             (cond
-               @multi-run-panel? {:title "MultiRun"
-                                  :content [multiple-connections-panel/main dark-mode? false]}
-               active-panel panel-content
-               :else nil)]]
+
+             (panel-content @active-panel)]]
 
            (when (seq (:data @multi-exec))
              [multiple-connections-exec-list-component/main

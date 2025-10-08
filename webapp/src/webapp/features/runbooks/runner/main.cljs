@@ -165,5 +165,5 @@
                       :class "px-4 py-3 border-b border-gray-3"}
              [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Metadata"]]
             [:> Box {:class "p-4"}
-             [metadata-panel/content]]]])]])))
+             [metadata-panel/main]]]])]])))
 
