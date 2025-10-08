@@ -55,7 +55,6 @@ if [[ $HOOP_RS_BUILD == "1" ]]; then
   echo ""
   echo "You need to have Rust installed to build the Rust agent."
   echo "You need to have Cross installed to build the Rust agent for multiple architectures."
-  echo 'run "make build-dev-webapp" to build the webapp'
   make build-dev-rust
   cp ./dist/dev/bin/hoop_rs ./dist/dev/bin/hooplinux
 fi
