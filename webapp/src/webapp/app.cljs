@@ -46,6 +46,7 @@
    [webapp.events.components.sidebar]
    [webapp.events.components.toast]
    [webapp.events.connections]
+   [webapp.events.roles]
    [webapp.events.database-schema]
    [webapp.connections.native-client-access.events]
    [webapp.events.editor-plugin]

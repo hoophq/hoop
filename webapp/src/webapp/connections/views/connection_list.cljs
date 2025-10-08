@@ -7,7 +7,7 @@
             [reagent.core :as r]
             [webapp.components.loaders :as loaders]
             [webapp.components.searchbox :as searchbox]
-            [webapp.components.virtualized-list :as virtualized-list]
+            [webapp.components.infinite-scroll :refer [infinite-scroll]]
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?
                                                 can-connect? can-open-web-terminal?
@@ -75,7 +75,7 @@
            [:> Check {:size 16}])])]]]])
 
 (defn panel [_]
-  (let [connections (rf/subscribe [:connections])
+  (let [connections (rf/subscribe [:roles])
         user (rf/subscribe [:users->current-user])
         test-connection-state (rf/subscribe [:connections->test-connection])
         search-focused (r/atom false)
@@ -86,7 +86,7 @@
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
         search-debounce-timer (r/atom nil)]
-    (rf/dispatch [:connections->get-connections nil])
+    (rf/dispatch [:roles/get-roles-paginated nil])   ;; TODO: Pass filters and pagination params
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:connections->get-connection-tags])
 
@@ -214,93 +214,94 @@
                 "No connections with this criteria"]
 
                [:div {:class "flex-1 overflow-hidden"}
-                [virtualized-list/virtualized-list
-                 {:items (vec connections-search-results)
-                  :item-height 72
-                  :container-height 800
-                  :render-item (fn [connection _index]
-                                 [:> Box {:class (str "bg-white border border-[--gray-3] "
-                                                      "text-[--gray-12] "
-                                                      "first:rounded-t-lg last:rounded-b-lg "
-                                                      "first:border-t last:border-b "
-                                                      "p-regular text-xs flex gap-8 justify-between items-center")}
-                                  [:div {:class "flex truncate items-center gap-regular"}
-                                   [:div
-                                    [:figure {:class "w-6"}
-                                     [:img {:src (connection-constants/get-connection-icon connection)
-                                            :class "w-9"
-                                            :loading "lazy"}]]]
-                                   [:div
-                                    [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
-                                     (:name connection)]
-                                    [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
-                                     [:div {:class (str "rounded-full h-[6px] w-[6px] "
-                                                        (if (= (:status connection) "online")
-                                                          "bg-green-500"
-                                                          "bg-red-500"))}]
-                                     (cs/capitalize (:status connection))]]]
+                [infinite-scroll
+                 {:on-load-more (fn []
+                                  (when (not (= :loading (:loading @connections)))
+                                    (rf/dispatch [:roles/get-roles-paginated nil]))) ;; TODO: Pass filters and pagination params
+                  :has-more? (:has-more? @connections)
+                  :loading? (= :loading (:loading @connections))}
+                 (for [connection connections-search-results]
+                   [:> Box {:class (str "bg-white border border-[--gray-3] "
+                                        "text-[--gray-12] "
+                                        "first:rounded-t-lg last:rounded-b-lg "
+                                        "first:border-t last:border-b "
+                                        "p-regular text-xs flex gap-8 justify-between items-center")}
+                    [:div {:class "flex truncate items-center gap-regular"}
+                     [:div
+                      [:figure {:class "w-6"}
+                       [:img {:src (connection-constants/get-connection-icon connection)
+                              :class "w-9"
+                              :loading "lazy"}]]]
+                     [:div
+                      [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
+                       (:name connection)]
+                      [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
+                       [:div {:class (str "rounded-full h-[6px] w-[6px] "
+                                          (if (= (:status connection) "online")
+                                            "bg-green-500"
+                                            "bg-red-500"))}]
+                       (cs/capitalize (:status connection))]]]
 
-                                  [:div {:id "connection-info"
-                                         :class "flex gap-6 items-center"}
-                                   (when (can-connect? connection)
-                                     [:> DropdownMenu.Root {:dir "rtl"}
-                                      [:> DropdownMenu.Trigger
-                                       [:> Button {:size 2 :variant "soft"}
-                                        "Connect"
-                                        [:> DropdownMenu.TriggerIcon]]]
-                                      [:> DropdownMenu.Content
-                                       (when (can-open-web-terminal? connection)
-                                         [:> DropdownMenu.Item {:on-click
-                                                                (fn []
-                                                                  (js/localStorage.setItem "selected-connection" connection)
-                                                                  (rf/dispatch [:navigate :editor-plugin-panel]))}
-                                          "Open in Web Terminal"])
+                    [:div {:id "connection-info"
+                           :class "flex gap-6 items-center"}
+                     (when (can-connect? connection)
+                       [:> DropdownMenu.Root {:dir "rtl"}
+                        [:> DropdownMenu.Trigger
+                         [:> Button {:size 2 :variant "soft"}
+                          "Connect"
+                          [:> DropdownMenu.TriggerIcon]]]
+                        [:> DropdownMenu.Content
+                         (when (can-open-web-terminal? connection)
+                           [:> DropdownMenu.Item {:on-click
+                                                  (fn []
+                                                    (js/localStorage.setItem "selected-connection" connection)
+                                                    (rf/dispatch [:navigate :editor-plugin-panel]))}
+                            "Open in Web Terminal"])
 
-                                       [:> DropdownMenu.Item {:on-click
-                                                              #(rf/dispatch [:modal->open
-                                                                             {:content [hoop-cli-modal/main (:name connection)]
-                                                                              :maxWidth "1100px"
-                                                                              :class "overflow-hidden"}])}
-                                        "Open with Hoop CLI"]
+                         [:> DropdownMenu.Item {:on-click
+                                                #(rf/dispatch [:modal->open
+                                                               {:content [hoop-cli-modal/main (:name connection)]
+                                                                :maxWidth "1100px"
+                                                                :class "overflow-hidden"}])}
+                          "Open with Hoop CLI"]
 
-                                       (when (can-access-native-client? connection)
-                                         [:> DropdownMenu.Item {:on-click
-                                                                #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
-                                          "Open in Native Client"])
+                         (when (can-access-native-client? connection)
+                           [:> DropdownMenu.Item {:on-click
+                                                  #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
+                            "Open in Native Client"])
 
-                                       (when (can-test-connection? connection)
-                                         [:> DropdownMenu.Item {:on-click #(rf/dispatch [:connections->test-connection (:name connection)])
-                                                                :disabled (is-connection-testing? @test-connection-state (:name connection))}
-                                          "Test Connection"])]])
+                         (when (can-test-connection? connection)
+                           [:> DropdownMenu.Item {:on-click #(rf/dispatch [:connections->test-connection (:name connection)])
+                                                  :disabled (is-connection-testing? @test-connection-state (:name connection))}
+                            "Test Connection"])]])
 
-                                   (when (-> @user :data :admin?)
-                                     [:> DropdownMenu.Root {:dir "rtl"}
-                                      [:> DropdownMenu.Trigger
-                                       [:> IconButton {:size "1" :variant "ghost" :color "gray"}
-                                        [:> EllipsisVertical {:size 16}]]]
-                                      [:> DropdownMenu.Content
-                                       (when (not (= (:managed_by connection) "hoopagent"))
-                                         [:> DropdownMenu.Item {:on-click
-                                                                (fn []
-                                                                  (rf/dispatch [:plugins->get-my-plugins])
-                                                                  (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
-                                          "Configure"])
-                                       [:> DropdownMenu.Item {:color "red"
-                                                              :on-click (fn []
-                                                                          (rf/dispatch [:dialog->open
-                                                                                        {:title "Delete connection?"
-                                                                                         :type :danger
-                                                                                         :text-action-button "Confirm and delete"
-                                                                                         :action-button? true
-                                                                                         :text [:> Box {:class "space-y-radix-4"}
-                                                                                                [:> Text {:as "p"}
-                                                                                                 "This action will instantly remove your access to "
-                                                                                                 (:name connection)
-                                                                                                 " and can not be undone."]
-                                                                                                [:> Text {:as "p"}
-                                                                                                 "Are you sure you want to delete this connection?"]]
-                                                                                         :on-success (fn []
-                                                                                                       (rf/dispatch [:connections->delete-connection (:name connection)])
-                                                                                                       (rf/dispatch [:modal->close]))}]))}
-                                        "Delete"]]])]])
-                  :overscan 5}]])]])]))))
+                     (when (-> @user :data :admin?)
+                       [:> DropdownMenu.Root {:dir "rtl"}
+                        [:> DropdownMenu.Trigger
+                         [:> IconButton {:size "1" :variant "ghost" :color "gray"}
+                          [:> EllipsisVertical {:size 16}]]]
+                        [:> DropdownMenu.Content
+                         (when (not (= (:managed_by connection) "hoopagent"))
+                           [:> DropdownMenu.Item {:on-click
+                                                  (fn []
+                                                    (rf/dispatch [:plugins->get-my-plugins])
+                                                    (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+                            "Configure"])
+                         [:> DropdownMenu.Item {:color "red"
+                                                :on-click (fn []
+                                                            (rf/dispatch [:dialog->open
+                                                                          {:title "Delete connection?"
+                                                                           :type :danger
+                                                                           :text-action-button "Confirm and delete"
+                                                                           :action-button? true
+                                                                           :text [:> Box {:class "space-y-radix-4"}
+                                                                                  [:> Text {:as "p"}
+                                                                                   "This action will instantly remove your access to "
+                                                                                   (:name connection)
+                                                                                   " and can not be undone."]
+                                                                                  [:> Text {:as "p"}
+                                                                                   "Are you sure you want to delete this connection?"]]
+                                                                           :on-success (fn []
+                                                                                         (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                                         (rf/dispatch [:modal->close]))}]))}
+                          "Delete"]]])]])]])]])]))))

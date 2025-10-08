@@ -97,4 +97,10 @@
                      :search-results {:status :idle :data {}}}
    :runbooks {:connection-dialog-open? false
               :execute-trigger false
-              :selected-connection nil}})
+              :selected-connection nil}
+   :roles {:data []
+           :loading false
+           :current-page 1
+           :page-size 20
+           :has-more? false
+           :total-count 0}})
