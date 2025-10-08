@@ -94,9 +94,7 @@
               {:icon [:> FastForward {:size 16}]
                :on-click (fn []
                            (if @primary-connection
-                             (do
-                               (rf/dispatch [:multiple-connections/clear])
-                               (rf/dispatch [:webclient/set-active-panel :multiple-connections]))
+                             (rf/dispatch [:webclient/set-active-panel :multiple-connections])
 
                              (do
                                (rf/dispatch [:connections->get-connections])
