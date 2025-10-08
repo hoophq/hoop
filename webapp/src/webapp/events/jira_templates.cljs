@@ -339,7 +339,7 @@
  :jira-templates->get-connections
  (fn [{:keys [db]} _]
    {:db (assoc db :jira-templates->connections-list {:status :loading :data []})
-    :fx [[:dispatch [:connections->get-connections
+    :fx [[:dispatch [:connections->get-connections {:force-refresh? true}
                      {:on-success [:jira-templates->set-connections]
                       :on-failure [:jira-templates->set-connections-error]}]]]}))
 

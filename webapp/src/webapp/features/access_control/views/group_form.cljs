@@ -15,7 +15,7 @@
         is-submitting (r/atom false)
         scroll-pos (r/atom 0)]
 
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
@@ -95,7 +95,7 @@
 
     ;; Initialize selected connections when component mounts
     (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn [group-id]
       (when (and (empty? @selected-connections)
@@ -130,7 +130,7 @@
 
                                 (do
                                   (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
-                                  (rf/dispatch [:connections->get-connections])
+                                  (rf/dispatch [:connections->get-connections {:force-refresh? true}])
                                   (rf/dispatch [:show-snackbar {:level :error
                                                                 :text "Failed to save group permissions"}])
                                   (js/setTimeout #(reset! is-submitting false) 1000))))}

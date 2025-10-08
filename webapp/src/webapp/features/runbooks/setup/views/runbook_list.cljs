@@ -32,7 +32,7 @@
         all-connections (rf/subscribe [:connections])]
 
     ;; Fetch all connections when component mounts
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       (let [connections (:results @all-connections)

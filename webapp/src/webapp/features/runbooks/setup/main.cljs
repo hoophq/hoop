@@ -24,7 +24,7 @@
         url-tab (r/atom (parse-params params))]
 
     (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       (let [plugin (:plugin @plugin-details)

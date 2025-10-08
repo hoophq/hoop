@@ -146,7 +146,7 @@
  :guardrails->get-connections
  (fn [{:keys [db]} _]
    {:db (assoc db :guardrails->connections-list {:status :loading :data []})
-    :fx [[:dispatch [:connections->get-connections
+    :fx [[:dispatch [:connections->get-connections {:force-refresh? true}
                      {:on-success [:guardrails->set-connections]
                       :on-failure [:guardrails->set-connections-error]}]]]}))
 

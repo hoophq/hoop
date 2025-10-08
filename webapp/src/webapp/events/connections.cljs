@@ -160,7 +160,7 @@
                                       ;; plugins might be updated in the connection
                                       ;; creation action, so we get them again here
                                       (rf/dispatch [:plugins->get-my-plugins])
-                                      (rf/dispatch [:connections->get-connections])
+                                      (rf/dispatch [:connections->get-connections {:force-refresh? true}])
                                       (rf/dispatch [:show-snackbar {:level :success
                                                                     :text "Connection created!"}])
 
@@ -182,7 +182,7 @@
                                                     {:level :success
                                                      :text (str "Connection " (:name connection) " updated!")}])
                                       (rf/dispatch [:plugins->get-my-plugins])
-                                      (rf/dispatch [:connections->get-connections])
+                                      (rf/dispatch [:connections->get-connections {:force-refresh? true}])
                                       (rf/dispatch [:navigate :connections]))}]]]})))
 
 (rf/reg-event-fx
@@ -274,7 +274,7 @@
               :on-success (fn []
                             (rf/dispatch [:show-snackbar {:level :success
                                                           :text "Connection created!"}])
-                            (rf/dispatch [:connections->get-connections])
+                            (rf/dispatch [:connections->get-connections {:force-refresh? true}])
                             (rf/dispatch [:plugins->get-my-plugins])
                             (rf/dispatch [:navigate :home]))}]]]})))
 
@@ -325,5 +325,5 @@ ORDER BY total_amount DESC;")
 
                                    (rf/dispatch [:show-snackbar {:level :success
                                                                  :text "Connection deleted!"}])
-                                   (rf/dispatch [:connections->get-connections])
+                                   (rf/dispatch [:connections->get-connections {:force-refresh? true}])
                                    (rf/dispatch [:navigate :connections])))}]]]}))
