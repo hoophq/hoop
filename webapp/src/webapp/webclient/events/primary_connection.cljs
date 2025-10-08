@@ -70,17 +70,6 @@
            [:dispatch [:primary-connection/update-runbooks]]]})))
 
 (rf/reg-event-fx
- :primary-connection/clear-selected
- (fn [{:keys [db]} _]
-   {:db (-> db
-            (assoc-in [:editor :connections :selected] nil)
-            (assoc-in [:editor :multi-connections :selected] []))
-    :fx [[:dispatch [:primary-connection/persist-selected]]
-         [:dispatch [:multiple-connections/persist]]
-         [:dispatch [:database-schema->clear-schema]]
-         [:dispatch [:primary-connection/update-runbooks]]]}))
-
-(rf/reg-event-fx
  :primary-connection/persist-selected
  (fn [{:keys [db]} _]
    (let [selected (get-in db [:editor :connections :selected])]
@@ -121,19 +110,9 @@
 
 ;; Subscriptions
 (rf/reg-sub
- :primary-connection/status
- (fn [db]
-   (get-in db [:editor :connections :status])))
-
-(rf/reg-sub
  :primary-connection/list
  (fn [db]
    (get-in db [:editor :connections :list])))
-
-(rf/reg-sub
- :primary-connection/error
- (fn [db]
-   (get-in db [:editor :connections :error])))
 
 (rf/reg-sub
  :primary-connection/selected

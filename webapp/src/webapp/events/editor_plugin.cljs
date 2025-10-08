@@ -48,7 +48,7 @@
                           :metadata (metadata->json-stringify metadata)}
                    jira_fields (assoc :jira_fields jira_fields)
                    cmdb_fields (assoc :cmdb_fields cmdb_fields))
-         on-failure (fn [error-message error]
+         on-failure (fn [_error-message error]
                       (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
                                                     :level :error
                                                     :details error}])
@@ -188,7 +188,9 @@
                                                          :uri (str "/sessions/" (:session-id exec) "/metadata")
                                                          :on-success (fn [] false)
                                                          :on-failure (fn [error]
-                                                                       (println exec error))
+                                                                       (rf/dispatch [:show-snackbar {:text "Failed to update metadata session"
+                                                                                                     :level :error
+                                                                                                     :details error}]))
                                                          :body {:metadata
                                                                 {"View related sessions"
                                                                  (str (. (. js/window -location) -origin)
@@ -406,18 +408,7 @@
 (rf/reg-event-fx
  :editor-plugin/handle-template-submit
  (fn [{:keys [db]} [_ {:keys [form-data script metadata env_vars keep-metadata?]}]]
-   (let [connection (get-in db [:editor :connections :selected])
-         is-dynamodb? (= (:subtype connection) "dynamodb")
-         is-cloudwatch? (= (:subtype connection) "cloudwatch")
-         selected-db (.getItem js/localStorage "selected-database")
-         env-vars (cond
-                    (and is-dynamodb? selected-db)
-                    {"envvar:TABLE_NAME" (js/btoa selected-db)}
-
-                    (and is-cloudwatch? selected-db)
-                    {"envvar:LOG_GROUP_NAME" selected-db}
-
-                    :else nil)]
+   (let [connection (get-in db [:editor :connections :selected])]
      {:fx [[:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->exec-script
                        (cond-> {:script script

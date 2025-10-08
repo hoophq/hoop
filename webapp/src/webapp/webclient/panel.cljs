@@ -301,7 +301,6 @@
                                                 editor-debounce-time)))
 
             panel-content (fn [active-panel]
-                            (println "active-panel" active-panel)
                             (case active-panel
                               :metadata {:title "Metadata"
                                          :content [metadata-panel/main {:metadata metadata

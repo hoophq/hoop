@@ -70,13 +70,6 @@
        {:db (assoc-in db [:editor :multi-connections :selected] [])
         :fx [[:dispatch [:multiple-connections/persist]]]}))))
 
-;; Clear all selections
-(rf/reg-event-fx
- :multiple-connections/clear
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:editor :multi-connections :selected] [])
-    :fx [[:dispatch [:multiple-connections/persist]]]}))
-
 ;; -- Subscriptions --
 
 (rf/reg-sub
@@ -107,12 +100,3 @@
  :<- [:multiple-connections/selected]
  (fn [multiples]
    (empty? multiples)))             ; Only primary = single mode
-
-(rf/reg-sub
- :execution/can-execute
- :<- [:primary-connection/selected]
- :<- [:multiple-connections/selected]
- (fn [[primary multiples]]
-   (and (some? primary)             ; Has primary
-        (every? #(= (:type %) (:type primary)) multiples)  ; All compatible
-        (every? #(not= (:name %) (:name primary)) multiples))))  ; None duplicates primary
