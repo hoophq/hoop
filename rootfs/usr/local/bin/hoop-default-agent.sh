@@ -2,6 +2,7 @@
 
 : "${POSTGRES_DB_URI:?env is required}"
 : "${DEFAULT_AGENT_GRPC_HOST:-"127.0.0.1:8010"}"
+: "${HOOP_GATEWAY_URL:-""}"
 
 SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 set -eo pipefail
