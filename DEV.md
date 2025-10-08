@@ -31,7 +31,7 @@ cp .env.sample .env
 ```
 
 > The sample configuration file doesn't have a default identity provider. Make sure to configure one to be able to run this project.
-> By default the this command will build the agentrs and will run inside the docker
+> By default this command will build the agentrs and will run inside the docker
 
 ```sh
 make run-dev
