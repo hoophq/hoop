@@ -22,7 +22,9 @@
  :connections->get-connection-details
  (fn
    [{:keys [db]} [_ connection-name]]
-   {:db (assoc db :connections->connection-details {:loading true :data {:name connection-name}})
+   {:db (-> db
+            (assoc :connections->connection-details {:loading true :data {:name connection-name}})
+            (assoc-in [:connections :details] {}))
     :fx [[:dispatch
           [:fetch {:method "GET"
                    :uri (str "/connections/" connection-name)
@@ -33,7 +35,40 @@
  :connections->set-connection
  (fn
    [{:keys [db]} [_ connection]]
-   {:db (assoc db :connections->connection-details {:loading false :data connection})}))
+   {:db (-> db
+            (assoc :connections->connection-details {:loading false :data connection})
+            ;; Also store in details map for quick lookup
+            (assoc-in [:connections :details (:name connection)] connection))
+    ;; Check if this completes a batch loading
+    :fx [[:dispatch [:connections->check-batch-complete connection]]]}))
+
+;; Batch loader for multiple connections by name
+(rf/reg-event-fx
+ :connections->get-multiple-by-names
+ (fn [{:keys [db]} [_ connection-names on-success on-failure]]
+   (let [requests (mapv (fn [name]
+                          [:dispatch [:connections->get-connection-details name]])
+                        connection-names)]
+     {:db (assoc db :connections->batch-loading
+                 {:names (set connection-names)
+                  :loaded #{}
+                  :on-success on-success
+                  :on-failure on-failure})
+      :fx requests})))
+
+;; Check if batch loading is complete
+(rf/reg-event-fx
+ :connections->check-batch-complete
+ (fn [{:keys [db]} [_ connection]]
+   (let [batch (get db :connections->batch-loading)
+         loaded (conj (:loaded batch #{}) (:name connection))
+         all-loaded? (= (:names batch) loaded)]
+     (if (and batch all-loaded?)
+       ;; All loaded - call success callback
+       {:db (dissoc db :connections->batch-loading)
+        :fx [[:dispatch (:on-success batch)]]}
+       ;; Still waiting for more
+       {:db (assoc-in db [:connections->batch-loading :loaded] loaded)}))))
 
 (rf/reg-event-db
  :connections->clear-connection-details

@@ -90,11 +90,11 @@
        [:> Flex {:align "center"
                  :gap "2"
                  :class "border-b border-gray-3 px-4 py-3"}
-        [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "MultiRun"]
+        [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Multi Run"]
         [:> Badge {:variant "solid" :color "green" :radius "full"}
          [:> Flex {:align "center" :gap "2"}
           [:> Text {:size "1" :weight "medium" :class "text-white"} "Selected"]
-          [:> Badge {:variant "solid" :radius "full" :class "bg-white"}
+          [:> Badge {:variant "solid" :radius "full" :class "bg-white" :size "1"}
            [:> Text {:size "1" :weight "bold" :class "text-success-9"}
             @total-count]]]]]
 

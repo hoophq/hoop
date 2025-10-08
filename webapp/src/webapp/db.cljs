@@ -11,7 +11,7 @@
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :loading, :data []}
-   :connections {:loading true}
+   :connections {:loading true :details {}}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :native-client-access {:requesting? false, :current nil}
