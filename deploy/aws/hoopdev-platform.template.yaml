@@ -621,6 +621,7 @@ Resources:
                   LOG_ENCODING=json
                   API_URL=https://${AppPublicDNS}
                   GRPC_URL=https://${AppPublicDNS}:8443
+                  HOOP_GATEWAY_URL=https://${AppPublicDNS}
                   POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
                   DLP_PROVIDER=${DataMasking}
                   DLP_MODE=best-effort
@@ -635,6 +636,7 @@ Resources:
                   LOG_ENCODING=json
                   API_URL=https://${AppPublicDNS}
                   GRPC_URL=https://${AppPublicDNS}:8443
+                  HOOP_GATEWAY_URL=https://${AppPublicDNS}
                   POSTGRES_DB_URI=postgres://MASTER_DB_USER:MASTER_DB_PASSWORD@${HoopDB.Endpoint.Address}:${HoopDB.Endpoint.Port}/postgres
                   IDP_URI=${AppIDPURI}
                   DLP_PROVIDER=${DataMasking}
