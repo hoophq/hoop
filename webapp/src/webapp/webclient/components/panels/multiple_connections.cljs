@@ -70,14 +70,18 @@
        [connection-item
         {:connection primary-connection
          :selected? true
-         :disabled? true} dark-mode?])
-
+         :disabled? true
+         :on-select (fn []
+                      (rf/dispatch [:connections->get-connections])
+                      (rf/dispatch [:primary-connection/toggle-dialog true]))}
+        dark-mode?])
      (for [connection compatible-connections]
        ^{:key (:name connection)}
        [connection-item
         {:connection connection
          :selected? (some #(= (:name %) (:name connection)) selected-connections)
-         :on-select #(rf/dispatch [:multiple-connections/toggle connection])} dark-mode?])]))
+         :on-select #(rf/dispatch [:multiple-connections/toggle connection])}
+        dark-mode?])]))
 
 (defn main [dark-mode?]
   (let [total-count (rf/subscribe [:execution/total-count])]
