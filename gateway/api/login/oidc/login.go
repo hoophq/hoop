@@ -198,15 +198,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
 		redirectSuccessURL = login.Redirect
-		c.SetCookie(
-			"hoop_access_token",
-			token.AccessToken,
-			0,
-			"/",
-			"",
-			true,
-			false,
-		)
+		c.Header("Token", token.AccessToken)
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)

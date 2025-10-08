@@ -289,15 +289,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
 		redirectSuccessURL = login.Redirect
-		c.SetCookie(
-			"hoop_access_token",
-			sessionToken,
-			0,
-			"/",
-			"",
-			true,
-			false,
-		)
+		c.Header("Token", sessionToken)
 	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
 }
