@@ -12,6 +12,7 @@
         min-loading-done (r/atom false)
         gateway-info (rf/subscribe [:gateway->info])]
     (rf/dispatch [:ai-data-masking->get-all])
+    (rf/dispatch [:connections->get-connections])
 
     ;; Set timer for minimum loading time
     (js/setTimeout #(reset! min-loading-done true) 1500)

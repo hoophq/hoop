@@ -15,7 +15,7 @@
         user (rf/subscribe [:users->current-user])
         min-loading-done (r/atom false)]
     (rf/dispatch [:jira-templates->get-all])
-    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
+    (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:jira-integration->get])
 
     ;; Set timer for minimum loading time
