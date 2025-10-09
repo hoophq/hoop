@@ -51,9 +51,9 @@
          connection-name (:name parsed)]
 
      (if connection-name
-       {:fx [[:dispatch [:connections->get-connection-details connection-name]]
-             [:dispatch-later {:ms 1000 :dispatch [:primary-connection/set-from-details connection-name]}]]}
-
+       {:fx [[:dispatch [:connections->get-connection-details
+                         connection-name
+                         [:primary-connection/set-from-details]]]]}
        {}))))
 
 ;; Set primary connection from loaded details
@@ -72,33 +72,13 @@
  (fn [db [_ open?]]
    (assoc-in db [:editor :connections :dialog-open?] open?)))
 
-;; Subscriptions
-(rf/reg-sub
- :primary-connection/list
- (fn [db]
-   (get-in db [:editor :connections :list])))
 
 (rf/reg-sub
  :primary-connection/selected
  (fn [db]
    (get-in db [:editor :connections :selected])))
 
-(rf/reg-sub
- :primary-connection/filter
- (fn [db]
-   (get-in db [:editor :connections :filter])))
 
-(rf/reg-sub
- :primary-connection/filtered
- :<- [:primary-connection/list]
- :<- [:primary-connection/filter]
- (fn [[connections filter-text]]
-   (if (empty? filter-text)
-     connections
-     (filter #(string/includes?
-               (string/lower-case (:name %))
-               (string/lower-case filter-text))
-             connections))))
 
 (rf/reg-sub
  :primary-connection/dialog-open?

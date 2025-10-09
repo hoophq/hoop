@@ -21,7 +21,7 @@
 (rf/reg-event-fx
  :connections->get-connection-details
  (fn
-   [{:keys [db]} [_ connection-name]]
+   [{:keys [db]} [_ connection-name & [on-success]]]
    {:db (-> db
             (assoc :connections->connection-details {:loading true :data {:name connection-name}})
             (assoc-in [:connections :details] {}))
@@ -29,18 +29,19 @@
           [:fetch {:method "GET"
                    :uri (str "/connections/" connection-name)
                    :on-success (fn [connection]
-                                 (rf/dispatch [:connections->set-connection connection]))}]]]}))
+                                 (rf/dispatch [:connections->set-connection connection on-success]))}]]]}))
 
 (rf/reg-event-fx
  :connections->set-connection
  (fn
-   [{:keys [db]} [_ connection]]
+   [{:keys [db]} [_ connection on-success]]
    {:db (-> db
             (assoc :connections->connection-details {:loading false :data connection})
             ;; Also store in details map for quick lookup
             (assoc-in [:connections :details (:name connection)] connection))
-    ;; Check if this completes a batch loading
-    :fx [[:dispatch [:connections->check-batch-complete connection]]]}))
+    ;; Check if this completes a batch loading and handle callback
+    :fx (cond-> [[:dispatch [:connections->check-batch-complete connection]]]
+          on-success (conj [:dispatch (conj on-success (:name connection))]))}))
 
 ;; Batch loader for multiple connections by name
 (rf/reg-event-fx

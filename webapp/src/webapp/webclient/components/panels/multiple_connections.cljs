@@ -1,6 +1,6 @@
 (ns webapp.webclient.components.panels.multiple-connections
   (:require
-   ["@radix-ui/themes" :refer [Box Badge Flex IconButton Text]]
+   ["@radix-ui/themes" :refer [Box Badge Flex IconButton Text Spinner]]
    ["lucide-react" :refer [Plus Minus]]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]))
@@ -54,37 +54,38 @@
                    (not= (:name %) (:name connection)))
              connections)))
 
-(defn connections-list [dark-mode?]
-  (let [connections @(rf/subscribe [:primary-connection/filtered])
-        primary-connection @(rf/subscribe [:primary-connection/selected])
-        selected-connections @(rf/subscribe [:multiple-connections/selected])
-        filtered-connections (filter-connections connections)
-        filtered-compatible-connections (filter-compatible-connections filtered-connections
-                                                                       primary-connection
-                                                                       selected-connections)
-        compatible-connections (if primary-connection
-                                 filtered-compatible-connections
-                                 filtered-connections)]
-    [:> Box
-     (when primary-connection
-       [connection-item
-        {:connection primary-connection
-         :selected? true
-         :disabled? true
-         :on-select (fn []
-                      (rf/dispatch [:connections->get-connections])
-                      (rf/dispatch [:primary-connection/toggle-dialog true]))}
-        dark-mode?])
-     (for [connection compatible-connections]
-       ^{:key (:name connection)}
-       [connection-item
-        {:connection connection
-         :selected? (some #(= (:name %) (:name connection)) selected-connections)
-         :on-select #(rf/dispatch [:multiple-connections/toggle connection])}
-        dark-mode?])]))
+(defn connections-list []
+  (let [primary-connection (rf/subscribe [:primary-connection/selected])
+        selected-connections (rf/subscribe [:multiple-connections/selected])]
+    (fn [dark-mode? connections]
+      (let [filtered-connections (filter-connections connections)
+            filtered-compatible-connections (filter-compatible-connections filtered-connections
+                                                                           @primary-connection
+                                                                           @selected-connections)
+            compatible-connections (if @primary-connection
+                                     filtered-compatible-connections
+                                     filtered-connections)]
+        [:> Box
+         (when @primary-connection
+           [connection-item
+            {:connection @primary-connection
+             :selected? true
+             :disabled? true
+             :on-select (fn []
+                          (rf/dispatch [:connections->get-connections])
+                          (rf/dispatch [:primary-connection/toggle-dialog true]))}
+            dark-mode?])
+         (for [connection compatible-connections]
+           ^{:key (:name connection)}
+           [connection-item
+            {:connection connection
+             :selected? (some #(= (:name %) (:name connection)) @selected-connections)
+             :on-select #(rf/dispatch [:multiple-connections/toggle connection])}
+            dark-mode?])]))))
 
 (defn main [dark-mode?]
-  (let [total-count (rf/subscribe [:execution/total-count])]
+  (let [total-count (rf/subscribe [:execution/total-count])
+        connections (rf/subscribe [:connections])]
     (fn []
       [:> Box {:class "h-full flex flex-col"}
        [:> Flex {:align "center"
@@ -103,4 +104,7 @@
         [:> Text {:as "p" :size "1" :class "py-3 px-4"}
          "Select similar connections to execute commands at once."]
 
-        [connections-list dark-mode?]]])))
+        (if (:loading @connections)
+          [:> Box {:class "flex items-center justify-center"}
+           [:> Spinner {:size "2"}]]
+          [connections-list dark-mode? (:results @connections)])]])))

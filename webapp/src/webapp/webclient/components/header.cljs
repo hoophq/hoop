@@ -93,12 +93,11 @@
              [notification-badge
               {:icon [:> FastForward {:size 16}]
                :on-click (fn []
+                           (rf/dispatch [:connections->get-connections])
                            (if @primary-connection
                              (rf/dispatch [:webclient/set-active-panel :multiple-connections])
 
-                             (do
-                               (rf/dispatch [:connections->get-connections])
-                               (rf/dispatch [:primary-connection/toggle-dialog true]))))
+                             (rf/dispatch [:primary-connection/toggle-dialog true])))
                :active? (= @active-panel :multiple-connections)
                :has-notification? has-multirun?
                :disabled? false}]]]
