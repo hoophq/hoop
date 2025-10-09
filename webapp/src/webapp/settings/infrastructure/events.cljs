@@ -59,12 +59,15 @@
    (let [ui-config (get-in db [:infrastructure :data])
          postgres-proxy-port (when-not (cs/blank? (:postgres-proxy-port ui-config))
                                (str "0.0.0.0:" (:postgres-proxy-port ui-config)))
+         ssh-proxy-port (when-not (cs/blank? (:ssh-proxy-port ui-config))
+                          (str "0.0.0.0:" (:ssh-proxy-port ui-config)))
          rdp-proxy-port (when-not (cs/blank? (:rdp-proxy-port ui-config))
                           (str "0.0.0.0:" (:rdp-proxy-port ui-config)))
          ;; Map UI structure back to API format
          api-payload {:grpc_server_url (:grpc-url ui-config)
                       :product_analytics (if (:analytics-enabled ui-config) "active" "inactive")
                       :postgres_server_config {:listen_address postgres-proxy-port}
+                      :ssh_server_config {:listen_address ssh-proxy-port}
                       :rdp_server_config {:listen_address rdp-proxy-port}}]
      {:db (assoc-in db [:infrastructure :submitting?] true)
       :fx [[:dispatch [:fetch {:method "PUT"
