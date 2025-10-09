@@ -103,29 +103,25 @@
 (rf/reg-event-fx
  :connections->cache-and-notify
  (fn [{:keys [db]} [_ connections on-success]]
-   (let [updated-db (-> db
-                        (assoc-in [:connections :results] connections)
-                        (assoc-in [:connections :loading] false)
-                        (assoc-in [:connections :cache-timestamp] (.now js/Date)))]
-     {:db updated-db
-      :fx [[:dispatch (conj on-success connections)]]})))
+   {:db (update db :connection merge {:results connections
+                                      :loading false
+                                      :cache-timestamp (.now js/Date)})
+    :fx [[:dispatch (conj on-success connections)]]}))
 
 (rf/reg-event-fx
  :connections->set-connections
  (fn
    [{:keys [db]} [_ connections]]
-   {:db (-> db
-            (assoc-in [:connections :results] connections)
-            (assoc-in [:connections :loading] false)
-            (assoc-in [:connections :cache-timestamp] (.now js/Date)))}))
+   {:db (update db :connections merge {:results connections
+                                       :loading false
+                                       :cache-timestamp (.now js/Date)})}))
 
 ;; Error event for connections
 (rf/reg-event-fx
  :connections->set-connections-error
  (fn [{:keys [db]} [_ error]]
-   {:db (-> db
-            (assoc-in [:connections :loading] false)
-            (assoc-in [:connections :error] error))}))
+   {:db (update db :connections merge {:loading false
+                                       :error error})}))
 
 (rf/reg-event-fx
  :connections->load-metadata

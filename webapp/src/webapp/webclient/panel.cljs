@@ -323,7 +323,6 @@
              dark-mode?
              #(rf/dispatch [:editor-plugin/submit-task {:script @script}])]
 
-            ;; Compact layout (now the only layout)
             [with-panel
              (boolean @active-panel)
              [:> Box {:class "flex h-terminal-content overflow-hidden"}

@@ -51,11 +51,9 @@
          connection-name (:name parsed)]
 
      (if connection-name
-       ;; Has saved connection - load only that one
        {:fx [[:dispatch [:connections->get-connection-details connection-name]]
              [:dispatch-later {:ms 1000 :dispatch [:primary-connection/set-from-details connection-name]}]]}
-       ;; No saved connection - don't load anything (lazy loading)
-       ;; Connections will be loaded when user clicks connection button
+
        {}))))
 
 ;; Set primary connection from loaded details
@@ -65,7 +63,7 @@
    (let [connection (get-in db [:connections :details connection-name])]
      (if connection
        {:db (assoc-in db [:editor :connections :selected] connection)}
-       ;; Connection not found - clear selection (may have been deleted)
+
        {:db (assoc-in db [:editor :connections :selected] nil)}))))
 
 ;; Dialog Events (for compact UI)

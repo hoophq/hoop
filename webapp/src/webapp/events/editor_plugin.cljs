@@ -231,7 +231,6 @@
  (fn [db]
    (get-in db [:editor-plugin :keep-metadata?] false)))
 
-;; Submit task event - now ensures fresh connection data
 (rf/reg-event-fx
  :editor-plugin/submit-task
  (fn [{:keys [db]} [_ {:keys [script] :as context}]]
@@ -240,15 +239,12 @@
          all-names (remove nil? (cons primary-name multi-names))]
 
      (if (empty? all-names)
-       ;; No connections
        {:fx [[:dispatch [:show-snackbar {:level :error :text "You must choose a connection"}]]]}
-       ;; Load fresh data for all connections
        {:fx [[:dispatch [:connections->get-multiple-by-names
                          all-names
                          [:editor-plugin/submit-task-with-fresh-data context]
                          [:editor-plugin/submit-task-connection-error]]]]}))))
 
-;; Submit task with fresh connection data
 (rf/reg-event-fx
  :editor-plugin/submit-task-with-fresh-data
  (fn [{:keys [db]} [_ {:keys [script]}]]
@@ -256,17 +252,16 @@
          multi-names (set (map :name (get-in db [:editor :multi-connections :selected])))
          connection-details (get-in db [:connections :details])
 
-         ;; FRESH DATA - guaranteed up-to-date from server
-         fresh-primary (get connection-details primary-name)
-         fresh-multiples (filter #(contains? multi-names (:name %)) (vals connection-details))
-         all-connections (when fresh-primary (cons fresh-primary fresh-multiples))
+         fresh-primary-connection (get connection-details primary-name)
+         fresh-multiples-connections (filter #(contains? multi-names (:name %)) (vals connection-details))
+         all-connections (when fresh-primary-connection (cons fresh-primary-connection fresh-multiples-connections))
          multiple-connections? (> (count all-connections) 1)
 
          has-jira-template-multiple-connections? (some #(not (cs/blank? (:jira_issue_template_id %)))
                                                        all-connections)
-         needs-template? (boolean (and fresh-primary
-                                       (not (cs/blank? (:jira_issue_template_id fresh-primary)))))
-         connection-type (discover-connection-type fresh-primary)
+         needs-template? (boolean (and fresh-primary-connection
+                                       (not (cs/blank? (:jira_issue_template_id fresh-primary-connection)))))
+         connection-type (discover-connection-type fresh-primary-connection)
          jira-integration-enabled? (= (-> (get-in db [:jira-integration->details])
                                           :data
                                           :status)
@@ -275,8 +270,8 @@
                                        ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
                                  (< (count script) 1))
          selected-db (.getItem js/localStorage "selected-database")
-         is-dynamodb? (= (:subtype fresh-primary) "dynamodb")
-         is-cloudwatch? (= (:subtype fresh-primary) "cloudwatch")
+         is-dynamodb? (= (:subtype fresh-primary-connection) "dynamodb")
+         is-cloudwatch? (= (:subtype fresh-primary-connection) "cloudwatch")
          env-vars (cond
                     (and is-dynamodb? selected-db)
                     {"envvar:TABLE_NAME" (js/btoa selected-db)}
@@ -307,7 +302,7 @@
 
      (cond
        ;; No connection selected (should not happen due to previous check)
-       (empty? fresh-primary)
+       (empty? fresh-primary-connection)
        {:fx [[:dispatch [:show-snackbar
                          {:level :error
                           :text "Connection not found"}]]]}
@@ -343,11 +338,11 @@
                           :custom-on-click-out #(.preventDefault %)
                           :content [loading-jira-templates/main]}]]
              [:dispatch [:jira-templates->get-submit-template
-                         (:jira_issue_template_id fresh-primary)]]
+                         (:jira_issue_template_id fresh-primary-connection)]]
              [:dispatch-later
               {:ms 1000
                :dispatch [:editor-plugin/check-template-and-show-form
-                          {:template-id (:jira_issue_template_id fresh-primary)
+                          {:template-id (:jira_issue_template_id fresh-primary-connection)
                            :script final-script
                            :metadata metadata
                            :env_vars env-vars
@@ -360,14 +355,13 @@
                 [:dispatch [:set-tab-tabular]])
               [:dispatch [:editor-plugin->exec-script
                           {:script final-script
-                           :connection-name (:name fresh-primary)
+                           :connection-name (:name fresh-primary-connection)
                            :metadata (metadata->json-stringify metadata)
                            :env_vars env-vars}]]]}
         (when-not keep-metadata?
-          {:db (-> db
-                   (assoc-in [:editor-plugin :metadata] [])
-                   (assoc-in [:editor-plugin :metadata-key] "")
-                   (assoc-in [:editor-plugin :metadata-value] ""))}))))))
+          {:db (update db :editor-plugin merge {:metadata []
+                                                :metadata-key ""
+                                                :metadata-value ""})}))))))
 
 ;; Error handler for connection loading failures
 (rf/reg-event-fx
@@ -453,10 +447,9 @@
 (rf/reg-event-db
  :editor-plugin/clear-metadata
  (fn [db _]
-   (-> db
-       (assoc-in [:editor-plugin :metadata] [])
-       (assoc-in [:editor-plugin :metadata-key] "")
-       (assoc-in [:editor-plugin :metadata-value] ""))))
+   (update db :editor-plugin merge {:metadata []
+                                    :metadata-key ""
+                                    :metadata-value ""})))
 
 (rf/reg-event-fx
  :runbooks-plugin/show-jira-form

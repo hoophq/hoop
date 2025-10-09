@@ -51,15 +51,9 @@
 (rf/reg-event-fx
  :webclient/set-active-panel
  (fn [{:keys [db]} [_ panel-type]]
-   ;; Toggle logic: se já está ativo, fecha; senão, abre
    (let [current-panel (get db :webclient->active-panel)
          new-panel (when-not (= current-panel panel-type) panel-type)]
      {:db (assoc db :webclient->active-panel new-panel)})))
-
-(rf/reg-event-fx
- :webclient/close-active-panel
- (fn [{:keys [db]} _]
-   {:db (assoc db :webclient->active-panel nil)}))
 
 (rf/reg-event-fx
  :close-page-loader
