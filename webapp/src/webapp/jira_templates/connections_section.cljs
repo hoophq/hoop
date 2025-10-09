@@ -13,10 +13,12 @@
 (defn main [props]
   (let [connections-atom (:connection-ids props)
         on-change (:on-connections-change props)
-        connections-list (rf/subscribe [:jira-templates->connections-list])]
+        connections-list (rf/subscribe [:jira-templates->connections-list])
+        all-connections (:all-connections props)]
     (fn []
       (let [connections-data (:data @connections-list)
-            connections-options (format-connections-for-select connections-data)
+            connections-options (concat (format-connections-for-select connections-data)
+                                        (format-connections-for-select all-connections))
             selected-values (mapv (fn [id]
                                     (first (filter #(= (get % "value") id) connections-options)))
                                   @connections-atom)]

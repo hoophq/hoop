@@ -10,7 +10,7 @@
         search-term (rf/subscribe [:search/term])]
     (fn []
       (let [input-id "header-search"
-            active-panel @(rf/subscribe [:webclient/active-panel])]
+            active-panel @(rf/subscribe [:webclient->active-panel])]
         (reset! has-text? (not (empty? @search-term)))
 
         [:div {:class "relative w-8 h-8"}

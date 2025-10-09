@@ -16,11 +16,12 @@
    Parameters:
    - connections-ids: atom containing array of connection IDs
    - on-connections-change: function to call when connections are changed"
-  [{:keys [connection-ids on-connections-change]}]
+  [{:keys [connection-ids on-connections-change all-connections]}]
   (let [connections-list (rf/subscribe [:guardrails->connections-list])]
     (fn []
       (let [connections-data (:data @connections-list)
-            connections-options (format-connections-for-select connections-data)
+            connections-options (concat (format-connections-for-select connections-data)
+                                        (format-connections-for-select all-connections))
             selected-values (mapv (fn [id]
                                     (first (filter #(= (get % "value") id) connections-options)))
                                   @connection-ids)]
