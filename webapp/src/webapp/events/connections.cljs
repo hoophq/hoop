@@ -6,7 +6,7 @@
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
 ;; Cache configuration
-(def cache-ttl-ms (* 5 60 1000)) ; 5 minutes in milliseconds
+(def cache-ttl-ms (* 120 60 1000)) ; 2 hours in milliseconds
 
 ;; Helper functions for cache management
 (defn cache-valid? [db]
