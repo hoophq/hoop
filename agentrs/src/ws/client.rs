@@ -25,6 +25,7 @@ pub struct WebSocket {
     pub config_manager: conf::ConfigHandleManager,
     pub request: Request,
     pub reconnect_interval: Duration,
+    pub max_attempts: u32,
 }
 
 fn build_websocket_url() -> String {
@@ -73,6 +74,7 @@ impl WebSocket {
             request,
             config_manager,
             reconnect_interval: Duration::from_secs(5),
+            max_attempts: 5,
         })
     }
     fn is_localhost(&self) -> bool {
@@ -99,6 +101,13 @@ impl WebSocket {
                 }
                 Err(e) => {
                     attempts += 1;
+                    if attempts >= self.max_attempts {
+                        error!(
+                            "> Max reconnection attempts ({}) reached. Exiting.",
+                            self.max_attempts
+                        );
+                        return Err(e);
+                    }
                     error!("> Connection failed (attempt {}): {}", attempts, e);
 
                     tokio::time::sleep(self.reconnect_interval).await;
@@ -141,9 +150,13 @@ impl WebSocket {
             }
         };
 
-        let (ws_stream, response) =
-            tokio_tungstenite::connect_async_tls_with_config(self.request.clone(), None, false, connector)
-                .await?;
+        let (ws_stream, response) = tokio_tungstenite::connect_async_tls_with_config(
+            self.request.clone(),
+            None,
+            false,
+            connector,
+        )
+        .await?;
 
         Ok((ws_stream, response))
     }
@@ -175,7 +188,6 @@ impl WebSocket {
     }
 
     async fn run(self) -> anyhow::Result<()> {
-
         let (ws_stream, _) = self.connect().await?;
         let (ws_sender, ws_receiver) = ws_stream.split();
 
