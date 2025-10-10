@@ -30,6 +30,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 	if connParams.DataMaskingEntityTypesData != nil {
 		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
 	}
+
 	opts := map[string]string{
 		"sid":                       sid,
 		"dlp_provider":              connParams.DlpProvider,
@@ -40,6 +41,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
 	}
+
 	args := append(connParams.CmdList, connParams.ClientArgs...)
 	cmd, err := libhoop.NewAdHocExec(connParams.EnvVars, args, pkt.Payload, stdoutw, stderrw, opts)
 	if err != nil {
