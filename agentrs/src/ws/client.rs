@@ -24,7 +24,6 @@ pub struct WebSocket {
     pub config_manager: conf::ConfigHandleManager,
     pub request: Request,
     pub reconnect_interval: Duration,
-    pub max_attempts: u32,
 }
 
 fn build_websocket_url() -> String {
@@ -80,9 +79,9 @@ impl WebSocket {
             request,
             config_manager,
             reconnect_interval: Duration::from_secs(5),
-            max_attempts: 5,
         })
     }
+
     fn is_localhost(&self) -> bool {
         self.gateway_url.contains("localhost")
             || self.gateway_url.contains("127.0.0.1")
@@ -107,13 +106,6 @@ impl WebSocket {
                 }
                 Err(e) => {
                     attempts += 1;
-                    if attempts >= self.max_attempts {
-                        error!(
-                            "> Max reconnection attempts ({}) reached. Exiting.",
-                            self.max_attempts
-                        );
-                        return Err(e);
-                    }
                     error!("> Connection failed (attempt {}): {}", attempts, e);
 
                     tokio::time::sleep(self.reconnect_interval).await;
