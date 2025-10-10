@@ -49,15 +49,15 @@ mkdir -p ./dist/dev/bin
 cp ./scripts/dev/entrypoint.sh ./dist/dev/bin/entrypoint.sh
 
 # Build Rust agent for development
-echo "Checking for Rust installation..."
-if command -v cargo >/dev/null 2>&1; then
-    make build-dev-rust
-    cp ${HOME}/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
-else
-    echo "Warning: Rust/cargo not found. Skipping Rust agent build."
-    echo "To build the Rust agent, install Rust from https://rustup.rs/"
-    echo "Then run: cd agentrs && make build-dev-rust."
+HOOP_RS_BUILD="${HOOP_RS_BUILD:-1}"
+if [[ $HOOP_RS_BUILD == "1" ]]; then
+  echo "Building Rust agent..."
+  echo ""
+  echo "You need to have Rust installed to build the Rust agent."
+  echo "You need to have Cross installed to build the Rust agent for multiple architectures."
+  make build-dev-rust
 fi
+
 
 VERSION="${VERSION:-unknown}"
 CGO_ENABLED=0 GOOS=linux go build \
