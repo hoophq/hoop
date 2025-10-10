@@ -11,7 +11,7 @@
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :loading, :data []}
-   :connections {:loading true}
+   :connections {:loading true :details {}}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :native-client-access {:requesting? false, :current nil}
@@ -52,11 +52,6 @@
    :editor-plugin->connections-exec-list {:status :ready :data nil}
    :editor-plugin->connections-runbook-list {:status :ready :data nil}
    :editor-plugin->current-connection {:status :loading :data nil}
-   :editor-plugin->filtered-run-connection-list nil
-   :editor-plugin->run-connection-list {:status :loading :data nil}
-   :editor-plugin->run-connection-list-selected (or (read-string
-                                                     (.getItem js/localStorage "run-connection-list-selected"))
-                                                    nil)
    :editor-plugin->select-language "shell"
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
@@ -90,6 +85,7 @@
    :user-groups []
    :users []
    :users->current-user {:loading true, :data nil}
+   :webclient->active-panel nil
    :command-palette {:open? false
                      :query ""
                      :current-page :main

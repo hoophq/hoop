@@ -375,11 +375,11 @@
               :access-modes {:runbooks (= (:access_mode_runbooks connection) "enabled")
                              :native (= (:access_mode_connect connection) "enabled")
                              :web (= (:access_mode_exec connection) "enabled")}
-              :guardrails (if (empty? (:guardrail_rules connection))
-                            []
+              :guardrails (if (seq (:guardrail_rules connection))
                             (transform-filtered-guardrails-selected
                              guardrails-list
-                             (:guardrail_rules connection)))
+                             (:guardrail_rules connection))
+                            [])
               :jira-template-id (if (:jira_issue_template_id connection)
                                   (transform-filtered-jira-template-selected
                                    jira-templates-list

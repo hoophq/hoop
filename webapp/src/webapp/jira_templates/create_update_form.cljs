@@ -17,7 +17,8 @@
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
         handlers (helpers/create-form-handlers state)
-        submitting? (rf/subscribe [:jira-templates->submitting?])]
+        submitting? (rf/subscribe [:jira-templates->submitting?])
+        all-connections (rf/subscribe [:connections])]
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:id "jira-form"
@@ -52,7 +53,8 @@
          ;; Connections section
          [connections-section/main
           {:connection-ids (:connection_ids state)
-           :on-connections-change (:on-connections-change handlers)}]
+           :on-connections-change (:on-connections-change handlers)
+           :all-connections (:results @all-connections)}]
 
          [:> Flex {:direction "column" :gap "5"}
           [:> Box

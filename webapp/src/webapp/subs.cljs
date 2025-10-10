@@ -18,11 +18,6 @@
    (:feature-flags db)))
 
 (re-frame/reg-sub
- :webclient/use-compact-ui?
- (fn [_db _]
-   (= "enabled" (.getItem js/localStorage "compact-terminal-ui"))))
-
-(re-frame/reg-sub
  :users
  (fn [db _]
    (:users db)))
@@ -354,20 +349,11 @@
  (fn [db _]
    (:gateway->public-info db)))
 
+;; Active panel state
 (re-frame/reg-sub
- :editor-plugin->run-connection-list
+ :webclient->active-panel
  (fn [db _]
-   (:editor-plugin->run-connection-list db)))
-
-(re-frame/reg-sub
- :editor-plugin->run-connection-list-selected
- (fn [db _]
-   (:editor-plugin->run-connection-list-selected db)))
-
-(re-frame/reg-sub
- :editor-plugin->filtered-run-connection-list
- (fn [db _]
-   (:editor-plugin->filtered-run-connection-list db)))
+   (get db :webclient->active-panel nil)))
 
 (re-frame/reg-sub
  :editor-plugin->connections-exec-list

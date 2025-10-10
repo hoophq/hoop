@@ -339,10 +339,9 @@
  :jira-templates->get-connections
  (fn [{:keys [db]} _]
    {:db (assoc db :jira-templates->connections-list {:status :loading :data []})
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/connections"
-                             :on-success #(rf/dispatch [:jira-templates->set-connections %])
-                             :on-failure #(rf/dispatch [:jira-templates->set-connections-error %])}]]]}))
+    :fx [[:dispatch [:connections->get-connections {:force-refresh? true}
+                     {:on-success [:jira-templates->set-connections]
+                      :on-failure [:jira-templates->set-connections-error]}]]]}))
 
 (rf/reg-event-db
  :jira-templates->set-connections

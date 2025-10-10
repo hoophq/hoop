@@ -145,4 +145,4 @@
 (rf/reg-event-fx
  :ai-data-masking->get-connections
  (fn [_ _]
-   {:dispatch [:connections->get-connections]}))
+   {:dispatch [:connections->get-connections {:force-refresh? true}]}))

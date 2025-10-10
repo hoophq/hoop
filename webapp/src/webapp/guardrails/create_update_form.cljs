@@ -12,7 +12,8 @@
 
 (defn guardrail-form [form-type guardrails scroll-pos]
   (let [state (helpers/create-form-state guardrails)
-        handlers (helpers/create-form-handlers state)]
+        handlers (helpers/create-form-handlers state)
+        all-connections (rf/subscribe [:connections])]
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:id "guardrails-form"
@@ -42,9 +43,10 @@
          ;; Connections section
          [connections-section/main
           {:connection-ids (:connection-ids state)
-           :on-connections-change (:on-connections-change handlers)}]
+           :on-connections-change (:on-connections-change handlers)
+           :all-connections (:results @all-connections)}]
 
-        ;; Rules section
+         ;; Rules section
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Flex {:align "center" :gap "2"}
@@ -55,7 +57,7 @@
             "Setup rules with Presets or Custom regular expression scripts."]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-          ;; Input Rules
+           ;; Input Rules
            [rules-table/main
             (merge
              {:title "Input rules"
@@ -65,7 +67,7 @@
               :select-state (:input-select state)}
              handlers)]
 
-          ;; Output Rules
+           ;; Output Rules
            [rules-table/main
             (merge
              {:title "Output rules"

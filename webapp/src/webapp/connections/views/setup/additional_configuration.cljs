@@ -70,8 +70,6 @@
         default-modes (get-access-mode-defaults @connection-subtype)]
 
     (rf/dispatch [:users->get-user-groups])
-    (rf/dispatch [:guardrails->get-all])
-    (rf/dispatch [:jira-templates->get-all])
 
     (when is-tcp?
       (doseq [[mode value] default-modes]
