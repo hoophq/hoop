@@ -33,6 +33,11 @@
    (:connections db)))
 
 (re-frame/reg-sub
+ :roles
+ (fn [db _]
+   (:roles db)))
+
+(re-frame/reg-sub
  :all-connections
  (fn [db _]
    (:all-connections db)))

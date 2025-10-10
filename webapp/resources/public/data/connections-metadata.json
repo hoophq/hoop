@@ -2,93 +2,75 @@
   "connections": [
     {
       "resourceConfiguration": {
-        "type": "database",
+        "type": "custom",
         "subtype": "cassandra",
-        "credentials": {
-          "keyspace": {
+        "command": [
+          "cqlsh",
+          "-k",
+          "$CQLSH_KEYSPACE",
+          "-u",
+          "$CQLSH_USER",
+          "-p",
+          "$CQLSH_PASSWD",
+          "$CQLSH_HOST",
+          "$CQLSH_PORT"
+        ],
+        "credentials": [
+          {
             "name": "CQLSH_KEYSPACE",
             "type": "env-var",
             "required": true,
-            "description": "The keyspace target"
+            "description": "The keyspace target",
+            "placeholder": "my_keyspace"
           },
-          "host": {
+          {
             "name": "CQLSH_HOST",
             "type": "env-var",
             "required": true,
-            "description": "The host of the Cassandra cluster"
+            "description": "The host of the Cassandra cluster",
+            "placeholder": "localhost"
           },
-          "port": {
+          {
             "name": "CQLSH_PORT",
             "type": "env-var",
             "required": false,
-            "description": "The Vault Token. Defaults to 9043"
+            "description": "The port of the Cassandra cluster. Defaults to 9042",
+            "placeholder": "9042"
           },
-          "username": {
+          {
             "name": "CQLSH_USER",
             "type": "env-var",
             "required": false,
-            "description": "The user can connect in the Cassandra cluster."
+            "description": "The user can connect in the Cassandra cluster.",
+            "placeholder": "cassandra"
           },
-          "password": {
+          {
             "name": "CQLSH_PASSWD",
             "type": "env-var",
             "required": false,
-            "description": "The password to connect in the Cassandra cluster."
+            "description": "The password to connect in the Cassandra cluster.",
+            "placeholder": "cassandra"
           }
-        }
+        ]
       },
       "id": "apache-cassandra",
       "name": "Apache Cassandra",
-      "description": "Execute queries to a Cassandra cluster with [cqlsh](https://cassandra.apache.org/doc/latest/cassandra/tools/cqlsh.html).",
+      "description": "A highly scalable, distributed NoSQL database designed for handling large amounts of data across many servers.",
       "category": "databases",
       "icon-name": "cassandra",
       "tags": [
-        "nosql",
-        "distributed",
-        "column-family",
-        "high-availability"
+        "database",
+        "nosql"
       ],
       "overview": {
-        "description": "Apache Cassandra is a highly scalable, distributed NoSQL database designed to handle large amounts of data across many commodity servers.",
-        "features": [
-          "Linear scalability and high availability",
-          "Fault-tolerant with no single point of failure",
-          "Tunable consistency levels",
-          "Support for structured, semi-structured, and unstructured data"
-        ],
-        "useCases": [
-          "High-volume web applications",
-          "Time-series data and IoT applications",
-          "Content management systems",
-          "Real-time analytics and reporting"
-        ]
+        "description": "Access your Cassandra clusters securely through Hoop.dev with comprehensive audit trails, AI-powered data masking for sensitive information, and granular access controls. Execute CQL queries with confidence knowing all interactions are monitored and protected."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Apache Cassandra 3.0+ cluster",
-          "Network connectivity to Cassandra nodes",
-          "Valid authentication credentials",
-          "CQL (Cassandra Query Language) knowledge"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "cqlsh host port -u username -p password",
-        "featureConfiguration": [
-          "Keyspace and table configuration",
-          "Replication strategy setup",
-          "Consistency level tuning",
-          "SSL/TLS encryption configuration"
-        ],
-        "otherRequirements": [
-          "Understanding of Cassandra data modeling",
-          "Cluster topology and replication planning",
-          "Monitoring and maintenance procedures"
-        ]
+        }
       },
       "documentationConfig": {
         "path": "quickstart/databases/apache-cassandra"
@@ -122,61 +104,57 @@
     },
     {
       "resourceConfiguration": {
-        "type": "cloud-service",
+        "type": "custom",
         "subtype": "aws-cli",
-        "credentials": {
-          "aws_access_key_id": {
+        "command": [
+          "bash"
+        ],
+        "credentials": [
+          {
             "name": "AWS_ACCESS_KEY_ID",
             "type": "env-var",
             "required": true,
-            "description": "The access key credential"
+            "description": "The access key credential",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
           },
-          "aws_secret_access_key": {
+          {
             "name": "AWS_SECRET_ACCESS_KEY",
             "type": "env-var",
             "required": true,
-            "description": "The secret key credential"
+            "description": "The secret key credential",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
           },
-          "aws_region": {
+          {
             "name": "AWS_REGION",
             "type": "env-var",
             "required": true,
-            "description": "The AWS region"
+            "description": "The AWS region",
+            "placeholder": "us-east-1"
           }
-        }
+        ]
       },
       "name": "AWS CLI",
       "requirements": {
         "description": "Use an IAM credential with reduced scope to only create secrets and/or listing ECS services."
       },
       "id": "aws-cli",
-      "description": "Hoop can be configured to use the AWS command line to manage resources in multiple accounts.",
+      "description": "The AWS Command Line Interface (CLI) is a unified tool to manage your AWS services from the command line.",
       "category": "cloud-services",
       "icon-name": "aws",
       "tags": [
         "aws",
-        "cloud",
         "cli",
-        "management"
+        "automation"
       ],
       "overview": {
-        "description": "The AWS Command Line Interface (CLI) is a unified tool to manage your AWS services from the command line.",
-        "features": [
-          "Comprehensive AWS service management",
-          "Scriptable automation capabilities",
-          "Multiple output formats (JSON, table, text)",
-          "Profile and credential management"
-        ]
+        "description": "Access your AWS resources securely through Hoop.dev with comprehensive command auditing, intelligent cost monitoring, and automated credential management. Execute AWS CLI commands with built-in compliance tracking and session recording for complete infrastructure governance."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
         }
-      },
-      "advancedConfiguration": {
-        "connectionString": "fafaf"
       },
       "documentationConfig": {
         "path": "quickstart/cloud-services/aws/aws-cli"
@@ -211,15 +189,22 @@
     {
       "id": "aws-cloudwatch",
       "name": "AWS CloudWatch",
-      "description": "CloudWatch in Hoop simplifies AWS log analysis by providing direct access to log groups with automatic environment variable setup and an optimized interface for log exploration.",
+      "description": "A monitoring and observability service that provides data and actionable insights for AWS, hybrid, and on-premises applications and infrastructure resources.",
       "category": "cloud-services",
-      "icon-name": "aws",
+      "icon-name": "aws-cloudwatch",
       "tags": [
-        "aws",
-        "monitoring",
-        "logs",
-        "metrics"
+        "aws"
       ],
+      "overview": {
+        "description": "Access AWS CloudWatch logs securely through Hoop.dev with intelligent log analysis, automated data classification, and comprehensive audit trails. Monitor your AWS infrastructure with built-in cost controls and session recording for complete observability governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
       "features": {
         "tlsTerminationProxy": {
           "native": false,
@@ -255,28 +240,34 @@
         ]
       },
       "resourceConfiguration": {
-        "type": "cloud-service",
+        "type": "custom",
         "subtype": "aws-cloudwatch",
-        "credentials": {
-          "aws_access_key_id": {
+        "command": [
+          "bash"
+        ],
+        "credentials": [
+          {
             "name": "AWS_ACCESS_KEY_ID",
             "type": "env-var",
             "required": true,
-            "description": "The AWS access key ID for CloudWatch Logs accesss"
+            "description": "The AWS access key ID for CloudWatch Logs access",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
           },
-          "aws_secret_access_key": {
+          {
             "name": "AWS_SECRET_ACCESS_KEY",
             "type": "env-var",
             "required": true,
-            "description": "The AWS secret access key for CloudWatch Logs access"
+            "description": "The AWS secret access key for CloudWatch Logs access",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
           },
-          "aws_region": {
+          {
             "name": "AWS_REGION",
             "type": "env-var",
             "required": true,
-            "description": "The AWS region where your CloudWatch log groups are located (e.g., us-east-1, eu-west-1)"
+            "description": "The AWS region where your CloudWatch log groups are located (e.g., us-east-1, eu-west-1)",
+            "placeholder": "us-east-1"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/cloud-services/aws/aws-cloudwatch"
@@ -285,15 +276,23 @@
     {
       "id": "aws-ecs",
       "name": "AWS ECS",
-      "description": "Interact with Elastic Container Service, executing one-off sessions into ECS tasks/containers.",
+      "description": "Amazon Elastic Container Service (ECS) is a fully managed container orchestration service that helps you easily deploy, manage, and scale containerized applications.",
       "category": "cloud-services",
       "icon-name": "aws",
       "tags": [
         "aws",
-        "containers",
-        "orchestration",
-        "ecs"
+        "containers"
       ],
+      "overview": {
+        "description": "Execute commands in your ECS containers securely through Hoop.dev with comprehensive session recording, intelligent resource monitoring, and automated access controls. Run one-off tasks and debug containerized applications with complete audit trails and built-in security guardrails."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
       "features": {
         "tlsTerminationProxy": {
           "native": false,
@@ -329,46 +328,58 @@
         ]
       },
       "resourceConfiguration": {
-        "type": "cloud-service",
+        "type": "custom",
         "subtype": "aws-ecs",
-        "credentials": {
-          "cluster_name": {
+        "command": [
+          "ecs-exec.sh",
+          "--cluster=$CLUSTER_NAME",
+          "--service-name=$SERVICE_NAME",
+          "--container=$CONTAINER"
+        ],
+        "credentials": [
+          {
             "name": "CLUSTER_NAME",
             "type": "env-var",
             "required": true,
-            "description": "The name or arn of the ECS Cluster"
+            "description": "The name or arn of the ECS Cluster",
+            "placeholder": "my-cluster"
           },
-          "service_name": {
+          {
             "name": "SERVICE_NAME",
             "type": "env-var",
             "required": true,
-            "description": "The name of the service on ECS"
+            "description": "The name of the service on ECS",
+            "placeholder": "my-service"
           },
-          "container": {
+          {
             "name": "CONTAINER",
             "type": "env-var",
             "required": true,
-            "description": "The name of the container defaults to the first one."
+            "description": "The name of the container defaults to the first one.",
+            "placeholder": "web"
           },
-          "aws_access_key_id": {
+          {
             "name": "AWS_ACCESS_KEY_ID",
             "type": "env-var",
             "required": true,
-            "description": "The access key credential"
+            "description": "The access key credential",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
           },
-          "aws_secret_access_key": {
+          {
             "name": "AWS_SECRET_ACCESS_KEY",
             "type": "env-var",
             "required": true,
-            "description": "The secret key credential"
+            "description": "The secret key credential",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
           },
-          "aws_default_region": {
+          {
             "name": "AWS_DEFAULT_REGION",
             "type": "env-var",
             "required": true,
-            "description": "The AWS region"
+            "description": "The AWS region",
+            "placeholder": "us-east-1"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/cloud-services/aws/aws-ecs"
@@ -377,12 +388,12 @@
     {
       "id": "bigquery",
       "name": "BigQuery",
-      "description": "Execute queries to Big Query with the [bq command line tool](https://cloud.google.com/bigquery/docs/bq-command-line-tool).",
+      "description": "A fully managed, serverless data warehouse that enables super-fast SQL queries using Google's infrastructure.",
       "category": "databases",
-      "icon-name": "bigquery",
+      "icon-name": "google-bigquery",
       "tags": [
+        "database",
         "analytics",
-        "data-warehouse",
         "google-cloud",
         "sql"
       ],
@@ -420,70 +431,41 @@
         ]
       },
       "overview": {
-        "description": "Google BigQuery is a fully managed, serverless data warehouse that enables super-fast SQL queries using the processing power of Google's infrastructure.",
-        "features": [
-          "Serverless and fully managed data warehouse",
-          "Petabyte-scale analytics with standard SQL",
-          "Built-in machine learning capabilities",
-          "Real-time data streaming and analysis"
-        ],
-        "useCases": [
-          "Large-scale data analytics and reporting",
-          "Business intelligence and data visualization",
-          "Machine learning model training on big data",
-          "Real-time streaming analytics"
-        ]
+        "description": "Connect to BigQuery through Hoop.dev for secure analytics access with automated data classification, query monitoring, and intelligent cost controls. Execute petabyte-scale queries while protecting sensitive datasets with zero-config data masking."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Google Cloud Platform account",
-          "BigQuery API enabled in your GCP project",
-          "Service account with BigQuery permissions",
-          "Google Cloud SDK (gcloud) installed"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "bq command-line tool with service account",
-        "featureConfiguration": [
-          "IAM roles and permissions for BigQuery access",
-          "Dataset and table-level security controls",
-          "Query optimization and slot management",
-          "Data encryption and compliance settings"
-        ],
-        "otherRequirements": [
-          "Understanding of BigQuery pricing model",
-          "Data modeling for optimal query performance",
-          "Monitoring with Cloud Logging and Monitoring"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "database",
+        "type": "custom",
         "subtype": "bigquery",
-        "credentials": {
-          "google_application_credentials": {
+        "command": [
+          "bq",
+          "query",
+          "--use_legacy_sql=false",
+          "--format=prettyjson",
+          "--project_id=$CLOUDSDK_CORE_PROJECT"
+        ],
+        "credentials": [
+          {
             "name": "GOOGLE_APPLICATION_CREDENTIALS",
             "type": "filesystem",
             "required": true,
-            "description": "The service account credentials file in JSON format"
+            "description": "The service account credentials file in JSON format",
+            "placeholder": "file content of service-account.json"
           },
-          "cloudsdk_core_project": {
+          {
             "name": "CLOUDSDK_CORE_PROJECT",
             "type": "env-var",
             "required": true,
-            "description": "The project id to use for request"
-          },
-          "cloudsdk_python": {
-            "name": "CLOUDSDK_PYTHON",
-            "type": "env-var",
-            "required": false,
-            "description": "The path of python interpreter, defaults to /usr/bin/python3.9"
+            "description": "The project id to use for request",
+            "placeholder": "my-project-id"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/bigquery"
@@ -492,14 +474,12 @@
     {
       "id": "clojure",
       "name": "Clojure",
-      "description": "Dynamic functional programming language for the JVM",
-      "category": "developer-consoles",
+      "description": "A dynamic, general-purpose programming language that combines interactive development with efficient infrastructure for multithreaded programming.",
+      "category": "development-environments",
       "icon-name": "clojure",
       "tags": [
-        "functional",
-        "lisp",
-        "jvm",
-        "development"
+        "development",
+        "interactive"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -528,50 +508,21 @@
         }
       },
       "overview": {
-        "description": "Clojure is a dynamic, general-purpose programming language that combines the approachability and interactive development of a scripting language with an efficient and robust infrastructure for multithreaded programming.",
-        "features": [
-          "Immutable data structures by default",
-          "Interactive REPL-driven development",
-          "Seamless Java interoperability",
-          "Software Transactional Memory (STM) for concurrency"
-        ],
-        "useCases": [
-          "Data processing and analytics applications",
-          "Web development with Ring and Compojure",
-          "Concurrent and parallel programming",
-          "Financial systems and algorithmic trading"
-        ]
+        "description": "Access your Clojure REPL environments securely through Hoop.dev with comprehensive session recording, intelligent code execution monitoring, and automated dependency management. Execute Clojure expressions with built-in safeguards, audit trails, and seamless JVM integration."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": true,
           "runbooks": true
-        },
-        "requirements": [
-          "Java 8+ installed (JVM)",
-          "Clojure CLI tools or Leiningen",
-          "Project dependencies resolved",
-          "REPL environment configured"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "clj -M:repl/rebel",
-        "featureConfiguration": [
-          "Build tool configuration (Leiningen, deps.edn)",
-          "REPL integration with development tools",
-          "ClojureScript compilation for frontend",
-          "Namespace and dependency management"
-        ],
-        "otherRequirements": [
-          "Editor integration (Emacs/CIDER, VS Code/Calva)",
-          "Testing framework setup (clojure.test, Midje)",
-          "Performance profiling and JVM tuning"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "application",
-        "subtype": "clojure"
+        "type": "custom",
+        "subtype": "clojure",
+        "command": [
+          "clj"
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/development-environments/clojure"
@@ -580,13 +531,12 @@
     {
       "id": "django",
       "name": "Django",
-      "description": "Interact with the Artisan console or execute ad-hoc scripts.",
+      "description": "A high-level Python web framework that encourages rapid development and clean, pragmatic design with built-in admin interface.",
       "category": "development-environments",
       "icon-name": "django",
       "tags": [
         "python",
-        "web-framework",
-        "management",
+        "web",
         "development"
       ],
       "features": {
@@ -616,50 +566,23 @@
         }
       },
       "overview": {
-        "description": "Django is a high-level Python web framework that encourages rapid development and clean, pragmatic design with built-in administrative interface.",
-        "features": [
-          "Powerful admin interface for content management",
-          "ORM for database interactions",
-          "Built-in authentication and authorization",
-          "Comprehensive management commands"
-        ],
-        "useCases": [
-          "Web application development and management",
-          "Database schema migrations and management",
-          "User and content administration",
-          "Custom management command execution"
-        ]
+        "description": "Access your Django management console securely through Hoop.dev with comprehensive command logging, automated database migration tracking, and intelligent access controls. Execute manage.py commands with full audit trails and built-in security safeguards."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": true,
           "runbooks": true
-        },
-        "requirements": [
-          "Python 3.8+ installed",
-          "Django framework installed",
-          "Django project configured",
-          "Database configured and migrated"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "python manage.py shell",
-        "featureConfiguration": [
-          "Django settings configuration",
-          "Database connection settings",
-          "Static files and media configuration",
-          "Custom management commands"
-        ],
-        "otherRequirements": [
-          "Virtual environment setup",
-          "Requirements.txt with dependencies",
-          "Environment-specific settings files"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "development-environment",
-        "subtype": "django"
+        "type": "custom",
+        "subtype": "django",
+        "command": [
+          "python",
+          "manage.py",
+          "shell"
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/development-environments/python/django-admin"
@@ -668,14 +591,13 @@
     {
       "id": "dynamodb",
       "name": "DynamoDB",
-      "description": "DynamoDB in Hoop offers a unique experience where tables are treated as databases, with automatic environment variable configuration and an interface optimized for NoSQL.",
+      "description": "Amazon DynamoDB is a fully managed NoSQL database service that provides fast and predictable performance with seamless scalability.",
       "category": "databases",
-      "icon-name": "dynamodb",
+      "icon-name": "aws-dynamodb",
       "tags": [
+        "database",
         "nosql",
-        "aws",
-        "managed",
-        "serverless"
+        "aws"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -712,70 +634,44 @@
         ]
       },
       "overview": {
-        "description": "Amazon DynamoDB is a fully managed NoSQL database service that provides fast and predictable performance with seamless scalability.",
-        "features": [
-          "Fully managed serverless database",
-          "Single-digit millisecond latency",
-          "Built-in security and backup capabilities",
-          "Global tables for multi-region deployment"
-        ],
-        "useCases": [
-          "Web and mobile applications",
-          "Gaming applications with leaderboards",
-          "IoT data collection and processing",
-          "Real-time personalization engines"
-        ]
+        "description": "Amazon DynamoDB is a fully managed NoSQL database service that provides fast and predictable performance with seamless scalability."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "AWS Account with DynamoDB access",
-          "IAM user with appropriate DynamoDB permissions",
-          "AWS Access Key ID and Secret Access Key",
-          "Network connectivity to AWS DynamoDB endpoints"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "AWS DynamoDB API via SDK",
-        "featureConfiguration": [
-          "IAM roles and policies for fine-grained access",
-          "VPC endpoints for private connectivity",
-          "DynamoDB Accelerator (DAX) for caching",
-          "Global Secondary Indexes (GSI) configuration"
-        ],
-        "otherRequirements": [
-          "Understanding of DynamoDB data modeling",
-          "Capacity planning for read/write units",
-          "Monitoring with CloudWatch metrics"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "database",
+        "type": "custom",
         "subtype": "dynamodb",
-        "credentials": {
-          "aws_access_key_id": {
+        "command": [
+          "bash"
+        ],
+        "credentials": [
+          {
             "name": "AWS_ACCESS_KEY_ID",
             "type": "env-var",
             "required": true,
-            "description": "The AWS access key ID for DynamoDB access"
+            "description": "The AWS access key ID for DynamoDB access",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
           },
-          "aws_secret_access_key": {
+          {
             "name": "AWS_SECRET_ACCESS_KEY",
             "type": "env-var",
             "required": true,
-            "description": "The AWS secret access key for DynamoDB access"
+            "description": "The AWS secret access key for DynamoDB access",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
           },
-          "aws_region": {
+          {
             "name": "AWS_REGION",
             "type": "env-var",
             "required": true,
-            "description": "The AWS region where your DynamoDB tables are located (e.g., us-east-1, eu-west-1)"
+            "description": "The AWS region where your DynamoDB tables are located (e.g., us-east-1, eu-west-1)",
+            "placeholder": "us-east-1"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/dynamodb"
@@ -784,13 +680,201 @@
     {
       "id": "elixir-IEx",
       "name": "Elixir IEx",
-      "description": "Interact with the IEx console or execute ad-hoc scripts.",
+      "description": "A dynamic, functional language designed for building maintainable and scalable applications, running on the Erlang Virtual Machine.",
       "category": "development-environments",
       "icon-name": "elixir",
       "tags": [
-        "elixir",
-        "functional",
-        "erlang-vm",
+        "development",
+        "interactive"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Elixir IEx console securely through Hoop.dev with comprehensive interactive session recording, intelligent process monitoring, and automated OTP supervision. Execute Elixir code with built-in concurrency safeguards and complete audit trails for distributed systems development."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "elixir",
+        "command": [
+          "iex",
+          "-S",
+          "mix"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/elixir-IEx"
+      }
+    },
+    {
+      "id": "httpproxy",
+      "name": "HTTP Proxy",
+      "description": "Access HTTP/HTTPS endpoints securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls.",
+      "category": "web-applications",
+      "icon-name": "httpproxy",
+      "tags": [
+        "web",
+        "security"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "overview": {
+        "description": "Access your HTTP/HTTPS services securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Proxy HTTP connections with built-in data masking, session recording, and advanced security guardrails for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "web-application",
+        "subtype": "http-proxy",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target HTTP/HTTPS URL to proxy requests to",
+            "placeholder": "https://example.com"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/web-applications/http-proxy"
+      }
+    },
+    {
+      "id": "kubernetes-admin",
+      "name": "Kubernetes Cluster Administration",
+      "description": "Administer your Kubernetes cluster through kubectl commands with comprehensive audit trails and session recording.",
+      "category": "cloud-services",
+      "icon-name": "kubernetes",
+      "tags": [
+        "containers",
+        "cli",
+        "automation"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "overview": {
+        "description": "Manage your Kubernetes clusters securely through Hoop.dev with comprehensive kubectl command auditing, RBAC-integrated access controls, and intelligent namespace protection. Execute cluster administration operations with complete session recording and built-in security guardrails."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "kubernetes-admin",
+        "command": [
+          "xargs",
+          "kubectl"
+        ],
+        "credentials": [
+          {
+            "name": "KUBECONFIG",
+            "type": "filesystem",
+            "required": true,
+            "description": "A [Kubeconfig File](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) with permission to access the cluster",
+            "placeholder": "file content of ~/.kube/config"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/kubernetes/cluster-administration"
+      }
+    },
+    {
+      "id": "kubernetes-exec",
+      "name": "Kubernetes Container Commands",
+      "description": "Execute one-off commands inside Kubernetes containers with comprehensive logging and audit trails.",
+      "category": "cloud-services",
+      "icon-name": "kubernetes",
+      "tags": [
+        "containers",
         "development"
       ],
       "features": {
@@ -820,156 +904,58 @@
         }
       },
       "overview": {
-        "description": "Elixir is a dynamic, functional language designed for building maintainable and scalable applications, running on the Erlang Virtual Machine.",
-        "features": [
-          "Interactive development with IEx",
-          "Actor-based concurrency model",
-          "Fault-tolerant and distributed systems",
-          "Hot code swapping capabilities"
-        ],
-        "useCases": [
-          "Real-time web applications with Phoenix",
-          "IoT and embedded systems",
-          "Distributed and concurrent applications",
-          "Microservices architecture"
-        ]
+        "description": "Execute commands inside your Kubernetes containers securely through Hoop.dev with comprehensive session recording, intelligent command monitoring, and automated access controls. Run one-off tasks and debug containerized applications with complete audit trails."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Elixir 1.12+ installed",
-          "Erlang/OTP runtime",
-          "Mix build tool configured",
-          "Project dependencies compiled"
-        ]
-      },
-      "resourceConfiguration": {
-        "type": "development-environment",
-        "subtype": "elixir"
-      },
-      "documentationConfig": {
-        "path": "quickstart/development-environments/elixir-IEx"
-      }
-    },
-    {
-      "id": "jump-hosts",
-      "name": "Jump Hosts",
-      "description": "Hoop could act as a bastion server allowing the execution of one-off sessions.",
-      "category": "web-applications",
-      "icon-name": "server",
-      "tags": [
-        "security",
-        "bastion",
-        "ssh-tunnel",
-        "network"
-      ],
-      "features": {
-        "tlsTerminationProxy": {
-          "native": false,
-          "oneOff": true
-        },
-        "audit": {
-          "native": false,
-          "oneOff": true
-        },
-        "dataMaskingGoogleDLP": {
-          "native": false,
-          "oneOff": true
-        },
-        "dataMaskingMSPresidio": {
-          "native": false,
-          "oneOff": true
-        },
-        "credentialsOffload": {
-          "native": false,
-          "oneOff": true
-        },
-        "interactiveAccess": {
-          "native": true,
-          "oneOff": true
         }
       },
       "resourceConfiguration": {
-        "type": "web-application",
-        "subtype": "jump-host"
-      },
-      "documentationConfig": {
-        "path": "quickstart/web-applications/jump-hosts"
-      }
-    },
-    {
-      "resourceConfiguration": {
-        "type": "cloud-service",
-        "subtype": "kubernetes",
-        "credentials": {
-          "kubeconfig": {
+        "type": "custom",
+        "subtype": "kubernetes-exec",
+        "command": [
+          "kubectl",
+          "exec",
+          "--stdin",
+          "$KUBERNETES_RESOURCE",
+          "--",
+          "bash"
+        ],
+        "credentials": [
+          {
             "name": "KUBECONFIG",
             "type": "filesystem",
             "required": true,
-            "description": "A [Kubeconfig File](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) with permission to access the cluster"
+            "description": "A [Kubeconfig File](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) with permission to access the cluster",
+            "placeholder": "file content of ~/.kube/config"
+          },
+          {
+            "name": "KUBERNETES_RESOURCE",
+            "type": "env-var",
+            "required": true,
+            "description": "The Kubernetes resource to target for executing commands (e.g., deployment/myapp, pod/mypod, statefulset/myapp)",
+            "placeholder": "deployment/myapp"
           }
-        }
-      },
-      "id": "kubernetes",
-      "name": "Kubernetes",
-      "description": "Hoop.dev can be configured to use the kubectl command line to manage resources and execute actions on workloads in Kubernetes.",
-      "category": "cloud-services",
-      "icon-name": "kubernetes",
-      "tags": [
-        "orchestration",
-        "containers",
-        "cloud-native",
-        "devops"
-      ],
-      "overview": {
-        "description": "Kubernetes is an open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications.",
-        "features": [
-          "Automated deployment and scaling",
-          "Service discovery and load balancing",
-          "Storage orchestration and management",
-          "Self-healing and rolling updates"
-        ],
-        "useCases": [
-          "Microservices architecture deployment",
-          "Container orchestration and management",
-          "CI/CD pipeline automation",
-          "Multi-cloud and hybrid cloud deployments"
-        ]
-      },
-      "setupGuide": {
-        "accessMethods": {
-          "webapp": true,
-          "cli": true,
-          "runbooks": true
-        },
-        "requirements": [
-          "Kubernetes cluster access",
-          "kubectl command-line tool installed",
-          "Valid kubeconfig file with cluster credentials",
-          "Network connectivity to Kubernetes API server"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "kubectl via kubeconfig",
-        "featureConfiguration": [
-          "RBAC (Role-Based Access Control) configuration",
-          "Service accounts and token authentication",
-          "Network policies and security contexts",
-          "Helm chart deployments and management"
-        ],
-        "otherRequirements": [
-          "Understanding of Kubernetes resources and manifests",
-          "Cluster monitoring and logging setup",
-          "Backup and disaster recovery planning"
         ]
       },
       "documentationConfig": {
-        "path": "quickstart/cloud-services/kubernetes"
-      },
+        "path": "quickstart/cloud-services/kubernetes/container-commands"
+      }
+    },
+    {
+      "id": "kubernetes-interactive",
+      "name": "Kubernetes Interactive Access",
+      "description": "Open interactive shell sessions inside Kubernetes containers with full TTY support and session recording.",
+      "category": "cloud-services",
+      "icon-name": "kubernetes",
+      "tags": [
+        "containers",
+        "interactive",
+        "development"
+      ],
       "features": {
         "tlsTerminationProxy": {
           "native": false,
@@ -995,19 +981,58 @@
           "native": true,
           "oneOff": true
         }
+      },
+      "overview": {
+        "description": "Access your Kubernetes containers interactively through Hoop.dev with full TTY support, comprehensive session recording, and intelligent access controls. Open shell sessions for debugging, development, and administrative tasks with complete audit trails."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "kubernetes-interactive",
+        "command": [
+          "kubectl",
+          "exec",
+          "--stdin",
+          "--tty",
+          "$KUBERNETES_RESOURCE",
+          "--"
+        ],
+        "credentials": [
+          {
+            "name": "KUBECONFIG",
+            "type": "filesystem",
+            "required": true,
+            "description": "A [Kubeconfig File](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) with permission to access the cluster",
+            "placeholder": "file content of ~/.kube/config"
+          },
+          {
+            "name": "KUBERNETES_RESOURCE",
+            "type": "env-var",
+            "required": true,
+            "description": "The Kubernetes resource to target for interactive access (e.g., deployment/myapp, pod/mypod, statefulset/myapp)",
+            "placeholder": "deployment/myapp"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/kubernetes/interactive-access"
       }
     },
     {
       "id": "mssql",
       "name": "Microsoft SQL Server",
-      "description": "Connecting to Microsoft SQL Server can be done natively using an IDE or any supported client library. Alternatively, you can use the [sqlcmd command line utility](https://learn.microsoft.com/en-us/sql/tools/sqlcmd/sqlcmd-utility) for one-off executions.",
+      "description": "A relational database management system developed by Microsoft, offering comprehensive data management and business intelligence capabilities.",
       "category": "databases",
       "icon-name": "mssql",
       "tags": [
-        "sql",
-        "relational",
-        "enterprise",
-        "microsoft"
+        "database",
+        "sql"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -1036,88 +1061,62 @@
         }
       },
       "overview": {
-        "description": "Microsoft SQL Server is a relational database management system developed by Microsoft, offering comprehensive data management and business intelligence capabilities.",
-        "features": [
-          "Advanced security with Always Encrypted technology",
-          "In-memory OLTP for high-performance workloads",
-          "Built-in machine learning and AI capabilities",
-          "Comprehensive backup and disaster recovery"
-        ],
-        "useCases": [
-          "Enterprise applications and ERP systems",
-          "Data warehousing and business intelligence",
-          "Mission-critical applications requiring high availability",
-          "Integration with Microsoft ecosystem"
-        ]
+        "description": "Connect to your SQL Server databases through Hoop.dev with enterprise-grade security, automated compliance logging, and real-time data protection. Execute T-SQL queries with advanced access controls and intelligent masking of sensitive business data."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": true,
           "runbooks": true
-        },
-        "requirements": [
-          "SQL Server 2017+",
-          "SQL Server authentication or Windows authentication",
-          "Network connectivity to port 1433",
-          "TLS/SSL certificates for encrypted connections"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "mssql://username:password@host:port/database",
-        "featureConfiguration": [
-          "Always On Availability Groups for high availability",
-          "Transparent Data Encryption (TDE)",
-          "Query Store for performance monitoring",
-          "Row-level security configuration"
-        ],
-        "otherRequirements": [
-          "SQL Server Agent for automated tasks",
-          "Performance monitoring with Extended Events",
-          "Regular maintenance plans configured"
-        ]
+        }
       },
       "resourceConfiguration": {
         "type": "database",
         "subtype": "mssql",
-        "credentials": {
-          "host": {
+        "credentials": [
+          {
             "name": "HOST",
             "type": "env-var",
             "required": true,
-            "description": "The IP or Host of the SQL Server"
+            "description": "The IP or Host of the SQL Server",
+            "placeholder": "localhost"
           },
-          "user": {
+          {
             "name": "USER",
             "type": "env-var",
             "required": true,
-            "description": "The user with access to the instance"
+            "description": "The user with access to the instance",
+            "placeholder": "sa"
           },
-          "pass": {
+          {
             "name": "PASS",
             "type": "env-var",
             "required": true,
-            "description": "The password with access to the instance"
+            "description": "The password with access to the instance",
+            "placeholder": "password"
           },
-          "port": {
+          {
             "name": "PORT",
             "type": "env-var",
             "required": true,
-            "description": "The port of the SQL server"
+            "description": "The port of the SQL server",
+            "placeholder": "1433"
           },
-          "db": {
+          {
             "name": "DB",
             "type": "env-var",
             "required": true,
-            "description": "The name of the database to connect (Required when using the connection via the command line)."
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
           },
-          "insecure": {
+          {
             "name": "INSECURE",
             "type": "env-var",
             "required": false,
-            "description": "If the connection will ignore the chain of certificates presented by the server. The connection will be subject to man-in-the-middle attacks if the network is not reliable. By default, this option is set to false."
+            "description": "If the connection will ignore the chain of certificates presented by the server. The connection will be subject to man-in-the-middle attacks if the network is not reliable. By default, this option is set to false.",
+            "placeholder": "false"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/mssql"
@@ -1126,55 +1125,23 @@
     {
       "id": "mongodb",
       "name": "MongoDB",
-      "description": "A MongoDB connection is a native type, allowing for the auditing of queries and redaction of their output. It facilitates a local TCP connection without requiring a password.",
+      "description": "A NoSQL document-oriented database that provides high scalability and flexibility for modern applications.",
       "category": "databases",
       "icon-name": "mongodb",
       "tags": [
+        "database",
         "nosql",
-        "document",
-        "cloud"
+        "development"
       ],
       "overview": {
-        "description": "MongoDB is a NoSQL document-oriented database that provides high scalability and flexibility for modern applications.",
-        "features": [
-          "Flexible schema for rapid data evolution",
-          "Horizontal scalability with automatic sharding",
-          "Built-in replication for high availability",
-          "Powerful queries with advanced indexing"
-        ],
-        "useCases": [
-          "Web and mobile applications with variable data",
-          "Content management systems",
-          "E-commerce product catalogs",
-          "Real-time data analytics"
-        ]
+        "description": "Connect to your MongoDB instances through Hoop.dev's secure access gateway with automated data protection, comprehensive query auditing, and intelligent access controls. Execute database operations with real-time masking of sensitive document fields."
       },
       "setupGuide": {
         "accessMethods": {
-          "webapp": false,
-          "cli": false,
-          "runbooks": false
-        },
-        "requirements": [
-          "MongoDB Server 4.0+",
-          "User credentials with appropriate privileges",
-          "Network connectivity to port 27017",
-          "Proper firewall configuration"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "mongodb://username:password@host:port/database",
-        "featureConfiguration": [
-          "Replica set configuration for high availability",
-          "Sharding configuration for scalability",
-          "Optimized indexes for frequent queries",
-          "SSL/TLS configuration for secure connections"
-        ],
-        "otherRequirements": [
-          "Performance monitoring enabled",
-          "Automatic backup configured",
-          "Storage capacity alerts"
-        ]
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
       },
       "documentationConfig": {
         "path": "quickstart/databases/mongodb"
@@ -1208,26 +1175,27 @@
       "resourceConfiguration": {
         "type": "database",
         "subtype": "mongodb",
-        "credentials": {
-          "connectionString": {
+        "credentials": [
+          {
             "name": "CONNECTION_STRING",
             "type": "env-var",
             "required": true,
-            "description": "The MongoDB connection string. See [MongoDB connection string](https://www.mongodb.com/docs/manual/reference/connection-string/) for more details about the proper format."
+            "description": "The MongoDB connection string. See [MongoDB connection string](https://www.mongodb.com/docs/manual/reference/connection-string/) for more details about the proper format.",
+            "placeholder": "mongodb://localhost:27017/mydb"
           }
-        }
+        ]
       }
     },
     {
       "id": "mysql",
       "name": "MySQL",
-      "description": "Connect to a private mysql instance from your favorite IDE",
+      "description": "The world's most popular open-source relational database, offering proven performance, reliability, and ease-of-use.",
       "category": "databases",
       "icon-name": "mysql",
       "tags": [
+        "database",
         "sql",
-        "relational",
-        "open-source"
+        "development"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -1257,88 +1225,62 @@
         }
       },
       "overview": {
-        "description": "MySQL is the world's most popular open-source relational database, offering proven performance, reliability, and ease-of-use.",
-        "features": [
-          "ACID-compliant transactions for data integrity",
-          "High performance with optimized storage engines",
-          "Comprehensive security with SSL encryption",
-          "Scalable architecture supporting large datasets"
-        ],
-        "useCases": [
-          "Web applications and e-commerce platforms",
-          "Data warehousing and analytics",
-          "Content management systems",
-          "Financial and banking applications"
-        ]
+        "description": "Access your MySQL databases securely through Hoop.dev with comprehensive audit logging, real-time data protection, and streamlined access management. Execute queries with built-in guardrails that prevent risky operations while maintaining developer productivity."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": true,
           "runbooks": true
-        },
-        "requirements": [
-          "MySQL Server 5.7+",
-          "Database user with appropriate privileges",
-          "Network connectivity to port 3306",
-          "SSL certificates for secure connections"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "mysql://username:password@host:port/database",
-        "featureConfiguration": [
-          "Master-slave replication for high availability",
-          "InnoDB storage engine optimization",
-          "Query cache configuration",
-          "SSL/TLS encryption setup"
-        ],
-        "otherRequirements": [
-          "Regular backup strategy implemented",
-          "Performance monitoring enabled",
-          "Binary logging configured"
-        ]
+        }
       },
       "resourceConfiguration": {
         "type": "database",
         "subtype": "mysql",
-        "credentials": {
-          "host": {
+        "credentials": [
+          {
             "name": "HOST",
             "type": "env-var",
             "required": true,
-            "description": "The IP or Host of the MySQL server"
+            "description": "The IP or Host of the MySQL server",
+            "placeholder": "localhost"
           },
-          "user": {
+          {
             "name": "USER",
             "type": "env-var",
             "required": true,
-            "description": "The user to connect in the MySQL server"
+            "description": "The user to connect in the MySQL server",
+            "placeholder": "root"
           },
-          "pass": {
+          {
             "name": "PASS",
             "type": "env-var",
             "required": true,
-            "description": "The password to connect to the MySQL server"
+            "description": "The password to connect to the MySQL server",
+            "placeholder": "password"
           },
-          "port": {
+          {
             "name": "PORT",
             "type": "env-var",
             "required": true,
-            "description": "The port of the MySQL server"
+            "description": "The port of the MySQL server",
+            "placeholder": "3306"
           },
-          "db": {
+          {
             "name": "DB",
             "type": "env-var",
             "required": true,
-            "description": "The name of the database to connect (Required when using the connection via the command line)."
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
           },
-          "preSQLScriptFile": {
+          {
             "name": "PRE_SQL_SCRIPT_FILE",
             "type": "filesystem",
             "required": false,
-            "description": "Append a custom SQL script at the beginning of the execution."
+            "description": "Append a custom SQL script at the beginning of the execution.",
+            "placeholder": "file content of script.sql"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/mysql"
@@ -1347,13 +1289,10 @@
     {
       "id": "nodejs",
       "name": "Node.js",
-      "description": "JavaScript runtime environment for server-side development",
-      "category": "developer-consoles",
-      "icon-name": "nodejs",
+      "description": "A JavaScript runtime built on Chrome's V8 engine, enabling server-side JavaScript development with high performance.",
+      "category": "development-environments",
+      "icon-name": "node",
       "tags": [
-        "javascript",
-        "runtime",
-        "server-side",
         "development"
       ],
       "features": {
@@ -1383,50 +1322,21 @@
         }
       },
       "overview": {
-        "description": "Node.js is a JavaScript runtime built on Chrome's V8 JavaScript engine, enabling server-side JavaScript development with high performance and scalability.",
-        "features": [
-          "Event-driven, non-blocking I/O architecture",
-          "Extensive NPM package ecosystem",
-          "Built-in REPL for interactive development",
-          "Cross-platform compatibility and deployment"
-        ],
-        "useCases": [
-          "Web API development and microservices",
-          "Real-time applications (chat, gaming)",
-          "Command-line tools and automation scripts",
-          "Full-stack JavaScript development"
-        ]
+        "description": "Access your Node.js development environments securely through Hoop.dev with comprehensive session recording, intelligent script execution monitoring, and automated secret management. Execute JavaScript code and manage npm packages with built-in safeguards and audit trails."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Node.js 16+ installed",
-          "NPM or Yarn package manager",
-          "Project dependencies installed (npm install)",
-          "Environment variables configured"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "node -i script.js",
-        "featureConfiguration": [
-          "Package management with NPM/Yarn/PNPM",
-          "Process management with PM2 or similar",
-          "Environment-specific configuration (development, production)",
-          "TypeScript integration and compilation"
-        ],
-        "otherRequirements": [
-          "Code linting and formatting (ESLint, Prettier)",
-          "Testing framework setup (Jest, Mocha, Vitest)",
-          "Performance monitoring and profiling tools"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "application",
-        "subtype": "nodejs"
+        "type": "custom",
+        "subtype": "nodejs",
+        "command": [
+          "node"
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/development-environments/nodejs"
@@ -1435,14 +1345,12 @@
     {
       "id": "oracle",
       "name": "Oracle",
-      "description": "Execute queries to Oracle instances with [sqlcl](https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/).",
+      "description": "A multi-model database management system designed for enterprise grid computing and high-performance applications.",
       "category": "databases",
       "icon-name": "oracle",
       "tags": [
-        "sql",
-        "relational",
-        "enterprise",
-        "high-performance"
+        "database",
+        "sql"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -1471,90 +1379,63 @@
         }
       },
       "overview": {
-        "description": "Oracle Database is a multi-model database management system produced by Oracle Corporation, designed for enterprise grid computing and high-performance applications.",
-        "features": [
-          "Advanced security with data encryption and masking",
-          "Real Application Clusters (RAC) for scalability",
-          "Automatic Storage Management (ASM)",
-          "In-memory processing capabilities"
-        ],
-        "useCases": [
-          "Large-scale enterprise applications",
-          "Data warehousing and analytics platforms",
-          "Financial and banking systems",
-          "High-availability mission-critical systems"
-        ]
+        "description": "Access your Oracle databases through Hoop.dev with enterprise-level security and compliance features, comprehensive audit trails, and automated data protection. Execute SQL operations with granular access controls and intelligent masking for sensitive enterprise data."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Oracle Database 12c+",
-          "Oracle user account with appropriate privileges",
-          "Network connectivity to port 1521",
-          "Oracle client libraries installed"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "oracle://username:password@host:port/service_name",
-        "featureConfiguration": [
-          "Real Application Clusters (RAC) configuration",
-          "Data Guard for disaster recovery",
-          "Transparent Data Encryption setup",
-          "Oracle Advanced Security configuration"
-        ],
-        "otherRequirements": [
-          "Oracle Enterprise Manager for monitoring",
-          "RMAN backup strategy configured",
-          "Automatic Workload Repository (AWR) enabled"
-        ]
+        }
       },
       "resourceConfiguration": {
         "type": "database",
         "subtype": "oracle",
-        "credentials": {
-          "host": {
+        "credentials": [
+          {
             "name": "HOST",
             "type": "env-var",
             "required": true,
-            "description": "The IP or Host of the Oracle server"
+            "description": "The IP or Host of the Oracle server",
+            "placeholder": "localhost"
           },
-          "user": {
+          {
             "name": "USER",
             "type": "env-var",
             "required": true,
-            "description": "The user to connect in the Oracle server"
+            "description": "The user to connect in the Oracle server",
+            "placeholder": "hr"
           },
-          "pass": {
+          {
             "name": "PASS",
             "type": "env-var",
             "required": true,
-            "description": "The password to connect to the Oracle server. Make sure to URL encode the password if it contains any special characters."
+            "description": "The password to connect to the Oracle server. Make sure to URL encode the password if it contains any special characters.",
+            "placeholder": "password"
           },
-          "port": {
+          {
             "name": "PORT",
             "type": "env-var",
             "required": true,
-            "description": "The port of the Oracle server"
+            "description": "The port of the Oracle server",
+            "placeholder": "1521"
           },
-          "ld_library_path": {
+          {
             "name": "LD_LIBRARY_PATH",
             "type": "env-var",
             "required": true,
             "description": "Oracle client library path",
-            "hidden": true
+            "hidden": true,
+            "placeholder": "/opt/oracle/instantclient"
           },
-          "sid": {
+          {
             "name": "SID",
             "type": "env-var",
             "required": true,
             "description": "The service name or SID (System identifier) to identify the database service.",
             "placeholder": "SID or Service name"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/oracle"
@@ -1563,13 +1444,11 @@
     {
       "id": "php-artisan",
       "name": "PHP Artisan",
-      "description": "Interact with the Laravel Artisan console or execute ad-hoc PHP scripts.",
+      "description": "Laravel Artisan is the command-line interface included with Laravel, providing helpful commands for application development.",
       "category": "development-environments",
-      "icon-name": "php",
+      "icon-name": "laravel",
       "tags": [
-        "php",
-        "laravel",
-        "artisan",
+        "web",
         "development"
       ],
       "features": {
@@ -1599,50 +1478,23 @@
         }
       },
       "overview": {
-        "description": "Laravel Artisan is the command-line interface included with Laravel, providing helpful commands for application development.",
-        "features": [
-          "Interactive PHP shell (Tinker)",
-          "Database migrations and seeding",
-          "Queue management and processing",
-          "Custom command creation and execution"
-        ],
-        "useCases": [
-          "Laravel application development and management",
-          "Database operations and migrations",
-          "Background job processing",
-          "Application debugging and testing"
-        ]
+        "description": "Access your Laravel Artisan console securely through Hoop.dev with comprehensive command monitoring, database migration tracking, and intelligent access controls. Execute PHP artisan commands with complete audit logging and built-in security guardrails."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "PHP 8.0+ installed",
-          "Laravel framework installed",
-          "Composer dependencies resolved",
-          "Application environment configured"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "php artisan tinker",
-        "featureConfiguration": [
-          "Laravel configuration files",
-          "Database connection settings",
-          "Queue and cache configuration",
-          "Custom Artisan commands"
-        ],
-        "otherRequirements": [
-          "Environment variables configuration",
-          "Application key generation",
-          "Storage permissions setup"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "development-environment",
-        "subtype": "php-artisan"
+        "type": "custom",
+        "subtype": "php-artisan",
+        "command": [
+          "php",
+          "artisan",
+          "tinker"
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/development-environments/php-artisan"
@@ -1651,14 +1503,13 @@
     {
       "id": "postgres",
       "name": "PostgreSQL",
-      "description": "A Postgres connection is a native type, allowing for the auditing of queries and redaction of their output. It facilitates a local TCP connection without requiring a password.",
+      "description": "A powerful, open-source relational database system known for reliability, feature robustness, and performance.",
       "category": "databases",
-      "icon-name": "postgresql",
+      "icon-name": "postgres",
       "tags": [
+        "database",
         "sql",
-        "relational",
-        "acid-compliant",
-        "open-source"
+        "development"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -1687,88 +1538,62 @@
         }
       },
       "overview": {
-        "description": "PostgreSQL is a powerful, open-source object-relational database system with a strong reputation for reliability, feature robustness, and performance.",
-        "features": [
-          "Advanced SQL compliance with custom data types",
-          "MVCC (Multi-Version Concurrency Control)",
-          "Full-text search and JSON support",
-          "Extensible with custom functions and operators"
-        ],
-        "useCases": [
-          "Complex web applications with advanced queries",
-          "Data analytics and business intelligence",
-          "Geospatial applications with PostGIS",
-          "Financial systems requiring ACID compliance"
-        ]
+        "description": "Connect to your PostgreSQL databases through Hoop.dev's secure gateway with zero-config AI data masking, comprehensive session recording, and intelligent access controls. Execute SQL queries while automatically protecting sensitive data like PII and credentials without complex rule setup."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
           "cli": true,
           "runbooks": true
-        },
-        "requirements": [
-          "PostgreSQL Server 12+",
-          "Database user with appropriate privileges",
-          "Network connectivity to port 5432",
-          "SSL certificates for encrypted connections"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "postgresql://username:password@host:port/database",
-        "featureConfiguration": [
-          "Streaming replication for high availability",
-          "Connection pooling with pgBouncer",
-          "Advanced indexing strategies (B-tree, GIN, GiST)",
-          "SSL/TLS configuration with certificate authentication"
-        ],
-        "otherRequirements": [
-          "WAL (Write-Ahead Logging) archiving configured",
-          "Performance monitoring with pg_stat_statements",
-          "Regular VACUUM and ANALYZE scheduling"
-        ]
+        }
       },
       "resourceConfiguration": {
         "type": "database",
         "subtype": "postgres",
-        "credentials": {
-          "host": {
+        "credentials": [
+          {
             "name": "HOST",
             "type": "env-var",
             "required": true,
-            "description": "The IP or hostname of the PostgreSQL server"
+            "description": "The IP or hostname of the PostgreSQL server",
+            "placeholder": "localhost"
           },
-          "user": {
+          {
             "name": "USER",
             "type": "env-var",
             "required": true,
-            "description": "The username to connect to PostgreSQL"
+            "description": "The username to connect to PostgreSQL",
+            "placeholder": "postgres"
           },
-          "pass": {
+          {
             "name": "PASS",
             "type": "env-var",
             "required": true,
-            "description": "The password to connect to the Postgres server. Make sure to URL encode the password if it contains any special characters."
+            "description": "The password to connect to the Postgres server. Make sure to URL encode the password if it contains any special characters.",
+            "placeholder": "password"
           },
-          "port": {
+          {
             "name": "PORT",
             "type": "env-var",
             "required": true,
-            "description": "The port of the Postgres server"
+            "description": "The port of the Postgres server",
+            "placeholder": "5432"
           },
-          "db": {
+          {
             "name": "DB",
             "type": "env-var",
             "required": true,
-            "description": "The name of the database to connect (Required when using the connection via the command line)."
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
           },
-          "sslmode": {
+          {
             "name": "SSLMODE",
             "type": "env-var",
             "required": false,
-            "description": "How to connect via tls with the remote host, it defaults to prefer. See [PostgreSQL SSL documentation](https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION) for more information. Available options are: disable, prefer, require, and verify-full"
+            "description": "How to connect via tls with the remote host, it defaults to prefer. See [PostgreSQL SSL documentation](https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION) for more information. Available options are disable, prefer, require, and verify-full",
+            "placeholder": "prefer"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/postgres"
@@ -1777,12 +1602,11 @@
     {
       "id": "python-scripts",
       "name": "Python Scripts",
-      "description": "Execute Python scripts and interact with the Python interpreter for development and automation tasks.",
+      "description": "A versatile, high-level programming language perfect for scripting, automation, data analysis, and application development.",
       "category": "development-environments",
       "icon-name": "python",
       "tags": [
         "python",
-        "scripting",
         "development",
         "automation"
       ],
@@ -1813,50 +1637,22 @@
         }
       },
       "overview": {
-        "description": "Python is a versatile, high-level programming language perfect for scripting, automation, data analysis, and application development.",
-        "features": [
-          "Interactive Python REPL",
-          "Extensive standard library",
-          "Rich ecosystem of third-party packages",
-          "Cross-platform compatibility"
-        ],
-        "useCases": [
-          "Data analysis and scientific computing",
-          "Automation and scripting tasks",
-          "Web development and APIs",
-          "Machine learning and AI applications"
-        ]
+        "description": "Execute Python scripts securely through Hoop.dev with comprehensive logging, automated dependency management, and intelligent code execution controls. Run data analysis, automation tasks, and development workflows with built-in security guardrails and session recording."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Python 3.8+ installed",
-          "Virtual environment configured",
-          "Required packages installed via pip",
-          "Script execution permissions"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "python -i",
-        "featureConfiguration": [
-          "Virtual environment activation",
-          "Package management with pip/pipenv/poetry",
-          "Environment variables configuration",
-          "Custom module imports"
-        ],
-        "otherRequirements": [
-          "Dependencies listed in requirements.txt",
-          "Environment-specific configuration files",
-          "Proper Python path configuration"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "development-environment",
-        "subtype": "python"
+        "type": "custom",
+        "subtype": "python",
+        "command": [
+          "python3",
+          "-"
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/development-environments/python/python-scripts"
@@ -1865,14 +1661,13 @@
     {
       "id": "redis",
       "name": "Redis",
-      "description": "Execute queries to Redis with the redis-cli command line tool.",
+      "description": "An in-memory data structure store, used as a database, cache, and message broker with support for various data types.",
       "category": "databases",
       "icon-name": "redis",
       "tags": [
-        "nosql",
+        "database",
         "cache",
-        "key-value",
-        "in-memory"
+        "nosql"
       ],
       "features": {
         "tlsTerminationProxy": {
@@ -1901,52 +1696,68 @@
         }
       },
       "overview": {
-        "description": "Redis is an in-memory data structure store, used as a database, cache, and message broker with support for various data structures.",
-        "features": [
-          "High-performance in-memory data storage",
-          "Support for strings, hashes, lists, sets, and more",
-          "Built-in replication and clustering",
-          "Pub/Sub messaging capabilities"
-        ],
-        "useCases": [
-          "Application caching and session storage",
-          "Real-time analytics and leaderboards",
-          "Message queuing and pub/sub systems",
-          "High-speed data processing pipelines"
-        ]
+        "description": "Access your Redis instances securely through Hoop.dev with high-performance connection management, session recording, and intelligent data protection. Execute Redis commands with built-in safeguards and comprehensive audit trails for cache operations and data queries."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Redis Server 6.0+",
-          {
-            "Network connectivity to Redis port (default": "6379)"
-          },
-          "Authentication credentials if AUTH is enabled",
-          "SSL/TLS configuration for encrypted connections"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "redis://username:password@host:port/database",
-        "featureConfiguration": [
-          "Redis Cluster configuration for scalability",
-          "Sentinel setup for high availability",
-          "Memory optimization and persistence settings",
-          "SSL/TLS encryption configuration"
-        ],
-        "otherRequirements": [
-          "Memory allocation planning for dataset size",
-          "Backup and persistence strategy (RDB/AOF)",
-          "Monitoring with Redis INFO commands"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "database",
-        "subtype": "redis"
+        "type": "custom",
+        "subtype": "redis",
+        "command": [
+          "redis-cli",
+          "-h",
+          "$HOST",
+          "-p",
+          "$PORT",
+          "--user",
+          "$USER",
+          "-a",
+          "$PASSWORD",
+          "-n",
+          "$DB_NUMBER"
+        ],
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The host of the Redis server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the Redis server",
+            "placeholder": "6379"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username for Redis authentication (Redis 6.0+)",
+            "placeholder": "default"
+          },
+          {
+            "name": "PASSWORD",
+            "type": "env-var",
+            "required": true,
+            "description": "The password for Redis authentication",
+            "placeholder": "password"
+          },
+          {
+            "name": "DB_NUMBER",
+            "type": "env-var",
+            "required": true,
+            "description": "The database number to select (0-15)",
+            "placeholder": "0"
+          }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/databases/redis"
@@ -1955,13 +1766,11 @@
     {
       "id": "ruby-on-rails",
       "name": "Ruby on Rails",
-      "description": "Interact with the rails console or execute ad-hoc scripts in a Ruby On Rails application.",
-      "category": "developer-consoles",
-      "icon-name": "ruby",
+      "description": "A web application framework written in Ruby that follows the MVC pattern, providing tools for rapid web development.",
+      "category": "development-environments",
+      "icon-name": "rails",
       "tags": [
-        "ruby",
-        "web-framework",
-        "mvc",
+        "web",
         "development"
       ],
       "features": {
@@ -1991,50 +1800,23 @@
         }
       },
       "overview": {
-        "description": "Ruby on Rails is a web application framework written in Ruby that follows the model-view-controller (MVC) architectural pattern, providing tools for rapid web development.",
-        "features": [
-          "Convention over configuration philosophy",
-          "Active Record ORM for database interactions",
-          "Built-in testing framework and tools",
-          "Rich ecosystem of gems and plugins"
-        ],
-        "useCases": [
-          "Rapid web application development",
-          "Database migrations and management",
-          "API development and microservices",
-          "E-commerce and content management systems"
-        ]
+        "description": "Access your Rails console securely through Hoop.dev with comprehensive audit logging, automated secret management, and intelligent access controls. Execute Rails commands and interact with your application models with full session recording and data protection."
       },
       "setupGuide": {
         "accessMethods": {
           "webapp": true,
-          "cli": true,
+          "cli": false,
           "runbooks": true
-        },
-        "requirements": [
-          "Ruby 2.7+ installed",
-          "Rails framework installed",
-          "Database connection configured",
-          "Application dependencies installed (bundle install)"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "rails console -e production",
-        "featureConfiguration": [
-          "Environment-specific configuration (development, test, production)",
-          "Database connection pooling and optimization",
-          "Caching strategies (Redis, Memcached)",
-          "Background job processing (Sidekiq, Resque)"
-        ],
-        "otherRequirements": [
-          "Application server configuration (Puma, Unicorn)",
-          "Asset pipeline and precompilation setup",
-          "Security configurations and secret management"
-        ]
+        }
       },
       "resourceConfiguration": {
-        "type": "application",
-        "subtype": "ruby-on-rails"
+        "type": "custom",
+        "subtype": "ruby-on-rails",
+        "command": [
+          "rails",
+          "runner",
+          "-"
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/development-environments/ruby-on-rails"
@@ -2044,92 +1826,63 @@
       "resourceConfiguration": {
         "type": "application",
         "subtype": "ssh",
-        "credentials": {
-          "host": {
+        "credentials": [
+          {
             "name": "HOST",
             "type": "env-var",
             "required": true,
-            "description": "The IP or hostname of the SSH server"
+            "description": "The IP or hostname of the SSH server",
+            "placeholder": "localhost"
           },
-          "port": {
+          {
             "name": "PORT",
             "type": "env-var",
             "required": false,
-            "description": "The port of the SSH server, default to 22"
+            "description": "The port of the SSH server, default to 22",
+            "placeholder": "22"
           },
-          "user": {
+          {
             "name": "USER",
             "type": "env-var",
             "required": true,
-            "description": "The username of the Linux server"
+            "description": "The username of the Linux server",
+            "placeholder": "ubuntu"
           },
-          "pass": {
+          {
             "name": "PASS",
             "type": "env-var",
             "required": false,
-            "description": "The credentials of the username if password authentication is enabled in the SSH server."
+            "description": "The credentials of the username if password authentication is enabled in the SSH server.",
+            "placeholder": "password"
           },
-          "authorized_server_keys": {
+          {
             "name": "AUTHORIZED_SERVER_KEYS",
-            "type": "textarea",
+            "type": "env-var",
             "required": false,
             "description": "The private key of the user that corresponds to the public key at $HOME/<user>/.ssh/authorized_keys",
             "placeholder": "Enter your private key"
           }
-        }
+        ]
       },
       "id": "ssh",
       "name": "Secure Shell (SSH)",
-      "description": "Proxy an SSH Server to remote hosts in your private network.",
+      "description": "A cryptographic network protocol for operating network services securely over an unsecured network, commonly used for remote command-line login.",
       "category": "infrastructure-access",
       "icon-name": "ssh",
       "tags": [
-        "remote-access",
-        "secure",
-        "terminal",
-        "unix"
+        "security",
+        "interactive",
+        "cli"
       ],
       "overview": {
-        "description": "SSH (Secure Shell) is a cryptographic network protocol for operating network services securely over an unsecured network, commonly used for remote command-line login and remote command execution.",
-        "features": [
-          "Encrypted communication for secure remote access",
-          "Public key authentication for enhanced security",
-          "Port forwarding and tunneling capabilities",
-          "Session multiplexing and connection sharing"
-        ],
-        "useCases": [
-          "Remote server administration and maintenance",
-          "Secure file transfers and backups",
-          "Development environment access",
-          "Network troubleshooting and diagnostics"
-        ]
+        "description": "Access your servers securely through Hoop.dev with comprehensive SSH session recording, intelligent command monitoring, and automated access controls. Connect to remote hosts with complete audit trails, data masking capabilities, and built-in security guardrails that eliminate the need for traditional VPN access."
       },
       "setupGuide": {
         "accessMethods": {
-          "webapp": true,
+          "webapp": false,
           "cli": true,
-          "runbooks": true
-        },
-        "requirements": [
-          "SSH server running on target host",
-          "Valid SSH credentials (password or key-based)",
-          "Network connectivity to port 22",
-          "Proper firewall configuration"
-        ]
-      },
-      "advancedConfiguration": {
-        "connectionString": "ssh://username@hostname:port",
-        "featureConfiguration": [
-          "SSH key-based authentication setup",
-          "SSH agent forwarding configuration",
-          "Custom SSH configuration files",
-          "Jump host and bastion configuration"
-        ],
-        "otherRequirements": [
-          "SSH key management and rotation",
-          "Connection logging and audit trails",
-          "Fail2ban or similar intrusion prevention"
-        ]
+          "runbooks": false
+        }
       },
       "documentationConfig": {
         "path": "quickstart/ssh"
@@ -2164,15 +1917,22 @@
     {
       "id": "webapps-and-apis",
       "name": "Web Applications and APIs",
-      "description": "Interact with web applications and APIs tunneling through hoop.dev.",
+      "description": "Web applications and APIs that provide HTTP/HTTPS endpoints for various services, applications, and data access interfaces.",
       "category": "web-applications",
-      "icon-name": "globe",
+      "icon-name": "tcp",
       "tags": [
-        "web",
-        "api",
-        "http",
-        "monitoring"
+        "web"
       ],
+      "overview": {
+        "description": "Access your web applications and APIs securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Tunnel HTTP/HTTPS connections with built-in data masking and session recording for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "runbooks": false
+        }
+      },
       "features": {
         "tlsTerminationProxy": {
           "native": true,
@@ -2202,20 +1962,22 @@
       "resourceConfiguration": {
         "type": "web-application",
         "subtype": "webapp-api",
-        "credentials": {
-          "host": {
+        "credentials": [
+          {
             "name": "HOST",
             "type": "env-var",
             "required": true,
-            "description": "The IP or hostname of the service"
+            "description": "The IP or hostname of the service",
+            "placeholder": "localhost"
           },
-          "PORT": {
+          {
             "name": "PORT",
             "type": "env-var",
             "required": true,
-            "description": "The port of the service"
+            "description": "The port of the service",
+            "placeholder": "8080"
           }
-        }
+        ]
       },
       "documentationConfig": {
         "path": "quickstart/web-applications/webapps-and-apis"
