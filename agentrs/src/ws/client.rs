@@ -267,9 +267,9 @@ impl WebSocket {
 
         // Cancel all active proxy tasks
         let mut proxies = active_proxies.write().await;
-        for (session_id, handle) in proxies.drain() {
+        for (sid, handle) in proxies.drain() {
             handle.abort();
-            debug!("> Cancelled proxy task for session {}", session_id);
+            debug!("> Cancelled proxy task for session {}", sid);
         }
 
         // Clear sessions and channels

@@ -53,13 +53,13 @@ impl WebSocketMessage {
         }
     }
 
-    pub fn encode_with_header(&self, session_id: Uuid) -> Result<Vec<u8>, serde_json::Error> {
+    pub fn encode_with_header(&self, sid: Uuid) -> Result<Vec<u8>, serde_json::Error> {
         // Serialize the message to JSON
         let json_data = serde_json::to_vec(self)?;
 
         // Create header
         let header = Header {
-            sid: session_id,
+            sid,
             len: json_data.len() as u32,
             data_size: DATA_SIZE_HEADER,
         };

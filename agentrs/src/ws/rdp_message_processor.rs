@@ -69,28 +69,28 @@ impl MessageProcessor {
 
     async fn handle_binary_message(&self, data: Vec<u8>) -> anyhow::Result<()> {
         // Try to decode as WebSocketMessage first (for control messages)
-        if let Ok((session_id, message)) = WebSocketMessage::decode_with_header(&data) {
+        if let Ok((sid, message)) = WebSocketMessage::decode_with_header(&data) {
             // Handle different message types
             match message.message_type {
                 MessageType::SessionStarted => {
                     info!(
                         "> Session {} started, processing connection info...",
-                        session_id
+                        sid
                     );
-                    self.handle_session_started(session_id, message).await
+                    self.handle_session_started(sid, message).await
                 }
                 MessageType::Data => {
                     debug!(
                         "> Received data for session: {} ({} bytes)",
-                        session_id,
+                        sid,
                         message.payload.len()
                     );
-                    self.handle_rdp_data(session_id, &message.payload).await
+                    self.handle_rdp_data(sid, &message.payload).await
                 }
                 MessageType::Unknown => {
                     info!(
                         "> Unknown message type: {:#?} for session: {}",
-                        message.message_type, session_id
+                        message.message_type, sid
                     );
                     Ok(())
                 }
@@ -120,23 +120,20 @@ impl MessageProcessor {
     #[instrument(level = "debug", skip(self, message))]
     async fn handle_session_started(
         &self,
-        session_id: Uuid,
+        sid: Uuid,
         message: WebSocketMessage,
     ) -> anyhow::Result<()> {
         // Debug: print the metadata to see what we're receiving
         debug!(
             "> Received session_started for {} with metadata: {:?}",
-            session_id, message.metadata
+            sid, message.metadata
         );
 
         // Check if session already exists to prevent duplicate processing
         {
             let sessions = self.sessions.read().await;
-            if sessions.contains_key(&session_id) {
-                debug!(
-                    "> Session {} already exists, ignoring duplicate",
-                    session_id
-                );
+            if sessions.contains_key(&sid) {
+                debug!("> Session {} already exists, ignoring duplicate", sid);
                 return Ok(());
             }
         }
@@ -171,7 +168,7 @@ impl MessageProcessor {
             .clone();
 
         let session_info = SessionInfo {
-            session_id,
+            sid: sid,
             target_address,
             username,
             password,
@@ -183,22 +180,22 @@ impl MessageProcessor {
         // Store session info
         {
             let mut sessions = self.sessions.write().await;
-            sessions.insert(session_id, session_info);
-            debug!("> Stored session {} in sessions map", session_id);
+            sessions.insert(sid, session_info);
+            debug!("> Stored session {} in sessions map", sid);
         }
 
         // Send response
-        self.send_rdp_started_response(session_id).await
+        self.send_rdp_started_response(sid).await
     }
 
-    async fn send_rdp_started_response(&self, session_id: Uuid) -> anyhow::Result<()> {
+    async fn send_rdp_started_response(&self, sid: Uuid) -> anyhow::Result<()> {
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("protocol".to_string(), PROTOCOL_RDP.to_string());
 
         let response = WebSocketMessage::new(MessageType::SessionStarted, metadata, Vec::new());
 
         let response_framed = response
-            .encode_with_header(session_id)
+            .encode_with_header(sid)
             .context("Failed to encode rdp_started response")?;
 
         let mut sender = self.ws_sender.lock().await;
@@ -209,23 +206,23 @@ impl MessageProcessor {
 
         debug!(
             "> Successfully sent rdp_started response for session {}",
-            session_id
+            sid
         );
         Ok(())
     }
 
     #[instrument(level = "debug")]
-    async fn handle_rdp_data(&self, session_id: Uuid, rdp_data: &[u8]) -> anyhow::Result<()> {
+    async fn handle_rdp_data(&self, sid: Uuid, rdp_data: &[u8]) -> anyhow::Result<()> {
         debug!(
             "> Received RDP data for session: {} ({} bytes)",
-            session_id,
+            sid,
             rdp_data.len()
         );
 
         // Check if we have session info
         let sessions = self.sessions.read().await;
-        let Some(session_info) = sessions.get(&session_id) else {
-            debug!("> Received RDP data for unknown session: {}", session_id);
+        let Some(session_info) = sessions.get(&sid) else {
+            debug!("> Received RDP data for unknown session: {}", sid);
             return Ok(());
         };
 
@@ -233,11 +230,11 @@ impl MessageProcessor {
         drop(sessions);
 
         // Get or create RDP data channel for this session
-        let (tx, rx) = self.get_or_create_session_channel(session_id).await;
+        let (tx, rx) = self.get_or_create_session_channel(sid).await;
 
         // Start RDP proxy if not already running
-        if !self.is_proxy_running(session_id).await {
-            self.start_rdp_proxy(session_id, session_info, rx).await?;
+        if !self.is_proxy_running(sid).await {
+            self.start_rdp_proxy(sid, session_info, rx).await?;
         }
 
         // Forward RDP data to proxy
@@ -250,28 +247,28 @@ impl MessageProcessor {
 
     async fn get_or_create_session_channel(
         &self,
-        session_id: Uuid,
+        sid: Uuid,
     ) -> (Sender<Vec<u8>>, Arc<Mutex<Receiver<Vec<u8>>>>) {
         let mut channels = self.session_channels.write().await;
 
-        if let Some((tx, rx)) = channels.get(&session_id) {
+        if let Some((tx, rx)) = channels.get(&sid) {
             (tx.clone(), rx.clone())
         } else {
             let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1024);
             let rx_arc = Arc::new(Mutex::new(rx));
-            channels.insert(session_id, (tx.clone(), rx_arc.clone()));
+            channels.insert(sid, (tx.clone(), rx_arc.clone()));
             (tx, rx_arc)
         }
     }
 
-    async fn is_proxy_running(&self, session_id: Uuid) -> bool {
+    async fn is_proxy_running(&self, sid: Uuid) -> bool {
         let proxies = self.active_proxies.read().await;
-        proxies.contains_key(&session_id)
+        proxies.contains_key(&sid)
     }
 
     async fn start_rdp_proxy(
         &self,
-        session_id: Uuid,
+        sid: Uuid,
         session_info: SessionInfo,
         rdp_data_rx: Arc<Mutex<Receiver<Vec<u8>>>>,
     ) -> anyhow::Result<()> {
@@ -284,23 +281,20 @@ impl MessageProcessor {
                 start_rdp_proxy_session(session_info, ws_sender, rdp_data_rx, config).await;
 
             match result {
-                Ok(_) => info!("> RDP proxy session completed for session {}", session_id),
-                Err(e) => error!(
-                    "> RDP proxy session failed for session {}: {}",
-                    session_id, e
-                ),
+                Ok(_) => info!("> RDP proxy session completed for session {}", sid),
+                Err(e) => error!("> RDP proxy session failed for session {}: {}", sid, e),
             }
 
             // Cleanup
             let mut proxies = active_proxies.write().await;
-            proxies.remove(&session_id);
-            info!("> Cleaned up RDP proxy task for session {}", session_id);
+            proxies.remove(&sid);
+            info!("> Cleaned up RDP proxy task for session {}", sid);
         });
 
         // Store the proxy task
         let mut proxies = self.active_proxies.write().await;
-        proxies.insert(session_id, proxy_task);
-        debug!("> Started RDP proxy task for session {}", session_id);
+        proxies.insert(sid, proxy_task);
+        debug!("> Started RDP proxy task for session {}", sid);
 
         Ok(())
     }
