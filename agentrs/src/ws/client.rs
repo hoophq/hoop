@@ -13,7 +13,6 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use tungstenite::{client::IntoClientRequest, handshake::client::Request};
-use x509_cert::request;
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
@@ -29,8 +28,15 @@ pub struct WebSocket {
 }
 
 fn build_websocket_url() -> String {
-    let gateway_url =
-        std::env::var("HOOP_GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009".to_string());
+    let gateway_url = std::env::var("HOOP_GATEWAY_URL");
+    // if is not set the gateway_url exit the program
+    let gateway_url = match gateway_url {
+        Ok(url) => url,
+        Err(_) => {
+            error!("HOOP_GATEWAY_URL environment variable is not set");
+            std::process::exit(1);
+        }
+    };
 
     let gateway_url = match gateway_url.as_str() {
         url if url.starts_with("ws://") || url.starts_with("wss://") => url.to_string(),
