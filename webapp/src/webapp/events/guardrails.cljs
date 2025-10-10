@@ -146,10 +146,9 @@
  :guardrails->get-connections
  (fn [{:keys [db]} _]
    {:db (assoc db :guardrails->connections-list {:status :loading :data []})
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/connections"
-                             :on-success #(rf/dispatch [:guardrails->set-connections %])
-                             :on-failure #(rf/dispatch [:guardrails->set-connections-error %])}]]]}))
+    :fx [[:dispatch [:connections->get-connections {:force-refresh? true}
+                     {:on-success [:guardrails->set-connections]
+                      :on-failure [:guardrails->set-connections-error]}]]]}))
 
 (rf/reg-event-db
  :guardrails->set-connections

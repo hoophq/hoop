@@ -7,8 +7,9 @@
 
 (defn main []
   (let [has-text? (r/atom false)
-        search-term (rf/subscribe [:search/term])]
-    (fn [active-panel]
+        search-term (rf/subscribe [:search/term])
+        active-panel (rf/subscribe [:webclient->active-panel])]
+    (fn []
       (let [input-id "header-search"]
         (reset! has-text? (not (empty? @search-term)))
 

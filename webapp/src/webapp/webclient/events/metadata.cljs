@@ -21,21 +21,6 @@
    (assoc-in db [:editor-plugin :metadata-value] value)))
 
 (rf/reg-event-db
- :editor-plugin/clear-metadata-inputs
- (fn [db [_]]
-   (-> db
-       (assoc-in [:editor-plugin :metadata-key] "")
-       (assoc-in [:editor-plugin :metadata-value] ""))))
-
-(rf/reg-event-db
- :editor-plugin/clear-all-metadata
- (fn [db [_]]
-   (-> db
-       (assoc-in [:editor-plugin :metadata] [])
-       (assoc-in [:editor-plugin :metadata-key] "")
-       (assoc-in [:editor-plugin :metadata-value] ""))))
-
-(rf/reg-event-db
  :editor-plugin/update-metadata-at-index
  (fn [db [_ index field value]]
    (assoc-in db [:editor-plugin :metadata index field] value)))

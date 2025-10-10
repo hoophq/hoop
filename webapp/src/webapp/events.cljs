@@ -47,6 +47,14 @@
    [{:keys [db]} [_ _]]
    {:db (assoc db :page-loader-status :closed)}))
 
+;; Webclient active panel events
+(rf/reg-event-fx
+ :webclient/set-active-panel
+ (fn [{:keys [db]} [_ panel-type]]
+   (let [current-panel (get db :webclient->active-panel)
+         new-panel (when-not (= current-panel panel-type) panel-type)]
+     {:db (assoc db :webclient->active-panel new-panel)})))
+
 (rf/reg-event-fx
  :close-page-loader
  (fn

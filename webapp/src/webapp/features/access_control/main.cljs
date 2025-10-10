@@ -1,9 +1,8 @@
 (ns webapp.features.access-control.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Text Heading]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.headings :as h]
    [webapp.components.loaders :as loaders]
    [webapp.features.access-control.views.empty-state :as empty-state]
    [webapp.features.access-control.views.group-list :as group-list]
@@ -38,15 +37,16 @@
                                                 :installed? false}]]
 
           :else
-          [:> Box {:class "flex flex-col bg-white px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
+          [:> Box {:class "bg-gray-1 p-radix-7 min-h-full h-max"}
            [:> Flex {:direction "column" :gap "6" :class "h-full"}
 
             [:> Flex {:justify "between" :align "center" :class "mb-6"}
              [:> Box
-              [h/h2 "Access Control" {:class "text-[--gray-12]"}]
-              [:> Text {:as "p" :size "3" :class "text-gray-500"}
+              [:> Heading {:size "8" :weight "bold" :as "h1"}
+               "Access Control"]
+              [:> Text {:size "5" :class "text-[--gray-11]"}
                "Manage which user groups have access to specific connections."]
-              [:> Text {:as "p" :size "3" :class "text-gray-500"}
+              [:> Text {:as "p" :size "5" :class "text-[--gray-11]"}
                "Control permissions and enhance security for your organization."]]
              (when (and installed? has-user-groups?)
                [:> Button {:size "3"
