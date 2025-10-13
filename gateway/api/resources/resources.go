@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -70,10 +71,11 @@ func CreateResource(c *gin.Context) {
 	}
 
 	resource := models.Resources{
-		OrgID: ctx.OrgID,
-		Name:  req.Name,
-		Type:  req.Type,
-		Envs:  req.EnvVars,
+		OrgID:   ctx.OrgID,
+		Name:    req.Name,
+		Type:    req.Type,
+		Envs:    req.EnvVars,
+		AgentID: sql.NullString{String: req.AgentID, Valid: true},
 	}
 
 	err = models.UpsertResource(models.DB, &resource, true)
@@ -158,11 +160,12 @@ func UpdateResource(c *gin.Context) {
 	}
 
 	resource := models.Resources{
-		ID:    existing.ID,
-		OrgID: ctx.OrgID,
-		Name:  req.Name,
-		Type:  req.Type,
-		Envs:  req.EnvVars,
+		ID:      existing.ID,
+		OrgID:   ctx.OrgID,
+		Name:    req.Name,
+		Type:    req.Type,
+		Envs:    req.EnvVars,
+		AgentID: sql.NullString{String: req.AgentID, Valid: true},
 	}
 
 	err = models.UpsertResource(models.DB, &resource, true)
@@ -229,5 +232,6 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 		Name:      r.Name,
 		Type:      r.Type,
 		EnvVars:   r.Envs,
+		AgentID:   r.AgentID.String,
 	}
 }

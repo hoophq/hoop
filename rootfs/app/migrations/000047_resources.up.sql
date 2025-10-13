@@ -8,14 +8,15 @@ CREATE TABLE resources (
     org_id UUID NOT NULL,
     name VARCHAR(128) NOT NULL,
     type VARCHAR(64) NOT NULL,
+    agent_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (org_id, name)
 );
 
 -- Migrate existing connection subtypes to resources
-INSERT INTO resources (org_id, name, type)
-    SELECT org_id, name, subtype
+INSERT INTO resources (org_id, name, type, agent_id)
+    SELECT org_id, name, subtype, agent_id
     FROM connections;
 
 -- Add resource_name column to connections table

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,12 +11,13 @@ import (
 const tableResources = "private.resources"
 
 type Resources struct {
-	ID        string    `gorm:"column:id"`
-	OrgID     string    `gorm:"column:org_id"`
-	Name      string    `gorm:"column:name"`
-	Type      string    `gorm:"column:type"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at"`
+	ID        string         `gorm:"column:id"`
+	OrgID     string         `gorm:"column:org_id"`
+	Name      string         `gorm:"column:name"`
+	Type      string         `gorm:"column:type"`
+	AgentID   sql.NullString `gorm:"column:agent_id"`
+	CreatedAt time.Time      `gorm:"column:created_at"`
+	UpdatedAt time.Time      `gorm:"column:updated_at"`
 
 	// read-only fields from related tables
 	Envs map[string]string `gorm:"column:envs;serializer:json;->"`

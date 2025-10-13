@@ -134,9 +134,10 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 		if resource == nil {
 			// Create new resource if it doesn't exist
 			err = UpsertResource(tx, &Resources{
-				OrgID: c.OrgID,
-				Type:  c.SubType.String,
-				Name:  c.ResourceName,
+				OrgID:   c.OrgID,
+				Type:    c.SubType.String,
+				Name:    c.ResourceName,
+				AgentID: c.AgentID,
 			}, false)
 			if err != nil {
 				return fmt.Errorf("failed upserting resource, reason=%v", err)
@@ -479,7 +480,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
+		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -506,7 +507,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
 	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
-	LEFT JOIN private.agents a ON a.id = c.agent_id AND a.org_id = @org_id
+	LEFT JOIN private.agents a ON a.id = COALESCE(c.agent_id, r.agent_id) AND a.org_id = @org_id
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
 	CASE

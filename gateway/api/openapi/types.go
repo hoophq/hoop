@@ -1783,6 +1783,8 @@ type ResourceRequest struct {
 	Type string `json:"type" binding:"required" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
+	// The agent associated with this resource
+	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 }
 
 type ResourceResponse struct {
@@ -1794,6 +1796,8 @@ type ResourceResponse struct {
 	Type string `json:"type" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars"`
+	// The agent associated with this resource
+	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
