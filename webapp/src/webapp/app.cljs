@@ -35,7 +35,11 @@
    [webapp.connections.views.setup.main :as connection-setup]
    [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
+   [webapp.resources.views.setup.main :as resource-setup]
+   [webapp.resources.views.setup.events.effects]
+   [webapp.resources.views.setup.events.subs]
    [webapp.events]
+   [webapp.events.resources]
    [webapp.events.agents]
    [webapp.events.ask-ai]
    [webapp.events.audit]
@@ -300,6 +304,15 @@
 (defmethod routes/panels :resource-catalog-panel []
   [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 h-full space-y-radix-7"}
                              [resource-catalog/main]]])
+
+(defmethod routes/panels :resource-setup-new-panel []
+  ;; Initialize if not coming from catalog
+  (when-not @(rf/subscribe [:resource-setup/from-catalog?])
+    (rf/dispatch [:resource-setup->initialize-state nil]))
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [resource-setup/main]]]])
 
 (defmethod routes/panels :home-panel []
   [layout :application-hoop [home/home-panel-hoop]])
