@@ -65,7 +65,6 @@ type Connection struct {
 	AgentName                 string            `gorm:"column:agent_name;->"`
 	JiraTransitionNameOnClose sql.NullString    `gorm:"column:issue_transition_name_on_close;->"`
 	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
-	EnvsResources             map[string]string `gorm:"column:envs_resources;serializer:json;->"`
 	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
 }
