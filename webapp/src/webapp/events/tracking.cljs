@@ -6,9 +6,8 @@
 
 (rf/reg-event-fx
  :tracking->initialize-if-allowed
- (fn
-   [_ _]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+ (fn [{:keys [db]} _]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
      (if (not analytics-tracking)
        ;; Tracking is disabled, ensure all tracking is stopped
        {:fx [[:dispatch [:tracking->disable-all-tracking]]]}
@@ -73,7 +72,7 @@
      (let [intercom-script (.createElement js/document "script")]
        (.setAttribute intercom-script "id" "intercom-script")
        (.setAttribute intercom-script "type" "text/javascript")
-       (set! (.-innerHTML intercom-script) "(function () { var w = window; var ic = w.Intercom; if (typeof ic === \"function\") { ic('reattach_activator'); ic('update', w.intercomSettings); } else { var d = document; var i = function () { i.c(arguments); }; i.q = []; i.c = function (args) { i.q.push(args); }; w.Intercom = i; var l = function () { var s = d.createElement('script'); s.type = 'text/javascript'; s.async = true; s.src = 'https://widget.intercom.io/widget/ryuapdmp'; var x = d.getElementsByTagName('script')[0]; x.parentNode.insertBefore(s, x); }; if (w.attachEvent) { w.attachEvent('onload', l); } else { w.addEventListener('load', l, false); } } })();")
+       (set! (.-innerHTML intercom-script) "(function(){var w=window;var ic=w.Intercom;if(typeof ic===\"function\"){ic('reattach_activator');ic('update',w.intercomSettings);}else{var d=document;var i=function(){i.c(arguments);};i.q=[];i.c=function(args){i.q.push(args);};w.Intercom=i;var l=function(){var s=d.createElement('script');s.type='text/javascript';s.async=true;s.src='https://widget.intercom.io/widget/ryuapdmp';var x=d.getElementsByTagName('script')[0];x.parentNode.insertBefore(s,x);};if(document.readyState==='complete'){l();}else if(w.attachEvent){w.attachEvent('onload',l);}else{w.addEventListener('load',l,false);}}})();")
        (let [head-element (.getElementsByTagName js/document "head")
              head (aget head-element 0)]
          (.appendChild head intercom-script))))
