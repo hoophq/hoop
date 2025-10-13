@@ -173,9 +173,10 @@
 (defn dispatch-setup-navigation
   "Dispatch navigation to appropriate setup flow"
   [setup-config is-onboarding?]
-  (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
-  (when (:app-type setup-config)
-    (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
+  ;; Initialize resource setup with data from catalog
+  (rf/dispatch [:resource-setup->initialize-from-catalog setup-config])
+
+  ;; Navigate to resource setup flow
   (if is-onboarding?
     (rf/dispatch [:navigate :onboarding-setup-resource])
-    (rf/dispatch [:navigate :create-connection])))
+    (rf/dispatch [:navigate :resource-setup-new])))
