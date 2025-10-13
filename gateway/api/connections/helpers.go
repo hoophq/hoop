@@ -66,7 +66,7 @@ func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (
 	return
 }
 
-func coerceToMapString(src map[string]any) map[string]string {
+func CoerceToMapString(src map[string]any) map[string]string {
 	dst := map[string]string{}
 	for k, v := range src {
 		dst[k] = fmt.Sprintf("%v", v)

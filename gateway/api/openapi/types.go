@@ -1776,6 +1776,42 @@ type ConnectionTestResponse struct {
 	Success bool `json:"success" example:"true"`
 }
 
+type ResourceRoleRequest struct {
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Is the shell command that is going to be executed when interacting with this connection.
+	// This value is required if the connection is going to be used from the Webapp.
+	Command []string `json:"command" example:"/bin/bash"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+	// Secrets are environment variables that are going to be exposed
+	// in the runtime of the connection:
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	//
+	// The value could also represent an integration with a external provider:
+	// * { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable
+	// * { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={"KEY": "val"}
+	Secrets map[string]any `json:"secret"`
+	// The agent associated with this connection
+	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+}
+
 type ResourceRequest struct {
 	// The resource name
 	Name string `json:"name" binding:"required" example:"my-resource"`
@@ -1785,6 +1821,8 @@ type ResourceRequest struct {
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource
 	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The roles associated with this resource
+	Roles []ResourceRoleRequest `json:"roles" binding:"required,dive"`
 }
 
 type ResourceResponse struct {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -79,11 +80,56 @@ func CreateResource(c *gin.Context) {
 	}
 
 	err = models.UpsertResource(models.DB, &resource, true)
-
 	if err != nil {
 		log.Errorf("failed to upsert resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
+	}
+
+	// Insert connections
+	if len(req.Roles) > 0 {
+		var connections []*models.Connection
+		for _, role := range req.Roles {
+			defaultCmd, defaultEnvVars := apiconnections.GetConnectionDefaults(role.Type, role.SubType, true)
+
+			if len(role.Command) == 0 {
+				role.Command = defaultCmd
+			}
+
+			for key, val := range defaultEnvVars {
+				if _, isset := role.Secrets[key]; !isset {
+					role.Secrets[key] = val
+				}
+			}
+
+			accessSchema := "disabled"
+			if role.Type == "database" {
+				accessSchema = "enabled"
+			}
+
+			connections = append(connections, &models.Connection{
+				OrgID:              ctx.OrgID,
+				Name:               role.Name,
+				ResourceName:       req.Name,
+				AgentID:            sql.NullString{String: role.AgentID, Valid: role.AgentID == ""},
+				Type:               role.Type,
+				SubType:            sql.NullString{String: role.SubType, Valid: role.SubType == ""},
+				Command:            defaultCmd,
+				Status:             models.ConnectionStatusOnline,
+				AccessModeRunbooks: "enabled",
+				AccessModeExec:     "enabled",
+				AccessModeConnect:  "enabled",
+				AccessSchema:       accessSchema,
+				Envs:               apiconnections.CoerceToMapString(role.Secrets),
+				ConnectionTags:     map[string]string{},
+			})
+		}
+		err = models.UpsertBatchConnections(connections)
+		if err != nil {
+			log.Errorf("failed to upsert connections: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusCreated, toOpenApi(&resource))

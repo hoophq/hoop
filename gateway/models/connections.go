@@ -142,9 +142,6 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 			if err != nil {
 				return fmt.Errorf("failed upserting resource, reason=%v", err)
 			}
-		} else if resource.Type != c.SubType.String {
-			// Validate resource type matches connection subtype
-			return fmt.Errorf("resource name %q already exists with a different type", c.ResourceName)
 		}
 
 		err = tx.Table(tableConnections).
