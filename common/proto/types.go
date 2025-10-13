@@ -166,6 +166,13 @@ func IsInList(item string, items []string) bool {
 // to maintain compatibility with old types enums in the database
 func ToConnectionType(connectionType, subtype string) ConnectionType {
 	switch connectionType {
+	case "server":
+		switch subtype {
+		case "rdp":
+			return ConnectionType(ConnectionTypeRDP)
+		default:
+			return ConnectionType(ConnectionTypeCommandLine)
+		}
 	case "application":
 		switch subtype {
 		case "tcp":
@@ -174,8 +181,6 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeHttpProxy)
 		case "ssh":
 			return ConnectionType(ConnectionTypeSSH)
-		case "rdp":
-			return ConnectionType(ConnectionTypeRDP)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}

@@ -69,6 +69,12 @@ func CreateRDPSession(
 		secrets[k] = string(value)
 	}
 
+	port := secrets["envvar:PORT"]
+	host := secrets["envvar:HOST"]
+	if port != "" {
+		host = fmt.Sprintf("%s:%s", host, port)
+	}
+
 	// Send session info to agent using new message format
 	msg := &WebSocketMessage{
 		Type: MessageTypeSessionStarted,
@@ -77,7 +83,7 @@ func CreateRDPSession(
 			"client_address": clientAddr,
 			"username":       secrets["envvar:USER"],
 			"password":       secrets["envvar:PASS"],
-			"target_address": secrets["envvar:HOST"],
+			"target_address": host,
 			"proxy_user":     extractedCreds, // Use the extracted credentials as proxy_user
 		},
 		Payload: []byte{}, // Empty payload since session ID is in header
