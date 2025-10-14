@@ -97,19 +97,29 @@
 (rf/reg-event-fx
  :initialize-intercom
  (fn
-   [_ [_ user]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+   [{:keys [db]} [_ user]]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
+     (when js/window.Intercom
+       (js/window.Intercom "shutdown"))
+
      (if (not analytics-tracking)
        ;; If analytics tracking is disabled, don't initialize Intercom
        {}
        ;; Otherwise, initialize Intercom
        (do
-         (js/window.Intercom
-          "boot"
-          (clj->js {:api_base "https://api-iam.intercom.io"
-                    :app_id "ryuapdmp"
-                    :name (:name user)
-                    :email (:email user)
-                    :user_id (:email user)
-                    :user_hash (:intercom_hmac_digest user)}))
+         (if (= (.-hostname js/location) "localhost")
+
+           (js/window.Intercom
+            "boot"
+            (clj->js {:api_base "https://api-iam.intercom.io"
+                      :app_id "ryuapdmp"}))
+
+           (js/window.Intercom
+            "boot"
+            (clj->js {:api_base "https://api-iam.intercom.io"
+                      :app_id "ryuapdmp"
+                      :name (:name user)
+                      :email (:email user)
+                      :user_id (:email user)
+                      :user_hash (:intercom_hmac_digest user)})))
          {})))))
