@@ -662,3 +662,158 @@ func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
 		Updates(map[string]any{"status": status}).
 		Error
 }
+
+type ConnectionPaginationOption struct {
+	ConnectionFilterOption
+	Page     int
+	PageSize int
+}
+
+// ListConnectionsPaginated retrieves a paginated list of connections based on the provided filter options.
+func ListConnectionsPaginated(ctx UserContext, opts ConnectionPaginationOption) ([]Connection, int64, error) {
+	setConnectionOptionDefaults(&opts.ConnectionFilterOption)
+	tagSelectorJsonData, err := opts.ParseTagSelectorQuery()
+	if err != nil {
+		return nil, 0, err
+	}
+	userGroups := pq.StringArray(ctx.GetUserGroups())  // TODO: Pass variables instead of ctx
+	tagsAsArray := opts.GetTagsAsArray()
+
+	offset := 0
+	if opts.Page > 1 {
+		offset = (opts.Page - 1) * opts.PageSize
+	}
+
+	var total int64
+	var items []Connection
+
+	// Count total records
+	err = DB.Raw(`
+	WITH tag_selector_keys(key, op, val) AS (
+		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
+	)
+	SELECT COUNT(*)
+	FROM private.connections c
+	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
+	WHERE c.org_id = ? AND
+	CASE
+		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		WHEN ac.id IS NULL OR (?)::BOOL THEN true
+		-- allow if any of the input user groups are in the access control list
+		ELSE acc.config && (?)::text[]
+	END AND
+	(
+		COALESCE(c.type::text, '') LIKE ? AND
+		COALESCE(c.subtype, '') LIKE ? AND
+		COALESCE(c.agent_id::text, '') LIKE ? AND
+		COALESCE(c.managed_by, '') LIKE ? AND
+		-- legacy tags
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		(
+			-- return all results if no tag selectors provided
+			(SELECT COUNT(*) FROM tag_selector_keys) = 0
+			OR
+			-- AND logic: each tag selector criterion must be satisfied
+			NOT EXISTS (
+				-- Find any tag selector that is NOT satisfied by this connection
+				SELECT 1 FROM tag_selector_keys tsk
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM private.connection_tags_association cta
+					JOIN private.connection_tags ct ON ct.id = cta.tag_id
+					WHERE cta.connection_id = c.id
+					AND ct.key = tsk.key
+					AND CASE
+						WHEN tsk.op = '=' THEN ct.value = tsk.val
+						WHEN tsk.op = '!=' THEN ct.value != tsk.val
+						ELSE false
+					END
+				)
+			)
+		)
+	)`,
+		tagSelectorJsonData,
+		ctx.GetOrgID(), ctx.GetOrgID(),
+		ctx.IsAdmin(), userGroups, // access control filter
+		opts.Type,
+		opts.SubType,
+		opts.AgentID,
+		opts.ManagedBy,
+		tagsAsArray, tagsAsArray,
+	).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated data
+	err = DB.Raw(`
+	WITH tag_selector_keys(key, op, val) AS (
+		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
+	)
+	SELECT
+		c.id, c.org_id, c.name, c.type, c.subtype, c.status,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect
+	FROM private.connections c
+	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
+	WHERE c.org_id = ? AND
+	CASE
+		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		WHEN ac.id IS NULL OR (?)::BOOL THEN true
+		-- allow if any of the input user groups are in the access control list
+		ELSE acc.config && (?)::text[]
+	END AND
+	(
+		COALESCE(c.type::text, '') LIKE ? AND
+		COALESCE(c.subtype, '') LIKE ? AND
+		COALESCE(c.agent_id::text, '') LIKE ? AND
+		COALESCE(c.managed_by, '') LIKE ? AND
+		-- legacy tags
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		(
+			-- return all results if no tag selectors provided
+			(SELECT COUNT(*) FROM tag_selector_keys) = 0
+			OR
+			-- AND logic: each tag selector criterion must be satisfied
+			NOT EXISTS (
+				-- Find any tag selector that is NOT satisfied by this connection
+				SELECT 1 FROM tag_selector_keys tsk
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM private.connection_tags_association cta
+					JOIN private.connection_tags ct ON ct.id = cta.tag_id
+					WHERE cta.connection_id = c.id
+					AND ct.key = tsk.key
+					AND CASE
+						WHEN tsk.op = '=' THEN ct.value = tsk.val
+						WHEN tsk.op = '!=' THEN ct.value != tsk.val
+						ELSE false
+					END
+				)
+			)
+		)
+	) ORDER BY c.name ASC
+	LIMIT ? OFFSET ?`,
+		tagSelectorJsonData,
+		ctx.GetOrgID(), ctx.GetOrgID(),
+		ctx.IsAdmin(), userGroups,
+		opts.Type,
+		opts.SubType,
+		opts.AgentID,
+		opts.ManagedBy,
+		tagsAsArray, tagsAsArray,
+		opts.PageSize, offset,
+	).Find(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return items, total, nil
+}

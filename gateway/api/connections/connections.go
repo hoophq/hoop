@@ -220,7 +220,7 @@ func Delete(c *gin.Context) {
 // List Connections
 //
 //	@Summary		List Connections
-//	@Description	List all connections.
+//	@Description	List all connections. Supports pagination when page/page_size parameters are provided.
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			agent_id		query		string	false	"Filter by agent id"																	Format(uuid)
@@ -229,7 +229,9 @@ func Delete(c *gin.Context) {
 //	@Param			type			query		string	false	"Filter by type"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)
-//	@Success		200				{array}		openapi.Connection
+//	@Param			page_size		query		int		false	"Maximum number of items to return (1-1000). When provided, enables pagination"			Format(int)
+//	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)
+//	@Success		200				{array}		openapi.Connection or {object}	object	"Returns array of Connection objects or PaginatedResponse[ConnectionSearch] when using pagination"
 //	@Failure		422,500			{object}	openapi.HTTPError
 //	@Router			/connections [get]
 func List(c *gin.Context) {
@@ -239,6 +241,58 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+
+	// Check if pagination parameters are provided
+	page, pageSize, paginationErr := validatePaginationOptions(c.Request.URL.Query())
+
+	urlValues := c.Request.URL.Query()
+	hasPaginationParams := urlValues.Get("page_size") != "" || urlValues.Get("page") != ""
+
+	if hasPaginationParams {
+		// Use paginated response
+		if paginationErr != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": paginationErr.Error()})
+			return
+		}
+
+		// Set default page size if not provided but page is provided
+		if pageSize == 0 && page > 0 {
+			pageSize = 50 // Default page size
+		}
+
+		paginationOpts := models.ConnectionPaginationOption{
+			ConnectionFilterOption: filterOpts,
+			Page:                   page,
+			PageSize:               pageSize,
+		}
+
+		connList, total, err := models.ListConnectionsPaginated(ctx, paginationOpts)  
+		if err != nil {
+			log.Errorf("failed listing connections with pagination, reason=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+
+		// Convert to search format for paginated response
+		responseConnList := make([]openapi.ConnectionSearch, len(connList))     // TODO: Create a type for this instead of ConnectionSearch
+		for i, conn := range connList {
+			responseConnList[i] = toConnectionSearch(&conn)
+		}
+
+		response := openapi.PaginatedResponse[openapi.ConnectionSearch]{
+			Pages: openapi.Pagination{
+				Total: int(total),
+				Page:  page,
+				Size:  pageSize,
+			},
+			Data: responseConnList,
+		}
+
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
+	// Use traditional non-paginated response
 	connList, err := models.ListConnections(ctx, filterOpts)
 	if err != nil {
 		log.Errorf("failed listing connections, reason=%v", err)
