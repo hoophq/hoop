@@ -9,11 +9,8 @@
 
 (defn- transform-results->matrix
   [results connection-type]
-  (let [res (if (= connection-type "oracledb")
-              (cs/join "\n" (drop 1 (cs/split results #"\n")))
-              results)]
-    (when-not (nil? results)
-      (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
+  (when-not (nil? results)
+    (get (js->clj (papa/parse results (clj->js {"delimiter" "\t"}))) "data")))
 
 (def selected-tab (r/atom (or (.getItem js/localStorage "webclient-selected-tab")
                               "Logs")))

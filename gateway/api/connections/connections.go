@@ -843,8 +843,10 @@ func TestConnection(c *gin.Context) {
 
 func getScriptsForTestConnection(connectionType *pb.ConnectionType) (string, error) {
 	switch *connectionType {
-	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL, pb.ConnectionTypeOracleDB:
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
 		return "SELECT 1", nil
+	case pb.ConnectionTypeOracleDB:
+		return "SELECT 1 FROM dual;", nil
 	case pb.ConnectionTypeMongoDB:
 		return `// Ensure verbosity is off
 if (typeof noVerbose === 'function') noVerbose();
