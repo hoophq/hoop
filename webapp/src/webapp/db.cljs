@@ -12,6 +12,12 @@
    :audit->session-logs {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :loading, :data []}
    :connections {:loading true :details {}}
+   :connections->pagination {:data []
+                             :loading false
+                             :current-page 1
+                             :page-size 20
+                             :has-more? false
+                             :total 0}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :native-client-access {:requesting? false, :current nil}
@@ -93,10 +99,4 @@
                      :search-results {:status :idle :data {}}}
    :runbooks {:connection-dialog-open? false
               :execute-trigger false
-              :selected-connection nil}
-   :roles {:data []
-           :loading false
-           :current-page 1
-           :page-size 20
-           :has-more? false
-           :total-count 0}})
+              :selected-connection nil}})

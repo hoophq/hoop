@@ -75,7 +75,7 @@
            [:> Check {:size 16}])])]]]])
 
 (defn panel [_]
-  (let [connections (rf/subscribe [:roles])
+  (let [connections (rf/subscribe [:connections->pagination])
         user (rf/subscribe [:users->current-user])
         test-connection-state (rf/subscribe [:connections->test-connection])
         search-focused (r/atom false)
@@ -86,7 +86,7 @@
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
         search-debounce-timer (r/atom nil)]
-    (rf/dispatch [:roles/get-roles-paginated nil])   ;; TODO: Pass filters and pagination params
+    (rf/dispatch [:connections/get-connections-paginated {:reset? true}])
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:connections->get-connection-tags])
 
@@ -95,7 +95,7 @@
 
     (fn []
       (let [connections-search-results (if (empty? @searched-connections)
-                                         (:results @connections)
+                                         (:data @connections)
                                          @searched-connections)
             any-filters? (or (not-empty @selected-tag-values) @selected-resource)
             clear-all-filters (fn []
@@ -109,7 +109,10 @@
                            (reset! searched-connections nil)
                            (reset! searched-criteria-connections "")
                            ;; Apply the filter
-                           (rf/dispatch [:connections->filter-connections filter-update]))]
+                           (rf/dispatch [:connections/get-connections-paginated 
+                                        {:filters filter-update
+                                         :page 1
+                                         :reset? true}]))]
 
         (let [connections-metadata @(rf/subscribe [:connections->metadata])]
           (when (nil? connections-metadata)
@@ -136,7 +139,7 @@
               "Clear Filters"])
 
            [searchbox/main
-            {:options (:results @connections)
+            {:options (:data @connections)
              :display-key :name
              :searchable-keys [:name :type :subtype :connection_tags :status]
              :on-change-results-cb #(reset! searched-connections %)
@@ -159,7 +162,10 @@
                                                        (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
                                                        @selected-resource (assoc :subtype @selected-resource))]
                                          (when (not-empty filters)
-                                           (rf/dispatch [:connections->filter-connections filters])))))
+                                           (rf/dispatch [:connections/get-connections-paginated
+                                                         {:filters filters
+                                                          :page 1
+                                                          :reset? true}])))))
                                    150))) ; 150ms debounce
              :loading? (= @connections-search-status :loading)
              :size :small
@@ -200,12 +206,12 @@
          ;; Test Connection Modal
          [test-connection-modal/test-connection-modal (get-in @test-connection-state [:connection-name])]
 
-         (if (and (= :loading (:status @connections)) (empty? (:results @connections)))
+         (if (and (= :loading (:loading @connections)) (empty? (:data @connections)))
            [loading-list-view]
 
            [:div {:class "h-full overflow-y-auto"}
             [:div {:class "relative h-full overflow-y-auto"}
-             (when (and (empty? (:results  @connections)) (not= (:status @connections) :loading))
+             (when (and (empty? (:data @connections)) (not= (:loading @connections) :loading))
                [empty-list-view])
 
              (if (and (empty? @searched-connections)
@@ -217,7 +223,11 @@
                 [infinite-scroll
                  {:on-load-more (fn []
                                   (when (not (= :loading (:loading @connections)))
-                                    (rf/dispatch [:roles/get-roles-paginated nil]))) ;; TODO: Pass filters and pagination params
+                                    (let [current-page (:current-page @connections 1)
+                                          next-page (inc current-page)]
+                                      (rf/dispatch [:connections/get-connections-paginated 
+                                                    {:page next-page
+                                                     :reset? false}]))))
                   :has-more? (:has-more? @connections)
                   :loading? (= :loading (:loading @connections))}
                  (for [connection connections-search-results]

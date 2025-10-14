@@ -124,6 +124,57 @@
    {:db (update db :connections merge {:loading false
                                        :error error})}))
 
+;; Paginated connections events
+(rf/reg-event-fx
+ :connections/get-connections-paginated
+ (fn
+   [{:keys [db]} [_ {:keys [page-size page filters search reset?]
+                     :or {page-size 20 page 1 reset? true}}]]
+   (let [request {:page-size page-size
+                  :page page
+                  :filters filters
+                  :search search
+                  :reset? reset?}
+         query-params (cond-> {}
+                        page-size (assoc :page_size page-size)
+                        page (assoc :page page)
+                        search (assoc :search search)
+                        (:tag_selector filters) (assoc :tag_selector (:tag_selector filters))
+                        (:type filters) (assoc :type (:type filters))
+                        (:subtype filters) (assoc :subtype (:subtype filters)))]
+     {:db (-> db
+              (assoc-in [:connections->pagination :loading] true)
+              (assoc-in [:connections->pagination :page-size] page-size)
+              (assoc-in [:connections->pagination :current-page] page)
+              (assoc-in [:connections->pagination :active-filters] filters)
+              (assoc-in [:connections->pagination :active-search] search))
+      :fx [[:dispatch
+            [:fetch {:method "GET"
+                     :uri "/connections"
+                     :query-params query-params
+                     :on-success #(rf/dispatch [:connections/set-connections-paginated (assoc request :response %)])}]]]})))
+
+(rf/reg-event-fx
+ :connections/set-connections-paginated
+ (fn
+   [{:keys [db]} [_ {:keys [response reset?]}]]
+   (let [connections-data (get response :data [])
+         pages-info (get response :pages {})
+         page-number (get pages-info :page 1)
+         page-size (get pages-info :size 20)
+         total (get pages-info :total 0)
+         existing-connections (get-in db [:connections->pagination :data] [])
+         final-connections (if reset? connections-data (vec (concat existing-connections connections-data)))
+         has-more? (< (* page-number page-size) total)]
+     {:db (-> db
+              (assoc-in [:connections->pagination :data] final-connections)
+              (assoc-in [:connections->pagination :loading] false)
+              (assoc-in [:connections->pagination :has-more?] has-more?)
+              (assoc-in [:connections->pagination :current-page] page-number)
+              (assoc-in [:connections->pagination :page-size] page-size)
+              (assoc-in [:connections->pagination :total] total))})))
+
+
 (rf/reg-event-fx
  :connections->load-metadata
  (fn [{:keys [db]} [_]]

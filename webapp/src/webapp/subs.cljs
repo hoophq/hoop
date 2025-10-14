@@ -33,9 +33,9 @@
    (:connections db)))
 
 (re-frame/reg-sub
- :roles
+ :connections->pagination
  (fn [db _]
-   (:roles db)))
+   (:connections->pagination db)))
 
 (re-frame/reg-sub
  :all-connections
