@@ -116,7 +116,7 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 
 func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
-	recvCh := grpc.NewStreamRecv(stream)
+	recvCh := grpc.NewStreamRecv(stream.Context(), stream)
 	for {
 		var dstream *grpc.DataStream
 		select {

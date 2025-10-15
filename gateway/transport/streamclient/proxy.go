@@ -137,6 +137,7 @@ func (s *ProxyStream) Save() (err error) {
 
 func (s *ProxyStream) Close(errMsg error) error {
 	// prevent calling if the stream is not in the store
+	defer s.cancelFn(errMsg)
 	if !proxyStore.Has(s.pluginCtx.SID) {
 		return nil
 	}
@@ -149,7 +150,6 @@ func (s *ProxyStream) Close(errMsg error) error {
 
 	s.pluginCtx.ExtensionsOnDisconnectFn(s.pluginCtx.SID)
 	_ = s.PluginExecOnDisconnect(*s.pluginCtx, errMsg)
-	s.cancelFn(errMsg)
 	proxyStore.Del(s.pluginCtx.SID)
 	return nil
 }

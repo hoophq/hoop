@@ -63,7 +63,7 @@ func (s *Server) proxyManager(stream *streamclient.ProxyStream) error {
 
 func (s *Server) listenProxyManagerMessages(stream *streamclient.ProxyStream) error {
 	pctx := stream.PluginContext()
-	recvCh := grpc.NewStreamRecv(stream)
+	recvCh := grpc.NewStreamRecv(stream.Context(), stream)
 	for {
 		var dstream *grpc.DataStream
 		select {
