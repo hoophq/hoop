@@ -602,8 +602,8 @@ func validatePaginationOptions(urlValues url.Values) (page, pageSize int, err er
 	
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
-		if err != nil || pageSize < 1 || pageSize > 1000 {
-			return 0, 0, fmt.Errorf("page_size must be between 1 and 1000")
+		if err != nil || pageSize < 1 || pageSize > 100 {
+			return 0, 0, fmt.Errorf("page_size must be between 1 and 100")
 		}
 	}
 	
