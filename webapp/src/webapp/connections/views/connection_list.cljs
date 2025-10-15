@@ -1,12 +1,11 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check]]
+  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search Loader2]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
-                                        Flex Text Popover]]
+                                        Flex Text Popover TextField]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.loaders :as loaders]
-            [webapp.components.searchbox :as searchbox]
             [webapp.components.infinite-scroll :refer [infinite-scroll]]
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?
@@ -78,9 +77,7 @@
   (let [connections (rf/subscribe [:connections->pagination])
         user (rf/subscribe [:users->current-user])
         test-connection-state (rf/subscribe [:connections->test-connection])
-        search-focused (r/atom false)
-        searched-connections (r/atom nil)
-        searched-criteria-connections (r/atom "")
+        search-term (r/atom "")
         connections-search-status (r/atom nil)
         selected-tag-values (r/atom {})
         tags-popover-open? (r/atom false)
@@ -94,27 +91,41 @@
       (rf/dispatch [:users->get-user]))
 
     (fn []
-      (let [connections-search-results (if (empty? @searched-connections)
-                                         (:data @connections)
-                                         @searched-connections)
-            any-filters? (or (not-empty @selected-tag-values) @selected-resource)
+      (let [connections-state @connections
+            connections-data (:data connections-state)
+            connections-loading? (= :loading (:loading connections-state))
+            active-filters (:active-filters connections-state)
+            active-search (or (:active-search connections-state) "")
+            trimmed-search (cs/trim @search-term)
+            any-filters? (or (seq @selected-tag-values)
+                             @selected-resource)
             clear-all-filters (fn []
                                 (reset! selected-tag-values {})
                                 (reset! selected-resource nil)
-                                (reset! searched-connections nil)
-                                (reset! searched-criteria-connections "")
-                                (rf/dispatch [:connections->get-connections nil]))
+                                (reset! search-term "")
+                                (when @search-debounce-timer
+                                  (js/clearTimeout @search-debounce-timer))
+                                (reset! search-debounce-timer nil)
+                                (reset! connections-search-status :loading)
+                                (rf/dispatch [:connections/get-connections-paginated
+                                              {:page 1 :reset? true :filters {}}]))
             apply-filter (fn [filter-update]
-                           ;; Clear search results when applying filters
-                           (reset! searched-connections nil)
-                           (reset! searched-criteria-connections "")
-                           ;; Apply the filter
-                           (rf/dispatch [:connections/get-connections-paginated
-                                         {:filters filter-update
-                                          :page 1
-                                          :reset? true}]))]
+                           (when @search-debounce-timer
+                             (js/clearTimeout @search-debounce-timer))
+                           (reset! search-debounce-timer nil)
+                           (reset! connections-search-status :loading)
+                           (let [search-value (cs/trim @search-term)
+                                 request (cond-> {:filters filter-update
+                                                  :page 1
+                                                  :reset? true}
+                                           (and (not (cs/blank? search-value))
+                                                (> (count search-value) 2)) (assoc :search search-value))]
+                             (rf/dispatch [:connections/get-connections-paginated request])))]
 
         (let [connections-metadata @(rf/subscribe [:connections->metadata])]
+          (when (and (= @connections-search-status :loading)
+                     (not connections-loading?))
+            (reset! connections-search-status nil))
           (when (nil? connections-metadata)
             (rf/dispatch [:connections->load-metadata])))
 
@@ -138,38 +149,32 @@
                          :on-click clear-all-filters}
               "Clear Filters"])
 
-           [searchbox/main
-            {:options (:data @connections)
-             :display-key :name
-             :searchable-keys [:name :type :subtype :connection_tags :status]
-             :on-change-results-cb #(reset! searched-connections %)
-             :hide-results-list true
-             :placeholder "Search"
-             :on-focus #(reset! search-focused true)
-             :on-blur #(reset! search-focused false)
-             :name "connection-search"
-             :on-change (fn [value]
-                          (reset! searched-criteria-connections value)
-                          ;; implement debounce to optimize performance
-                          (when @search-debounce-timer
-                            (js/clearTimeout @search-debounce-timer))
-                          (reset! search-debounce-timer
-                                  (js/setTimeout
-                                   (fn []
-                                     (when (empty? value)
-                                       ;; When search is cleared, reapply the current filters
-                                       (let [filters (cond-> {}
-                                                       (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
-                                                       @selected-resource (assoc :subtype @selected-resource))]
-                                         (when (not-empty filters)
-                                           (rf/dispatch [:connections/get-connections-paginated
-                                                         {:filters filters
-                                                          :page 1
-                                                          :reset? true}])))))
-                                   150))) ; 150ms debounce
-             :loading? (= @connections-search-status :loading)
-             :size :small
-             :icon-position "left"}]
+           [:> TextField.Root {:class "relative w-full sm:w-64"
+                               :placeholder "Search connections"
+                               :value @search-term
+                               :onChange (fn [e]
+                                           (let [value (-> e .-target .-value)
+                                                 filters (cond-> {}
+                                                           (seq @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
+                                                           @selected-resource (assoc :subtype @selected-resource))
+                                                 trimmed (cs/trim value)
+                                                 should-search? (or (cs/blank? trimmed) (> (count trimmed) 2))
+                                                 request (cond-> {:filters filters
+                                                                  :page 1
+                                                                  :reset? true}
+                                                           (and should-search? (not (cs/blank? trimmed))) (assoc :search trimmed))]
+                                             (reset! search-term value)
+                                             (when @search-debounce-timer
+                                               (js/clearTimeout @search-debounce-timer))
+                                             (when should-search?
+                                               (reset! search-debounce-timer
+                                                       (js/setTimeout
+                                                        (fn []
+                                                          (reset! connections-search-status :loading)
+                                                          (rf/dispatch [:connections/get-connections-paginated request]))
+                                                        500)))))}
+            [:> TextField.Slot
+             [:> Search {:size 16}]]]
 
            [:> Popover.Root {:open @tags-popover-open?
                              :onOpenChange #(reset! tags-popover-open? %)}
@@ -206,32 +211,34 @@
          ;; Test Connection Modal
          [test-connection-modal/test-connection-modal (get-in @test-connection-state [:connection-name])]
 
-         (if (and (= :loading (:loading @connections)) (empty? (:data @connections)))
+         (if (and connections-loading? (empty? connections-data))
            [loading-list-view]
 
            [:div {:class "h-full overflow-y-auto"}
             [:div {:class "relative h-full overflow-y-auto"}
-             (when (and (empty? (:data @connections)) (not= (:loading @connections) :loading))
-               [empty-list-view])
+             (when (and (empty? connections-data) (not connections-loading?))
+               (if (not (cs/blank? trimmed-search))
+                 [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
+                  "No connections with this criteria"]
+                 [empty-list-view]))
 
-             (if (and (empty? @searched-connections)
-                      (> (count @searched-criteria-connections) 0))
-               [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
-                "No connections with this criteria"]
-
+             (when (seq connections-data)
                [:div {:class "flex-1 overflow-hidden"}
                 [infinite-scroll
                  {:on-load-more (fn []
-                                  (when (not (= :loading (:loading @connections)))
-                                    (let [current-page (:current-page @connections 1)
-                                          next-page (inc current-page)]
-                                      (rf/dispatch [:connections/get-connections-paginated
-                                                    {:page next-page
-                                                     :reset? false}]))))
-                  :has-more? (:has-more? @connections)
-                  :loading? (= :loading (:loading @connections))}
-                 (for [connection connections-search-results]
-                   [:> Box {:class (str "bg-white border border-[--gray-3] "
+                                  (when (not connections-loading?)
+                                    (let [current-page (:current-page connections-state 1)
+                                          next-page (inc current-page)
+                                          next-request (cond-> {:page next-page
+                                                                :reset? false
+                                                                :filters (or active-filters {})}
+                                                         (not (cs/blank? (cs/trim active-search))) (assoc :search (cs/trim active-search)))]
+                                      (rf/dispatch [:connections/get-connections-paginated next-request]))))
+                  :has-more? (:has-more? connections-state)
+                  :loading? connections-loading?}
+                 (for [connection connections-data]
+                   [:> Box {:key (:id connection)
+                            :class (str "bg-white border border-[--gray-3] "
                                         "text-[--gray-12] "
                                         "first:rounded-t-lg last:rounded-b-lg "
                                         "first:border-t last:border-b "

@@ -450,6 +450,7 @@ type ConnectionFilterOption struct {
 	AgentID     string
 	Tags        []string
 	TagSelector string
+	Search      string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -461,6 +462,17 @@ func (o ConnectionFilterOption) GetTagsAsArray() any {
 		v = append(v, val)
 	}
 	return v
+}
+
+func (o ConnectionFilterOption) GetSearchPattern() string {
+	term := strings.TrimSpace(o.Search)
+	if term == "" {
+		return "%"
+	}
+	term = strings.ReplaceAll(term, `\`, `\\`)
+	term = strings.ReplaceAll(term, `%`, `\\%`)
+	term = strings.ReplaceAll(term, `_`, `\\_`)
+	return fmt.Sprintf("%%%s%%", term)
 }
 
 func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string, err error) {
@@ -511,6 +523,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	}
 	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
+	searchPattern := opts.GetSearchPattern()
 	var items []Connection
 	// TODO: try changing to @ syntax
 	err = DB.Raw(`
@@ -563,6 +576,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 			ELSE true
 		END AND
 		(
+			c.name ILIKE ?
+			OR c.type::text ILIKE ?
+			OR COALESCE(c.subtype, '') ILIKE ?
+		) AND
+		(
 			-- return all results if no tag selectors provided
 			(SELECT COUNT(*) FROM tag_selector_keys) = 0
 			OR
@@ -593,6 +611,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.AgentID,
 		opts.ManagedBy,
 		tagsAsArray, tagsAsArray,
+		searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {
 		return nil, err
@@ -680,6 +699,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	tagsAsArray := opts.GetTagsAsArray()
+	searchPattern := opts.GetSearchPattern()
 
 	offset := 0
 	if opts.Page > 1 {
@@ -720,6 +740,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 				ELSE true
 			END AND
 			(
+				c.name ILIKE ?
+				OR c.type::text ILIKE ?
+				OR COALESCE(c.subtype, '') ILIKE ?
+			) AND
+			(
 				-- return all results if no tag selectors provided
 				(SELECT COUNT(*) FROM tag_selector_keys) = 0
 				OR
@@ -751,6 +776,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.AgentID,
 		opts.ManagedBy,
 		tagsAsArray, tagsAsArray,
+		searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
 	if err != nil {

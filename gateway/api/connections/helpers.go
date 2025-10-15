@@ -143,6 +143,9 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			o.ManagedBy = values[0]
 		case "tag_selector":
 			o.TagSelector = values[0]
+		case "search":
+			o.Search = strings.TrimSpace(values[0])
+			continue
 		case "tags":
 			if len(values[0]) > 0 {
 				for _, tagVal := range strings.Split(values[0], ",") {
@@ -589,24 +592,24 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 func validatePaginationOptions(urlValues url.Values) (page, pageSize int, err error) {
 	pageStr := urlValues.Get("page")
 	pageSizeStr := urlValues.Get("page_size")
-	
-	page = 1 // Default to page 1
+
+	page = 1     // Default to page 1
 	pageSize = 0 // 0 means no limit (backward compatibility)
-	
+
 	if pageStr != "" {
 		page, err = strconv.Atoi(pageStr)
 		if err != nil || page < 1 {
 			return 0, 0, fmt.Errorf("page must be >= 1")
 		}
 	}
-	
+
 	if pageSizeStr != "" {
 		pageSize, err = strconv.Atoi(pageSizeStr)
 		if err != nil || pageSize < 1 || pageSize > 100 {
 			return 0, 0, fmt.Errorf("page_size must be between 1 and 100")
 		}
 	}
-	
+
 	return page, pageSize, nil
 }
 
