@@ -64,76 +64,99 @@
         installation-method (r/atom "Docker Hub")
         agent-key (rf/subscribe [:agents->agent-key])
         agent-created? (r/atom false)
-        dialog-open? (r/atom false)]
+        dialog-open? (r/atom false)
+        agent-id-set? (r/atom false)]
 
-    (fn []
-      [:> Box {:class "space-y-16"}
-       ;; Agent name section
-       [:> Grid {:columns "7" :gap "7"}
-        [:> Box {:grid-column "span 3 / span 3"}
-         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-          "Set an Agent name"]
-         [:> Text {:size "2" :class "text-[--gray-11]"}
-          "This name is used to identify your Agent in your environment."]]
+    (r/create-class
+     {:component-did-mount
+      (fn [_]
+        ;; Watch for agent creation success (POST returns token)
+        (add-watch agent-key :agent-watcher
+                   (fn [_ _ old-val new-val]
+                     (when (and (= (:status new-val) :ready)
+                                (not= (:status old-val) :ready)
+                                (not @agent-id-set?))
+                       (js/console.log "🎯 Agent created! Token received")
+                       (js/console.log "📦 Agent data:" (clj->js (:data new-val)))
+                       ;; Now fetch agents list to get the ID
+                       (js/console.log "🔍 Fetching agents list to find agent ID...")
+                       (rf/dispatch [:resource-setup->fetch-agent-id-by-name @agent-name])
+                       (reset! agent-id-set? true)))))
 
-        [:> Box {:grid-column "span 4 / span 4"}
-         [:form {:on-submit (fn [e]
-                              (.preventDefault e)
-                              (rf/dispatch [:agents->generate-agent-key @agent-name])
-                              (reset! agent-created? true))}
-          [forms/input {:label "Name"
-                        :placeholder "e.g. mycompany-agent"
-                        :value @agent-name
-                        :required true
-                        :disabled @agent-created?
-                        :on-change #(reset! agent-name (-> % .-target .-value))}]
+      :component-will-unmount
+      (fn [_]
+        ;; Cleanup watcher
+        (remove-watch agent-key :agent-watcher))
 
-          (when-not @agent-created?
-            [:> Button {:type "submit"
-                        :size "3"
-                        :class "mt-4"}
-             "Create Agent"])]]]
-
-       ;; Installation method section - shows after agent is created
-       (when @agent-created?
+      :reagent-render
+      (fn []
+        [:> Box {:class "space-y-16"}
+         ;; Agent name section
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 3 / span 3"}
            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-            "Installation method"]
+            "Set an Agent name"]
            [:> Text {:size "2" :class "text-[--gray-11]"}
-            "Select the type of environment to setup the Agent in your service."]]
-
-          [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
-           [:> Flex {:direction "column" :gap "3"}
-            [installation-method-card
-             {:icon-path-dark "/images/docker-dark.svg"
-              :icon-path-light "/images/docker-light.svg"
-              :title "Docker Hub"
-              :description "Setup a new Agent with a Docker image."
-              :selected? (= @installation-method "Docker Hub")
-              :on-click #(reset! installation-method "Docker Hub")}]
-
-            [installation-method-card
-             {:icon-path-dark "/images/kubernetes-dark.svg"
-              :icon-path-light "/images/kubernetes-light.svg"
-              :title "Kubernetes"
-              :description "Setup a new Agent with Helm package manager."
-              :selected? (= @installation-method "Kubernetes")
-              :on-click #(reset! installation-method "Kubernetes")}]]]])
-
-       ;; Deployment instructions - shows when agent key is ready
-       (when (= (:status @agent-key) :ready)
-         [:> Grid {:columns "7" :gap "7"}
-          [:> Box {:grid-column "span 3 / span 3"}
-           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-            "Agent deployment"]
-           [:> Text {:size "2" :class "text-[--gray-11]"}
-            "Setup your Agent with a docker image or manually run it in your environment."]]
+            "This name is used to identify your Agent in your environment."]]
 
           [:> Box {:grid-column "span 4 / span 4"}
-           [deployment/installation @installation-method (-> @agent-key :data :token)]]])
+           [:form {:on-submit (fn [e]
+                                (.preventDefault e)
+                                (rf/dispatch [:agents->generate-agent-key @agent-name])
+                                (reset! agent-created? true))}
+            [forms/input {:label "Name"
+                          :placeholder "e.g. mycompany-agent"
+                          :value @agent-name
+                          :required true
+                          :disabled @agent-created?
+                          :on-change #(reset! agent-name (-> % .-target .-value))}]
 
-       [agent-not-found-dialog dialog-open? #(reset! dialog-open? false)]])))
+            (when-not @agent-created?
+              [:> Button {:type "submit"
+                          :size "3"
+                          :class "mt-4"}
+               "Create Agent"])]]]
+
+         ;; Installation method section - shows after agent is created
+         (when @agent-created?
+           [:> Grid {:columns "7" :gap "7"}
+            [:> Box {:grid-column "span 3 / span 3"}
+             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+              "Installation method"]
+             [:> Text {:size "2" :class "text-[--gray-11]"}
+              "Select the type of environment to setup the Agent in your service."]]
+
+            [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
+             [:> Flex {:direction "column" :gap "3"}
+              [installation-method-card
+               {:icon-path-dark "/images/docker-dark.svg"
+                :icon-path-light "/images/docker-light.svg"
+                :title "Docker Hub"
+                :description "Setup a new Agent with a Docker image."
+                :selected? (= @installation-method "Docker Hub")
+                :on-click #(reset! installation-method "Docker Hub")}]
+
+              [installation-method-card
+               {:icon-path-dark "/images/kubernetes-dark.svg"
+                :icon-path-light "/images/kubernetes-light.svg"
+                :title "Kubernetes"
+                :description "Setup a new Agent with Helm package manager."
+                :selected? (= @installation-method "Kubernetes")
+                :on-click #(reset! installation-method "Kubernetes")}]]]])
+
+         ;; Deployment instructions - shows when agent key is ready
+         (when (= (:status @agent-key) :ready)
+           [:> Grid {:columns "7" :gap "7"}
+            [:> Box {:grid-column "span 3 / span 3"}
+             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+              "Agent deployment"]
+             [:> Text {:size "2" :class "text-[--gray-11]"}
+              "Setup your Agent with a docker image or manually run it in your environment."]]
+
+            [:> Box {:grid-column "span 4 / span 4"}
+             [deployment/installation @installation-method (-> @agent-key :data :token)]]])
+
+         [agent-not-found-dialog dialog-open? #(reset! dialog-open? false)]])})))
 
 (defn agent-selector [creation-mode]
   (let [agents (rf/subscribe [:agents])
