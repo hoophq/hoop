@@ -609,16 +609,3 @@ func validatePaginationOptions(urlValues url.Values) (page, pageSize int, err er
 	
 	return page, pageSize, nil
 }
-
-func toConnectionSearch(conn *models.Connection) openapi.ConnectionSearch {
-	return openapi.ConnectionSearch{
-		ID:                 conn.ID,
-		Name:               conn.Name,
-		Type:               conn.Type,
-		SubType:            conn.SubType.String,
-		Status:             conn.Status,
-		AccessModeRunbooks: conn.AccessModeRunbooks,
-		AccessModeExec:     conn.AccessModeExec,
-		AccessModeConnect:  conn.AccessModeConnect,
-	}
-}
