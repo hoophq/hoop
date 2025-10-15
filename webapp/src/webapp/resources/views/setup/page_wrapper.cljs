@@ -1,78 +1,90 @@
 (ns webapp.resources.views.setup.page-wrapper
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Text]]
-   ["lucide-react" :refer [Check]]
-   [re-frame.core :as rf]))
+   ["@radix-ui/themes" :refer [Avatar Button Box Flex Text]]
+   ["lucide-react" :refer [PackagePlus]]
+   [re-frame.core :as rf]
+   [reagent.core :as r]))
 
-(defn stepper-item [{:keys [number label completed? active?]}]
-  [:> Flex {:gap "3" :align "center" :class "py-3"}
-   [:> Box {:class (str "flex items-center justify-center rounded-full w-8 h-8 "
-                        (cond
-                          completed? "bg-green-9"
-                          active? "bg-blue-9"
-                          :else "bg-gray-5"))}
-    (if completed?
-      [:> Check {:size 16 :class "text-white"}]
-      [:> Text {:size "2" :weight "bold" :class "text-white"}
-       number])]
+(defn stepper-item [{:keys [title description completed? active? icon]}]
+  [:> Flex {:gap "3" :align "center" :class "w-full p-radix-3 bg-white rounded-lg border border-gray-4"}
+   (if completed?
+     [:> Avatar {:size "4"
+                 :variant "soft"
+                 :color "gray"
+                 :fallback (r/as-element [icon "gray"])}]
+
+     [:> Avatar {:size "4"
+                 :variant "soft"
+                 :color "green"
+                 :fallback (r/as-element [icon "green"])}])
    [:> Box
-    [:> Text {:size "2"
-              :weight (if active? "bold" "regular")
+    [:> Text {:as "p"
+              :size "3"
+              :weight (if active? "medium" "regular")
               :class (cond
                        active? "text-gray-12"
                        completed? "text-gray-11"
-                       :else "text-gray-9")}
-     label]]])
+                       :else "text-gray-11")}
+     title]
+    (when description
+      [:> Text {:as "p"
+                :size "2"
+                :class (cond
+                         active? "text-gray-11"
+                         completed? "text-gray-10"
+                         :else "text-gray-10")}
+       description])]])
 
 (defn stepper []
   (let [current-step @(rf/subscribe [:resource-setup/current-step])]
-    [:> Box {:class "w-64 bg-gray-2 border-r border-gray-6 p-6 space-y-2"}
-     [stepper-item {:number "1"
-                    :label "Resource type"
+    [:> Flex {:direction "column" :gap "3" :align "center" :justify "center" :class "w-[350px] p-10"}
+     [stepper-item {:title "Resource type"
+                    :icon (fn [color]
+                            [:> PackagePlus {:size 18 :color color}])
                     :completed? true
                     :active? false}]
 
-     [stepper-item {:number "2"
-                    :label "Setup your Agents"
+     [stepper-item {:title "Setup your Agents"
+                    :description "Establish secure communication with your infrastructure."
+                    :icon (fn [color]
+                            [:> PackagePlus {:size 18 :color color}])
                     :completed? (contains? #{:roles :success} current-step)
                     :active? (= current-step :agent-selector)}]
 
-     [stepper-item {:number "3"
-                    :label "Resource roles"
+     [stepper-item {:title "Resource roles"
+                    :description "Configure permissions and usage details for your resource."
+                    :icon (fn [color]
+                            [:> PackagePlus {:size 18 :color color}])
                     :completed? (= current-step :success)
                     :active? (= current-step :roles)}]]))
 
 (defn main [{:keys [children footer-props]}]
-  [:> Flex {:class "h-screen overflow-hidden"}
-   [stepper]
+  [:> Flex {:direction "column" :class "h-screen"}
+   ;; Main content area with stepper on left and children on right
+   [:> Flex {:class "flex-1 overflow-hidden"}
+    ;; Stepper on the left
+    [stepper]
 
-   [:> Flex {:direction "column" :class "flex-1 overflow-hidden"}
-    ;; Content area
+    ;; Children content on the right
     [:> Box {:class "flex-1 overflow-y-auto"}
-     children]
+     children]]
 
-    ;; Footer with navigation buttons
-    (when-not (:hide-footer? footer-props)
-      [:> Flex {:justify "between"
-                :align "center"
-                :class "border-t border-gray-6 p-6 bg-white"}
-       [:> Box
-        (when-not (:back-hidden? footer-props)
-          [:button {:class "text-sm text-gray-11 hover:text-gray-12"
-                    :on-click #(rf/dispatch [:resource-setup->back])}
-           "Back"])]
+   ;; Footer with navigation buttons - spans full width
+   (when-not (:hide-footer? footer-props)
+     [:> Flex {:justify "end"
+               :align "center"
+               :class "border-t border-gray-6 p-6 bg-white"}
 
-       [:> Flex {:gap "3"}
-        (when (:on-cancel footer-props)
-          [:button {:class "px-4 py-2 text-sm text-gray-11 hover:text-gray-12"
-                    :on-click (:on-cancel footer-props)}
-           "Cancel"])
+      [:> Flex {:gap "5" :align "center"}
+       (when (:on-cancel footer-props)
+         [:> Button {:size "2"
+                     :variant "ghost"
+                     :color "gray"
+                     :on-click #(rf/dispatch [:resource-setup->back])}
+          "Back"])
 
-        (when-not (:next-hidden? footer-props)
-          [:button {:class (str "px-4 py-2 rounded-md text-sm font-medium "
-                                (if (:next-disabled? footer-props)
-                                  "bg-gray-5 text-gray-9 cursor-not-allowed"
-                                  "bg-blue-9 text-white hover:bg-blue-10"))
-                    :disabled (:next-disabled? footer-props)
-                    :on-click (:on-next footer-props)}
-           (or (:next-text footer-props) "Next")])]])]])
+       (when-not (:next-hidden? footer-props)
+         [:> Button {:size "2"
+                     :disabled (:next-disabled? footer-props)
+                     :on-click (:on-next footer-props)}
+          (or (:next-text footer-props) "Next")])]])])
