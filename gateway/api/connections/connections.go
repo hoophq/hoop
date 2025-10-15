@@ -231,7 +231,7 @@ func Delete(c *gin.Context) {
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)
 //	@Param			page_size		query		int		false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)
-//	@Success		200				{array}		openapi.Connection or {object}	object	"Returns array of Connection objects or PaginatedResponse[openapi.Connection] when using pagination"
+//	@Success		200				{array}		openapi.Connection or {object}	object	"Returns array of Connection objects or PaginatedResponse[openapi.ConnectionSearch] when using pagination"
 //	@Failure		422,500			{object}	openapi.HTTPError
 //	@Router			/connections [get]
 func List(c *gin.Context) {
@@ -273,12 +273,12 @@ func List(c *gin.Context) {
 			return
 		}
 
-		responseConnList := make([]openapi.Connection, len(connList))
+		responseConnList := make([]openapi.ConnectionSearch, len(connList))
 		for i, conn := range connList {
-			responseConnList[i] = toOpenApi(&conn)
+			responseConnList[i] = toConnectionSearch(&conn)
 		}
 
-		response := openapi.PaginatedResponse[openapi.Connection]{
+		response := openapi.PaginatedResponse[openapi.ConnectionSearch]{
 			Pages: openapi.Pagination{
 				Total: int(total),
 				Page:  page,
