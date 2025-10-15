@@ -471,7 +471,6 @@ func (o ConnectionFilterOption) GetSearchPattern() string {
 	}
 	term = strings.ReplaceAll(term, `\`, `\\`)
 	term = strings.ReplaceAll(term, `%`, `\\%`)
-	term = strings.ReplaceAll(term, `_`, `\\_`)
 	return fmt.Sprintf("%%%s%%", term)
 }
 
