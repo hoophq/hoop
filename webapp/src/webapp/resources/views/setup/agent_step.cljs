@@ -1,7 +1,7 @@
 (ns webapp.resources.views.setup.agent-step
   (:require
-   ["@radix-ui/themes" :refer [Box Button Dialog Flex Heading Text Avatar]]
-   ["lucide-react" :refer [Plus AlertCircle]]
+   ["@radix-ui/themes" :refer [Box Button Dialog Flex Heading Text Avatar Link]]
+   ["lucide-react" :refer [Plus AlertCircle ArrowUpRight]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -170,16 +170,21 @@
 
       :reagent-render
       (fn []
-        [:> Box {:class "max-w-[800px] mx-auto p-8 space-y-8"}
-         [:> Box {:class "space-y-4"}
-          [:> Heading {:as "h2" :size "6" :weight "bold" :class "text-[--gray-12]"}
+        [:> Box {:class "p-8 space-y-9"}
+         [:> Box {:class "space-y-2"}
+          [:> Heading {:as "h2" :size "6" :weight "bold" :class "text-gray-12"}
            "Setup your Organization Agents"]
-          [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-           "The Agent serves as the component linking your private infrastructure to Hoop's services. It functions as a proxy, connecting to a central gateway and exposing services within its network scope. Select or create one to get started."]
-          [:> Text {:as "p" :size "2" :class "text-blue-9"}
-           [:a {:href (get-in config/docs-url [:concepts :agents])
-                :target "_blank"}
-            "Access our Docs"]
+          [:> Text {:as "p" :size "3" :class "text-gray-12"}
+           (str "The Agent serves as the component linking your private infrastructure to Hoop's "
+                "services. It functions as a proxy, connecting to a central gateway and exposing "
+                "services within its network scope. Select or create one to get started.")]
+          [:> Text {:as "p" :size "2" :class "text-gray-11 flex items-center gap-1"}
+           "Access"
+           [:> Flex {:align "center" :gap "1"}
+            [:> Link {:href (get-in config/docs-url [:concepts :agents])
+                      :target "_blank"}
+             " our Docs"]
+            [:> ArrowUpRight {:size 12 :class "text-primary-11"}]]
            " to learn more about Agents."]]
 
          (case (or @creation-mode :select)
