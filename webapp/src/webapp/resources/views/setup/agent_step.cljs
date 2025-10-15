@@ -1,6 +1,6 @@
 (ns webapp.resources.views.setup.agent-step
   (:require
-   ["@radix-ui/themes" :refer [Box Button Dialog Flex Heading Text Avatar Link]]
+   ["@radix-ui/themes" :refer [Avatar Box Button Card Dialog Flex Grid Heading Text Link]]
    ["lucide-react" :refer [Plus AlertCircle ArrowUpRight]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -35,131 +35,137 @@
                   :on-click on-close}
        "Return to Agent Configuration"]]]]])
 
-(defn installation-method-card [{:keys [icon-path title description selected? on-click]}]
-  [:> Box {:p "3"
-           :on-click on-click
-           :class (str "border rounded-lg cursor-pointer transition "
-                       (if selected?
-                         "border-blue-9 bg-blue-2"
-                         "border-gray-6 hover:border-gray-8 hover:bg-gray-2"))}
-   [:> Flex {:gap "3" :align "center"}
-    [:> Avatar {:size "3"
+(defn installation-method-card [{:keys [icon-path-dark icon-path-light title description selected? on-click]}]
+  [:> Card {:size "1"
+            :variant "surface"
+            :p "3"
+            :on-click on-click
+            :class (str "w-full cursor-pointer "
+                        (when selected? "before:bg-primary-12"))}
+   [:> Flex {:align "center" :gap "3" :class (str (when selected? "text-[--gray-1]"))}
+    [:> Avatar {:size "4"
+                :class (when selected? "dark")
                 :variant "soft"
-                :color (if selected? "blue" "gray")
+                :color "gray"
                 :fallback (r/as-element
-                           [:img {:src (str config/webapp-url icon-path)
+                           [:img {:src (str config/webapp-url (if selected?
+                                                                icon-path-light
+                                                                icon-path-dark))
                                   :alt title
                                   :class "w-5 h-5"}])}]
-    [:> Box
-     [:> Text {:size "3" :weight "medium" :class "text-gray-12"}
+    [:> Flex {:direction "column"}
+     [:> Text {:size "3" :weight "medium"}
       title]
-     [:> Text {:size "2" :class "text-gray-11"}
+     [:> Text {:size "2"}
       description]]]])
 
 (defn agent-creation-form []
   (let [agent-name (r/atom "")
         installation-method (r/atom "Docker Hub")
         agent-key (rf/subscribe [:agents->agent-key])
-        step (r/atom :name)
+        agent-created? (r/atom false)
         dialog-open? (r/atom false)]
 
     (fn []
-      (case @step
-        :name
-        [:> Box {:class "space-y-6"}
-         [:> Box {:class "space-y-3"}
-          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-           "Set an Agent name"]
-          [:> Text {:size "2" :class "text-[--gray-11]"}
-           "This name is used to identify your Agent in your environment."]]
+      [:> Box {:class "space-y-16"}
+       ;; Agent name section
+       [:> Grid {:columns "7" :gap "7"}
+        [:> Box {:grid-column "span 3 / span 3"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "Set an Agent name"]
+         [:> Text {:size "2" :class "text-[--gray-11]"}
+          "This name is used to identify your Agent in your environment."]]
 
+        [:> Box {:grid-column "span 4 / span 4"}
          [:form {:on-submit (fn [e]
                               (.preventDefault e)
                               (rf/dispatch [:agents->generate-agent-key @agent-name])
-                              (reset! step :installation))}
+                              (reset! agent-created? true))}
           [forms/input {:label "Name"
                         :placeholder "e.g. mycompany-agent"
                         :value @agent-name
                         :required true
+                        :disabled @agent-created?
                         :on-change #(reset! agent-name (-> % .-target .-value))}]
 
-          [:> Flex {:gap "3" :class "mt-4"}
-           [:> Button {:type "button"
-                       :variant "soft"
-                       :size "3"
-                       :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :select])}
-            "Back to Agent List"]
-           [:> Button {:type "submit"
-                       :size "3"}
-            "Create Agent"]]]]
+          (when-not @agent-created?
+            [:> Button {:type "submit"
+                        :size "3"
+                        :class "mt-4"}
+             "Create Agent"])]]]
 
-        :installation
-        [:> Box {:class "space-y-6"}
-         [:> Box {:class "space-y-3"}
-          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-           "Installation method"]
-          [:> Text {:size "2" :class "text-[--gray-11]"}
-           "Select the type of environment to setup the Agent in your infrastructure."]]
+       ;; Installation method section - shows after agent is created
+       (when @agent-created?
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 3 / span 3"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Installation method"]
+           [:> Text {:size "2" :class "text-[--gray-11]"}
+            "Select the type of environment to setup the Agent in your service."]]
 
-         [:> Flex {:direction "column" :gap "3" :class "mb-6"}
-          [installation-method-card
-           {:icon-path "/images/docker-dark.svg"
-            :title "Docker Hub"
-            :description "Setup a new Agent with a Docker image."
-            :selected? (= @installation-method "Docker Hub")
-            :on-click #(reset! installation-method "Docker Hub")}]
+          [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
+           [:> Flex {:direction "column" :gap "3"}
+            [installation-method-card
+             {:icon-path-dark "/images/docker-dark.svg"
+              :icon-path-light "/images/docker-light.svg"
+              :title "Docker Hub"
+              :description "Setup a new Agent with a Docker image."
+              :selected? (= @installation-method "Docker Hub")
+              :on-click #(reset! installation-method "Docker Hub")}]
 
-          [installation-method-card
-           {:icon-path "/images/kubernetes-dark.svg"
-            :title "Kubernetes"
-            :description "Setup a new Agent with Helm package manager."
-            :selected? (= @installation-method "Kubernetes")
-            :on-click #(reset! installation-method "Kubernetes")}]]
+            [installation-method-card
+             {:icon-path-dark "/images/kubernetes-dark.svg"
+              :icon-path-light "/images/kubernetes-light.svg"
+              :title "Kubernetes"
+              :description "Setup a new Agent with Helm package manager."
+              :selected? (= @installation-method "Kubernetes")
+              :on-click #(reset! installation-method "Kubernetes")}]]]])
 
-         (when (= (:status @agent-key) :ready)
-           [:> Box {:class "mt-6"}
-            [deployment/installation @installation-method (-> @agent-key :data :token)]])
+       ;; Deployment instructions - shows when agent key is ready
+       (when (= (:status @agent-key) :ready)
+         [:> Grid {:columns "7" :gap "7"}
+          [:> Box {:grid-column "span 3 / span 3"}
+           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+            "Agent deployment"]
+           [:> Text {:size "2" :class "text-[--gray-11]"}
+            "Setup your Agent with a docker image or manually run it in your environment."]]
 
-         [:> Flex {:gap "3" :class "mt-6"}
-          [:> Button {:variant "soft"
-                      :size "3"
-                      :on-click #(reset! step :name)}
-           "Back"]
-          [:> Button {:size "3"
-                      :on-click #(do
-                                   (reset! dialog-open? true)
-                                   (rf/dispatch [:agents->get-agents]))}
-           "Agent Created"]]
+          [:> Box {:grid-column "span 4 / span 4"}
+           [deployment/installation @installation-method (-> @agent-key :data :token)]]])
 
-         [agent-not-found-dialog dialog-open? #(reset! dialog-open? false)]]))))
+       [agent-not-found-dialog dialog-open? #(reset! dialog-open? false)]])))
 
-(defn agent-selector []
+(defn agent-selector [creation-mode]
   (let [agents (rf/subscribe [:agents])
-        agent-id (rf/subscribe [:resource-setup/agent-id])]
-    [:> Box {:class "space-y-4"}
-     [:> Box {:class "space-y-3"}
+        agent-id (rf/subscribe [:resource-setup/agent-id])
+        is-creating? (= creation-mode :create)]
+    [:> Grid {:columns "7" :gap "7"}
+     [:> Box {:grid-column "span 3 / span 3"}
       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
        "Select an Agent"]
       [:> Text {:size "2" :class "text-[--gray-11]"}
        "This name is used to identify your Agent in your environment."]]
 
-     [forms/select
-      {:label "Agent Name"
-       :placeholder "Select an Agent"
-       :required true
-       :full-width? true
-       :options (mapv #(hash-map :value (:id %)
-                                 :text (:name %))
-                      (:data @agents))
-       :selected (or @agent-id "")
-       :on-change #(when (and % (not= % @agent-id) (not= % ""))
-                     (rf/dispatch [:resource-setup->set-agent-id %]))}]
+     [:> Box {:grid-column "span 4 / span 4" :class "space-y-4"}
+      [forms/select
+       {:label "Agent Name"
+        :placeholder "Select an Agent"
+        :required true
+        :full-width? true
+        :disabled is-creating?
+        :options (mapv #(hash-map :value (:id %)
+                                  :text (:name %))
+                       (:data @agents))
+        :selected (or @agent-id "")
+        :on-change #(when (and % (not= % @agent-id) (not= % ""))
+                      (rf/dispatch [:resource-setup->set-agent-id %]))}]
 
-     [:> Button {:variant "ghost"
-                 :size "2"
-                 :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :create])}
-      [:> Plus {:size 16}]
-      "Create new Agent"]]))
+      (when-not is-creating?
+        [:> Button {:variant "ghost"
+                    :size "2"
+                    :on-click #(rf/dispatch [:resource-setup->set-agent-creation-mode :create])}
+         [:> Plus {:size 16}]
+         "Create new Agent"])]]))
 
 (defn main []
   (let [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])]
@@ -170,7 +176,8 @@
 
       :reagent-render
       (fn []
-        [:> Box {:class "p-8 space-y-9"}
+        [:> Box {:class "p-8 space-y-16"}
+         ;; Header
          [:> Box {:class "space-y-2"}
           [:> Heading {:as "h2" :size "6" :weight "bold" :class "text-gray-12"}
            "Setup your Organization Agents"]
@@ -187,6 +194,9 @@
             [:> ArrowUpRight {:size 12 :class "text-primary-11"}]]
            " to learn more about Agents."]]
 
-         (case (or @creation-mode :select)
-           :select [agent-selector]
-           :create [agent-creation-form])])})))
+         ;; Always show agent selector
+         [agent-selector (or @creation-mode :select)]
+
+         ;; Show creation form when in create mode
+         (when (= @creation-mode :create)
+           [agent-creation-form])])})))
