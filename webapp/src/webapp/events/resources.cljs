@@ -42,7 +42,7 @@
             (assoc-in [:resources :last-created] resource))
     :fx [[:dispatch [:show-snackbar {:level :success
                                      :text "Resource created successfully!"}]]
-         [:dispatch [:resource-setup->set-step :success]]]}))
+         [:dispatch [:navigate :connections]]]}))
 
 (rf/reg-event-fx
  :resources->create-failure
