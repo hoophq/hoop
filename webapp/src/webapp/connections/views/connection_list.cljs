@@ -1,5 +1,5 @@
 (ns webapp.connections.views.connection-list
-  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search Loader2]]
+  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
                                         Flex Text Popover TextField]]
             [clojure.string :as cs]

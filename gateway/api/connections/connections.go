@@ -220,7 +220,7 @@ func Delete(c *gin.Context) {
 // List Connections
 //
 //	@Summary		List Connections
-//	@Description	List all connections. Supports pagination when page/page_size parameters are provided.
+//	@Description	List all connections.
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			agent_id		query		string	false	"Filter by agent id"																	Format(uuid)
