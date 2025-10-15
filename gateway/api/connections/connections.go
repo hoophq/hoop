@@ -266,7 +266,7 @@ func List(c *gin.Context) {
 			PageSize:               pageSize,
 		}
 
-		connList, total, err := models.ListConnectionsPaginated(ctx, paginationOpts)  
+		connList, total, err := models.ListConnectionsPaginated(ctx.GetOrgID(), ctx.GetUserGroups(), paginationOpts)  
 		if err != nil {
 			log.Errorf("failed listing connections with pagination, reason=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

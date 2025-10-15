@@ -670,13 +670,15 @@ type ConnectionPaginationOption struct {
 }
 
 // ListConnectionsPaginated retrieves a paginated list of connections based on the provided filter options.
-func ListConnectionsPaginated(ctx UserContext, opts ConnectionPaginationOption) ([]Connection, int64, error) {
+func ListConnectionsPaginated(orgID string, userGroups []string, opts ConnectionPaginationOption) ([]Connection, int64, error) {
 	setConnectionOptionDefaults(&opts.ConnectionFilterOption)
 	tagSelectorJsonData, err := opts.ParseTagSelectorQuery()
 	if err != nil {
 		return nil, 0, err
 	}
-	userGroups := pq.StringArray(ctx.GetUserGroups())  // TODO: Pass variables instead of ctx
+
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	userGroupsPgArray := pq.StringArray(userGroups)
 	tagsAsArray := opts.GetTagsAsArray()
 
 	offset := 0
@@ -737,8 +739,8 @@ func ListConnectionsPaginated(ctx UserContext, opts ConnectionPaginationOption) 
 		)
 	)`,
 		tagSelectorJsonData,
-		ctx.GetOrgID(), ctx.GetOrgID(),
-		ctx.IsAdmin(), userGroups, // access control filter
+		orgID, orgID,
+		isAdmin, userGroupsPgArray,
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,
@@ -802,8 +804,8 @@ func ListConnectionsPaginated(ctx UserContext, opts ConnectionPaginationOption) 
 	) ORDER BY c.name ASC
 	LIMIT ? OFFSET ?`,
 		tagSelectorJsonData,
-		ctx.GetOrgID(), ctx.GetOrgID(),
-		ctx.IsAdmin(), userGroups,
+		orgID, orgID,
+		isAdmin, userGroupsPgArray,
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,

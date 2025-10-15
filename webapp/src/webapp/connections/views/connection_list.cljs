@@ -109,10 +109,10 @@
                            (reset! searched-connections nil)
                            (reset! searched-criteria-connections "")
                            ;; Apply the filter
-                           (rf/dispatch [:connections/get-connections-paginated 
-                                        {:filters filter-update
-                                         :page 1
-                                         :reset? true}]))]
+                           (rf/dispatch [:connections/get-connections-paginated
+                                         {:filters filter-update
+                                          :page 1
+                                          :reset? true}]))]
 
         (let [connections-metadata @(rf/subscribe [:connections->metadata])]
           (when (nil? connections-metadata)
@@ -225,7 +225,7 @@
                                   (when (not (= :loading (:loading @connections)))
                                     (let [current-page (:current-page @connections 1)
                                           next-page (inc current-page)]
-                                      (rf/dispatch [:connections/get-connections-paginated 
+                                      (rf/dispatch [:connections/get-connections-paginated
                                                     {:page next-page
                                                      :reset? false}]))))
                   :has-more? (:has-more? @connections)
