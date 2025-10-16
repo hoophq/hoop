@@ -18,6 +18,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -243,13 +244,15 @@ func List(c *gin.Context) {
 		return
 	}
 
-	// Check if pagination parameters are provided
-	page, pageSize, paginationErr := validatePaginationOptions(c.Request.URL.Query())
-
 	urlValues := c.Request.URL.Query()
-	hasPaginationParams := urlValues.Get("page_size") != "" || urlValues.Get("page") != ""
+	pageStr := urlValues.Get("page")
+	pageSizeStr := urlValues.Get("page_size")
+
+	hasPaginationParams := pageStr != "" || pageSizeStr != ""
 
 	if hasPaginationParams {
+		page, pageSize, paginationErr := apivalidation.ParsePaginationParams(pageStr, pageSizeStr)
+
 		// Use paginated response
 		if paginationErr != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": paginationErr.Error()})

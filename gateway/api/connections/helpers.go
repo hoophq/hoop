@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 
 	pb "github.com/hoophq/hoop/common/proto"
@@ -589,29 +588,6 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 	return cmd
 }
 
-func validatePaginationOptions(urlValues url.Values) (page, pageSize int, err error) {
-	pageStr := urlValues.Get("page")
-	pageSizeStr := urlValues.Get("page_size")
-
-	page = 1     // Default to page 1
-	pageSize = 0 // 0 means no limit (backward compatibility)
-
-	if pageStr != "" {
-		page, err = strconv.Atoi(pageStr)
-		if err != nil || page < 1 {
-			return 0, 0, fmt.Errorf("page must be >= 1")
-		}
-	}
-
-	if pageSizeStr != "" {
-		pageSize, err = strconv.Atoi(pageSizeStr)
-		if err != nil || pageSize < 1 || pageSize > 100 {
-			return 0, 0, fmt.Errorf("page_size must be between 1 and 100")
-		}
-	}
-
-	return page, pageSize, nil
-}
 
 func toConnectionSearch(conn *models.Connection) openapi.ConnectionSearch {
 	return openapi.ConnectionSearch{
