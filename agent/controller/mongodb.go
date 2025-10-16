@@ -46,17 +46,22 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		return
 	}
 
+	var dataMaskingEntityTypesData string
+	if connParams.DataMaskingEntityTypesData != nil {
+		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
+	}
+
 	log.With("sid", sid, "conn", clientConnectionID, "legacy", connenv.connectionString == "").
 		Infof("starting mongodb connection at %v", connenv.Address())
 
 	opts := map[string]string{
-		"sid":               sid,
-		"connection_string": connenv.connectionString,
-		"connection_id":     clientConnectionID,
-		// Not Implemented yet
-		// "dlp_provider":        connParams.DlpProvider,
-		// "mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
-		// "mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
+		"sid":                       sid,
+		"connection_string":         connenv.connectionString,
+		"connection_id":             clientConnectionID,
+		"dlp_provider":              connParams.DlpProvider,
+		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
+		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
+		"data_masking_entity_data":  dataMaskingEntityTypesData,
 		"dlp_mode":              connParams.DlpMode,
 		"dlp_gcp_credentials":   connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
