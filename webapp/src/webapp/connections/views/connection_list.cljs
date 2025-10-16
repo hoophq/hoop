@@ -83,7 +83,7 @@
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
         search-debounce-timer (r/atom nil)]
-    (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
+    (rf/dispatch [:connections/get-connections-paginated])
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:connections->get-connection-tags])
 

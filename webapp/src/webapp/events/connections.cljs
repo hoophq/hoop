@@ -129,7 +129,7 @@
  :connections/get-connections-paginated
  (fn
    [{:keys [db]} [_ {:keys [page-size page filters search force-refresh?]
-                     :or {page-size 20 page 1 force-refresh? true}}]]
+                     :or {page-size 20 page 1 force-refresh? false}}]]
    (let [request {:page-size page-size
                   :page page
                   :filters filters
