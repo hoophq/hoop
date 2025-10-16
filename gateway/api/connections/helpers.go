@@ -144,7 +144,7 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		case "tag_selector":
 			o.TagSelector = values[0]
 		case "search":
-			o.Search = strings.TrimSpace(values[0])
+			o.Search = strings.TrimLeft(values[0], " ")
 			continue
 		case "tags":
 			if len(values[0]) > 0 {
