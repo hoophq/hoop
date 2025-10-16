@@ -30,6 +30,11 @@ func TestConnectionFilterOptions(t *testing.T) {
 			want: models.ConnectionFilterOption{},
 		},
 		{
+			msg:  "it must accept search parameter",
+			opts: map[string]string{"search": "  database "},
+			want: models.ConnectionFilterOption{Search: "database"},
+		},
+		{
 			msg:     "it must error with invalid option values",
 			opts:    map[string]string{"subtype": "value with space"},
 			wantErr: errInvalidOptionVal.Error(),

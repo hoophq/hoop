@@ -33,6 +33,11 @@
    (:connections db)))
 
 (re-frame/reg-sub
+ :connections->pagination
+ (fn [db _]
+   (:connections->pagination db)))
+
+(re-frame/reg-sub
  :all-connections
  (fn [db _]
    (:all-connections db)))
