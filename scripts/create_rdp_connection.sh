@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Simple RDP Connection Creation Script
-# Always runs hoop login and creates an RDP connection
+# You should run hoop login before running this script
 
 # Default values
 HOOP_API_URL="${HOOP_API_URL:-http://localhost:8009}"
@@ -62,9 +62,8 @@ if ! command -v base64 &> /dev/null; then
     exit 1
 fi
 
-# Run hoop login and capture token
-echo -e "${YELLOW}🔐 Running hoop login...${NC}"
-TOKEN=$(hoop login)
+echo -e "${YELLOW}🔐 Running hoop config view token...${NC}"
+TOKEN=$(hoop config view token)
 if [ $? -ne 0 ] || [ -z "$TOKEN" ]; then
     echo -e "${RED}❌ Hoop login failed${NC}"
     exit 1
@@ -90,7 +89,7 @@ RESPONSE=$(curl -s -w "\n%{http_code}" \
     -H "Authorization: Bearer $TOKEN" \
     -d "{
         \"name\": \"$CONNECTION_NAME\",
-        \"type\": \"application\",
+        \"type\": \"server\",
         \"subtype\": \"rdp\",
         \"agent_id\": \"$AGENT_ID\",
         \"command\": [\"$COMMAND\"],
