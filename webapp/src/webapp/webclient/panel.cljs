@@ -126,44 +126,33 @@
     (reset! is-typing is-typing?)
     (aset js/window "is_typing" is-typing?)))
 
-(def codemirror-extensions-cache (r/atom {}))
-
-(defn create-codemirror-extensions [current-language
-                                    parser
+(defn create-codemirror-extensions [parser
                                     keymap
                                     feature-ai-ask
                                     is-one-connection-selected?
                                     connection-subtype
                                     is-template-ready?]
 
-  (let [cache-key [current-language
-                   (hash parser)
-                   feature-ai-ask
-                   is-one-connection-selected?
-                   is-template-ready?]]
+  (let [extensions
+        (concat
+         [(.of cm-view/keymap (clj->js keymap))]
+         (when (and (= feature-ai-ask "enabled")
+                    is-one-connection-selected?)
+           [(inlineCopilot
+             #js{:getSuggestions (fn [prefix suffix]
+                                   (extensions/fetch-autocomplete
+                                    connection-subtype
+                                    prefix
+                                    suffix))
+                 :debounceMs 1200
+                 :maxPrefixLength 500
+                 :maxSuffixLength 500})])
+         parser
+         (when is-template-ready?
+           [(.of (.-editable cm-view/EditorView) false)
+            (.of (.-readOnly cm-state/EditorState) true)]))]
 
-    (or (get @codemirror-extensions-cache cache-key)
-        (let [extensions
-              (concat
-               (when (and (= feature-ai-ask "enabled")
-                          is-one-connection-selected?)
-                 [(inlineCopilot
-                   #js{:getSuggestions (fn [prefix suffix]
-                                         (extensions/fetch-autocomplete
-                                          connection-subtype
-                                          prefix
-                                          suffix))
-                       :debounceMs 1200
-                       :maxPrefixLength 500
-                       :maxSuffixLength 500})])
-               [(.of cm-view/keymap (clj->js keymap))]
-               parser
-               (when is-template-ready?
-                 [(.of (.-editable cm-view/EditorView) false)
-                  (.of (.-readOnly cm-state/EditorState) true)]))]
-
-          (swap! codemirror-extensions-cache assoc cache-key extensions)
-          extensions))))
+    extensions))
 
 (def codemirror-editor
   (r/create-class
@@ -280,7 +269,6 @@
             language-parser-case (get-or-create-sql-parser current-language)
 
             codemirror-exts (create-codemirror-extensions
-                             current-language
                              language-parser-case
                              keymap
                              feature-ai-ask
