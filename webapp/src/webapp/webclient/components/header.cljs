@@ -37,7 +37,7 @@
              :color (if @primary-connection "indigo" "gray")
              :class "cursor-pointer"
              :onClick (fn []
-                        (rf/dispatch [:connections->get-connections])
+                        (rf/dispatch [:connections/get-connections-paginated])
                         (rf/dispatch [:primary-connection/toggle-dialog true]))}
             (if @primary-connection
               (:name @primary-connection)
@@ -51,7 +51,7 @@
               :variant "soft"
               :color "gray"
               :onClick (fn []
-                         (rf/dispatch [:connections->get-connections])
+                         (rf/dispatch [:connections/get-connections-paginated])
                          (rf/dispatch [:primary-connection/toggle-dialog true]))}
              [:> Search {:size 16}]]]
 

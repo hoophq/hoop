@@ -43,7 +43,9 @@
             {:radius "full"
              :color (if @runbooks-connection "indigo" "gray")
              :class "cursor-pointer"
-             :onClick (fn [] (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
+             :onClick (fn [] 
+                        (rf/dispatch [:connections/get-connections-paginated])
+                        (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
             (if @runbooks-connection
               (:name @runbooks-connection)
               "Connection")

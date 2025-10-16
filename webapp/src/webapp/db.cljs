@@ -1,5 +1,4 @@
-(ns webapp.db
-  (:require [clojure.edn :refer [read-string]]))
+(ns webapp.db)
 
 (def default-db
   {:agents {:status :loading, :data []}

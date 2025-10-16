@@ -83,7 +83,7 @@
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
         search-debounce-timer (r/atom nil)]
-    (rf/dispatch [:connections/get-connections-paginated {:reset? true}])
+    (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:connections->get-connection-tags])
 
@@ -108,7 +108,7 @@
                                 (reset! search-debounce-timer nil)
                                 (reset! connections-search-status :loading)
                                 (rf/dispatch [:connections/get-connections-paginated
-                                              {:page 1 :reset? true :filters {}}]))
+                                              {:page 1 :force-refresh? true :filters {}}]))
             apply-filter (fn [filter-update]
                            (when @search-debounce-timer
                              (js/clearTimeout @search-debounce-timer))
@@ -117,7 +117,7 @@
                            (let [search-value (cs/trim @search-term)
                                  request (cond-> {:filters filter-update
                                                   :page 1
-                                                  :reset? true}
+                                                  :force-refresh? true}
                                            (and (not (cs/blank? search-value))
                                                 (> (count search-value) 2)) (assoc :search search-value))]
                              (rf/dispatch [:connections/get-connections-paginated request])))]
@@ -149,7 +149,7 @@
                          :on-click clear-all-filters}
               "Clear Filters"])
 
-           [:> TextField.Root {:class "relative w-full sm:w-64"
+           [:> TextField.Root {:class "relative"
                                :placeholder "Search connections"
                                :value @search-term
                                :onChange (fn [e]
@@ -161,7 +161,7 @@
                                                  should-search? (or (cs/blank? trimmed) (> (count trimmed) 2))
                                                  request (cond-> {:filters filters
                                                                   :page 1
-                                                                  :reset? true}
+                                                                  :force-refresh? true}
                                                            (and should-search? (not (cs/blank? trimmed))) (assoc :search trimmed))]
                                              (reset! search-term value)
                                              (when @search-debounce-timer
@@ -230,7 +230,7 @@
                                     (let [current-page (:current-page connections-state 1)
                                           next-page (inc current-page)
                                           next-request (cond-> {:page next-page
-                                                                :reset? false
+                                                                :force-refresh? false
                                                                 :filters (or active-filters {})}
                                                          (not (cs/blank? (cs/trim active-search))) (assoc :search (cs/trim active-search)))]
                                       (rf/dispatch [:connections/get-connections-paginated next-request]))))

@@ -128,13 +128,13 @@
 (rf/reg-event-fx
  :connections/get-connections-paginated
  (fn
-   [{:keys [db]} [_ {:keys [page-size page filters search reset?]
-                     :or {page-size 20 page 1 reset? true}}]]
+   [{:keys [db]} [_ {:keys [page-size page filters search force-refresh?]
+                     :or {page-size 20 page 1 force-refresh? true}}]]
    (let [request {:page-size page-size
                   :page page
                   :filters filters
                   :search search
-                  :reset? reset?}
+                  :force-refresh? force-refresh?}
          query-params (cond-> {}
                         page-size (assoc :page_size page-size)
                         page (assoc :page page)
@@ -157,14 +157,14 @@
 (rf/reg-event-fx
  :connections/set-connections-paginated
  (fn
-   [{:keys [db]} [_ {:keys [response reset?]}]]
+   [{:keys [db]} [_ {:keys [response force-refresh?]}]]
    (let [connections-data (get response :data [])
          pages-info (get response :pages {})
          page-number (get pages-info :page 1)
          page-size (get pages-info :size 20)
          total (get pages-info :total 0)
          existing-connections (get-in db [:connections->pagination :data] [])
-         final-connections (if reset? connections-data (vec (concat existing-connections connections-data)))
+         final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
          has-more? (< (* page-number page-size) total)]
      {:db (-> db
               (assoc-in [:connections->pagination :data] final-connections)
