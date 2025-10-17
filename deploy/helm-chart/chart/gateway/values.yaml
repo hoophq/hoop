@@ -167,3 +167,9 @@ serviceAccount:
   create: false
   # Annotations to add to the service account
   annotations: {}
+
+# Name of existing ConfigMap containing extra env vars
+extraEnvVarsCM: ""
+
+# Name of existing Secrets containing extra env vars
+extraEnvVarsSecret: ""
