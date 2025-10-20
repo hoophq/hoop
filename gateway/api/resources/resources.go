@@ -13,6 +13,8 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/transport/streamclient"
+	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
 	"gorm.io/gorm"
 )
 
@@ -105,24 +107,34 @@ func CreateResource(c *gin.Context) {
 				}
 			}
 
-			accessSchema := "disabled"
+			accessSchemaStatus := "disabled"
 			if role.Type == "database" {
-				accessSchema = "enabled"
+				accessSchemaStatus = "enabled"
+			}
+
+			agentId := resource.AgentID.String
+			if role.AgentID != "" {
+				agentId = role.AgentID
+			}
+
+			connectionStatus := models.ConnectionStatusOffline
+			if streamclient.IsAgentOnline(streamtypes.NewStreamID(agentId, "")) {
+				connectionStatus = models.ConnectionStatusOnline
 			}
 
 			connections = append(connections, &models.Connection{
 				OrgID:              ctx.OrgID,
 				Name:               role.Name,
 				ResourceName:       req.Name,
-				AgentID:            sql.NullString{String: role.AgentID, Valid: role.AgentID == ""},
+				AgentID:            sql.NullString{String: role.AgentID, Valid: role.AgentID != ""},
 				Type:               role.Type,
-				SubType:            sql.NullString{String: role.SubType, Valid: role.SubType == ""},
+				SubType:            sql.NullString{String: role.SubType, Valid: role.SubType != ""},
 				Command:            defaultCmd,
-				Status:             models.ConnectionStatusOnline,
+				Status:             connectionStatus,
 				AccessModeRunbooks: "enabled",
 				AccessModeExec:     "enabled",
 				AccessModeConnect:  "enabled",
-				AccessSchema:       accessSchema,
+				AccessSchema:       accessSchemaStatus,
 				Envs:               apiconnections.CoerceToMapString(role.Secrets),
 				ConnectionTags:     map[string]string{},
 			})
