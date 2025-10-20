@@ -102,7 +102,7 @@
                         :onClick on-toggle-collapse}
          [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
        (when-not collapsed?
-         [:> Box {:class "flex-1 p-2 h-full"} [runbooks-list/main templates filtered-templates]])])))
+         [:> Box {:class "flex-1 p-2 h-full overflow-y-auto"} [runbooks-list/main templates filtered-templates]])])))
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
