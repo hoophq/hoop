@@ -57,26 +57,29 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 		"authorized_server_keys": connenv.authorizedSSHKeys,
 		"connection_id":          clientConnectionID,
 	}
-	serverWriter, err := libhoop.NewSSHProxy(context.Background(), streamClient, opts)
-	if err != nil {
-		errMsg := fmt.Sprintf("failed initializing SSH proxy connection, err=%v", err)
-		log.With("sid", sid, "conn", clientConnectionID).Errorf(errMsg)
-		a.sendClientSessionClose(sid, errMsg)
-		return
-	}
+	// this will run in a new goroutine the Connection 
+	go func() {
+		serverWriter, err := libhoop.NewSSHProxy(context.Background(), streamClient, opts)
+		if err != nil {
+			errMsg := fmt.Sprintf("failed initializing SSH proxy connection, err=%v", err)
+			log.With("sid", sid, "conn", clientConnectionID).Errorf(errMsg)
+			a.sendClientSessionClose(sid, errMsg)
+			return
+		}
 
-	serverWriter.Run(func(_ int, errMsg string) {
-		a.connStore.Del(clientConnectionIDKey)
-		a.sendClientSessionClose(sid, errMsg)
-	})
+		serverWriter.Run(func(_ int, errMsg string) {
+			a.connStore.Del(clientConnectionIDKey)
+			a.sendClientSessionClose(sid, errMsg)
+		})
 
-	// write the first packet when establishing the connection
-	if _, err = serverWriter.Write(pkt.Payload); err != nil {
-		errMsg := fmt.Sprintf("unable to connect with remote SSH server, err=%v", err)
-		log.With("sid", sid, "conn", clientConnectionID).Errorf(errMsg)
-		a.sendClientSessionClose(sid, errMsg)
-		return
-	}
+		// write the first packet when establishing the connection
+		if _, err = serverWriter.Write(pkt.Payload); err != nil {
+			errMsg := fmt.Sprintf("unable to connect with remote SSH server, err=%v", err)
+			log.With("sid", sid, "conn", clientConnectionID).Errorf(errMsg)
+			a.sendClientSessionClose(sid, errMsg)
+			return
+		}
 
-	a.connStore.Set(clientConnectionIDKey, serverWriter)
+		a.connStore.Set(clientConnectionIDKey, serverWriter)
+	}()
 }
