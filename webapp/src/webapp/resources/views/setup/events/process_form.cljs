@@ -66,7 +66,6 @@
   "Process the entire resource setup form into API payload"
   [db]
   (let [resource-name (get-in db [:resource-setup :name])
-        resource-type (get-in db [:resource-setup :type])
         resource-subtype (get-in db [:resource-setup :subtype])
         agent-id (get-in db [:resource-setup :agent-id])
         roles (get-in db [:resource-setup :roles] [])
@@ -74,9 +73,9 @@
         ;; Process all roles
         processed-roles (mapv #(process-role % agent-id) roles)]
 
-    {:resource {:name resource-name
-                :type resource-type
-                :subtype resource-subtype
-                :agent_id agent-id}
+    {:name resource-name
+     :type resource-subtype  ;; Backend expects subtype as "type" (e.g., "postgres")
+     :agent_id agent-id
+     :env_vars {}
      :roles processed-roles}))
 
