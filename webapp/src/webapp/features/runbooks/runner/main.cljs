@@ -23,65 +23,79 @@
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])]
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
-      (let [has-metadata? (or (seq @metadata)
-                              (seq @metadata-key)
-                              (seq @metadata-value))
-            no-connection-selected? (not @runbooks-connection)
-            runbooks-enabled? (= "enabled" (:access_mode_runbooks @runbooks-connection))
-            exec-enabled? (= "enabled" (:access_mode_exec @runbooks-connection))
-            disable-run-button? (or no-connection-selected?
-                                    (empty? (@selected-template :data))
-                                    (not runbooks-enabled?)
-                                    (not exec-enabled?))]
+      (letfn [(run-disabled? []
+                (let [template @selected-template
+                      connection @runbooks-connection
+                      runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))
+                      exec-enabled? (= "enabled" (:access_mode_exec connection))]
+                  (or (nil? connection)
+                      (empty? (:data template))
+                      (not runbooks-enabled?)
+                      (not exec-enabled?))))]
+        (r/with-let [submit-ref (r/atom submit)
+                     handle-keydown (let [f (fn [e]
+                                              (when (and (= "Enter" (.-key e))
+                                                         (not (run-disabled?)))
+                                                (.preventDefault e)
+                                                (when-let [fn-submit @submit-ref]
+                                                  (fn-submit))))]
+                                      (.addEventListener js/document "keydown" f)
+                                      f)]
+          (reset! submit-ref submit)
+          (let [has-metadata? (or (seq @metadata)
+                                  (seq @metadata-key)
+                                  (seq @metadata-value))
+                disable-run-button? (run-disabled?)]
+            [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
+             [:> Flex {:class "h-full px-4 items-center justify-between"}
+              [:> Flex {:class "items-end gap-2"}
+               [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+                "Runbooks"]
+               [:> Badge
+                {:radius "full"
+                 :color (if @runbooks-connection "indigo" "gray")
+                 :class "cursor-pointer"
+                 :onClick (fn [] (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
+                (if @runbooks-connection
+                  (:name @runbooks-connection)
+                  "Connection")
+                [:> ChevronDown {:size 12}]]]
 
-        [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
-         [:> Flex {:class "h-full px-4 items-center justify-between"}
-          [:> Flex {:class "items-end gap-2"}
-           [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
-            "Runbooks"]
-           [:> Badge
-            {:radius "full"
-             :color (if @runbooks-connection "indigo" "gray")
-             :class "cursor-pointer"
-             :onClick (fn [] (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
-            (if @runbooks-connection
-              (:name @runbooks-connection)
-              "Connection")
-            [:> ChevronDown {:size 12}]]]
+              [:> Flex {:class "items-center gap-2"}
+               [:> Tooltip {:content "Search"}
+                [search/main :runbooks]]
 
-          [:> Flex {:class "items-center gap-2"}
-           [:> Tooltip {:content "Search"}
-            [search/main :runbooks]]
+               [:> Tooltip {:content "Theme"}
+                [:> IconButton
+                 {:class (when @dark-mode?
+                           "bg-gray-8 text-gray-12")
+                  :size "2"
+                  :color "gray"
+                  :variant "soft"
+                  :onClick (fn []
+                             (swap! dark-mode? not)
+                             (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
+                 (if @dark-mode?
+                   [:> Sun {:size 16}]
+                   [:> Moon {:size 16}])]]
 
-           [:> Tooltip {:content "Theme"}
-            [:> IconButton
-             {:class (when @dark-mode?
-                       "bg-gray-8 text-gray-12")
-              :size "2"
-              :color "gray"
-              :variant "soft"
-              :onClick (fn []
-                         (swap! dark-mode? not)
-                         (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
-             (if @dark-mode?
-               [:> Sun {:size 16}]
-               [:> Moon {:size 16}])]]
+               [:> Tooltip {:content "Metadata"}
+                [notification-badge
+                 {:icon [:> PackagePlus {:size 16}]
+                  :on-click toggle-metadata-open
+                  :active? metadata-open?
+                  :has-notification? has-metadata?
+                  :disabled? false}]]
 
-           [:> Tooltip {:content "Metadata"}
-            [notification-badge
-             {:icon [:> PackagePlus {:size 16}]
-              :on-click toggle-metadata-open
-              :active? metadata-open?
-              :has-notification? has-metadata?
-              :disabled? false}]]
-
-           [:> Tooltip {:content "Run"}
-            [:> Button
-             {:disabled disable-run-button?
-              :class (when disable-run-button? "cursor-not-allowed")
-              :onClick #(submit)}
-             [:> Play {:size 16}]
-             "Run"]]]]]))))
+               [:> Tooltip {:content "Run"}
+                [:> Button
+                 {:disabled disable-run-button?
+                  :class (when disable-run-button? "cursor-not-allowed")
+                  :onClick #(submit)}
+                 [:> Play {:size 16}]
+                 "Run"]]]]])
+          (finally
+            (.removeEventListener js/document "keydown" handle-keydown)))))))
 
 (defn runbooks-library []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
