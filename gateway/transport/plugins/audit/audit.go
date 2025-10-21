@@ -140,17 +140,18 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if decJSONPayload != nil {
 			return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, decJSONPayload, eventMetadata)
 		}
-	case pbclient.WriteStdout,
-		pbclient.WriteStderr:
+	case pbclient.WriteStdout, pbclient.WriteStderr:
 		err := p.writeOnReceive(pctx.SID, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 		if err != nil {
 			log.Warnf("failed writing agent packet response, err=%v", err)
 		}
 		return nil, nil
-	case pbagent.ExecWriteStdin,
-		pbagent.TerminalWriteStdin,
-		pbagent.TCPConnectionWrite:
+	case pbagent.ExecWriteStdin, pbagent.TerminalWriteStdin, pbagent.TCPConnectionWrite:
 		return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, pkt.Payload, eventMetadata)
+	case pbclient.SSHConnectionWrite:
+		return nil, p.writeOnReceive(pctx.SID, eventlogv1.InputType, pkt.Payload, eventMetadata)
+	case pbagent.SSHConnectionWrite:
+		return nil, p.writeOnReceive(pctx.SID, eventlogv1.OutputType, pkt.Payload, eventMetadata)
 	}
 	return nil, nil
 }
