@@ -9,6 +9,7 @@
    [clojure.string :as cs]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.webclient.components.search :as search]
+   [webapp.components.keyboard-shortcuts :refer [detect-os]]
    [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.log-area.main :as log-area]
    [webapp.webclient.panel :refer [discover-connection-type]]
@@ -48,7 +49,8 @@
                                   (seq @metadata-key)
                                   (seq @metadata-value))
                 disable-run-button? (run-disabled?)
-                runbook-loading? (= (:status @script-response) :loading)]
+                runbook-loading? (= (:status @script-response) :loading)
+                os (detect-os)]
             [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
              [:> Flex {:class "h-full px-4 items-center justify-between"}
               [:> Flex {:class "items-end gap-2"}
@@ -90,7 +92,7 @@
                   :has-notification? has-metadata?
                   :disabled? false}]]
 
-               [:> Tooltip {:content "cmd + Enter"}
+               [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
                 [:> Button
                  {:disabled disable-run-button?
                   :loading runbook-loading?

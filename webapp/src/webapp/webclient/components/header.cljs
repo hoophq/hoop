@@ -4,7 +4,8 @@
    ["lucide-react" :refer [CircleHelp FastForward PackagePlus
                            Play Sun Moon ChevronDown Search]]
    [re-frame.core :as rf]
-   [webapp.components.notification-badge :refer [notification-badge]]))
+   [webapp.components.notification-badge :refer [notification-badge]]
+   [webapp.components.keyboard-shortcuts :refer [detect-os]]))
 
 
 (defn main []
@@ -25,7 +26,8 @@
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or (not exec-enabled?)
                                     no-connection-selected?)
-            script-loading? (= (:status @script-response) :loading)]
+            script-loading? (= (:status @script-response) :loading)
+            os (detect-os)]
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
          [:> Flex {:align "center"
                    :justify "between"
@@ -104,7 +106,7 @@
                :has-notification? has-multirun?
                :disabled? false}]]]
 
-           [:> Tooltip {:content "cmd + Enter"}
+          [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button
              {:disabled disable-run-button?
               :loading script-loading?
