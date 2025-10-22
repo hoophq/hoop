@@ -13,7 +13,8 @@
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         primary-connection (rf/subscribe [:primary-connection/selected])
         selected-connections (rf/subscribe [:multiple-connections/selected])
-        active-panel (rf/subscribe [:webclient->active-panel])]
+        active-panel (rf/subscribe [:webclient->active-panel])
+        script-response (rf/subscribe [:editor-plugin->script])]
     (fn [dark-mode? submit]
       (let [has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
@@ -23,7 +24,8 @@
             has-multirun? (seq @selected-connections)
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or (not exec-enabled?)
-                                    no-connection-selected?)]
+                                    no-connection-selected?)
+            script-loading? (= (:status @script-response) :loading)]
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
          [:> Flex {:align "center"
                    :justify "between"
@@ -102,9 +104,10 @@
                :has-notification? has-multirun?
                :disabled? false}]]]
 
-           [:> Tooltip {:content "Run"}
+           [:> Tooltip {:content "cmd + Enter"}
             [:> Button
              {:disabled disable-run-button?
+              :loading script-loading?
               :class (when disable-run-button? "cursor-not-allowed")
               :onClick #(submit)}
              [:> Play {:size 16}]

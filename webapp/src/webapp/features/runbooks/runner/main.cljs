@@ -21,7 +21,8 @@
         metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
-        runbooks-connection (rf/subscribe [:runbooks/selected-connection])]
+        runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        script-response (rf/subscribe [:editor-plugin->script])]
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
       (letfn [(run-disabled? []
                 (let [template @selected-template
@@ -35,6 +36,7 @@
         (r/with-let [submit-ref (r/atom submit)
                      handle-keydown (let [f (fn [e]
                                               (when (and (= "Enter" (.-key e))
+                                                         (or (.-metaKey e) (.-ctrlKey e))
                                                          (not (run-disabled?)))
                                                 (.preventDefault e)
                                                 (when-let [fn-submit @submit-ref]
@@ -45,7 +47,8 @@
           (let [has-metadata? (or (seq @metadata)
                                   (seq @metadata-key)
                                   (seq @metadata-value))
-                disable-run-button? (run-disabled?)]
+                disable-run-button? (run-disabled?)
+                runbook-loading? (= (:status @script-response) :loading)]
             [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
              [:> Flex {:class "h-full px-4 items-center justify-between"}
               [:> Flex {:class "items-end gap-2"}
@@ -87,9 +90,10 @@
                   :has-notification? has-metadata?
                   :disabled? false}]]
 
-               [:> Tooltip {:content "Run"}
+               [:> Tooltip {:content "cmd + Enter"}
                 [:> Button
                  {:disabled disable-run-button?
+                  :loading runbook-loading?
                   :class (when disable-run-button? "cursor-not-allowed")
                   :onClick #(submit)}
                  [:> Play {:size 16}]
