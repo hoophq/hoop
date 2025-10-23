@@ -16,7 +16,7 @@ CREATE TABLE resources (
 
 -- Migrate existing connection subtypes to resources
 INSERT INTO resources (org_id, name, type, agent_id)
-    SELECT org_id, name, subtype, agent_id
+    SELECT org_id, name, COALESCE(subtype, ''), agent_id
     FROM connections;
 
 -- Add resource_name column to connections table
