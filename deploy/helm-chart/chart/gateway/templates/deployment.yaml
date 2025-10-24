@@ -39,6 +39,14 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
+        {{- if .Values.extraEnvVarsCM }}
+        - configMapRef:
+            name: {{ .Values.extraEnvVarsCM }}
+        {{- end }}
+        {{- if .Values.extraEnvVarsSecret }}
+        - secretRef:
+            name: {{ .Values.extraEnvVarsSecret }}
+        {{- end }}
         resources:
           {{- toYaml .Values.resources.gw | nindent 10 }}
         {{- if .Values.persistence.enabled }}
