@@ -23,11 +23,17 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
+# Make sure all is always first
+
+all:
+	@echo "Please specify a make target. Available targets:" && grep -E '^[a-zA-Z0-9_-]+:' Makefile | grep -v "\.PHONY" | sed 's/:.*//' | sort | tr '\n' ' '
+
 build-dev-rust:
-	echo "Building hoop_rs for dev"
-	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
+	@echo "Building hoop_rs for dev ${RUST_TARGET}"
+	cargo install cross
+	cd agentrs && cross build --release --target ${RUST_TARGET}
 	mkdir -p ${HOME}/.hoop/bin
-	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOME}/.hoop/bin/hoop_rs
+	cp agentrs/target/${RUST_TARGET}/release/agentrs ${HOME}/.hoop/bin/hoop_rs
 	chmod +x ${HOME}/.hoop/bin/hoop_rs
 
 install-rust:
