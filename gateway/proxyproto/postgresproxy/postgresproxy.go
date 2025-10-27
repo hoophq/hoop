@@ -2,7 +2,9 @@ package postgresproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 	"io"
 	"net"
 	"strconv"
@@ -43,7 +45,7 @@ func GetServerInstance() *PGServer {
 	return server
 }
 
-func (s *PGServer) Start(listenAddr string) error {
+func (s *PGServer) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) error {
 	if _, ok := instanceStore.Get(instanceKey).(*PGServer); ok && s.listener != nil {
 		return nil
 	}
@@ -51,7 +53,7 @@ func (s *PGServer) Start(listenAddr string) error {
 	log.Infof("starting postgres server proxy at %v", listenAddr)
 
 	// start new instance
-	server, err := runPgProxyServer(listenAddr)
+	server, err := runPgProxyServer(listenAddr, tlsConfig, acceptPlainText)
 	if err != nil {
 		return err
 	}
@@ -80,8 +82,9 @@ func (s *PGServer) Stop() error {
 
 func (s *PGServer) ListenAddr() string { return s.listenAddr }
 
-func runPgProxyServer(listenAddr string) (*PGServer, error) {
-	lis, err := net.Listen("tcp4", listenAddr)
+func runPgProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) (*PGServer, error) {
+	lisRaw, err := net.Listen("tcp4", listenAddr)
+	lis := tlstermination.NewTLSTermination(lisRaw, tlsConfig, acceptPlainText)
 	if err != nil {
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}

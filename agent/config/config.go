@@ -19,6 +19,7 @@ type Config struct {
 	Type      string
 	AgentMode string
 	insecure  bool
+	isTLS     bool
 	tlsCA     string
 }
 
@@ -40,14 +41,15 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		isInsecure := dsn.Scheme == "http" || dsn.Scheme == "grpc"
+		isTLS := dsn.Scheme != "http" && dsn.Scheme != "grpc"
 		return &Config{
 			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
-			insecure:  isInsecure,
+			insecure:  !isTLS || dsn.SkipTLSVerify,
+			isTLS:     isTLS,
 			tlsCA:     tlsCA,
 		}, nil
 	}
@@ -66,13 +68,15 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
-	srvAddr, err := grpc.ParseServerAddress(c.URL)
+	srvAddr, _, err := grpc.ParseServerAddress(c.URL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
 		Token:         c.Token,
 		Insecure:      c.IsInsecure(),
+		IsTLS:         c.isTLS,
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.tlsCA,
+		TLSSkipVerify: c.IsInsecure(),
 	}, err
 }
 

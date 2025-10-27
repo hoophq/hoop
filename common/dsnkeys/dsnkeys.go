@@ -30,6 +30,9 @@ type DSN struct {
 	// the secret key hashed
 	SecretKeyHash string
 
+	// If true, skip TLS certificate verification
+	SkipTLSVerify bool
+
 	key string
 }
 
@@ -81,10 +84,12 @@ func Parse(keyDsn string) (*DSN, error) {
 			AgentMode:     pb.AgentModeEmbeddedType,
 			Name:          "",
 			SecretKeyHash: secretKeyHash,
+			SkipTLSVerify: false,
 			key:           keyDsn,
 		}, err
 	}
 	agentMode := u.Query().Get("mode")
+	skipTLSVerify := u.Query().Get("skip_tls_verify") == "true"
 	secretKey, _ := u.User.Password()
 	if secretKey == "" {
 		return nil, ErrSecretKeyNotFound
@@ -96,6 +101,7 @@ func Parse(keyDsn string) (*DSN, error) {
 		AgentMode:     agentMode,
 		Name:          u.User.Username(),
 		SecretKeyHash: secretKeyHash,
+		SkipTLSVerify: skipTLSVerify,
 		key:           keyDsn,
 	}, err
 }

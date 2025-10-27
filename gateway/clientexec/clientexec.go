@@ -146,6 +146,8 @@ func New(opts *Options) (*clientExec, error) {
 		Token:         opts.BearerToken,
 		UserAgent:     userAgent,
 		Insecure:      tlsCA == "",
+		IsTLS:         true,
+		TLSSkipVerify: true,
 		TLSCA:         tlsCA,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),

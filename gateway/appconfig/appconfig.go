@@ -54,6 +54,7 @@ type Config struct {
 	gatewayTLSCa                    string
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
+	gatewayAllowPlainText           bool
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
 
@@ -170,6 +171,11 @@ func Load() error {
 		dlpMode = "best-effort"
 	}
 
+	allowPlainText := true // Defaults to true
+	if os.Getenv("GATEWAY_ALLOW_PLAINTEXT") == "false" {
+		allowPlainText = false
+	}
+
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -201,6 +207,7 @@ func Load() error {
 		gatewayTLSCa:                    gatewayTLSCa,
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
+		gatewayAllowPlainText:           allowPlainText,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
 	}

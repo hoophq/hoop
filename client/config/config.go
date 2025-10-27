@@ -121,11 +121,12 @@ func Load() (*Config, error) {
 
 // GrpcClientConfig returns a configuration to connect to the gRPC server
 func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
-	srvAddr, err := grpc.ParseServerAddress(c.GrpcURL)
+	srvAddr, isTLS, err := grpc.ParseServerAddress(c.GrpcURL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
 		Token:         c.Token,
 		Insecure:      c.InsecureGRPC,
+		IsTLS:         isTLS,
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.TlsCA(),
 	}, err
