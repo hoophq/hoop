@@ -5,7 +5,7 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]))
 
-(defn- detect-os []
+(defn detect-os []
   (let [user-agent (.. js/window -navigator -userAgent)]
     (cond
       (re-find #"Mac" user-agent) :mac
