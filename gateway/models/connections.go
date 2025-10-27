@@ -717,6 +717,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		SELECT
 			c.id, c.org_id, c.name, c.type, c.subtype, c.status,
 			c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect,
+			c.access_schema, c.managed_by, c.command, c.jira_issue_template_id,
 			COUNT(*) OVER() AS total
 		FROM private.connections c
 		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?

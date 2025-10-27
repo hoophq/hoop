@@ -1784,3 +1784,55 @@ type ConnectionTestResponse struct {
 	// Indicates if the connection test was successful
 	Success bool `json:"success" example:"true"`
 }
+
+type ConnectionPaginated struct {
+	// Unique ID of the resource
+	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Is the shell command that is going to be executed when interacting with this connection.
+	// This value is required if the connection is going to be used from the Webapp.
+	Command []string `json:"command" example:"/bin/bash"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+	// Status is a read only field that informs if the connection is available for interaction
+	// * online - The agent is connected and alive
+	// * offline - The agent is not connected
+	Status string `json:"status" readonly:"true" enums:"online,offline"`
+	// Toggle Ad Hoc Runbooks Executions
+	// * enabled - Enable to run runbooks for this connection
+	// * disabled - Disable runbooks execution for this connection
+	AccessModeRunbooks string `json:"access_mode_runbooks" binding:"required" enums:"enabled,disabled"`
+	// Toggle Ad Hoc Executions
+	// * enabled - Enable to run ad-hoc executions for this connection
+	// * disabled - Disable ad-hoc executions for this connection
+	AccessModeExec string `json:"access_mode_exec" binding:"required" enums:"enabled,disabled"`
+	// Toggle Port Forwarding
+	// * enabled - Enable to perform port forwarding for this connection
+	// * disabled - Disable port forwarding for this connection
+	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
+	// Toggle Introspection Schema
+	// * enabled - Enable the instrospection schema in the webapp
+	// * disabled - Disable the instrospection schema in the webapp
+	AccessSchema string `json:"access_schema" binding:"required" enums:"enabled,disabled"`
+	// Managed By is a read only field that indicates who is managing this resource.
+	// When this attribute is set, this resource is considered immutable
+	ManagedBy *string `json:"managed_by" readonly:"true" example:""`
+	// The jira issue templates ids associated to the connection
+	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+}
