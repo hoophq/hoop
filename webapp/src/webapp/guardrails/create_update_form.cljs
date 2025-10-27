@@ -12,8 +12,7 @@
 
 (defn guardrail-form [form-type guardrails scroll-pos]
   (let [state (helpers/create-form-state guardrails)
-        handlers (helpers/create-form-handlers state)
-        all-connections (rf/subscribe [:connections])]
+        handlers (helpers/create-form-handlers state)]
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:id "guardrails-form"
@@ -43,8 +42,7 @@
          ;; Connections section
          [connections-section/main
           {:connection-ids (:connection-ids state)
-           :on-connections-change (:on-connections-change handlers)
-           :all-connections (:results @all-connections)}]
+           :on-connections-change (:on-connections-change handlers)}]
 
          ;; Rules section
          [:> Grid {:columns "7" :gap "7"}
@@ -86,7 +84,6 @@
   (let [guardrails->active-guardrail (rf/subscribe [:guardrails->active-guardrail])
         scroll-pos (r/atom 0)]
 
-    (rf/dispatch [:guardrails->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)

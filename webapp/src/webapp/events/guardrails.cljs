@@ -141,25 +141,6 @@
                                               :input [{:type "" :rule "" :details ""}]
                                               :output [{:type "" :rule "" :details ""}]}]]]}))
 
-;; Get connections for guardrails
-(rf/reg-event-fx
- :guardrails->get-connections
- (fn [{:keys [db]} _]
-   {:db (assoc db :guardrails->connections-list {:status :loading :data []})
-    :fx [[:dispatch [:connections->get-connections {:force-refresh? true}
-                     {:on-success [:guardrails->set-connections]
-                      :on-failure [:guardrails->set-connections-error]}]]]}))
-
-(rf/reg-event-db
- :guardrails->set-connections
- (fn [db [_ connections]]
-   (assoc db :guardrails->connections-list {:status :ready :data connections})))
-
-(rf/reg-event-db
- :guardrails->set-connections-error
- (fn [db [_ error]]
-   (assoc db :guardrails->connections-list {:status :error :error error :data []})))
-
 ;; SUBSCRIPTIONS
 (rf/reg-sub
  :guardrails->list
@@ -171,7 +152,3 @@
  (fn [db _]
    (get-in db [:guardrails->active-guardrail])))
 
-(rf/reg-sub
- :guardrails->connections-list
- (fn [db _]
-   (get-in db [:guardrails->connections-list])))
