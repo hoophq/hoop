@@ -6,22 +6,23 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/pkg/errors"
 	"net"
+	"time"
 )
 
 var _ net.Listener = (*tlsTermination)(nil)
 
 type tlsTermination struct {
 	net.Listener
-	cert         tls.Certificate
-	acceptNonTls bool
+	tlsConfig       *tls.Config
+	acceptPlainText bool
 }
 
 // NewTLSTermination wraps a net.Listener and terminates TLS using the provided certificate.
-func NewTLSTermination(inner net.Listener, cert tls.Certificate, acceptNonTls bool) net.Listener {
+func NewTLSTermination(inner net.Listener, tlsConfig *tls.Config, acceptPlainText bool) net.Listener {
 	return &tlsTermination{
-		Listener:     inner,
-		cert:         cert,
-		acceptNonTls: acceptNonTls,
+		Listener:        inner,
+		tlsConfig:       tlsConfig,
+		acceptPlainText: acceptPlainText,
 	}
 }
 
@@ -39,8 +40,8 @@ func (t *tlsTermination) Accept() (net.Conn, error) {
 	}
 	log.Debugf("isPostgresTLS=%v, err=%v", isPostgresTLS, err)
 
-	if !t.acceptNonTls { // force TLS
-		return t.toTLSConn(c), nil
+	if !t.acceptPlainText { // force TLS
+		return t.toTLSConn(bconn), nil
 	}
 
 	isTLS, err := isTLSConn(bconn)
@@ -60,10 +61,7 @@ func (t *tlsTermination) Accept() (net.Conn, error) {
 
 // toTLSConn converts a tcp connection to a tls connection
 func (t *tlsTermination) toTLSConn(conn net.Conn) *tls.Conn {
-	return tls.Server(conn, &tls.Config{
-		Certificates: []tls.Certificate{t.cert},
-		MinVersion:   tls.VersionTLS12,
-	})
+	return tls.Server(conn, t.tlsConfig)
 }
 
 // isTLSConn checks if the connection handshake is currently sent by the connector
@@ -111,8 +109,15 @@ func isPostgresTLSCheck(conn BufferedConnection) (bool, error) {
 
 	if bytes.Equal(data, expected) {
 		log.Debugf("receive request to TLS on postgres")
+		// Set deadlines because we don't want to wait forever here
+		_ = conn.SetDeadline(time.Now().Add(peekWaitDuration))
+
 		_, _ = conn.Read(expected)     // Just read the header
 		_, _ = conn.Write([]byte("S")) // Send back S to accept TLS
+
+		// Restore deadlines
+		_ = conn.SetDeadline(time.Time{})
+
 		return true, nil
 	}
 

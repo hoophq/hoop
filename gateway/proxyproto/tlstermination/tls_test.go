@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func generateSelfSignedCert(t *testing.T) tls.Certificate {
+func generateSelfSignedCert(t *testing.T) *tls.Config {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
@@ -40,9 +40,12 @@ func generateSelfSignedCert(t *testing.T) tls.Certificate {
 		t.Fatalf("Failed to create certificate: %v", err)
 	}
 
-	return tls.Certificate{
-		Certificate: [][]byte{certDER},
-		PrivateKey:  key,
+	return &tls.Config{
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{certDER},
+			PrivateKey:  key,
+		}},
+		MinVersion: tls.VersionTLS12,
 	}
 }
 
