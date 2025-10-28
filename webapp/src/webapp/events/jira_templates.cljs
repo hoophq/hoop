@@ -3,7 +3,8 @@
    [re-frame.core :as rf]
    [webapp.jira-templates.prompt-form :as prompt-form]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
-   [webapp.jira-templates.cmdb-error :as cmdb-error]))
+   [webapp.jira-templates.cmdb-error :as cmdb-error]
+   [clojure.string :as cs]))
 
 ;; CMDB
 
@@ -334,25 +335,6 @@
  (fn [db [_ value]]
    (assoc-in db [:jira-templates :submitting?] value)))
 
-;; Connections
-(rf/reg-event-fx
- :jira-templates->get-connections
- (fn [{:keys [db]} _]
-   {:db (assoc db :jira-templates->connections-list {:status :loading :data []})
-    :fx [[:dispatch [:connections->get-connections {:force-refresh? true}
-                     {:on-success [:jira-templates->set-connections]
-                      :on-failure [:jira-templates->set-connections-error]}]]]}))
-
-(rf/reg-event-db
- :jira-templates->set-connections
- (fn [db [_ connections]]
-   (assoc db :jira-templates->connections-list {:status :ready :data connections})))
-
-(rf/reg-event-db
- :jira-templates->set-connections-error
- (fn [db [_ error]]
-   (assoc db :jira-templates->connections-list {:status :error :error error :data []})))
-
 ;; Subs
 (rf/reg-sub
  :jira-templates->list
@@ -389,7 +371,32 @@
  (fn [db]
    (get-in db [:jira-templates :submitting?])))
 
-(rf/reg-sub
- :jira-templates->connections-list
- (fn [db _]
-   (:jira-templates->connections-list db)))
+
+(rf/reg-event-fx
+ :jira-templates/get-selected-connections
+ (fn [{:keys [db]} [_ connection-ids]]
+   (if (seq connection-ids)
+     (let [base-uri "/connections"
+           query-params [(str "connection_ids=" (cs/join "," connection-ids))
+                         "page=1"
+                         "size=50"]
+           uri (str base-uri "?" (cs/join "&" query-params))]
+       {:fx [[:dispatch [:fetch {:method "GET"
+                                 :uri uri
+                                 :on-success (fn [response]
+                                               (rf/dispatch [:jira-templates/set-selected-connections (:data response)]))
+                                 :on-failure (fn [error]
+                                               (rf/dispatch [:jira-templates/set-selected-connections-error error]))}]]]})
+     {:db (assoc-in db [:jira-templates->active-template :data :connections] [])})))
+
+(rf/reg-event-db
+ :jira-templates/set-selected-connections
+ (fn [db [_ connections]]
+   (assoc-in db [:jira-templates->active-template :data :connections] connections)))
+
+(rf/reg-event-db
+ :jira-templates/set-selected-connections-error
+ (fn [db [_ error]]
+   (-> db
+       (assoc-in [:jira-templates->active-template :data :connections] [])
+       (assoc-in [:jira-templates->active-template :data :connections-error] error))))

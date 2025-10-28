@@ -1,27 +1,30 @@
 (ns webapp.jira-templates.connections-section
   (:require
+   ["@radix-ui/themes" :refer [Box Heading Flex]]
    [re-frame.core :as rf]
-   ["@radix-ui/themes" :refer [Box Heading Grid Flex]]
-   [webapp.components.multiselect :as multiselect]))
+   [reagent.core :as r]
+   [webapp.components.connections-select :as connections-select]))
 
-(defn- format-connections-for-select [connections]
-  (mapv (fn [connection]
-          {"value" (:id connection)
-           "label" (:name connection)})
-        connections))
+(defn main
+  "Render the connections selection component for jira templates
 
-(defn main [props]
-  (let [connections-atom (:connection-ids props)
-        on-change (:on-connections-change props)
-        connections-list (rf/subscribe [:jira-templates->connections-list])
-        all-connections (:all-connections props)]
+   Parameters:
+   - connection-ids: atom containing array of connection IDs
+   - on-connections-change: function to call when connections are changed"
+  [{:keys [connection-ids on-connections-change]}]
+  (let [jira-templates-active (rf/subscribe [:jira-templates->active-template])
+        prev-connection-ids (r/atom nil)]
+
     (fn []
-      (let [connections-data (:data @connections-list)
-            connections-options (concat (format-connections-for-select connections-data)
-                                        (format-connections-for-select all-connections))
-            selected-values (mapv (fn [id]
-                                    (first (filter #(= (get % "value") id) connections-options)))
-                                  @connections-atom)]
+      (let [current-connection-ids @connection-ids
+            selected-connections (get-in @jira-templates-active [:data :connections] [])]
+
+        ;; Fetch selected connections when connection-ids change
+        (when (not= @prev-connection-ids current-connection-ids)
+          (reset! prev-connection-ids current-connection-ids)
+          (when (seq current-connection-ids)
+            (rf/dispatch [:jira-templates/get-selected-connections current-connection-ids])))
+
         [:> Flex {:direction "column" :gap "5"}
          [:> Box
           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
@@ -30,10 +33,9 @@
            "Select connections where this template should be applied"]]
 
          [:> Box {:class "mb-5"}
-          [multiselect/main
-           {:label "Connections"
-            :options connections-options
-            :default-value (if (empty? selected-values) nil selected-values)
-            :on-change (fn [selected-options]
-                         (let [connection-ids (mapv #(get % "value") (js->clj selected-options))]
-                           (on-change connection-ids)))}]]]))))
+          [connections-select/main
+           {:connection-ids current-connection-ids
+            :selected-connections selected-connections
+            :on-connections-change (fn [selected-options]
+                                     (let [new-connection-ids (mapv #(:value %) selected-options)]
+                                       (on-connections-change new-connection-ids)))}]]]))))

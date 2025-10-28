@@ -11,11 +11,9 @@
 (defn panel []
   (let [jira-templates-list (rf/subscribe [:jira-templates->list])
         jira-integrations (rf/subscribe [:jira-integration->details])
-        connections (rf/subscribe [:connections])
         user (rf/subscribe [:users->current-user])
         min-loading-done (r/atom false)]
     (rf/dispatch [:jira-templates->get-all])
-    (rf/dispatch [:connections->get-connections])
     (rf/dispatch [:jira-integration->get])
 
     ;; Set timer for minimum loading time
@@ -24,8 +22,7 @@
     (fn []
       (let [user-data (:data @user)
             free-license? (:free-license? user-data)
-            loading? (or (:loading @connections)
-                         (= :loading (:status @jira-templates-list))
+            loading? (or (= :loading (:status @jira-templates-list))
                          (not @min-loading-done))]
         [:<>
 
