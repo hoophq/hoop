@@ -319,7 +319,7 @@
                          on-load-more has-more? loading?]))]
 
     [:div {:class "mb-regular text-sm"}
-     [:div {:class "flex items-center gap-2"}
+     [:div {:class "flex items-center mb-1"}
       (when label
         [form-label label])]
      [:> Select
