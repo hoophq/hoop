@@ -220,7 +220,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		return newErr("failed sending open session packet, reason=%v", err)
 	}
 	defer func() { c.wlog.Close(); os.RemoveAll(c.folderName) }()
-	recvCh := grpc.NewStreamRecv(c.client)
+	recvCh := grpc.NewStreamRecv(c.ctx, c.client)
 	for {
 		var dstream *grpc.DataStream
 		select {

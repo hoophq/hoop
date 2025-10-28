@@ -272,6 +272,7 @@
                            [:> DropdownMenu.Item {:on-click
                                                   (fn []
                                                     (js/localStorage.setItem "selected-connection" connection)
+                                                    (rf/dispatch [:database-schema->clear-schema])
                                                     (rf/dispatch [:navigate :editor-plugin-panel]))}
                             "Open in Web Terminal"])
 

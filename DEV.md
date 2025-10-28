@@ -3,6 +3,8 @@
 To start a development server it requires the following local tools:
 
 - [Golang 1.22+](https://go.dev/doc/install)
+- [Rust](https://www.rust-lang.org/tools/install)
+- [Rust-Cross](https://github.com/cross-rs/cross)
 - [Docker](https://docs.docker.com/engine/install/)
 - [Clojure / Java](https://clojure.org/guides/install_clojure)
 - [git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
@@ -29,6 +31,7 @@ cp .env.sample .env
 ```
 
 > The sample configuration file doesn't have a default identity provider. Make sure to configure one to be able to run this project.
+> By default this command will build the agentrs and will run inside the docker
 
 ```sh
 make run-dev
