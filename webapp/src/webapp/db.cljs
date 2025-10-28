@@ -14,7 +14,7 @@
    :connections->pagination {:data []
                              :loading false
                              :current-page 1
-                             :page-size 20
+                             :page-size 50
                              :has-more? false
                              :total 0}
    :connections->connection-connected {:status :loading, :data nil}

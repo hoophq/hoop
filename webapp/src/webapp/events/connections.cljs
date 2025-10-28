@@ -129,7 +129,7 @@
  :connections/get-connections-paginated
  (fn
    [{:keys [db]} [_ {:keys [page-size page filters search force-refresh?]
-                     :or {page-size 20 page 1 force-refresh? false}}]]
+                     :or {page-size 50 page 1 force-refresh? false}}]]
    (let [request {:page-size page-size
                   :page page
                   :filters filters
@@ -161,7 +161,7 @@
    (let [connections-data (get response :data [])
          pages-info (get response :pages {})
          page-number (get pages-info :page 1)
-         page-size (get pages-info :size 20)
+         page-size (get pages-info :size 50)
          total (get pages-info :total 0)
          existing-connections (get-in db [:connections->pagination :data] [])
          final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
