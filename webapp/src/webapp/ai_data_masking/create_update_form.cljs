@@ -1,6 +1,6 @@
 (ns webapp.ai-data-masking.create-update-form
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Flex Grid Heading Text]]
+   ["@radix-ui/themes" :refer [Box Flex Heading]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
@@ -72,7 +72,6 @@
   (let [ai-data-masking (rf/subscribe [:ai-data-masking->active-rule])
         scroll-pos (r/atom 0)]
 
-    (rf/dispatch [:ai-data-masking->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)

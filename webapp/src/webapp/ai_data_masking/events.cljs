@@ -140,9 +140,3 @@
  :ai-data-masking->clear-active-rule
  (fn [db _]
    (assoc-in db [:ai-data-masking :active-rule] {:status :idle :data nil})))
-
-;; Get connections for form
-(rf/reg-event-fx
- :ai-data-masking->get-connections
- (fn [_ _]
-   {:dispatch [:connections->get-connections {:force-refresh? true}]}))
