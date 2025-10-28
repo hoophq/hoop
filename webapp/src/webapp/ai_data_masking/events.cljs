@@ -1,5 +1,6 @@
 (ns webapp.ai-data-masking.events
   (:require
+   [clojure.string :as cs]
    [re-frame.core :as rf]))
 
 ;; Get all AI Data Masking rules
@@ -140,3 +141,32 @@
  :ai-data-masking->clear-active-rule
  (fn [db _]
    (assoc-in db [:ai-data-masking :active-rule] {:status :idle :data nil})))
+
+(rf/reg-event-fx
+ :ai-data-masking/get-selected-connections
+ (fn [{:keys [db]} [_ connection-ids]]
+   (if (seq connection-ids)
+     (let [base-uri "/connections"
+           query-params [(str "connection_ids=" (cs/join "," connection-ids))
+                         "page=1"
+                         "size=50"]
+           uri (str base-uri "?" (cs/join "&" query-params))]
+       {:fx [[:dispatch [:fetch {:method "GET"
+                                 :uri uri
+                                 :on-success (fn [response]
+                                               (rf/dispatch [:ai-data-masking/set-selected-connections (:data response)]))
+                                 :on-failure (fn [error]
+                                               (rf/dispatch [:ai-data-masking/set-selected-connections-error error]))}]]]})
+     {:db (assoc-in db [:ai-data-masking :active-rule :data :connections] [])})))
+
+(rf/reg-event-db
+ :ai-data-masking/set-selected-connections
+ (fn [db [_ connections]]
+   (assoc-in db [:ai-data-masking :active-rule :data :connections] connections)))
+
+(rf/reg-event-db
+ :ai-data-masking/set-selected-connections-error
+ (fn [db [_ error]]
+   (-> db
+       (assoc-in [:ai-data-masking :active-rule :data :connections] [])
+       (assoc-in [:ai-data-masking :active-rule :data :connections-error] error))))
