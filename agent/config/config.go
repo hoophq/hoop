@@ -41,6 +41,7 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		tlsSkipVerify := os.Getenv("SKIP_TLS_VERIFY") == "true"
 		isTLS := dsn.Scheme != "http" && dsn.Scheme != "grpc"
 		return &Config{
 			Name:      dsn.Name,
@@ -48,7 +49,7 @@ func Load() (*Config, error) {
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
-			insecure:  !isTLS || dsn.SkipTLSVerify,
+			insecure:  !isTLS || tlsSkipVerify,
 			isTLS:     isTLS,
 			tlsCA:     tlsCA,
 		}, nil
@@ -76,7 +77,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		IsTLS:         c.isTLS,
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.tlsCA,
-		TLSSkipVerify: c.IsInsecure(),
+		TLSSkipVerify: os.Getenv("SKIP_TLS_VERIFY") == "true",
 	}, err
 }
 

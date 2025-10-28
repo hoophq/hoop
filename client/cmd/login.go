@@ -42,6 +42,10 @@ var loginCmd = &cobra.Command{
 	Short: "Authenticate at Hoop",
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if skipTLSVerifyFlag {
+			_ = os.Setenv("SKIP_TLS_VERIFY", "true")
+		}
+		
 		conf, err := proxyconfig.Load()
 		switch err {
 		case proxyconfig.ErrEmpty:

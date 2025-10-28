@@ -21,7 +21,7 @@ import (
 
 var ErrEmpty error = errors.New("unable to locate configuration file")
 
-const apiLocalhostURL = "http://127.0.0.1:8009"
+const apiLocalhostURL = "https://127.0.0.1:8009"
 
 type Config struct {
 	Token        string `toml:"token"`
@@ -127,6 +127,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		Token:         c.Token,
 		Insecure:      c.InsecureGRPC,
 		IsTLS:         isTLS,
+		TLSSkipVerify: c.InsecureGRPC,
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.TlsCA(),
 	}, err

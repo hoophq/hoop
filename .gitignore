@@ -13,6 +13,7 @@
 
 # IDE related
 agent/.idea/*
+agentrs/.idea/*
 client/.idea/*
 gateway/.idea/*
 plugins/.idea/*
