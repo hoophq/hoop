@@ -37,7 +37,7 @@
 
 (defn stepper []
   (let [current-step @(rf/subscribe [:resource-setup/current-step])]
-    [:> Flex {:direction "column" :gap "3" :align "center" :justify "center" :class "w-[350px] p-10"}
+    [:> Flex {:direction "column" :gap "3" :align "center" :justify "center" :class "w-[350px] p-10 bg-gray-1"}
      [stepper-item {:title "Resource type"
                     :icon (fn [color]
                             [:> PackagePlus {:size 18 :color color}])
@@ -61,17 +61,17 @@
 (defn main [{:keys [children footer-props onboarding?]}]
   (if onboarding?
     ;; Onboarding layout: with stepper on left
-    [:> Flex {:direction "column" :class "h-screen"}
+    [:> Box {:class "h-screen bg-gray-1 flex flex-col"}
      ;; Main content area with stepper on left and children on right
-     [:> Flex {:class "flex-1 overflow-hidden"}
+     [:> Flex {:class "flex-1 min-h-0"}
       ;; Stepper on the left
       [stepper]
 
       ;; Children content on the right
-      [:> Box {:class "flex-1 overflow-y-auto"}
+      [:> Box {:class "flex-1 overflow-y-auto bg-gray-1"}
        children]]
 
-     ;; Footer with navigation buttons - spans full width
+     ;; Footer with navigation buttons - fixed at bottom
      (when-not (:hide-footer? footer-props)
        [:> Flex {:justify "end"
                  :align "center"
@@ -92,12 +92,12 @@
             (or (:next-text footer-props) "Next")])]])]
 
     ;; Normal layout: full-width without stepper
-    [:> Flex {:direction "column" :class "h-screen"}
+    [:> Box {:class "h-screen bg-gray-1 flex flex-col"}
      ;; Content fills full width
-     [:> Box {:class "flex-1 overflow-y-auto"}
+     [:> Box {:class "flex-1 overflow-y-auto bg-gray-1"}
       children]
 
-     ;; Footer with navigation buttons - spans full width
+     ;; Footer with navigation buttons - fixed at bottom
      (when-not (:hide-footer? footer-props)
        [:> Flex {:justify "end"
                  :align "center"

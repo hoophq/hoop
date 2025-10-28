@@ -21,7 +21,7 @@
     [page-wrapper/main
      {:onboarding? onboarding?
       :children
-      [:> Box {:class "min-h-screen bg-gray-1"}
+      [:> Box {:class "h-full"}
        ;; Show Hoop logo only in onboarding mode
        (when onboarding?
          [:> Flex {:justify "start" :class "p-8 pb-0"}
