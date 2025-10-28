@@ -45,7 +45,7 @@
                                   (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
            "Configure"]]))]]])
 
-(defn connection-filter-popover [{:keys [selected-connection search-term search-debounce-timer connections-pagination connections-data connections-loading? has-more? current-page]}]
+(defn connection-filter-popover [{:keys [selected-connection search-term search-debounce-timer connections connections-data connections-loading? has-more? current-page]}]
   [:<>
    [:> ui/Popover.Button {:class (str (if (seq @selected-connection)
                                         "bg-gray-50 text-gray-600 border-gray-400 "
@@ -109,7 +109,7 @@
          {:on-load-more (fn []
                           (when (not connections-loading?)
                             (let [next-page (inc current-page)
-                                  active-search (:active-search @connections-pagination)
+                                  active-search (:active-search @connections)
                                   next-request (cond-> {:page next-page
                                                         :force-refresh? false}
                                                  (not (cs/blank? active-search)) (assoc :search active-search))]
@@ -175,7 +175,7 @@
 (defn main []
   (let [all-groups (rf/subscribe [:access-control/all-groups])
         groups-with-permissions (rf/subscribe [:access-control/groups-with-permissions])
-        connections-pagination (rf/subscribe [:connections->pagination])
+        connections (rf/subscribe [:connections->pagination])
 
         selected-connection (r/atom "")
         search-term (r/atom "")
@@ -186,10 +186,10 @@
     (fn []
       (let [filtered-groups (or @all-groups [])
             group-permissions (or @groups-with-permissions {})
-            connections-data (or (:data @connections-pagination) [])
-            connections-loading? (:loading @connections-pagination)
-            has-more? (:has-more? @connections-pagination)
-            current-page (:current-page @connections-pagination 1)
+            connections-data (or (:data @connections) [])
+            connections-loading? (:loading @connections)
+            has-more? (:has-more? @connections)
+            current-page (:current-page @connections 1)
             connections-map (reduce #(assoc %1 (:name %2) %2) {} connections-data)
 
             groups-filtered-by-connection (if (empty? @selected-connection)
@@ -218,7 +218,7 @@
            [connection-filter-popover {:selected-connection selected-connection
                                        :search-term search-term
                                        :search-debounce-timer search-debounce-timer
-                                       :connections-pagination connections-pagination
+                                       :connections connections
                                        :connections-data connections-data
                                        :connections-loading? connections-loading?
                                        :has-more? has-more?

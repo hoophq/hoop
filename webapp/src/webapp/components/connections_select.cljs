@@ -16,58 +16,34 @@
 
    Parameters:
    - connection-ids: vector containing array of connection IDs
-   - selected-connections: optional vector of pre-selected connection objects with :id and :name
+   - selected-connections: vector of pre-selected connection objects with :id and :name
    - on-connections-change: function to call when connections are changed"
   [{:keys [connection-ids selected-connections on-connections-change]}]
   (let [connections (rf/subscribe [:connections->pagination])
         search-term (r/atom "")
         search-debounce-timer (r/atom nil)
-        ;; Store selected connections to preserve them during searches
-        selected-connections-cache (r/atom {})
-        ;; Track previous connection-ids to detect changes
-        prev-connection-ids (r/atom nil)]
+        initialized (r/atom false)]
 
-    (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
-
-    ;; Initialize cache with pre-selected connections if provided
-    (when (seq selected-connections)
-      (doseq [conn selected-connections]
-        (swap! selected-connections-cache assoc (:id conn) conn)))
+    (when (not @initialized)
+      (reset! initialized true)
+      (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}]))
 
     (fn [{:keys [connection-ids selected-connections on-connections-change]}]
       (let [connections-data (or (:data @connections) [])
             connections-loading? (:loading @connections)
             has-more? (:has-more? @connections)
             current-page (:current-page @connections 1)
-
-            ;; Update cache with any new connections we've loaded
-            _ (doseq [conn connections-data]
-                (swap! selected-connections-cache assoc (:id conn) conn))
-
-            ;; Check if connection-ids changed and fetch missing selected connections if needed
-            _ (when (not= @prev-connection-ids connection-ids)
-                (reset! prev-connection-ids connection-ids)
-                ;; If we have new selected IDs that aren't in our cache, we need to fetch them
-                (let [missing-ids (filter #(not (contains? @selected-connections-cache %)) connection-ids)]
-                  (when (seq missing-ids)
-                    ;; Dispatch to get the missing connections
-                    (rf/dispatch [:connections/get-connections-by-ids missing-ids]))))
-
-            ;; Get selected connections from cache
-            selected-connections-from-cache (keep #(get @selected-connections-cache %) connection-ids)
-            selected-options (format-connections-for-select selected-connections-from-cache)
-
-            ;; Format current search results
             search-options (format-connections-for-select connections-data)
+            selected-options (format-connections-for-select (or selected-connections []))
 
             ;; Merge search results with selected options, avoiding duplicates
             search-ids (set (map :value search-options))
             missing-selected (filter #(not (search-ids (:value %))) selected-options)
             connections-options (concat search-options missing-selected)
-
             selected-values (keep (fn [id]
                                     (first (filter #(= (:value %) id) connections-options)))
                                   connection-ids)]
+
         [multiselect/paginated
          {:label "Connections"
           :options connections-options
@@ -94,7 +70,7 @@
                                               (rf/dispatch [:connections/get-connections-paginated request])))
                                           300)))))
           :on-load-more (fn []
-                          (when (not connections-loading?)
+                          (when (and (not connections-loading?) has-more?)
                             (let [next-page (inc current-page)
                                   active-search (:active-search @connections)
                                   next-request (cond-> {:page next-page

@@ -1,6 +1,7 @@
 (ns webapp.events.guardrails
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [clojure.string :as cs]))
 
 (rf/reg-event-fx
  :guardrails->get-all
@@ -138,6 +139,7 @@
                                               :name ""
                                               :description ""
                                               :connection_ids []
+                                              :connections []
                                               :input [{:type "" :rule "" :details ""}]
                                               :output [{:type "" :rule "" :details ""}]}]]]}))
 
@@ -152,3 +154,31 @@
  (fn [db _]
    (get-in db [:guardrails->active-guardrail])))
 
+(rf/reg-event-fx
+ :guardrails/get-selected-connections
+ (fn [{:keys [db]} [_ connection-ids]]
+   (if (seq connection-ids)
+     (let [base-uri "/connections"
+           query-params [(str "connection_ids=" (cs/join "," connection-ids))
+                         "page=1"
+                         "size=50"]
+           uri (str base-uri "?" (cs/join "&" query-params))]
+       {:fx [[:dispatch [:fetch {:method "GET"
+                                 :uri uri
+                                 :on-success (fn [response]
+                                               (rf/dispatch [:guardrails/set-selected-connections (:data response)]))
+                                 :on-failure (fn [error]
+                                               (rf/dispatch [:guardrails/set-selected-connections-error error]))}]]]})
+     {:db (assoc-in db [:guardrails->active-guardrail :data :connections] [])})))
+
+(rf/reg-event-db
+ :guardrails/set-selected-connections
+ (fn [db [_ connections]]
+   (assoc-in db [:guardrails->active-guardrail :data :connections] connections)))
+
+(rf/reg-event-db
+ :guardrails/set-selected-connections-error
+ (fn [db [_ error]]
+   (-> db
+       (assoc-in [:guardrails->active-guardrail :data :connections] [])
+       (assoc-in [:guardrails->active-guardrail :data :connections-error] error))))
