@@ -5,7 +5,7 @@
 # You should run hoop login before running this script
 
 # Default values
-HOOP_API_URL="${HOOP_API_URL:-http://localhost:8009}"
+HOOP_API_URL="${HOOP_API_URL:-https://localhost:8009}"
 CONNECTION_NAME="${CONNECTION_NAME:-}"
 ACCESS_DURATION="${ACCESS_DURATION:-3600}"  # 1 hour default
 
@@ -19,7 +19,7 @@ usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -u, --url URL              Hoop API URL (default: http://localhost:8009)"
+    echo "  -u, --url URL              Hoop API URL (default: https://localhost:8009)"
     echo "  -n, --name NAME            Connection name (required)"
     echo "  -d, --duration SECONDS     Access duration in seconds (default: 3600)"
     echo "  --help                     Show this help"
@@ -54,6 +54,7 @@ if ! command -v hoop &> /dev/null; then
 fi
 
 TOKEN=$(hoop config view token)
+
 if [ $? -ne 0 ] || [ -z "$TOKEN" ]; then
     echo -e "${RED}❌ Hoop login failed${NC}"
     exit 1
@@ -64,14 +65,12 @@ echo -e "${GREEN}✅ Login successful${NC}"
 echo -e "${YELLOW}Creating credentials for connection: $CONNECTION_NAME${NC}"
 echo -e "${YELLOW}Access duration: $ACCESS_DURATION seconds${NC}"
 
-RESPONSE=$(curl -s -w "\n%{http_code}" \
+RESPONSE=$(curl --http1.1 -ks -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
     -H "Authorization: Bearer $TOKEN" \
-    -d "{
-        \"access_duration_seconds\": $ACCESS_DURATION
-    }" \
+    -d "{\"access_duration_seconds\": $ACCESS_DURATION}" \
     "$HOOP_API_URL/api/connections/$CONNECTION_NAME/credentials")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)

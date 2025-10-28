@@ -164,7 +164,7 @@ func Run() {
 
 		if serverConfig.RDPServerConfig != nil {
 			err = rdp.GetServerInstance().Start(
-				serverConfig.RDPServerConfig.ListenAddress,
+				serverConfig.RDPServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext(),
 			)
 			if err != nil {
 				log.Fatalf("failed to start rdp server, reason=%v", err)

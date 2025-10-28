@@ -136,7 +136,7 @@ func UpdateServerMisc(c *gin.Context) {
 	switch state {
 	case instanceStateStart:
 		_ = rdpInstance.Stop()
-		err = rdpInstance.Start(rdpConf.ListenAddress)
+		err = rdpInstance.Start(rdpConf.ListenAddress, tlsConfig, globalConfig.GatewayAllowPlaintext())
 	case instanceStateStop:
 		err = rdpInstance.Stop()
 	}
