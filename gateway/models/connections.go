@@ -444,13 +444,14 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 
 // ConnectionOption each attribute set applies an AND operator logic
 type ConnectionFilterOption struct {
-	Type        string
-	SubType     string
-	ManagedBy   string
-	AgentID     string
-	Tags        []string
-	TagSelector string
-	Search      string
+	Type          string
+	SubType       string
+	ManagedBy     string
+	AgentID       string
+	Tags          []string
+	TagSelector   string
+	Search        string
+	ConnectionIDs []string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -459,6 +460,17 @@ func (o ConnectionFilterOption) GetTagsAsArray() any {
 	}
 	var v pq.StringArray
 	for _, val := range o.Tags {
+		v = append(v, val)
+	}
+	return v
+}
+
+func (o ConnectionFilterOption) GetConnectionIDsAsArray() any {
+	if len(o.ConnectionIDs) == 0 {
+		return nil
+	}
+	var v pq.StringArray
+	for _, val := range o.ConnectionIDs {
 		v = append(v, val)
 	}
 	return v
@@ -522,6 +534,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	}
 	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
+	connectionIDsAsArray := opts.GetConnectionIDsAsArray()
 	searchPattern := opts.GetSearchPattern()
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -569,6 +582,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		-- connection ids filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c.id::text = ANY((?)::text[])
+			ELSE true
+		END AND
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
@@ -609,6 +627,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
 		searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
@@ -698,6 +717,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	tagsAsArray := opts.GetTagsAsArray()
+	connectionIDsAsArray := opts.GetConnectionIDsAsArray()
 	searchPattern := opts.GetSearchPattern()
 
 	offset := 0
@@ -734,6 +754,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			COALESCE(c.subtype, '') LIKE ? AND
 			COALESCE(c.agent_id::text, '') LIKE ? AND
 			COALESCE(c.managed_by, '') LIKE ? AND
+			-- connection ids filter
+			CASE WHEN (?)::text[] IS NOT NULL
+				THEN c.id::text = ANY((?)::text[])
+				ELSE true
+			END AND
 			-- legacy tags
 			CASE WHEN (?)::text[] IS NOT NULL
 				THEN c._tags @> (?)::text[]
@@ -775,6 +800,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
 		searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
