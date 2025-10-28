@@ -2,7 +2,7 @@
   (:require
    ["@headlessui/react" :as ui]
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text TextField]]
-   ["lucide-react" :refer [ArrowRightLeft Check ChevronDown ChevronUp]]
+   ["lucide-react" :refer [ArrowRightLeft Check ChevronDown ChevronUp Search]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [clojure.string :as cs]
@@ -81,27 +81,28 @@
                            (rf/dispatch [:ui/close-popover]))}
          [:span "Clear filter"]]])
 
-     [:div {:class "mb-2"}
-      [:> TextField.Root {:class "w-full"
-                          :placeholder "Search connections"
-                          :value @search-term
-                          :onChange (fn [e]
-                                      (let [value (-> e .-target .-value)
-                                            trimmed (cs/trim value)
-                                            should-search? (or (cs/blank? trimmed)
-                                                               (> (count trimmed) 2))
-                                            request (cond-> {:page 1 :force-refresh? true}
-                                                      (seq trimmed) (assoc :search trimmed))]
-                                        (reset! search-term value)
-                                        (when @search-debounce-timer
-                                          (js/clearTimeout @search-debounce-timer))
-                                        (if should-search?
-                                          (reset! search-debounce-timer
-                                                  (js/setTimeout
-                                                   (fn []
-                                                     (rf/dispatch [:connections/get-connections-paginated request]))
-                                                   300))
-                                          (reset! search-debounce-timer nil))))}]]
+    [:div {:class "mb-2 relative"}
+     [:> TextField.Root {:class "w-full"
+                         :placeholder "Search connections"
+                         :value @search-term
+                         :onChange (fn [e]
+                                     (let [value (-> e .-target .-value)
+                                           trimmed (cs/trim value)
+                                           should-search? (or (cs/blank? trimmed)
+                                                              (> (count trimmed) 2))
+                                           request (cond-> {:page 1 :force-refresh? true}
+                                                     (seq trimmed) (assoc :search trimmed))]
+                                       (reset! search-term value)
+                                       (when @search-debounce-timer
+                                         (js/clearTimeout @search-debounce-timer))
+                                       (if should-search?
+                                         (reset! search-debounce-timer
+                                                 (js/setTimeout
+                                                  (fn []
+                                                    (rf/dispatch [:connections/get-connections-paginated request]))
+                                                  300))
+                                         (reset! search-debounce-timer nil))))}]
+     [:> Search {:class "absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" :size 16}]]
 
      (if (> (count connections-data) 0)
        [:div {:class "relative"}
