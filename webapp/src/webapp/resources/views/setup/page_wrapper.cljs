@@ -58,33 +58,61 @@
                     :completed? (= current-step :success)
                     :active? (= current-step :roles)}]]))
 
-(defn main [{:keys [children footer-props]}]
-  [:> Flex {:direction "column" :class "h-screen"}
-   ;; Main content area with stepper on left and children on right
-   [:> Flex {:class "flex-1 overflow-hidden"}
-    ;; Stepper on the left
-    [stepper]
+(defn main [{:keys [children footer-props onboarding?]}]
+  (if onboarding?
+    ;; Onboarding layout: with stepper on left
+    [:> Flex {:direction "column" :class "h-screen"}
+     ;; Main content area with stepper on left and children on right
+     [:> Flex {:class "flex-1 overflow-hidden"}
+      ;; Stepper on the left
+      [stepper]
 
-    ;; Children content on the right
-    [:> Box {:class "flex-1 overflow-y-auto"}
-     children]]
+      ;; Children content on the right
+      [:> Box {:class "flex-1 overflow-y-auto"}
+       children]]
 
-   ;; Footer with navigation buttons - spans full width
-   (when-not (:hide-footer? footer-props)
-     [:> Flex {:justify "end"
-               :align "center"
-               :class "border-t border-gray-6 p-6 bg-white"}
+     ;; Footer with navigation buttons - spans full width
+     (when-not (:hide-footer? footer-props)
+       [:> Flex {:justify "end"
+                 :align "center"
+                 :class "border-t border-gray-6 p-6 bg-white"}
 
-      [:> Flex {:gap "5" :align "center"}
-       (when (:on-cancel footer-props)
-         [:> Button {:size "2"
-                     :variant "ghost"
-                     :color "gray"
-                     :on-click #(rf/dispatch [:resource-setup->back])}
-          "Back"])
+        [:> Flex {:gap "5" :align "center"}
+         (when (:on-cancel footer-props)
+           [:> Button {:size "2"
+                       :variant "ghost"
+                       :color "gray"
+                       :on-click #(rf/dispatch [:resource-setup->back])}
+            "Back"])
 
-       (when-not (:next-hidden? footer-props)
-         [:> Button {:size "2"
-                     :disabled (:next-disabled? footer-props)
-                     :on-click (:on-next footer-props)}
-          (or (:next-text footer-props) "Next")])]])])
+         (when-not (:next-hidden? footer-props)
+           [:> Button {:size "2"
+                       :disabled (:next-disabled? footer-props)
+                       :on-click (:on-next footer-props)}
+            (or (:next-text footer-props) "Next")])]])]
+
+    ;; Normal layout: full-width without stepper
+    [:> Flex {:direction "column" :class "h-screen"}
+     ;; Content fills full width
+     [:> Box {:class "flex-1 overflow-y-auto"}
+      children]
+
+     ;; Footer with navigation buttons - spans full width
+     (when-not (:hide-footer? footer-props)
+       [:> Flex {:justify "end"
+                 :align "center"
+                 :class "border-t border-gray-6 p-6 bg-white"}
+
+        [:> Flex {:gap "5" :align "center"}
+         (when (:on-cancel footer-props)
+           [:> Button {:size "2"
+                       :variant "ghost"
+                       :color "gray"
+                       :on-click #(rf/dispatch [:resource-setup->back])}
+            "Back"])
+
+         (when-not (:next-hidden? footer-props)
+           [:> Button {:size "2"
+                       :disabled (:next-disabled? footer-props)
+                       :on-click (:on-next footer-props)}
+            (or (:next-text footer-props) "Next")])]])]))

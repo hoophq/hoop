@@ -1,12 +1,13 @@
 (ns webapp.resources.views.setup.main
   (:require
-   ["@radix-ui/themes" :refer [Box]]
+   ["@radix-ui/themes" :refer [Box Flex]]
    [re-frame.core :as rf]
    [webapp.resources.views.setup.page-wrapper :as page-wrapper]
    [webapp.resources.views.setup.resource-name-step :as resource-name-step]
    [webapp.resources.views.setup.agent-step :as agent-step]
    [webapp.resources.views.setup.roles-step :as roles-step]
-   [webapp.resources.views.setup.success-step :as success-step]))
+   [webapp.resources.views.setup.success-step :as success-step]
+   [webapp.resources.helpers :as helpers]))
 
 (defn main []
   (let [current-step @(rf/subscribe [:resource-setup/current-step])
@@ -14,11 +15,21 @@
         agent-id @(rf/subscribe [:resource-setup/agent-id])
         roles @(rf/subscribe [:resource-setup/roles])
         creating? @(rf/subscribe [:resources->creating?])
+        onboarding? (helpers/is-onboarding-context?)
         _ (js/console.log "📍 Current step:" current-step "agent-id:" agent-id)]
 
     [page-wrapper/main
-     {:children
+     {:onboarding? onboarding?
+      :children
       [:> Box {:class "min-h-screen bg-gray-1"}
+       ;; Show Hoop logo only in onboarding mode
+       (when onboarding?
+         [:> Flex {:justify "start" :class "p-8 pb-0"}
+          [:figure
+           [:img {:src "/images/hoop-branding/PNG/hoop-symbol_black@4x.png"
+                  :alt "Hoop Logo"
+                  :class "w-16"}]]])
+
        (case current-step
          :resource-name [resource-name-step/main]
          :agent-selector [agent-step/main]

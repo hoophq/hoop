@@ -132,18 +132,18 @@
 
 ;; Connection to setup flow mapping
 (def connection-setup-mappings
-  {;; Database connections (current flow)
+  {;; Database connections (new resources flow)
    "postgres" {:type "database" :subtype "postgres"}
    "mysql" {:type "database" :subtype "mysql"}
    "mongodb" {:type "database" :subtype "mongodb"}
    "mssql" {:type "database" :subtype "mssql"}
    "oracle" {:type "database" :subtype "oracledb"}
-   ;; Network connections (current flow)
-   "ssh" {:type "server" :subtype "ssh"}
-   "tcp" {:type "network" :subtype "tcp"}
-   "httpproxy" {:type "network" :subtype "httpproxy"}
-   ;; Custom connections (current flow)
-   "linux-vm" {:type "server" :subtype "custom"}})
+   ;; Application connections (new resources flow)
+   "ssh" {:type "application" :subtype "ssh"}
+   "tcp" {:type "application" :subtype "tcp"}
+   "httpproxy" {:type "application" :subtype "httpproxy"}
+   ;; Custom connections (new resources flow)
+   "linux-vm" {:type "custom" :subtype "linux-vm" :command ["bash"]}})
 
 (defn get-connection-badge
   "Get badge info for a connection (NEW, BETA, etc)"

@@ -4,6 +4,11 @@
    ["unique-names-generator" :as ung]
    [clojure.string :as s]))
 
+(defn is-onboarding-context?
+  "Check if we're currently in onboarding context by URL"
+  []
+  (s/includes? (.. js/window -location -pathname) "/onboarding"))
+
 (defn random-resource-name
   "Generates a random resource name.
    Returns a string in the format \"<name>-<4 digits>\"
@@ -40,7 +45,7 @@
 
 (defn is-special-type?
   "Check if a resource type requires special handling"
-  [type subtype]
+  [_type subtype]
   (contains? #{"postgres" "mysql" "mongodb" "mssql" "oracledb" "ssh" "tcp" "httpproxy"}
              subtype))
 

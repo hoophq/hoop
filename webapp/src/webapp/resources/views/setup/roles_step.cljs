@@ -243,7 +243,9 @@
          [http-proxy-role-form role-index]
 
          (= resource-type "custom")
-         [metadata-driven-role-form role-index]
+         (if (= resource-subtype "linux-vm")
+           [linux-container-role-form role-index]
+           [metadata-driven-role-form role-index])
 
          :else
          [linux-container-role-form role-index])]
