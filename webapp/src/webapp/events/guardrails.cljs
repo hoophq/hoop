@@ -161,7 +161,7 @@
      (let [base-uri "/connections"
            query-params [(str "connection_ids=" (cs/join "," connection-ids))
                          "page=1"
-                         "size=50"]
+                         "page_size=50"]
            uri (str base-uri "?" (cs/join "&" query-params))]
        {:fx [[:dispatch [:fetch {:method "GET"
                                  :uri uri
