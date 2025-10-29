@@ -1,6 +1,8 @@
 package grpc
 
 import (
+	"context"
+
 	pb "github.com/hoophq/hoop/common/proto"
 )
 
@@ -23,15 +25,19 @@ func (s *DataStream) Recv() (*pb.Packet, error) { return s.pkt, s.err }
 // It is safe to have a goroutine calling SendMsg and another goroutine
 // calling RecvMsg on the same stream at the same time, but it is not
 // safe to call RecvMsg on the same stream in different goroutines.
-func NewStreamRecv(stream pb.ClientReceiver) chan *DataStream {
+func NewStreamRecv(ctx context.Context, stream pb.ClientReceiver) chan *DataStream {
 	ch := make(chan *DataStream)
 	go func() {
 		defer close(ch)
 		for {
 			pkt, err := stream.Recv()
-			ch <- &DataStream{pkt, err}
-			if err != nil {
-				break
+			select {
+			case ch <- &DataStream{pkt, err}:
+				if err != nil {
+					return
+				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()

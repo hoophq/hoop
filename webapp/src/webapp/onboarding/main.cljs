@@ -11,7 +11,7 @@
     (when (empty? (:data @user))
       (rf/dispatch [:users->get-user]))
 
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       (let [user-loading? (:loading @user)

@@ -75,12 +75,13 @@ func Post(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  req.ID,
 		OrgID:               ctx.OrgID,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                req.Name,
 		Command:             req.Command,
 		Type:                req.Type,
 		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                coerceToMapString(req.Secrets),
+		Envs:                CoerceToMapString(req.Secrets),
 		Status:              req.Status,
 		ManagedBy:           sql.NullString{},
 		Tags:                req.Tags,
@@ -154,12 +155,13 @@ func Put(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                conn.Name,
 		Command:             req.Command,
 		Type:                req.Type,
 		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                coerceToMapString(req.Secrets),
+		Envs:                CoerceToMapString(req.Secrets),
 		Status:              req.Status,
 		ManagedBy:           sql.NullString{},
 		Tags:                req.Tags,
@@ -268,7 +270,7 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
+	conn, err := models.GetBareConnectionByNameOrID(ctx, c.Param("nameOrID"), models.DB)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -278,6 +280,7 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
+
 	c.JSON(http.StatusOK, toOpenApi(conn))
 }
 
@@ -293,6 +296,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	return openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
+		ResourceName:        conn.ResourceName,
 		Command:             conn.Command,
 		Type:                conn.Type,
 		SubType:             conn.SubType.String,
@@ -843,8 +847,10 @@ func TestConnection(c *gin.Context) {
 
 func getScriptsForTestConnection(connectionType *pb.ConnectionType) (string, error) {
 	switch *connectionType {
-	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL, pb.ConnectionTypeOracleDB:
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
 		return "SELECT 1", nil
+	case pb.ConnectionTypeOracleDB:
+		return "SELECT 1 FROM dual;", nil
 	case pb.ConnectionTypeMongoDB:
 		return `// Ensure verbosity is off
 if (typeof noVerbose === 'function') noVerbose();

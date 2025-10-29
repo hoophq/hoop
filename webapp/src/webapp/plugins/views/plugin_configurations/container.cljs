@@ -56,7 +56,7 @@
         plugin-details (rf/subscribe [:plugins->plugin-details])
         searched-connections (r/atom nil)
         user-groups (rf/subscribe [:user-groups])]
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
     (rf/dispatch [:users->get-user-groups])
     (fn []
       (let [results (if (empty? @searched-connections)

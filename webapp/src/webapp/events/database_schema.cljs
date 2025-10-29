@@ -332,6 +332,46 @@
        (assoc-in [:database-schema :current-connection] (:connection-name connection))
        (assoc-in [:database-schema :data (:connection-name connection) :status] :loading))))
 
+;; Smart event to ensure schema is loaded (replaces complex component logic)
+(rf/reg-event-fx
+ :database-schema->ensure-loaded
+ (fn [{:keys [db]} [_ connection]]
+   (let [connection-name (:connection-name connection)
+         connection-type (:connection-type connection)
+         current-connection (get-in db [:database-schema :current-connection])
+         current-schema (get-in db [:database-schema :data connection-name])
+         should-load? (or
+                       ;; Connection changed
+                       (not= current-connection connection-name)
+                       ;; No schema exists
+                       (not current-schema))]
+
+     (if should-load?
+       ;; Load schema
+       {:db (assoc-in db [:database-schema :current-connection] connection-name)
+        :fx [(case connection-type
+               "oracledb" [:dispatch [:database-schema->handle-database-schema connection]]
+               "mssql" [:dispatch [:database-schema->handle-database-schema connection]]
+               "postgres" [:dispatch [:database-schema->handle-multi-database-schema connection]]
+               "mysql" [:dispatch [:database-schema->handle-multi-database-schema connection]]
+               "mongodb" [:dispatch [:database-schema->handle-multi-database-schema connection]]
+               "dynamodb" [:dispatch [:database-schema->handle-dynamodb-schema connection]]
+               "cloudwatch" [:dispatch [:database-schema->handle-cloudwatch-schema connection]]
+               ;; Default: do nothing for unknown types
+               [:dispatch [:database-schema->set-loading-status connection]])]}
+
+       ;; Auto-select persisted database if needed
+       (let [selected-db (.getItem js/localStorage "selected-database")
+             postgres-or-mongo? (contains? #{"postgres" "mongodb"} connection-type)
+             has-success? (= (:status current-schema) :success)
+             no-open-db? (not (get-in current-schema [:open-database]))]
+         (if (and postgres-or-mongo? selected-db has-success? no-open-db?)
+           {:fx [[:dispatch [:database-schema->change-database
+                             {:connection-name connection-name}
+                             selected-db]]]}
+           ;; No action needed
+           {}))))))
+
 ;; Events to load specific DynamoDB tables when the user selects a "database"
 (rf/reg-event-fx
  :database-schema->load-dynamodb-table

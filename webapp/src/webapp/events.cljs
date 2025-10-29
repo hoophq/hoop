@@ -47,6 +47,14 @@
    [{:keys [db]} [_ _]]
    {:db (assoc db :page-loader-status :closed)}))
 
+;; Webclient active panel events
+(rf/reg-event-fx
+ :webclient/set-active-panel
+ (fn [{:keys [db]} [_ panel-type]]
+   (let [current-panel (get db :webclient->active-panel)
+         new-panel (when-not (= current-panel panel-type) panel-type)]
+     {:db (assoc db :webclient->active-panel new-panel)})))
+
 (rf/reg-event-fx
  :close-page-loader
  (fn
@@ -89,19 +97,29 @@
 (rf/reg-event-fx
  :initialize-intercom
  (fn
-   [_ [_ user]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+   [{:keys [db]} [_ user]]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
+     (when js/window.Intercom
+       (js/window.Intercom "shutdown"))
+
      (if (not analytics-tracking)
        ;; If analytics tracking is disabled, don't initialize Intercom
        {}
        ;; Otherwise, initialize Intercom
        (do
-         (js/window.Intercom
-          "boot"
-          (clj->js {:api_base "https://api-iam.intercom.io"
-                    :app_id "ryuapdmp"
-                    :name (:name user)
-                    :email (:email user)
-                    :user_id (:email user)
-                    :user_hash (:intercom_hmac_digest user)}))
+         (if (= (.-hostname js/location) "localhost")
+
+           (js/window.Intercom
+            "boot"
+            (clj->js {:api_base "https://api-iam.intercom.io"
+                      :app_id "ryuapdmp"}))
+
+           (js/window.Intercom
+            "boot"
+            (clj->js {:api_base "https://api-iam.intercom.io"
+                      :app_id "ryuapdmp"
+                      :name (:name user)
+                      :email (:email user)
+                      :user_id (:email user)
+                      :user_hash (:intercom_hmac_digest user)})))
          {})))))

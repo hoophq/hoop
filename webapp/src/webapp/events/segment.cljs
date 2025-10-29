@@ -7,7 +7,7 @@
 (rf/reg-event-fx
  :segment->load
  (fn [{:keys [db]} [_ event-callback]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
      (if (not analytics-tracking)
        ;; If analytics tracking is disabled, don't load segment
        {}
@@ -21,7 +21,7 @@
 (rf/reg-event-fx
  :segment->track
  (fn [{:keys [db]} [_ event-name properties]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
      (if (not analytics-tracking)
        ;; If analytics tracking is disabled, don't send track events
        {}

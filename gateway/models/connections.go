@@ -42,6 +42,7 @@ const (
 type Connection struct {
 	OrgID               string         `gorm:"column:org_id"`
 	ID                  string         `gorm:"column:id"`
+	ResourceName        string         `gorm:"column:resource_name"`
 	AgentID             sql.NullString `gorm:"column:agent_id"`
 	Name                string         `gorm:"column:name"`
 	Command             pq.StringArray `gorm:"column:command;type:text[]"`
@@ -120,7 +121,30 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 	var newConnection *Connection
 	sess := &gorm.Session{FullSaveAssociations: true}
 	return newConnection, DB.Session(sess).Transaction(func(tx *gorm.DB) error {
-		err := tx.Table(tableConnections).
+		if c.ResourceName == "" {
+			c.ResourceName = c.Name
+		}
+
+		// Get resource for the connection
+		resource, err := GetResourceByName(tx, c.OrgID, c.ResourceName, true)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("failed to get resource, reason=%v", err)
+		}
+
+		if resource == nil {
+			// Create new resource if it doesn't exist
+			err = UpsertResource(tx, &Resources{
+				OrgID:   c.OrgID,
+				Type:    c.SubType.String,
+				Name:    c.ResourceName,
+				AgentID: c.AgentID,
+			}, false)
+			if err != nil {
+				return fmt.Errorf("failed upserting resource, reason=%v", err)
+			}
+		}
+
+		err = tx.Table(tableConnections).
 			Save(c).
 			Error
 		if err != nil {
@@ -376,13 +400,8 @@ func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules,
 	return &conn, nil
 }
 
-// GetConnectionByNameOrID retrieves a connection by name or ID.
-// It also checks if the user has access to the connection based on the access control plugin.
-func GetConnectionByNameOrID(ctx UserContext, nameOrID string) (*Connection, error) {
-	return getConnectionByNameOrID(ctx, nameOrID, DB)
-}
-
-func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Connection, error) {
+// GetBareConnectionByNameOrID retrieves a connection by name or ID without resource envs, etc.
+func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Connection, error) {
 	userGroups := pq.StringArray{}
 	for _, group := range ctx.GetUserGroups() {
 		userGroups = append(userGroups, group)
@@ -390,7 +409,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	var conn Connection
 	err := tx.Raw(`
 	SELECT
-		c.id, c.org_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
@@ -402,7 +421,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 			WHERE cta.connection_id = c.id
 			GROUP BY cta.connection_id ), '{}'
 		) AS connection_tags,
-		COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
+		COALESCE (( SELECT envs FROM private.env_vars WHERE (@is_admin AND id = c.id )), '{}') AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
 		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
@@ -418,6 +437,74 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	LEFT JOIN private.agents a ON a.id = c.agent_id AND a.org_id = @org_id
+	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
+	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
+	CASE
+		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
+		-- allow if any of the user groups are in the access control list
+		ELSE acc.config && (@user_groups)::text[]
+	END`, map[string]any{
+		"org_id":      ctx.GetOrgID(),
+		"nameOrID":    nameOrID,
+		"is_admin":    ctx.IsAdmin(),
+		"user_groups": userGroups,
+	}).
+		First(&conn).
+		Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &conn, nil
+}
+
+// GetConnectionByNameOrID retrieves a connection by name or ID.
+// It also checks if the user has access to the connection based on the access control plugin.
+func GetConnectionByNameOrID(ctx UserContext, nameOrID string) (*Connection, error) {
+	return getConnectionByNameOrID(ctx, nameOrID, DB)
+}
+
+func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Connection, error) {
+	userGroups := pq.StringArray{}
+	for _, group := range ctx.GetUserGroups() {
+		userGroups = append(userGroups, group)
+	}
+	var conn Connection
+	err := tx.Raw(`
+	SELECT
+		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode,
+		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
+		COALESCE (
+			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
+			FROM private.connection_tags_association cta
+			INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
+			WHERE cta.connection_id = c.id
+			GROUP BY cta.connection_id ), '{}'
+		) AS connection_tags,
+		COALESCE (( SELECT envs FROM private.env_vars WHERE id = r.id ), '{}') ||
+			COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
+		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
+		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
+		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
+		COALESCE((
+			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
+			WHERE private.guardrail_rules_connections.connection_id = c.id
+		), ARRAY[]::TEXT[]) AS guardrail_rules
+	FROM private.connections c
+	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.resource_name
+	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
+	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
+	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
+	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = @org_id
+	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
+	LEFT JOIN private.agents a ON a.id = COALESCE(c.agent_id, r.agent_id) AND a.org_id = @org_id
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
 	CASE

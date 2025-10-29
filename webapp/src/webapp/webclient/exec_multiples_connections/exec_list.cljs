@@ -1,82 +1,78 @@
 (ns webapp.webclient.exec-multiples-connections.exec-list
-  (:require ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@heroicons/react/24/solid" :as hero-solid-icon]
+  (:require ["@radix-ui/themes" :refer [Badge Box Button Card Flex Heading Text]]
+            ["lucide-react" :refer [Check Loader2 AlertTriangle Clock Play ExternalLink]]
             [clojure.string :as cs]
-            [re-frame.core :as rf]
-            [webapp.components.button :as button]
-            [webapp.components.headings :as h]))
+            [re-frame.core :as rf]))
 
 (defn ready-bar []
-  [:div {:class "flex items-center w-36 justify-center gap-small rounded-md bg-gray-100 p-3 text-gray-900"}
-   [:> hero-outline-icon/CheckIcon {:class "h-4 w-4 shrink-0"}]
-   [:span {:class "text-xs"}
-    "Ready"]])
+  [:> Badge {:variant "soft" :color "gray"}
+   [:> Flex {:align "center" :gap "1"}
+    [:> Check {:size 14}]
+    [:> Text {:size "1"} "Ready"]]])
 
 (defn running-bar []
-  [:div {:class "flex items-center w-36 justify-center gap-small rounded-md bg-gray-100 p-3 text-gray-900"}
-   [:> hero-outline-icon/ArrowPathIcon {:class "h-4 w-4 shrink-0"}]
-   [:span {:class "text-xs"}
-    "Running"]])
+  [:> Badge {:variant "soft" :color "blue"}
+   [:> Flex {:align "center" :gap "1"}
+    [:> Loader2 {:size 14 :class "animate-spin"}]
+    [:> Text {:size "1"} "Running"]]])
 
 (defn completed-bar []
-  [:div {:class "flex items-center w-36 justify-center gap-small rounded-md bg-green-100 p-3 text-gray-900"}
-   [:> hero-outline-icon/CheckIcon {:class "h-4 w-4 shrink-0"}]
-   [:span {:class "text-xs"}
-    "Completed"]])
+  [:> Badge {:variant "soft" :color "green"}
+   [:> Flex {:align "center" :gap "1"}
+    [:> Check {:size 14}]
+    [:> Text {:size "1"} "Completed"]]])
 
 (defn error-bar []
-  [:div {:class "flex items-center w-36 justify-center gap-small rounded-md bg-red-100 p-3 text-gray-900"}
-   [:> hero-outline-icon/ExclamationTriangleIcon {:class "h-4 w-4 shrink-0"}]
-   [:span {:class "text-xs"}
-    "Error"]])
+  [:> Badge {:variant "soft" :color "red"}
+   [:> Flex {:align "center" :gap "1"}
+    [:> AlertTriangle {:size 14}]
+    [:> Text {:size "1"} "Error"]]])
 
 (defn waiting-review-bar []
-  [:div {:class "flex items-center w-36 justify-center gap-small rounded-md bg-yellow-100 p-3 text-gray-900"}
-   [:> hero-outline-icon/ClockIcon {:class "h-4 w-4 shrink-0"}]
-   [:span {:class "text-xs"}
-    "Waiting Review"]])
+  [:> Badge {:variant "soft" :color "yellow"}
+   [:> Flex {:align "center" :gap "1"}
+    [:> Clock {:size 14}]
+    [:> Text {:size "1"} "Waiting Review"]]])
 
 (defn button-group-running []
-  [:div {:class "mt-6 flex items-center justify-end gap-small"}
-   [:span {:class "text-sm text-gray-500"}
+  [:> Flex {:justify "end" :align "center" :gap "3" :mt "6"}
+   [:> Text {:size "2" :color "gray"}
     "Keep this screen open while your command is running"]
-   [button/primary {:text [:div {:class "flex items-center gap-small"}
-                           [:> hero-solid-icon/PlayIcon {:class "h-5 w-5 text-white"
-                                                         :aria-hidden "true"}]
-                           [:span "Run"]]
-                    :disabled true
-                    :type "button"
-                    :on-click (fn [] false)}]])
+   [:> Button {:disabled true}
+    [:> Flex {:align "center" :gap "2"}
+     [:> Play {:size 16}]
+     [:> Text "Run"]]]])
 
 (defn button-group-ready [exec-list]
-  [:div {:class "mt-6 flex items-center justify-end gap-small"}
-   [button/secondary {:text "Close"
-                      :type "button"
-                      :on-click #(rf/dispatch [:multiple-connection-execution/clear])}]
-   [button/primary {:text [:div {:class "flex items-center gap-small"}
-                           [:> hero-solid-icon/PlayIcon {:class "h-5 w-5 text-white"
-                                                         :aria-hidden "true"}]
-                           [:span "Run"]]
-                    :disabled false
-                    :type "button"
-                    :on-click (fn []
-                                (rf/dispatch [:multiple-connection-execution/execute-script exec-list]))}]])
+  [:> Flex {:justify "between" :align "center" :gap "3" :mt "6"}
+   [:> Button {:variant "soft"
+               :color "gray"
+               :size "3"
+               :on-click #(rf/dispatch [:multiple-connection-execution/clear])}
+    "Close"]
+   [:> Button {:size "3"
+               :on-click #(rf/dispatch [:multiple-connection-execution/execute-script exec-list])}
+    [:> Flex {:align "center" :gap "2"}
+     [:> Play {:size 16}]
+     [:> Text "Run"]]]])
 
 (defn button-group-completed [exec-list]
   (rf/dispatch [:editor-plugin->multiple-connections-update-metadata exec-list])
-  [:div {:class "mt-6 flex items-center justify-end gap-small"}
-   [button/secondary {:text "Close"
-                      :type "button"
-                      :on-click #(rf/dispatch [:multiple-connection-execution/clear])}]
+  [:> Flex {:justify "between" :align "center" :gap "3" :mt "6"}
+   [:> Button {:variant "soft"
+               :color "gray"
+               :size "3"
+               :on-click #(rf/dispatch [:multiple-connection-execution/clear])}
+    "Close"]
    [:a {:href (str (. (. js/window -location) -origin)
                    "/sessions/filtered?id="
                    (cs/join "," (map :session-id exec-list)))
         :target "_blank"
         :rel "noopener noreferrer"}
-    [button/primary {:text "Open in a new tab"
-                     :disabled false
-                     :type "button"
-                     :on-click (fn [] false)}]]])
+    [:> Button {:size "3"}
+     [:> Flex {:align "center" :gap "2"}
+      [:> ExternalLink {:size 16}]
+      [:> Text "Open in new tab"]]]]])
 
 (defn main []
   (let [multi-exec (rf/subscribe [:multiple-connection-execution/modal])]
@@ -87,42 +83,44 @@
              "aria-modal" true}
        [:div {"aria-hidden" "true"
               :class "fixed w-full h-full inset-0 bg-black bg-opacity-80 transition"}]
-       [:div {:class (str "relative mb-large m-auto "
-                          "bg-white shadow-sm rounded-lg "
-                          "mx-auto mt-16 lg:mt-large p-6 overflow-auto "
-                          "w-full max-w-xs lg:max-w-4xl")}
-        [:div
-         [h/h4-md "Review and Run"
-          {:class "mb-6"}]
-         [:div {:class "border rounded-md"}
+       [:> Box {:class (str "relative mb-large m-auto "
+                            "mx-auto mt-16 lg:mt-large overflow-auto "
+                            "w-full max-w-xs lg:max-w-4xl")
+                :style {:backgroundColor "var(--gray-1)"
+                        :border "1px solid var(--gray-4)"
+                        :borderRadius "var(--radius-3)"
+                        :boxShadow "var(--shadow-5)"}}
+        [:> Box {:p "6"}
+         [:> Heading {:size "4" :weight "bold" :mb "4"} "Review and Run"]
+         [:> Card {:variant "classic"}
           (doall
            (for [exec (:data @multi-exec)]
              ^{:key (:connection-name exec)}
-             [:div {:class "flex justify-between items-center gap-small p-regular border-b border-gray-200"}
-              [:div {:class "flex flex-col gap-small"}
-               [:span {:class "text-sm text-gray-900 font-bold"}
-                (:connection-name exec)]
-               [:span {:class "text-xxs text-gray-900"}
-                (:subtype exec)]]
+             [:> Box {:p "3" :class "border-b border-gray-3 last:border-b-0"}
+              [:> Flex {:justify "between" :align "center" :gap "4"}
+               [:> Flex {:direction "column"}
+                [:> Text {:size "2" :weight "bold" :mb "1"}
+                 (:connection-name exec)]
+                [:> Text {:size "1" :color "gray"}
+                 (:subtype exec)]]
 
-              [:div {:class "flex items-center gap-20"}
-               (when (:session-id exec)
-                 [:div {:class "flex items-center gap-regular"}
-                  [:span {:class "text-xs text-gray-500"}
-                   "id:"]
-                  [:span {:class "text-xs text-gray-900"}
-                   (first (cs/split (:session-id exec) #"-"))]
-                  [:a {:href (str (. (. js/window -location) -origin) "/sessions/" (:session-id exec))
-                       :target "_blank"
-                       :rel "noopener noreferrer"}
-                   [:> hero-outline-icon/ArrowTopRightOnSquareIcon {:class "h-5 w-5 text-gray-900"}]]])
+               [:> Flex {:align "center" :gap "6"}
+                (when (:session-id exec)
+                  [:> Flex {:align "center" :gap "2"}
+                   [:> Text {:size "1" :color "gray"} "ID:"]
+                   [:> Text {:size "1" :weight "medium"}
+                    (first (cs/split (:session-id exec) #"-"))]
+                   [:a {:href (str (. (. js/window -location) -origin) "/sessions/" (:session-id exec))
+                        :target "_blank"
+                        :rel "noopener noreferrer"}
+                    [:> ExternalLink {:size 16 :class "text-gray-700 hover:text-gray-900"}]]])
 
-               (case (:status exec)
-                 :ready [ready-bar]
-                 :running [running-bar]
-                 :completed [completed-bar]
-                 :error [error-bar]
-                 :waiting-review [waiting-review-bar])]]))]
+                (case (:status exec)
+                  :ready [ready-bar]
+                  :running [running-bar]
+                  :completed [completed-bar]
+                  :error [error-bar]
+                  :waiting-review [waiting-review-bar])]]]))]
          (case (:status @multi-exec)
            :ready [button-group-ready (:data @multi-exec)]
            :running [button-group-running]

@@ -154,11 +154,13 @@
 
         :reagent-render
         (fn []
-          (if (:loading @connection)
+          (if (or (:loading @connection)
+                  (= (:status @guardrails-list) :loading)
+                  (= (:status @jira-templates-list) :loading))
             [loading-view]
             (when (:data @connection)
-              (when (and (not @initialized?)
-                         (:data @connection))
+
+              (when (not @initialized?)
                 (let [processed-connection (helpers/process-connection-for-update
                                             (:data @connection)
                                             (:data @guardrails-list)

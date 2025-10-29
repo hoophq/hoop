@@ -62,7 +62,7 @@ pub async fn start_rdp_proxy_session(
 
     // Create a task to forward responses back to the WebSocket
     let ws_sender_clone = ws_sender.clone();
-    let session_id = session_info.session_id;
+    let sid = session_info.sid;
     tokio::spawn(async move {
         while let Some(data) = response_rx.recv().await {
             debug!(
@@ -73,7 +73,7 @@ pub async fn start_rdp_proxy_session(
             // Frame the RDP response data with a Header
             let header_size = 20;
             let header = Header {
-                sid: session_id,
+                sid: sid,
                 len: data.len() as u32,
                 data_size: header_size,
             };

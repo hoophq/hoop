@@ -163,7 +163,7 @@ struct Shared {
     ws_out_tx: Arc<RwLock<Option<mpsc::Sender<Message>>>>,
 
     /// WS → TCP sessions (binary payloads from agent to TCP peers).
-    /// Maps session ID to the channel for that specific TCP session.
+    /// Maps sid to the channel for that specific TCP session.
     sessions: Arc<RwLock<std::collections::HashMap<Uuid, SessionInfo>>>,
 }
 
@@ -289,7 +289,7 @@ async fn handle_socket(shared: Shared, socket: WebSocket) {
                                     }
                                 } else {
                                     println!(
-                                        "> No TCP session found for session ID: {}",
+                                        "> No TCP session found for sid: {}",
                                         header.sid
                                     );
                                 }
@@ -347,10 +347,10 @@ async fn handle_tcp_client(
     peer: SocketAddr,
     db: DatabaseMemory,
 ) {
-    // Generate a unique session ID for this TCP connection
+    // Generate a unique sid for this TCP connection
     let session_id = uuid::Uuid::new_v4();
     println!(
-        "> Generated session ID: {} for TCP connection from {}",
+        "> Generated sid: {} for TCP connection from {}",
         session_id, peer
     );
 

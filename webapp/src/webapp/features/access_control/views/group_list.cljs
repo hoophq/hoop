@@ -82,20 +82,18 @@
         groups-with-permissions (rf/subscribe [:access-control/groups-with-permissions])
         all-connections (rf/subscribe [:connections])
 
-        ;; Estado do filtro de conexão
         selected-connection (r/atom "")
         searched-connections (r/atom nil)
         searched-criteria-connections (r/atom "")]
 
     ;; Fetch all connections when component mounts
-    (rf/dispatch [:connections->get-connections])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       (let [filtered-groups (or @all-groups [])
             group-permissions (or @groups-with-permissions {})
             connections-map (reduce #(assoc %1 (:name %2) %2) {} (:results @all-connections))
 
-            ;; Aplicar filtro de conexão se selecionado
             groups-filtered-by-connection (if (empty? @selected-connection)
                                             filtered-groups
                                             (filter (fn [group-name]

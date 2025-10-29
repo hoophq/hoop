@@ -44,14 +44,14 @@
 
 (defn connection-dialog []
   (let [open? (rf/subscribe [:primary-connection/dialog-open?])
-        connections (rf/subscribe [:primary-connection/list])
         selected (rf/subscribe [:primary-connection/selected])
+        connections (rf/subscribe [:connections])
         search-term (r/atom "")]
 
     (rf/dispatch [:primary-connection/initialize-with-persistence])
 
     (fn []
-      (let [all-connections (or @connections [])
+      (let [all-connections (or (:results @connections) [])
             valid-connections (filter #(and
                                         (not (#{"tcp" "httpproxy" "ssh"} (:subtype %)))
                                         (or (= "enabled" (:access_mode_exec %))
@@ -66,6 +66,7 @@
                                    (filter matches? valid-connections))]
         [command-dialog/command-dialog
          {:open? @open?
+          :loading? (:loading @connections)
           :on-open-change (fn [open?]
                             (rf/dispatch [:primary-connection/toggle-dialog open?])
                             (when-not open? (reset! search-term "")))
