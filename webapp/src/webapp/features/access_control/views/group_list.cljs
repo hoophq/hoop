@@ -183,7 +183,7 @@
         search-debounce-timer (r/atom nil)]
 
     (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
-    (println @search-term)
+
     (fn []
       (let [filtered-groups (or @all-groups [])
             group-permissions (or @groups-with-permissions {})
