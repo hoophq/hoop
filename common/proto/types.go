@@ -174,8 +174,6 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeHttpProxy)
 		case "ssh":
 			return ConnectionType(ConnectionTypeSSH)
-		case "rdp":
-			return ConnectionType(ConnectionTypeRDP)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
@@ -185,6 +183,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeDynamoDB)
 		case "cloudwatch":
 			return ConnectionType(ConnectionTypeCloudWatch)
+		case "rdp":
+			return ConnectionType(ConnectionTypeRDP)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}

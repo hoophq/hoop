@@ -2,6 +2,7 @@
 
 # Simple RDP Credentials Creation Script
 # Creates credentials for an existing RDP connection
+# You should run hoop login before running this script
 
 # Default values
 HOOP_API_URL="${HOOP_API_URL:-http://localhost:8009}"
@@ -52,9 +53,7 @@ if ! command -v hoop &> /dev/null; then
     exit 1
 fi
 
-# Run hoop login and capture token
-echo -e "${YELLOW}🔐 Running hoop login...${NC}"
-TOKEN=$(hoop login)
+TOKEN=$(hoop config view token)
 if [ $? -ne 0 ] || [ -z "$TOKEN" ]; then
     echo -e "${RED}❌ Hoop login failed${NC}"
     exit 1
