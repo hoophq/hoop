@@ -69,6 +69,7 @@
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
            [connections-select/main
             {:connection-ids (mapv :id @selected-connections)
+             :selected-connections @selected-connections
              :on-connections-change (fn [new-connections]
                                       (let [connection-data (mapv (fn [conn]
                                                                     {:id (:value conn)

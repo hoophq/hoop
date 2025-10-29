@@ -41,6 +41,8 @@
  :ai-data-masking->get-by-id-success
  (fn [db [_ data]]
    (-> db
+       ;; Clear any existing connections state to prevent stale data
+       (update-in [:ai-data-masking :active-rule :data] dissoc :connections :connections-loading :connections-error)
        (assoc-in [:ai-data-masking :active-rule :status] :success)
        (assoc-in [:ai-data-masking :active-rule :data] data))))
 
@@ -140,24 +142,71 @@
 (rf/reg-event-db
  :ai-data-masking->clear-active-rule
  (fn [db _]
-   (assoc-in db [:ai-data-masking :active-rule] {:status :idle :data nil})))
+   (-> db
+       ;; Clear any existing connections state to prevent stale data
+       (update-in [:ai-data-masking :active-rule :data] dissoc :connections :connections-loading :connections-error)
+       (assoc-in [:ai-data-masking :active-rule] {:status :idle :data nil}))))
 
 (rf/reg-event-fx
  :ai-data-masking/get-selected-connections
  (fn [{:keys [db]} [_ connection-ids]]
    (if (seq connection-ids)
-     (let [base-uri "/connections"
-           query-params [(str "connection_ids=" (cs/join "," connection-ids))
-                         "page=1"
-                         "page_size=50"]
-           uri (str base-uri "?" (cs/join "&" query-params))]
-       {:fx [[:dispatch [:fetch {:method "GET"
-                                 :uri uri
-                                 :on-success (fn [response]
-                                               (rf/dispatch [:ai-data-masking/set-selected-connections (:data response)]))
-                                 :on-failure (fn [error]
-                                               (rf/dispatch [:ai-data-masking/set-selected-connections-error error]))}]]]})
-     {:db (assoc-in db [:ai-data-masking :active-rule :data :connections] [])})))
+     (let [page-size 30
+           base-uri "/connections"
+           chunks (partition-all page-size connection-ids)
+           num-batches (count chunks)
+           mk-uri (fn [ids]
+                    (let [query-params [(str "connection_ids=" (cs/join "," ids))
+                                        "page=1"
+                                        (str "page_size=" page-size)]]
+                      (str base-uri "?" (cs/join "&" query-params))))
+           fx-requests (mapv (fn [ids]
+                               [:dispatch
+                                [:fetch {:method "GET"
+                                         :uri (mk-uri ids)
+                                         :on-success (fn [response]
+                                                       (rf/dispatch [:ai-data-masking/accumulate-selected-connections (:data response)]))
+                                         :on-failure (fn [error]
+                                                       (rf/dispatch [:ai-data-masking/accumulate-selected-connections-error error]))}]])
+                             chunks)]
+       {:db (-> db
+                (assoc-in [:ai-data-masking :active-rule :data :connections-loading]
+                          {:remaining num-batches
+                           :acc []
+                           :errors []}))
+        :fx fx-requests})
+     {:db (-> db
+              (assoc-in [:ai-data-masking :active-rule :data :connections] [])
+              (assoc-in [:ai-data-masking :active-rule :data :connections-loading]
+                        {:remaining 0 :acc [] :errors []}))})))
+
+(rf/reg-event-fx
+ :ai-data-masking/accumulate-selected-connections
+ (fn [{:keys [db]} [_ connections]]
+   (let [{:keys [remaining acc]} (get-in db [:ai-data-masking :active-rule :data :connections-loading] {:remaining 0 :acc []})
+         new-remaining (dec remaining)
+         new-acc (into acc connections)]
+     (if (pos? new-remaining)
+       {:db (assoc-in db [:ai-data-masking :active-rule :data :connections-loading]
+                      {:remaining new-remaining
+                       :acc new-acc
+                       :errors (:errors (get-in db [:ai-data-masking :active-rule :data :connections-loading]))})}
+       {:db (update-in db [:ai-data-masking :active-rule :data] dissoc :connections-loading)
+        :fx [[:dispatch [:ai-data-masking/set-selected-connections new-acc]]]}))))
+
+(rf/reg-event-fx
+ :ai-data-masking/accumulate-selected-connections-error
+ (fn [{:keys [db]} [_ error]]
+   (let [{:keys [remaining acc errors]} (get-in db [:ai-data-masking :active-rule :data :connections-loading] {:remaining 0 :acc [] :errors []})
+         new-remaining (dec remaining)
+         new-errors (conj (vec errors) error)]
+     (if (pos? new-remaining)
+       {:db (assoc-in db [:ai-data-masking :active-rule :data :connections-loading]
+                      {:remaining new-remaining
+                       :acc acc
+                       :errors new-errors})}
+       {:db (update-in db [:ai-data-masking :active-rule :data] dissoc :connections-loading)
+        :fx [[:dispatch [:ai-data-masking/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db
  :ai-data-masking/set-selected-connections

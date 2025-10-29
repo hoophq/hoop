@@ -238,7 +238,10 @@
 (rf/reg-event-db
  :jira-templates->set-active-template
  (fn [db [_ template]]
-   (assoc db :jira-templates->active-template {:status :ready :data template})))
+   (-> db
+       ;; Clear any existing connections state to prevent stale data
+       (update-in [:jira-templates->active-template :data] dissoc :connections :connections-loading :connections-error)
+       (assoc :jira-templates->active-template {:status :ready :data template}))))
 
 
 (rf/reg-event-db
@@ -376,18 +379,62 @@
  :jira-templates/get-selected-connections
  (fn [{:keys [db]} [_ connection-ids]]
    (if (seq connection-ids)
-     (let [base-uri "/connections"
-           query-params [(str "connection_ids=" (cs/join "," connection-ids))
-                         "page=1"
-                         "page_size=50"]
-           uri (str base-uri "?" (cs/join "&" query-params))]
-       {:fx [[:dispatch [:fetch {:method "GET"
-                                 :uri uri
-                                 :on-success (fn [response]
-                                               (rf/dispatch [:jira-templates/set-selected-connections (:data response)]))
-                                 :on-failure (fn [error]
-                                               (rf/dispatch [:jira-templates/set-selected-connections-error error]))}]]]})
-     {:db (assoc-in db [:jira-templates->active-template :data :connections] [])})))
+     (let [page-size 30
+           base-uri "/connections"
+           chunks (partition-all page-size connection-ids)
+           num-batches (count chunks)
+           mk-uri (fn [ids]
+                    (let [query-params [(str "connection_ids=" (cs/join "," ids))
+                                        "page=1"
+                                        (str "page_size=" page-size)]]
+                      (str base-uri "?" (cs/join "&" query-params))))
+           fx-requests (mapv (fn [ids]
+                               [:dispatch
+                                [:fetch {:method "GET"
+                                         :uri (mk-uri ids)
+                                         :on-success (fn [response]
+                                                       (rf/dispatch [:jira-templates/accumulate-selected-connections (:data response)]))
+                                         :on-failure (fn [error]
+                                                       (rf/dispatch [:jira-templates/accumulate-selected-connections-error error]))}]])
+                             chunks)]
+       {:db (-> db
+                (assoc-in [:jira-templates->active-template :data :connections-loading]
+                          {:remaining num-batches
+                           :acc []
+                           :errors []}))
+        :fx fx-requests})
+     {:db (-> db
+              (assoc-in [:jira-templates->active-template :data :connections] [])
+              (assoc-in [:jira-templates->active-template :data :connections-loading]
+                        {:remaining 0 :acc [] :errors []}))})))
+
+(rf/reg-event-fx
+ :jira-templates/accumulate-selected-connections
+ (fn [{:keys [db]} [_ connections]]
+   (let [{:keys [remaining acc]} (get-in db [:jira-templates->active-template :data :connections-loading] {:remaining 0 :acc []})
+         new-remaining (dec remaining)
+         new-acc (into acc connections)]
+     (if (pos? new-remaining)
+       {:db (assoc-in db [:jira-templates->active-template :data :connections-loading]
+                      {:remaining new-remaining
+                       :acc new-acc
+                       :errors (:errors (get-in db [:jira-templates->active-template :data :connections-loading]))})}
+       {:db (update-in db [:jira-templates->active-template :data] dissoc :connections-loading)
+        :fx [[:dispatch [:jira-templates/set-selected-connections new-acc]]]}))))
+
+(rf/reg-event-fx
+ :jira-templates/accumulate-selected-connections-error
+ (fn [{:keys [db]} [_ error]]
+   (let [{:keys [remaining acc errors]} (get-in db [:jira-templates->active-template :data :connections-loading] {:remaining 0 :acc [] :errors []})
+         new-remaining (dec remaining)
+         new-errors (conj (vec errors) error)]
+     (if (pos? new-remaining)
+       {:db (assoc-in db [:jira-templates->active-template :data :connections-loading]
+                      {:remaining new-remaining
+                       :acc acc
+                       :errors new-errors})}
+       {:db (update-in db [:jira-templates->active-template :data] dissoc :connections-loading)
+        :fx [[:dispatch [:jira-templates/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db
  :jira-templates/set-selected-connections

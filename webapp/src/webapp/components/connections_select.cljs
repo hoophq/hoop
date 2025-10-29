@@ -24,7 +24,8 @@
         search-debounce-timer (r/atom nil)
         initialized (r/atom false)]
 
-    (when (not @initialized)
+    ;; Only load connections if we don't have selected connections already loaded
+    (when (and (not @initialized) (empty? selected-connections))
       (reset! initialized true)
       (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}]))
 
