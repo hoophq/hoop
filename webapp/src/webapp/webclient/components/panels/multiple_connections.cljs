@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Box Badge Flex IconButton Text Spinner]]
    ["lucide-react" :refer [Plus Minus]]
    [re-frame.core :as rf]
-   [webapp.connections.constants :as connection-constants]))
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
 (defn connection-item [{:keys [connection selected? on-select disabled?]} dark-mode?]
   [:> Flex {:align "center"
@@ -56,9 +57,12 @@
 
 (defn connections-list []
   (let [primary-connection (rf/subscribe [:primary-connection/selected])
-        selected-connections (rf/subscribe [:multiple-connections/selected])]
-    (fn [dark-mode? connections]
-      (let [filtered-connections (filter-connections connections)
+        selected-connections (rf/subscribe [:multiple-connections/selected])
+        connections (rf/subscribe [:connections->pagination])]
+    (fn [dark-mode?]
+      (let [all-connections (or (:data @connections) [])
+            connections-loading? (= :loading (:loading @connections))
+            filtered-connections (filter-connections all-connections)
             filtered-compatible-connections (filter-compatible-connections filtered-connections
                                                                            @primary-connection
                                                                            @selected-connections)
@@ -72,20 +76,32 @@
              :selected? true
              :disabled? true
              :on-select (fn []
-                          (rf/dispatch [:connections->get-connections])
+                          (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
                           (rf/dispatch [:primary-connection/toggle-dialog true]))}
             dark-mode?])
-         (for [connection compatible-connections]
-           ^{:key (:name connection)}
-           [connection-item
-            {:connection connection
-             :selected? (some #(= (:name %) (:name connection)) @selected-connections)
-             :on-select #(rf/dispatch [:multiple-connections/toggle connection])}
-            dark-mode?])]))))
+
+         [infinite-scroll
+          {:on-load-more (fn []
+                           (when (not connections-loading?)
+                             (let [current-page (:current-page @connections 1)
+                                   next-page (inc current-page)
+                                   next-request {:page next-page
+                                                 :force-refresh? false}]
+                               (rf/dispatch [:connections/get-connections-paginated next-request]))))
+           :has-more? (:has-more? @connections)
+           :loading? connections-loading?}
+          [:> Box
+           (for [connection compatible-connections]
+             ^{:key (:name connection)}
+             [connection-item
+              {:connection connection
+               :selected? (some #(= (:name %) (:name connection)) @selected-connections)
+               :on-select #(rf/dispatch [:multiple-connections/toggle connection])}
+              dark-mode?])]]]))))
 
 (defn main [dark-mode?]
   (let [total-count (rf/subscribe [:execution/total-count])
-        connections (rf/subscribe [:connections])]
+        connections (rf/subscribe [:connections->pagination])]
     (fn []
       [:> Box {:class "h-full flex flex-col"}
        [:> Flex {:align "center"
@@ -99,12 +115,11 @@
            [:> Text {:size "1" :weight "bold" :class "text-success-9"}
             @total-count]]]]]
 
-
        [:> Box {:class "space-y-4 text-gray-11"}
         [:> Text {:as "p" :size "1" :class "py-3 px-4"}
          "Select similar connections to execute commands at once."]
-
-        (if (:loading @connections)
+        
+        (if (= :loading (:loading @connections))
           [:> Box {:class "flex items-center justify-center"}
            [:> Spinner {:size "2"}]]
-          [connections-list dark-mode? (:results @connections)])]])))
+          [connections-list dark-mode?])]])))
