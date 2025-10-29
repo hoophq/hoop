@@ -83,11 +83,13 @@ func (s *PGServer) Stop() error {
 func (s *PGServer) ListenAddr() string { return s.listenAddr }
 
 func runPgProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) (*PGServer, error) {
-	lisRaw, err := net.Listen("tcp4", listenAddr)
+	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
-	lis := tlstermination.NewTLSTermination(lisRaw, tlsConfig, acceptPlainText)
+	if tlsConfig != nil {
+		lis = tlstermination.NewTLSTermination(lis, tlsConfig, acceptPlainText)
+	}
 	server := &PGServer{connectionStore: memory.New(), listener: lis, listenAddr: listenAddr}
 	go func() {
 		defer lis.Close()

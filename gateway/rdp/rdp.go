@@ -70,12 +70,15 @@ func (r *RDPProxy) Stop() error {
 }
 
 func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) (*RDPProxy, error) {
-	lisRaw, err := net.Listen("tcp", listenAddr)
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start RDP proxy server at %v, reason=%v", listenAddr, err)
 	}
 
-	listener := tlstermination.NewTLSTermination(lisRaw, tlsConfig, acceptPlainText)
+	if tlsConfig != nil {
+		listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
+	}
+	
 	rdpProxyInstance := &RDPProxy{
 		listener:   listener,
 		listenAddr: listenAddr,
