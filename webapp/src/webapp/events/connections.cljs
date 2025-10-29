@@ -143,11 +143,12 @@
                         (:type filters) (assoc :type (:type filters))
                         (:subtype filters) (assoc :subtype (:subtype filters)))]
      {:db (-> db
-              (assoc-in [:connections->pagination :loading] true)
-              (assoc-in [:connections->pagination :page-size] page-size)
-              (assoc-in [:connections->pagination :current-page] page)
-              (assoc-in [:connections->pagination :active-filters] filters)
-              (assoc-in [:connections->pagination :active-search] search))
+              (update-in [:connections->pagination] merge
+                         {:loading true
+                          :page-size page-size
+                          :current-page page
+                          :active-filters filters
+                          :active-search search}))
       :fx [[:dispatch
             [:fetch {:method "GET"
                      :uri "/connections"
@@ -167,12 +168,13 @@
          final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
          has-more? (< (* page-number page-size) total)]
      {:db (-> db
-              (assoc-in [:connections->pagination :data] final-connections)
-              (assoc-in [:connections->pagination :loading] false)
-              (assoc-in [:connections->pagination :has-more?] has-more?)
-              (assoc-in [:connections->pagination :current-page] page-number)
-              (assoc-in [:connections->pagination :page-size] page-size)
-              (assoc-in [:connections->pagination :total] total))})))
+              (update-in [:connections->pagination] merge
+                         {:data final-connections
+                          :loading false
+                          :has-more? has-more?
+                          :current-page page-number
+                          :page-size page-size
+                          :total total}))})))
 
 
 (rf/reg-event-fx
