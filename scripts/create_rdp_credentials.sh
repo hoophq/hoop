@@ -5,7 +5,7 @@
 # You should run hoop login before running this script
 
 # Default values
-HOOP_API_URL="${HOOP_API_URL:-https://localhost:8009}"
+HOOP_API_URL="${HOOP_API_URL:-http://localhost:8009}"
 CONNECTION_NAME="${CONNECTION_NAME:-}"
 ACCESS_DURATION="${ACCESS_DURATION:-3600}"  # 1 hour default
 

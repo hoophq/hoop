@@ -4,7 +4,7 @@
 # You should run hoop login before running this script
 
 # Default values
-HOOP_API_URL="${HOOP_API_URL:-https://localhost:8009}"
+HOOP_API_URL="${HOOP_API_URL:-http://localhost:8009}"
 CONNECTION_NAME="${CONNECTION_NAME:-rdp-connection}"
 AGENT_ID="${AGENT_ID:-75122BCE-F957-49EB-A812-2AB60977CD9F}" # set the default docker agent id
 RDP_HOST="${RDP_HOST:-0.0.0.0:3389}"
@@ -22,7 +22,7 @@ usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  -u, --url URL              Hoop API URL (default: https://localhost:8080)"
+    echo "  -u, --url URL              Hoop API URL (default: http://localhost:8080)"
     echo "  -n, --name NAME            Connection name (default: rdp-connection)"
     echo "  -a, --agent-id ID          Agent ID"
     echo "  -h, --host HOST:PORT       RDP host:port (default: 0.0.0.0:3389)"

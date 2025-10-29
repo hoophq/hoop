@@ -56,6 +56,7 @@ type Config struct {
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
 	gatewayAllowPlainText           bool
+	gatewaySkipTLSVerify            bool
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
 
@@ -174,6 +175,7 @@ func Load() error {
 
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
 	generateSelfSigned := os.Getenv("GENERATE_SELF_SIGNED_TLS") == "true"
+	gatewaySkipTLSVerify := os.Getenv("SKIP_TLS_VERIFY") == "true"
 
 	if generateSelfSigned && (gatewayTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != "") {
 		return fmt.Errorf("cannot set GENERATE_SELF_SIGNED_TLS to true when TLS_CERT, TLS_KEY or TLS_CA are set")
@@ -212,6 +214,7 @@ func Load() error {
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
 		gatewayAllowPlainText:           allowPlainText,
+		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
 	}
@@ -359,9 +362,11 @@ func (c Config) MigrationPathFiles() string            { return c.migrationPathF
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
+func (c Config) GatewayGenerateSelfSignedTLS() bool    { return c.gatewayGenerateSelfSignedTLS }
 func (c Config) GatewayTLSCa() string                  { return c.gatewayTLSCa }
 func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }
+func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }
 func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
 func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
 func (c Config) AskAIApiURL() (u string) {
