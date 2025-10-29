@@ -141,7 +141,7 @@ func New(opts *Options) (*clientExec, error) {
 	}
 
 	tlsCA := appconfig.Get().GatewayTLSCa()
-	selfSigned := appconfig.Get().GatewayGenerateSelfSignedTLS()
+	useTLS := appconfig.Get().GatewayUseTLS()
 	tlsSkipVerify := appconfig.Get().GatewaySkipTLSVerify()
 
 	client, err := grpc.Connect(grpc.ClientConfig{
@@ -149,7 +149,7 @@ func New(opts *Options) (*clientExec, error) {
 		Token:         opts.BearerToken,
 		UserAgent:     userAgent,
 		Insecure:      tlsCA == "",
-		IsTLS:         tlsCA != "" || selfSigned,
+		IsTLS:         useTLS,
 		TLSSkipVerify: tlsSkipVerify,
 		TLSCA:         tlsCA,
 	},

@@ -51,7 +51,7 @@ type Config struct {
 	webappUsersManagement           string
 	webappStaticUIPath              string
 	disableSessionsDownload         bool
-	gatewayGenerateSelfSignedTLS    bool
+	gatewayUseTLS                   bool
 	gatewayTLSCa                    string
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
@@ -174,12 +174,8 @@ func Load() error {
 	}
 
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
-	generateSelfSigned := os.Getenv("GENERATE_SELF_SIGNED_TLS") == "true"
+	gatewayUseTLS := os.Getenv("USE_TLS") == "true"
 	gatewaySkipTLSVerify := os.Getenv("SKIP_TLS_VERIFY") == "true"
-
-	if generateSelfSigned && (gatewayTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != "") {
-		return fmt.Errorf("cannot set GENERATE_SELF_SIGNED_TLS to true when TLS_CERT, TLS_KEY or TLS_CA are set")
-	}
 
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
@@ -209,7 +205,7 @@ func Load() error {
 		webappStaticUIPath:              webappStaticUiPath,
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
-		gatewayGenerateSelfSignedTLS:    generateSelfSigned,
+		gatewayUseTLS:                   gatewayUseTLS,
 		gatewayTLSCa:                    gatewayTLSCa,
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
@@ -362,7 +358,7 @@ func (c Config) MigrationPathFiles() string            { return c.migrationPathF
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
-func (c Config) GatewayGenerateSelfSignedTLS() bool    { return c.gatewayGenerateSelfSignedTLS }
+func (c Config) GatewayUseTLS() bool                   { return c.gatewayUseTLS }
 func (c Config) GatewayTLSCa() string                  { return c.gatewayTLSCa }
 func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }

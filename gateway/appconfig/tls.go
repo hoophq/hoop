@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/hoophq/hoop/common/log"
 	"math/big"
-	"os"
 	"sync"
 	"time"
 )
@@ -19,7 +18,10 @@ var loadTlsConfigOnce = sync.OnceValues(loadOrGenerateTlsConfig)
 
 // GetTLSConfig returns the TLS configuration, loading it from files or generating a self-signed certificate if necessary.
 func (c Config) GetTLSConfig() (*tls.Config, error) {
-	return loadTlsConfigOnce()
+	if c.GatewayUseTLS() {
+		return loadTlsConfigOnce()
+	}
+	return nil, nil
 }
 
 // GatewayAllowPlaintext indicates if plaintext (non-TLS) connections are allowed.
@@ -29,16 +31,6 @@ func (c Config) GatewayAllowPlaintext() bool {
 
 // loadOrGenerateTlsConfig loads TLS configuration from files or generates a self-signed certificate if files are not provided.
 func loadOrGenerateTlsConfig() (tlsConfig *tls.Config, err error) {
-
-	if os.Getenv("GENERATE_SELF_SIGNED_TLS") == "true" {
-		log.Infof("GENERATE_SELF_SIGNED_TLS is set to true, generating self-signed certificate")
-		cert, err := generateSelfSignedCert()
-		if err != nil {
-			return tlsConfig, err
-		}
-		return buildTLSConfig(cert, nil), nil
-	}
-
 	var certPool *x509.CertPool
 	caFile, certFile, keyFile := Get().GatewayTLSCa(), Get().GatewayTLSCert(), Get().GatewayTLSKey()
 
@@ -59,7 +51,13 @@ func loadOrGenerateTlsConfig() (tlsConfig *tls.Config, err error) {
 		return buildTLSConfig(cert, certPool), nil
 	}
 
-	return nil, nil
+	log.Warnf("no TLS certificate and/or key file provided, generating self-signed certificate")
+	cert, err := generateSelfSignedCert()
+	if err != nil {
+		return tlsConfig, err
+	}
+
+	return buildTLSConfig(cert, certPool), nil
 }
 
 // generateSelfSignedCert creates a self-signed TLS certificate
