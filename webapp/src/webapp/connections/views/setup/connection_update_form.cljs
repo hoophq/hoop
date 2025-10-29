@@ -60,7 +60,7 @@
                                 (when form
                                   (.reportValidity form)
                                   (reset! credentials-valid? (.checkValidity form))))))
-     _ (rf/dispatch [:connections->get-connection-details connection-name])
+     _ (rf/dispatch-sync [:connections->get-connection-details connection-name])
      _ (rf/dispatch [:guardrails->get-all])
      _ (rf/dispatch [:jira-templates->get-all])]
 
