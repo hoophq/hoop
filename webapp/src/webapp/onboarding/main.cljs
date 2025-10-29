@@ -4,14 +4,14 @@
 
 (defn main []
   (let [user (rf/subscribe [:users->current-user])
-        connections (rf/subscribe [:connections->pagination])
+        connections (rf/subscribe [:connections])
         check-performed? (atom false)]
 
     ;; Dispatch data loading
     (when (empty? (:data @user))
       (rf/dispatch [:users->get-user]))
 
-    (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
+    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       (let [user-loading? (:loading @user)
