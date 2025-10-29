@@ -1841,3 +1841,103 @@ type ResourceResponse struct {
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
+
+type RunbookConfiguration struct {
+	// The unique identifier of the runbook
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this configuration
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// The runbook repository configuration
+	Repositories []RunbookRepository `json:"repositories"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type RunbookRepository struct {
+	// Git repository URL where the runbook is located
+	GitUrl string `json:"git_url" binding:"required" example:"https://github.com/myorg/myrepo"`
+	// Git username for repository authentication
+	GitUser string `json:"git_user" example:"myusername"`
+	// Git password or token for repository authentication
+	GitPassword string `json:"git_password" example:"mypassword"`
+	// SSH private key for Git repository authentication
+	SSHKey string `json:"ssh_key" example:"-----BEGIN PRIVATE KEY-----..."`
+	// SSH username for Git repository authentication
+	SSHUser string `json:"ssh_user" example:"myuser"`
+	// SSH key passphrase for encrypted SSH keys
+	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
+	// Git SSH known hosts for host key verification
+	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
+}
+
+type RunbookConfigurationRequest struct {
+	// The runbook repository configuration
+	Repositories []RunbookRepository `json:"repositories"`
+}
+
+type RunbookV2 struct {
+	// File path relative to repository root containing runbook file in the following format: `/path/to/file.runbook.<ext>`
+	Name string `json:"name" example:"ops/update-user.runbook.sh"`
+	// Metadata contains the attributes parsed from a template.
+	// Payload Example:
+	/*
+		{
+			"customer_id" : {
+				"description": "the id of the customer",
+				"required": true,
+				"type": "text",
+				"default": "Default value to use"
+			},
+			"country": {
+				"description": "the country code US; BR, etc",
+				"required": false,
+				"type": "select",
+				"options": ["US", "BR"]
+			}
+		}
+	*/
+	// By default it will have the attributes `description=""`, `required=false` and `type="text"`.
+	Metadata map[string]any `json:"metadata"`
+	// The connections that could be used for this runbook
+	ConnectionList []string `json:"connections,omitempty" example:"pgdemo,bash"`
+	// The error description if it failed to render
+	Error      *string           `json:"error"`
+	EnvVars    map[string]string `json:"-"`
+	InputFile  []byte            `json:"-"`
+	CommitHash string            `json:"-"`
+}
+
+type RunbookRepositoryList struct {
+	Items []*Runbook `json:"items"`
+	// Repository url
+	Repository string `json:"repository" example:"github.com/myorg/myrepo"`
+	// The commit sha
+	Commit string `json:"commit" example:"03c25fd64c74712c71798250d256d4b859dd5853"`
+	// The commit author
+	CommitAuthor string `json:"commit_author" example:"John Wick <john.wick@bad.org>"`
+	// The commit message
+	CommitMessage string `json:"commit_message" example:"runbook update"`
+}
+
+type RunbookListV2 struct {
+	Repositories []RunbookRepositoryList `json:"repositories"`
+}
+
+type RunbookRuleFile struct {
+	Repository string `json:"repository" example:"github.com/myorg/myrepo"`
+	Name       string `json:"name" example:"ops/update-user.runbook.sh"`
+}
+
+type RunbookRule struct {
+	ID          string            `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	OrgID       string            `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	Name        string            `json:"name" binding:"required" example:"Default Runbook Rules"`
+	Description string            `json:"description" example:"Runbook rules for production databases"`
+	Runbooks    []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
+	Connections []string          `json:"connections" binding:"required" example:"pgdemo,bash"`
+	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
+	CreatedAt   time.Time         `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	UpdatedAt   time.Time         `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}

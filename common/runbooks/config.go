@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os/exec"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +27,80 @@ type Config struct {
 	HookCacheTTL     *time.Duration
 	Auth             transport.AuthMethod
 	sshKnownHostsEnc string
+	Branch           string
+}
+
+func NewConfigV2(envVars map[string]string) (*Config, error) {
+	if len(envVars) == 0 {
+		return nil, ErrEmptyConfiguration
+	}
+	gitURL, err := base64.StdEncoding.DecodeString(envVars["GIT_URL"])
+	if err != nil {
+		return nil, ErrEmptyConfiguration
+	}
+
+	hookCacheTTL, err := parseRunbookHookCacheTTLConfig(envVars)
+	if err != nil {
+		return nil, err
+	}
+	gitBranch := envVars["GIT_BRANCH"]
+	gitUserEnc := envVars["GIT_USER"]
+	gitPasswordEnc := envVars["GIT_PASSWORD"]
+	sshKeyEnc := envVars["SSH_KEY"]
+	sshUserEnc := envVars["SSH_USER"]
+	sshKeyPassEnc := envVars["SSH_KEY_PASS"]
+
+	config := &Config{
+		GitURL:       string(gitURL),
+		HookCacheTTL: hookCacheTTL,
+		Branch:       gitBranch,
+	}
+	switch {
+	case sshKeyEnc != "":
+		pemBytes, err := base64.StdEncoding.DecodeString(sshKeyEnc)
+		if err != nil {
+			return nil, fmt.Errorf("failed decoding SSH_KEY")
+		}
+		sshUser := []byte(`git`)
+		if sshUserEnc != "" {
+			sshUser, err = base64.StdEncoding.DecodeString(sshUserEnc)
+			if err != nil {
+				return nil, fmt.Errorf("failed decoding SSH_USER")
+			}
+		}
+		sshKeyPass := []byte(``)
+		if sshKeyPassEnc != "" {
+			sshKeyPass, err = base64.StdEncoding.DecodeString(sshKeyPassEnc)
+			if err != nil {
+				return nil, fmt.Errorf("failed decoding SSH_KEY_PASS")
+			}
+		}
+		auth, err := gitssh.NewPublicKeys(string(sshUser), pemBytes, string(sshKeyPass))
+		if err != nil {
+			log.Infof("failed parsing SSH key file, err=%v", err)
+			return nil, fmt.Errorf("failed parsing SSH key file")
+		}
+
+		// Set public key auth
+		config.Auth = auth
+		config.sshKnownHostsEnc = envVars["SSH_KNOWN_HOSTS"]
+	case gitPasswordEnc != "":
+		gitPassword, err := base64.StdEncoding.DecodeString(gitPasswordEnc)
+		if err != nil {
+			return nil, fmt.Errorf("failed decoding GIT_PASSWORD")
+		}
+		gitUser := []byte(`oauth2`)
+		if gitUserEnc != "" {
+			gitUser, err = base64.StdEncoding.DecodeString(gitUserEnc)
+			if err != nil {
+				return nil, fmt.Errorf("failed decoding GIT_USER")
+			}
+		}
+		// Set basic auth
+		config.Auth = &githttp.BasicAuth{Username: string(gitUser), Password: string(gitPassword)}
+	}
+
+	return config, nil
 }
 
 // NewConfig creates a new RunbookConfig from the given runbook plugin configuration
@@ -100,6 +176,55 @@ func NewConfig(envVars map[string]string) (*Config, error) {
 
 var globalSSHKeyScanKnownHostsContent string
 
+func (c *Config) GetNormalizedGitURL() string {
+	raw := c.GitURL
+
+	// Handle SSH shorthand: git@host:user/repo.git
+	if strings.Contains(raw, ":") && !strings.Contains(raw, "://") {
+		parts := strings.SplitN(raw, ":", 2)
+		if len(parts) == 2 {
+			hostPart := strings.TrimPrefix(parts[0], "git@")
+			raw = "ssh://" + hostPart + "/" + parts[1]
+		}
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	host := parsed.Hostname()
+	path := strings.TrimSuffix(parsed.Path, ".git")
+	path = strings.Trim(path, "/")
+
+	return fmt.Sprintf("%s/%s", host, path)
+}
+
+func (c *Config) GetRepositoryName() string {
+	raw := c.GitURL
+
+	// Handle SSH-style URLs like git@github.com:user/repo.git
+	if strings.Contains(raw, ":") && !strings.Contains(raw, "://") {
+		parts := strings.SplitN(raw, ":", 2)
+		if len(parts) == 2 {
+			raw = "ssh://" + strings.Replace(parts[0], "git@", "", 1) + "/" + parts[1]
+		}
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	// Get last two parts of the path (e.g., bluetooth/bluez)
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) >= 2 {
+		repoPath := path.Join(segments[len(segments)-2], segments[len(segments)-1])
+		return strings.TrimSuffix(repoPath, ".git")
+	}
+	return strings.TrimSuffix(parsed.Path, ".git")
+}
+
 // loadKnownHosts parses a known hosts file format from the plugin configuration if it's available.
 // It fallback loading the known hosts by issuing a ssh-keyscan once and cache the content in memory.
 //
@@ -133,7 +258,7 @@ func (c *Config) loadKnownHosts() (err error) {
 	// fallback loading from the plugin configuration
 	knownHostsContent, err := base64.StdEncoding.DecodeString(c.sshKnownHostsEnc)
 	if err != nil {
-		return fmt.Errorf("failed decoding GIT_SSH_KNOWN_HOSTS")
+		return fmt.Errorf("failed decoding SSH_KNOWN_HOSTS")
 	}
 	knownHosts := parseKnownHostsFileContent(string(knownHostsContent))
 	auth.HostKeyCallback = trustedHostKeyCallback(knownHosts)
