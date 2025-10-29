@@ -111,7 +111,6 @@ func UpdateServerMisc(c *gin.Context) {
 	globalConfig := appconfig.Get()
 	tlsConfig, err := globalConfig.GetTLSConfig()
 	if err != nil {
-		// This technically should never happen, since gateway does not start if TLS config is invalid
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}

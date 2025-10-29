@@ -51,6 +51,7 @@ type Config struct {
 	webappUsersManagement           string
 	webappStaticUIPath              string
 	disableSessionsDownload         bool
+	gatewayGenerateSelfSignedTLS    bool
 	gatewayTLSCa                    string
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
@@ -172,6 +173,11 @@ func Load() error {
 	}
 
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
+	generateSelfSigned := os.Getenv("GENERATE_SELF_SIGNED_TLS") == "true"
+
+	if generateSelfSigned && (gatewayTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != "") {
+		return fmt.Errorf("cannot set GENERATE_SELF_SIGNED_TLS to true when TLS_CERT, TLS_KEY or TLS_CA are set")
+	}
 
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
@@ -201,6 +207,7 @@ func Load() error {
 		webappStaticUIPath:              webappStaticUiPath,
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
+		gatewayGenerateSelfSignedTLS:    generateSelfSigned,
 		gatewayTLSCa:                    gatewayTLSCa,
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
