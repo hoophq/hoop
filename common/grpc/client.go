@@ -82,7 +82,7 @@ func PreConnectRPC(cc ClientConfig, req *pb.PreConnectRequest) (*pb.PreConnectRe
 	if cc.Insecure {
 		dialOptions := []grpc.DialOption{
 			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-				InsecureSkipVerify: true,
+				InsecureSkipVerify: cc.TLSSkipVerify,
 			})),
 			grpc.WithUserAgent(cc.UserAgent),
 			grpc.WithDefaultCallOptions(
@@ -168,12 +168,9 @@ func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, erro
 	}
 	// Create the credentials and return it
 	config := &tls.Config{
-		RootCAs:    certPool,
-		ServerName: cc.TLSServerName,
-	}
-
-	if cc.TLSSkipVerify {
-		config.InsecureSkipVerify = true
+		RootCAs:            certPool,
+		ServerName:         cc.TLSServerName,
+		InsecureSkipVerify: cc.TLSSkipVerify,
 	}
 
 	return credentials.NewTLS(config), nil

@@ -42,7 +42,7 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 		tlsSkipVerify := os.Getenv("SKIP_TLS_VERIFY") == "true"
-		isTLS := dsn.Scheme != "http" && dsn.Scheme != "grpc"
+		isTLS := dsn.Scheme == "grpcs" || dsn.Scheme == "https" || dsn.Scheme == "wss"
 		return &Config{
 			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,

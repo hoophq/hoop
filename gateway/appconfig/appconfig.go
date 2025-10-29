@@ -171,10 +171,7 @@ func Load() error {
 		dlpMode = "best-effort"
 	}
 
-	allowPlainText := true // Defaults to true
-	if os.Getenv("GATEWAY_ALLOW_PLAINTEXT") == "false" {
-		allowPlainText = false
-	}
+	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
 
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
