@@ -32,14 +32,20 @@ func CreateRDPSession(
 	connectionInfo models.Connection,
 	clientAddr string,
 	protocol string,
-	extractedCreds string) (*Session, error) {
+	extractedCreds string,
+	expireAt time.Time,
+	ctxDuration time.Duration,
+) (*Session, error) {
 
 	sessionID := uuid.New()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancelFn := context.WithCancelCause(context.Background())
+	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
+		fmt.Errorf("connection access expired (%v)",
+			expireAt.Format(time.RFC3339)))
 
 	client, _ := GetAgent(connectionInfo.AgentName)
 	if client == nil {
-		cancel()
+		cancelFn(fmt.Errorf("agent not found: %s", connectionInfo.AgentName))
 		return nil, fmt.Errorf("agent not found: %s", connectionInfo.AgentName)
 	}
 
@@ -56,7 +62,10 @@ func CreateRDPSession(
 		Protocol:            ProtocolRDP,
 		credentialsReceived: credentialsReceived,
 		ctx:                 ctx,
-		cancel:              cancel,
+		cancel: func(msq string, a ...any) {
+			cancelFn(fmt.Errorf(msq, a...))
+			timeoutCancelFn()
+		},
 	}
 
 	// Store session immediately so it can be found by WebSocket handler
@@ -98,8 +107,10 @@ func CreateRDPSession(
 		return nil, err
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancelFn()
+	timeoutCtx, cancelFunc := context.WithTimeout(
+		context.Background(), 20*time.Second)
+
+	defer cancelFunc()
 
 	// Wait for protocol-specific started response
 	select {
