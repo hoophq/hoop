@@ -61,9 +61,9 @@
 (defn main [{:keys [children footer-props onboarding?]}]
   (if onboarding?
     ;; Onboarding layout: with stepper on left
-    [:> Box {:class "h-screen bg-gray-1 flex flex-col"}
+    [:> Box {:class "bg-gray-1 flex flex-col" :style {:height "calc(100vh - 72px)"}}
      ;; Main content area with stepper on left and children on right
-     [:> Flex {:class "flex-1 min-h-0"}
+     [:> Flex {:class "flex-1 min-h-0 overflow-hidden"}
       ;; Stepper on the left
       [stepper]
 
@@ -75,7 +75,7 @@
      (when-not (:hide-footer? footer-props)
        [:> Flex {:justify "end"
                  :align "center"
-                 :class "border-t border-gray-6 p-6 bg-white"}
+                 :class "border-t border-gray-6 p-6 bg-white flex-shrink-0"}
 
         [:> Flex {:gap "5" :align "center"}
          (when (:on-cancel footer-props)
