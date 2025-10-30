@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
@@ -168,6 +169,12 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
+	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
+	if ctxDuration <= 0 {
+		log.Errorf("invalid secret access key credentials")
+		return
+	}
+
 	connectionModel, err := models.GetConnectionByNameOrID(storagev2.NewOrganizationContext(dba.OrgID), dba.ConnectionName)
 	if err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
@@ -179,7 +186,10 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		*connectionModel,
 		peerAddr.String(),
 		broker.ProtocolRDP,
-		extractedCreds)
+		extractedCreds,
+		dba.ExpireAt,
+		ctxDuration,
+	)
 
 	if err != nil {
 		log.Printf("Failed to create session: %v", err)
