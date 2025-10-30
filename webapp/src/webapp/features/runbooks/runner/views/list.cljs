@@ -1,7 +1,7 @@
 (ns webapp.features.runbooks.runner.views.list
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text]]
-   ["lucide-react" :refer [ChevronDown ChevronUp File Folder FolderOpen]]
+   ["@radix-ui/themes" :refer [Box Button Flex Text Callout Link]]
+   ["lucide-react" :refer [ChevronDown ChevronUp File Folder FolderOpen Info]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -56,13 +56,13 @@
 
 (defn file [filename filter-template-selected level selected?]
   [:> Flex {:class (str "items-center gap-2 pb-3 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre overflow-x-hidden "
-             (when (pos? level) "pl-4"))
-       :on-click (fn []
-             (let [template (filter-template-selected filename)]
-               (rf/dispatch [:runbooks/set-active-runbook template])))}
-    [:> Flex {:class (str "w-fit gap-2 items-center py-1.5 px-2" (when selected?  " bg-[--indigo-a3] rounded-2"))} 
+                        (when (pos? level) "pl-4"))
+            :on-click (fn []
+                        (let [template (filter-template-selected filename)]
+                          (rf/dispatch [:runbooks/set-active-runbook template])))}
+   [:> Flex {:class (str "w-fit gap-2 items-center py-1.5 px-2" (when selected?  " bg-[--indigo-a3] rounded-2"))}
     [:> File {:size 16
-          :class "text-[--gray-11]"}]
+              :class "text-[--gray-11]"}]
     [:> Text {:size "2" :weight "medium" :class "flex items-center block truncate"}
      [tooltip/truncate-tooltip {:text (last (split-path filename))}]]]])
 
@@ -162,7 +162,7 @@
     "Loading runbooks"]
    [:> Box {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
     [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
-    
+
 (defn- empty-templates-view []
   [:> Flex {:class "h-full text-center flex-col justify-center items-center"}
    [:> Text {:size "1" :class "text-gray-8"}
@@ -170,16 +170,36 @@
    [:> Text {:size "1" :class "text-gray-8"}
     "Contact your Admin for more information"]])
 
+(defn- runbooks-extension-callout []
+  [:> Callout.Root {:size "1"
+                    :color "blue"
+                    :highContrast true
+                    :class "bg-info-3"}
+   [:> Callout.Icon
+    [:> Info {:size 16}]]
+   [:> Callout.Text
+    [:> Box {:class "flex flex-col gap-2 text-info-12"}
+     [:> Text {:size "2"}
+      "If you have already set your Runbooks and still don't see them, make sure your files include "
+      [:> Text {:weight "medium"} ".runbooks"]
+      " on the extension."]
+     [:> Link {:href (get-in config/docs-url [:features :runbooks])
+               :class "text-info-12 font-medium"}
+      "Go to Runbooks configuration docs ↗"]]]])
+
 (defn- no-integration-templates-view []
-  [:> Flex {:class "h-full text-center flex-col justify-center items-center" :gap "4"}
-   [:> Text {:size "1" :class "text-gray-8"}
-    "No Runbooks configured on your Organization yet"]
-   [:> Button {:color "indigo"
-               :size "2"
-               :variant "soft"
-               :radius "medium"
-               :on-click #(rf/dispatch [:navigate :runbooks-setup {:tab "configurations"}])}
-    "Go to Runbooks Configuration"]])
+  [:> Flex {:class "h-full flex-col"}
+   [:> Box {:class "grow flex flex-col items-center justify-center text-center gap-4"}
+    [:> Text {:size "1" :class "text-gray-8"}
+     "No Runbooks configured on your Organization yet"]
+    [:> Button {:color "indigo"
+                :size "2"
+                :variant "soft"
+                :radius "medium"
+                :on-click #(rf/dispatch [:navigate :runbooks-setup {:tab "configurations"}])}
+     "Go to Runbooks Configuration"]]
+   [:> Box {:class "self-end mt-8 mb-2 mx-4"}
+    [runbooks-extension-callout]]])
 
 (defn main []
   (fn [templates filtered-templates]
