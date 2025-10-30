@@ -86,13 +86,14 @@
   [:> Box {:class "space-y-4"}
 
    ;; Database Name
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Database Name"]
-    [logs/new-container
-     {:status :success
-      :id "database-name"
-      :logs (:database_name native-client-access-data)}]]
+   (when (:database_name native-client-access-data)
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Database Name"]
+      [logs/new-container
+       {:status :success
+        :id "database-name"
+        :logs (:database_name native-client-access-data)}]])
 
    ;; Host
    [:> Box {:class "space-y-2"}
@@ -145,10 +146,25 @@
    [:> Text {:as "p" :size "2" :class "text-[--gray-11] mt-3"}
     "Works with DBeaver, DataGrip and most PostgreSQL clients"]])
 
+(defn- connect-command-tab
+  "Command tab content"
+  [native-client-access-data]
+  [:> Box {:class "space-y-4"}
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Connection Command"]
+    [logs/new-container
+     {:status :success
+      :id "command"
+      :logs (:command native-client-access-data)}]]])
+
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [native-client-access-data minimize-fn disconnect-fn]
-  (let [active-tab (r/atom "credentials")]
+  (let [active-tab (r/atom "credentials")
+        has-connection-uri? (some? (get (:connection_credentials native-client-access-data) :connection_string))
+        has-command? (some? (get (:connection_credentials native-client-access-data) :command))]
+
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}
@@ -176,13 +192,20 @@
                        :onValueChange #(reset! active-tab %)}
          [:> Tabs.List {:aria-label "Connection methods"}
           [:> Tabs.Trigger {:value "credentials"} "Credentials"]
-          [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"]]
+          (when has-connection-uri?
+            [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"])
+          (when has-command?
+            [:> Tabs.Trigger {:value "command"} "Command"])]
 
          [:> Tabs.Content {:value "credentials" :class "mt-4"}
           [connect-credentials-tab (:connection_credentials native-client-access-data)]]
 
-         [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
-          [connect-uri-tab (:connection_credentials native-client-access-data)]]]]
+         (when has-connection-uri?
+           [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
+            [connect-uri-tab (:connection_credentials native-client-access-data)]])
+         (when has-command?
+           [:> Tabs.Content {:value "command" :class "mt-4"}
+            [connect-command-tab (:connection_credentials native-client-access-data)]])]]
 
        ;; Sticky footer
        [:footer {:class "sticky bottom-0 z-30 bg-white py-4 flex justify-between items-center"}
@@ -220,12 +243,12 @@
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Connected to: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      (:database_name native-client-access-data)]]
+      (:connection_name native-client-access-data)]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Type: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      "postgresql"]]
+      (:connection_type native-client-access-data)]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Time left: "]
