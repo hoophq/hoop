@@ -39,7 +39,7 @@ func NewBufferedConnection(conn net.Conn) BufferedConnection {
 func (b *bufferedConnection) Peek(n int) ([]byte, error) {
 	// set a short deadline for peeking
 	// This avoids waiting forever if there is not enough bytes in the buffer
-	_ = b.Conn.SetReadDeadline(time.Now().Add(peekWaitDuration))
+	_ = b.Conn.SetReadDeadline(time.Now().UTC().Add(peekWaitDuration))
 	d, err := b.r.Peek(n)
 	_ = b.Conn.SetReadDeadline(time.Time{}) // clear the deadline
 	return d, err

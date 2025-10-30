@@ -69,7 +69,14 @@ func (t *tlsTermination) toTLSConn(conn net.Conn) *tls.Conn {
 // QUIC connections are not supported
 func isTLSConn(conn BufferedConnection) (bool, error) {
 	data, err := conn.Peek(3)
+
 	if err != nil {
+		// if err is timeout, return false but nil
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			log.Warn("timeout while peeking connection for TLS detection. Assuming plain text.")
+			err = nil
+		}
 		return false, err
 	}
 
