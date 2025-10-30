@@ -30,7 +30,7 @@ type Session struct {
 	credentialsReceived chan bool
 	closed              bool
 	ctx                 context.Context
-	cancel              func(msg string, a ...any)
+	cancel              context.CancelFunc
 	mu                  sync.Mutex
 }
 
@@ -64,7 +64,7 @@ func (s *Session) Close() {
 	}
 	s.closed = true
 	if s.cancel != nil {
-		s.cancel("Session %s closed", s.ID)
+		s.cancel()
 	}
 
 	// Close data channel safely
