@@ -24,7 +24,7 @@
       [:> Box {:class "h-full"}
        ;; Show Hoop logo only in onboarding mode
        (when onboarding?
-         [:> Flex {:justify "start" :class "p-8 pb-0"}
+         [:> Flex {:justify "start" :class "px-8"}
           [:figure
            [:img {:src "/images/hoop-branding/PNG/hoop-symbol_black@4x.png"
                   :alt "Hoop Logo"
