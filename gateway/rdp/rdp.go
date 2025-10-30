@@ -170,7 +170,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	}
 
 	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
-	if dba.ExpireAt.Before(time.Now().UTC()) {
+	if ctxDuration <= 0 {
 		log.Errorf("invalid secret access key credentials")
 		return
 	}
