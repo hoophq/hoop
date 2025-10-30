@@ -184,6 +184,7 @@
       [:> Text {:weight "medium"} ".runbooks"]
       " on the extension."]
      [:> Link {:href (get-in config/docs-url [:features :runbooks])
+               :target "_blank"
                :class "text-info-12 font-medium"}
       "Go to Runbooks configuration docs ↗"]]]])
 
