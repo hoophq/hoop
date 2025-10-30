@@ -11,7 +11,7 @@
             [webapp.connections.constants :as connection-constants]
             [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?
                                                 can-connect? can-open-web-terminal?
-                                                can-access-native-client?]]
+                                                can-access-native-client? can-hoop-cli?]]
             [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
             [webapp.connections.views.tag-selector :as tag-selector]
             [webapp.connections.views.test-connection-modal :as test-connection-modal]
@@ -257,12 +257,13 @@
                                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
                                           "Open in Web Terminal"])
 
-                                       [:> DropdownMenu.Item {:on-click
-                                                              #(rf/dispatch [:modal->open
-                                                                             {:content [hoop-cli-modal/main (:name connection)]
-                                                                              :maxWidth "1100px"
-                                                                              :class "overflow-hidden"}])}
-                                        "Open with Hoop CLI"]
+                                       (when (can-hoop-cli? connection)
+                                         [:> DropdownMenu.Item {:on-click
+                                                                #(rf/dispatch [:modal->open
+                                                                               {:content [hoop-cli-modal/main (:name connection)]
+                                                                                :maxWidth "1100px"
+                                                                                :class "overflow-hidden"}])}
+                                          "Open with Hoop CLI"])
 
                                        (when (can-access-native-client? connection)
                                          [:> DropdownMenu.Item {:on-click

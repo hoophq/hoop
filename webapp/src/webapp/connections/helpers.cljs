@@ -95,6 +95,11 @@
 
     false))
 
+(defn can-hoop-cli? [connection]
+  (and (= "enabled" (:access_mode_connect connection))
+       (not (and (= (:type connection) "custom")
+                 (= (:subtype connection) "rdp")))))
+
 (defn can-access-native-client? [connection]
   (and (= "enabled" (:access_mode_connect connection))
        (or (= (:subtype connection) "postgres")
