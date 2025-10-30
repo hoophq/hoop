@@ -32,7 +32,7 @@ func (c Config) GatewayAllowPlaintext() bool {
 // loadOrGenerateTlsConfig loads TLS configuration from files or generates a self-signed certificate if files are not provided.
 func loadOrGenerateTlsConfig() (tlsConfig *tls.Config, err error) {
 	var certPool *x509.CertPool
-	caFile, certFile, keyFile := Get().GatewayTLSCa(), Get().GatewayTLSCert(), Get().GatewayTLSKey()
+	caFile, certData, keyData := Get().GatewayTLSCa(), Get().GatewayTLSCert(), Get().GatewayTLSKey()
 
 	if caFile != "" {
 		certPool = x509.NewCertPool()
@@ -42,12 +42,12 @@ func loadOrGenerateTlsConfig() (tlsConfig *tls.Config, err error) {
 		log.Infof("loaded TLS CA certificate from caFile=%s", caFile)
 	}
 
-	if certFile != "" && keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if certData != "" && keyData != "" {
+		cert, err := tls.X509KeyPair([]byte(certData), []byte(keyData))
 		if err != nil {
 			return tlsConfig, err
 		}
-		log.Infof("loaded TLS certificate from certFile=%s and keyFile=%s", certFile, keyFile)
+		log.Info("loaded TLS certificate from config")
 		return buildTLSConfig(cert, certPool), nil
 	}
 
@@ -79,8 +79,8 @@ func generateSelfSignedCert() (cert tls.Certificate, err error) {
 			Organization: []string{"Hoop Gateway"},
 			Country:      []string{"US"},
 		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(time.Hour * 24 * 365), // valid for 1 year
+		NotBefore:             time.Now().UTC(),
+		NotAfter:              time.Now().UTC().Add(time.Hour * 24 * 365), // valid for 1 year
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,

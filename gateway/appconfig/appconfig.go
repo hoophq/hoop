@@ -176,7 +176,7 @@ func Load() error {
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
 	// For backwards compatibility, we also allow plaintext if no TLS envs are set
 	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || gatewayTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
-	gatewaySkipTLSVerify := os.Getenv("SKIP_TLS_VERIFY") == "true"
+	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
 
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),

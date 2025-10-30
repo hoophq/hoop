@@ -24,13 +24,14 @@ var ErrEmpty error = errors.New("unable to locate configuration file")
 const apiLocalhostURL = "http://127.0.0.1:8009"
 
 type Config struct {
-	Token        string `toml:"token"`
-	ApiURL       string `toml:"api_url"`
-	GrpcURL      string `toml:"grpc_url"`
-	TlsCAB64Enc  string `toml:"tls_ca"`
-	Mode         string `toml:"-"`
-	InsecureGRPC bool   `toml:"-"`
-	filepath     string `toml:"-"`
+	Token         string `toml:"token"`
+	ApiURL        string `toml:"api_url"`
+	GrpcURL       string `toml:"grpc_url"`
+	TlsCAB64Enc   string `toml:"tls_ca"`
+	SkipTLSVerify bool   `toml:"skip_tls_verify"`
+	Mode          string `toml:"-"`
+	InsecureGRPC  bool   `toml:"-"`
+	filepath      string `toml:"-"`
 }
 
 // NewConfigFile creates a new configuration in the filesystem
@@ -40,11 +41,12 @@ func NewConfigFile(apiURL, grpcURL, token, tlsCA string) (string, error) {
 		return "", err
 	}
 	config := &Config{
-		filepath:    filepath,
-		Token:       token,
-		ApiURL:      apiURL,
-		GrpcURL:     grpcURL,
-		TlsCAB64Enc: base64.StdEncoding.EncodeToString([]byte(tlsCA)),
+		filepath:      filepath,
+		Token:         token,
+		ApiURL:        apiURL,
+		GrpcURL:       grpcURL,
+		SkipTLSVerify: false,
+		TlsCAB64Enc:   base64.StdEncoding.EncodeToString([]byte(tlsCA)),
 	}
 	_, err = config.Save()
 	return filepath, err
@@ -68,18 +70,20 @@ func Load() (*Config, error) {
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	apiServer := os.Getenv("HOOP_APIURL")
 	accessToken := os.Getenv("HOOP_TOKEN")
+	skipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
 	tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
 	if err != nil {
 		return nil, err
 	}
 	if grpcURL != "" && apiServer != "" && accessToken != "" {
 		return &Config{
-			Token:        accessToken,
-			ApiURL:       apiServer,
-			GrpcURL:      grpcURL,
-			TlsCAB64Enc:  base64.StdEncoding.EncodeToString([]byte(tlsCA)),
-			Mode:         clientconfig.ModeEnv,
-			InsecureGRPC: hasInsecureScheme(grpcURL)}, nil
+			Token:         accessToken,
+			ApiURL:        apiServer,
+			GrpcURL:       grpcURL,
+			SkipTLSVerify: skipTLSVerify,
+			TlsCAB64Enc:   base64.StdEncoding.EncodeToString([]byte(tlsCA)),
+			Mode:          clientconfig.ModeEnv,
+			InsecureGRPC:  hasInsecureScheme(grpcURL)}, nil
 	}
 
 	// fallback to reading the configuration file
@@ -99,6 +103,7 @@ func Load() (*Config, error) {
 		conf.Mode = clientconfig.ModeConfigFile
 		conf.filepath = filepath
 		conf.InsecureGRPC = hasInsecureScheme(conf.GrpcURL)
+		conf.SkipTLSVerify = skipTLSVerify
 		return &conf, nil
 	}
 
@@ -127,7 +132,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		Token:         c.Token,
 		Insecure:      c.InsecureGRPC,
 		IsTLS:         isTLS,
-		TLSSkipVerify: c.InsecureGRPC,
+		TLSSkipVerify: c.SkipTLSVerify,
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.TlsCA(),
 	}, err

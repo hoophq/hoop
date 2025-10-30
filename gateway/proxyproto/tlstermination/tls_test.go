@@ -28,8 +28,8 @@ func generateSelfSignedCert(t *testing.T) *tls.Config {
 		Subject: pkix.Name{
 			Organization: []string{"Test Co"},
 		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(time.Hour),
+		NotBefore:             time.Now().UTC(),
+		NotAfter:              time.Now().UTC().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
