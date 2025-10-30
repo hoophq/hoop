@@ -603,31 +603,3 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 	}
 	return cmd
 }
-
-
-func toConnectionPaginated(conn *models.Connection) openapi.ConnectionPaginated {
-	var managedBy *string
-	if conn.ManagedBy.Valid {
-		managedBy = &conn.ManagedBy.String
-	}
-
-	var jiraIssueTemplateID string
-	if conn.JiraIssueTemplateID.Valid {
-		jiraIssueTemplateID = conn.JiraIssueTemplateID.String
-	}
-
-	return openapi.ConnectionPaginated{
-		ID:                  conn.ID,
-		Name:                conn.Name,
-		Command:             conn.Command,
-		Type:                conn.Type,
-		SubType:             conn.SubType.String,
-		Status:              conn.Status,
-		AccessModeRunbooks:  conn.AccessModeRunbooks,
-		AccessModeExec:      conn.AccessModeExec,
-		AccessModeConnect:   conn.AccessModeConnect,
-		AccessSchema:        conn.AccessSchema,
-		ManagedBy:           managedBy,
-		JiraIssueTemplateID: jiraIssueTemplateID,
-	}
-}
