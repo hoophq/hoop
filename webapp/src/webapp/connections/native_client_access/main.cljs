@@ -229,7 +229,6 @@
                                                          :text "Native client access session has expired."}]))}]]]
 
         (if (= (:connection_type native-client-access-data) "postgres")
-          ;; PostgreSQL - mostra tabs
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -242,7 +241,6 @@
            [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
             [connect-uri-tab native-client-access-data]]]
 
-          ;; RDP - apenas credentials
           [connect-credentials-tab native-client-access-data])]
 
        ;; Sticky footer
