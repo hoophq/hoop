@@ -82,7 +82,8 @@ func (p *HttpProxy) serveConn(sessionID, connectionID string, tcpClient net.Conn
 func (p *HttpProxy) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, error) {
 	conn, err := p.getConnection(connectionID)
 	if err != nil {
-		return 0, err
+		log.Warnf("receive packet (length=%v) after connection (%v) is closed", len(pkt.Payload), connectionID)
+		return 0, nil
 	}
 	return conn.Write(pkt.Payload)
 }

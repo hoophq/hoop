@@ -92,7 +92,8 @@ func (p *PGServer) serveConn(sessionID, connectionID string, pgClient net.Conn) 
 func (p *PGServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int, error) {
 	conn, err := p.getConnection(connectionID)
 	if err != nil {
-		return 0, err
+		log.Warnf("receive packet (length=%v) after connection (%v) is closed", len(pkt.Payload), connectionID)
+		return 0, nil
 	}
 	// store the pid for each connection
 	if len(pkt.Payload) >= 13 {
