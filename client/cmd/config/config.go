@@ -41,13 +41,13 @@ var createCmd = &cobra.Command{
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
 		if grpcURLFlag != "" {
-			if _, _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
+			if _, err := grpc.ParseServerAddress(grpcURLFlag); err != nil {
 				styles.PrintErrorAndExit("--grpc-url value is not a gRPC address")
 			}
 		}
 
 		apiURL := strings.TrimSuffix(apiURLFlag, "/")
-		if _, _, err := grpc.ParseServerAddress(apiURL); err != nil {
+		if _, err := grpc.ParseServerAddress(apiURL); err != nil {
 			styles.PrintErrorAndExit("--api-url value is not an http address")
 		}
 		var tlsCA string

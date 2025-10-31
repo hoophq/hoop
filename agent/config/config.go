@@ -66,7 +66,7 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
-	srvAddr, _, err := grpc.ParseServerAddress(c.URL)
+	srvAddr, err := grpc.ParseServerAddress(c.URL)
 	return grpc.ClientConfig{
 		ServerAddress: srvAddr,
 		Token:         c.Token,

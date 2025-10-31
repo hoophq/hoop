@@ -43,9 +43,7 @@ type (
 		// Insecure indicates if it will connect without TLS
 		// It should only be used in secure networks!
 		Insecure bool
-		// True if the connection should use TLS
-		IsTLS bool
-		TLSCA string
+		TLSCA    string
 		// Indicates if the TLS connection should skip verifying server certificate
 		TLSSkipVerify bool
 		// This is used to specify a different DNS name when connecting via TLS
@@ -81,9 +79,7 @@ func ConnectLocalhost(token, userAgent string, opts ...*ClientOptions) (pb.Clien
 func PreConnectRPC(cc ClientConfig, req *pb.PreConnectRequest) (*pb.PreConnectResponse, error) {
 	if cc.Insecure {
 		dialOptions := []grpc.DialOption{
-			grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-				InsecureSkipVerify: cc.TLSSkipVerify,
-			})),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithUserAgent(cc.UserAgent),
 			grpc.WithDefaultCallOptions(
 				grpc.MaxCallRecvMsgSize(MaxRecvMsgSize),
@@ -125,7 +121,7 @@ func PreConnectRPC(cc ClientConfig, req *pb.PreConnectRequest) (*pb.PreConnectRe
 }
 
 func Connect(clientConfig ClientConfig, opts ...*ClientOptions) (pb.ClientTransport, error) {
-	if clientConfig.Insecure && !clientConfig.IsTLS {
+	if clientConfig.Insecure {
 		opts = append(opts, &ClientOptions{
 			optionKey: "authorization",
 			optionVal: fmt.Sprintf("Bearer %s", clientConfig.Token),
@@ -251,21 +247,21 @@ func (c *mutexClient) StreamContext() context.Context {
 // ParseServerAddress parses addr to a HOST:PORT string.
 // It validates if it's a valid server name HOST:PORT or
 // a valid URL, usually SCHEME://HOST:PORT.
-func ParseServerAddress(addr string) (hostPort string, isTLS bool, err error) {
+func ParseServerAddress(addr string) (hostPort string, err error) {
 	u, _ := url.Parse(addr)
 	if u == nil {
 		u = &url.URL{}
 	}
-	isTLS = u.Scheme == "grpcs" || u.Scheme == "https" || u.Scheme == "wss"
+
 	srvAddr := u.Host
 	if srvAddr == "" {
 		host, port, found := strings.Cut(addr, ":")
 		if !found || host == "" {
-			return "", isTLS, fmt.Errorf("server address is in wrong format")
+			return "", fmt.Errorf("server address is in wrong format")
 		}
 		srvAddr = fmt.Sprintf("%s:%s", host, port)
 	}
-	return srvAddr, isTLS, nil
+	return srvAddr, nil
 }
 
 // ShouldDebugGrpc return true if env LOG_GRPC=1 or LGO_GRPC=2
