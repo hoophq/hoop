@@ -125,11 +125,9 @@
                       (if (seq (:rules output))
                         {:output (mapv rule-builder (:rules output))}
                         {:output [{:type "" :rule "" :details ""}]}))]
-     {:db (-> db
-              ;; Clear any existing connections state to prevent stale data
-              (update-in [:guardrails->active-guardrail :data] dissoc :connections :connections-loading :connections-error)
-              (assoc :guardrails->active-guardrail {:status :ready
-                                                    :data rule-schema}))})))
+     {:db (assoc db :guardrails->active-guardrail
+                 {:status :ready
+                  :data (merge {:connections nil :connections-loading false :connections-error nil} rule-schema)})})))
 
 (rf/reg-event-fx
  :guardrails->clear-active-guardrail
@@ -180,16 +178,11 @@
                                          :on-failure (fn [error]
                                                        (rf/dispatch [:guardrails/accumulate-selected-connections-error error]))}]])
                              chunks)]
-       {:db (-> db
-                (assoc-in [:guardrails->active-guardrail :data :connections-loading]
-                          {:remaining num-batches
-                           :acc []
-                           :errors []}))
+       {:db (update-in db [:guardrails->active-guardrail :data] merge
+                       {:connections-loading {:remaining num-batches :acc [] :errors []}})
         :fx fx-requests})
-     {:db (-> db
-              (assoc-in [:guardrails->active-guardrail :data :connections] [])
-              (assoc-in [:guardrails->active-guardrail :data :connections-loading]
-                        {:remaining 0 :acc [] :errors []}))})))
+     {:db (update-in db [:guardrails->active-guardrail :data] merge
+                     {:connections [] :connections-loading {:remaining 0 :acc [] :errors []}})})))
 
 (rf/reg-event-fx
  :guardrails/accumulate-selected-connections
@@ -198,11 +191,12 @@
          new-remaining (dec remaining)
          new-acc (into acc connections)]
      (if (pos? new-remaining)
-       {:db (assoc-in db [:guardrails->active-guardrail :data :connections-loading]
-                      {:remaining new-remaining
-                       :acc new-acc
-                       :errors (:errors (get-in db [:guardrails->active-guardrail :data :connections-loading]))})}
-       {:db (update-in db [:guardrails->active-guardrail :data] dissoc :connections-loading)
+       {:db (update-in db [:guardrails->active-guardrail :data] merge
+                       {:connections-loading {:remaining new-remaining
+                                              :acc new-acc
+                                              :errors (:errors (get-in db [:guardrails->active-guardrail :data :connections-loading]))}})}
+       {:db (update-in db [:guardrails->active-guardrail :data] merge
+                       {:connections-loading false})
         :fx [[:dispatch [:guardrails/set-selected-connections new-acc]]]}))))
 
 (rf/reg-event-fx
@@ -212,21 +206,22 @@
          new-remaining (dec remaining)
          new-errors (conj (vec errors) error)]
      (if (pos? new-remaining)
-       {:db (assoc-in db [:guardrails->active-guardrail :data :connections-loading]
-                      {:remaining new-remaining
-                       :acc acc
-                       :errors new-errors})}
-       {:db (update-in db [:guardrails->active-guardrail :data] dissoc :connections-loading)
+       {:db (update-in db [:guardrails->active-guardrail :data] merge
+                       {:connections-loading {:remaining new-remaining
+                                              :acc acc
+                                              :errors new-errors}})}
+       {:db (update-in db [:guardrails->active-guardrail :data] merge
+                       {:connections-loading false})
         :fx [[:dispatch [:guardrails/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db
  :guardrails/set-selected-connections
  (fn [db [_ connections]]
-   (assoc-in db [:guardrails->active-guardrail :data :connections] connections)))
+   (let [filtered-connections (mapv #(select-keys % [:id :name]) connections)]
+     (assoc-in db [:guardrails->active-guardrail :data :connections] filtered-connections))))
 
 (rf/reg-event-db
  :guardrails/set-selected-connections-error
  (fn [db [_ error]]
-   (-> db
-       (assoc-in [:guardrails->active-guardrail :data :connections] [])
-       (assoc-in [:guardrails->active-guardrail :data :connections-error] error))))
+   (update-in db [:guardrails->active-guardrail :data] merge
+              {:connections [] :connections-error error})))

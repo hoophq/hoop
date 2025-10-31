@@ -238,10 +238,9 @@
 (rf/reg-event-db
  :jira-templates->set-active-template
  (fn [db [_ template]]
-   (-> db
-       ;; Clear any existing connections state to prevent stale data
-       (update-in [:jira-templates->active-template :data] dissoc :connections :connections-loading :connections-error)
-       (assoc :jira-templates->active-template {:status :ready :data template}))))
+   (assoc db :jira-templates->active-template
+          {:status :ready
+           :data (merge {:connections nil :connections-loading false :connections-error nil} template)})))
 
 
 (rf/reg-event-db
@@ -397,16 +396,11 @@
                                          :on-failure (fn [error]
                                                        (rf/dispatch [:jira-templates/accumulate-selected-connections-error error]))}]])
                              chunks)]
-       {:db (-> db
-                (assoc-in [:jira-templates->active-template :data :connections-loading]
-                          {:remaining num-batches
-                           :acc []
-                           :errors []}))
+       {:db (update-in db [:jira-templates->active-template :data] merge
+                       {:connections-loading {:remaining num-batches :acc [] :errors []}})
         :fx fx-requests})
-     {:db (-> db
-              (assoc-in [:jira-templates->active-template :data :connections] [])
-              (assoc-in [:jira-templates->active-template :data :connections-loading]
-                        {:remaining 0 :acc [] :errors []}))})))
+     {:db (update-in db [:jira-templates->active-template :data] merge
+                     {:connections [] :connections-loading {:remaining 0 :acc [] :errors []}})})))
 
 (rf/reg-event-fx
  :jira-templates/accumulate-selected-connections
@@ -415,11 +409,12 @@
          new-remaining (dec remaining)
          new-acc (into acc connections)]
      (if (pos? new-remaining)
-       {:db (assoc-in db [:jira-templates->active-template :data :connections-loading]
-                      {:remaining new-remaining
-                       :acc new-acc
-                       :errors (:errors (get-in db [:jira-templates->active-template :data :connections-loading]))})}
-       {:db (update-in db [:jira-templates->active-template :data] dissoc :connections-loading)
+       {:db (update-in db [:jira-templates->active-template :data] merge
+                       {:connections-loading {:remaining new-remaining
+                                              :acc new-acc
+                                              :errors (:errors (get-in db [:jira-templates->active-template :data :connections-loading]))}})}
+       {:db (update-in db [:jira-templates->active-template :data] merge
+                       {:connections-loading false})
         :fx [[:dispatch [:jira-templates/set-selected-connections new-acc]]]}))))
 
 (rf/reg-event-fx
@@ -429,21 +424,22 @@
          new-remaining (dec remaining)
          new-errors (conj (vec errors) error)]
      (if (pos? new-remaining)
-       {:db (assoc-in db [:jira-templates->active-template :data :connections-loading]
-                      {:remaining new-remaining
-                       :acc acc
-                       :errors new-errors})}
-       {:db (update-in db [:jira-templates->active-template :data] dissoc :connections-loading)
+       {:db (update-in db [:jira-templates->active-template :data] merge
+                       {:connections-loading {:remaining new-remaining
+                                             :acc acc
+                                             :errors new-errors}})}
+       {:db (update-in db [:jira-templates->active-template :data] merge
+                       {:connections-loading false})
         :fx [[:dispatch [:jira-templates/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db
  :jira-templates/set-selected-connections
  (fn [db [_ connections]]
-   (assoc-in db [:jira-templates->active-template :data :connections] connections)))
+   (let [filtered-connections (mapv #(select-keys % [:id :name]) connections)]
+     (assoc-in db [:jira-templates->active-template :data :connections] filtered-connections))))
 
 (rf/reg-event-db
  :jira-templates/set-selected-connections-error
  (fn [db [_ error]]
-   (-> db
-       (assoc-in [:jira-templates->active-template :data :connections] [])
-       (assoc-in [:jira-templates->active-template :data :connections-error] error))))
+   (update-in db [:jira-templates->active-template :data] merge
+              {:connections [] :connections-error error})))
