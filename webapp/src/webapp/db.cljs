@@ -1,5 +1,4 @@
-(ns webapp.db
-  (:require [clojure.edn :refer [read-string]]))
+(ns webapp.db)
 
 (def default-db
   {:agents {:status :loading, :data []}
@@ -12,6 +11,12 @@
    :audit->session-logs {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :loading, :data []}
    :connections {:loading true :details {}}
+   :connections->pagination {:data []
+                             :loading false
+                             :current-page 1
+                             :page-size 50
+                             :has-more? false
+                             :total 0}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
    :native-client-access {:requesting? false, :current nil}
@@ -60,7 +65,6 @@
                                   :description ""
                                   :input [{:type "" :rule "" :details ""}]
                                   :output [{:type "" :rule "" :details ""}]}
-   :guardrails->connections-list {:status :loading :data []}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed

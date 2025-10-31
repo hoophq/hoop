@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -142,6 +143,9 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			o.ManagedBy = values[0]
 		case "tag_selector":
 			o.TagSelector = values[0]
+		case "search":
+			o.Search = strings.TrimLeft(values[0], " ")
+			continue
 		case "tags":
 			if len(values[0]) > 0 {
 				for _, tagVal := range strings.Split(values[0], ",") {
@@ -149,6 +153,21 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 						return o, errInvalidOptionVal
 					}
 					o.Tags = append(o.Tags, tagVal)
+				}
+			}
+			continue
+		case "connection_ids":
+			if len(values[0]) > 0 {
+				for _, connID := range strings.Split(values[0], ",") {
+					connID = strings.TrimSpace(connID)
+					if connID == "" {
+						continue
+					}
+					// Validate UUID format
+					if _, err := uuid.Parse(connID); err != nil {
+						return o, fmt.Errorf("invalid connection ID format: %s", connID)
+					}
+					o.ConnectionIDs = append(o.ConnectionIDs, connID)
 				}
 			}
 			continue

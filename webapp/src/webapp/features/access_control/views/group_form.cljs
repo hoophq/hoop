@@ -5,30 +5,23 @@
    [reagent.core :as r]
    [webapp.components.button :as button]
    [webapp.components.forms :as forms]
-   [webapp.components.multiselect :as multi-select]))
+   [webapp.components.connections-select :as connections-select]))
 
 (defn create-form []
   (let [group-name (r/atom "")
         description (r/atom "")
         selected-connections (r/atom [])
-        all-connections (rf/subscribe [:connections])
         is-submitting (r/atom false)
         scroll-pos (r/atom 0)]
-
-    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
-
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:on-submit (fn [e]
                             (.preventDefault e)
                             (reset! is-submitting true)
-                            (let [connection-ids (map #(get % "value") (or @selected-connections []))
-                                  all-results (or (:results @all-connections) [])
-                                  selected-conns (filter #(some #{(:id %)} connection-ids) all-results)]
-                              (rf/dispatch [:access-control/create-group-with-permissions
-                                            {:name @group-name
-                                             :description @description
-                                             :connections selected-conns}])))}
+                            (rf/dispatch [:access-control/create-group-with-permissions
+                                          {:name @group-name
+                                           :description @description
+                                           :connections @selected-connections}]))}
 
         [:<>
          [:> Flex {:p "5" :gap "2"}
@@ -74,63 +67,50 @@
             "Select which connections this group should have access to."]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-           [multi-select/main
-            {:id "connections-input"
-             :name "connections-input"
-             :label "Connections"
-             :options (mapv #(hash-map "value" (:id %) "label" (:name %))
-                            (:results @all-connections))
-             :default-value @selected-connections
-             :placeholder "Select connections..."
-             :on-change #(reset! selected-connections (js->clj %))}]]]]]])))
+           [connections-select/main
+            {:connection-ids (mapv :id @selected-connections)
+             :selected-connections @selected-connections
+             :on-connections-change (fn [new-connections]
+                                      (let [connection-data (mapv (fn [conn]
+                                                                    {:id (:value conn)
+                                                                     :name (:label conn)})
+                                                                  new-connections)]
+                                        (reset! selected-connections connection-data)))}]]]]]])))
 
 (defn edit-form [group-id]
-  (let [connections (rf/subscribe [:connections])
-        plugin-details (rf/subscribe [:plugins->plugin-details])
+  (let [plugin-details (rf/subscribe [:plugins->plugin-details])
         group-connections (rf/subscribe [:access-control/group-permissions group-id])
         selected-connections (r/atom [])
         is-submitting (r/atom false)
-        connections-loaded? (r/atom false)
         scroll-pos (r/atom 0)]
 
     ;; Initialize selected connections when component mounts
     (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
-    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn [group-id]
       (when (and (empty? @selected-connections)
-                 @connections
                  (seq @group-connections)
-                 (not= (:status @plugin-details) :loading)
-                 (not @connections-loaded?))
-        (reset! connections-loaded? true)
-        (reset! selected-connections
-                (->> @group-connections
-                     (map #(hash-map "value" (:id %) "label" (:name %)))
-                     vec)))
+                 (not= (:status @plugin-details) :loading))
+        (reset! selected-connections @group-connections))
 
       (let [plugin (:plugin @plugin-details)
-            plugin-loaded? (and plugin (:name plugin) (= (:name plugin) "access_control"))
-            connections-loaded? (and @connections (map? @connections) (:results @connections))]
+            plugin-loaded? (and plugin (:name plugin) (= (:name plugin) "access_control"))]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
                               (.preventDefault e)
                               (reset! is-submitting true)
 
-                              (if (and plugin-loaded? connections-loaded?)
-                                (let [connection-ids (map #(get % "value") (or @selected-connections []))
-                                      all-results (or (:results @connections) [])
-                                      selected-conns (filter #(some #{(:id %)} connection-ids) all-results)]
+                              (if plugin-loaded?
+                                (do
                                   (rf/dispatch [:access-control/add-group-permissions
                                                 {:group-id group-id
-                                                 :connections selected-conns
+                                                 :connections @selected-connections
                                                  :plugin plugin}])
                                   (js/setTimeout #(rf/dispatch [:navigate :access-control]) 1000))
 
                                 (do
                                   (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
-                                  (rf/dispatch [:connections->get-connections {:force-refresh? true}])
                                   (rf/dispatch [:show-snackbar {:level :error
                                                                 :text "Failed to save group permissions"}])
                                   (js/setTimeout #(reset! is-submitting false) 1000))))}
@@ -164,7 +144,7 @@
                "Delete"]
               [:> Button {:size "3"
                           :loading @is-submitting
-                          :disabled (or @is-submitting (not plugin-loaded?) (not connections-loaded?))
+                          :disabled (or @is-submitting (not plugin-loaded?))
                           :type "submit"}
                "Save"]]]]]
 
@@ -192,15 +172,15 @@
               "Select which connections this group should have access to."]]
 
             [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [multi-select/main
-              {:id "connections-input"
-               :name "connections-input"
-               :label "Connections"
-               :options (mapv #(hash-map "value" (:id %) "label" (:name %))
-                              (:results @connections))
-               :default-value @selected-connections
-               :placeholder "Select connections..."
-               :on-change #(reset! selected-connections (js->clj %))}]]]]]]))))
+             [connections-select/main
+              {:connection-ids (mapv :id @selected-connections)
+               :selected-connections @selected-connections
+               :on-connections-change (fn [new-connections]
+                                        (let [connection-data (mapv (fn [conn]
+                                                                      {:id (:value conn)
+                                                                       :name (:label conn)})
+                                                                    new-connections)]
+                                          (reset! selected-connections connection-data)))}]]]]]]))))
 
 (defn main [mode & [params]]
   (case mode

@@ -160,9 +160,8 @@
    :on-custom-rule-add (fn [rules-atom]
                          (swap! rules-atom conj (create-empty-custom-rule)))
 
-   :on-connections-change (fn [connections]
-                            (let [connection-ids (mapv #(get % "value") (js->clj connections))]
-                              (reset! (:connection_ids state) connection-ids)))})
+   :on-connections-change (fn [connection-ids]
+                            (reset! (:connection_ids state) connection-ids))})
 
 (defn remove-empty-rules [rules]
   (remove (fn [rule]

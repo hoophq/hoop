@@ -531,12 +531,14 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 
 // ConnectionOption each attribute set applies an AND operator logic
 type ConnectionFilterOption struct {
-	Type        string
-	SubType     string
-	ManagedBy   string
-	AgentID     string
-	Tags        []string
-	TagSelector string
+	Type          string
+	SubType       string
+	ManagedBy     string
+	AgentID       string
+	Tags          []string
+	TagSelector   string
+	Search        string
+	ConnectionIDs []string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -548,6 +550,27 @@ func (o ConnectionFilterOption) GetTagsAsArray() any {
 		v = append(v, val)
 	}
 	return v
+}
+
+func (o ConnectionFilterOption) GetConnectionIDsAsArray() any {
+	if len(o.ConnectionIDs) == 0 {
+		return nil
+	}
+	var v pq.StringArray
+	for _, val := range o.ConnectionIDs {
+		v = append(v, val)
+	}
+	return v
+}
+
+func (o ConnectionFilterOption) GetSearchPattern() string {
+	term := strings.TrimSpace(o.Search)
+	if term == "" {
+		return "%"
+	}
+	term = strings.ReplaceAll(term, `\`, `\\`)
+	term = strings.ReplaceAll(term, `%`, `\\%`)
+	return fmt.Sprintf("%%%s%%", term)
 }
 
 func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string, err error) {
@@ -598,6 +621,8 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	}
 	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
+	connectionIDsAsArray := opts.GetConnectionIDsAsArray()
+	searchPattern := opts.GetSearchPattern()
 	var items []Connection
 	// TODO: try changing to @ syntax
 	err = DB.Raw(`
@@ -644,11 +669,21 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		-- connection ids filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c.id::text = ANY((?)::text[])
+			ELSE true
+		END AND
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
 			ELSE true
 		END AND
+		(
+			c.name ILIKE ?
+			OR c.type::text ILIKE ?
+			OR COALESCE(c.subtype, '') ILIKE ?
+		) AND
 		(
 			-- return all results if no tag selectors provided
 			(SELECT COUNT(*) FROM tag_selector_keys) = 0
@@ -679,7 +714,9 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {
 		return nil, err
@@ -748,4 +785,126 @@ func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
 		Where("org_id = ? AND name = ?", orgID, connectionName).
 		Updates(map[string]any{"status": status}).
 		Error
+}
+
+type ConnectionPaginationOption struct {
+	ConnectionFilterOption
+	Page     int
+	PageSize int
+}
+
+// ListConnectionsPaginated retrieves a paginated list of connections based on the provided filter options.
+func ListConnectionsPaginated(orgID string, userGroups []string, opts ConnectionPaginationOption) ([]Connection, int64, error) {
+	setConnectionOptionDefaults(&opts.ConnectionFilterOption)
+	tagSelectorJsonData, err := opts.ParseTagSelectorQuery()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	userGroupsPgArray := pq.StringArray(userGroups)
+	tagsAsArray := opts.GetTagsAsArray()
+	connectionIDsAsArray := opts.GetConnectionIDsAsArray()
+	searchPattern := opts.GetSearchPattern()
+
+	offset := 0
+	if opts.Page > 1 {
+		offset = (opts.Page - 1) * opts.PageSize
+	}
+
+	var results []struct {
+		Connection
+		Total int64 `gorm:"column:total"`
+	}
+
+	err = DB.Raw(`
+		WITH tag_selector_keys(key, op, val) AS (
+			SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
+		)
+		SELECT
+			c.id, c.org_id, c.name, c.type, c.subtype, c.status,
+			c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect,
+			c.access_schema, c.managed_by, c.command, c.jira_issue_template_id,
+			COUNT(*) OVER() AS total
+		FROM private.connections c
+		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+		LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
+		WHERE c.org_id = ? AND
+		CASE
+			-- do not apply any access control if the plugin is not enabled or it is an admin user
+			WHEN ac.id IS NULL OR (?)::BOOL THEN true
+			-- allow if any of the input user groups are in the access control list
+			ELSE acc.config && (?)::text[]
+		END AND
+		(
+			COALESCE(c.type::text, '') LIKE ? AND
+			COALESCE(c.subtype, '') LIKE ? AND
+			COALESCE(c.agent_id::text, '') LIKE ? AND
+			COALESCE(c.managed_by, '') LIKE ? AND
+			-- connection ids filter
+			CASE WHEN (?)::text[] IS NOT NULL
+				THEN c.id::text = ANY((?)::text[])
+				ELSE true
+			END AND
+			-- legacy tags
+			CASE WHEN (?)::text[] IS NOT NULL
+				THEN c._tags @> (?)::text[]
+				ELSE true
+			END AND
+			(
+				c.name ILIKE ?
+				OR c.type::text ILIKE ?
+				OR COALESCE(c.subtype, '') ILIKE ?
+			) AND
+			(
+				-- return all results if no tag selectors provided
+				(SELECT COUNT(*) FROM tag_selector_keys) = 0
+				OR
+				-- AND logic: each tag selector criterion must be satisfied
+				NOT EXISTS (
+					-- Find any tag selector that is NOT satisfied by this connection
+					SELECT 1 FROM tag_selector_keys tsk
+					WHERE NOT EXISTS (
+						SELECT 1
+						FROM private.connection_tags_association cta
+						JOIN private.connection_tags ct ON ct.id = cta.tag_id
+						WHERE cta.connection_id = c.id
+						AND ct.key = tsk.key
+						AND CASE
+							WHEN tsk.op = '=' THEN ct.value = tsk.val
+							WHEN tsk.op = '!=' THEN ct.value != tsk.val
+							ELSE false
+						END
+					)
+				)
+			)
+		) ORDER BY c.name ASC
+		LIMIT ? OFFSET ?`,
+		tagSelectorJsonData,
+		orgID, orgID,
+		isAdmin, userGroupsPgArray,
+		opts.Type,
+		opts.SubType,
+		opts.AgentID,
+		opts.ManagedBy,
+		connectionIDsAsArray, connectionIDsAsArray,
+		tagsAsArray, tagsAsArray,
+		searchPattern, searchPattern, searchPattern,
+		opts.PageSize, offset,
+	).Find(&results).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(results) == 0 {
+		return []Connection{}, 0, nil
+	}
+
+	total := results[0].Total
+	items := make([]Connection, len(results))
+	for i, result := range results {
+		items[i] = result.Connection
+	}
+
+	return items, total, nil
 }

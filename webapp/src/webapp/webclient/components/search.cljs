@@ -28,7 +28,7 @@
                               " focus:pl-3 focus:pr-8 "
                               " dark:text-gray-12 ")
                   :id input-id
-                  :placeholder "Search connections"
+                  :placeholder "Search runbooks"
                   :name "header-search"
                   :autoComplete "off"
                   :value @search-term

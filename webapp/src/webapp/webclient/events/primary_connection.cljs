@@ -1,7 +1,6 @@
 (ns webapp.webclient.events.primary-connection
   (:require
    [clojure.edn :refer [read-string]]
-   [clojure.string :as string]
    [re-frame.core :as rf]))
 
 ;; Events

@@ -70,7 +70,6 @@
          "Additional OAuth scopes to request during login."]]
 
        [:> Box {:grid-column "span 5 / span 5"}
-        (println (:custom-scopes @config))
         [multi-select/creatable-select
          {:label "Groups"
           :options (array->select-options ["email" "profile"])

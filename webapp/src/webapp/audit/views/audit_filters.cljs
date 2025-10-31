@@ -1,22 +1,23 @@
 (ns webapp.audit.views.audit-filters
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
             ["@radix-ui/themes" :refer [Popover Button]]
+            ["lucide-react" :refer [Search]]
             ["react-tailwindcss-datepicker" :as Datepicker]
             [clojure.string :as string]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.components.infinite-scroll :refer [infinite-scroll]]
             [webapp.components.searchbox :as searchbox]
             [webapp.connections.constants :as connection-constants]))
 
 (defn- form [filters]
-  (let [user (rf/subscribe [:users->current-user])
-        users (rf/subscribe [:users])
+  (let [users (rf/subscribe [:users])
         searched-users (r/atom nil)
         searched-criteria-users (r/atom "")
 
-        connections (rf/subscribe [:connections])
-        searched-connections (r/atom nil)
-        searched-criteria-connections (r/atom "")
+        connections (rf/subscribe [:connections->pagination])
+        search-term-connections (r/atom "")
+        search-debounce-timer-connections (r/atom nil)
 
         connection-types-options [{:text "Custom" :value "custom"}
                                   {:text "Database" :value "database"}
@@ -42,9 +43,10 @@
                           (rf/dispatch [:audit->filter-sessions {"start_date" (iso-date "start_date" (.-startDate date))
                                                                  "end_date" (iso-date "end_date" (.-endDate date))}])))]
     (fn [filters]
-      (let [connections-search-results (if (empty? @searched-connections)
-                                         (:results @connections)
-                                         @searched-connections)
+      (let [connections-data (or (:data @connections) [])
+            connections-loading? (:loading @connections)
+            has-more? (:has-more? @connections)
+            current-page (:current-page @connections 1)
             users-search-results (if (empty? @searched-users)
                                    (users-options (sort-by :name @users))
                                    @searched-users)
@@ -111,60 +113,89 @@
            [:> Popover.Trigger {:asChild true}
             [:> Button {:size "3"
                         :variant (if (get filters "connection") "soft" "surface")
-                        :color "gray"
-                        :on-click (fn []
-                                    (reset! searched-connections nil)
-                                    (reset! searched-criteria-connections ""))}
+                        :color "gray"}
              [:> hero-micro-icon/ArrowsRightLeftIcon {:class "w-4 h-4"}]
              [:span {:class "text-sm font-semibold"}
-              "Connection"]
+              (if (get filters "connection")
+                (get filters "connection")
+                "Connection")]
              (when (get filters "connection")
                [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
                 [:span {:class "text-white text-xxs font-bold"}
                  "1"]])]]
-           [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
-            [:div {:class "w-full max-h-96 overflow-y-auto"}
+           [:> Popover.Content {:size "2" :style {:width "384px"}}
+            [:div {:class "w-full max-h-96"}
              [:div
-              [:div {:class "mb-2"}
-               [searchbox/main
-                {:options (:results @connections)
-                 :display-key :name
-                 :variant :small
-                 :searchable-keys [:name :type :tags]
-                 :on-change-results-cb #(reset! searched-connections %)
-                 :hide-results-list true
-                 :placeholder "Search"
-                 :name "connection-search"
-                 :on-change #(reset! searched-criteria-connections %)
-                 :loading? (empty? (:results @connections))
-                 :size :small}]]
+              ;; Clear filter option
+              (when (get filters "connection")
+                [:div {:class "mb-2 pb-2 border-b border-gray-200"}
+                 [:div {:class (str "flex cursor-pointer items-center gap-2 "
+                                    "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                        :on-click (fn []
+                                    (rf/dispatch [:audit->filter-sessions {"connection" ""}]))}
+                  [:span "Clear filter"]]])
 
-              (if (and (empty? @searched-connections)
-                       (> (count @searched-criteria-connections) 0))
-                [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
-                 "No connections with this criteria"]
+              [:div {:class "mb-2 relative"}
+               [:input {:type "text"
+                        :class "w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md text-sm"
+                        :placeholder "Search connections"
+                        :value @search-term-connections
+                        :onChange (fn [e]
+                                    (let [value (-> e .-target .-value)
+                                          trimmed (string/trim value)
+                                          should-search? (or (string/blank? trimmed)
+                                                             (> (count trimmed) 2))
+                                          request (cond-> {:page 1 :force-refresh? true}
+                                                    (seq trimmed) (assoc :search trimmed))]
+                                      (reset! search-term-connections value)
+                                      (when @search-debounce-timer-connections
+                                        (js/clearTimeout @search-debounce-timer-connections))
+                                      (if should-search?
+                                        (reset! search-debounce-timer-connections
+                                                (js/setTimeout
+                                                 (fn []
+                                                   (rf/dispatch [:connections/get-connections-paginated request]))
+                                                 300))
+                                        (reset! search-debounce-timer-connections nil))))}]
+               [:> Search {:class "absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" :size 16}]]
 
+              (if (> (count connections-data) 0)
                 [:div {:class "relative"}
-                 [:ul
-                  (doall
-                   (for [connection connections-search-results]
-                     ^{:key (:name connection)}
-                     [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
-                                       "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
-                           :on-click (fn []
-                                       (rf/dispatch [:audit->filter-sessions
-                                                     {"connection" (if (= (:name connection) (get filters "connection"))
-                                                                     ""
-                                                                     (:name connection))}]))}
-                      [:div {:class "w-full flex justify-between items-center gap-regular"}
-                       [:div {:class "flex items-center gap-small"}
-                        [:figure {:class "w-5"}
-                         [:img {:src  (connection-constants/get-connection-icon connection)
-                                :class "w-9"}]]
-                        [:span {:class "block truncate"}
-                         (:name connection)]]
-                       (when (= (:name connection) (get filters "connection"))
-                         [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]]
+                 [infinite-scroll
+                  {:on-load-more (fn []
+                                   (when (not connections-loading?)
+                                     (let [next-page (inc current-page)
+                                           active-search (:active-search @connections)
+                                           next-request (cond-> {:page next-page
+                                                                 :force-refresh? false}
+                                                          (not (string/blank? active-search)) (assoc :search active-search))]
+                                       (rf/dispatch [:connections/get-connections-paginated next-request]))))
+                   :has-more? has-more?
+                   :loading? connections-loading?}
+                  [:ul
+                   (doall
+                    (for [connection connections-data]
+                      ^{:key (:name connection)}
+                      [:li {:class (str "flex justify-between cursor-pointer items-center gap-2 "
+                                        "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                            :on-click (fn []
+                                        (rf/dispatch [:audit->filter-sessions
+                                                      {"connection" (if (= (:name connection) (get filters "connection"))
+                                                                      ""
+                                                                      (:name connection))}]))}
+                       [:div {:class "w-full flex justify-between items-center gap-3"}
+                        [:div {:class "flex items-center gap-2"}
+                         [:figure {:class "w-4"}
+                          [:img {:src (connection-constants/get-connection-icon connection)
+                                 :class "w-full"}]]
+                         [:span {:class "block truncate"}
+                          (:name connection)]]
+                        (when (= (:name connection) (get filters "connection"))
+                          [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]]]
+                [:div {:class "px-3 py-4 text-xs text-gray-700 italic"}
+                 (if (seq @search-term-connections)
+                   "No connections found matching your search"
+                   "No connections with this criteria")])]]]]]
 
           [:> Popover.Root
            [:> Popover.Trigger {:asChild true}
@@ -243,10 +274,10 @@
                            :showShortcuts true
                            :onChange (fn [v]
                                        (reset! date v)
-                                       (dispatch-date v))}]]]]))))
+                                       (dispatch-date v))}]]]))))
 
 (defn audit-filters [_]
-  (rf/dispatch [:connections->get-connections])
+  (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
   (rf/dispatch [:users->get-users])
   (fn [filters]
     [form filters]))

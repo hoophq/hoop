@@ -30,6 +30,11 @@ func TestConnectionFilterOptions(t *testing.T) {
 			want: models.ConnectionFilterOption{},
 		},
 		{
+			msg:  "it must accept search parameter",
+			opts: map[string]string{"search": "  database "},
+			want: models.ConnectionFilterOption{Search: "database "},
+		},
+		{
 			msg:     "it must error with invalid option values",
 			opts:    map[string]string{"subtype": "value with space"},
 			wantErr: errInvalidOptionVal.Error(),
@@ -48,6 +53,26 @@ func TestConnectionFilterOptions(t *testing.T) {
 			msg:     "it must error when tag values are empty",
 			opts:    map[string]string{"tags": "foo,,,,"},
 			wantErr: errInvalidOptionVal.Error(),
+		},
+		{
+			msg:  "it must accept valid connection IDs",
+			opts: map[string]string{"connection_ids": "550e8400-e29b-41d4-a716-446655440000,6ba7b810-9dad-11d1-80b4-00c04fd430c8"},
+			want: models.ConnectionFilterOption{ConnectionIDs: []string{"550e8400-e29b-41d4-a716-446655440000", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"}},
+		},
+		{
+			msg:  "it must accept single connection ID",
+			opts: map[string]string{"connection_ids": "550e8400-e29b-41d4-a716-446655440000"},
+			want: models.ConnectionFilterOption{ConnectionIDs: []string{"550e8400-e29b-41d4-a716-446655440000"}},
+		},
+		{
+			msg:     "it must error with invalid connection ID format",
+			opts:    map[string]string{"connection_ids": "invalid-uuid,550e8400-e29b-41d4-a716-446655440000"},
+			wantErr: "invalid connection ID format: invalid-uuid",
+		},
+		{
+			msg:  "it must handle empty connection_ids parameter",
+			opts: map[string]string{"connection_ids": ""},
+			want: models.ConnectionFilterOption{},
 		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {

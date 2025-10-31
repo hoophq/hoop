@@ -80,7 +80,6 @@
   (let [state (r/atom {})
         previous-template-name (r/atom nil)
         update-state #(swap! state assoc %1 %2)]
-    (rf/dispatch [:connections->get-connections])
 
     (let [form-ref (r/atom nil)
           prev-execute (r/atom false)]
