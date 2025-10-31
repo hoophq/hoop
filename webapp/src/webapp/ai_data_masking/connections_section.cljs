@@ -22,7 +22,7 @@
         (when (and (seq current-connection-ids)
                    (not @connections-loaded)
                    (empty? stored-connections)
-                   (not (get-in @ai-data-masking-active [:data :connections-loading])))
+                   (not (get-in @ai-data-masking-active [:data :connections-load-state :loading])))
           (reset! connections-loaded true)
           (rf/dispatch [:ai-data-masking/get-selected-connections current-connection-ids]))
 

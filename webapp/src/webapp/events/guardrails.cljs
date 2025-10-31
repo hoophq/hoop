@@ -54,6 +54,7 @@
               convert-preset-rules
               remove-empty-rules)})
 
+;; TODO: Handle errors properly
 (rf/reg-event-fx
  :guardrails->create
  (fn [_ [_ guardrails]]
@@ -86,7 +87,7 @@
                                    (rf/dispatch [:guardrails->get-all])
                                    (rf/dispatch [:navigate :guardrails]))
                      :on-failure (fn [error]
-                                   (println :guardrails->update-by-id guardrails error))}]]]})))
+                                   (println :guardrails->update-by-id guardrails error))}]]]}))) 
 
 (rf/reg-event-fx
  :guardrails->delete-by-id
@@ -127,7 +128,7 @@
                         {:output [{:type "" :rule "" :details ""}]}))]
      {:db (assoc db :guardrails->active-guardrail
                  {:status :ready
-                  :data (merge {:connections nil :connections-loading false :connections-error nil} rule-schema)})})))
+                  :data (merge {:connections nil :connections-load-state {:loading false :remaining 0 :acc [] :errors []} :connections-error nil} rule-schema)})})))
 
 (rf/reg-event-fx
  :guardrails->clear-active-guardrail
@@ -179,39 +180,41 @@
                                                        (rf/dispatch [:guardrails/accumulate-selected-connections-error error]))}]])
                              chunks)]
        {:db (update-in db [:guardrails->active-guardrail :data] merge
-                       {:connections-loading {:remaining num-batches :acc [] :errors []}})
+                       {:connections-load-state {:loading true :remaining num-batches :acc [] :errors []}})
         :fx fx-requests})
      {:db (update-in db [:guardrails->active-guardrail :data] merge
-                     {:connections [] :connections-loading {:remaining 0 :acc [] :errors []}})})))
+                     {:connections [] :connections-load-state {:loading false :remaining 0 :acc [] :errors []}})})))
 
 (rf/reg-event-fx
  :guardrails/accumulate-selected-connections
  (fn [{:keys [db]} [_ connections]]
-   (let [{:keys [remaining acc]} (get-in db [:guardrails->active-guardrail :data :connections-loading] {:remaining 0 :acc []})
+   (let [{:keys [remaining acc errors]} (get-in db [:guardrails->active-guardrail :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
          new-remaining (dec remaining)
          new-acc (into acc connections)]
      (if (pos? new-remaining)
        {:db (update-in db [:guardrails->active-guardrail :data] merge
-                       {:connections-loading {:remaining new-remaining
-                                              :acc new-acc
-                                              :errors (:errors (get-in db [:guardrails->active-guardrail :data :connections-loading]))}})}
+                       {:connections-load-state {:loading true
+                                                 :remaining new-remaining
+                                                 :acc new-acc
+                                                 :errors errors}})}
        {:db (update-in db [:guardrails->active-guardrail :data] merge
-                       {:connections-loading false})
+                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
         :fx [[:dispatch [:guardrails/set-selected-connections new-acc]]]}))))
 
 (rf/reg-event-fx
  :guardrails/accumulate-selected-connections-error
  (fn [{:keys [db]} [_ error]]
-   (let [{:keys [remaining acc errors]} (get-in db [:guardrails->active-guardrail :data :connections-loading] {:remaining 0 :acc [] :errors []})
+   (let [{:keys [remaining acc errors]} (get-in db [:guardrails->active-guardrail :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
          new-remaining (dec remaining)
          new-errors (conj (vec errors) error)]
      (if (pos? new-remaining)
        {:db (update-in db [:guardrails->active-guardrail :data] merge
-                       {:connections-loading {:remaining new-remaining
-                                              :acc acc
-                                              :errors new-errors}})}
+                       {:connections-load-state {:loading true
+                                                 :remaining new-remaining
+                                                 :acc acc
+                                                 :errors new-errors}})}
        {:db (update-in db [:guardrails->active-guardrail :data] merge
-                       {:connections-loading false})
+                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
         :fx [[:dispatch [:guardrails/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db

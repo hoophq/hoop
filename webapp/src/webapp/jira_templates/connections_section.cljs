@@ -28,7 +28,7 @@
         (when (and (seq current-connection-ids)
                    (not @connections-loaded)
                    (empty? stored-connections)
-                   (not (get-in @jira-templates-active [:data :connections-loading])))
+                   (not (get-in @jira-templates-active [:data :connections-load-state :loading])))
           (reset! connections-loaded true)
           (rf/dispatch [:jira-templates/get-selected-connections current-connection-ids]))
 

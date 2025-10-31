@@ -240,7 +240,7 @@
  (fn [db [_ template]]
    (assoc db :jira-templates->active-template
           {:status :ready
-           :data (merge {:connections nil :connections-loading false :connections-error nil} template)})))
+           :data (merge {:connections nil :connections-load-state {:loading false :remaining 0 :acc [] :errors []} :connections-error nil} template)})))
 
 
 (rf/reg-event-db
@@ -397,39 +397,41 @@
                                                        (rf/dispatch [:jira-templates/accumulate-selected-connections-error error]))}]])
                              chunks)]
        {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-loading {:remaining num-batches :acc [] :errors []}})
+                       {:connections-load-state {:loading true :remaining num-batches :acc [] :errors []}})
         :fx fx-requests})
      {:db (update-in db [:jira-templates->active-template :data] merge
-                     {:connections [] :connections-loading {:remaining 0 :acc [] :errors []}})})))
+                     {:connections [] :connections-load-state {:loading false :remaining 0 :acc [] :errors []}})})))
 
 (rf/reg-event-fx
  :jira-templates/accumulate-selected-connections
  (fn [{:keys [db]} [_ connections]]
-   (let [{:keys [remaining acc]} (get-in db [:jira-templates->active-template :data :connections-loading] {:remaining 0 :acc []})
+   (let [{:keys [remaining acc errors]} (get-in db [:jira-templates->active-template :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
          new-remaining (dec remaining)
          new-acc (into acc connections)]
      (if (pos? new-remaining)
        {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-loading {:remaining new-remaining
-                                              :acc new-acc
-                                              :errors (:errors (get-in db [:jira-templates->active-template :data :connections-loading]))}})}
+                       {:connections-load-state {:loading true
+                                                 :remaining new-remaining
+                                                 :acc new-acc
+                                                 :errors errors}})}
        {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-loading false})
+                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
         :fx [[:dispatch [:jira-templates/set-selected-connections new-acc]]]}))))
 
 (rf/reg-event-fx
  :jira-templates/accumulate-selected-connections-error
  (fn [{:keys [db]} [_ error]]
-   (let [{:keys [remaining acc errors]} (get-in db [:jira-templates->active-template :data :connections-loading] {:remaining 0 :acc [] :errors []})
+   (let [{:keys [remaining acc errors]} (get-in db [:jira-templates->active-template :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
          new-remaining (dec remaining)
          new-errors (conj (vec errors) error)]
      (if (pos? new-remaining)
        {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-loading {:remaining new-remaining
-                                             :acc acc
-                                             :errors new-errors}})}
+                       {:connections-load-state {:loading true
+                                                 :remaining new-remaining
+                                                 :acc acc
+                                                 :errors new-errors}})}
        {:db (update-in db [:jira-templates->active-template :data] merge
-                       {:connections-loading false})
+                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
         :fx [[:dispatch [:jira-templates/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db

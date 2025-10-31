@@ -87,8 +87,11 @@
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
+        
+        (if (= :loading (:status @guardrails->active-guardrail))
+          [loading]
+          [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos])
+        
         (finally
-          (.removeEventListener js/window "scroll" handle-scroll)))
-      (if (= :loading (:status @guardrails->active-guardrail))
-        [loading]
-        [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos]))))
+          (.removeEventListener js/window "scroll" handle-scroll)
+          (rf/dispatch [:guardrails->clear-active-guardrail]))))))

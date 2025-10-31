@@ -75,12 +75,11 @@
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
-        (finally
-          (.removeEventListener js/window "scroll" handle-scroll)))
-
-      (r/with-let [_ nil]
+        
         (if (= :loading (:status @ai-data-masking))
           [loading]
           [ai-data-masking-form form-type (:data @ai-data-masking) scroll-pos])
+        
         (finally
+          (.removeEventListener js/window "scroll" handle-scroll)
           (rf/dispatch [:ai-data-masking->clear-active-rule]))))))

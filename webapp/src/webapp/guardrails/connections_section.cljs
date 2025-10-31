@@ -28,7 +28,7 @@
         (when (and (seq current-connection-ids)
                    (not @connections-loaded)
                    (empty? stored-connections)
-                   (not (get-in @guardrails-active [:data :connections-loading])))
+                   (not (get-in @guardrails-active [:data :connections-load-state :loading])))
           (reset! connections-loaded true)
           (rf/dispatch [:guardrails/get-selected-connections current-connection-ids]))
 

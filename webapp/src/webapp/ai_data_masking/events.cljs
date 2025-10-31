@@ -43,7 +43,7 @@
    (-> db
        (assoc-in [:ai-data-masking :active-rule :status] :success)
        (update-in [:ai-data-masking :active-rule :data] merge
-                  {:connections nil :connections-loading false :connections-error nil}
+                  {:connections nil :connections-load-state {:loading false :remaining 0 :acc [] :errors []} :connections-error nil}
                   data))))
 
 (rf/reg-event-db
@@ -167,39 +167,41 @@
                                                        (rf/dispatch [:ai-data-masking/accumulate-selected-connections-error error]))}]])
                              chunks)]
        {:db (update-in db [:ai-data-masking :active-rule :data] merge
-                       {:connections-loading {:remaining num-batches :acc [] :errors []}})
+                       {:connections-load-state {:loading true :remaining num-batches :acc [] :errors []}})
         :fx fx-requests})
      {:db (update-in db [:ai-data-masking :active-rule :data] merge
-                     {:connections [] :connections-loading {:remaining 0 :acc [] :errors []}})})))
+                     {:connections [] :connections-load-state {:loading false :remaining 0 :acc [] :errors []}})})))
 
 (rf/reg-event-fx
  :ai-data-masking/accumulate-selected-connections
  (fn [{:keys [db]} [_ connections]]
-   (let [{:keys [remaining acc]} (get-in db [:ai-data-masking :active-rule :data :connections-loading] {:remaining 0 :acc []})
+   (let [{:keys [remaining acc errors]} (get-in db [:ai-data-masking :active-rule :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
          new-remaining (dec remaining)
          new-acc (into acc connections)]
      (if (pos? new-remaining)
        {:db (update-in db [:ai-data-masking :active-rule :data] merge
-                       {:connections-loading {:remaining new-remaining
-                                              :acc new-acc
-                                              :errors (:errors (get-in db [:ai-data-masking :active-rule :data :connections-loading]))}})}
+                       {:connections-load-state {:loading true
+                                                 :remaining new-remaining
+                                                 :acc new-acc
+                                                 :errors errors}})}
        {:db (update-in db [:ai-data-masking :active-rule :data] merge
-                       {:connections-loading false})
+                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
         :fx [[:dispatch [:ai-data-masking/set-selected-connections new-acc]]]}))))
 
 (rf/reg-event-fx
  :ai-data-masking/accumulate-selected-connections-error
  (fn [{:keys [db]} [_ error]]
-   (let [{:keys [remaining acc errors]} (get-in db [:ai-data-masking :active-rule :data :connections-loading] {:remaining 0 :acc [] :errors []})
+   (let [{:keys [remaining acc errors]} (get-in db [:ai-data-masking :active-rule :data :connections-load-state] {:loading false :remaining 0 :acc [] :errors []})
          new-remaining (dec remaining)
          new-errors (conj (vec errors) error)]
      (if (pos? new-remaining)
        {:db (update-in db [:ai-data-masking :active-rule :data] merge
-                       {:connections-loading {:remaining new-remaining
-                                              :acc acc
-                                              :errors new-errors}})}
+                       {:connections-load-state {:loading true
+                                                 :remaining new-remaining
+                                                 :acc acc
+                                                 :errors new-errors}})}
        {:db (update-in db [:ai-data-masking :active-rule :data] merge
-                       {:connections-loading false})
+                       {:connections-load-state {:loading false :remaining 0 :acc [] :errors []}})
         :fx [[:dispatch [:ai-data-masking/set-selected-connections-error new-errors]]]}))))
 
 (rf/reg-event-db
