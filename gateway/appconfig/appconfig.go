@@ -51,9 +51,12 @@ type Config struct {
 	webappUsersManagement           string
 	webappStaticUIPath              string
 	disableSessionsDownload         bool
+	gatewayUseTLS                   bool
 	gatewayTLSCa                    string
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
+	gatewayAllowPlainText           bool
+	gatewaySkipTLSVerify            bool
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
 
@@ -170,6 +173,11 @@ func Load() error {
 		dlpMode = "best-effort"
 	}
 
+	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
+	// For backwards compatibility, we also allow plaintext if no TLS envs are set
+	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || gatewayTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
+	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
+
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -198,9 +206,12 @@ func Load() error {
 		webappStaticUIPath:              webappStaticUiPath,
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
+		gatewayUseTLS:                   gatewayUseTLS,
 		gatewayTLSCa:                    gatewayTLSCa,
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
+		gatewayAllowPlainText:           allowPlainText,
+		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
 	}
@@ -348,9 +359,11 @@ func (c Config) MigrationPathFiles() string            { return c.migrationPathF
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
+func (c Config) GatewayUseTLS() bool                   { return c.gatewayUseTLS }
 func (c Config) GatewayTLSCa() string                  { return c.gatewayTLSCa }
 func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }
+func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }
 func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
 func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
 func (c Config) AskAIApiURL() (u string) {

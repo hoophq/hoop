@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -32,6 +33,14 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 
 func NewHttpClient(tlsCA string) HttpClient {
 	client := httpClient{http.DefaultClient, nil}
+
+	skipVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
+	if skipVerify {
+		client.client.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipVerify},
+		}
+	}
+
 	var certPool *x509.CertPool
 	if tlsCA != "" {
 		certPool = x509.NewCertPool()
@@ -52,9 +61,11 @@ func NewHttpClient(tlsCA string) HttpClient {
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 			TLSClientConfig: &tls.Config{
-				RootCAs: certPool,
+				RootCAs:            certPool,
+				InsecureSkipVerify: skipVerify,
 			},
 		}
 	}
+
 	return &client
 }

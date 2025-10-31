@@ -2,7 +2,9 @@ package rdp
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 	"net"
 	"time"
 
@@ -36,14 +38,14 @@ func GetServerInstance() *RDPProxy {
 	return server
 }
 
-func (r *RDPProxy) Start(listenAddr string) error {
+func (r *RDPProxy) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) error {
 	if _, ok := store.Get(instanceKey).(*RDPProxy); ok && r.listener != nil {
 		return nil
 	}
 
 	log.Infof("starting rdp server proxy at %v", listenAddr)
 	//start new tcp listener for rdp clients
-	server, err := runRDPProxyServer(listenAddr)
+	server, err := runRDPProxyServer(listenAddr, tlsConfig, acceptPlainText)
 	if err != nil {
 		return err
 	}
@@ -68,12 +70,16 @@ func (r *RDPProxy) Stop() error {
 	return nil
 }
 
-func runRDPProxyServer(listenAddr string) (*RDPProxy, error) {
+func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) (*RDPProxy, error) {
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start RDP proxy server at %v, reason=%v", listenAddr, err)
 	}
 
+	if tlsConfig != nil {
+		listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
+	}
+	
 	rdpProxyInstance := &RDPProxy{
 		listener:   listener,
 		listenAddr: listenAddr,

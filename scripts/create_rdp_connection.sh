@@ -66,6 +66,7 @@ fi
 
 echo -e "${YELLOW}🔐 Running hoop config view token...${NC}"
 TOKEN=$(hoop config view token)
+
 if [ $? -ne 0 ] || [ -z "$TOKEN" ]; then
     echo -e "${RED}❌ Hoop login failed${NC}"
     exit 1
@@ -86,7 +87,7 @@ echo -e "${YELLOW}Creating RDP connection: $CONNECTION_NAME${NC}"
 echo -e "${YELLOW}Host: $RDP_HOST${NC}"
 echo -e "${YELLOW}Username: $RDP_USERNAME${NC}"
 
-RESPONSE=$(curl -s -w "\n%{http_code}" \
+RESPONSE=$(curl --http1.1 -ks -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
