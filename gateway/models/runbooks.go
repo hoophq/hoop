@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -62,7 +63,7 @@ func GetUserAvailableRunbooks(orgId string, userGroups []string) ([]string, erro
 
 	var runbookCount int64
 	err := DB.
-		Table("runbook_rules").
+		Table("private.runbook_rules").
 		Where("org_id = ?", orgId).
 		Count(&runbookCount).Error
 	if err != nil {
@@ -74,8 +75,8 @@ func GetUserAvailableRunbooks(orgId string, userGroups []string) ([]string, erro
 
 	var availableRunbooksFromRules [][]string
 	err = DB.
-		Table("runbook_rules").
-		Select("available_runbooks").
+		Table("private.runbook_rules").
+		Select("runbooks").
 		Where("org_id = ? AND (CARDINALITY(user_groups) = 0 OR user_groups && ?)", orgId, userGroups).
 		Scan(&availableRunbooksFromRules).Error
 	if err != nil {
@@ -100,20 +101,38 @@ func GetUserAvailableRunbooks(orgId string, userGroups []string) ([]string, erro
 	return availableRunbooks, nil
 }
 
-func IsUserAllowedToRunRunbook(orgId, connection, runbookPath string, userGroups []string) (bool, error) {
+func IsUserAllowedToRunRunbook(orgId, connection, runbookRepository, runbookName string, userGroups []string) (bool, error) {
 	if slices.Contains(userGroups, types.GroupAdmin) {
 		return true, nil
 	}
 
+	existsRules := false
+	err := DB.Table("private.runbook_rules").
+		Select("1").
+		Where("org_id = ?", orgId).
+		Limit(1).
+		Find(&existsRules).Error
+	if err != nil {
+		return false, err
+	}
+
+	if !existsRules {
+		return true, nil
+	}
+
 	var count int64
-	err := DB.
-		Table("runbook_rules").
+	err = DB.
+		Table("private.runbook_rules").
 		Where(`
 		org_id = ? AND
 		(CARDINALITY(user_groups) = 0 OR user_groups && ?) AND
 		(CARDINALITY(connections) = 0 OR connections && ?) AND
-		(CARDINALITY(available_runbooks) = 0 OR available_runbooks && ?)
-		`, orgId, []string{connection}, userGroups, []string{runbookPath}).
+		(JSONB_ARRAY_LENGTH(runbooks) = 0 OR EXISTS (
+			SELECT 1
+			FROM JSONB_ARRAY_ELEMENTS(runbooks) file
+			WHERE file ->> 'repository' = ? AND file ->> 'name' = ?
+		))
+		`, orgId, pq.StringArray(userGroups), pq.StringArray([]string{connection}), runbookRepository, runbookName).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -123,7 +142,7 @@ func IsUserAllowedToRunRunbook(orgId, connection, runbookPath string, userGroups
 }
 
 func GetRunbookRules(db *gorm.DB, orgID string, offset int, limit int) ([]RunbookRules, error) {
-	query := db.Where("org_id = ?", orgID)
+	query := db.Table("private.runbook_rules").Where("org_id = ?", orgID)
 	if limit > 0 {
 		query = query.Offset(offset).Limit(limit)
 	}
@@ -138,15 +157,19 @@ func GetRunbookRules(db *gorm.DB, orgID string, offset int, limit int) ([]Runboo
 
 func GetRunbookConfigurationByOrgID(db *gorm.DB, orgID string) (*Runbooks, error) {
 	var runbooks Runbooks
-	err := db.Where("org_id = ?", orgID).First(&runbooks).Error
+	err := db.Table("private.runbooks").Where("org_id = ?", orgID).First(&runbooks).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+
 		return nil, err
 	}
 	return &runbooks, nil
 }
 
 func UpsertRunbookConfiguration(db *gorm.DB, runbooks *Runbooks) error {
-	tx := db.Clauses(clause.OnConflict{
+	tx := db.Table("private.runbooks").Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "org_id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"repository_configs": runbooks.RepositoryConfigs,
@@ -159,7 +182,7 @@ func UpsertRunbookConfiguration(db *gorm.DB, runbooks *Runbooks) error {
 
 func GetRunbookRuleByID(db *gorm.DB, orgID, ruleID string) (*RunbookRules, error) {
 	var rule RunbookRules
-	err := db.Where("org_id = ? AND id = ?", orgID, ruleID).First(&rule).Error
+	err := db.Table("private.runbook_rules").Where("org_id = ? AND id = ?", orgID, ruleID).First(&rule).Error
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +190,7 @@ func GetRunbookRuleByID(db *gorm.DB, orgID, ruleID string) (*RunbookRules, error
 }
 
 func UpsertRunbookRule(db *gorm.DB, rule *RunbookRules) error {
-	tx := db.Clauses(clause.OnConflict{
+	tx := db.Table("private.runbook_rules").Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"name":        rule.Name,
@@ -183,6 +206,6 @@ func UpsertRunbookRule(db *gorm.DB, rule *RunbookRules) error {
 }
 
 func DeleteRunbookRule(db *gorm.DB, orgID, ruleID string) error {
-	tx := db.Where("id = ? AND org_id = ?", ruleID, orgID).Delete(&RunbookRules{})
+	tx := db.Table("private.runbook_rules").Where("id = ? AND org_id = ?", ruleID, orgID).Delete(&RunbookRules{})
 	return tx.Error
 }

@@ -38,9 +38,15 @@ func FetchRepository(config *Config) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return BuildRepositoryFromCommit(commit)
+}
+
+func BuildRepositoryFromCommit(commit *object.Commit) (*Repository, error) {
 	if commit.Hash.IsZero() {
 		return nil, fmt.Errorf("commit hash from remote is empty")
 	}
+
 	tree, err := commit.Tree()
 	if err != nil {
 		return nil, fmt.Errorf("failed obtaining tree from commit %v, %v", commit.Hash.String(), err)

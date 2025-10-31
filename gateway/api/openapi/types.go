@@ -1870,6 +1870,7 @@ type RunbookRepository struct {
 	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
 	// Git SSH known hosts for host key verification
 	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
+	GitHookTtl    string `json:"git_hook_ttl" example:"1000"`
 }
 
 type RunbookConfigurationRequest struct {
@@ -1940,4 +1941,27 @@ type RunbookRule struct {
 	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
 	CreatedAt   time.Time         `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	UpdatedAt   time.Time         `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type RunbookExec struct {
+	// Connection name to execute the runbook against
+	ConnectionName string `json:"connection_name" binding:"required" example:"pgdemo"`
+	// Repository name where the runbook is located
+	Repository string `json:"repository" binding:"required" example:"github.com/myorg/myrepo"`
+	// The relative path name of the runbook file from the git source
+	FileName string `json:"file_name" binding:"required" example:"myrunbooks/run-backup.runbook.sql"`
+	// The commit sha reference to obtain the file
+	RefHash string `json:"ref_hash" example:"20320ebbf9fc612256b67dc9e899bbd6e4745c77"`
+	// The parameters of the runbook. It must match with the declared attributes
+	Parameters map[string]string `json:"parameters" example:"amount:10,wallet_id:6736"`
+	// Environment Variables that will be included in the runtime
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	EnvVars map[string]string `json:"env_vars" example:"envvar:PASSWORD:MTIz,filesystem:SECRET_FILE:bXlzZWNyZXQ="`
+	// Additional arguments to pass down to the connection
+	ClientArgs []string `json:"client_args" example:"--verbose"`
+	// Metadata attributes to add in the session
+	Metadata map[string]any `json:"metadata"`
+	// Jira fields to create a Jira issue
+	JiraFields map[string]string `json:"jira_fields"`
 }

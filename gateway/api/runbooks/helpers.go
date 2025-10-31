@@ -23,38 +23,58 @@ type runbookCache struct {
 	cachedAt time.Time
 }
 
-var runbooksCache sync.Map // map[orgId]*runbookCache
+var runbooksCache sync.Map // sync.Map[orgId]map[gitUrl]*runbookCache
 
-func cacheRunbooks(orgId string, commit *object.Commit) {
-	cacheEntry := &runbookCache{
+func setRunbookCache(orgId, gitUrl string, commit *object.Commit) {
+	// tenta obter o mapa interno
+	v, ok := runbooksCache.Load(orgId)
+	var inner map[string]*runbookCache
+	if ok {
+		inner = v.(map[string]*runbookCache)
+	} else {
+		inner = make(map[string]*runbookCache)
+		runbooksCache.Store(orgId, inner)
+	}
+
+	// atualiza o mapa interno
+	inner[gitUrl] = &runbookCache{
 		commit:   commit,
 		cachedAt: time.Now(),
 	}
-	runbooksCache.Store(orgId, cacheEntry)
 }
 
-func getCachedRunbooks(orgId string) *object.Commit {
-	value, exists := runbooksCache.Load(orgId)
-	if !exists {
-		return nil
-	}
+func GetRunbookCache(orgId, gitUrl string) (*object.Commit, bool) {
+	if v, ok := runbooksCache.Load(orgId); ok {
+		inner := v.(map[string]*runbookCache)
+		rb, ok := inner[gitUrl]
 
-	cacheEntry, ok := value.(*runbookCache)
-	if !ok {
-		return nil
-	}
+		if !ok {
+			return nil, false
+		}
 
-	// Invalidate cache if expired
-	if time.Since(cacheEntry.cachedAt) > cacheDuration {
+		// Invalidate cache if expired
+		if time.Since(rb.cachedAt) > cacheDuration {
+			delete(inner, gitUrl)
+			runbooksCache.Store(orgId, inner)
+			return nil, false
+		}
+
+		return rb.commit, ok
+	}
+	return nil, false
+}
+
+func deleteRunbookCache(orgId string, gitUrl string) {
+	if gitUrl == "" {
 		runbooksCache.Delete(orgId)
-		return nil
+		return
 	}
 
-	return cacheEntry.commit
-}
-
-func clearRunbooksCache(orgId string) {
-	runbooksCache.Delete(orgId)
+	if v, ok := runbooksCache.Load(orgId); ok {
+		inner := v.(map[string]*runbookCache)
+		delete(inner, gitUrl)
+		runbooksCache.Store(orgId, inner)
+	}
 }
 
 func slicesHasIntersection[T comparable](a, b []T) bool {
@@ -117,17 +137,17 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 	return connections
 }
 
-func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionList, userGroups []string) (*openapi.RunbookRepositoryList, error) {
-	commit := getCachedRunbooks(orgId)
+func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionList, userGroups []string, removeEmptyConnections bool) (*openapi.RunbookRepositoryList, error) {
+	commit, ok := GetRunbookCache(orgId, config.GetNormalizedGitURL())
 
-	if commit == nil {
+	if !ok {
 		var err error
 		commit, err = runbooks.CloneRepositoryInMemory(config)
 		if err != nil {
 			return nil, err
 		}
 
-		cacheRunbooks(orgId, commit)
+		setRunbookCache(orgId, config.GetNormalizedGitURL(), commit)
 	}
 
 	runbookList := &openapi.RunbookRepositoryList{
@@ -148,6 +168,10 @@ func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.Ru
 		}
 
 		connectionList := getRunbookConnections(rules, connectionList, config.GetNormalizedGitURL(), f.Name, userGroups)
+		if removeEmptyConnections && len(connectionList) == 0 {
+			return nil
+		}
+
 		runbook := &openapi.Runbook{
 			Name:           f.Name,
 			Metadata:       map[string]any{},

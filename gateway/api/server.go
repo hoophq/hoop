@@ -725,9 +725,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	)
 
 	r.GET("/runbooks",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apirunbooks.ListRunbooksV2,
+	)
+	r.POST("/runbooks/exec",
+		r.AuthMiddleware,
+		apirunbooks.RunExecV2,
 	)
 	r.GET("/runbooks/configurations",
 		apiroutes.AdminOnlyAccessRole,
@@ -744,14 +747,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apirunbooks.ListRunbookRules,
 	)
+	r.GET("/runbooks/rules/:id",
+		r.AuthMiddleware,
+		apirunbooks.GetRunbookRule,
+	)
 	r.POST("/runbooks/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apirunbooks.CreateRunbookRule,
-	)
-	r.GET("/runbooks/rules/:id",
-		r.AuthMiddleware,
-		apirunbooks.GetRunbookRule,
 	)
 	r.PUT("/runbooks/rules/:id",
 		apiroutes.AdminOnlyAccessRole,
