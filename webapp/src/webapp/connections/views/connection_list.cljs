@@ -61,19 +61,18 @@
    [:> Popover.Content {:size "2" :style {:width "280px"}}
     [:> Box {:class "w-full max-h-64 overflow-y-auto"}
      [:> Box {:class "space-y-1 px-2 pt-2"}
-      (into []
-            (map (fn [{:keys [id value label]}]
-                   ^{:key id}
-                   [:> Button
-                    {:variant "ghost"
-                     :color "gray"
-                     :class "w-full justify-between gap-2"
-                     :onClick #(on-change (if (= selected-resource value) nil value))}
-                    [:> Text {:size "2" :class "text-gray-12"}
-                     label]
-                    (when (= selected-resource value)
-                      [:> Check {:size 16}])])
-                 resource-types))]]]])
+      (doall
+       (for [{:keys [id value label]} resource-types]
+         ^{:key id}
+         [:> Button
+          {:variant "ghost"
+           :color "gray"
+           :class "w-full justify-between gap-2"
+           :onClick #(on-change (if (= selected-resource value) nil value))}
+          [:> Text {:size "2" :class "text-gray-12"}
+           label]
+          (when (= selected-resource value)
+            [:> Check {:size 16}])]))]]]])
 
 (defn panel [_]
   (let [connections (rf/subscribe [:connections->pagination])
