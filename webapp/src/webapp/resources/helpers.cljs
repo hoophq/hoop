@@ -9,17 +9,6 @@
   []
   (s/includes? (.. js/window -location -pathname) "/onboarding"))
 
-(defn random-resource-name
-  "Generates a random resource name.
-   Returns a string in the format \"<name>-<4 digits>\"
-   Example: \"database-1234\""
-  []
-  (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})
-        characterName (ung/uniqueNamesGenerator #js{:dictionaries #js[ung/animals ung/starWars]
-                                                    :style "lowerCase"
-                                                    :length 1})]
-    (str characterName "-" numberDictionary)))
-
 (defn random-role-name
   "Generates a random role name based on resource type.
    Example: \"postgres-readonly-1234\""
@@ -43,17 +32,19 @@
                 {prefixed-key (js/btoa final-value)})))
        (reduce into {})))
 
-(defn is-special-type?
-  "Check if a resource type requires special handling"
-  [_type subtype]
-  (contains? #{"postgres" "mysql" "mongodb" "mssql" "oracledb" "ssh" "tcp" "httpproxy"}
-             subtype))
+(defn can-open-web-terminal?
+  "Check if a role/connection can open web terminal based on subtype and access modes"
+  [role]
+  (if-not (#{"tcp" "httpproxy" "ssh" "rdp"} (:subtype role))
+    (if (or (= "enabled" (:access_mode_runbooks role))
+            (= "enabled" (:access_mode_exec role)))
+      true
+      false)
+    false))
 
-(defn get-resource-category
-  "Get the category of a resource based on type"
-  [type]
-  (case type
-    "database" "database"
-    "application" "application"
-    "custom" "custom"
-    "custom"))
+(defn can-access-native-client?
+  "Check if a role/connection can access native client based on subtype and access mode"
+  [role]
+  (and (= "enabled" (:access_mode_connect role))
+       (or (= (:subtype role) "postgres")
+           (= (:subtype role) "rdp"))))

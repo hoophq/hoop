@@ -55,6 +55,13 @@
                          [:primary-connection/set-from-details]]]]}
        {}))))
 
+
+(rf/reg-event-fx
+ :primary-connection/clear-selected
+ (fn [{:keys [db]} _]
+   (.removeItem js/localStorage "selected-connection")
+   {:db (assoc-in db [:editor :connections :selected] nil)}))
+
 ;; Set primary connection from loaded details
 (rf/reg-event-fx
  :primary-connection/set-from-details
