@@ -18,8 +18,8 @@ import (
 // @Description  List all Runbook Rules
 // @Tags         Runbooks
 // @Produce      json
-// @Success      200  {object}  []models.RunbookRule
-// @Failure      404,422,500  {object}  HTTPError
+// @Success      200  {object}  []openapi.RunbookRule
+// @Failure      404,422,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules [get]
 func ListRunbookRules(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -47,7 +47,7 @@ func ListRunbookRules(c *gin.Context) {
 // @Produce      json
 // @Param        id  path      string  true  "Runbook Rule ID"
 // @Success      200  {object}  openapi.RunbookRule
-// @Failure      404,422,500  {object}  HTTPError
+// @Failure      404,422,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [get]
 func GetRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -72,9 +72,9 @@ func GetRunbookRule(c *gin.Context) {
 // @Tags         Runbooks
 // @Accept       json
 // @Produce      json
-// @Param        rule  body      models.RunbookRule  true  "Runbook Rule"
+// @Param        rule  body     openapi.RunbookRule  true  "Runbook Rule"
 // @Success      201  {object}  openapi.RunbookRule
-// @Failure      400,422,500  {object}  HTTPError
+// @Failure      400,422,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules [post]
 func CreateRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -107,9 +107,9 @@ func CreateRunbookRule(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        id    path      string              true  "Runbook Rule ID"
-// @Param        rule  body      models.RunbookRule  true  "Runbook Rule"
-// @Success      200  {object}  openapi.RunbookRule
-// @Failure      400,404,422,500  {object}  HTTPError
+// @Param        rule  body      openapi.RunbookRule  true  "Runbook Rule"
+// @Success      200  {object}   openapi.RunbookRule
+// @Failure      400,404,422,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [put]
 func UpdateRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -145,7 +145,7 @@ func UpdateRunbookRule(c *gin.Context) {
 // @Produce      json
 // @Param        id  path      string  true  "Runbook Rule ID"
 // @Success      204  {object}  nil
-// @Failure      404,422,500  {object}  HTTPError
+// @Failure      404,422,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [delete]
 func DeleteRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)

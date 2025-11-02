@@ -92,7 +92,7 @@ func ListRunbooksV2(c *gin.Context) {
 //	@Description	Get Runbook Configuration
 //	@Tags			Runbooks
 //	@Accept			json
-//	@Produce		json {object}	openapi.RunbookConfiguration
+//	@Produce		json
 //	@Success		200			{object}	openapi.RunbookConfiguration
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [get]
@@ -120,7 +120,7 @@ func GetRunbookConfiguration(c *gin.Context) {
 //	@Description	Update Runbook Configuration
 //	@Tags			Runbooks
 //	@Accept			json
-//	@Produce		json {object}	openapi.RunbookConfiguration
+//	@Produce		json
 //	@Param			runbook	body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
 //	@Success		200			{object}	openapi.RunbookConfiguration
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
