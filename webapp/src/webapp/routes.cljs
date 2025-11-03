@@ -28,7 +28,8 @@
                      ["/new" :create-connection]
                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]
                      [["/edit/" :connection-name] :edit-connection]]
-     "/resources" [["/new" :resource-setup-new]]
+     "/resources" [["" :resources]
+                   ["/new" :resource-setup-new]]
      "/client" :editor-plugin
      "/runbooks" :runbooks
      "/dashboard" :dashboard

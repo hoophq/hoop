@@ -38,6 +38,9 @@
    [webapp.resources.views.setup.main :as resource-setup]
    [webapp.resources.views.setup.events.effects]
    [webapp.resources.views.setup.events.subs]
+   [webapp.resources.views.main :as resources-main]
+   [webapp.resources.subs]
+   [webapp.resources.events]
    [webapp.events]
    [webapp.events.resources]
    [webapp.events.agents]
@@ -162,7 +165,7 @@
     (if error
       (rf/dispatch [:navigate :login-hoop])
 
-      (if (and redirect-after-auth (not (empty? redirect-after-auth)))
+      (if (and redirect-after-auth (seq redirect-after-auth))
         (js/setTimeout
          #(do
             (.removeItem js/localStorage "redirect-after-auth")
@@ -378,6 +381,12 @@
                              [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
                               "Connections"]
                              [connections/panel]]])
+
+(defmethod routes/panels :resources-panel []
+  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
+                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
+                              "Resources"]
+                             [resources-main/panel]]])
 
 (defmethod routes/panels :dashboard-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}

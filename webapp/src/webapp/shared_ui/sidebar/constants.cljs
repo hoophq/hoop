@@ -12,6 +12,8 @@
 (def icons-registry
   {"Connections" (fn [& [{:keys [size] :or {size 24}}]]
                    [:> Rotate3d {:size size}])
+   "Resources" (fn [& [{:keys [size] :or {size 24}}]]
+                 [:> Rotate3d {:size size}])
    "Dashboard" (fn [& [{:keys [size] :or {size 24}}]]
                  [:> LayoutDashboard {:size size}])
    "Terminal" (fn [& [{:keys [size] :or {size 24}}]]
@@ -65,7 +67,17 @@
 
 ;; Menu principal
 (def main-routes
-  [{:name "Connections"
+  [{:name "Resources"
+    :label "Resources"
+    :icon (get icons-registry "Resources")
+    :uri (routes/url-for :resources)
+    :navigate :resources
+    :free-feature? true
+    :admin-only? false
+    :badge (fn []
+             [:> Badge {:variant "solid" :color "blue" :size "1"}
+              "NEW"])}
+   {:name "Connections"
     :label "Connections"
     :icon (get icons-registry "Connections")
     :uri (routes/url-for :connections)
