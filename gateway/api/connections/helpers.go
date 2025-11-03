@@ -83,6 +83,50 @@ func coerceToAnyMap(src map[string]string) map[string]any {
 	return dst
 }
 
+func validatePatchConnectionRequest(req openapi.ConnectionPatch) error {
+	errors := []string{}
+	// TODO: deprecated
+	if req.Tags != nil {
+		for _, val := range *req.Tags {
+			if !tagsValRe.MatchString(val) {
+				errors = append(errors, "tags: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters")
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+
+	if req.ConnectionTags != nil && len(*req.ConnectionTags) > 10 {
+		return fmt.Errorf("max tag association reached (10)")
+	}
+
+	if req.ConnectionTags != nil {
+		for key, val := range *req.ConnectionTags {
+			// if strings.HasPrefix(key, "hoop.dev/") {
+			// 	errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
+			// 	continue
+			// }
+
+			if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
+				errors = append(errors,
+					fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
+						"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
+			}
+			if (len(val) < 1 || len(val) > 256) || !connectionTagsValRe.MatchString(val) {
+				errors = append(errors, fmt.Sprintf("connection_tags (%v), values must contain between 1 and 256 alphanumeric characters, ", key)+
+					"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+	return nil
+}
+
 func validateConnectionRequest(req openapi.Connection) error {
 	errors := []string{}
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {

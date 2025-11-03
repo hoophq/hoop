@@ -262,6 +262,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateConnection),
 		apiconnections.Put)
+	r.PATCH("/connections/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.Patch)
 	r.GET("/connections",
 		r.AuthMiddleware,
 		apiconnections.List)
