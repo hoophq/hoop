@@ -12,27 +12,27 @@ import (
 )
 
 func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
-	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
 	streamClient := pb.NewStreamWriter(a.client, pbclient.MySQLConnectionWrite, pkt.Spec)
-	connParams := a.connectionParams(sessionID)
+	connParams := a.connectionParams(sid)
 	if connParams == nil {
-		log.Errorf("session=%s - connection params not found", sessionID)
-		a.sendClientSessionClose(sessionID, "connection params not found, contact the administrator")
+		log.With("sid", sid).Errorf("connection params not found")
+		a.sendClientSessionClose(sid, "connection params not found, contact the administrator")
 		return
 	}
 
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 	if clientConnectionID == "" && pkt.Payload != nil {
-		log.Errorf("connection id not found in memory")
-		a.sendClientSessionClose(sessionID, "connection id not found, contact the administrator")
+		log.With("sid", sid).Errorf("connection id not found in memory")
+		a.sendClientSessionClose(sid, "connection id not found, contact the administrator")
 		return
 	}
-	clientConnectionIDKey := fmt.Sprintf("%s:%s", sessionID, string(clientConnectionID))
+	clientConnectionIDKey := fmt.Sprintf("%s:%s", sid, string(clientConnectionID))
 	clientObj := a.connStore.Get(clientConnectionIDKey)
 	if proxyServerWriter, ok := clientObj.(io.WriteCloser); ok {
 		if _, err := proxyServerWriter.Write(pkt.Payload); err != nil {
-			log.Errorf("failed sending packet, err=%v", err)
-			a.sendClientSessionClose(sessionID, "fail to write packet")
+			log.With("sid", sid).Errorf("failed sending packet, err=%v", err)
+			a.sendClientSessionClose(sid, "fail to write packet")
 			_ = proxyServerWriter.Close()
 		}
 		return
@@ -40,29 +40,38 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 
 	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeMySQL)
 	if err != nil {
-		log.Error("mysql credentials not found in memory, err=%v", err)
-		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
+		log.With("sid", sid).Error("mysql credentials not found in memory, err=%v", err)
+		a.sendClientSessionClose(sid, "credentials are empty, contact the administrator")
 		return
 	}
 
-	log.Infof("session=%v - starting mysql connection at %v:%v", sessionID, connenv.host, connenv.port)
+	log.With("sid", sid).Infof("starting mysql connection at %v:%v", connenv.host, connenv.port)
+	var dataMaskingEntityTypesData string
+	if connParams.DataMaskingEntityTypesData != nil {
+		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
+	}
 	opts := map[string]string{
-		"sid":           sessionID,
-		"hostname":      connenv.host,
-		"port":          connenv.port,
-		"username":      connenv.user,
-		"password":      connenv.pass,
-		"connection_id": clientConnectionID,
+		"sid":                       sid,
+		"hostname":                  connenv.host,
+		"port":                      connenv.port,
+		"username":                  connenv.user,
+		"password":                  connenv.pass,
+		"connection_id":             clientConnectionID,
+		"dlp_provider":              connParams.DlpProvider,
+		"dlp_mode":                  connParams.DlpMode,
+		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
+		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
+		"data_masking_entity_data":  dataMaskingEntityTypesData,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MySQL()
 	if err != nil {
 		errMsg := fmt.Sprintf("failed connecting with mysql server, err=%v", err)
 		log.Errorf(errMsg)
-		a.sendClientSessionClose(sessionID, errMsg)
+		a.sendClientSessionClose(sid, errMsg)
 		return
 	}
 	serverWriter.Run(func(_ int, errMsg string) {
-		a.sendClientSessionClose(sessionID, errMsg)
+		a.sendClientSessionClose(sid, errMsg)
 	})
 	a.connStore.Set(clientConnectionIDKey, serverWriter)
 }
