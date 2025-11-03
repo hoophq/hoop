@@ -568,8 +568,7 @@ func (o ConnectionFilterOption) GetSearchPattern() string {
 	if term == "" {
 		return "%"
 	}
-	term = strings.ReplaceAll(term, `\`, `\\`)
-	term = strings.ReplaceAll(term, `%`, `\\%`)
+	
 	return fmt.Sprintf("%%%s%%", term)
 }
 
