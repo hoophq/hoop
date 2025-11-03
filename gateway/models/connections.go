@@ -818,70 +818,91 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	}
 
 	err = DB.Raw(`
-		WITH tag_selector_keys(key, op, val) AS (
-			SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
-		)
-		SELECT
-			c.id, c.org_id, c.name, c.type, c.subtype, c.status,
-			c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect,
-			c.access_schema, c.managed_by, c.command, c.jira_issue_template_id,
-			COUNT(*) OVER() AS total
-		FROM private.connections c
-		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
-		LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
-		WHERE c.org_id = ? AND
-		CASE
-			-- do not apply any access control if the plugin is not enabled or it is an admin user
-			WHEN ac.id IS NULL OR (?)::BOOL THEN true
-			-- allow if any of the input user groups are in the access control list
-			ELSE acc.config && (?)::text[]
+	WITH tag_selector_keys(key, op, val) AS (
+		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
+	)
+	SELECT
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		c.jira_issue_template_id,
+		-- legacy tags
+		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
+		COALESCE (
+			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
+			FROM private.connection_tags_association cta
+			INNER JOIN private.connection_tags ct ON ct.id = cta.tag_id
+			WHERE cta.connection_id = c.id
+			GROUP BY cta.connection_id ), '{}'
+		) AS connection_tags,
+		COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
+		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
+		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
+		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
+		COALESCE((
+			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
+			WHERE private.guardrail_rules_connections.connection_id = c.id
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COUNT(*) OVER() AS total
+	FROM private.connections c
+	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
+	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
+	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
+	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
+	LEFT JOIN private.plugins dlp ON dlp.name = 'dlp' AND dlp.org_id = ?
+	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
+	WHERE c.org_id = ? AND
+	CASE
+		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		WHEN ac.id IS NULL OR (?)::BOOL THEN true
+		-- allow if any of the input user groups are in the access control list
+		ELSE acc.config && (?)::text[]
+	END AND
+	(
+		COALESCE(c.type::text, '') LIKE ? AND
+		COALESCE(c.subtype, '') LIKE ? AND
+		COALESCE(c.agent_id::text, '') LIKE ? AND
+		COALESCE(c.managed_by, '') LIKE ? AND
+		-- connection ids filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c.id::text = ANY((?)::text[])
+			ELSE true
+		END AND
+		-- legacy tags
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN c._tags @> (?)::text[]
+			ELSE true
 		END AND
 		(
-			COALESCE(c.type::text, '') LIKE ? AND
-			COALESCE(c.subtype, '') LIKE ? AND
-			COALESCE(c.agent_id::text, '') LIKE ? AND
-			COALESCE(c.managed_by, '') LIKE ? AND
-			-- connection ids filter
-			CASE WHEN (?)::text[] IS NOT NULL
-				THEN c.id::text = ANY((?)::text[])
-				ELSE true
-			END AND
-			-- legacy tags
-			CASE WHEN (?)::text[] IS NOT NULL
-				THEN c._tags @> (?)::text[]
-				ELSE true
-			END AND
-			(
-				c.name ILIKE ?
-				OR c.type::text ILIKE ?
-				OR COALESCE(c.subtype, '') ILIKE ?
-			) AND
-			(
-				-- return all results if no tag selectors provided
-				(SELECT COUNT(*) FROM tag_selector_keys) = 0
-				OR
-				-- AND logic: each tag selector criterion must be satisfied
-				NOT EXISTS (
-					-- Find any tag selector that is NOT satisfied by this connection
-					SELECT 1 FROM tag_selector_keys tsk
-					WHERE NOT EXISTS (
-						SELECT 1
-						FROM private.connection_tags_association cta
-						JOIN private.connection_tags ct ON ct.id = cta.tag_id
-						WHERE cta.connection_id = c.id
-						AND ct.key = tsk.key
-						AND CASE
-							WHEN tsk.op = '=' THEN ct.value = tsk.val
-							WHEN tsk.op = '!=' THEN ct.value != tsk.val
-							ELSE false
-						END
-					)
+			c.name ILIKE ?
+			OR c.type::text ILIKE ?
+			OR COALESCE(c.subtype, '') ILIKE ?
+		) AND
+		(
+			-- return all results if no tag selectors provided
+			(SELECT COUNT(*) FROM tag_selector_keys) = 0
+			OR
+			-- AND logic: each tag selector criterion must be satisfied
+			NOT EXISTS (
+				-- Find any tag selector that is NOT satisfied by this connection
+				SELECT 1 FROM tag_selector_keys tsk
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM private.connection_tags_association cta
+					JOIN private.connection_tags ct ON ct.id = cta.tag_id
+					WHERE cta.connection_id = c.id
+					AND ct.key = tsk.key
+					AND CASE
+						WHEN tsk.op = '=' THEN ct.value = tsk.val
+						WHEN tsk.op = '!=' THEN ct.value != tsk.val
+						ELSE false
+					END
 				)
 			)
-		) ORDER BY c.name ASC
-		LIMIT ? OFFSET ?`,
+		)
+	) ORDER BY c.name ASC
+	LIMIT ? OFFSET ?`,
 		tagSelectorJsonData,
-		orgID, orgID,
+		orgID, orgID, orgID, orgID,
 		isAdmin, userGroupsPgArray,
 		opts.Type,
 		opts.SubType,

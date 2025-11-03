@@ -282,6 +282,9 @@ func List(c *gin.Context) {
 
 		responseConnList := make([]openapi.Connection, len(connList))
 		for i, conn := range connList {
+			// it should return empty to avoid leaking sensitive content
+			// in the future we plan to know which entry is sensitive or not
+			conn.Envs = map[string]string{}
 			responseConnList[i] = toOpenApi(&conn)
 		}
 
