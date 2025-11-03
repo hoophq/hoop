@@ -187,3 +187,24 @@ Please be patient; it may take over 15 seconds to see any output, and over 30 se
 
 The `resources/public/js/compiled` directory is created, containing the compiled `app.js` and
 `manifest.edn` files.
+
+## Decap
+
+The display of connection quick start resources is automated via Decap CMS. In order to test new configurations, make sure to:
+
+1. Run the development server
+
+```bash
+npm run dev
+```
+
+2. Copy the contents of `../../documentation/store/connections.json` to `./resources/public/data/connections-metadata.json`
+
+> Assuming the `documentation` repository is one level under the root directory of Hoop.
+
+```sh
+cp ../../documentation/store/connections.json ./resources/public/data/connections-metadata.json
+```
+
+3. Click on Add Connection to see the list of available resources to create
+
