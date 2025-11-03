@@ -124,6 +124,59 @@
    {:db (update db :connections merge {:loading false
                                        :error error})}))
 
+;; Paginated connections events
+(rf/reg-event-fx
+ :connections/get-connections-paginated
+ (fn
+   [{:keys [db]} [_ {:keys [page-size page filters search force-refresh?]
+                     :or {page-size 50 page 1 force-refresh? false}}]]
+   (let [request {:page-size page-size
+                  :page page
+                  :filters filters
+                  :search search
+                  :force-refresh? force-refresh?}
+         query-params (cond-> {}
+                        page-size (assoc :page_size page-size)
+                        page (assoc :page page)
+                        search (assoc :search search)
+                        (:tag_selector filters) (assoc :tag_selector (:tag_selector filters))
+                        (:type filters) (assoc :type (:type filters))
+                        (:subtype filters) (assoc :subtype (:subtype filters)))]
+     {:db (-> db
+              (update-in [:connections->pagination] merge
+                         {:loading true
+                          :page-size page-size
+                          :current-page page
+                          :active-filters filters
+                          :active-search search}))
+      :fx [[:dispatch
+            [:fetch {:method "GET"
+                     :uri "/connections"
+                     :query-params query-params
+                     :on-success #(rf/dispatch [:connections/set-connections-paginated (assoc request :response %)])}]]]})))
+
+(rf/reg-event-fx
+ :connections/set-connections-paginated
+ (fn
+   [{:keys [db]} [_ {:keys [response force-refresh?]}]]
+   (let [connections-data (get response :data [])
+         pages-info (get response :pages {})
+         page-number (get pages-info :page 1)
+         page-size (get pages-info :size 50)
+         total (get pages-info :total 0)
+         existing-connections (get-in db [:connections->pagination :data] [])
+         final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
+         has-more? (< (* page-number page-size) total)]
+     {:db (-> db
+              (update-in [:connections->pagination] merge
+                         {:data final-connections
+                          :loading false
+                          :has-more? has-more?
+                          :current-page page-number
+                          :page-size page-size
+                          :total total}))})))
+
+
 (rf/reg-event-fx
  :connections->load-metadata
  (fn [{:keys [db]} [_]]
@@ -157,7 +210,7 @@
                                       ;; plugins might be updated in the connection
                                       ;; creation action, so we get them again here
                                       (rf/dispatch [:plugins->get-my-plugins])
-                                      (rf/dispatch [:connections->get-connections {:force-refresh? true}])
+                                      (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       (rf/dispatch [:show-snackbar {:level :success
                                                                     :text "Connection created!"}])
 
@@ -179,7 +232,7 @@
                                                     {:level :success
                                                      :text (str "Connection " (:name connection) " updated!")}])
                                       (rf/dispatch [:plugins->get-my-plugins])
-                                      (rf/dispatch [:connections->get-connections {:force-refresh? true}])
+                                      (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       (rf/dispatch [:navigate :connections]))}]]]})))
 
 (rf/reg-event-fx
@@ -271,7 +324,7 @@
               :on-success (fn []
                             (rf/dispatch [:show-snackbar {:level :success
                                                           :text "Connection created!"}])
-                            (rf/dispatch [:connections->get-connections {:force-refresh? true}])
+                            (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                             (rf/dispatch [:plugins->get-my-plugins])
                             (rf/dispatch [:navigate :home]))}]]]})))
 
@@ -322,5 +375,5 @@ ORDER BY total_amount DESC;")
 
                                    (rf/dispatch [:show-snackbar {:level :success
                                                                  :text "Connection deleted!"}])
-                                   (rf/dispatch [:connections->get-connections {:force-refresh? true}])
+                                   (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                    (rf/dispatch [:navigate :connections])))}]]]}))

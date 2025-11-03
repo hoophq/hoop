@@ -17,8 +17,7 @@
 (defn jira-form [form-type template scroll-pos]
   (let [state (helpers/create-form-state template)
         handlers (helpers/create-form-handlers state)
-        submitting? (rf/subscribe [:jira-templates->submitting?])
-        all-connections (rf/subscribe [:connections])]
+        submitting? (rf/subscribe [:jira-templates->submitting?])]
     (fn []
       [:> Box {:class "min-h-screen bg-gray-1"}
        [:form {:id "jira-form"
@@ -53,8 +52,7 @@
          ;; Connections section
          [connections-section/main
           {:connection-ids (:connection_ids state)
-           :on-connections-change (:on-connections-change handlers)
-           :all-connections (:results @all-connections)}]
+           :on-connections-change (:on-connections-change handlers)}]
 
          [:> Flex {:direction "column" :gap "5"}
           [:> Box
@@ -147,17 +145,14 @@
 (defn main [form-type]
   (let [jira-template (rf/subscribe [:jira-templates->active-template])
         scroll-pos (r/atom 0)]
-
-    (rf/dispatch [:jira-templates->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
-        (finally
-          (.removeEventListener js/window "scroll" handle-scroll)))
 
-      (r/with-let [_ nil]
         (if (= :loading (:status @jira-template))
           [loading]
           [jira-form form-type (:data @jira-template) scroll-pos])
+
         (finally
+          (.removeEventListener js/window "scroll" handle-scroll)
           (rf/dispatch [:jira-templates->clear-active-template]))))))

@@ -1724,6 +1724,17 @@ type SSHConnectionInfo struct {
 	Command string `json:"command" example:"ssh -p 22"`
 }
 
+type Pagination struct {
+	Total int `json:"total"`
+	Page  int `json:"page"`
+	Size  int `json:"size"`
+}
+
+type PaginatedResponse[T any] struct {
+	Pages Pagination `json:"pages"`
+	Data  []T        `json:"data"`
+}
+
 type ConnectionSearch struct {
 	// Unique ID of the resource
 	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`

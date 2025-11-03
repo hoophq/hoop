@@ -18,18 +18,17 @@
 
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        connections (rf/subscribe [:connections])
+        connections (rf/subscribe [:connections->pagination])
         active-tab (r/atom "connections")
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))]
 
     (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
-    (rf/dispatch [:connections->get-connections {:force-refresh? true}])
 
     (fn []
       (let [plugin (:plugin @plugin-details)
             installed? (or (:installed? plugin) false)
-            has-connections? (and (:results @connections) (seq (:results @connections)))]
+            has-connections? (and (:data @connections) (seq (:data @connections)))]
 
         ;; Initialize active tab from URL
         (when @url-tab

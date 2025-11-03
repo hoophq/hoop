@@ -18,6 +18,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -228,10 +229,14 @@ func Delete(c *gin.Context) {
 //	@Param			agent_id		query		string	false	"Filter by agent id"																	Format(uuid)
 //	@Param			tags			query		string	false	"DEPRECATED: Filter by tags, separated by comma"										Format(string)
 //	@Param			tag_selector	query		string	false	"Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)"	Format(string)
+//	@Param			search			query		string	false	"Search by name, type, or subtype"						Format(string)
 //	@Param			type			query		string	false	"Filter by type"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)
-//	@Success		200				{array}		openapi.Connection
+//	@Param			connection_ids	query		string	false	"Filter by specific connection IDs, separated by comma"									Format(string)
+//	@Param			page_size		query		int		false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
+//	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)
+//	@Success		200				{array}		openapi.Connection or {object}	object	"Returns array of Connection objects or PaginatedResponse[openapi.Connection] when using pagination"
 //	@Failure		422,500			{object}	openapi.HTTPError
 //	@Router			/connections [get]
 func List(c *gin.Context) {
@@ -241,6 +246,62 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+
+	urlValues := c.Request.URL.Query()
+	pageStr := urlValues.Get("page")
+	pageSizeStr := urlValues.Get("page_size")
+
+	hasPaginationParams := pageStr != "" || pageSizeStr != ""
+
+	if hasPaginationParams {
+		page, pageSize, paginationErr := apivalidation.ParsePaginationParams(pageStr, pageSizeStr)
+
+		// Use paginated response
+		if paginationErr != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": paginationErr.Error()})
+			return
+		}
+
+		// Set default page size if not provided but page is provided
+		if pageSize == 0 && page > 0 {
+			pageSize = 50 // Default page size
+		}
+
+		paginationOpts := models.ConnectionPaginationOption{
+			ConnectionFilterOption: filterOpts,
+			Page:                   page,
+			PageSize:               pageSize,
+		}
+
+		connList, total, err := models.ListConnectionsPaginated(ctx.GetOrgID(), ctx.GetUserGroups(), paginationOpts)
+		if err != nil {
+			log.Errorf("failed listing connections with pagination, reason=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+
+		responseConnList := make([]openapi.Connection, len(connList))
+		for i, conn := range connList {
+			// it should return empty to avoid leaking sensitive content
+			// in the future we plan to know which entry is sensitive or not
+			conn.Envs = map[string]string{}
+			responseConnList[i] = toOpenApi(&conn)
+		}
+
+		response := openapi.PaginatedResponse[openapi.Connection]{
+			Pages: openapi.Pagination{
+				Total: int(total),
+				Page:  page,
+				Size:  pageSize,
+			},
+			Data: responseConnList,
+		}
+
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
+	// Use traditional non-paginated response
 	connList, err := models.ListConnections(ctx, filterOpts)
 	if err != nil {
 		log.Errorf("failed listing connections, reason=%v", err)
