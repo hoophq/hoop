@@ -1875,7 +1875,7 @@ type RunbookRepository struct {
 
 type RunbookConfigurationRequest struct {
 	// The runbook repository configuration
-	Repositories []RunbookRepository `json:"repositories"`
+	Repositories []RunbookRepository `json:"repositories" binding:"required"`
 }
 
 type RunbookV2 struct {

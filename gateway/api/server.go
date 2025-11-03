@@ -730,7 +730,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	)
 	r.POST("/runbooks/exec",
 		r.AuthMiddleware,
-		apirunbooks.RunExecV2,
+		apirunbooks.RunbookExec,
 	)
 	r.GET("/runbooks/configurations",
 		apiroutes.AdminOnlyAccessRole,

@@ -53,54 +53,6 @@ type RunbookRules struct {
 	UpdatedAt   time.Time        `gorm:"column:updated_at"`
 }
 
-// GetUserAvailableRunbooks returns the list of available runbooks for a user based on their groups
-// If there are no runbook rules defined for the organization, it returns nil, nil
-// If there are runbook rules defined but none match the user's groups, it returns an empty list, nil
-func GetUserAvailableRunbooks(orgId string, userGroups []string) ([]string, error) {
-	if slices.Contains(userGroups, types.GroupAdmin) {
-		return nil, nil
-	}
-
-	var runbookCount int64
-	err := DB.
-		Table("private.runbook_rules").
-		Where("org_id = ?", orgId).
-		Count(&runbookCount).Error
-	if err != nil {
-		return nil, err
-	}
-	if runbookCount == 0 {
-		return nil, nil
-	}
-
-	var availableRunbooksFromRules [][]string
-	err = DB.
-		Table("private.runbook_rules").
-		Select("runbooks").
-		Where("org_id = ? AND (CARDINALITY(user_groups) = 0 OR user_groups && ?)", orgId, userGroups).
-		Scan(&availableRunbooksFromRules).Error
-	if err != nil {
-		return nil, err
-	}
-
-	hasEmptyRunbooks := slices.ContainsFunc(availableRunbooksFromRules, func(runbooks []string) bool {
-		return len(runbooks) == 0
-	})
-
-	if hasEmptyRunbooks {
-		return nil, nil
-	}
-
-	var availableRunbooks []string
-	for _, runbooks := range availableRunbooksFromRules {
-		availableRunbooks = append(availableRunbooks, runbooks...)
-	}
-
-	availableRunbooks = slices.Compact(availableRunbooks)
-
-	return availableRunbooks, nil
-}
-
 func IsUserAllowedToRunRunbook(orgId, connection, runbookRepository, runbookName string, userGroups []string) (bool, error) {
 	if slices.Contains(userGroups, types.GroupAdmin) {
 		return true, nil

@@ -67,7 +67,9 @@ func ListRunbooksV2(c *gin.Context) {
 		}
 	}
 
-	runbookList := &openapi.RunbookListV2{}
+	runbookList := &openapi.RunbookListV2{
+		Repositories: []openapi.RunbookRepositoryList{},
+	}
 	for _, configEnvVars := range runbookConfig.RepositoryConfigs {
 		config, err := runbooks.NewConfigV2(configEnvVars)
 		if err != nil {
@@ -222,7 +224,7 @@ func buildRunbookConfigurationResponse(r *models.Runbooks) *openapi.RunbookConfi
 //	@Success		202				{object}	openapi.ExecResponse	"The execution is still in progress"
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/exec [post]
-func RunExecV2(c *gin.Context) {
+func RunbookExec(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	var req openapi.RunbookExec
 	if err := c.ShouldBindJSON(&req); err != nil {

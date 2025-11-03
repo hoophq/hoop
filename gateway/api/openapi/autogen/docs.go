@@ -8182,6 +8182,9 @@ const docTemplate = `{
         },
         "openapi.RunbookConfigurationRequest": {
             "type": "object",
+            "required": [
+                "repositories"
+            ],
             "properties": {
                 "repositories": {
                     "description": "The runbook repository configuration",
