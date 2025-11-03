@@ -341,6 +341,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiagents.List)
+	r.GET("/agents/:nameOrID",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiagents.Get)
 	r.DELETE("/agents/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

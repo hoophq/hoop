@@ -183,6 +183,31 @@ type AgentListResponse struct {
 	Platform      string `json:"platform" example:"amd64"`
 }
 
+type Agent struct {
+	// Unique ID of the resource
+	ID string `json:"id" format:"uuid" example:"8a4239fa-5116-4bbb-ad3c-ea1f294aac4a"`
+	// The token/key of the resource, this value is always empty for now
+	Token string `json:"token" default:""`
+	// Unique name of the resource
+	Name string `json:"name" example:"default"`
+	// Mode of execution of the agent
+	// * standard - Is the default mode, which is suitable to run the agent as a standalone process
+	// * embedded - This mode is suitable when the agent needs to be run close to another process or application
+	Mode string `json:"mode" enums:"standard,embedded" example:"standard"`
+	// The status of the agent
+	// * CONNECTED - The agent is connected with the gateway
+	// * DISCONNECTED - The agent is disconnected from the gateway
+	Status string `json:"status" enums:"CONNECTED,DISCONNECTED" example:"DISCONNECTED"`
+	// Metadata contains attributes regarding the machine where the agent is being executed
+	// * version - Version of the agent
+	// * go-version - Agent build information
+	// * compiler - Agent build information
+	// * platform - The operating system architecture where the agent is running
+	// * machine-id - The machine id of server
+	// * kernel-version - The kernel version of the server
+	Metadata map[string]string `json:"metadata" example:"hostname:johnwick.local,version:1.23.14,compiler:gcc,kernel-version:Linux 9acfe93d8195 5.15.49-linuxkit,platform:amd64,machine-id:id"`
+}
+
 type Connection struct {
 	// Unique ID of the resource
 	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`

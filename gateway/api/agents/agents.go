@@ -101,6 +101,52 @@ func Delete(c *gin.Context) {
 	}
 }
 
+// GetAgent
+//
+//	@Summary		Get Agent Key
+//	@Description	Get an agent key by name or ID
+//	@Tags			Agents
+//	@Produce		json
+//	@Param			nameOrID	path	string	true	"The name or ID of the resource"
+//	@Success		200			{object}	openapi.Agent
+//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Router			/agents/{nameOrID} [get]
+func Get(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	nameOrID := c.Param("nameOrID")
+	agent, err := models.GetAgentByNameOrID(ctx.OrgID, nameOrID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
+		return
+	case nil:
+		mode := agent.Mode
+		if mode == "" {
+			// set to default mode if the entity doesn't contain any value
+			mode = proto.AgentModeStandardType
+		}
+		if mode == proto.AgentModeMultiConnectionType {
+			// for now, don't return multi-connection keys
+			// there's a special route for managing these kind of token.
+			// See orgs/orgs.go
+			c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
+			return
+		}
+		c.JSON(http.StatusOK, openapi.Agent{
+			ID:       agent.ID,
+			Token:    "", // don't show the hashed token
+			Name:     agent.Name,
+			Mode:     mode,
+			Status:   agent.Status,
+			Metadata: agent.Metadata,
+		})
+	default:
+		log.Errorf("failed getting agent %v, err=%#v", nameOrID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+}
+
 // ListAgents
 //
 //	@Summary		List Agent Keys
