@@ -539,6 +539,7 @@ type ConnectionFilterOption struct {
 	TagSelector   string
 	Search        string
 	ConnectionIDs []string
+	ResourceName  string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -557,7 +558,7 @@ func (o ConnectionFilterOption) GetSearchPattern() string {
 	if term == "" {
 		return "%"
 	}
-	
+
 	return fmt.Sprintf("%%%s%%", term)
 }
 
@@ -871,6 +872,10 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			THEN c._tags @> (?)::text[]
 			ELSE true
 		END AND
+		CASE WHEN ? IS NOT NULL
+			THEN c.resource_name = ?
+			ELSE true
+		END AND
 		(
 			c.name ILIKE ?
 			OR c.type::text ILIKE ?
@@ -909,6 +914,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.ManagedBy,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		opts.ResourceName, opts.ResourceName,
 		searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error

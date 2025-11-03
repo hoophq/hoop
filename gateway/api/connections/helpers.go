@@ -195,6 +195,9 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 				}
 			}
 			continue
+		case "resource_name":
+			o.ResourceName = values[0]
+			continue
 		case "connection_ids":
 			if len(values[0]) > 0 {
 				for _, connID := range strings.Split(values[0], ",") {
