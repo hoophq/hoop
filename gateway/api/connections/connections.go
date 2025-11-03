@@ -346,6 +346,7 @@ func Delete(c *gin.Context) {
 //	@Param			type			query		string	false	"Filter by type"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)
+//	@Param			resource_name		query		string	false	"Filter by resource name"																	Format(string)
 //	@Param			connection_ids	query		string	false	"Filter by specific connection IDs, separated by comma"									Format(string)
 //	@Param			page_size		query		int		false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)
