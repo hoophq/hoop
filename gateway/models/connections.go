@@ -830,7 +830,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.jira_issue_template_id, c.resource_name,
+		c.resource_name,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
