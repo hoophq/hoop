@@ -108,6 +108,13 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	globalConfig := appconfig.Get()
+	tlsConfig, err := globalConfig.GetTLSConfig()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	newState, err := parseMiscPayload(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -128,7 +135,7 @@ func UpdateServerMisc(c *gin.Context) {
 	switch state {
 	case instanceStateStart:
 		_ = rdpInstance.Stop()
-		err = rdpInstance.Start(rdpConf.ListenAddress)
+		err = rdpInstance.Start(rdpConf.ListenAddress, tlsConfig, globalConfig.GatewayAllowPlaintext())
 	case instanceStateStop:
 		err = rdpInstance.Stop()
 	}
@@ -145,7 +152,7 @@ func UpdateServerMisc(c *gin.Context) {
 	switch state {
 	case instanceStateStart:
 		_ = pgInstance.Stop()
-		err = pgInstance.Start(pgConf.ListenAddress)
+		err = pgInstance.Start(pgConf.ListenAddress, tlsConfig, globalConfig.GatewayAllowPlaintext())
 	case instanceStateStop:
 		err = pgInstance.Stop()
 	}

@@ -13,6 +13,7 @@
 
 # IDE related
 agent/.idea/*
+agentrs/.idea/*
 client/.idea/*
 gateway/.idea/*
 plugins/.idea/*
@@ -54,3 +55,6 @@ deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 
 **/.claude/settings.local.json
 **/.mcp.json
+
+# rust build
+target/

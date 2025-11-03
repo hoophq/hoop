@@ -55,15 +55,16 @@ var loginCmd = &cobra.Command{
 		default:
 			printErrorAndExit(err.Error())
 		}
-		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v",
-			conf.Mode, conf.GrpcURL, conf.ApiURL, len(conf.TlsCAB64Enc) > 0, len(conf.Token))
+		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v "+
+			" skip_tls_verify=%v",
+			conf.Mode, conf.GrpcURL, conf.ApiURL, len(conf.TlsCAB64Enc) > 0, len(conf.Token), conf.SkipTLSVerify)
 		// perform the login and save the token
 		conf.Token, err = doLogin(conf.ApiURL, conf.TlsCA())
 		if err != nil {
 			printErrorAndExit(err.Error())
 		}
 		if conf.GrpcURL == "" {
-			// best-effort to obtain the obtain the grpc url if it's not set
+			// best-effort to obtain the grpc url if it's not set
 			si, err := fetchServerInfo(conf.ApiURL, conf.Token, conf.TlsCA())
 			if err != nil {
 				printErrorAndExit(err.Error())
