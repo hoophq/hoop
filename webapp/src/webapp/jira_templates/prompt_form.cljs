@@ -126,7 +126,6 @@
                :form-data form-data
                :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}]))
 
-         ;; CMDB Fields - Mostrar todos os campos CMDB com o novo dropdown paginado
          (when (seq @cmdb-items)
            (doall
             (for [item @cmdb-items]
