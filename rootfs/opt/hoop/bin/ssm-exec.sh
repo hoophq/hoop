@@ -4,6 +4,15 @@ set -eo pipefail
 
 [[ "$CONNECTION_DEBUG" == "1" ]] && set -x
 
+if [[ "$HOOP_CLIENT_VERB" == "connect" ]]; then
+    if [[ -z "$INSTANCE_ID" ]]; then
+      echo "Error: INSTANCE_ID is required for connect"
+      exit 1
+    fi
+    aws ssm start-session --target $INSTANCE_ID
+    exit $?
+fi
+
 PIPE_EXEC=${PIPE_EXEC:=/bin/bash}
 
 STDIN_INPUT=$(< /dev/stdin)
@@ -11,6 +20,8 @@ if [[ -z "$STDIN_INPUT" ]]; then
   echo "Error: missing input to ssm-exec"
   exit 1
 fi
+
+
 
 INSTANCE_ID=""
 while IFS= read -r line; do
