@@ -552,17 +552,6 @@ func (o ConnectionFilterOption) GetTagsAsArray() any {
 	return v
 }
 
-func (o ConnectionFilterOption) GetConnectionIDsAsArray() any {
-	if len(o.ConnectionIDs) == 0 {
-		return nil
-	}
-	var v pq.StringArray
-	for _, val := range o.ConnectionIDs {
-		v = append(v, val)
-	}
-	return v
-}
-
 func (o ConnectionFilterOption) GetSearchPattern() string {
 	term := strings.TrimSpace(o.Search)
 	if term == "" {
@@ -620,7 +609,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	}
 	userGroups := pq.StringArray(ctx.GetUserGroups())
 	tagsAsArray := opts.GetTagsAsArray()
-	connectionIDsAsArray := opts.GetConnectionIDsAsArray()
+	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -803,7 +792,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	tagsAsArray := opts.GetTagsAsArray()
-	connectionIDsAsArray := opts.GetConnectionIDsAsArray()
+	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
 
 	offset := 0
