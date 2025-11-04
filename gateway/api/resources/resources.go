@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
@@ -136,31 +138,70 @@ func CreateResource(c *gin.Context) {
 	c.JSON(http.StatusCreated, toOpenApi(&resource))
 }
 
+func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, err error) {
+	pageStr := urlValues.Get("page")
+	pageSizeStr := urlValues.Get("page_size")
+	page, pageSize, paginationErr := apivalidation.ParsePaginationParams(pageStr, pageSizeStr)
+	if paginationErr != nil {
+		return o, paginationErr
+	}
+
+	o.Page = page
+	o.PageSize = pageSize
+
+	for key, values := range urlValues {
+		switch key {
+		case "name":
+			o.Name = values[0]
+		case "type":
+			o.Type = values[0]
+		}
+	}
+	return
+}
+
 // ListResources
 //
 //	@Summary		Lists resources
 //	@Description	Lists all resources for the organization.
 //	@Tags			Resources
 //	@Produces		json
-//	@Success		200	{array}	openapi.ResourceResponse
+//	@Success		200	{object}	openapi.PaginatedResponse[*openapi.ResourceResponse]
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/resources [get]
 func ListResources(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	resources, err := models.ListResources(models.DB, ctx.OrgID, ctx.IsAdmin())
+	queryParams := c.Request.URL.Query()
+
+	opts, err := validateListOptions(queryParams)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.IsAdmin(), opts)
 	if err != nil {
 		log.Errorf("failed to list resources: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
 
-	var resp []openapi.ResourceResponse
+	var resp []*openapi.ResourceResponse
 	for _, r := range resources {
-		resp = append(resp, *toOpenApi(&r))
+		resp = append(resp, toOpenApi(&r))
 	}
 
-	c.JSON(http.StatusOK, resp)
+	response := openapi.PaginatedResponse[*openapi.ResourceResponse]{
+		Pages: openapi.Pagination{
+			Total: int(total),
+			Page:  opts.Page,
+			Size:  opts.PageSize,
+		},
+		Data: resp,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // UpdateResource
