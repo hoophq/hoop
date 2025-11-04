@@ -40,18 +40,71 @@ func GetResourceByName(db *gorm.DB, orgID, name string, isAdminOrInternal bool) 
 	return &resource, nil
 }
 
-func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool) ([]Resources, error) {
-	var resources []Resources
+type ResourceFilterOption struct {
+	Page     int
+	PageSize int
+	Name     string
+	Type     string
+}
+
+func setResourceOptionDefaults(opts *ResourceFilterOption) {
+	if opts.Name == "" {
+		opts.Name = "%"
+	}
+
+	if opts.Type == "" {
+		opts.Type = "%"
+	}
+}
+
+func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts ResourceFilterOption) ([]Resources, int64, error) {
+	setResourceOptionDefaults(&opts)
+
+	offset := 0
+	if opts.Page > 1 {
+		offset = (opts.Page - 1) * opts.PageSize
+	}
+
+	var results []struct {
+		Resources
+		Total int64 `gorm:"column:total"`
+	}
+
 	err := db.Raw(`
 	SELECT
 		r.*,
-		COALESCE((SELECT envs FROM private.env_vars WHERE (? AND id = r.id)), '{}') AS envs
+		COALESCE((SELECT envs FROM private.env_vars WHERE (@is_admin_or_internal AND id = r.id)), '{}') AS envs,
+		COUNT(*) OVER() AS total
 	FROM private.resources r
-	WHERE org_id = ?
+	WHERE
+		r.org_id = @org_id AND
+		r.name LIKE @name AND
+		r.type LIKE @type
 	ORDER BY created_at DESC
-	`, isAdminOrInternal, orgID).Find(&resources).Error
+	LIMIT @page_size OFFSET @offset
+	`, map[string]interface{}{
+		"org_id":               orgID,
+		"is_admin_or_internal": isAdminOrInternal,
+		"name":                 opts.Name,
+		"type":                 opts.Type,
+		"page_size":            opts.PageSize,
+		"offset":               offset,
+	}).Find(&results).Error
+	if err != nil {
+		return nil, 0, err
+	}
 
-	return resources, err
+	if len(results) == 0 {
+		return []Resources{}, 0, nil
+	}
+
+	total := results[0].Total
+	resources := make([]Resources, len(results))
+	for i, r := range results {
+		resources[i] = r.Resources
+	}
+
+	return resources, total, err
 }
 
 func UpsertResource(db *gorm.DB, resource *Resources, updateDependentTables bool) error {
