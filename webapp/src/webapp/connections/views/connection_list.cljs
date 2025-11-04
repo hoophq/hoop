@@ -130,199 +130,196 @@
           (when (nil? connections-metadata)
             (rf/dispatch [:connections->load-metadata])))
 
-        [:div {:class "flex flex-col h-full overflow-y-auto"}
-         (when (-> @user :data :admin?)
-           [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
-            [:> Button {:on-click (fn []
-                                    (rf/dispatch [:navigate :resource-catalog]))}
-             "Add Connection"]])
-         [:> Flex {:as "header"
-                   :direction "column"
-                   :gap "3"
-                   :class "mb-4"}
+        [infinite-scroll
+         {:on-load-more (fn []
+                          (when (not connections-loading?)
+                            (let [current-page (:current-page connections-state 1)
+                                  next-page (inc current-page)
+                                  next-request (cond-> {:page next-page
+                                                        :force-refresh? false
+                                                        :filters (or active-filters {})}
+                                                 (not (cs/blank? (cs/trim active-search))) (assoc :search (cs/trim active-search)))]
+                              (rf/dispatch [:connections/get-connections-paginated next-request]))))
+          :has-more? (:has-more? connections-state)
+          :loading? connections-loading?}
+         [:div
+          (when (-> @user :data :admin?)
+            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
+             [:> Button {:on-click (fn []
+                                     (rf/dispatch [:navigate :resource-catalog]))}
+              "Add Connection"]])
+          [:> Flex {:as "header"
+                    :direction "column"
+                    :gap "3"
+                    :class "mb-4"}
 
 
-          [:> Flex {:gap "2" :class "mb-2 self-end"}
-           (when any-filters?
-             [:> Button {:size "2"
-                         :variant "soft"
-                         :color "gray"
-                         :on-click clear-all-filters}
-              "Clear Filters"])
+           [:> Flex {:gap "2" :class "mb-2 self-end"}
+            (when any-filters?
+              [:> Button {:size "2"
+                          :variant "soft"
+                          :color "gray"
+                          :on-click clear-all-filters}
+               "Clear Filters"])
 
-           [:> TextField.Root {:class "relative"
-                               :placeholder "Search connections"
-                               :value @search-term
-                               :onChange (fn [e]
-                                           (let [value (-> e .-target .-value)
-                                                 filters (cond-> {}
-                                                           (seq @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
-                                                           @selected-resource (assoc :subtype @selected-resource))
-                                                 trimmed (cs/trim value)
-                                                 should-search? (or (cs/blank? trimmed) (> (count trimmed) 2))
-                                                 request (cond-> {:filters filters
-                                                                  :page 1
-                                                                  :force-refresh? true}
-                                                           (and should-search? (not (cs/blank? trimmed))) (assoc :search trimmed))]
-                                             (reset! search-term value)
-                                             (when @search-debounce-timer
-                                               (js/clearTimeout @search-debounce-timer))
-                                             (when should-search?
-                                               (reset! search-debounce-timer
-                                                       (js/setTimeout
-                                                        (fn []
-                                                          (reset! connections-search-status :loading)
-                                                          (rf/dispatch [:connections/get-connections-paginated request]))
-                                                        500)))))}
-            [:> TextField.Slot
-             [:> Search {:size 16}]]]
+            [:> TextField.Root {:class "relative"
+                                :placeholder "Search connections"
+                                :value @search-term
+                                :onChange (fn [e]
+                                            (let [value (-> e .-target .-value)
+                                                  filters (cond-> {}
+                                                            (seq @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
+                                                            @selected-resource (assoc :subtype @selected-resource))
+                                                  trimmed (cs/trim value)
+                                                  should-search? (or (cs/blank? trimmed) (> (count trimmed) 2))
+                                                  request (cond-> {:filters filters
+                                                                   :page 1
+                                                                   :force-refresh? true}
+                                                            (and should-search? (not (cs/blank? trimmed))) (assoc :search trimmed))]
+                                              (reset! search-term value)
+                                              (when @search-debounce-timer
+                                                (js/clearTimeout @search-debounce-timer))
+                                              (when should-search?
+                                                (reset! search-debounce-timer
+                                                        (js/setTimeout
+                                                         (fn []
+                                                           (reset! connections-search-status :loading)
+                                                           (rf/dispatch [:connections/get-connections-paginated request]))
+                                                         500)))))}
+             [:> TextField.Slot
+              [:> Search {:size 16}]]]
 
-           [:> Popover.Root {:open @tags-popover-open?
-                             :onOpenChange #(reset! tags-popover-open? %)}
-            [:> Popover.Trigger {:asChild true}
-             [:> Button {:size "2"
-                         :variant (if (not-empty @selected-tag-values) "soft" "surface")
-                         :color "gray"
-                         :onClick #(reset! tags-popover-open? true)}
-              [:> Flex {:gap "2" :align "center"}
-               [:> Tag {:size 16}]
-               "Tags"
-               (when (not-empty @selected-tag-values)
-                 (let [tag-count (apply + (map count (vals @selected-tag-values)))]
-                   [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
-                    [:> Text {:size "1" :weight "bold" :class "text-white"}
-                     tag-count]]))]]]
+            [:> Popover.Root {:open @tags-popover-open?
+                              :onOpenChange #(reset! tags-popover-open? %)}
+             [:> Popover.Trigger {:asChild true}
+              [:> Button {:size "2"
+                          :variant (if (not-empty @selected-tag-values) "soft" "surface")
+                          :color "gray"
+                          :onClick #(reset! tags-popover-open? true)}
+               [:> Flex {:gap "2" :align "center"}
+                [:> Tag {:size 16}]
+                "Tags"
+                (when (not-empty @selected-tag-values)
+                  (let [tag-count (apply + (map count (vals @selected-tag-values)))]
+                    [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
+                     [:> Text {:size "1" :weight "bold" :class "text-white"}
+                      tag-count]]))]]]
 
-            [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
-             [tag-selector/tag-selector
-              @selected-tag-values
-              (fn [new-selected]
-                (reset! selected-tag-values new-selected)
-                (apply-filter (cond-> {}
-                                (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
-                                @selected-resource (assoc :subtype @selected-resource))))]]]
+             [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
+              [tag-selector/tag-selector
+               @selected-tag-values
+               (fn [new-selected]
+                 (reset! selected-tag-values new-selected)
+                 (apply-filter (cond-> {}
+                                 (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
+                                 @selected-resource (assoc :subtype @selected-resource))))]]]
 
-           [resource-component @selected-resource
-            (fn [resource]
-              (reset! selected-resource resource)
-              (apply-filter (cond-> {}
-                              (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
-                              resource (assoc :subtype resource))))]]]
+            [resource-component @selected-resource
+             (fn [resource]
+               (reset! selected-resource resource)
+               (apply-filter (cond-> {}
+                               (not-empty @selected-tag-values) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tag-values))
+                               resource (assoc :subtype resource))))]]]
 
-         ;; Test Connection Modal
-         [test-connection-modal/test-connection-modal (get-in @test-connection-state [:connection-name])]
+          ;; Test Connection Modal
+          [test-connection-modal/test-connection-modal (get-in @test-connection-state [:connection-name])]
 
-         (if (and connections-loading? (empty? connections-data))
-           [loading-list-view]
+          [:div {:class "h-full"}
+           [:div {:class "relative h-full"}
+            (when (and (empty? connections-data) (not connections-loading?))
+              (if (not (cs/blank? trimmed-search))
+                [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
+                 "No connections with this criteria"]
+                [empty-list-view]))
 
-           [:div {:class "h-full overflow-y-auto"}
-            [:div {:class "relative h-full overflow-y-auto"}
-             (when (and (empty? connections-data) (not connections-loading?))
-               (if (not (cs/blank? trimmed-search))
-                 [:div {:class "px-regular py-large text-xs text-gray-700 italic"}
-                  "No connections with this criteria"]
-                 [empty-list-view]))
+            (when (seq connections-data)
+              [:div {:class "flex-1 overflow-hidden"}
+               (doall
+                (for [connection connections-data]
+                  [:> Box {:key (:id connection)
+                           :class (str "bg-white border border-[--gray-3] "
+                                       "text-[--gray-12] "
+                                       "first:rounded-t-lg last:rounded-b-lg "
+                                       "first:border-t last:border-b "
+                                       "p-regular text-xs flex gap-8 justify-between items-center")}
+                   [:div {:class "flex truncate items-center gap-regular"}
+                    [:div
+                     [:figure {:class "w-6"}
+                      [:img {:src (connection-constants/get-connection-icon connection)
+                             :class "w-9"
+                             :loading "lazy"}]]]
+                    [:div
+                     [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
+                      (:name connection)]
+                     [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
+                      [:div {:class (str "rounded-full h-[6px] w-[6px] "
+                                         (if (= (:status connection) "online")
+                                           "bg-green-500"
+                                           "bg-red-500"))}]
+                      (cs/capitalize (:status connection))]]]
 
-             (when (seq connections-data)
-               [:div {:class "flex-1 overflow-hidden"}
-                [infinite-scroll
-                 {:on-load-more (fn []
-                                  (when (not connections-loading?)
-                                    (let [current-page (:current-page connections-state 1)
-                                          next-page (inc current-page)
-                                          next-request (cond-> {:page next-page
-                                                                :force-refresh? false
-                                                                :filters (or active-filters {})}
-                                                         (not (cs/blank? (cs/trim active-search))) (assoc :search (cs/trim active-search)))]
-                                      (rf/dispatch [:connections/get-connections-paginated next-request]))))
-                  :has-more? (:has-more? connections-state)
-                  :loading? connections-loading?}
-                 (doall
-                  (for [connection connections-data]
-                    [:> Box {:key (:id connection)
-                             :class (str "bg-white border border-[--gray-3] "
-                                         "text-[--gray-12] "
-                                         "first:rounded-t-lg last:rounded-b-lg "
-                                         "first:border-t last:border-b "
-                                         "p-regular text-xs flex gap-8 justify-between items-center")}
-                     [:div {:class "flex truncate items-center gap-regular"}
-                      [:div
-                       [:figure {:class "w-6"}
-                        [:img {:src (connection-constants/get-connection-icon connection)
-                               :class "w-9"
-                               :loading "lazy"}]]]
-                      [:div
-                       [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
-                        (:name connection)]
-                       [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
-                        [:div {:class (str "rounded-full h-[6px] w-[6px] "
-                                           (if (= (:status connection) "online")
-                                             "bg-green-500"
-                                             "bg-red-500"))}]
-                        (cs/capitalize (:status connection))]]]
+                   [:div {:id "connection-info"
+                          :class "flex gap-6 items-center"}
+                    (when (can-connect? connection)
+                      [:> DropdownMenu.Root {:dir "rtl"}
+                       [:> DropdownMenu.Trigger
+                        [:> Button {:size 2 :variant "soft"}
+                         "Connect"
+                         [:> DropdownMenu.TriggerIcon]]]
+                       [:> DropdownMenu.Content
+                        (when (can-open-web-terminal? connection)
+                          [:> DropdownMenu.Item {:on-click
+                                                 (fn []
+                                                   (js/localStorage.setItem "selected-connection" connection)
+                                                   (rf/dispatch [:database-schema->clear-schema])
+                                                   (rf/dispatch [:navigate :editor-plugin-panel]))}
+                           "Open in Web Terminal"])
 
-                     [:div {:id "connection-info"
-                            :class "flex gap-6 items-center"}
-                      (when (can-connect? connection)
-                        [:> DropdownMenu.Root {:dir "rtl"}
-                         [:> DropdownMenu.Trigger
-                          [:> Button {:size 2 :variant "soft"}
-                           "Connect"
-                           [:> DropdownMenu.TriggerIcon]]]
-                         [:> DropdownMenu.Content
-                          (when (can-open-web-terminal? connection)
-                            [:> DropdownMenu.Item {:on-click
-                                                   (fn []
-                                                     (js/localStorage.setItem "selected-connection" connection)
-                                                     (rf/dispatch [:database-schema->clear-schema])
-                                                     (rf/dispatch [:navigate :editor-plugin-panel]))}
-                             "Open in Web Terminal"])
+                        (when (can-hoop-cli? connection)
+                          [:> DropdownMenu.Item {:on-click
+                                                 #(rf/dispatch [:modal->open
+                                                                {:content [hoop-cli-modal/main (:name connection)]
+                                                                 :maxWidth "1100px"
+                                                                 :class "overflow-hidden"}])}
+                           "Open with Hoop CLI"])
 
-                          (when (can-hoop-cli? connection)
-                            [:> DropdownMenu.Item {:on-click
-                                                   #(rf/dispatch [:modal->open
-                                                                  {:content [hoop-cli-modal/main (:name connection)]
-                                                                   :maxWidth "1100px"
-                                                                   :class "overflow-hidden"}])}
-                             "Open with Hoop CLI"])
+                        (when (can-access-native-client? connection)
+                          [:> DropdownMenu.Item {:on-click
+                                                 #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
+                           "Open in Native Client"])
 
-                          (when (can-access-native-client? connection)
-                            [:> DropdownMenu.Item {:on-click
-                                                   #(rf/dispatch [:native-client-access->start-flow (:name connection)])}
-                             "Open in Native Client"])
+                        (when (can-test-connection? connection)
+                          [:> DropdownMenu.Item {:on-click #(rf/dispatch [:connections->test-connection (:name connection)])
+                                                 :disabled (is-connection-testing? @test-connection-state (:name connection))}
+                           "Test Connection"])]])
 
-                          (when (can-test-connection? connection)
-                            [:> DropdownMenu.Item {:on-click #(rf/dispatch [:connections->test-connection (:name connection)])
-                                                   :disabled (is-connection-testing? @test-connection-state (:name connection))}
-                             "Test Connection"])]])
-
-                      (when (-> @user :data :admin?)
-                        [:> DropdownMenu.Root {:dir "rtl"}
-                         [:> DropdownMenu.Trigger
-                          [:> IconButton {:size "1" :variant "ghost" :color "gray"}
-                           [:> EllipsisVertical {:size 16}]]]
-                         [:> DropdownMenu.Content
-                          (when (not (= (:managed_by connection) "hoopagent"))
-                            [:> DropdownMenu.Item {:on-click
-                                                   (fn []
-                                                     (rf/dispatch [:plugins->get-my-plugins])
-                                                     (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
-                             "Configure"])
-                          [:> DropdownMenu.Item {:color "red"
-                                                 :on-click (fn []
-                                                             (rf/dispatch [:dialog->open
-                                                                           {:title "Delete connection?"
-                                                                            :type :danger
-                                                                            :text-action-button "Confirm and delete"
-                                                                            :action-button? true
-                                                                            :text [:> Box {:class "space-y-radix-4"}
-                                                                                   [:> Text {:as "p"}
-                                                                                    "This action will instantly remove your access to "
-                                                                                    (:name connection)
-                                                                                    " and can not be undone."]
-                                                                                   [:> Text {:as "p"}
-                                                                                    "Are you sure you want to delete this connection?"]]
-                                                                            :on-success (fn []
-                                                                                          (rf/dispatch [:connections->delete-connection (:name connection)])
-                                                                                          (rf/dispatch [:modal->close]))}]))}
-                           "Delete"]]])]]))]])]])]))))
+                    (when (-> @user :data :admin?)
+                      [:> DropdownMenu.Root {:dir "rtl"}
+                       [:> DropdownMenu.Trigger
+                        [:> IconButton {:size "1" :variant "ghost" :color "gray"}
+                         [:> EllipsisVertical {:size 16}]]]
+                       [:> DropdownMenu.Content
+                        (when (not (= (:managed_by connection) "hoopagent"))
+                          [:> DropdownMenu.Item {:on-click
+                                                 (fn []
+                                                   (rf/dispatch [:plugins->get-my-plugins])
+                                                   (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+                           "Configure"])
+                        [:> DropdownMenu.Item {:color "red"
+                                               :on-click (fn []
+                                                           (rf/dispatch [:dialog->open
+                                                                         {:title "Delete connection?"
+                                                                          :type :danger
+                                                                          :text-action-button "Confirm and delete"
+                                                                          :action-button? true
+                                                                          :text [:> Box {:class "space-y-radix-4"}
+                                                                                 [:> Text {:as "p"}
+                                                                                  "This action will instantly remove your access to "
+                                                                                  (:name connection)
+                                                                                  " and can not be undone."]
+                                                                                 [:> Text {:as "p"}
+                                                                                  "Are you sure you want to delete this connection?"]]
+                                                                          :on-success (fn []
+                                                                                        (rf/dispatch [:connections->delete-connection (:name connection)])
+                                                                                        (rf/dispatch [:modal->close]))}]))}
+                         "Delete"]]])]]))])]]]]))))
