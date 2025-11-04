@@ -20,17 +20,17 @@
 (rf/reg-event-fx
  :resources/get-resources-paginated
  (fn
-   [{:keys [db]} [_ {:keys [page-size page filters search force-refresh?]
+   [{:keys [db]} [_ {:keys [page-size page filters name force-refresh?]
                      :or {page-size 50 page 1 force-refresh? false}}]]
    (let [request {:page-size page-size
                   :page page
                   :filters filters
-                  :search search
+                  :name name
                   :force-refresh? force-refresh?}
          query-params (cond-> {}
                         page-size (assoc :page_size page-size)
                         page (assoc :page page)
-                        search (assoc :search search)
+                        name (assoc :name name)
                         (:tag_selector filters) (assoc :tag_selector (:tag_selector filters))
                         (:type filters) (assoc :type (:type filters))
                         (:subtype filters) (assoc :subtype (:subtype filters)))]
@@ -40,7 +40,7 @@
                           :page-size page-size
                           :current-page page
                           :active-filters filters
-                          :active-search search}))
+                          :active-name name}))
       :fx [[:dispatch
             [:fetch {:method "GET"
                      :uri "/resources"
@@ -51,7 +51,7 @@
  :resources/set-resources-paginated
  (fn
    [{:keys [db]} [_ {:keys [response force-refresh?]}]]
-   (let [resources-data response
+   (let [resources-data (get response :data [])
          pages-info (get response :pages {})
          page-number (get pages-info :page 1)
          page-size (get pages-info :size 50)

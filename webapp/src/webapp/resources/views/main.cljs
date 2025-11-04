@@ -265,7 +265,7 @@
 (defn panel []
   (let [user (rf/subscribe [:users->current-user])
         active-tab (r/atom "resources")
-        search-term (r/atom "")
+        search-name (r/atom "")
         selected-tags (r/atom {})
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
@@ -295,7 +295,7 @@
           [custom-tab-header @active-tab
            (fn [new-tab]
              (reset! active-tab new-tab)
-             (reset! search-term "")
+             (reset! search-name "")
              (reset! selected-tags {})
              (reset! selected-resource nil))]
 
@@ -307,7 +307,7 @@
                          :on-click (fn []
                                      (reset! selected-tags {})
                                      (reset! selected-resource nil)
-                                     (reset! search-term "")
+                                     (reset! search-name "")
                                      (when @search-debounce-timer
                                        (js/clearTimeout @search-debounce-timer))
                                      (if (= @active-tab "resources")
@@ -321,11 +321,11 @@
            [:> TextField.Root {:placeholder (if (= @active-tab "resources")
                                               "Search resources"
                                               "Search roles")
-                               :value @search-term
+                               :value @search-name
                                :onChange (fn [e]
                                            (let [value (-> e .-target .-value)
                                                  trimmed (cs/trim value)]
-                                             (reset! search-term value)
+                                             (reset! search-name value)
                                              (when @search-debounce-timer
                                                (js/clearTimeout @search-debounce-timer))
                                              (when (or (cs/blank? trimmed) (> (count trimmed) 2))
@@ -335,10 +335,10 @@
                                                           (if (= @active-tab "resources")
                                                             (rf/dispatch [:resources/get-resources-paginated
                                                                           {:page 1 :force-refresh? true
-                                                                           :search trimmed :filters {}}])
+                                                                           :name trimmed :filters {}}])
                                                             (rf/dispatch [:connections/get-connections-paginated
                                                                           {:page 1 :force-refresh? true
-                                                                           :search trimmed :filters {}}])))
+                                                                           :name trimmed :filters {}}])))
                                                         500)))))}
             [:> TextField.Slot [:> Search {:size 16}]]]
 
