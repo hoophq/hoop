@@ -65,6 +65,8 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts Resou
 		offset = (opts.Page - 1) * opts.PageSize
 	}
 
+	nameQuery := "%" + opts.Name + "%"
+
 	var results []struct {
 		Resources
 		Total int64 `gorm:"column:total"`
@@ -85,7 +87,7 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts Resou
 	`, map[string]interface{}{
 		"org_id":               orgID,
 		"is_admin_or_internal": isAdminOrInternal,
-		"name":                 opts.Name,
+		"name":                 nameQuery,
 		"type":                 opts.Type,
 		"page_size":            opts.PageSize,
 		"offset":               offset,
