@@ -1,6 +1,7 @@
 (ns webapp.resources.events
   (:require
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.connections.views.setup.events.process-form :as process-form]))
 
 ;; Cache configuration
 (def cache-ttl-ms (* 120 60 1000)) ; 2 hours in milliseconds
@@ -163,6 +164,30 @@
                                                                :text "Resource deleted!"}])
                                  (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
                                  (rf/dispatch [:navigate :resources]))}]]]}))
+
+;; Update role connection (with redirect to resource configure)
+(rf/reg-event-fx
+ :resources->update-role-connection
+ (fn
+   [{:keys [db]} [_ {:keys [name]}]]
+   (let [body (process-form/process-payload db)
+         ;; Get resource_name from the connection data
+         resource-name (get-in db [:connections->connection-details :data :resource_name])]
+     {:fx [[:dispatch [:fetch
+                       {:method "PUT"
+                        :uri (str "/connections/" name)
+                        :body body
+                        :on-success (fn []
+                                      (rf/dispatch [:modal->close])
+                                      (rf/dispatch [:show-snackbar
+                                                    {:level :success
+                                                     :text (str "Role " name " updated!")}])
+                                      (rf/dispatch [:plugins->get-my-plugins])
+                                      (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
+                                      ;; Redirect back to resource configure using resource_name
+                                      (if resource-name
+                                        (rf/dispatch [:navigate :configure-resource {} :resource-id resource-name])
+                                        (rf/dispatch [:navigate :resources])))}]]]})))
 
 ;; Get resource roles (connections) - Paginated
 (rf/reg-event-fx

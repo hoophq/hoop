@@ -240,8 +240,7 @@
                         (when (not (= (:managed_by connection) "hoopagent"))
                           [:> DropdownMenu.Item {:on-click
                                                  (fn []
-                                                   (rf/dispatch [:plugins->get-my-plugins])
-                                                   (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+                                                   (rf/dispatch [:navigate :configure-role {} :connection-name (:name connection)]))}
                            "Configure"])
                         [:> DropdownMenu.Item {:color "red"
                                                :on-click (fn []

@@ -30,7 +30,8 @@
                      [["/edit/" :connection-name] :edit-connection]]
      "/resources" [["" :resources]
                    ["/new" :resource-setup-new]
-                   [["/configure/" :resource-id] :configure-resource]]
+                   [["/configure/" :resource-id] :configure-resource]
+                   [["/roles/" :connection-name "/configure"] :configure-role]]
      "/client" :editor-plugin
      "/runbooks" :runbooks
      "/dashboard" :dashboard

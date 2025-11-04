@@ -109,8 +109,7 @@
                               :variant "outline"
                               :color "gray"
                               :on-click (fn []
-                                          (rf/dispatch [:plugins->get-my-plugins])
-                                          (rf/dispatch [:navigate :edit-connection {} :connection-name (:name connection)]))}
+                                          (rf/dispatch [:navigate :configure-role {} :connection-name (:name connection)]))}
                    "Configure"]
                   [:> Button {:size "2"
                               :variant "soft"
