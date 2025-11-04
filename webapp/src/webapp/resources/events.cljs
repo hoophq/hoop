@@ -164,23 +164,47 @@
                                  (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
                                  (rf/dispatch [:navigate :resources]))}]]]}))
 
-;; Get resource roles (connections)
+;; Get resource roles (connections) - Paginated
 (rf/reg-event-fx
  :resources->get-resource-roles
  (fn
-   [{:keys [db]} [_ resource-id]]
-   {:db (-> db
-            (assoc-in [:resources->resource-roles resource-id] {:loading true :data []}))
-    :fx [[:dispatch
-          [:fetch {:method "GET"
-                   :uri "/connections"
-                   :query-params {:resource_name resource-id}
-                   :on-success (fn [response]
-                                 (rf/dispatch [:resources->set-resource-roles resource-id response]))}]]]}))
+   [{:keys [db]} [_ resource-id {:keys [page-size page force-refresh?]
+                                 :or {page-size 50 page 1 force-refresh? false}}]]
+   (let [request {:page-size page-size
+                  :page page
+                  :resource-id resource-id
+                  :force-refresh? force-refresh?}
+         query-params {:resource_name resource-id
+                       :page_size page-size
+                       :page page}]
+     {:db (-> db
+              (update-in [:resources->resource-roles resource-id] merge
+                         {:loading true
+                          :page-size page-size
+                          :current-page page}))
+      :fx [[:dispatch
+            [:fetch {:method "GET"
+                     :uri "/connections"
+                     :query-params query-params
+                     :on-success (fn [response]
+                                   (rf/dispatch [:resources->set-resource-roles resource-id (assoc request :response response)]))}]]]})))
 
 (rf/reg-event-db
  :resources->set-resource-roles
- (fn [db [_ resource-id roles]]
-   (assoc-in db [:resources->resource-roles resource-id]
-             {:loading false :data roles})))
+ (fn [db [_ resource-id {:keys [response force-refresh?]}]]
+   (let [connections-data (get response :data [])
+         pages-info (get response :pages {})
+         page-number (get pages-info :page 1)
+         page-size (get pages-info :size 50)
+         total (get pages-info :total 0)
+         existing-roles (get-in db [:resources->resource-roles resource-id :data] [])
+         final-roles (if force-refresh? connections-data (vec (concat existing-roles connections-data)))
+         has-more? (< (* page-number page-size) total)]
+     (assoc-in db [:resources->resource-roles resource-id]
+               {:loading false
+                :data final-roles
+                :has-more? has-more?
+                :current-page page-number
+                :page-size page-size
+                :total total}))))
 
