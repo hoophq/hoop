@@ -144,7 +144,9 @@
              [:> Button {:size "2"
                          :variant "ghost"
                          :color "gray"
-                         :on-click #(rf/dispatch [:resource-setup->back])}
+                         :on-click #(if (= current-step :resource-name)
+                                      (js/history.back)
+                                      (rf/dispatch [:resource-setup->back]))}
               "Back"])
 
            (when-not (:next-hidden? footer-props)
