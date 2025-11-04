@@ -6,19 +6,15 @@
    [webapp.connections.views.setup.server :as server]))
 
 (defn main [connection]
-  [:form {:class "max-w-[600px]"
-          :id "credentials-form"
-          :on-submit (fn [e] (.preventDefault e))}
-   [:> Box {:class "space-y-8"}
-
-    ;; Environment credentials (dynamic forms)
-    [:> Box
-     (case (:type connection)
-       "database" [database/credentials-step (:subtype connection) :update]
-       "custom" [server/credentials-step :update]
-       "application" (if (= (:subtype connection) "ssh")
-                       [server/ssh-credentials]
-                       [network/credentials-form
-                        {:connection-type (:subtype connection)}])
-       nil)]]])
+  [:> Box {:class "max-w-[600px] space-y-8"}
+   ;; Environment credentials (dynamic forms)
+   ;; Cada tipo de conexão já cria seu próprio form com id="credentials-form"
+   (case (:type connection)
+     "database" [database/credentials-step (:subtype connection) :update]
+     "custom" [server/credentials-step :update]
+     "application" (if (= (:subtype connection) "ssh")
+                     [server/ssh-credentials]
+                     [network/credentials-form
+                      {:connection-type (:subtype connection)}])
+     nil)])
 

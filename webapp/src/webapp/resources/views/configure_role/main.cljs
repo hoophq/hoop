@@ -73,52 +73,54 @@
      _ (rf/dispatch [:guardrails->get-all])
      _ (rf/dispatch [:jira-templates->get-all])]
 
-    (let [handle-submit (fn [e]
-                          (.preventDefault e)
-                          (let [connection-type (:type (:data @connection))
-                                connection-subtype (:subtype (:data @connection))
-                                form-id (cond
-                                          (and (= connection-type "application")
-                                               (= connection-subtype "ssh")) "ssh-credentials-form"
-                                          :else "credentials-form")
-                                form (.getElementById js/document form-id)
-                                current-tag-key @(rf/subscribe [:connection-setup/current-key])
-                                current-tag-value @(rf/subscribe [:connection-setup/current-value])]
+    (let [handle-save (fn []
+                        (let [connection-type (:type (:data @connection))
+                              connection-subtype (:subtype (:data @connection))
+                              form-id (cond
+                                        (and (= connection-type "application")
+                                             (= connection-subtype "ssh")) "ssh-credentials-form"
+                                        :else "credentials-form")
+                              form (.getElementById js/document form-id)
+                              current-tag-key @(rf/subscribe [:connection-setup/current-key])
+                              current-tag-value @(rf/subscribe [:connection-setup/current-value])]
 
-                            (when form
-                              (.reportValidity form)
-                              (reset! credentials-valid? (.checkValidity form)))
+                          ;; Se o form não existe (tab não renderizada), ir para credentials primeiro
+                          (if-not form
+                            (reset! active-tab "credentials")
 
-                            (when @credentials-valid?
-                              ;; Para conexões SSH, limpar campos não utilizados baseado no método de autenticação
-                              (when (and (= connection-type "application")
-                                         (= connection-subtype "ssh"))
-                                (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
-                                  (case auth-method
-                                    "password"
-                                    (rf/dispatch [:connection-setup/update-ssh-credentials
-                                                  "authorized_server_keys" ""])
-                                    "key"
-                                    (rf/dispatch [:connection-setup/update-ssh-credentials
-                                                  "pass" ""])
-                                    nil)))
+                            ;; Validar o form de credentials
+                            (if (.checkValidity form)
+                              (do
+                                ;; Para conexões SSH, limpar campos não utilizados baseado no método de autenticação
+                                (when (and (= connection-type "application")
+                                           (= connection-subtype "ssh"))
+                                  (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
+                                    (case auth-method
+                                      "password"
+                                      (rf/dispatch [:connection-setup/update-ssh-credentials
+                                                    "authorized_server_keys" ""])
+                                      "key"
+                                      (rf/dispatch [:connection-setup/update-ssh-credentials
+                                                    "pass" ""])
+                                      nil)))
 
-                              ;; Process current tag values before submitting
-                              (when (and current-tag-key (.-value current-tag-key))
-                                (rf/dispatch [:connection-setup/add-tag
-                                              (.-value current-tag-key)
-                                              (if current-tag-value
-                                                (.-value current-tag-value)
-                                                "")]))
+                                ;; Process current tag values before submitting
+                                (when (and current-tag-key (.-value current-tag-key))
+                                  (rf/dispatch [:connection-setup/add-tag
+                                                (.-value current-tag-key)
+                                                (if current-tag-value
+                                                  (.-value current-tag-value)
+                                                  "")]))
 
-                              ;; Submit the form - use custom event to redirect back to resource
-                              (rf/dispatch [:resources->update-role-connection {:name connection-name
-                                                                                :resource-name (:resource_name (:data @connection))
-                                                                                :from-page @from-page}]))
+                                ;; Submit - dados já estão no re-frame state
+                                (rf/dispatch [:resources->update-role-connection {:name connection-name
+                                                                                  :resource-name (:resource_name (:data @connection))
+                                                                                  :from-page @from-page}]))
 
-                            (println "credentials-valid?" @credentials-valid?)
-                            (when (not @credentials-valid?)
-                              (reset! active-tab "credentials"))))]
+                              ;; Se inválido, mostrar erros e ir para tab credentials
+                              (do
+                                (reset! active-tab "credentials")
+                                (js/setTimeout #(.reportValidity form) 200))))))]
 
       (r/create-class
        {:component-did-mount #(check-form-validity!)
@@ -153,8 +155,7 @@
                  [:> Box {:class "bg-gray-1 min-h-screen px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10"}
                   [header (:data @connection) @test-connection-state]
 
-                  [:form {:id "update-connection-form"
-                          :on-submit handle-submit}
+                  [:div {:id "update-connection-wrapper"}
                    [:> Tabs.Root {:value @active-tab
                                   :on-value-change (fn [new-tab]
                                                      (when (and (= @active-tab "credentials")
@@ -167,27 +168,32 @@
                      [:> Tabs.Trigger {:value "terminal"} "Terminal Access"]
                      [:> Tabs.Trigger {:value "native"} "Native Access"]]
 
-                    [:> Tabs.Content {:value "details"}
-                     [details-tab/main (:data @connection)]]
+                    [:> Tabs.Content {:value "details"
+                                      :force-mount true}
+                     [:> Box {:class (when (not= @active-tab "details") "hidden")}
+                      [details-tab/main (:data @connection)]]]
 
-                    [:> Tabs.Content {:value "credentials"}
-                     [credentials-tab/main (:data @connection)]]
+                    [:> Tabs.Content {:value "credentials"
+                                      :force-mount true}
+                     [:> Box {:class (when (not= @active-tab "credentials") "hidden")}
+                      [credentials-tab/main (:data @connection)]]]
 
-                    [:> Tabs.Content {:value "terminal"}
-                     [terminal-access-tab/main (:data @connection)]]
+                    [:> Tabs.Content {:value "terminal"
+                                      :force-mount true}
+                     [:> Box {:class (when (not= @active-tab "terminal") "hidden")}
+                      [terminal-access-tab/main (:data @connection)]]]
 
-                    [:> Tabs.Content {:value "native"}
-                     [native-access-tab/main (:data @connection)]]]]]
+                    [:> Tabs.Content {:value "native"
+                                      :force-mount true}
+                     [:> Box {:class (when (not= @active-tab "native") "hidden")}
+                      [native-access-tab/main (:data @connection)]]]]]]
 
                  :footer-props
                  {:form-type :update
                   :back-text "Back"
                   :next-text "Save"
                   :on-back #(js/history.back)
-                  :on-next (fn []
-                             (let [form (.getElementById js/document "update-connection-form")]
-                               (when form
-                                 (.dispatchEvent form (js/Event. "submit" #js{:bubbles true :cancelable true})))))
+                  :on-next handle-save
 
                   :on-delete #(rf/dispatch [:dialog->open
                                             {:title "Delete role?"

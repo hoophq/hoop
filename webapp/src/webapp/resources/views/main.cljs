@@ -286,7 +286,7 @@
          ;; Add button (admin only)
          (when (-> @user :data :admin?)
            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
-            [:> Button {:on-click #(rf/dispatch [:navigate :resource-setup-new])}
+            [:> Button {:on-click #(rf/dispatch [:navigate :resource-catalog])}
              "Setup new Resource"]])
 
          ;; Tab Header and Filters in SAME ROW
