@@ -29,11 +29,15 @@
 
 (defn main [_connection]
   (let [user (rf/subscribe [:users->current-user])
+        gateway-info (rf/subscribe [:gateway->info])
         access-modes (rf/subscribe [:connection-setup/access-modes])
-        review? (rf/subscribe [:connection-setup/review])]
+        review? (rf/subscribe [:connection-setup/review])
+        data-masking? (rf/subscribe [:connection-setup/data-masking])]
     
     (fn [_connection]
       (let [free-license? (-> @user :data :free-license?)
+            has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
+            redact-provider (-> @gateway-info :data :redact_provider)
             native-access-enabled? (get @access-modes :native true)]
         
         [:> Box {:class "max-w-[600px] space-y-8"}
@@ -60,8 +64,11 @@
          [toggle-section
           {:title "AI Data Masking"
            :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
-           :checked false
-           :disabled? true
+           :checked @data-masking?
+           :disabled? (or free-license?
+                          (not has-redact-credentials?)
+                          (= redact-provider "mspresidio"))
+           :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
            :upgrade-plan-component
            (when free-license?
              [:> Callout.Root {:size "1" :class "mt-4" :color "blue"}

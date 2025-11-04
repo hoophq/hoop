@@ -34,16 +34,21 @@
 
 (defn main [connection]
   (let [user (rf/subscribe [:users->current-user])
+        gateway-info (rf/subscribe [:gateway->info])
         guardrails-list (rf/subscribe [:guardrails->list])
         jira-templates-list (rf/subscribe [:jira-templates->list])
         access-modes (rf/subscribe [:connection-setup/access-modes])
         database-schema? (rf/subscribe [:connection-setup/database-schema])
         jira-template-id (rf/subscribe [:connection-setup/jira-template-id])
         guardrails (rf/subscribe [:connection-setup/guardrails])
+        review? (rf/subscribe [:connection-setup/review])
+        data-masking? (rf/subscribe [:connection-setup/data-masking])
         is-database? (= (:type connection) "database")]
 
     (fn [_connection]
       (let [free-license? (-> @user :data :free-license?)
+            has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
+            redact-provider (-> @gateway-info :data :redact_provider)
             web-terminal-enabled? (get @access-modes :web true)
             runbooks-enabled? (get @access-modes :runbooks true)]
 
@@ -60,8 +65,9 @@
          [toggle-section
           {:title "Review by Command"
            :description "Require approval prior to connection execution."
-           :checked false
-           :disabled? true
+           :checked @review?
+           :on-change #(rf/dispatch [:connection-setup/toggle-review])
+           :disabled? free-license?
            :upgrade-plan-component
            (when free-license?
              [:> Callout.Root {:size "1" :class "mt-4" :color "blue"}
@@ -79,8 +85,11 @@
          [toggle-section
           {:title "AI Data Masking"
            :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
-           :checked false
-           :disabled? true
+           :checked @data-masking?
+           :disabled? (or free-license?
+                          (not has-redact-credentials?)
+                          (= redact-provider "mspresidio"))
+           :on-change #(rf/dispatch [:connection-setup/toggle-data-masking])
            :upgrade-plan-component
            (when free-license?
              [:> Callout.Root {:size "1" :class "mt-4" :color "blue"}
@@ -111,16 +120,20 @@
            {:title "Guardrails"
             :description "Create custom rules to guide and protect usage within your connections."
             :checked (seq @guardrails)
-            :disabled? true}]
+            :on-change (fn []
+                         (when (seq (:data @guardrails-list))
+                           (rf/dispatch [:connection-setup/set-guardrails nil])))
+            :disabled? (empty? (:data @guardrails-list))}]
 
           (when (seq (:data @guardrails-list))
             [:> Box {:class "mt-4"}
              [multi-select/main
-              {:options (map (fn [g] {:value (:id g) :label (:name g)})
-                             (:data @guardrails-list))
-               :selected @guardrails
-               :on-change #(rf/dispatch [:connection-setup/set-guardrails %])
-               :placeholder "Select one"}]])
+              {:options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
+                                  (-> @guardrails-list :data)) [])
+               :id "guardrails-input"
+               :name "guardrails-input"
+               :default-value (or @guardrails [])
+               :on-change #(rf/dispatch [:connection-setup/set-guardrails (js->clj %)])}]])
 
           [:> Button {:variant "ghost" :size "2" :class "mt-3"}
            [:> ArrowUpRight {:size 16}]
@@ -132,17 +145,22 @@
            {:title "Jira Templates"
             :description "Optimize and automate workflows with Jira Integration."
             :checked (some? @jira-template-id)
-            :disabled? true}]
+            :on-change (fn []
+                         (when (seq (:data @jira-templates-list))
+                           (rf/dispatch [:connection-setup/set-jira-template-id nil])))
+            :disabled? (empty? (:data @jira-templates-list))}]
 
           (when (seq (:data @jira-templates-list))
             [:> Box {:class "mt-4"}
-             [multi-select/main
-              {:options (map (fn [t] {:value (:id t) :label (:name t)})
-                             (:data @jira-templates-list))
-               :selected (when @jira-template-id [@jira-template-id])
-               :on-change #(rf/dispatch [:connection-setup/set-jira-template (first %)])
-               :placeholder "Select one"
-               :single? true}]])
+             [multi-select/single
+              {:placeholder "Select one"
+               :options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
+                                  (-> @jira-templates-list :data)) [])
+               :id "jira-template-select"
+               :name "jira-template-select"
+               :default-value (when @jira-template-id [@jira-template-id])
+               :clearable? true
+               :on-change #(rf/dispatch [:connection-setup/set-jira-template-id (js->clj %)])}]])
 
           [:> Button {:variant "ghost" :size "2" :class "mt-3"}
            [:> ArrowUpRight {:size 16}]
