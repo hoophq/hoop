@@ -115,6 +115,7 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	nameOrID := c.Param("nameOrID")
 	agent, err := models.GetAgentByNameOrID(ctx.OrgID, nameOrID)
+
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
@@ -125,6 +126,7 @@ func Get(c *gin.Context) {
 			// set to default mode if the entity doesn't contain any value
 			mode = proto.AgentModeStandardType
 		}
+		
 		if mode == proto.AgentModeMultiConnectionType {
 			// for now, don't return multi-connection keys
 			// there's a special route for managing these kind of token.
@@ -132,6 +134,7 @@ func Get(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
 			return
 		}
+
 		c.JSON(http.StatusOK, openapi.Agent{
 			ID:       agent.ID,
 			Token:    "", // don't show the hashed token
@@ -153,12 +156,14 @@ func Get(c *gin.Context) {
 //	@Description	List all agent keys
 //	@Tags			Agents
 //	@Produce		json
-//	@Success		200	{array}		openapi.AgentListResponse
-//	@Failure		500	{object}	openapi.HTTPError
+//	@Param			status	query		string	false	"Filter by status (CONNECTED or DISCONNECTED)"
+//	@Success		200		{array}		openapi.AgentListResponse
+//	@Failure		500		{object}	openapi.HTTPError
 //	@Router			/agents [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	items, err := models.ListAgents(ctx.OrgID)
+	status := c.Query("status")
+	items, err := models.ListAgents(ctx.OrgID, status)
 	if err != nil {
 		log.Errorf("failed listing agents, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing agents"})
