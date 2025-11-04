@@ -36,7 +36,7 @@
           resource (:data resource-state)
           loading? (:loading resource-state)]
 
-      [:> Box {:class "bg-[--gray-2] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10 h-full overflow-auto"}
+      [:> Box {:class "bg-[--gray-1] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10 h-full overflow-auto"}
        (if (or loading? (nil? resource))
          [loading-view]
          [:> Box
