@@ -2,6 +2,8 @@ package apirunbooks
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // ListRunbookRules
@@ -19,15 +22,15 @@ import (
 // @Tags         Runbooks
 // @Produce      json
 // @Success      200  {object}  []openapi.RunbookRule
-// @Failure      404,422,500  {object} openapi.HTTPError
+// @Failure      500  {object} openapi.HTTPError
 // @Router       /runbooks/rules [get]
 func ListRunbookRules(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	rules, err := models.GetRunbookRules(models.DB, ctx.GetOrgID(), 0, 0)
 	if err != nil {
-		log.Infof("failed fetching runbook rules, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed fetching runbook rules"})
+		log.Errorf("failed fetching runbook rules, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rules, reason=%v", err)})
 		return
 	}
 
@@ -47,7 +50,7 @@ func ListRunbookRules(c *gin.Context) {
 // @Produce      json
 // @Param        id  path      string  true  "Runbook Rule ID"
 // @Success      200  {object}  openapi.RunbookRule
-// @Failure      404,422,500  {object} openapi.HTTPError
+// @Failure      404,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [get]
 func GetRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -56,8 +59,13 @@ func GetRunbookRule(c *gin.Context) {
 
 	rule, err := models.GetRunbookRuleByID(models.DB, ctx.GetOrgID(), ruleID)
 	if err != nil {
-		log.Infof("failed fetching runbook rule, err=%v", err)
-		c.JSON(http.StatusNotFound, gin.H{"message": "runbook rule not found"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "runbook rule not found"})
+			return
+		}
+
+		log.Errorf("failed fetching runbook rule, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rule, reason=%v", err)})
 		return
 	}
 
@@ -72,25 +80,26 @@ func GetRunbookRule(c *gin.Context) {
 // @Tags         Runbooks
 // @Accept       json
 // @Produce      json
-// @Param        rule  body     openapi.RunbookRule  true  "Runbook Rule"
+// @Param        request  body     openapi.RunbookRuleRequest  true  "Runbook Rule"
 // @Success      201  {object}  openapi.RunbookRule
-// @Failure      400,422,500  {object} openapi.HTTPError
+// @Failure      400,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules [post]
 func CreateRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	var reqRule openapi.RunbookRule
+	var reqRule openapi.RunbookRuleRequest
 	if err := c.ShouldBindJSON(&reqRule); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
 		return
 	}
 
 	rule := buildRunbookRuleModelFromRequest(&reqRule)
+	rule.ID = uuid.NewString()
 	rule.OrgID = ctx.GetOrgID()
 
 	if err := models.UpsertRunbookRule(models.DB, &rule); err != nil {
 		log.Errorf("failed creating runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating runbook rule"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed creating runbook rule, reason=%v", err)})
 		return
 	}
 
@@ -107,18 +116,30 @@ func CreateRunbookRule(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        id    path      string              true  "Runbook Rule ID"
-// @Param        rule  body      openapi.RunbookRule  true  "Runbook Rule"
+// @Param        request  body      openapi.RunbookRule  true  "Runbook Rule"
 // @Success      200  {object}   openapi.RunbookRule
-// @Failure      400,404,422,500  {object} openapi.HTTPError
+// @Failure      400,404,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [put]
 func UpdateRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	ruleID := c.Param("id")
 
-	var reqRule openapi.RunbookRule
+	var reqRule openapi.RunbookRuleRequest
 	if err := c.ShouldBindJSON(&reqRule); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		return
+	}
+
+	_, err := models.GetRunbookRuleByID(models.DB, ctx.GetOrgID(), ruleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "runbook rule not found"})
+			return
+		}
+
+		log.Errorf("failed fetching runbook rule, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rule, reason=%v", err)})
 		return
 	}
 
@@ -128,7 +149,7 @@ func UpdateRunbookRule(c *gin.Context) {
 
 	if err := models.UpsertRunbookRule(models.DB, &rule); err != nil {
 		log.Errorf("failed updating runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating runbook rule"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed updating runbook rule, reason=%v", err)})
 		return
 	}
 
@@ -145,16 +166,28 @@ func UpdateRunbookRule(c *gin.Context) {
 // @Produce      json
 // @Param        id  path      string  true  "Runbook Rule ID"
 // @Success      204  {object}  nil
-// @Failure      404,422,500  {object} openapi.HTTPError
+// @Failure      404,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [delete]
 func DeleteRunbookRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	ruleID := c.Param("id")
 
+	_, err := models.GetRunbookRuleByID(models.DB, ctx.GetOrgID(), ruleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "runbook rule not found"})
+			return
+		}
+
+		log.Errorf("failed fetching runbook rule for delete, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rule for delete, reason=%v", err)})
+		return
+	}
+
 	if err := models.DeleteRunbookRule(models.DB, ctx.GetOrgID(), ruleID); err != nil {
 		log.Errorf("failed deleting runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting runbook rule"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed deleting runbook rule, reason=%v", err)})
 		return
 	}
 
@@ -183,12 +216,7 @@ func buildRunbookResponseFromModel(rule *models.RunbookRules) openapi.RunbookRul
 	}
 }
 
-func buildRunbookRuleModelFromRequest(reqRule *openapi.RunbookRule) models.RunbookRules {
-	id := reqRule.ID
-	if id == "" {
-		id = uuid.NewString()
-	}
-
+func buildRunbookRuleModelFromRequest(reqRule *openapi.RunbookRuleRequest) models.RunbookRules {
 	runbooks := make([]models.RunbookRuleFile, 0, len(reqRule.Runbooks))
 	for _, r := range reqRule.Runbooks {
 		runbooks = append(runbooks, models.RunbookRuleFile{
@@ -198,8 +226,6 @@ func buildRunbookRuleModelFromRequest(reqRule *openapi.RunbookRule) models.Runbo
 	}
 
 	return models.RunbookRules{
-		ID:          id,
-		OrgID:       reqRule.OrgID,
 		Name:        reqRule.Name,
 		Description: sql.NullString{String: reqRule.Description, Valid: reqRule.Description != ""},
 		UserGroups:  reqRule.UserGroups,

@@ -1931,6 +1931,14 @@ type RunbookRuleFile struct {
 	Name       string `json:"name" example:"ops/update-user.runbook.sh"`
 }
 
+type RunbookRuleRequest struct {
+	Name        string            `json:"name" binding:"required" example:"Default Runbook Rules"`
+	Description string            `json:"description" example:"Runbook rules for production databases"`
+	Runbooks    []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
+	Connections []string          `json:"connections" binding:"required" example:"pgdemo,bash"`
+	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
+}
+
 type RunbookRule struct {
 	ID          string            `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	OrgID       string            `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
