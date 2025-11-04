@@ -104,11 +104,6 @@ func validatePatchConnectionRequest(req openapi.ConnectionPatch) error {
 
 	if req.ConnectionTags != nil {
 		for key, val := range *req.ConnectionTags {
-			// if strings.HasPrefix(key, "hoop.dev/") {
-			// 	errors = append(errors, "connection_tags: keys must not use the reserverd prefix hoop.dev/")
-			// 	continue
-			// }
-
 			if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
 				errors = append(errors,
 					fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
