@@ -128,7 +128,7 @@ func getRunbookHookFilesV2(ctx Context) ([]*runbookWrapperFiles, error) {
 
 	// Fetch hooks from repositories
 	for _, repositoryConfig := range runbooksConfig.RepositoryConfigs {
-		config, err := runbooks.NewConfig(repositoryConfig)
+		config, err := models.BuildCommonConfig(&repositoryConfig)
 		if err != nil {
 			return nil, err
 		}

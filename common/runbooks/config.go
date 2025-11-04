@@ -29,52 +29,43 @@ type Config struct {
 	Branch           string
 }
 
-func NewConfigV2(envVars map[string]string) (*Config, error) {
-	if len(envVars) == 0 {
-		return nil, ErrEmptyConfiguration
-	}
-	gitURL, err := base64.StdEncoding.DecodeString(envVars["GIT_URL"])
-	if err != nil {
+type ConfigInput struct {
+	GitURL        string
+	GitUser       string
+	GitPassword   string
+	GitBranch     string
+	SSHKey        string
+	SSHUser       string
+	SSHKeyPass    string
+	SSHKnownHosts string
+	HookCacheTTL  string
+}
+
+func NewConfigV2(input *ConfigInput) (*Config, error) {
+	if input == nil {
 		return nil, ErrEmptyConfiguration
 	}
 
-	hookCacheTTL, err := parseRunbookHookCacheTTLConfig(envVars)
+	configTTL, err := strconv.Atoi(input.HookCacheTTL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed parsing HookCacheTTL, %v", err)
 	}
-	gitBranch := envVars["GIT_BRANCH"]
-	gitUserEnc := envVars["GIT_USER"]
-	gitPasswordEnc := envVars["GIT_PASSWORD"]
-	sshKeyEnc := envVars["SSH_KEY"]
-	sshUserEnc := envVars["SSH_USER"]
-	sshKeyPassEnc := envVars["SSH_KEY_PASS"]
+	hookCacheTTL := time.Duration(configTTL) * time.Second
 
 	config := &Config{
-		GitURL:       string(gitURL),
-		HookCacheTTL: hookCacheTTL,
-		Branch:       gitBranch,
+		GitURL:       input.GitURL,
+		HookCacheTTL: &hookCacheTTL,
+		Branch:       input.GitBranch,
 	}
+
 	switch {
-	case sshKeyEnc != "":
-		pemBytes, err := base64.StdEncoding.DecodeString(sshKeyEnc)
-		if err != nil {
-			return nil, fmt.Errorf("failed decoding SSH_KEY")
+	case input.SSHKey != "":
+		sshUser := "git"
+		if input.SSHUser != "" {
+			sshUser = input.SSHUser
 		}
-		sshUser := []byte(`git`)
-		if sshUserEnc != "" {
-			sshUser, err = base64.StdEncoding.DecodeString(sshUserEnc)
-			if err != nil {
-				return nil, fmt.Errorf("failed decoding SSH_USER")
-			}
-		}
-		sshKeyPass := []byte(``)
-		if sshKeyPassEnc != "" {
-			sshKeyPass, err = base64.StdEncoding.DecodeString(sshKeyPassEnc)
-			if err != nil {
-				return nil, fmt.Errorf("failed decoding SSH_KEY_PASS")
-			}
-		}
-		auth, err := gitssh.NewPublicKeys(string(sshUser), pemBytes, string(sshKeyPass))
+
+		auth, err := gitssh.NewPublicKeys(sshUser, []byte(input.SSHKey), input.SSHKeyPass)
 		if err != nil {
 			log.Infof("failed parsing SSH key file, err=%v", err)
 			return nil, fmt.Errorf("failed parsing SSH key file")
@@ -82,21 +73,15 @@ func NewConfigV2(envVars map[string]string) (*Config, error) {
 
 		// Set public key auth
 		config.Auth = auth
-		config.sshKnownHostsEnc = envVars["SSH_KNOWN_HOSTS"]
-	case gitPasswordEnc != "":
-		gitPassword, err := base64.StdEncoding.DecodeString(gitPasswordEnc)
-		if err != nil {
-			return nil, fmt.Errorf("failed decoding GIT_PASSWORD")
+		config.sshKnownHostsEnc = input.SSHKnownHosts
+	case input.GitPassword != "":
+		gitUser := "oauth2"
+		if input.GitUser != "" {
+			gitUser = input.GitUser
 		}
-		gitUser := []byte(`oauth2`)
-		if gitUserEnc != "" {
-			gitUser, err = base64.StdEncoding.DecodeString(gitUserEnc)
-			if err != nil {
-				return nil, fmt.Errorf("failed decoding GIT_USER")
-			}
-		}
+
 		// Set basic auth
-		config.Auth = &githttp.BasicAuth{Username: string(gitUser), Password: string(gitPassword)}
+		config.Auth = &githttp.BasicAuth{Username: gitUser, Password: input.GitPassword}
 	}
 
 	return config, nil

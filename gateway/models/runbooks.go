@@ -8,18 +8,30 @@ import (
 	"slices"
 	"time"
 
+	commonRunbooks "github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+type RunbookRepositoryConfig struct {
+	GitUrl        string `json:"git_url"`
+	GitUser       string `json:"git_user"`
+	GitPassword   string `json:"git_password"`
+	SSHKey        string `json:"ssh_key"`
+	SSHUser       string `json:"ssh_user"`
+	SSHKeyPass    string `json:"ssh_key_pass"`
+	SSHKnownHosts string `json:"ssh_known_hosts"`
+	GitHookTtl    string `json:"git_hook_config_ttl"`
+}
+
 type Runbooks struct {
-	ID                string                       `gorm:"column:id"`
-	OrgID             string                       `gorm:"column:org_id"`
-	RepositoryConfigs map[string]map[string]string `gorm:"column:repository_configs;serializer:json"`
-	CreatedAt         time.Time                    `gorm:"column:created_at"`
-	UpdatedAt         time.Time                    `gorm:"column:updated_at"`
+	ID                string                             `gorm:"column:id"`
+	OrgID             string                             `gorm:"column:org_id"`
+	RepositoryConfigs map[string]RunbookRepositoryConfig `gorm:"column:repository_configs;serializer:json"`
+	CreatedAt         time.Time                          `gorm:"column:created_at"`
+	UpdatedAt         time.Time                          `gorm:"column:updated_at"`
 }
 
 type RunbookRuleFile struct {
@@ -158,4 +170,20 @@ func DeleteRunbookRule(db *gorm.DB, orgID, ruleID string) error {
 		Where("id = ? AND org_id = ?", ruleID, orgID).
 		Delete(&RunbookRules{}).
 		Error
+}
+
+func BuildCommonConfig(config *RunbookRepositoryConfig) (*commonRunbooks.Config, error) {
+	configInput := &commonRunbooks.ConfigInput{
+		GitURL:        config.GitUrl,
+		GitUser:       config.GitUser,
+		GitPassword:   config.GitPassword,
+		SSHKey:        config.SSHKey,
+		SSHUser:       config.SSHUser,
+		SSHKeyPass:    config.SSHKeyPass,
+		SSHKnownHosts: config.SSHKnownHosts,
+		GitBranch:     "",
+		HookCacheTTL:  config.GitHookTtl,
+	}
+
+	return commonRunbooks.NewConfigV2(configInput)
 }
