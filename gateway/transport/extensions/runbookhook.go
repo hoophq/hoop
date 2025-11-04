@@ -107,7 +107,12 @@ func getRunbookHookFilesV2(ctx Context) ([]*runbookWrapperFiles, error) {
 	}
 
 	if cached, ok := hookStoreV2.Load(ctx.OrgID); ok {
-		cachedHooks := cached.([]*runbookWrapperFiles)
+		cachedHooks, ok := cached.([]*runbookWrapperFiles)
+		if !ok {
+			hookStoreV2.Delete(ctx.OrgID)
+			log.With("sid", ctx.SID).Errorf("invalid runbook hook V2 cache structure, resetting cache")
+			return nil, nil
+		}
 		now := time.Now().UTC()
 
 		hasExpired := slices.ContainsFunc(cachedHooks, func(hook *runbookWrapperFiles) bool {

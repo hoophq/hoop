@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
@@ -26,17 +27,20 @@ type runbookCache struct {
 var runbooksCache sync.Map // sync.Map[orgId]map[gitUrl]*runbookCache
 
 func setRunbookCache(orgId, gitUrl string, commit *object.Commit) {
-	// tenta obter o mapa interno
-	v, ok := runbooksCache.Load(orgId)
 	var inner map[string]*runbookCache
+
+	v, ok := runbooksCache.Load(orgId)
 	if ok {
-		inner = v.(map[string]*runbookCache)
+		inner, ok = v.(map[string]*runbookCache)
+		if !ok {
+			log.Errorf("invalid runbook cache structure for orgId=%s", orgId)
+			inner = make(map[string]*runbookCache)
+		}
 	} else {
 		inner = make(map[string]*runbookCache)
 		runbooksCache.Store(orgId, inner)
 	}
 
-	// atualiza o mapa interno
 	inner[gitUrl] = &runbookCache{
 		commit:   commit,
 		cachedAt: time.Now(),
@@ -45,9 +49,13 @@ func setRunbookCache(orgId, gitUrl string, commit *object.Commit) {
 
 func GetRunbookCache(orgId, gitUrl string) (*object.Commit, bool) {
 	if v, ok := runbooksCache.Load(orgId); ok {
-		inner := v.(map[string]*runbookCache)
-		rb, ok := inner[gitUrl]
+		inner, ok := v.(map[string]*runbookCache)
+		if !ok {
+			log.Infof("invalid runbook cache structure for orgId=%s", orgId)
+			return nil, false
+		}
 
+		rb, ok := inner[gitUrl]
 		if !ok {
 			return nil, false
 		}
@@ -89,8 +97,13 @@ func slicesHasIntersection[T comparable](a, b []T) bool {
 }
 
 func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []string, runbookRepository, runbookName string, userGroups []string) []string {
-	// If no connections or rules are defined, return a list of empty connections
-	if len(connectionList) == 0 || len(runbookRules) == 0 {
+	// If no connections available, return empty list
+	if len(connectionList) == 0 {
+		return []string{}
+	}
+
+	// If no runbook rules defined, return all connections
+	if len(runbookRules) == 0 {
 		return connectionList
 	}
 
