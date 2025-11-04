@@ -633,7 +633,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.jira_issue_template_id,
+		c.jira_issue_template_id, c.resource_name,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -670,6 +670,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		COALESCE(c.resource_name::text, '') LIKE ? AND
 		-- connection ids filter
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c.id::text = ANY((?)::text[])
@@ -715,6 +716,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		opts.ResourceName,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
 		searchPattern, searchPattern, searchPattern,
@@ -779,6 +781,9 @@ func setConnectionOptionDefaults(opts *ConnectionFilterOption) {
 	if opts.ManagedBy == "" {
 		opts.ManagedBy = "%"
 	}
+	if opts.ResourceName == "" {
+		opts.ResourceName = "%"
+	}
 }
 
 func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
@@ -825,7 +830,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.jira_issue_template_id,
+		c.jira_issue_template_id, c.resource_name,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -863,6 +868,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		COALESCE(c.resource_name::text, '') LIKE ? AND
 		-- connection ids filter
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c.id::text = ANY((?)::text[])
@@ -871,10 +877,6 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
-			ELSE true
-		END AND
-		CASE WHEN ? IS NOT NULL
-			THEN c.resource_name = ?
 			ELSE true
 		END AND
 		(
@@ -913,9 +915,9 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		opts.ResourceName,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
-		opts.ResourceName, opts.ResourceName,
 		searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
