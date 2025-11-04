@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // ListRunbooks
@@ -30,39 +31,44 @@ import (
 //	@Description	List all Runbooks
 //	@Tags			Runbooks
 //	@Produce		json
+//	@Param			connection	query		string	false	"Filter runbooks by connection name"
 //	@Success		200			{object}	openapi.RunbookList
-//	@Failure		404,422,500	{object}	openapi.HTTPError
+//	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
 func ListRunbooksV2(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	runbookConfig, err := models.GetRunbookConfigurationByOrgID(models.DB, ctx.GetOrgID())
 	if err != nil {
-		log.Infof("failed fetching runbook configuration, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed fetching runbook configuration"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "runbook configuration not found"})
+			return
+		}
+
+		log.Errorf("failed fetching runbook configuration, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook configuration, reason=%v", err)})
 		return
 	}
 
 	runbookRules, err := models.GetRunbookRules(models.DB, ctx.OrgID, 0, 0)
 	if err != nil {
-		log.Infof("failed fetching runbook rules, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed fetching runbook rules"})
+		log.Errorf("failed fetching runbook rules, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rules, reason=%v", err)})
 		return
 	}
 
 	urlQuery := c.Request.URL.Query()
 	connection := urlQuery.Get("connection")
 
-	removeEmptyConnectionsList := false
-	var connectionNames []string
-	if connection != "" {
-		connectionNames = []string{connection}
-		removeEmptyConnectionsList = true
-	} else {
+	removeEmptyConnectionsList := true
+	connectionNames := []string{connection}
+
+	if connection == "" {
+		removeEmptyConnectionsList = false
 		connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
 		if err != nil {
-			log.Infof("failed fetching connection names, err=%v", err)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed fetching connection names"})
+			log.Errorf("failed fetching connection names, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching connection names, reason=%v", err)})
 			return
 		}
 	}
@@ -73,13 +79,14 @@ func ListRunbooksV2(c *gin.Context) {
 	for _, configEnvVars := range runbookConfig.RepositoryConfigs {
 		config, err := runbooks.NewConfigV2(configEnvVars)
 		if err != nil {
+			log.Errorf("failed creating runbook config, err=%v", err)
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
 		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, removeEmptyConnectionsList)
 		if err != nil {
-			log.Infof("failed listing runbooks, err=%v", err)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
+			log.Errorf("failed listing runbooks, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
 			return
 		}
 		runbookList.Repositories = append(runbookList.Repositories, *repositoryList)
@@ -96,7 +103,7 @@ func ListRunbooksV2(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Success		200			{object}	openapi.RunbookConfiguration
-//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [get]
 func GetRunbookConfiguration(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -109,7 +116,7 @@ func GetRunbookConfiguration(c *gin.Context) {
 		}
 
 		log.Infof("failed fetching runbook configuration, err=%v", err)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "failed fetching runbook configuration"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching runbook configuration"})
 		return
 	}
 
@@ -123,7 +130,7 @@ func GetRunbookConfiguration(c *gin.Context) {
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Param			runbook	body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
+//	@Param			request	body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
 //	@Success		200			{object}	openapi.RunbookConfiguration
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [put]
@@ -132,22 +139,22 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 
 	var req openapi.RunbookConfigurationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("invalid request body, reason=%v", err)})
 		return
 	}
 
 	repositoryConfigs := make(map[string]map[string]string)
-
 	for _, repo := range req.Repositories {
 		mapConfig := buildConfigMapRepository(&repo)
 		config, err := runbooks.NewConfigV2(mapConfig)
 		if err != nil {
+			log.Errorf("failed creating runbook config, reason=%v", err)
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed creating runbook config, reason=%v", err)})
 			return
 		}
 
 		if _, isset := repositoryConfigs[config.GetNormalizedGitURL()]; isset {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "duplicate git repository URLs are not allowed"})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "duplicate git repository URLs are not allowed"})
 			return
 		}
 
@@ -155,7 +162,6 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 	}
 
 	runbooks := models.Runbooks{
-		ID:                uuid.NewString(),
 		OrgID:             ctx.GetOrgID(),
 		RepositoryConfigs: repositoryConfigs,
 	}
@@ -163,7 +169,7 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 	err := models.UpsertRunbookConfiguration(models.DB, &runbooks)
 	if err != nil {
 		log.Errorf("failed upserting runbook, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed upserting runbook"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed upserting runbook, reason=%v", err)})
 		return
 	}
 
@@ -234,7 +240,7 @@ func RunbookExec(c *gin.Context) {
 
 	allowed, err := models.IsUserAllowedToRunRunbook(ctx.OrgID, req.ConnectionName, req.Repository, req.FileName, ctx.UserGroups)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("failed checking user permissions for runbook exec, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -248,6 +254,7 @@ func RunbookExec(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+
 	connectionName := req.ConnectionName
 	connection, err := getConnection(ctx, c, connectionName)
 	if err != nil {
@@ -275,6 +282,7 @@ func RunbookExec(c *gin.Context) {
 
 	config, err := runbooks.NewConfigV2(repoConfig)
 	if err != nil {
+		log.Errorf("failed creating runbook config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
@@ -284,6 +292,7 @@ func RunbookExec(c *gin.Context) {
 		var err error
 		commit, err = runbooks.CloneRepositoryInMemory(config)
 		if err != nil {
+			log.Errorf("failed cloning runbook repository, reason=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 			return
 		}

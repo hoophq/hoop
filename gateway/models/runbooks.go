@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -111,10 +110,6 @@ func GetRunbookConfigurationByOrgID(db *gorm.DB, orgID string) (*Runbooks, error
 	var runbooks Runbooks
 	err := db.Table("private.runbooks").Where("org_id = ?", orgID).First(&runbooks).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
-
 		return nil, err
 	}
 	return &runbooks, nil
@@ -142,22 +137,25 @@ func GetRunbookRuleByID(db *gorm.DB, orgID, ruleID string) (*RunbookRules, error
 }
 
 func UpsertRunbookRule(db *gorm.DB, rule *RunbookRules) error {
-	tx := db.Table("private.runbook_rules").Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "id"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
-			"name":        rule.Name,
-			"description": rule.Description,
-			"user_groups": rule.UserGroups,
-			"connections": rule.Connections,
-			"runbooks":    rule.Runbooks,
-			"updated_at":  time.Now().UTC(),
-		}),
-	}).Create(rule)
-
-	return tx.Error
+	return db.Table("private.runbook_rules").
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"name":        rule.Name,
+				"description": rule.Description,
+				"user_groups": rule.UserGroups,
+				"connections": rule.Connections,
+				"runbooks":    rule.Runbooks,
+				"updated_at":  time.Now().UTC(),
+			}),
+		}).
+		Create(rule).
+		Error
 }
 
 func DeleteRunbookRule(db *gorm.DB, orgID, ruleID string) error {
-	tx := db.Table("private.runbook_rules").Where("id = ? AND org_id = ?", ruleID, orgID).Delete(&RunbookRules{})
-	return tx.Error
+	return db.Table("private.runbook_rules").
+		Where("id = ? AND org_id = ?", ruleID, orgID).
+		Delete(&RunbookRules{}).
+		Error
 }

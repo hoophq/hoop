@@ -89,7 +89,7 @@ func CreateRunbookRule(c *gin.Context) {
 
 	var reqRule openapi.RunbookRuleRequest
 	if err := c.ShouldBindJSON(&reqRule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("invalid request body, reason=%v", err)})
 		return
 	}
 
@@ -116,7 +116,7 @@ func CreateRunbookRule(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        id    path      string              true  "Runbook Rule ID"
-// @Param        request  body      openapi.RunbookRule  true  "Runbook Rule"
+// @Param        request  body      openapi.RunbookRuleRequest  true  "Runbook Rule"
 // @Success      200  {object}   openapi.RunbookRule
 // @Failure      400,404,500  {object} openapi.HTTPError
 // @Router       /runbooks/rules/{id} [put]
@@ -127,7 +127,7 @@ func UpdateRunbookRule(c *gin.Context) {
 
 	var reqRule openapi.RunbookRuleRequest
 	if err := c.ShouldBindJSON(&reqRule); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("invalid request body, reason=%v", err)})
 		return
 	}
 

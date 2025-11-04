@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/url"
 	"os/exec"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -198,31 +197,6 @@ func (c *Config) GetNormalizedGitURL() string {
 	path = strings.Trim(path, "/")
 
 	return fmt.Sprintf("%s/%s", host, path)
-}
-
-func (c *Config) GetRepositoryName() string {
-	raw := c.GitURL
-
-	// Handle SSH-style URLs like git@github.com:user/repo.git
-	if strings.Contains(raw, ":") && !strings.Contains(raw, "://") {
-		parts := strings.SplitN(raw, ":", 2)
-		if len(parts) == 2 {
-			raw = "ssh://" + strings.Replace(parts[0], "git@", "", 1) + "/" + parts[1]
-		}
-	}
-
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-
-	// Get last two parts of the path (e.g., bluetooth/bluez)
-	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(segments) >= 2 {
-		repoPath := path.Join(segments[len(segments)-2], segments[len(segments)-1])
-		return strings.TrimSuffix(repoPath, ".git")
-	}
-	return strings.TrimSuffix(parsed.Path, ".git")
 }
 
 // loadKnownHosts parses a known hosts file format from the plugin configuration if it's available.
