@@ -198,13 +198,21 @@ The display of connection quick start resources is automated via Decap CMS. In o
 npm run dev
 ```
 
-2. Copy the contents of `../../documentation/store/connections.json` to `./resources/public/data/connections-metadata.json`
-
-> Assuming the `documentation` repository is one level under the root directory of Hoop.
+2. Copy the contents of `./documentation/store/connections.json` to `./hoop/webapp/resources/public/data/connections-metadata.json`
 
 ```sh
-cp ../../documentation/store/connections.json ./resources/public/data/connections-metadata.json
+# hoop repository folder
+cd ./hoop/webapp
+
+# clone the documentation repo
+git clone https://github.com/hoophq/documentation.git
 ```
 
-3. Click on Add Connection to see the list of available resources to create
+3. Add a new connection quick start and copy the file below
+
+```sh
+cp ./documentation/store/connections.json ./resources/public/data/connections-metadata.json
+```
+
+4. Visit the Webapp and click on Add Connection to see the list of available resources to create
 
