@@ -265,6 +265,73 @@ type Connection struct {
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 }
 
+type ConnectionPatch struct {
+	// Is the shell command that is going to be executed when interacting with this connection.
+	// This value is required if the connection is going to be used from the Webapp.
+	Command *[]string `json:"command" example:"/bin/bash"`
+	// Resource to which this connection belongs to
+	ResourceName *string `json:"resource_name" example:"pgdemo"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type *string `json:"type" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType *string `json:"subtype" example:"postgres"`
+	// Secrets are environment variables that are going to be exposed
+	// in the runtime of the connection:
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	//
+	// The value could also represent an integration with a external provider:
+	// * { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable
+	// * { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={"KEY": "val"}
+	Secrets *map[string]any `json:"secret"`
+	// The agent associated with this connection
+	AgentId *string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Reviewers is a list of groups that will review the connection before the user could execute it
+	Reviewers *[]string `json:"reviewers" example:"dba-group"`
+	// Redact Types is a list of info types that will used to redact the output of the connection.
+	// Possible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference
+	RedactTypes *[]string `json:"redact_types" example:"EMAIL_ADDRESS"`
+	// DEPRECATED: Tags to classify the connection
+	Tags *[]string `json:"tags" example:"prod"`
+	// Tags to identify the connection
+	// * keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).
+	// * values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.
+	ConnectionTags *map[string]string `json:"connection_tags" example:"environment:prod,tier:frontend"`
+	// Toggle Ad Hoc Runbooks Executions
+	// * enabled - Enable to run runbooks for this connection
+	// * disabled - Disable runbooks execution for this connection
+	AccessModeRunbooks *string `json:"access_mode_runbooks" enums:"enabled,disabled"`
+	// Toggle Ad Hoc Executions
+	// * enabled - Enable to run ad-hoc executions for this connection
+	// * disabled - Disable ad-hoc executions for this connection
+	AccessModeExec *string `json:"access_mode_exec" enums:"enabled,disabled"`
+	// Toggle Port Forwarding
+	// * enabled - Enable to perform port forwarding for this connection
+	// * disabled - Disable port forwarding for this connection
+	AccessModeConnect *string `json:"access_mode_connect" enums:"enabled,disabled"`
+	// Toggle Introspection Schema
+	// * enabled - Enable the instrospection schema in the webapp
+	// * disabled - Disable the instrospection schema in the webapp
+	AccessSchema *string `json:"access_schema" enums:"enabled,disabled"`
+	// The guard rail association id rules
+	GuardRailRules *[]string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// The jira issue templates ids associated to the connection
+	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+}
+
 type ConnectionTagCreateRequest struct {
 	// Key is the identifier for the tag category (e.g., "environment", "department")
 	Key string `json:"key" binding:"required" example:"environment"`

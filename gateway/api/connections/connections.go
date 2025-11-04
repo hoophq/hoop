@@ -189,6 +189,119 @@ func Put(c *gin.Context) {
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
+// PatchConnection
+//
+//	@Summary		Patch Connection
+//	@Description	Partial update of a connection resource. Only provided fields will be updated.
+//	@Tags			Connections
+//	@Accept			json
+//	@Produce		json
+//	@Param			nameOrID		path		string				true	"The name or ID of the resource"
+//	@Param			request			body		openapi.ConnectionPatch	true	"The request body resource with fields to update"
+//	@Success		200				{object}	openapi.Connection
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID} [patch]
+func Patch(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
+		return
+	}
+
+	var req openapi.ConnectionPatch
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Validate the body
+	if err := validatePatchConnectionRequest(req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Apply patches from request (only non-nil values override)
+	if req.Command != nil {
+		conn.Command = *req.Command
+	}
+	if req.ResourceName != nil {
+		conn.ResourceName = *req.ResourceName
+	}
+	if req.Type != nil {
+		conn.Type = *req.Type
+	}
+	if req.SubType != nil {
+		conn.SubType = sql.NullString{String: *req.SubType, Valid: *req.SubType != ""}
+	}
+	if req.Secrets != nil {
+		conn.Envs = CoerceToMapString(*req.Secrets)
+	}
+	if req.AgentId != nil {
+		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
+	}
+	if req.Reviewers != nil {
+		conn.Reviewers = *req.Reviewers
+	}
+	if req.RedactTypes != nil {
+		conn.RedactTypes = *req.RedactTypes
+	}
+	if req.Tags != nil {
+		conn.Tags = *req.Tags
+	}
+	if req.ConnectionTags != nil {
+		conn.ConnectionTags = *req.ConnectionTags
+	}
+	if req.AccessModeRunbooks != nil {
+		conn.AccessModeRunbooks = *req.AccessModeRunbooks
+	}
+	if req.AccessModeExec != nil {
+		conn.AccessModeExec = *req.AccessModeExec
+	}
+	if req.AccessModeConnect != nil {
+		conn.AccessModeConnect = *req.AccessModeConnect
+	}
+	if req.AccessSchema != nil {
+		conn.AccessSchema = *req.AccessSchema
+	}
+	if req.GuardRailRules != nil {
+		conn.GuardRailRules = *req.GuardRailRules
+	}
+	if req.JiraIssueTemplateID != nil {
+		conn.JiraIssueTemplateID = sql.NullString{String: *req.JiraIssueTemplateID, Valid: *req.JiraIssueTemplateID != ""}
+	}
+
+	// Update status
+	conn.Status = models.ConnectionStatusOffline
+	if streamclient.IsAgentOnline(streamtypes.NewStreamID(conn.AgentID.String, "")) {
+		conn.Status = models.ConnectionStatusOnline
+	}
+
+	resp, err := models.UpsertConnection(ctx, conn)
+	if err != nil {
+		switch err.(type) {
+		case *models.ErrNotFoundGuardRailRules:
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		default:
+			log.Errorf("failed patching connection, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, toOpenApi(resp))
+}
+
 // DeleteConnection
 //
 //	@Summary		Delete Connection
