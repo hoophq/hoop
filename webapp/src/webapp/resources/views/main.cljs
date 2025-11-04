@@ -138,7 +138,7 @@
                     [:> Button {:size "2"
                                 :variant "soft"
                                 :color "gray"
-                                :on-click #(js/console.log "Configure resource" (:id resource))}
+                                :on-click #(rf/dispatch [:navigate :configure-resource {} :resource-id (:name resource)])}
                      "Configure"])]))])])))))
 
 ;; Roles List (without filters)

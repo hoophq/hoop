@@ -126,7 +126,7 @@
                        {:method "POST"
                         :uri "/resources"
                         :body body
-                        :on-success (fn [resource]
+                        :on-success (fn [_response]
                                       (rf/dispatch [:modal->close])
                                       (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
                                       (rf/dispatch [:show-snackbar {:level :success
@@ -163,4 +163,24 @@
                                                                :text "Resource deleted!"}])
                                  (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
                                  (rf/dispatch [:navigate :resources]))}]]]}))
+
+;; Get resource roles (connections)
+(rf/reg-event-fx
+ :resources->get-resource-roles
+ (fn
+   [{:keys [db]} [_ resource-id]]
+   {:db (-> db
+            (assoc-in [:resources->resource-roles resource-id] {:loading true :data []}))
+    :fx [[:dispatch
+          [:fetch {:method "GET"
+                   :uri "/connections"
+                   :query-params {:resource_name resource-id}
+                   :on-success (fn [response]
+                                 (rf/dispatch [:resources->set-resource-roles resource-id response]))}]]]}))
+
+(rf/reg-event-db
+ :resources->set-resource-roles
+ (fn [db [_ resource-id roles]]
+   (assoc-in db [:resources->resource-roles resource-id]
+             {:loading false :data roles})))
 

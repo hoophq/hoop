@@ -41,3 +41,9 @@
  (fn [db]
    (get-in db [:resources :tags-loading])))
 
+;; Resource roles
+(rf/reg-sub
+ :resources->resource-roles
+ (fn [db [_ resource-id]]
+   (get-in db [:resources->resource-roles resource-id])))
+

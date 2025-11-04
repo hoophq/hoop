@@ -39,6 +39,7 @@
    [webapp.resources.views.setup.events.effects]
    [webapp.resources.views.setup.events.subs]
    [webapp.resources.views.main :as resources-main]
+   [webapp.resources.views.configure.main :as resource-configure]
    [webapp.resources.subs]
    [webapp.resources.events]
    [webapp.events]
@@ -387,6 +388,14 @@
                              [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
                               "Resources"]
                              [resources-main/panel]]])
+
+(defmethod routes/panels :configure-resource-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        resource-id (:resource-id (:route-params current-route))]
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [resource-configure/main resource-id]]]))
 
 (defmethod routes/panels :dashboard-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}
