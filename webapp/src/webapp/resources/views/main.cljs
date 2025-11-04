@@ -151,26 +151,26 @@
             connections-data (:data connections-state)
             connections-loading? (= :loading (:loading connections-state))]
 
-        [infinite-scroll
-         {:on-load-more #(when-not connections-loading?
-                           (rf/dispatch [:connections/get-connections-paginated
-                                         {:page (inc (:current-page connections-state 1))
-                                          :force-refresh? false}]))
-          :has-more? (:has-more? connections-state)
-          :loading? connections-loading?}
-         [:div
-          ;; Test Connection Modal
-          [test-connection-modal/test-connection-modal
-           (get-in @test-connection-state [:connection-name])]
+        [:div {:class "flex flex-col h-full"}
+         ;; Test Connection Modal
+         [test-connection-modal/test-connection-modal
+          (get-in @test-connection-state [:connection-name])]
 
-          ;; List
-          (if (and connections-loading? (empty? connections-data))
-            [loading-list-view]
-            [:div {:class "h-full"}
-             (when (and (empty? connections-data) (not connections-loading?))
-               [empty-list-view "roles"])
+         ;; List
+         (if (and connections-loading? (empty? connections-data))
+           [loading-list-view]
+           [:div {:class "h-full overflow-y-auto"}
+            (when (and (empty? connections-data) (not connections-loading?))
+              [empty-list-view "roles"])
 
-             (when (seq connections-data)
+            (when (seq connections-data)
+              [infinite-scroll
+               {:on-load-more #(when-not connections-loading?
+                                 (rf/dispatch [:connections/get-connections-paginated
+                                               {:page (inc (:current-page connections-state 1))
+                                                :force-refresh? false}]))
+                :has-more? (:has-more? connections-state)
+                :loading? connections-loading?}
                (doall
                 (for [connection connections-data]
                   ^{:key (:id connection)}
@@ -240,7 +240,7 @@
                         (when (not (= (:managed_by connection) "hoopagent"))
                           [:> DropdownMenu.Item {:on-click
                                                  (fn []
-                                                   (rf/dispatch [:navigate :configure-role {} :connection-name (:name connection)]))}
+                                                   (rf/dispatch [:navigate :configure-role {:from_page "roles-list"} :connection-name (:name connection)]))}
                            "Configure"])
                         [:> DropdownMenu.Item {:color "red"
                                                :on-click (fn []
@@ -259,7 +259,7 @@
                                                                           :on-success (fn []
                                                                                         (rf/dispatch [:connections->delete-connection (:name connection)])
                                                                                         (rf/dispatch [:modal->close]))}]))}
-                         "Delete"]]])]])))])]]))))
+                         "Delete"]]])]]))])])]))))
 
 ;; Main component with custom tabs and filters in same row
 (defn panel []

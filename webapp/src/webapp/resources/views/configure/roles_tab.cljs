@@ -109,7 +109,7 @@
                               :variant "outline"
                               :color "gray"
                               :on-click (fn []
-                                          (rf/dispatch [:navigate :configure-role {} :connection-name (:name connection)]))}
+                                          (rf/dispatch [:navigate :configure-role {:from_page "resource-configure"} :connection-name (:name connection)]))}
                    "Configure"]
                   [:> Button {:size "2"
                               :variant "soft"

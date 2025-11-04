@@ -1,18 +1,20 @@
 (ns webapp.resources.views.configure-role.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.connections.constants :as constants]
-   [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
+   [webapp.connections.helpers :refer [can-test-connection?
+                                       is-connection-testing?]]
    [webapp.connections.views.setup.events.process-form :as helpers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.test-connection-modal :as test-connection-modal]
-   [webapp.resources.views.configure-role.details-tab :as details-tab]
    [webapp.resources.views.configure-role.credentials-tab :as credentials-tab]
-   [webapp.resources.views.configure-role.terminal-access-tab :as terminal-access-tab]
-   [webapp.resources.views.configure-role.native-access-tab :as native-access-tab]))
+   [webapp.resources.views.configure-role.details-tab :as details-tab]
+   [webapp.resources.views.configure-role.native-access-tab :as native-access-tab]
+   [webapp.resources.views.configure-role.terminal-access-tab :as terminal-access-tab]))
 
 (defn header [{:keys [name type subtype]} test-connection-state]
   [:> Box {:class "pb-[--space-5]"}
@@ -38,9 +40,17 @@
    [:div {:class "flex items-center justify-center h-full"}
     [loaders/simple-loader]]])
 
+(defn parse-params [params]
+  (let [params (js/decodeURIComponent params)
+        params (cs/split params "=")
+        params (second params)]
+    params))
+
 (defn main [connection-name]
   (r/with-let
     [active-tab (r/atom "details")
+     params (.-search (.-location js/window))
+     from-page (r/atom (parse-params params)) ;; can be "roles-list" or "resource-configure"
      credentials-valid? (r/atom false)
      connection (rf/subscribe [:connections->connection-details])
      guardrails-list (rf/subscribe [:guardrails->list])
@@ -102,13 +112,16 @@
                                                 "")]))
 
                               ;; Submit the form - use custom event to redirect back to resource
-                              (rf/dispatch [:resources->update-role-connection {:name connection-name}]))
+                              (rf/dispatch [:resources->update-role-connection {:name connection-name
+                                                                                :resource-name (:resource_name (:data @connection))
+                                                                                :from-page @from-page}]))
 
+                            (println "credentials-valid?" @credentials-valid?)
                             (when (not @credentials-valid?)
                               (reset! active-tab "credentials"))))]
 
       (r/create-class
-       {:component-did-mount check-form-validity!
+       {:component-did-mount #(check-form-validity!)
 
         :component-did-update
         (fn [this old-argv]

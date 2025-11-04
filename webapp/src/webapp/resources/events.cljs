@@ -169,10 +169,8 @@
 (rf/reg-event-fx
  :resources->update-role-connection
  (fn
-   [{:keys [db]} [_ {:keys [name]}]]
-   (let [body (process-form/process-payload db)
-         ;; Get resource_name from the connection data
-         resource-name (get-in db [:connections->connection-details :data :resource_name])]
+   [{:keys [db]} [_ {:keys [name from-page resource-name]}]]
+   (let [body (process-form/process-payload db)]
      {:fx [[:dispatch [:fetch
                        {:method "PUT"
                         :uri (str "/connections/" name)
@@ -185,7 +183,7 @@
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       ;; Redirect back to resource configure using resource_name
-                                      (if resource-name
+                                      (if (= from-page "resource-configure")
                                         (rf/dispatch [:navigate :configure-resource {} :resource-id resource-name])
                                         (rf/dispatch [:navigate :resources])))}]]]})))
 
