@@ -127,6 +127,10 @@ func GetRunbookConfigurationByOrgID(db *gorm.DB, orgID string) (*Runbooks, error
 	return &runbooks, nil
 }
 
+func DeleteRunbookConfigurationByOrgID(db *gorm.DB, orgID string) error {
+	return db.Table("private.runbooks").Where("org_id = ?", orgID).Delete(&Runbooks{}).Error
+}
+
 func UpsertRunbookConfiguration(db *gorm.DB, runbooks *Runbooks) error {
 	tx := db.Table("private.runbooks").Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "org_id"}},

@@ -3727,6 +3727,27 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "description": "Delete Runbook Configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Delete Runbook Configuration",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
             }
         },
         "/runbooks/exec": {

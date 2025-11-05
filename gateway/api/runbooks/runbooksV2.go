@@ -110,17 +110,41 @@ func GetRunbookConfiguration(c *gin.Context) {
 
 	runbooks, err := models.GetRunbookConfigurationByOrgID(models.DB, ctx.GetOrgID())
 	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "runbook configuration not found"})
 			return
 		}
 
-		log.Infof("failed fetching runbook configuration, err=%v", err)
+		log.Errorf("failed fetching runbook configuration, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching runbook configuration"})
 		return
 	}
 
 	c.JSON(200, buildRunbookConfigurationResponse(runbooks))
+}
+
+// DeleteRunbookConfiguration
+//
+//	@Summary		Delete Runbook Configuration
+//	@Description	Delete Runbook Configuration
+//	@Tags			Runbooks
+//	@Produce		json
+//	@Success		204
+//	@Failure		500	{object}	openapi.HTTPError
+//	@Router			/runbooks/configurations [delete]
+func DeleteRunbookConfiguration(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	err := models.DeleteRunbookConfigurationByOrgID(models.DB, ctx.GetOrgID())
+	if err != nil {
+		log.Errorf("failed deleting runbook configuration, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting runbook configuration"})
+		return
+	}
+
+	deleteRunbookCache(ctx.GetOrgID(), "") // clear all cache for this org
+
+	c.Status(http.StatusNoContent)
 }
 
 // UpdateRunbookConfiguration
@@ -283,7 +307,7 @@ func RunbookExec(c *gin.Context) {
 
 	configs, err := models.GetRunbookConfigurationByOrgID(models.DB, ctx.OrgID)
 	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "runbook configuration not found"})
 			return
 		}
