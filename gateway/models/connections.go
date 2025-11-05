@@ -532,6 +532,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 
 // ConnectionOption each attribute set applies an AND operator logic
 type ConnectionFilterOption struct {
+	Name          string
 	Type          string
 	SubType       string
 	ManagedBy     string
@@ -624,6 +625,9 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
+	namePattern := "%" + opts.Name + "%"
+	resourceNamePattern := "%" + opts.ResourceName + "%"
+
 	var items []Connection
 	// TODO: try changing to @ syntax
 	err = DB.Raw(`
@@ -671,6 +675,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
 		COALESCE(c.resource_name::text, '') LIKE ? AND
+		COALESCE(c.name::text, '') LIKE ? AND
 		-- connection ids filter
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c.id::text = ANY((?)::text[])
@@ -716,7 +721,8 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
-		opts.ResourceName,
+		resourceNamePattern,
+		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
 		searchPattern, searchPattern, searchPattern,
@@ -784,6 +790,9 @@ func setConnectionOptionDefaults(opts *ConnectionFilterOption) {
 	if opts.ResourceName == "" {
 		opts.ResourceName = "%"
 	}
+	if opts.Name == "" {
+		opts.Name = "%"
+	}
 }
 
 func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
@@ -812,6 +821,8 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
+	namePattern := "%" + opts.Name + "%"
+	resourceNamePattern := "%" + opts.ResourceName + "%"
 
 	offset := 0
 	if opts.Page > 1 {
@@ -869,6 +880,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
 		COALESCE(c.resource_name::text, '') LIKE ? AND
+		COALESCE(c.name::text, '') LIKE ? AND
 		-- connection ids filter
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c.id::text = ANY((?)::text[])
@@ -915,7 +927,8 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
-		opts.ResourceName,
+		resourceNamePattern,
+		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
 		searchPattern, searchPattern, searchPattern,
