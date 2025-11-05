@@ -37,8 +37,7 @@
 
 (defn main [resource-id]
   (r/with-let
-    [;; Read query param ?tab=roles
-     query-params (js->clj (new js/URLSearchParams (.. js/window -location -search))
+    [query-params (js->clj (new js/URLSearchParams (.. js/window -location -search))
                            :keywordize-keys true)
      initial-tab (get query-params :tab "information")
      active-tab (r/atom initial-tab)

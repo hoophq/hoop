@@ -16,6 +16,8 @@
 
 ;; Create a new connection
 (defn get-api-connection-type [ui-type subtype]
+  (println "ui-type" ui-type)
+  (println "subtype" subtype)
   (cond
     (= subtype "ssh") "application"
     :else (case ui-type

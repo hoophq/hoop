@@ -3,19 +3,6 @@
    [re-frame.core :as rf]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
-;; Cache configuration
-(def cache-ttl-ms (* 120 60 1000)) ; 2 hours in milliseconds
-
-;; Helper functions for cache management
-(defn cache-valid? [db]
-  (let [{:keys [cache-timestamp]} (:resources db)
-        now (.now js/Date)]
-    (and cache-timestamp
-         (< (- now cache-timestamp) cache-ttl-ms))))
-
-(defn get-cached-resources [db]
-  (get-in db [:resources :results]))
-
 ;; Paginated resources events
 (rf/reg-event-fx
  :resources/get-resources-paginated
@@ -97,26 +84,6 @@
  (fn [db [_]]
    (assoc db :resources->resource-details {:loading true :data nil})))
 
-;; Load metadata
-(rf/reg-event-fx
- :resources->load-metadata
- (fn [{:keys [db]} [_]]
-   {:db (assoc-in db [:resources :metadata :loading] true)
-    :fx [[:dispatch [:http-request {:method "GET"
-                                    :url "/data/resources-metadata.json"
-                                    :on-success #(rf/dispatch [:resources->set-metadata %])
-                                    :on-failure #(rf/dispatch [:resources->metadata-error %])}]]]}))
-
-(rf/reg-event-db
- :resources->set-metadata
- (fn [db [_ metadata]]
-   (assoc-in db [:resources :metadata] {:data metadata :loading false :error nil})))
-
-(rf/reg-event-db
- :resources->metadata-error
- (fn [db [_ error]]
-   (assoc-in db [:resources :metadata] {:data nil :loading false :error error})))
-
 ;; Create resource
 (rf/reg-event-fx
  :resources->create-resource
@@ -133,23 +100,6 @@
                                       (rf/dispatch [:show-snackbar {:level :success
                                                                     :text "Resource created!"}])
                                       (rf/dispatch [:navigate :resources]))}]]]})))
-
-;; Update resource
-(rf/reg-event-fx
- :resources->update-resource
- (fn
-   [_ [_ resource]]
-   {:fx [[:dispatch [:fetch
-                     {:method "PUT"
-                      :uri (str "/resources/" (:id resource))
-                      :body resource
-                      :on-success (fn []
-                                    (rf/dispatch [:modal->close])
-                                    (rf/dispatch [:show-snackbar
-                                                  {:level :success
-                                                   :text (str "Resource " (:name resource) " updated!")}])
-                                    (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
-                                    (rf/dispatch [:navigate :resources]))}]]]}))
 
 ;; Delete resource
 (rf/reg-event-fx

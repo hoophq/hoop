@@ -7,8 +7,6 @@
 
 (defn main [connection]
   [:> Box {:class "max-w-[600px] space-y-8"}
-   ;; Environment credentials (dynamic forms)
-   ;; Cada tipo de conexão já cria seu próprio form com id="credentials-form"
    (case (:type connection)
      "database" [database/credentials-step (:subtype connection) :update]
      "custom" [server/credentials-step :update]

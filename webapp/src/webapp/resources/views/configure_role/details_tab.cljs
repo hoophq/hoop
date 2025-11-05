@@ -6,7 +6,6 @@
 
 (defn main [connection]
   [:> Box {:class "max-w-[600px] space-y-8"}
-   ;; Name (read-only)
    [:> Box
     [forms/input {:label "Name"
                   :value (:name connection)
