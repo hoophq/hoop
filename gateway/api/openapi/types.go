@@ -1870,7 +1870,7 @@ type RunbookRepository struct {
 	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
 	// Git SSH known hosts for host key verification
 	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
-	GitHookTtl    string `json:"git_hook_ttl" example:"1000"`
+	GitHookTTL    int    `json:"git_hook_ttl" example:1000`
 }
 
 type RunbookConfigurationRequest struct {

@@ -38,23 +38,22 @@ type ConfigInput struct {
 	SSHUser       string
 	SSHKeyPass    string
 	SSHKnownHosts string
-	HookCacheTTL  string
+	HookCacheTTL  int
 }
 
 func NewConfigV2(input *ConfigInput) (*Config, error) {
 	if input == nil {
 		return nil, ErrEmptyConfiguration
 	}
-
-	configTTL, err := strconv.Atoi(input.HookCacheTTL)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing HookCacheTTL, %v", err)
+	var hookCacheTTL *time.Duration
+	if input.HookCacheTTL > 0 {
+		durationTTL := time.Duration(input.HookCacheTTL) * time.Second
+		hookCacheTTL = &durationTTL
 	}
-	hookCacheTTL := time.Duration(configTTL) * time.Second
 
 	config := &Config{
 		GitURL:       input.GitURL,
-		HookCacheTTL: &hookCacheTTL,
+		HookCacheTTL: hookCacheTTL,
 		Branch:       input.GitBranch,
 	}
 

@@ -3608,6 +3608,14 @@ const docTemplate = `{
                     "Runbooks"
                 ],
                 "summary": "List Runbooks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter runbooks by connection name",
+                        "name": "connection",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3617,12 +3625,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3656,20 +3658,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.RunbookConfiguration"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3697,7 +3687,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "description": "Runbook Configuration",
-                        "name": "runbook",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -3782,6 +3772,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -3823,18 +3819,6 @@ const docTemplate = `{
                             }
                         }
                     },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3858,11 +3842,11 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "description": "Runbook Rule",
-                        "name": "rule",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/openapi.RunbookRule"
+                            "$ref": "#/definitions/openapi.RunbookRuleRequest"
                         }
                     }
                 ],
@@ -3875,12 +3859,6 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3926,12 +3904,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3962,11 +3934,11 @@ const docTemplate = `{
                     },
                     {
                         "description": "Runbook Rule",
-                        "name": "rule",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/openapi.RunbookRule"
+                            "$ref": "#/definitions/openapi.RunbookRuleRequest"
                         }
                     }
                 ],
@@ -3985,12 +3957,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -4027,12 +3993,6 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -8302,8 +8262,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "git_hook_ttl": {
-                    "type": "string",
-                    "example": "1000"
+                    "type": "integer"
                 },
                 "git_password": {
                     "description": "Git password or token for repository authentication",
@@ -8481,6 +8440,51 @@ const docTemplate = `{
                 "repository": {
                     "type": "string",
                     "example": "github.com/myorg/myrepo"
+                }
+            }
+        },
+        "openapi.RunbookRuleRequest": {
+            "type": "object",
+            "required": [
+                "connections",
+                "name",
+                "runbooks",
+                "user_groups"
+            ],
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "bash"
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Runbook rules for production databases"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Default Runbook Rules"
+                },
+                "runbooks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRuleFile"
+                    }
+                },
+                "user_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-team",
+                        "devops-team"
+                    ]
                 }
             }
         },

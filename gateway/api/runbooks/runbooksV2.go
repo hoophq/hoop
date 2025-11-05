@@ -189,7 +189,7 @@ func buildCommonConfig(config *models.RunbookRepositoryConfig) (*runbooks.Config
 		SSHKeyPass:    config.SSHKeyPass,
 		SSHKnownHosts: config.SSHKnownHosts,
 		GitBranch:     "",
-		HookCacheTTL:  config.GitHookTtl,
+		HookCacheTTL:  config.GitHookTTL,
 	}
 
 	return runbooks.NewConfigV2(configInput)
@@ -204,7 +204,7 @@ func buildConfigMapRepository(config *openapi.RunbookRepository) models.RunbookR
 		SSHUser:       config.SSHUser,
 		SSHKeyPass:    config.SSHKeyPass,
 		SSHKnownHosts: config.SSHKnownHosts,
-		GitHookTtl:    config.GitHookTtl,
+		GitHookTTL:    config.GitHookTTL,
 	}
 }
 
@@ -217,7 +217,7 @@ func buildRunbookRepositoryResponse(repoConfig *models.RunbookRepositoryConfig) 
 		SSHUser:       repoConfig.SSHUser,
 		SSHKeyPass:    repoConfig.SSHKeyPass,
 		SSHKnownHosts: repoConfig.SSHKnownHosts,
-		GitHookTtl:    repoConfig.GitHookTtl,
+		GitHookTTL:    repoConfig.GitHookTTL,
 	}
 }
 
