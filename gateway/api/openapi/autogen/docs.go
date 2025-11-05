@@ -34,13 +34,21 @@ const docTemplate = `{
                     "Agents"
                 ],
                 "summary": "List Agent Keys",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status (CONNECTED or DISCONNECTED)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/openapi.AgentListResponse"
+                                "$ref": "#/definitions/openapi.AgentResponse"
                             }
                         }
                     },
@@ -110,6 +118,45 @@ const docTemplate = `{
             }
         },
         "/agents/{nameOrID}": {
+            "get": {
+                "description": "Get an agent key by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Get Agent Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the resource",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "description": "Remove an agent key. It will invalidate a running agent",
                 "produces": [
@@ -3255,6 +3302,210 @@ const docTemplate = `{
                 }
             }
         },
+        "/resources": {
+            "get": {
+                "description": "Lists all resources for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Lists resources",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ResourceResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a resource for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Creates a resource",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/{name}": {
+            "get": {
+                "description": "Gets a resource by ID for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Gets a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Updates a resource by ID for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Updates a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a resource by ID for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Deletes a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reviews": {
             "get": {
                 "description": "Get all reviews resource",
@@ -5109,7 +5360,29 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.AgentListResponse": {
+        "openapi.AgentRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "mode": {
+                    "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
+                    "type": "string",
+                    "default": "standard",
+                    "enum": [
+                        "standard",
+                        "embedded"
+                    ]
+                },
+                "name": {
+                    "description": "Unique name of the resource",
+                    "type": "string",
+                    "example": "default"
+                }
+            }
+        },
+        "openapi.AgentResponse": {
             "type": "object",
             "properties": {
                 "compiler": {
@@ -5188,28 +5461,6 @@ const docTemplate = `{
                 "version": {
                     "type": "string",
                     "example": "1.23.10"
-                }
-            }
-        },
-        "openapi.AgentRequest": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "mode": {
-                    "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
-                    "type": "string",
-                    "default": "standard",
-                    "enum": [
-                        "standard",
-                        "embedded"
-                    ]
-                },
-                "name": {
-                    "description": "Unique name of the resource",
-                    "type": "string",
-                    "example": "default"
                 }
             }
         },
@@ -5360,6 +5611,11 @@ const docTemplate = `{
                     "example": [
                         "EMAIL_ADDRESS"
                     ]
+                },
+                "resource_name": {
+                    "description": "Resource to which this connection belongs to, it'll be created if it doesn't exist",
+                    "type": "string",
+                    "example": "pgdemo"
                 },
                 "reviewers": {
                     "description": "Reviewers is a list of groups that will review the connection before the user could execute it",
@@ -7102,6 +7358,158 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.RDPServerConfig": {
+            "type": "object",
+            "properties": {
+                "listen_address": {
+                    "description": "The listen address to run the RDP server proxy",
+                    "type": "string",
+                    "example": "0.0.0.0:3389"
+                }
+            }
+        },
+        "openapi.ResourceRequest": {
+            "type": "object",
+            "required": [
+                "agent_id",
+                "env_vars",
+                "name",
+                "roles",
+                "type"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "The agent associated with this resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "env_vars": {
+                    "description": "The resource environment variables",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "The resource name",
+                    "type": "string",
+                    "example": "my-resource"
+                },
+                "roles": {
+                    "description": "The roles associated with this resource",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceRoleRequest"
+                    }
+                },
+                "type": {
+                    "description": "The resource type",
+                    "type": "string",
+                    "example": "mysql"
+                }
+            }
+        },
+        "openapi.ResourceResponse": {
+            "type": "object",
+            "required": [
+                "agent_id"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "The agent associated with this resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "env_vars": {
+                    "description": "The resource environment variables",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "The resource ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "description": "The resource name",
+                    "type": "string",
+                    "example": "my-resource"
+                },
+                "type": {
+                    "description": "The resource type",
+                    "type": "string",
+                    "example": "mysql"
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.ResourceRoleRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "type"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "The agent associated with this connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "command": {
+                    "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "/bin/bash"
+                    ]
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "secret": {
+                    "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
+                }
+            }
+        },
         "openapi.Review": {
             "type": "object",
             "properties": {
@@ -7813,6 +8221,14 @@ const docTemplate = `{
                     "description": "Either to enable or disable the product analytics tracking",
                     "type": "string",
                     "example": "active"
+                },
+                "rdp_server_config": {
+                    "description": "The RDP server proxy configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.RDPServerConfig"
+                        }
+                    ]
                 },
                 "ssh_server_config": {
                     "description": "The SSH server proxy configuration",
