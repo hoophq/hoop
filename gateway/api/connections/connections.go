@@ -349,7 +349,8 @@ func Delete(c *gin.Context) {
 //	@Param			connection_ids	query		string	false	"Filter by specific connection IDs, separated by comma"									Format(string)
 //	@Param			page_size		query		int		false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)
-//	@Success		200				{array}		openapi.Connection or {object}	object	"Returns array of Connection objects or PaginatedResponse[openapi.Connection] when using pagination"
+//	@Success		200				{object}		openapi.PaginatedResponse[openapi.Connection]	"Returns Connection objects paginated when using pagination"
+//	@Success		200				{array}		openapi.Connection	"Returns array of Connection objects"
 //	@Failure		422,500			{object}	openapi.HTTPError
 //	@Router			/connections [get]
 func List(c *gin.Context) {

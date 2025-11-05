@@ -751,11 +751,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apirunbooks.UpdateRunbookConfiguration,
 	)
-	r.DELETE("/runbooks/configurations",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		apirunbooks.DeleteRunbookConfiguration,
-	)
 
 	r.GET("/runbooks/rules",
 		r.AuthMiddleware,
