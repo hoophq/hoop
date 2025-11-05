@@ -41,6 +41,8 @@
    [webapp.resources.views.main :as resources-main]
    [webapp.resources.views.configure.main :as resource-configure]
    [webapp.resources.views.configure-role.main :as configure-role]
+   [webapp.resources.views.add-role.main :as add-role]
+   [webapp.resources.views.add-role.events]
    [webapp.resources.subs]
    [webapp.resources.events]
    [webapp.events]
@@ -405,6 +407,14 @@
     [layout :application-hoop
      [routes/wrap-admin-only
       [configure-role/main connection-name]]]))
+
+(defmethod routes/panels :add-role-to-resource-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        resource-id (:resource-id (:route-params current-route))]
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [add-role/main resource-id]]]))
 
 (defmethod routes/panels :dashboard-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}

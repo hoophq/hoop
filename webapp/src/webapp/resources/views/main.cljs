@@ -269,13 +269,17 @@
         selected-tags (r/atom {})
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
-        search-debounce-timer (r/atom nil)]
+        search-debounce-timer (r/atom nil)
+        connections-metadata (rf/subscribe [:connections->metadata])]
 
     ;; Initial load
     (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
     (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
     (rf/dispatch [:connections->get-connection-tags])
     (rf/dispatch [:guardrails->get-all])
+
+    (when (nil? @connections-metadata)
+      (rf/dispatch [:connections->load-metadata]))
 
     (when (empty? (:data @user))
       (rf/dispatch [:users->get-user]))

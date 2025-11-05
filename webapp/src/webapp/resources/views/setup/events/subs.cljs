@@ -78,3 +78,29 @@
  (fn [db _]
    (get-in db [:resource-setup :agent-creation-mode] :select)))
 
+;; Context (for add-role flow)
+(rf/reg-sub
+ :resource-setup/context
+ (fn [db _]
+   (get-in db [:resource-setup :context] :setup)))
+
+(rf/reg-sub
+ :resource-setup/resource-id
+ (fn [db _]
+   (get-in db [:resource-setup :resource-id])))
+
+(rf/reg-sub
+ :resource-setup/loading?
+ (fn [db _]
+   (get-in db [:resource-setup :loading?] false)))
+
+(rf/reg-sub
+ :resource-setup/submitting?
+ (fn [db _]
+   (get-in db [:resource-setup :submitting?] false)))
+
+;; Last created roles (for add-role success screen)
+(rf/reg-sub
+ :resources->last-created-roles
+ (fn [db _]
+   (get-in db [:resources :last-created-roles] [])))

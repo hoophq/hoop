@@ -1,5 +1,6 @@
 (ns webapp.resources.views.setup.events.process-form
   (:require
+   [clojure.string :as cs]
    [webapp.resources.helpers :as helpers]))
 
 (defn process-http-headers
@@ -15,6 +16,7 @@
   [role]
   (let [subtype (:subtype role)
         credentials (:credentials role)
+        metadata-credentials (:metadata-credentials role)
         env-vars (:environment-variables role [])
         config-files (:configuration-files role [])
 
@@ -24,12 +26,21 @@
                                      :value v})
                                   (seq credentials))
 
+        ;; Convert metadata-credentials to env-var format (for custom resources)
+        metadata-credential-env-vars (mapv (fn [[k v]]
+                                             {:key (cs/upper-case (name k))
+                                              :value v})
+                                           (seq metadata-credentials))
+
+        ;; Combine all credentials
+        all-credential-env-vars (concat credential-env-vars metadata-credential-env-vars)
+
         ;; Special handling for httpproxy headers
         all-env-vars (if (= subtype "httpproxy")
                        (let [headers (:environment-variables role [])
                              processed-headers (process-http-headers headers)]
-                         (concat credential-env-vars processed-headers))
-                       (concat credential-env-vars env-vars))]
+                         (concat all-credential-env-vars processed-headers))
+                       (concat all-credential-env-vars env-vars))]
 
     (clj->js
      (merge
@@ -58,6 +69,7 @@
      :access_mode_runbooks "enabled"
      :access_mode_exec "enabled"
      :access_mode_connect "enabled"
+     :access_schema "enabled"
      :redact_enabled false
      :redact_types []
      :reviewers []}))

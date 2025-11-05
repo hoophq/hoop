@@ -31,12 +31,17 @@
      [:> ChevronRight {:size 20 :class "text-gray-9"}]]]])
 
 (defn main []
-  (let [resource @(rf/subscribe [:resources->last-created])
+  (let [context @(rf/subscribe [:resource-setup/context])
+        resource-id @(rf/subscribe [:resource-setup/resource-id])
+        resource @(rf/subscribe [:resources->last-created])
+        created-roles @(rf/subscribe [:resources->last-created-roles])
         roles @(rf/subscribe [:resource-setup/roles])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
         onboarding? (helpers/is-onboarding-context?)
-        single-role? (= (count roles) 1)
-        first-role (first roles)
+        ;; For add-role context, use created-roles; for setup, use roles
+        actual-roles (if (= context :add-role) created-roles roles)
+        single-role? (= (count actual-roles) 1)
+        first-role (first actual-roles)
         ;; Check capabilities of the first role
         can-web-terminal? (helpers/can-open-web-terminal? first-role)
         can-native-client? (helpers/can-access-native-client? first-role)]
@@ -102,7 +107,12 @@
          [action-card {:icon ChevronRight
                        :title "Go to Resources"
                        :description "Access your configured resources and roles"
-                       :on-click #(rf/dispatch [:navigate :connections])}]])]
+                       :on-click (fn []
+                                   (if (= context :add-role)
+                                     ;; Add-role: go back to resource configure roles tab
+                                     (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-id])
+                                     ;; Setup: go to connections list
+                                     (rf/dispatch [:navigate :connections])))}]])]
 
      ;; Footer action
      [:> Flex {:justify "center" :class "mt-8"}
@@ -114,5 +124,10 @@
         [:> Button {:size "3"
                     :variant "ghost"
                     :color "gray"
-                    :on-click #(rf/dispatch [:navigate :connections])}
+                    :on-click (fn []
+                                (if (= context :add-role)
+                                  ;; Add-role: go back to resource configure roles tab
+                                  (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-id])
+                                  ;; Setup: go to connections list
+                                  (rf/dispatch [:navigate :connections])))}
          "Skip and configure later"])]]))

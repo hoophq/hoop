@@ -99,62 +99,34 @@
         metadata-credentials @(rf/subscribe [:resource-setup/metadata-credentials role-index])]
 
     (when (seq credentials-config)
-      [:> Box {:class "space-y-4"}
-       [:> Heading {:as "h3" :size "4" :weight "bold"}
-        "Environment credentials"]
-
-       [:> Grid {:columns "1" :gap "4"}
-        (for [field credentials-config]
-          (let [form-key (cs/lower-case (cs/replace (:name field) #"[^a-zA-Z0-9]" ""))
-                field-type (case (:type field)
-                             "filesystem" "textarea"
-                             "textarea" "textarea"
-                             "password")]
-            ^{:key form-key}
-            (if (= field-type "textarea")
-              [forms/textarea {:label (:name field)
-                               :placeholder (or (:placeholder field) (:description field))
-                               :value (get metadata-credentials form-key "")
-                               :required (:required field)
-                               :helper-text (:description field)
-                               :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
-                                                         role-index
-                                                         form-key
-                                                         (-> % .-target .-value)])}]
-              [forms/input {:label (:name field)
-                            :placeholder (or (:placeholder field) (:description field))
-                            :value (get metadata-credentials form-key "")
-                            :required (:required field)
-                            :type field-type
-                            :helper-text (:description field)
-                            :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
-                                                      role-index
-                                                      form-key
-                                                      (-> % .-target .-value)])}])))]
-
-       ;; Environment variables section
-       [:> Box {:class "mt-6"}
-        [:> Heading {:as "h4" :size "3" :weight "bold" :class "mb-3"}
-         "Environment variables"]
-        [:> Text {:size "2" :class "text-[--gray-11] mb-3"}
-         "Include environment variables to be used in your connection."]
-        [:> Button {:size "2"
-                    :variant "soft"
-                    :on-click #(rf/dispatch [:resource-setup->add-role-env-var role-index "" ""])}
-         [:> Plus {:size 16}]
-         "Add key/value"]]
-
-       ;; Configuration files section
-       [:> Box {:class "mt-6"}
-        [:> Heading {:as "h4" :size "3" :weight "bold" :class "mb-3"}
-         "Configuration files"]
-        [:> Text {:size "2" :class "text-[--gray-11] mb-3"}
-         "Add values from your configuration file and use them as an environment variable in your connection."]
-        [:> Button {:size "2"
-                    :variant "soft"
-                    :on-click #(rf/dispatch [:resource-setup->add-role-config-file role-index "" ""])}
-         [:> Plus {:size 16}]
-         "Add"]]])))
+      [:> Grid {:columns "1" :gap "4"}
+       (for [field credentials-config]
+         (let [form-key (cs/lower-case (cs/replace (:name field) #"[^a-zA-Z0-9]" ""))
+               field-type (case (:type field)
+                            "filesystem" "textarea"
+                            "textarea" "textarea"
+                            "password")]
+           ^{:key form-key}
+           (if (= field-type "textarea")
+             [forms/textarea {:label (:name field)
+                              :placeholder (or (:placeholder field) (:description field))
+                              :value (get metadata-credentials form-key "")
+                              :required (:required field)
+                              :helper-text (:description field)
+                              :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
+                                                        role-index
+                                                        form-key
+                                                        (-> % .-target .-value)])}]
+             [forms/input {:label (:name field)
+                           :placeholder (or (:placeholder field) (:description field))
+                           :value (get metadata-credentials form-key "")
+                           :required (:required field)
+                           :type field-type
+                           :helper-text (:description field)
+                           :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
+                                                     role-index
+                                                     form-key
+                                                     (-> % .-target .-value)])}])))])))
 
 ;; Linux/Container role form
 (defn linux-container-role-form [role-index]
@@ -230,9 +202,6 @@
         "Role credentials"]
        ;; Render appropriate form based on type
        (cond
-         (= resource-type "database")
-         [database-role-form role-index]
-
          (= resource-subtype "ssh")
          [ssh-role-form role-index]
 
@@ -242,13 +211,11 @@
          (= resource-subtype "httpproxy")
          [http-proxy-role-form role-index]
 
-         (= resource-type "custom")
-         (if (= resource-subtype "linux-vm")
-           [linux-container-role-form role-index]
-           [metadata-driven-role-form role-index])
+         (= resource-subtype "linux-vm")
+         [linux-container-role-form role-index]
 
          :else
-         [linux-container-role-form role-index])]
+         [metadata-driven-role-form role-index])]
 
       ;; Remove role button (only if more than one role)
       (when can-remove?
@@ -262,12 +229,16 @@
 
 ;; Main roles step component
 (defn main []
-  (let [roles @(rf/subscribe [:resource-setup/roles])]
+  (let [roles @(rf/subscribe [:resource-setup/roles])
+        context @(rf/subscribe [:resource-setup/context])]
 
     [:form {:id "roles-form"
             :on-submit (fn [e]
                          (.preventDefault e)
-                         (rf/dispatch [:resource-setup->submit]))}
+                         ;; Use different submit event based on context
+                         (if (= context :add-role)
+                           (rf/dispatch [:add-role->submit])
+                           (rf/dispatch [:resource-setup->submit])))}
      [:> Box {:class "p-8 space-y-16"}
       ;; Header
       [:> Box {:class "space-y-2"}

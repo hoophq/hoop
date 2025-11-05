@@ -1,6 +1,7 @@
 (ns webapp.resources.views.configure.main
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Heading Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
+   ["lucide-react" :refer [Plus]]
    [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.components.loaders :as loaders]
@@ -9,17 +10,25 @@
    [webapp.resources.views.configure.roles-tab :as roles-tab]))
 
 (defn header [resource]
-  [:> Box {:class "pb-[--space-5]"}
-   [:> Flex {:justify "between" :align "center"}
-    [:> Box {:class "space-y-radix-3"}
-     [:> Heading {:size "6" :weight "bold" :class "text-[--gray-12]"} "Configure Resource"]
-     [:> Flex {:gap "3" :align "center"}
-      [:figure {:class "w-4"}
-       [:img {:src (constants/get-connection-icon
-                    {:type (:type resource)
-                     :subtype (:subtype resource)})}]]
-      [:> Text {:size "3" :class "text-[--gray-12]"}
-       (:name resource)]]]]])
+  (let [user @(rf/subscribe [:user])]
+    [:> Box {:class "pb-[--space-5]"}
+     [:> Flex {:justify "between" :align "center"}
+      [:> Box {:class "space-y-radix-3"}
+       [:> Heading {:size "6" :weight "bold" :class "text-[--gray-12]"} "Configure Resource"]
+       [:> Flex {:gap "3" :align "center"}
+        [:figure {:class "w-4"}
+         [:img {:src (constants/get-connection-icon
+                      {:type (:type resource)
+                       :subtype (:subtype resource)})}]]
+        [:> Text {:size "3" :class "text-[--gray-12]"}
+         (:name resource)]]]
+
+      ;; Add New Role button (admin only)
+      [:> Button {:size "2"
+                  :variant "solid"
+                  :on-click #(rf/dispatch [:navigate :add-role-to-resource {} :resource-id (:name resource)])}
+       [:> Plus {:size 16}]
+       "Add New Role"]]]))
 
 (defn loading-view []
   [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
@@ -28,9 +37,14 @@
 
 (defn main [resource-id]
   (r/with-let
-    [active-tab (r/atom "information")
+    [;; Read query param ?tab=roles
+     query-params (js->clj (new js/URLSearchParams (.. js/window -location -search))
+                           :keywordize-keys true)
+     initial-tab (get query-params :tab "information")
+     active-tab (r/atom initial-tab)
      resource-details (rf/subscribe [:resources->resource-details])
-     _ (rf/dispatch [:resources->get-resource-details resource-id])]
+     _ (rf/dispatch [:resources->get-resource-details resource-id])
+     _ (rf/dispatch [:add-role->clear])]
 
     (let [resource-state @resource-details
           resource (:data resource-state)
