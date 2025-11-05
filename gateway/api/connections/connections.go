@@ -156,7 +156,7 @@ func Put(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
-		ResourceName:        req.ResourceName,
+		ResourceName:        conn.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                conn.Name,
 		Command:             req.Command,
@@ -235,9 +235,6 @@ func Patch(c *gin.Context) {
 	// Apply patches from request (only non-nil values override)
 	if req.Command != nil {
 		conn.Command = *req.Command
-	}
-	if req.ResourceName != nil {
-		conn.ResourceName = *req.ResourceName
 	}
 	if req.Type != nil {
 		conn.Type = *req.Type
