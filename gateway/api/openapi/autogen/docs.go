@@ -297,6 +297,13 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
+                        "description": "Search by name, type, or subtype",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
                         "description": "Filter by type",
                         "name": "type",
                         "in": "query"
@@ -314,11 +321,32 @@ const docTemplate = `{
                         "description": "Filter by managed by",
                         "name": "managed_by",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by specific connection IDs, separated by comma",
+                        "name": "connection_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Maximum number of items to return (1-100). When provided, enables pagination",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Page number (1-based). When provided, enables pagination",
+                        "name": "page",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Returns array of Connection objects",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -493,6 +521,69 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/openapi.Connection"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Connection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partial update of a connection resource. Only provided fields will be updated.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Patch Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the resource",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource with fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionPatch"
                         }
                     }
                 ],
@@ -3774,27 +3865,6 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
-            "delete": {
-                "description": "Delete Runbook Configuration",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Runbooks"
-                ],
-                "summary": "Delete Runbook Configuration",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
             }
         },
         "/runbooks/exec": {
@@ -6168,6 +6238,141 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ConnectionPatch": {
+            "type": "object",
+            "properties": {
+                "access_mode_connect": {
+                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_exec": {
+                    "description": "Toggle Ad Hoc Executions\n* enabled - Enable to run ad-hoc executions for this connection\n* disabled - Disable ad-hoc executions for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_runbooks": {
+                    "description": "Toggle Ad Hoc Runbooks Executions\n* enabled - Enable to run runbooks for this connection\n* disabled - Disable runbooks execution for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_schema": {
+                    "description": "Toggle Introspection Schema\n* enabled - Enable the instrospection schema in the webapp\n* disabled - Disable the instrospection schema in the webapp",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "agent_id": {
+                    "description": "The agent associated with this connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "command": {
+                    "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "/bin/bash"
+                    ]
+                },
+                "connection_tags": {
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "environment": "prod",
+                        "tier": "frontend"
+                    }
+                },
+                "guardrail_rules": {
+                    "description": "The guard rail association id rules",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "5701046A-7B7A-4A78-ABB0-A24C95E6FE54",
+                        "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                    ]
+                },
+                "jira_issue_template_id": {
+                    "description": "The jira issue templates ids associated to the connection",
+                    "type": "string",
+                    "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "redact_types": {
+                    "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "EMAIL_ADDRESS"
+                    ]
+                },
+                "resource_name": {
+                    "description": "Resource to which this connection belongs to",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "reviewers": {
+                    "description": "Reviewers is a list of groups that will review the connection before the user could execute it",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-group"
+                    ]
+                },
+                "secret": {
+                    "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "tags": {
+                    "description": "DEPRECATED: Tags to classify the connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod"
+                    ]
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
+                }
+            }
+        },
         "openapi.ConnectionSearch": {
             "type": "object",
             "required": [
@@ -7495,6 +7700,34 @@ const docTemplate = `{
                     "type": "string",
                     "format": "dsn",
                     "example": "grpcs://default:\u003csecret-key\u003e@127.0.0.1:8010"
+                }
+            }
+        },
+        "openapi.PaginatedResponse-openapi_Connection": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Connection"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
+        "openapi.Pagination": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
