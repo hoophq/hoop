@@ -1,6 +1,7 @@
 package apiagents
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -116,46 +117,47 @@ func Get(c *gin.Context) {
 	nameOrID := c.Param("nameOrID")
 	agent, err := models.GetAgentByNameOrID(ctx.OrgID, nameOrID)
 
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
-		return
-	case nil:
-		mode := agent.Mode
-		if mode == "" {
-			// set to default mode if the entity doesn't contain any value
-			mode = proto.AgentModeStandardType
-		}
-		
-		if mode == proto.AgentModeMultiConnectionType {
-			// for now, don't return multi-connection keys
-			// there's a special route for managing these kind of token.
-			// See orgs/orgs.go
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
 			return
 		}
 
-		c.JSON(http.StatusOK, openapi.AgentResponse{
-			ID:       agent.ID,
-			Token:    "", // don't show the hashed token
-			Name:     agent.Name,
-			Mode:     mode,
-			Status:   agent.Status,
-			Metadata: agent.Metadata,
-			// DEPRECATE top level metadata keys
-			Hostname:      agent.Metadata["hostname"],
-			MachineID:     agent.Metadata["machine_id"],
-			KernelVersion: agent.Metadata["kernel_version"],
-			Version:       agent.Metadata["version"],
-			GoVersion:     agent.Metadata["goversion"],
-			Compiler:      agent.Metadata["compiler"],
-			Platform:      agent.Metadata["platform"],
-		})
-	default:
 		log.Errorf("failed getting agent %v, err=%#v", nameOrID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
+	mode := agent.Mode
+	if mode == "" {
+		// set to default mode if the entity doesn't contain any value
+		mode = proto.AgentModeStandardType
+	}
+
+	if mode == proto.AgentModeMultiConnectionType {
+		// for now, don't return multi-connection keys
+		// there's a special route for managing these kind of token.
+		// See orgs/orgs.go
+		c.JSON(http.StatusNotFound, gin.H{"message": "agent not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, openapi.AgentResponse{
+		ID:       agent.ID,
+		Token:    "", // don't show the hashed token
+		Name:     agent.Name,
+		Mode:     agent.Mode,
+		Status:   agent.Status,
+		Metadata: agent.Metadata,
+		// DEPRECATE top level metadata keys
+		Hostname:      agent.Metadata["hostname"],
+		MachineID:     agent.Metadata["machine_id"],
+		KernelVersion: agent.Metadata["kernel_version"],
+		Version:       agent.Metadata["version"],
+		GoVersion:     agent.Metadata["goversion"],
+		Compiler:      agent.Metadata["compiler"],
+		Platform:      agent.Metadata["platform"],
+	})
 }
 
 // ListAgents
