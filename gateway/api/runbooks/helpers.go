@@ -43,7 +43,7 @@ func setRunbookCache(orgId, gitUrl string, commit *object.Commit) {
 
 	inner[gitUrl] = &runbookCache{
 		commit:   commit,
-		cachedAt: time.Now(),
+		cachedAt: time.Now().UTC(),
 	}
 }
 
@@ -79,7 +79,11 @@ func deleteRunbookCache(orgId string, gitUrl string) {
 	}
 
 	if v, ok := runbooksCache.Load(orgId); ok {
-		inner := v.(map[string]*runbookCache)
+		inner, ok := v.(map[string]*runbookCache)
+		if !ok {
+			log.Errorf("invalid runbook cache structure for orgId=%s", orgId)
+			return
+		}
 		delete(inner, gitUrl)
 		runbooksCache.Store(orgId, inner)
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/runbooks"
-	commonRunbooks "github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
@@ -180,8 +179,8 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 	c.JSON(200, buildRunbookConfigurationResponse(&runbooks))
 }
 
-func buildCommonConfig(config *models.RunbookRepositoryConfig) (*commonRunbooks.Config, error) {
-	configInput := &commonRunbooks.ConfigInput{
+func buildCommonConfig(config *models.RunbookRepositoryConfig) (*runbooks.Config, error) {
+	configInput := &runbooks.ConfigInput{
 		GitURL:        config.GitUrl,
 		GitUser:       config.GitUser,
 		GitPassword:   config.GitPassword,
@@ -193,7 +192,7 @@ func buildCommonConfig(config *models.RunbookRepositoryConfig) (*commonRunbooks.
 		HookCacheTTL:  config.GitHookTtl,
 	}
 
-	return commonRunbooks.NewConfigV2(configInput)
+	return runbooks.NewConfigV2(configInput)
 }
 
 func buildConfigMapRepository(config *openapi.RunbookRepository) models.RunbookRepositoryConfig {
