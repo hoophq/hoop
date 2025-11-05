@@ -599,6 +599,17 @@ func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string
 	return string(jsonData), nil
 }
 
+func ListConnectionsName(db *gorm.DB, orgID string) ([]string, error) {
+	var names []string
+	err := db.Table(tableConnections).
+		Where("org_id = ?", orgID).
+		Pluck("name", &names).Error
+	if err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
 // ListConnections retrieves a list of connections based on the provided filter options.
 // It applies access control rules based on the user's groups and the access control plugin.
 func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection, error) {

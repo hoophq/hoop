@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -16,7 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
-const maxTemplateSize = 1000000 // 1MB
+const maxTemplateSize = 1_000_000 // 1MB
 
 type File struct {
 	Name      string
@@ -37,9 +38,15 @@ func FetchRepository(config *Config) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return BuildRepositoryFromCommit(commit)
+}
+
+func BuildRepositoryFromCommit(commit *object.Commit) (*Repository, error) {
 	if commit.Hash.IsZero() {
 		return nil, fmt.Errorf("commit hash from remote is empty")
 	}
+
 	tree, err := commit.Tree()
 	if err != nil {
 		return nil, fmt.Errorf("failed obtaining tree from commit %v, %v", commit.Hash.String(), err)
@@ -109,10 +116,12 @@ func CloneRepositoryInMemory(runbookConf *Config) (*object.Commit, error) {
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancelFn()
+
+	remoteName := "origin"
 	err = r.FetchContext(ctx, &git.FetchOptions{
 		RemoteURL:  runbookConf.GitURL,
 		Auth:       runbookConf.Auth,
-		RemoteName: "origin",
+		RemoteName: remoteName,
 		Tags:       git.NoTags,
 		Depth:      1,
 		// RefSpecs:   []config.RefSpec{"refs/heads/main:refs/heads/main"},
@@ -120,30 +129,49 @@ func CloneRepositoryInMemory(runbookConf *Config) (*object.Commit, error) {
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return nil, fmt.Errorf("failed pulling repo %v, err=%v", runbookConf.GitURL, err)
 	}
+
 	refs, err := r.References()
 	if err != nil {
 		return nil, fmt.Errorf("failed getting references, err=%v", err)
 	}
+	defer refs.Close()
+
+	var branches []string
+	if runbookConf.Branch == "" {
+		// If no specific branch is set, use the default branches
+		branches = []string{"master", "main"}
+	} else {
+		branches = []string{runbookConf.Branch}
+	}
+
 	var refList []string
 	var resRef *plumbing.Reference
-	refs.ForEach(func(ref *plumbing.Reference) error {
-		if resRef != nil {
-			return nil
+	for {
+		ref, err := refs.Next()
+		if err != nil {
+			break
 		}
+
 		// The HEAD is omitted in a `git show-ref` so we ignore the symbolic
 		// references, the HEAD
 		if ref.Type() == plumbing.SymbolicReference {
-			return nil
+			continue
 		}
-		if ref.Name() == "refs/remotes/origin/master" || ref.Name() == "refs/remotes/origin/main" {
+
+		matchesBranch := slices.ContainsFunc(branches, func(branch string) bool {
+			return ref.Name().Short() == fmt.Sprintf("%s/%s", remoteName, branch)
+		})
+		if matchesBranch {
 			resRef = ref
-			return nil
+			break
 		}
+
 		refList = append(refList, fmt.Sprintf("%v=%s", ref.Name(), ref.Hash().String()))
-		return nil
-	})
+	}
+
 	if resRef != nil {
 		return r.CommitObject(resRef.Hash())
 	}
-	return nil, fmt.Errorf("master or main ref not found. refs=%v", refList)
+
+	return nil, fmt.Errorf("branch ref not found. branches=%v refs=%v", branches, refList)
 }

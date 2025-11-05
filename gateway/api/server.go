@@ -729,6 +729,54 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		searchapi.Get,
 	)
 
+	r.GET("/runbooks",
+		r.AuthMiddleware,
+		apirunbooks.ListRunbooksV2,
+	)
+	r.POST("/runbooks/exec",
+		r.AuthMiddleware,
+		apirunbooks.RunbookExec,
+	)
+	r.GET("/runbooks/configurations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.GetRunbookConfiguration,
+	)
+	r.PUT("/runbooks/configurations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.UpdateRunbookConfiguration,
+	)
+	r.DELETE("/runbooks/configurations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.DeleteRunbookConfiguration,
+	)
+
+	r.GET("/runbooks/rules",
+		r.AuthMiddleware,
+		apirunbooks.ListRunbookRules,
+	)
+	r.GET("/runbooks/rules/:id",
+		r.AuthMiddleware,
+		apirunbooks.GetRunbookRule,
+	)
+	r.POST("/runbooks/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.CreateRunbookRule,
+	)
+	r.PUT("/runbooks/rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.UpdateRunbookRule,
+	)
+	r.DELETE("/runbooks/rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.DeleteRunbookRule,
+	)
+
 	r.GET("/ws", transport.HandleConnection)
 
 	r.GET("/resources",
