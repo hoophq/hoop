@@ -269,8 +269,6 @@ type ConnectionPatch struct {
 	// Is the shell command that is going to be executed when interacting with this connection.
 	// This value is required if the connection is going to be used from the Webapp.
 	Command *[]string `json:"command" example:"/bin/bash"`
-	// Resource to which this connection belongs to
-	ResourceName *string `json:"resource_name" example:"pgdemo"`
 	// Type represents the main type of the connection:
 	// * database - Database protocols
 	// * application - Custom applications
