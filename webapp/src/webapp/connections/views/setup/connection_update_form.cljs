@@ -60,7 +60,7 @@
                                 (when form
                                   (.reportValidity form)
                                   (reset! credentials-valid? (.checkValidity form))))))
-     _ (rf/dispatch [:connections->get-connection-details connection-name])
+     _ (rf/dispatch-sync [:connections->get-connection-details connection-name])
      _ (rf/dispatch [:guardrails->get-all])
      _ (rf/dispatch [:jira-templates->get-all])]
 
@@ -154,11 +154,13 @@
 
         :reagent-render
         (fn []
-          (if (:loading @connection)
+          (if (or (:loading @connection)
+                  (= (:status @guardrails-list) :loading)
+                  (= (:status @jira-templates-list) :loading))
             [loading-view]
             (when (:data @connection)
-              (when (and (not @initialized?)
-                         (:data @connection))
+
+              (when (not @initialized?)
                 (let [processed-connection (helpers/process-connection-for-update
                                             (:data @connection)
                                             (:data @guardrails-list)

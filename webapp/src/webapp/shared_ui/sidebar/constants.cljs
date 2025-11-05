@@ -23,7 +23,7 @@
    "Reviews" (fn [& [{:keys [size] :or {size 24}}]]
                [:> Inbox {:size size}])
    "RunbooksSetup" (fn [& [{:keys [size] :or {size 24}}]]
-                [:> BookMarked {:size size}])
+                     [:> BookMarked {:size size}])
    "Guardrails" (fn [& [{:keys [size] :or {size 24}}]]
                   [:> ShieldCheck {:size size}])
    "JiraTemplates" (fn [& [{:keys [size] :or {size 24}}]]
@@ -116,7 +116,7 @@
     :admin-only? false
     :badge (fn []
              [:> Flex {:gap "3"}
-              [:> Text {:weight "regular"} "cmd + k"]
+              [:> Text {:weight "regular"} "cmd + K"]
               [:> Badge {:variant "solid" :color "green"}
                "NEW"]])}])
 

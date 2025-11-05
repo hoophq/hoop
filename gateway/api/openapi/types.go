@@ -150,7 +150,7 @@ type AgentCreateResponse struct {
 	Token string `json:"token" example:"grpc://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard"`
 }
 
-type AgentListResponse struct {
+type AgentResponse struct {
 	// Unique ID of the resource
 	ID string `json:"id" format:"uuid" example:"8a4239fa-5116-4bbb-ad3c-ea1f294aac4a"`
 	// The token/key of the resource, this value is always empty for now
@@ -191,6 +191,8 @@ type Connection struct {
 	// Is the shell command that is going to be executed when interacting with this connection.
 	// This value is required if the connection is going to be used from the Webapp.
 	Command []string `json:"command" example:"/bin/bash"`
+	// Resource to which this connection belongs to, it'll be created if it doesn't exist
+	ResourceName string `json:"resource_name" example:"pgdemo"`
 	// Type represents the main type of the connection:
 	// * database - Database protocols
 	// * application - Custom applications
@@ -261,6 +263,73 @@ type Connection struct {
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+}
+
+type ConnectionPatch struct {
+	// Is the shell command that is going to be executed when interacting with this connection.
+	// This value is required if the connection is going to be used from the Webapp.
+	Command *[]string `json:"command" example:"/bin/bash"`
+	// Resource to which this connection belongs to
+	ResourceName *string `json:"resource_name" example:"pgdemo"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type *string `json:"type" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType *string `json:"subtype" example:"postgres"`
+	// Secrets are environment variables that are going to be exposed
+	// in the runtime of the connection:
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	//
+	// The value could also represent an integration with a external provider:
+	// * { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable
+	// * { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={"KEY": "val"}
+	Secrets *map[string]any `json:"secret"`
+	// The agent associated with this connection
+	AgentId *string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// Reviewers is a list of groups that will review the connection before the user could execute it
+	Reviewers *[]string `json:"reviewers" example:"dba-group"`
+	// Redact Types is a list of info types that will used to redact the output of the connection.
+	// Possible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference
+	RedactTypes *[]string `json:"redact_types" example:"EMAIL_ADDRESS"`
+	// DEPRECATED: Tags to classify the connection
+	Tags *[]string `json:"tags" example:"prod"`
+	// Tags to identify the connection
+	// * keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).
+	// * values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.
+	ConnectionTags *map[string]string `json:"connection_tags" example:"environment:prod,tier:frontend"`
+	// Toggle Ad Hoc Runbooks Executions
+	// * enabled - Enable to run runbooks for this connection
+	// * disabled - Disable runbooks execution for this connection
+	AccessModeRunbooks *string `json:"access_mode_runbooks" enums:"enabled,disabled"`
+	// Toggle Ad Hoc Executions
+	// * enabled - Enable to run ad-hoc executions for this connection
+	// * disabled - Disable ad-hoc executions for this connection
+	AccessModeExec *string `json:"access_mode_exec" enums:"enabled,disabled"`
+	// Toggle Port Forwarding
+	// * enabled - Enable to perform port forwarding for this connection
+	// * disabled - Disable port forwarding for this connection
+	AccessModeConnect *string `json:"access_mode_connect" enums:"enabled,disabled"`
+	// Toggle Introspection Schema
+	// * enabled - Enable the instrospection schema in the webapp
+	// * disabled - Disable the instrospection schema in the webapp
+	AccessSchema *string `json:"access_schema" enums:"enabled,disabled"`
+	// The guard rail association id rules
+	GuardRailRules *[]string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// The jira issue templates ids associated to the connection
+	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -1722,6 +1791,17 @@ type SSHConnectionInfo struct {
 	Command string `json:"command" example:"ssh -p 22"`
 }
 
+type Pagination struct {
+	Total int `json:"total"`
+	Page  int `json:"page"`
+	Size  int `json:"size"`
+}
+
+type PaginatedResponse[T any] struct {
+	Pages Pagination `json:"pages"`
+	Data  []T        `json:"data"`
+}
+
 type ConnectionSearch struct {
 	// Unique ID of the resource
 	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
@@ -1772,4 +1852,202 @@ type SearchResponse struct {
 type ConnectionTestResponse struct {
 	// Indicates if the connection test was successful
 	Success bool `json:"success" example:"true"`
+}
+
+type ResourceRoleRequest struct {
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Is the shell command that is going to be executed when interacting with this connection.
+	// This value is required if the connection is going to be used from the Webapp.
+	Command []string `json:"command" example:"/bin/bash"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+	// Secrets are environment variables that are going to be exposed
+	// in the runtime of the connection:
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	//
+	// The value could also represent an integration with a external provider:
+	// * { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable
+	// * { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={"KEY": "val"}
+	Secrets map[string]any `json:"secret"`
+	// The agent associated with this connection
+	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+}
+
+type ResourceRequest struct {
+	// The resource name
+	Name string `json:"name" binding:"required" example:"my-resource"`
+	// The resource type
+	Type string `json:"type" binding:"required" example:"mysql"`
+	// The resource environment variables
+	EnvVars map[string]string `json:"env_vars" binding:"required"`
+	// The agent associated with this resource
+	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The roles associated with this resource
+	Roles []ResourceRoleRequest `json:"roles" binding:"required,dive"`
+}
+
+type ResourceResponse struct {
+	// The resource ID
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The resource name
+	Name string `json:"name" example:"my-resource"`
+	// The resource type
+	Type string `json:"type" example:"mysql"`
+	// The resource environment variables
+	EnvVars map[string]string `json:"env_vars"`
+	// The agent associated with this resource
+	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type RunbookConfiguration struct {
+	// The unique identifier of the runbook
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this configuration
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// The runbook repository configuration
+	Repositories []RunbookRepository `json:"repositories"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type RunbookRepository struct {
+	// Git repository URL where the runbook is located
+	GitUrl string `json:"git_url" binding:"required" example:"https://github.com/myorg/myrepo"`
+	// Git username for repository authentication
+	GitUser string `json:"git_user" example:"myusername"`
+	// Git password or token for repository authentication
+	GitPassword string `json:"git_password" example:"mypassword"`
+	// SSH private key for Git repository authentication
+	SSHKey string `json:"ssh_key" example:"-----BEGIN PRIVATE KEY-----..."`
+	// SSH username for Git repository authentication
+	SSHUser string `json:"ssh_user" example:"myuser"`
+	// SSH key passphrase for encrypted SSH keys
+	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
+	// Git SSH known hosts for host key verification
+	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
+	GitHookTTL    int    `json:"git_hook_ttl" example:1000`
+}
+
+type RunbookConfigurationRequest struct {
+	// The runbook repository configuration
+	Repositories []RunbookRepository `json:"repositories" binding:"required"`
+}
+
+type RunbookV2 struct {
+	// File path relative to repository root containing runbook file in the following format: `/path/to/file.runbook.<ext>`
+	Name string `json:"name" example:"ops/update-user.runbook.sh"`
+	// Metadata contains the attributes parsed from a template.
+	// Payload Example:
+	/*
+		{
+			"customer_id" : {
+				"description": "the id of the customer",
+				"required": true,
+				"type": "text",
+				"default": "Default value to use"
+			},
+			"country": {
+				"description": "the country code US; BR, etc",
+				"required": false,
+				"type": "select",
+				"options": ["US", "BR"]
+			}
+		}
+	*/
+	// By default it will have the attributes `description=""`, `required=false` and `type="text"`.
+	Metadata map[string]any `json:"metadata"`
+	// The connections that could be used for this runbook
+	ConnectionList []string `json:"connections,omitempty" example:"pgdemo,bash"`
+	// The error description if it failed to render
+	Error      *string           `json:"error"`
+	EnvVars    map[string]string `json:"-"`
+	InputFile  []byte            `json:"-"`
+	CommitHash string            `json:"-"`
+}
+
+type RunbookRepositoryList struct {
+	Items []*Runbook `json:"items"`
+	// Repository url
+	Repository string `json:"repository" example:"github.com/myorg/myrepo"`
+	// The commit sha
+	Commit string `json:"commit" example:"03c25fd64c74712c71798250d256d4b859dd5853"`
+	// The commit author
+	CommitAuthor string `json:"commit_author" example:"John Wick <john.wick@bad.org>"`
+	// The commit message
+	CommitMessage string `json:"commit_message" example:"runbook update"`
+}
+
+type RunbookListV2 struct {
+	Repositories []RunbookRepositoryList `json:"repositories"`
+}
+
+type RunbookRuleFile struct {
+	Repository string `json:"repository" example:"github.com/myorg/myrepo"`
+	Name       string `json:"name" example:"ops/update-user.runbook.sh"`
+}
+
+type RunbookRuleRequest struct {
+	Name        string            `json:"name" binding:"required" example:"Default Runbook Rules"`
+	Description string            `json:"description" example:"Runbook rules for production databases"`
+	Runbooks    []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
+	Connections []string          `json:"connections" binding:"required" example:"pgdemo,bash"`
+	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
+}
+
+type RunbookRule struct {
+	ID          string            `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	OrgID       string            `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	Name        string            `json:"name" binding:"required" example:"Default Runbook Rules"`
+	Description string            `json:"description" example:"Runbook rules for production databases"`
+	Runbooks    []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
+	Connections []string          `json:"connections" binding:"required" example:"pgdemo,bash"`
+	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
+	CreatedAt   time.Time         `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	UpdatedAt   time.Time         `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type RunbookExec struct {
+	// Connection name to execute the runbook against
+	ConnectionName string `json:"connection_name" binding:"required" example:"pgdemo"`
+	// Repository name where the runbook is located
+	Repository string `json:"repository" binding:"required" example:"github.com/myorg/myrepo"`
+	// The relative path name of the runbook file from the git source
+	FileName string `json:"file_name" binding:"required" example:"myrunbooks/run-backup.runbook.sql"`
+	// The commit sha reference to obtain the file
+	RefHash string `json:"ref_hash" example:"20320ebbf9fc612256b67dc9e899bbd6e4745c77"`
+	// The parameters of the runbook. It must match with the declared attributes
+	Parameters map[string]string `json:"parameters" example:"amount:10,wallet_id:6736"`
+	// Environment Variables that will be included in the runtime
+	// * { envvar:[env-key]: [base64-val] } - Expose the value as environment variable
+	// * { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem
+	EnvVars map[string]string `json:"env_vars" example:"envvar:PASSWORD:MTIz,filesystem:SECRET_FILE:bXlzZWNyZXQ="`
+	// Additional arguments to pass down to the connection
+	ClientArgs []string `json:"client_args" example:"--verbose"`
+	// Metadata attributes to add in the session
+	Metadata map[string]any `json:"metadata"`
+	// Jira fields to create a Jira issue
+	JiraFields map[string]string `json:"jira_fields"`
 }

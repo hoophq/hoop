@@ -67,6 +67,13 @@
         start-date (:start_date session)]
     [session-data-video/main event-stream session-id start-date]))
 
+(defmethod ^:private session-event-stream "application"
+  [_ session]
+  (let [event-stream (:event_stream session)
+        session-id (:id session)
+        start-date (:start_date session)]
+    [session-data-video/main event-stream session-id start-date]))
+
 (defmethod ^:private session-event-stream "custom"
   [_ session]
   (let [event-stream (:event_stream session)

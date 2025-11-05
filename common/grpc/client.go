@@ -43,8 +43,9 @@ type (
 		// Insecure indicates if it will connect without TLS
 		// It should only be used in secure networks!
 		Insecure bool
-
-		TLSCA string
+		TLSCA    string
+		// Indicates if the TLS connection should skip verifying server certificate
+		TLSSkipVerify bool
 		// This is used to specify a different DNS name when connecting via TLS
 		TLSServerName string
 	}
@@ -163,9 +164,11 @@ func loadTLSCredentials(cc ClientConfig) (credentials.TransportCredentials, erro
 	}
 	// Create the credentials and return it
 	config := &tls.Config{
-		RootCAs:    certPool,
-		ServerName: cc.TLSServerName,
+		RootCAs:            certPool,
+		ServerName:         cc.TLSServerName,
+		InsecureSkipVerify: cc.TLSSkipVerify,
 	}
+
 	return credentials.NewTLS(config), nil
 }
 
@@ -244,11 +247,12 @@ func (c *mutexClient) StreamContext() context.Context {
 // ParseServerAddress parses addr to a HOST:PORT string.
 // It validates if it's a valid server name HOST:PORT or
 // a valid URL, usually SCHEME://HOST:PORT.
-func ParseServerAddress(addr string) (string, error) {
+func ParseServerAddress(addr string) (hostPort string, err error) {
 	u, _ := url.Parse(addr)
 	if u == nil {
 		u = &url.URL{}
 	}
+
 	srvAddr := u.Host
 	if srvAddr == "" {
 		host, port, found := strings.Cut(addr, ":")

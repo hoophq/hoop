@@ -13,7 +13,6 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use tungstenite::{client::IntoClientRequest, handshake::client::Request};
-use x509_cert::request;
 
 use futures::{SinkExt, StreamExt};
 use tokio::sync::Mutex;
@@ -28,8 +27,15 @@ pub struct WebSocket {
 }
 
 fn build_websocket_url() -> String {
-    let gateway_url =
-        std::env::var("HOOP_GATEWAY_URL").unwrap_or_else(|_| "ws://localhost:8009".to_string());
+    let gateway_url = std::env::var("HOOP_GATEWAY_URL");
+    // if is not set the gateway_url exit the program
+    let gateway_url = match gateway_url {
+        Ok(url) => url,
+        Err(_) => {
+            error!("HOOP_GATEWAY_URL environment variable is not set");
+            std::process::exit(1);
+        }
+    };
 
     let gateway_url = match gateway_url.as_str() {
         url if url.starts_with("ws://") || url.starts_with("wss://") => url.to_string(),
@@ -75,6 +81,7 @@ impl WebSocket {
             reconnect_interval: Duration::from_secs(5),
         })
     }
+
     fn is_localhost(&self) -> bool {
         self.gateway_url.contains("localhost")
             || self.gateway_url.contains("127.0.0.1")
@@ -141,9 +148,13 @@ impl WebSocket {
             }
         };
 
-        let (ws_stream, response) =
-            tokio_tungstenite::connect_async_tls_with_config(self.request.clone(), None, false, connector)
-                .await?;
+        let (ws_stream, response) = tokio_tungstenite::connect_async_tls_with_config(
+            self.request.clone(),
+            None,
+            false,
+            connector,
+        )
+        .await?;
 
         Ok((ws_stream, response))
     }
@@ -175,7 +186,6 @@ impl WebSocket {
     }
 
     async fn run(self) -> anyhow::Result<()> {
-
         let (ws_stream, _) = self.connect().await?;
         let (ws_sender, ws_receiver) = ws_stream.split();
 
@@ -257,9 +267,9 @@ impl WebSocket {
 
         // Cancel all active proxy tasks
         let mut proxies = active_proxies.write().await;
-        for (session_id, handle) in proxies.drain() {
+        for (sid, handle) in proxies.drain() {
             handle.abort();
-            debug!("> Cancelled proxy task for session {}", session_id);
+            debug!("> Cancelled proxy task for session {}", sid);
         }
 
         // Clear sessions and channels

@@ -145,17 +145,14 @@
 (defn main [form-type]
   (let [jira-template (rf/subscribe [:jira-templates->active-template])
         scroll-pos (r/atom 0)]
-
-    (rf/dispatch [:jira-templates->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
-        (finally
-          (.removeEventListener js/window "scroll" handle-scroll)))
 
-      (r/with-let [_ nil]
         (if (= :loading (:status @jira-template))
           [loading]
           [jira-form form-type (:data @jira-template) scroll-pos])
+
         (finally
+          (.removeEventListener js/window "scroll" handle-scroll)
           (rf/dispatch [:jira-templates->clear-active-template]))))))

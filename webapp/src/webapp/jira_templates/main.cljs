@@ -11,7 +11,7 @@
 (defn panel []
   (let [jira-templates-list (rf/subscribe [:jira-templates->list])
         jira-integrations (rf/subscribe [:jira-integration->details])
-        connections (rf/subscribe [:connections])
+        connections (rf/subscribe [:connections->pagination])
         user (rf/subscribe [:users->current-user])
         min-loading-done (r/atom false)]
     (rf/dispatch [:jira-templates->get-all])

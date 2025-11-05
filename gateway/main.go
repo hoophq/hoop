@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"os"
 
@@ -52,7 +50,7 @@ func Run() {
 		log.Warnf("failed configuring webappjs server URL, running gateway without it, reason=%v", err)
 	}
 
-	tlsConfig, err := loadServerCertificates()
+	tlsConfig, err := appconfig.Get().GetTLSConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -148,7 +146,7 @@ func Run() {
 	log.Infof("starting proxy servers")
 	if serverConfig != nil {
 		if serverConfig.PostgresServerConfig != nil {
-			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress)
+			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext())
 			if err != nil {
 				log.Fatalf("failed to start postgres server, reason=%v", err)
 			}
@@ -166,7 +164,7 @@ func Run() {
 
 		if serverConfig.RDPServerConfig != nil {
 			err = rdp.GetServerInstance().Start(
-				serverConfig.RDPServerConfig.ListenAddress,
+				serverConfig.RDPServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext(),
 			)
 			if err != nil {
 				log.Fatalf("failed to start rdp server, reason=%v", err)
@@ -178,27 +176,4 @@ func Run() {
 		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
 	go g.StartRPCServer()
 	a.StartAPI(sentryStarted)
-}
-
-func loadServerCertificates() (*tls.Config, error) {
-	conf := appconfig.Get()
-	tlsCA, tlsKey, tlsCert := conf.GatewayTLSCa(), conf.GatewayTLSKey(), conf.GatewayTLSCert()
-	if tlsKey == "" || tlsCert == "" {
-		return nil, nil
-	}
-	cert, err := tls.X509KeyPair([]byte(tlsCert), []byte(tlsKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing key pair, err=%v", err)
-	}
-	var certPool *x509.CertPool
-	if tlsCA != "" {
-		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM([]byte(tlsCA)) {
-			return nil, fmt.Errorf("failed creating cert pool for TLS_CA")
-		}
-	}
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      certPool,
-	}, nil
 }

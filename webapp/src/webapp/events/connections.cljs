@@ -5,22 +5,71 @@
    [webapp.connections.constants :as constants]
    [webapp.connections.views.setup.events.process-form :as process-form]))
 
+;; Cache configuration
+(def cache-ttl-ms (* 120 60 1000)) ; 2 hours in milliseconds
+
+;; Helper functions for cache management
+(defn cache-valid? [db]
+  (let [{:keys [cache-timestamp]} (:connections db)
+        now (.now js/Date)]
+    (and cache-timestamp
+         (< (- now cache-timestamp) cache-ttl-ms))))
+
+(defn get-cached-connections [db]
+  (get-in db [:connections :results]))
+
 (rf/reg-event-fx
  :connections->get-connection-details
  (fn
-   [{:keys [db]} [_ connection-name]]
-   {:db (assoc db :connections->connection-details {:loading true :data {:name connection-name}})
+   [{:keys [db]} [_ connection-name & [on-success]]]
+   {:db (-> db
+            (assoc :connections->connection-details {:loading true :data {:name connection-name}})
+            (assoc-in [:connections :details] {}))
     :fx [[:dispatch
           [:fetch {:method "GET"
                    :uri (str "/connections/" connection-name)
                    :on-success (fn [connection]
-                                 (rf/dispatch [:connections->set-connection connection]))}]]]}))
+                                 (rf/dispatch [:connections->set-connection connection on-success]))}]]]}))
 
 (rf/reg-event-fx
  :connections->set-connection
  (fn
-   [{:keys [db]} [_ connection]]
-   {:db (assoc db :connections->connection-details {:loading false :data connection})}))
+   [{:keys [db]} [_ connection on-success]]
+   {:db (-> db
+            (assoc :connections->connection-details {:loading false :data connection})
+            ;; Also store in details map for quick lookup
+            (assoc-in [:connections :details (:name connection)] connection))
+    ;; Check if this completes a batch loading and handle callback
+    :fx (cond-> [[:dispatch [:connections->check-batch-complete connection]]]
+          on-success (conj [:dispatch (conj on-success (:name connection))]))}))
+
+;; Batch loader for multiple connections by name
+(rf/reg-event-fx
+ :connections->get-multiple-by-names
+ (fn [{:keys [db]} [_ connection-names on-success on-failure]]
+   (let [requests (mapv (fn [name]
+                          [:dispatch [:connections->get-connection-details name]])
+                        connection-names)]
+     {:db (assoc db :connections->batch-loading
+                 {:names (set connection-names)
+                  :loaded #{}
+                  :on-success on-success
+                  :on-failure on-failure})
+      :fx requests})))
+
+;; Check if batch loading is complete
+(rf/reg-event-fx
+ :connections->check-batch-complete
+ (fn [{:keys [db]} [_ connection]]
+   (let [batch (get db :connections->batch-loading)
+         loaded (conj (:loaded batch #{}) (:name connection))
+         all-loaded? (= (:names batch) loaded)]
+     (if (and batch all-loaded?)
+       ;; All loaded - call success callback
+       {:db (dissoc db :connections->batch-loading)
+        :fx [[:dispatch (:on-success batch)]]}
+       ;; Still waiting for more
+       {:db (assoc-in db [:connections->batch-loading :loaded] loaded)}))))
 
 (rf/reg-event-db
  :connections->clear-connection-details
@@ -29,24 +78,104 @@
 
 (rf/reg-event-fx
  :connections->get-connections
- (fn
-   [{:keys [db]} [_ filters]]
-   (if filters
+ (fn [{:keys [db]} [_ {:keys [filters on-success on-failure force-refresh?]
+                       :or {on-success [:connections->set-connections]
+                            on-failure [:connections->set-connections-error]}}]]
+
+   (cond
+     filters
      ;; If filters are provided, delegate to filter-connections
      {:fx [[:dispatch [:connections->filter-connections filters]]]}
-     ;; Otherwise use the simple original implementation
+
+     (and (not force-refresh?) (cache-valid? db))
+     ;; Use cached data if valid
+     (let [cached-connections (get-cached-connections db)]
+       {:fx [[:dispatch (conj on-success cached-connections)]]})
+
+     :else
+     ;; Make fresh request
      {:db (assoc-in db [:connections :loading] true)
       :fx [[:dispatch [:fetch {:method "GET"
                                :uri "/connections"
-                               :on-success #(rf/dispatch [:connections->set-connections %])}]]]})))
+                               :on-success #(rf/dispatch [:connections->cache-and-notify % on-success])
+                               :on-failure #(rf/dispatch (conj on-failure %))}]]]})))
+
+;; New event to cache connections and notify callback
+(rf/reg-event-fx
+ :connections->cache-and-notify
+ (fn [{:keys [db]} [_ connections on-success]]
+   {:db (update db :connection merge {:results connections
+                                      :loading false
+                                      :cache-timestamp (.now js/Date)})
+    :fx [[:dispatch (conj on-success connections)]]}))
 
 (rf/reg-event-fx
  :connections->set-connections
  (fn
    [{:keys [db]} [_ connections]]
-   {:db (-> db
-            (assoc-in [:connections :results] connections)
-            (assoc-in [:connections :loading] false))}))
+   {:db (update db :connections merge {:results connections
+                                       :loading false
+                                       :cache-timestamp (.now js/Date)})}))
+
+;; Error event for connections
+(rf/reg-event-fx
+ :connections->set-connections-error
+ (fn [{:keys [db]} [_ error]]
+   {:db (update db :connections merge {:loading false
+                                       :error error})}))
+
+;; Paginated connections events
+(rf/reg-event-fx
+ :connections/get-connections-paginated
+ (fn
+   [{:keys [db]} [_ {:keys [page-size page filters search force-refresh?]
+                     :or {page-size 50 page 1 force-refresh? false}}]]
+   (let [request {:page-size page-size
+                  :page page
+                  :filters filters
+                  :search search
+                  :force-refresh? force-refresh?}
+         query-params (cond-> {}
+                        page-size (assoc :page_size page-size)
+                        page (assoc :page page)
+                        search (assoc :search search)
+                        (:tag_selector filters) (assoc :tag_selector (:tag_selector filters))
+                        (:type filters) (assoc :type (:type filters))
+                        (:subtype filters) (assoc :subtype (:subtype filters)))]
+     {:db (-> db
+              (update-in [:connections->pagination] merge
+                         {:loading true
+                          :page-size page-size
+                          :current-page page
+                          :active-filters filters
+                          :active-search search}))
+      :fx [[:dispatch
+            [:fetch {:method "GET"
+                     :uri "/connections"
+                     :query-params query-params
+                     :on-success #(rf/dispatch [:connections/set-connections-paginated (assoc request :response %)])}]]]})))
+
+(rf/reg-event-fx
+ :connections/set-connections-paginated
+ (fn
+   [{:keys [db]} [_ {:keys [response force-refresh?]}]]
+   (let [connections-data (get response :data [])
+         pages-info (get response :pages {})
+         page-number (get pages-info :page 1)
+         page-size (get pages-info :size 50)
+         total (get pages-info :total 0)
+         existing-connections (get-in db [:connections->pagination :data] [])
+         final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
+         has-more? (< (* page-number page-size) total)]
+     {:db (-> db
+              (update-in [:connections->pagination] merge
+                         {:data final-connections
+                          :loading false
+                          :has-more? has-more?
+                          :current-page page-number
+                          :page-size page-size
+                          :total total}))})))
+
 
 (rf/reg-event-fx
  :connections->load-metadata
@@ -81,7 +210,7 @@
                                       ;; plugins might be updated in the connection
                                       ;; creation action, so we get them again here
                                       (rf/dispatch [:plugins->get-my-plugins])
-                                      (rf/dispatch [:connections->get-connections])
+                                      (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       (rf/dispatch [:show-snackbar {:level :success
                                                                     :text "Connection created!"}])
 
@@ -103,7 +232,7 @@
                                                     {:level :success
                                                      :text (str "Connection " (:name connection) " updated!")}])
                                       (rf/dispatch [:plugins->get-my-plugins])
-                                      (rf/dispatch [:connections->get-connections])
+                                      (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       (rf/dispatch [:navigate :connections]))}]]]})))
 
 (rf/reg-event-fx
@@ -195,7 +324,7 @@
               :on-success (fn []
                             (rf/dispatch [:show-snackbar {:level :success
                                                           :text "Connection created!"}])
-                            (rf/dispatch [:connections->get-connections])
+                            (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                             (rf/dispatch [:plugins->get-my-plugins])
                             (rf/dispatch [:navigate :home]))}]]]})))
 
@@ -246,5 +375,5 @@ ORDER BY total_amount DESC;")
 
                                    (rf/dispatch [:show-snackbar {:level :success
                                                                  :text "Connection deleted!"}])
-                                   (rf/dispatch [:connections->get-connections])
+                                   (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                    (rf/dispatch [:navigate :connections])))}]]]}))

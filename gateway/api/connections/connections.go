@@ -18,6 +18,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -75,12 +76,13 @@ func Post(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  req.ID,
 		OrgID:               ctx.OrgID,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                req.Name,
 		Command:             req.Command,
 		Type:                req.Type,
 		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                coerceToMapString(req.Secrets),
+		Envs:                CoerceToMapString(req.Secrets),
 		Status:              req.Status,
 		ManagedBy:           sql.NullString{},
 		Tags:                req.Tags,
@@ -154,12 +156,13 @@ func Put(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                conn.Name,
 		Command:             req.Command,
 		Type:                req.Type,
 		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                coerceToMapString(req.Secrets),
+		Envs:                CoerceToMapString(req.Secrets),
 		Status:              req.Status,
 		ManagedBy:           sql.NullString{},
 		Tags:                req.Tags,
@@ -179,6 +182,119 @@ func Put(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		default:
 			log.Errorf("failed updating connection, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		}
+		return
+	}
+	c.JSON(http.StatusOK, toOpenApi(resp))
+}
+
+// PatchConnection
+//
+//	@Summary		Patch Connection
+//	@Description	Partial update of a connection resource. Only provided fields will be updated.
+//	@Tags			Connections
+//	@Accept			json
+//	@Produce		json
+//	@Param			nameOrID		path		string				true	"The name or ID of the resource"
+//	@Param			request			body		openapi.ConnectionPatch	true	"The request body resource with fields to update"
+//	@Success		200				{object}	openapi.Connection
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID} [patch]
+func Patch(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+	if err != nil {
+		log.Errorf("failed fetching connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if conn == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	}
+	// when the connection is managed by the agent, make sure to deny any change
+	if conn.ManagedBy.String != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "unable to update a connection managed by its agent"})
+		return
+	}
+
+	var req openapi.ConnectionPatch
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Validate the body
+	if err := validatePatchConnectionRequest(req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Apply patches from request (only non-nil values override)
+	if req.Command != nil {
+		conn.Command = *req.Command
+	}
+	if req.ResourceName != nil {
+		conn.ResourceName = *req.ResourceName
+	}
+	if req.Type != nil {
+		conn.Type = *req.Type
+	}
+	if req.SubType != nil {
+		conn.SubType = sql.NullString{String: *req.SubType, Valid: *req.SubType != ""}
+	}
+	if req.Secrets != nil {
+		conn.Envs = CoerceToMapString(*req.Secrets)
+	}
+	if req.AgentId != nil {
+		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
+	}
+	if req.Reviewers != nil {
+		conn.Reviewers = *req.Reviewers
+	}
+	if req.RedactTypes != nil {
+		conn.RedactTypes = *req.RedactTypes
+	}
+	if req.Tags != nil {
+		conn.Tags = *req.Tags
+	}
+	if req.ConnectionTags != nil {
+		conn.ConnectionTags = *req.ConnectionTags
+	}
+	if req.AccessModeRunbooks != nil {
+		conn.AccessModeRunbooks = *req.AccessModeRunbooks
+	}
+	if req.AccessModeExec != nil {
+		conn.AccessModeExec = *req.AccessModeExec
+	}
+	if req.AccessModeConnect != nil {
+		conn.AccessModeConnect = *req.AccessModeConnect
+	}
+	if req.AccessSchema != nil {
+		conn.AccessSchema = *req.AccessSchema
+	}
+	if req.GuardRailRules != nil {
+		conn.GuardRailRules = *req.GuardRailRules
+	}
+	if req.JiraIssueTemplateID != nil {
+		conn.JiraIssueTemplateID = sql.NullString{String: *req.JiraIssueTemplateID, Valid: *req.JiraIssueTemplateID != ""}
+	}
+
+	// Update status
+	conn.Status = models.ConnectionStatusOffline
+	if streamclient.IsAgentOnline(streamtypes.NewStreamID(conn.AgentID.String, "")) {
+		conn.Status = models.ConnectionStatusOnline
+	}
+
+	resp, err := models.UpsertConnection(ctx, conn)
+	if err != nil {
+		switch err.(type) {
+		case *models.ErrNotFoundGuardRailRules:
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		default:
+			log.Errorf("failed patching connection, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		}
 		return
@@ -226,10 +342,14 @@ func Delete(c *gin.Context) {
 //	@Param			agent_id		query		string	false	"Filter by agent id"																	Format(uuid)
 //	@Param			tags			query		string	false	"DEPRECATED: Filter by tags, separated by comma"										Format(string)
 //	@Param			tag_selector	query		string	false	"Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)"	Format(string)
+//	@Param			search			query		string	false	"Search by name, type, or subtype"						Format(string)
 //	@Param			type			query		string	false	"Filter by type"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)
-//	@Success		200				{array}		openapi.Connection
+//	@Param			connection_ids	query		string	false	"Filter by specific connection IDs, separated by comma"									Format(string)
+//	@Param			page_size		query		int		false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
+//	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)
+//	@Success		200				{array}		openapi.Connection or {object}	object	"Returns array of Connection objects or PaginatedResponse[openapi.Connection] when using pagination"
 //	@Failure		422,500			{object}	openapi.HTTPError
 //	@Router			/connections [get]
 func List(c *gin.Context) {
@@ -239,6 +359,62 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+
+	urlValues := c.Request.URL.Query()
+	pageStr := urlValues.Get("page")
+	pageSizeStr := urlValues.Get("page_size")
+
+	hasPaginationParams := pageStr != "" || pageSizeStr != ""
+
+	if hasPaginationParams {
+		page, pageSize, paginationErr := apivalidation.ParsePaginationParams(pageStr, pageSizeStr)
+
+		// Use paginated response
+		if paginationErr != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": paginationErr.Error()})
+			return
+		}
+
+		// Set default page size if not provided but page is provided
+		if pageSize == 0 && page > 0 {
+			pageSize = 50 // Default page size
+		}
+
+		paginationOpts := models.ConnectionPaginationOption{
+			ConnectionFilterOption: filterOpts,
+			Page:                   page,
+			PageSize:               pageSize,
+		}
+
+		connList, total, err := models.ListConnectionsPaginated(ctx.GetOrgID(), ctx.GetUserGroups(), paginationOpts)
+		if err != nil {
+			log.Errorf("failed listing connections with pagination, reason=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+
+		responseConnList := make([]openapi.Connection, len(connList))
+		for i, conn := range connList {
+			// it should return empty to avoid leaking sensitive content
+			// in the future we plan to know which entry is sensitive or not
+			conn.Envs = map[string]string{}
+			responseConnList[i] = toOpenApi(&conn)
+		}
+
+		response := openapi.PaginatedResponse[openapi.Connection]{
+			Pages: openapi.Pagination{
+				Total: int(total),
+				Page:  page,
+				Size:  pageSize,
+			},
+			Data: responseConnList,
+		}
+
+		c.JSON(http.StatusOK, response)
+		return
+	}
+
+	// Use traditional non-paginated response
 	connList, err := models.ListConnections(ctx, filterOpts)
 	if err != nil {
 		log.Errorf("failed listing connections, reason=%v", err)
@@ -268,7 +444,7 @@ func List(c *gin.Context) {
 //	@Router			/connections/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
+	conn, err := models.GetBareConnectionByNameOrID(ctx, c.Param("nameOrID"), models.DB)
 	if err != nil {
 		log.Errorf("failed fetching connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -278,6 +454,7 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
 	}
+
 	c.JSON(http.StatusOK, toOpenApi(conn))
 }
 
@@ -293,6 +470,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	return openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
+		ResourceName:        conn.ResourceName,
 		Command:             conn.Command,
 		Type:                conn.Type,
 		SubType:             conn.SubType.String,
@@ -843,8 +1021,10 @@ func TestConnection(c *gin.Context) {
 
 func getScriptsForTestConnection(connectionType *pb.ConnectionType) (string, error) {
 	switch *connectionType {
-	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL, pb.ConnectionTypeOracleDB:
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
 		return "SELECT 1", nil
+	case pb.ConnectionTypeOracleDB:
+		return "SELECT 1 FROM dual;", nil
 	case pb.ConnectionTypeMongoDB:
 		return `// Ensure verbosity is off
 if (typeof noVerbose === 'function') noVerbose();

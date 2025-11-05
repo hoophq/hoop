@@ -28,7 +28,7 @@
                 (assoc-in [:jobs :has-running-jobs?] false)
                 (assoc-in [:jobs :polling-active?] false))
         :dispatch-n [[:jobs/stop-aws-connect-polling]
-                     [:connections->get-connections]]}))))
+                     [:connections->get-connections {:force-refresh? true}]]}))))
 
 (rf/reg-event-db
  :jobs/fetch-aws-connect-jobs-failure

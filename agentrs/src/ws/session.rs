@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct SessionInfo {
-    pub session_id: Uuid,
+    pub sid: Uuid,
     pub target_address: String,
     pub username: String,
     pub password: String,

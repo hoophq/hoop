@@ -2,7 +2,8 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading]]
    [re-frame.core :as rf]
-   [webapp.connections.constants :as connection-constants]))
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
 (defn- get-connection-paths [connection-name paths-by-connection]
   (get paths-by-connection connection-name []))
@@ -29,13 +30,15 @@
 
 (defn main []
   (let [paths-by-connection (rf/subscribe [:runbooks/paths-by-connection])
-        all-connections (rf/subscribe [:connections])]
+        all-connections (rf/subscribe [:connections->pagination])]
 
-    ;; Fetch all connections when component mounts
-    (rf/dispatch [:connections->get-connections])
+    ;; Fetch connections when component mounts
+    (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
 
     (fn []
-      (let [connections (:results @all-connections)
+      (let [connections-state @all-connections
+            connections (or (:data connections-state) [])
+            connections-loading? (:loading connections-state false)
             processed-connections (->> connections
                                        (map (fn [connection]
                                               (let [connection-paths (get-connection-paths (:id connection) @paths-by-connection)]
@@ -43,7 +46,16 @@
                                                  :paths connection-paths})))
                                        (sort-by #(-> % :connection :name)))]
         [:> Box {:class "w-full h-full"}
-         [:> Box
+         [infinite-scroll
+          {:on-load-more (fn []
+                           (when (not connections-loading?)
+                             (let [current-page (:current-page connections-state 1)
+                                   next-page (inc current-page)
+                                   next-request {:page next-page
+                                                 :force-refresh? false}]
+                               (rf/dispatch [:connections/get-connections-paginated next-request]))))
+           :has-more? (:has-more? connections-state false)
+           :loading? connections-loading?}
           (doall
            (for [conn processed-connections]
              ^{:key (-> conn :connection :id)}

@@ -38,7 +38,7 @@
        [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
 
      (when-not collapsed?
-       [:> Box {:class "p-4 overflow-y-auto"}
+       [:> Box {:p "4" :class "overflow-y-auto h-[calc(100%-40px)]"}
         (if access-disabled?
           [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
            [:> Text {:size "2" :mb "2" :class "text-gray-11"} "Database Schema Disabled"]

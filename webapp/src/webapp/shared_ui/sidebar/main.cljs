@@ -237,7 +237,6 @@
       (rf/dispatch [:users->get-user]))
 
     (rf/dispatch [:plugins->get-my-plugins])
-    (rf/dispatch [:connections->get-connections])
 
     (fn []
       (if (empty? (:data @user))
