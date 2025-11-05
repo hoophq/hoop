@@ -34,13 +34,21 @@ const docTemplate = `{
                     "Agents"
                 ],
                 "summary": "List Agent Keys",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status (CONNECTED or DISCONNECTED)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/openapi.AgentListResponse"
+                                "$ref": "#/definitions/openapi.AgentResponse"
                             }
                         }
                     },
@@ -110,6 +118,45 @@ const docTemplate = `{
             }
         },
         "/agents/{nameOrID}": {
+            "get": {
+                "description": "Get an agent key by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Get Agent Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the resource",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "description": "Remove an agent key. It will invalidate a running agent",
                 "produces": [
@@ -5742,7 +5789,29 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.AgentListResponse": {
+        "openapi.AgentRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "mode": {
+                    "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
+                    "type": "string",
+                    "default": "standard",
+                    "enum": [
+                        "standard",
+                        "embedded"
+                    ]
+                },
+                "name": {
+                    "description": "Unique name of the resource",
+                    "type": "string",
+                    "example": "default"
+                }
+            }
+        },
+        "openapi.AgentResponse": {
             "type": "object",
             "properties": {
                 "compiler": {
@@ -5821,28 +5890,6 @@ const docTemplate = `{
                 "version": {
                     "type": "string",
                     "example": "1.23.10"
-                }
-            }
-        },
-        "openapi.AgentRequest": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "mode": {
-                    "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
-                    "type": "string",
-                    "default": "standard",
-                    "enum": [
-                        "standard",
-                        "embedded"
-                    ]
-                },
-                "name": {
-                    "description": "Unique name of the resource",
-                    "type": "string",
-                    "example": "default"
                 }
             }
         },

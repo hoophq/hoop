@@ -150,7 +150,7 @@ type AgentCreateResponse struct {
 	Token string `json:"token" example:"grpc://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard"`
 }
 
-type AgentListResponse struct {
+type AgentResponse struct {
 	// Unique ID of the resource
 	ID string `json:"id" format:"uuid" example:"8a4239fa-5116-4bbb-ad3c-ea1f294aac4a"`
 	// The token/key of the resource, this value is always empty for now
