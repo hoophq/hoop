@@ -125,7 +125,7 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 		// Check if runbook is listed in the rule
 		// Only runs if no matching user group found
 		hasMatchingRunbook := !hasMatchingUserGroup && (len(rule.Runbooks) == 0 || slices.ContainsFunc(rule.Runbooks, func(runbook models.RunbookRuleFile) bool {
-			return runbook.Repository == runbookRepository && runbook.Name == runbookName
+			return runbook.Repository == runbookRepository && strings.HasPrefix(runbookName, runbook.Name)
 		}))
 
 		if hasMatchingUserGroup || hasMatchingRunbook {
