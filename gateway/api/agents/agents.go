@@ -108,7 +108,7 @@ func Delete(c *gin.Context) {
 //	@Tags			Agents
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"The name or ID of the resource"
-//	@Success		200			{object}	openapi.Agent
+//	@Success		200			{object}	openapi.AgentResponse
 //	@Failure		404,500		{object}	openapi.HTTPError
 //	@Router			/agents/{nameOrID} [get]
 func Get(c *gin.Context) {
@@ -135,13 +135,21 @@ func Get(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, openapi.Agent{
+		c.JSON(http.StatusOK, openapi.AgentResponse{
 			ID:       agent.ID,
 			Token:    "", // don't show the hashed token
 			Name:     agent.Name,
 			Mode:     mode,
 			Status:   agent.Status,
 			Metadata: agent.Metadata,
+			// DEPRECATE top level metadata keys
+			Hostname:      agent.Metadata["hostname"],
+			MachineID:     agent.Metadata["machine_id"],
+			KernelVersion: agent.Metadata["kernel_version"],
+			Version:       agent.Metadata["version"],
+			GoVersion:     agent.Metadata["goversion"],
+			Compiler:      agent.Metadata["compiler"],
+			Platform:      agent.Metadata["platform"],
 		})
 	default:
 		log.Errorf("failed getting agent %v, err=%#v", nameOrID, err)
@@ -157,7 +165,7 @@ func Get(c *gin.Context) {
 //	@Tags			Agents
 //	@Produce		json
 //	@Param			status	query		string	false	"Filter by status (CONNECTED or DISCONNECTED)"
-//	@Success		200		{array}		openapi.AgentListResponse
+//	@Success		200		{array}		openapi.AgentResponse
 //	@Failure		500		{object}	openapi.HTTPError
 //	@Router			/agents [get]
 func List(c *gin.Context) {
@@ -169,7 +177,7 @@ func List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing agents"})
 		return
 	}
-	result := []openapi.AgentListResponse{}
+	result := []openapi.AgentResponse{}
 	for _, a := range items {
 		switch a.Mode {
 		case proto.AgentModeMultiConnectionType:
@@ -181,7 +189,7 @@ func List(c *gin.Context) {
 			// set to default mode if the entity doesn't contain any value
 			a.Mode = proto.AgentModeStandardType
 		}
-		result = append(result, openapi.AgentListResponse{
+		result = append(result, openapi.AgentResponse{
 			ID:       a.ID,
 			Token:    "", // don't show the hashed token
 			Name:     a.Name,
