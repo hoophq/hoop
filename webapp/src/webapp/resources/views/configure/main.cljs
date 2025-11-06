@@ -64,7 +64,7 @@
               [:> Tabs.Trigger {:value "roles"}
                "Resource Roles"]]
 
-             [:> Box {:class "mt-6"}
+             [:> Box {:class "mt-10"}
               [:> Tabs.Content {:value "information"}
                [information-tab/main resource]]
 

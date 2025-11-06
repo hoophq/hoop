@@ -9,7 +9,7 @@
   (let [icon-url (conn-constants/get-connection-icon {:type (:type resource)
                                                       :subtype (:subtype resource)}
                                                      "default")]
-    [:> Box {:class "p-8 space-y-16"}
+    [:> Box {:class "space-y-16"}
      ;; Resource type
      [:> Grid {:columns "7" :gap "7"}
       [:> Box {:grid-column "span 3 / span 3"}
