@@ -113,39 +113,63 @@
  (fn [db [_ role-index key value]]
    (assoc-in db [:resource-setup :roles role-index :metadata-credentials key] value)))
 
-;; Environment variables for roles
+;; Environment variables for roles - New pattern with current-key/current-value
 (rf/reg-event-db
- :resource-setup->add-role-env-var
- (fn [db [_ role-index key value]]
-   (if (and (not (str/blank? key)) (not (str/blank? value)))
-     (update-in db [:resource-setup :roles role-index :environment-variables]
-                (fnil conj []) {:key key :value value})
-     db)))
+ :resource-setup->update-role-env-current-key
+ (fn [db [_ role-index value]]
+   (assoc-in db [:resource-setup :roles role-index :env-current-key] value)))
 
 (rf/reg-event-db
- :resource-setup->remove-role-env-var
- (fn [db [_ role-index var-index]]
-   (update-in db [:resource-setup :roles role-index :environment-variables]
-              (fn [vars]
-                (vec (concat (subvec vars 0 var-index)
-                             (subvec vars (inc var-index))))))))
-
-;; Configuration files for roles
-(rf/reg-event-db
- :resource-setup->add-role-config-file
- (fn [db [_ role-index name content]]
-   (if (and (not (str/blank? name)) (not (str/blank? content)))
-     (update-in db [:resource-setup :roles role-index :configuration-files]
-                (fnil conj []) {:key name :value content})
-     db)))
+ :resource-setup->update-role-env-current-value
+ (fn [db [_ role-index value]]
+   (assoc-in db [:resource-setup :roles role-index :env-current-value] value)))
 
 (rf/reg-event-db
- :resource-setup->remove-role-config-file
- (fn [db [_ role-index file-index]]
-   (update-in db [:resource-setup :roles role-index :configuration-files]
-              (fn [files]
-                (vec (concat (subvec files 0 file-index)
-                             (subvec files (inc file-index))))))))
+ :resource-setup->add-role-env-row
+ (fn [db [_ role-index]]
+   (let [current-key (get-in db [:resource-setup :roles role-index :env-current-key])
+         current-value (get-in db [:resource-setup :roles role-index :env-current-value])]
+     (if (and (not (str/blank? current-key)) (not (str/blank? current-value)))
+       (-> db
+           (update-in [:resource-setup :roles role-index :environment-variables]
+                      (fnil conj []) {:key current-key :value current-value})
+           (assoc-in [:resource-setup :roles role-index :env-current-key] "")
+           (assoc-in [:resource-setup :roles role-index :env-current-value] ""))
+       db))))
+
+(rf/reg-event-db
+ :resource-setup->update-role-env-var
+ (fn [db [_ role-index var-index field value]]
+   (assoc-in db [:resource-setup :roles role-index :environment-variables var-index field] value)))
+
+;; Configuration files for roles - New pattern with current-name/current-content
+(rf/reg-event-db
+ :resource-setup->update-role-config-current-name
+ (fn [db [_ role-index value]]
+   (assoc-in db [:resource-setup :roles role-index :config-current-name] value)))
+
+(rf/reg-event-db
+ :resource-setup->update-role-config-current-content
+ (fn [db [_ role-index value]]
+   (assoc-in db [:resource-setup :roles role-index :config-current-content] value)))
+
+(rf/reg-event-db
+ :resource-setup->add-role-config-row
+ (fn [db [_ role-index]]
+   (let [current-name (get-in db [:resource-setup :roles role-index :config-current-name])
+         current-content (get-in db [:resource-setup :roles role-index :config-current-content])]
+     (if (and (not (str/blank? current-name)) (not (str/blank? current-content)))
+       (-> db
+           (update-in [:resource-setup :roles role-index :configuration-files]
+                      (fnil conj []) {:key current-name :value current-content})
+           (assoc-in [:resource-setup :roles role-index :config-current-name] "")
+           (assoc-in [:resource-setup :roles role-index :config-current-content] ""))
+       db))))
+
+(rf/reg-event-db
+ :resource-setup->update-role-config-file
+ (fn [db [_ role-index file-index field value]]
+   (assoc-in db [:resource-setup :roles role-index :configuration-files file-index field] value)))
 
 ;; Submit
 (rf/reg-event-fx

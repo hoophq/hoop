@@ -110,3 +110,25 @@
  :resource-setup/processed-roles
  (fn [db _]
    (get-in db [:resource-setup :processed-roles] [])))
+
+;; Environment variables - current fields (temporary)
+(rf/reg-sub
+ :resource-setup/role-env-current-key
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :env-current-key] "")))
+
+(rf/reg-sub
+ :resource-setup/role-env-current-value
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :env-current-value] "")))
+
+;; Configuration files - current fields (temporary)
+(rf/reg-sub
+ :resource-setup/role-config-current-name
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :config-current-name] "")))
+
+(rf/reg-sub
+ :resource-setup/role-config-current-content
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :config-current-content] "")))

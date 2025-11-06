@@ -6,15 +6,45 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
-   [webapp.resources.constants :as constants]))
+   [webapp.resources.constants :as constants]
+   [webapp.resources.views.setup.configuration-inputs :as configuration-inputs]))
 
-;; SSH role form
+;; SSH role form - Based on server.cljs
 (defn ssh-role-form [role-index]
   (let [configs (constants/get-role-config "application" "ssh")
-        credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
+        credentials @(rf/subscribe [:resource-setup/role-credentials role-index])
+        ;; Local state for auth method (default to password)
+        auth-method (or (get credentials "auth-method") "password")
+        filtered-fields (filter (fn [field]
+                                  (case auth-method
+                                    "password" (not= (:key field) "authorized_server_keys")
+                                    "key" (not= (:key field) "pass")
+                                    true))
+                                configs)]
     [:> Box {:class "space-y-4"}
+     ;; Authentication Method Selector
+     [:> Box {:class "space-y-4 mb-6"}
+      [:> Heading {:as "h4" :size "3" :weight "medium"}
+       "Authentication Method"]
+      [:> Grid {:columns "2" :gap "3"}
+       [:> Button {:size "2"
+                   :variant (if (= auth-method "password") "solid" "outline")
+                   :on-click #(rf/dispatch [:resource-setup->update-role-credentials
+                                            role-index
+                                            "auth-method"
+                                            "password"])}
+        "Username & Password"]
+       [:> Button {:size "2"
+                   :variant (if (= auth-method "key") "solid" "outline")
+                   :on-click #(rf/dispatch [:resource-setup->update-role-credentials
+                                            role-index
+                                            "auth-method"
+                                            "key"])}
+        "Private Key Authentication"]]]
+
+     ;; SSH Fields (filtered based on auth method)
      [:> Grid {:columns "1" :gap "4"}
-      (for [field configs]
+      (for [field filtered-fields]
         ^{:key (:key field)}
         (let [base-props {:label (:label field)
                           :placeholder (or (:placeholder field) (str "e.g. " (:key field)))
@@ -28,7 +58,7 @@
             [forms/textarea base-props]
             [forms/input (assoc base-props :type "password")])))]]))
 
-;; TCP role form
+;; TCP role form - Based on network.cljs
 (defn tcp-role-form [role-index]
   (let [configs (constants/get-role-config "application" "tcp")
         credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
@@ -39,16 +69,17 @@
                      :placeholder (or (:placeholder field) (str "e.g. " (:key field)))
                      :value (get credentials (:key field) "")
                      :required (:required field)
-                     :type "text"
+                     :type "password"  ;; Credenciais sensíveis
                      :on-change #(rf/dispatch [:resource-setup->update-role-credentials
                                                role-index
                                                (:key field)
                                                (-> % .-target .-value)])}])]))
 
-;; HTTP Proxy role form
+;; HTTP Proxy role form - Based on network.cljs
 (defn http-proxy-role-form [role-index]
   (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
     [:> Box {:class "space-y-4"}
+     ;; Remote URL
      [forms/input {:label "Remote URL"
                    :placeholder "e.g. http://example.com"
                    :value (get credentials "remote_url" "")
@@ -59,16 +90,12 @@
                                              "remote_url"
                                              (-> % .-target .-value)])}]
 
-     [:> Box
-      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12] mb-2"}
-       "HTTP headers"]
-      [:> Button {:size "2"
-                  :variant "soft"
-                  :on-click #(rf/dispatch [:resource-setup->add-role-env-var role-index "" ""])}
-       [:> Plus {:size 16}]
-       "Add key/value"]]]))
+     ;; HTTP headers section (usando configuration-inputs)
+     [configuration-inputs/environment-variables-section role-index
+      {:title "HTTP headers"
+       :subtitle "Add HTTP headers that will be used in your requests."}]]))
 
-;; Custom/Metadata-driven role form
+;; Custom/Metadata-driven role form (includes databases)
 (defn metadata-driven-role-form [role-index]
   (let [subtype @(rf/subscribe [:resource-setup/resource-subtype])
         connections-metadata @(rf/subscribe [:connections->metadata])
@@ -113,38 +140,20 @@
                                                      env-var-name
                                                      (-> % .-target .-value)])}])))])))
 
-;; Linux/Container role form
+;; Linux/Container role form - Based on server.cljs
 (defn linux-container-role-form [role-index]
-  [:> Box {:class "space-y-4"}
-   ;; Environment variables
-   [:> Box
-    [:> Heading {:as "h4" :size "3" :weight "bold" :class "mb-3"}
-     "Environment variables"]
-    [:> Text {:size "2" :class "text-[--gray-11] mb-3"}
-     "Include environment variables to be used in your connection."]
-    [:> Button {:size "2"
-                :variant "soft"
-                :on-click #(rf/dispatch [:resource-setup->add-role-env-var role-index "" ""])}
-     [:> Plus {:size 16}]
-     "Add key/value"]]
+  [:> Box {:class "space-y-6"}
+   ;; Environment variables section (usando configuration-inputs)
+   [configuration-inputs/environment-variables-section role-index {}]
 
-   ;; Configuration files
-   [:> Box {:class "mt-6"}
-    [:> Heading {:as "h4" :size "3" :weight "bold" :class "mb-3"}
-     "Configuration files"]
-    [:> Text {:size "2" :class "text-[--gray-11] mb-3"}
-     "Add values from your configuration file and use them as an environment variable in your connection."]
-    [:> Button {:size "2"
-                :variant "soft"
-                :on-click #(rf/dispatch [:resource-setup->add-role-config-file role-index "" ""])}
-     [:> Plus {:size 16}]
-     "Add"]]
+   ;; Configuration files section (usando configuration-inputs)
+   [configuration-inputs/configuration-files-section role-index]
 
-   ;; Additional command
-   [:> Box {:class "mt-6"}
-    [:> Heading {:as "h4" :size "3" :weight "bold" :class "mb-3"}
+   ;; Additional command section
+   [:> Box {:class "space-y-3"}
+    [:> Heading {:as "h4" :size "3" :weight "medium"}
      "Additional command"]
-    [:> Text {:size "2" :class "text-[--gray-11] mb-3"}
+    [:> Text {:size "2" :class "text-[--gray-11]"}
      "Add an additional command that will run on your connection. Variables (like the ones above) can also be used here."]
     [forms/input {:label "Command"
                   :placeholder "$ bash"
