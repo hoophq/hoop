@@ -129,6 +129,22 @@ ingressGrpc:
   #   - grpc01.domain.tld
   #   - grpc02.domain.tld
 
+sshService:
+  # --- Enables direct SSH access
+  # Required for accessing through native ssh clients
+  enabled: false
+  type: LoadBalancer
+  port: 12222
+  annotations: {}
+  
+rdpService:
+  # --- Enables direct RDP access
+  # Required for accessing through native ssh clients
+  enabled: false
+  type: LoadBalancer
+  port: 3389
+  annotations: {}
+
 # -- Define persistence to sessions
 persistence:
   # -- Use persistent volume for write ahead log sessions

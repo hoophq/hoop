@@ -18,6 +18,14 @@ spec:
       name: http
       protocol: TCP
       targetPort: 8009
+    - port: 3389
+      name: rdp
+      protocol: TCP
+      targetPort: 3389
+    - port: 12222
+      name: ssh
+      protocol: TCP
+      targetPort: 12222
 {{- with .Values.mainService.httpBackendConfig }}
 ---
 apiVersion: cloud.google.com/v1

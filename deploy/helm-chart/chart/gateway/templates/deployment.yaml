@@ -51,6 +51,10 @@ spec:
           name: grpc
         - containerPort: 8009
           name: api
+        - containerPort: 3389
+          name: api
+        - containerPort: 12222
+          name: api
       {{- if .Values.defaultAgent.enabled }}
       - image: '{{ .Values.defaultAgent.imageRepository | default "hoophq/hoopdev" }}:{{ .Values.defaultAgent.imageTag | default "latest" }}'
         name: defaultagent
