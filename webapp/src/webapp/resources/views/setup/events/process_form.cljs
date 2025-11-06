@@ -1,6 +1,5 @@
 (ns webapp.resources.views.setup.events.process-form
   (:require
-   [clojure.string :as cs]
    [webapp.resources.helpers :as helpers]))
 
 (defn process-http-headers
@@ -28,7 +27,7 @@
 
         ;; Convert metadata-credentials to env-var format (for custom resources)
         metadata-credential-env-vars (mapv (fn [[k v]]
-                                             {:key (cs/upper-case (name k))
+                                             {:key (name k)
                                               :value v})
                                            (seq metadata-credentials))
 

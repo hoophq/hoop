@@ -84,23 +84,6 @@
  (fn [db [_]]
    (assoc db :resources->resource-details {:loading true :data nil})))
 
-;; Create resource
-(rf/reg-event-fx
- :resources->create-resource
- (fn
-   [_ [_ resource]]
-   (let [body (apply merge (for [[k v] resource :when (not (= "" v))] {k v}))]
-     {:fx [[:dispatch [:fetch
-                       {:method "POST"
-                        :uri "/resources"
-                        :body body
-                        :on-success (fn [_response]
-                                      (rf/dispatch [:modal->close])
-                                      (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
-                                      (rf/dispatch [:show-snackbar {:level :success
-                                                                    :text "Resource created!"}])
-                                      (rf/dispatch [:navigate :resources]))}]]]})))
-
 ;; Delete resource
 (rf/reg-event-fx
  :resources->delete-resource

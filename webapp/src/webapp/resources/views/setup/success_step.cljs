@@ -35,11 +35,11 @@
         resource-id @(rf/subscribe [:resource-setup/resource-id])
         resource @(rf/subscribe [:resources->last-created])
         created-roles @(rf/subscribe [:resources->last-created-roles])
-        roles @(rf/subscribe [:resource-setup/roles])
+        processed-roles @(rf/subscribe [:resource-setup/processed-roles])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
         onboarding? (helpers/is-onboarding-context?)
-        ;; For add-role context, use created-roles; for setup, use roles
-        actual-roles (if (= context :add-role) created-roles roles)
+        ;; For add-role context, use created-roles; for setup, use processed-roles (from payload)
+        actual-roles (if (= context :add-role) created-roles processed-roles)
         single-role? (= (count actual-roles) 1)
         first-role (first actual-roles)
         ;; Check capabilities of the first role
@@ -91,7 +91,7 @@
                        :description "Advanced protection like AI Data Masking, Runbooks and more"
                        :on-click (fn []
                                    (rf/dispatch [:plugins->get-my-plugins])
-                                   (rf/dispatch [:navigate :edit-connection {} :connection-name (:name first-role)]))}]]
+                                   (rf/dispatch [:navigate :configure-role {} :connection-name (:name first-role)]))}]]
 
         ;; Multiple roles: Show only 2 options
         [:<>

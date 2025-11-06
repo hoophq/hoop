@@ -33,6 +33,7 @@
    (let [resource-name (get-in db [:resource-setup :name])
          agent-id (get-in db [:resource-setup :agent-id])
          roles (get-in db [:resource-setup :roles] [])
+         connections-metadata (get-in db [:connections :metadata :data :connections])
          total-roles (count roles)]
 
      (if (empty? roles)

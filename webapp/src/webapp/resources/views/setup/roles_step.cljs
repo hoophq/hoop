@@ -1,7 +1,8 @@
 (ns webapp.resources.views.setup.roles-step
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Link Text Button Flex Grid Separator]]
-   ["lucide-react" :refer [Trash2 Plus ArrowUpRight]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Link Separator
+                               Text]]
+   ["lucide-react" :refer [ArrowUpRight Plus Trash2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
@@ -101,31 +102,35 @@
     (when (seq credentials-config)
       [:> Grid {:columns "1" :gap "4"}
        (for [field credentials-config]
-         (let [form-key (cs/lower-case (cs/replace (:name field) #"[^a-zA-Z0-9]" ""))
+         (let [sanitized-name (cs/capitalize
+                               (cs/lower-case
+                                (cs/replace (:name field) #"[^a-zA-Z0-9]" " ")))
+               env-var-name (:name field)
                field-type (case (:type field)
                             "filesystem" "textarea"
                             "textarea" "textarea"
                             "password")]
-           ^{:key form-key}
            (if (= field-type "textarea")
-             [forms/textarea {:label (:name field)
+             ^{:key env-var-name}
+             [forms/textarea {:label sanitized-name
                               :placeholder (or (:placeholder field) (:description field))
-                              :value (get metadata-credentials form-key "")
+                              :value (get metadata-credentials env-var-name "")
                               :required (:required field)
                               :helper-text (:description field)
                               :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
                                                         role-index
-                                                        form-key
+                                                        env-var-name
                                                         (-> % .-target .-value)])}]
-             [forms/input {:label (:name field)
+             ^{:key env-var-name}
+             [forms/input {:label sanitized-name
                            :placeholder (or (:placeholder field) (:description field))
-                           :value (get metadata-credentials form-key "")
+                           :value (get metadata-credentials env-var-name "")
                            :required (:required field)
                            :type field-type
                            :helper-text (:description field)
                            :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
                                                      role-index
-                                                     form-key
+                                                     env-var-name
                                                      (-> % .-target .-value)])}])))])))
 
 ;; Linux/Container role form

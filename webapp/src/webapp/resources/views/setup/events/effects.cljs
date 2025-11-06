@@ -150,8 +150,11 @@
 (rf/reg-event-fx
  :resource-setup->submit
  (fn [{:keys [db]} _]
-   (let [payload (process-form/process-payload db)]
-     {:fx [[:dispatch [:resources->create-resource payload]]]})))
+   (let [payload (process-form/process-payload db)
+         ;; Armazena as roles processadas para usar no success step
+         processed-roles (:roles payload)]
+     {:db (assoc-in db [:resource-setup :processed-roles] processed-roles)
+      :fx [[:dispatch [:resources->create-resource payload]]]})))
 
 ;; Navigation helpers
 (rf/reg-event-fx

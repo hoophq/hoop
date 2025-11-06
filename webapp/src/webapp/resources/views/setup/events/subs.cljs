@@ -104,3 +104,9 @@
  :resources->last-created-roles
  (fn [db _]
    (get-in db [:resources :last-created-roles] [])))
+
+;; Processed roles (roles that were sent in the request)
+(rf/reg-sub
+ :resource-setup/processed-roles
+ (fn [db _]
+   (get-in db [:resource-setup :processed-roles] [])))

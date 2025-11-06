@@ -236,6 +236,7 @@
               [:div {:class "flex-1 overflow-hidden"}
                (doall
                 (for [connection connections-data]
+                  ^{:key (:id connection)}
                   [:> Box {:key (:id connection)
                            :class (str "bg-white border border-[--gray-3] "
                                        "text-[--gray-12] "

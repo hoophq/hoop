@@ -5,7 +5,6 @@
 (rf/reg-event-fx
  :resources->create-resource
  (fn [{:keys [db]} [_ payload]]
-   (js/console.log "🚀 Creating resource with payload:" (clj->js payload))
    {:db (assoc-in db [:resources :creating?] true)
     :fx [[:dispatch [:fetch {:method "POST"
                              :uri "/resources"
@@ -18,7 +17,6 @@
 (rf/reg-event-fx
  :resources->create-success
  (fn [{:keys [db]} [_ resource]]
-   (js/console.log "✅ Resource created successfully:" (clj->js resource))
    {:db (-> db
             (assoc-in [:resources :creating?] false)
             (assoc-in [:resources :last-created] resource))
@@ -29,7 +27,6 @@
 (rf/reg-event-fx
  :resources->create-failure
  (fn [{:keys [db]} [_ error]]
-   (js/console.error "❌ Failed to create resource:" error)
    {:db (assoc-in db [:resources :creating?] false)
     :fx [[:dispatch [:show-snackbar {:level :error
                                      :text "Failed to create resource"
