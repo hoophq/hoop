@@ -135,7 +135,8 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 			// Create new resource if it doesn't exist
 			err = UpsertResource(tx, &Resources{
 				OrgID:   c.OrgID,
-				Type:    c.SubType.String,
+				Type:    c.Type,
+				SubType: c.SubType,
 				Name:    c.ResourceName,
 				AgentID: c.AgentID,
 			}, false)
@@ -557,7 +558,7 @@ func (o ConnectionFilterOption) GetSearchPattern() string {
 	if term == "" {
 		return "%"
 	}
-	
+
 	return fmt.Sprintf("%%%s%%", term)
 }
 

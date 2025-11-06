@@ -1894,7 +1894,9 @@ type ResourceRequest struct {
 	// The resource name
 	Name string `json:"name" binding:"required" example:"my-resource"`
 	// The resource type
-	Type string `json:"type" binding:"required" example:"mysql"`
+	Type string `json:"type" binding:"required" example:"database"`
+	// The resource subtype
+	SubType string `json:"subtype" binding:"required" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource
@@ -1909,7 +1911,9 @@ type ResourceResponse struct {
 	// The resource name
 	Name string `json:"name" example:"my-resource"`
 	// The resource type
-	Type string `json:"type" example:"mysql"`
+	Type string `json:"type" example:"database"`
+	// The resource subtype
+	SubType string `json:"subtype" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars"`
 	// The agent associated with this resource
