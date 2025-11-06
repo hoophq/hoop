@@ -201,8 +201,8 @@ func UpdateResource(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
-	if len(connections) > 0 && existing.Type != req.Type {
-		c.JSON(http.StatusForbidden, gin.H{"message": "cannot change resource type with existing connections"})
+	if len(connections) > 0 && (existing.Type != req.Type || existing.SubType.String != req.SubType) {
+		c.JSON(http.StatusForbidden, gin.H{"message": "cannot change resource type or subtype with existing connections"})
 		return
 	}
 
@@ -211,8 +211,9 @@ func UpdateResource(c *gin.Context) {
 		OrgID:   ctx.OrgID,
 		Name:    req.Name,
 		Type:    req.Type,
+		SubType: sql.NullString{String: req.SubType, Valid: req.SubType != ""},
 		Envs:    req.EnvVars,
-		AgentID: sql.NullString{String: req.AgentID, Valid: true},
+		AgentID: sql.NullString{String: req.AgentID, Valid: req.AgentID != ""},
 	}
 
 	err = models.UpsertResource(models.DB, &resource, true)
