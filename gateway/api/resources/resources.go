@@ -75,8 +75,9 @@ func CreateResource(c *gin.Context) {
 		OrgID:   ctx.OrgID,
 		Name:    req.Name,
 		Type:    req.Type,
+		SubType: sql.NullString{String: req.SubType, Valid: req.SubType != ""},
 		Envs:    req.EnvVars,
-		AgentID: sql.NullString{String: req.AgentID, Valid: true},
+		AgentID: sql.NullString{String: req.AgentID, Valid: req.AgentID != ""},
 	}
 
 	err = models.UpsertResource(models.DB, &resource, true)
@@ -277,6 +278,7 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 		UpdatedAt: r.UpdatedAt,
 		Name:      r.Name,
 		Type:      r.Type,
+		SubType:   r.SubType.String,
 		EnvVars:   r.Envs,
 		AgentID:   r.AgentID.String,
 	}

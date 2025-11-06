@@ -15,6 +15,7 @@ type Resources struct {
 	OrgID     string         `gorm:"column:org_id"`
 	Name      string         `gorm:"column:name"`
 	Type      string         `gorm:"column:type"`
+	SubType   sql.NullString `gorm:"column:subtype"`
 	AgentID   sql.NullString `gorm:"column:agent_id"`
 	CreatedAt time.Time      `gorm:"column:created_at"`
 	UpdatedAt time.Time      `gorm:"column:updated_at"`
