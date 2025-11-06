@@ -15,8 +15,7 @@
         agent-id @(rf/subscribe [:resource-setup/agent-id])
         roles @(rf/subscribe [:resource-setup/roles])
         creating? @(rf/subscribe [:resources->creating?])
-        onboarding? (helpers/is-onboarding-context?)
-        _ (js/console.log "📍 Current step:" current-step "agent-id:" agent-id)]
+        onboarding? (helpers/is-onboarding-context?)]
 
     [page-wrapper/main
      {:onboarding? onboarding?

@@ -59,7 +59,7 @@
 
      ;; Local state
      active-tab (r/atom "details")
-     from-page (r/atom (get-query-param "from"))
+     from-page (r/atom (get-query-param "from_page"))
      initialized? (r/atom false)
 
      ;; Initialize data

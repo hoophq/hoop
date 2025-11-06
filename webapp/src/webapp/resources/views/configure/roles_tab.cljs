@@ -24,9 +24,7 @@
   (let [roles-state (rf/subscribe [:resources->resource-roles resource-id])
         test-connection-state (rf/subscribe [:connections->test-connection])]
 
-    ;; Fetch roles on mount
-    (when (nil? @roles-state)
-      (rf/dispatch [:resources->get-resource-roles resource-id {:force-refresh? true}]))
+    (rf/dispatch [:resources->get-resource-roles resource-id {:force-refresh? true}])
 
     (fn [resource-id]
       (let [roles-state-data (or @roles-state {:loading true :data []})

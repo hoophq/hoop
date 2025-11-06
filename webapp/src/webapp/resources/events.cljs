@@ -103,6 +103,7 @@
  :resources->update-role-connection
  (fn
    [{:keys [db]} [_ {:keys [name from-page resource-name]}]]
+   (println "name" from-page)
    (let [body (process-form/process-payload db)]
      {:fx [[:dispatch [:fetch
                        {:method "PUT"
@@ -117,8 +118,8 @@
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                                       ;; Redirect back to resource configure using resource_name
                                       (if (= from-page "resource-configure")
-                                        (rf/dispatch [:navigate :configure-resource {} :resource-id resource-name])
-                                        (rf/dispatch [:navigate :resources])))}]]]})))
+                                        (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-name])
+                                        (rf/dispatch [:navigate :resources {:tab "roles"}])))}]]]})))
 
 ;; Get resource roles (connections) - Paginated
 (rf/reg-event-fx

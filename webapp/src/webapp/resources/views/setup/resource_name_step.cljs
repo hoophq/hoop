@@ -9,11 +9,9 @@
   (let [resource-name @(rf/subscribe [:resource-setup/resource-name])
         resource-type @(rf/subscribe [:resource-setup/resource-type])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
-        _ (js/console.log "📋 Resource Name Step - type:" resource-type "subtype:" resource-subtype)
         icon-url (conn-constants/get-connection-icon {:type resource-type
                                                       :subtype resource-subtype}
-                                                     "default")
-        _ (js/console.log "🎨 Icon URL:" icon-url)]
+                                                     "default")]
     [:form {:id "resource-name-form"
             :on-submit (fn [e]
                          (.preventDefault e)

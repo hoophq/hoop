@@ -8,26 +8,6 @@
    [webapp.components.forms :as forms]
    [webapp.resources.constants :as constants]))
 
-;; Database role form
-(defn database-role-form [role-index]
-  (let [subtype @(rf/subscribe [:resource-setup/resource-subtype])
-        configs (constants/get-role-config "database" subtype)
-        credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
-    (when configs
-      [:> Grid {:columns "1" :gap "4"}
-       (for [field configs]
-         ^{:key (:key field)}
-         (let [field-type (or (:type field) "password")]
-           [forms/input {:label (:label field)
-                         :placeholder (or (:placeholder field) (str "e.g. " (:key field)))
-                         :value (get credentials (:key field) "")
-                         :required (:required field)
-                         :type field-type
-                         :on-change #(rf/dispatch [:resource-setup->update-role-credentials
-                                                   role-index
-                                                   (:key field)
-                                                   (-> % .-target .-value)])}]))])))
-
 ;; SSH role form
 (defn ssh-role-form [role-index]
   (let [configs (constants/get-role-config "application" "ssh")
@@ -226,6 +206,7 @@
       (when can-remove?
         [:> Flex {:justify "end"}
          [:> Button {:size "2"
+                     :type "button"
                      :variant "ghost"
                      :color "red"
                      :on-click #(rf/dispatch [:resource-setup->remove-role role-index])}

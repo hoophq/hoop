@@ -264,7 +264,10 @@
 ;; Main component with custom tabs and filters in same row
 (defn panel []
   (let [user (rf/subscribe [:users->current-user])
-        active-tab (r/atom "resources")
+        search-string (.. js/window -location -search)
+        url-params (new js/URLSearchParams search-string)
+        initial-tab (.get url-params "tab")
+        active-tab (r/atom (or initial-tab "resources"))
         search-name (r/atom "")
         selected-tags (r/atom {})
         tags-popover-open? (r/atom false)

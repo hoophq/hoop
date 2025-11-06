@@ -16,7 +16,6 @@
 (rf/reg-event-fx
  :resource-setup->initialize-from-catalog
  (fn [{:keys [db]} [_ {:keys [type subtype command]}]]
-   (js/console.log "🔧 Initializing resource setup from catalog:" (clj->js {:type type :subtype subtype}))
    {:db (update db :resource-setup merge {:type type
                                           :subtype subtype
                                           :command command
@@ -81,9 +80,11 @@
  (fn [db [_]]
    (let [resource-type (get-in db [:resource-setup :type])
          resource-subtype (get-in db [:resource-setup :subtype])
+         command (get-in db [:resource-setup :command])
          new-role {:name (helpers/random-role-name resource-subtype)
                    :type resource-type
                    :subtype resource-subtype
+                   :command command
                    :credentials {}
                    :environment-variables []
                    :configuration-files []}]
