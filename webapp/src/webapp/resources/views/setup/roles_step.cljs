@@ -28,6 +28,7 @@
        "Authentication Method"]
       [:> Grid {:columns "2" :gap "3"}
        [:> Button {:size "2"
+                   :type "button"
                    :variant (if (= auth-method "password") "solid" "outline")
                    :on-click #(rf/dispatch [:resource-setup->update-role-credentials
                                             role-index
@@ -35,6 +36,7 @@
                                             "password"])}
         "Username & Password"]
        [:> Button {:size "2"
+                   :type "button"
                    :variant (if (= auth-method "key") "solid" "outline")
                    :on-click #(rf/dispatch [:resource-setup->update-role-credentials
                                             role-index
