@@ -60,8 +60,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rust-binaries-darwin
-          path: dist/binaries/
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
 
   build-rust-binaries-linux:
     runs-on: ubuntu-latest
@@ -95,8 +95,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rust-binaries-linux
-          path: dist/binaries/
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
 
   darwin-amd64:
     runs-on: ubuntu-latest
@@ -132,7 +132,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/darwin_amd64/
+          path: dist/
 
   darwin-arm64:
     runs-on: ubuntu-latest
@@ -168,7 +168,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/darwin_arm64/
+          path: dist/
 
   windows-amd64:
     runs-on: ubuntu-latest
@@ -204,7 +204,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/windows_amd64/
+          path: dist/
 
   windows-arm64:
     runs-on: ubuntu-latest
@@ -240,7 +240,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/windows_arm64/
+          path: dist/
 
   linux-amd64:
     runs-on: ubuntu-latest
@@ -280,7 +280,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/linux_amd64/
+          path: dist/
 
   linux-arm64:
     runs-on: ubuntu-latest
@@ -320,7 +320,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
-          path: dist/binaries/linux_arm64/
+          path: dist/
 
   build-webapp:
     runs-on: ubuntu-latest
@@ -361,74 +361,20 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
         
-      - name: Download Darwin AMD64
+      - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist-artifacts-darwin-amd64
-          path: dist/binaries/darwin_amd64/
-          
-      - name: Download Darwin ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-darwin-arm64
-          path: dist/binaries/darwin_arm64/
-          
-      - name: Download Windows AMD64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-windows-amd64
-          path: dist/binaries/windows_amd64/
-          
-      - name: Download Windows ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-windows-arm64
-          path: dist/binaries/windows_arm64/
-          
-      - name: Download Linux AMD64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-linux-amd64
-          path: dist/binaries/linux_amd64/
-          
-      - name: Download Linux ARM64
-        uses: actions/download-artifact@v4
-        with:
-          name: dist-artifacts-linux-arm64
-          path: dist/binaries/linux_arm64/
-          
-      - name: Download Rust Binaries Darwin
-        uses: actions/download-artifact@v4
-        with:
-          name: rust-binaries-darwin
-          path: dist/binaries/
-          
-      - name: Download Rust Binaries Linux
-        uses: actions/download-artifact@v4
-        with:
-          name: rust-binaries-linux
-          path: dist/binaries/
-          
-      - name: Copy Rust Binaries to Architecture Directories
-        run: |
-          cp dist/binaries/darwin_amd64/hoop_rs dist/binaries/darwin_amd64/ 2>/dev/null || true
-          cp dist/binaries/darwin_arm64/hoop_rs dist/binaries/darwin_arm64/ 2>/dev/null || true
-          
-          cp dist/binaries/linux_amd64/hoop_rs dist/binaries/linux_amd64/ 2>/dev/null || true
-          cp dist/binaries/linux_arm64/hoop_rs dist/binaries/linux_arm64/ 2>/dev/null || true
+          pattern: dist-artifacts-*
+          merge-archive: true
+          path: dist/
           
       - name: Build Tar Files for All Architectures
         run: |
           GOOS=darwin GOARCH=amd64 make build-tar-files
-          
           GOOS=darwin GOARCH=arm64 make build-tar-files
-          
           GOOS=windows GOARCH=amd64 make build-tar-files
-          
           GOOS=windows GOARCH=arm64 make build-tar-files
-          
           GOOS=linux GOARCH=amd64 make build-tar-files
-          
           GOOS=linux GOARCH=arm64 make build-tar-files
         
       - uses: actions/upload-artifact@v4
