@@ -120,15 +120,24 @@ func buildSearchResponse(connections []models.Connection, runbooks []string, res
 		connectionSearchResults[i] = connectionToConnectionSearch(&conn)
 	}
 
-	resourcesSearchResults := make([]string, len(resources))
+	resourcesSearchResults := make([]openapi.ResourceSearch, len(resources))
 	for i, res := range resources {
-		resourcesSearchResults[i] = res.Name
+		resourcesSearchResults[i] = resourceToResourceSearch(&res)
 	}
 
 	return openapi.SearchResponse{
 		Connections: connectionSearchResults,
 		Runbooks:    runbooks,
 		Resources:   resourcesSearchResults,
+	}
+}
+
+func resourceToResourceSearch(res *models.Resources) openapi.ResourceSearch {
+	return openapi.ResourceSearch{
+		ID:      res.ID,
+		Name:    res.Name,
+		Type:    res.Type,
+		SubType: res.SubType.String,
 	}
 }
 

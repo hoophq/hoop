@@ -1842,13 +1842,37 @@ type ConnectionSearch struct {
 	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
 }
 
+type ResourceSearch struct {
+	// Unique ID of the resource
+	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+}
+
 type SearchResponse struct {
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
 	// Runbooks found in the search
 	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
 	// Resources found in the search
-	Resources []string `json:"resources" example:"my-resource-1,my-resource-2"`
+	Resources []ResourceSearch `json:"resources" example:"my-resource-1,my-resource-2"`
 }
 
 type ConnectionTestResponse struct {
