@@ -9,6 +9,7 @@
   "Tag showing current context"
   [{:keys [current-page context on-close]}]
   (let [label (case current-page
+                :resource-roles (:name context)
                 :connection-actions (:name context)
                 (str current-page))]
     [:> Flex

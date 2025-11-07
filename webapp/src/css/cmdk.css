@@ -22,6 +22,15 @@
   cursor: pointer;
 }
 
+[cmdk-item][aria-selected="true"] {
+  background-color: var(--gray-3);
+  color: var(--gray-12);
+}
+
+[cmdk-item][aria-selected="true"]:hover {
+  background-color: var(--gray-4);
+}
+
 [cmdk-loading] {
   transition: opacity 200ms ease;
 }

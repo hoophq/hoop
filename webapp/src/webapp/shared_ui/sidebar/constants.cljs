@@ -2,18 +2,15 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
    ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
-                           Inbox LayoutDashboard PackageSearch Rotate3d Search
+                           Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
-;; Dicionário central de ícones com tamanho flexível (fonte única da verdade)
 (def icons-registry
-  {"Connections" (fn [& [{:keys [size] :or {size 24}}]]
-                   [:> Rotate3d {:size size}])
-   "Resources" (fn [& [{:keys [size] :or {size 24}}]]
-                 [:> Rotate3d {:size size}])
+  {"Resources" (fn [& [{:keys [size] :or {size 24}}]]
+                 [:> Package {:size size}])
    "Dashboard" (fn [& [{:keys [size] :or {size 24}}]]
                  [:> LayoutDashboard {:size size}])
    "Terminal" (fn [& [{:keys [size] :or {size 24}}]]
@@ -72,16 +69,6 @@
     :icon (get icons-registry "Resources")
     :uri (routes/url-for :resources)
     :navigate :resources
-    :free-feature? true
-    :admin-only? false
-    :badge (fn []
-             [:> Badge {:variant "solid" :color "blue" :size "1"}
-              "NEW"])}
-   {:name "Connections"
-    :label "Connections"
-    :icon (get icons-registry "Connections")
-    :uri (routes/url-for :connections)
-    :navigate :connections
     :free-feature? true
     :admin-only? false}
    {:name "Dashboard"
@@ -254,6 +241,3 @@
     :free-feature? true
     :admin-only? true
     :selfhosted-only? false}])
-
-;; Mantemos essa constante para compatibilidade com o código existente
-(def routes main-routes)
