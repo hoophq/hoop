@@ -165,8 +165,8 @@ func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, e
 		switch key {
 		case "name":
 			o.Name = values[0]
-		case "type":
-			o.Type = values[0]
+		case "subtype":
+			o.SubType = values[0]
 		}
 	}
 	return

@@ -20,7 +20,7 @@
                               :resource-id resource-id
                               :name (:name resource-data)
                               :type (:type resource-data)
-                              :subtype (:type resource-data) ;; Backend returns type as subtype
+                              :subtype (:subtype resource-data)
                               :agent-id (:agent_id resource-data)
                               :current-step :roles
                               :roles []
