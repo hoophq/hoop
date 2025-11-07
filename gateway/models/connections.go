@@ -749,6 +749,7 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 			c.type,
 			c.subtype,
 			c.status,
+			c.resource_name,
 			c.access_mode_runbooks,
 			c.access_mode_exec,
 			c.access_mode_connect
