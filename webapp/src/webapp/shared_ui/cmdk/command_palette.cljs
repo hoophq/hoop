@@ -37,13 +37,16 @@
                           :main "Search for resources, features and more..."
                           :resource-roles "Select or search a role"
                           :connection-actions "Select or search an action"
-                          "Search...")]
+                          "Search...")
+            ;; Enable native filtering for non-main pages (client-side search)
+            should-filter? (not= current-page :main)]
         [command-dialog/command-dialog
          {:open? (:open? @palette-state)
           :on-open-change #(if %
                              (rf/dispatch [:command-palette->open])
                              (rf/dispatch [:command-palette->close]))
           :title "Command Palette"
+          :should-filter? should-filter?
           :search-config {:show-search-icon true
                           :show-input true
                           :is-searching? is-searching?
