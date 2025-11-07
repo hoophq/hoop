@@ -14,8 +14,8 @@
    {:value "session.user_email" :text "User email"}
    {:value "session.user_id" :text "User ID"}
    {:value "session.user_name" :text "User name"}
-   {:value "session.type" :text "Connection type"}
-   {:value "session.connection" :text "Connection name"}
+   {:value "session.type" :text "Resource role type"}
+   {:value "session.connection" :text "Resource role name"}
    {:value "session.status" :text "Session status"}
    {:value "session.start_date" :text "Session start date"}
    {:value "session.verb" :text "Session type"}

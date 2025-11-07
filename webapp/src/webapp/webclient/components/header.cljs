@@ -45,7 +45,7 @@
                         (rf/dispatch [:primary-connection/toggle-dialog true]))}
             (if @primary-connection
               (:name @primary-connection)
-              "Connection")
+              "Resource Role")
             [:> ChevronDown {:size 12}]]]
           [:> Flex {:align "center" :gap "2"}
 
@@ -106,7 +106,7 @@
                :has-notification? has-multirun?
                :disabled? false}]]]
 
-          [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
+           [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button
              {:disabled disable-run-button?
               :loading script-loading?

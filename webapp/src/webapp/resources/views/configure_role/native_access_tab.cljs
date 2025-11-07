@@ -56,14 +56,14 @@
          ;; Native access availability
          [toggle-section
           {:title "Native access availability"
-           :description "Access from your client of preference using hoop.dev to channel connections using our Desktop App or our Command Line Interface."
+           :description "Access from your client of preference using hoop.dev to channel resource roles using our Desktop App or our Command Line Interface."
            :checked native-access-enabled?
            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :native])}]
 
          ;; Just-in-Time Review
          [toggle-section
           {:title "Just-in-Time Review"
-           :description "Require approval prior to connection execution."
+           :description "Require approval prior to resource role execution."
            :checked @review?
            :on-change #(rf/dispatch [:connection-setup/toggle-review])
            :complement-component (when @review?

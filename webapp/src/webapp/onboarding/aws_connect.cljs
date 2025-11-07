@@ -287,7 +287,7 @@
           [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
            "Skip Connected Resources"]
           [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
-           "Automatically ignore resources already used in existing connections."]]]]
+           "Automatically ignore resources already used in existing resource roles."]]]]
 
        ;; Error message (if any)
        (when @error
@@ -379,9 +379,9 @@
                   :on-checked-change #(rf/dispatch [:aws-connect/toggle-create-connection %])}]
       [:> Box
        [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
-        "Create Connection"]
+        "Create Resource Role"]
        [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
-        "When enabled, connections will be automatically created after configuring the resources."]]]
+        "When enabled, resource roles will be automatically created after configuring the resources."]]]
 
      [:> Flex {:align "center" :gap "4" :class "text-[--accent-a11] cursor-pointer" :mt "4"}
       [:> Switch {:checked enable-secrets-manager
@@ -390,7 +390,7 @@
        [:> Text {:as "p" :size "3" :weight "medium" :class "text-[--gray-12]"}
         "Enable Vault Secrets Provider"]
        [:> Text {:as "p" :size "2" :class "text-[--gray-12]"}
-        "Integrate with HashiCorp Vault to dynamically expand environment variables in your connections. Currently, only Vault is supported."]
+        "Integrate with HashiCorp Vault to dynamically expand environment variables in your resource roles. Currently, only Vault is supported."]
 
        [:> Box {:my "2"}
         [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
@@ -446,7 +446,7 @@
       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
        "Review Selected Resources"]
       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-       "Please review your selected AWS database resources and assign an Agent to each connection before proceeding. You can also customize the connection names."]
+       "Please review your selected AWS database resources and assign an Agent to each resource role before proceeding. You can also customize the resource role names."]
 
       [:> Flex {:align "center" :gap "1" :class "text-[--accent-a11] cursor-pointer"}
        [:> Link {:href (get-in config/docs-url [:concepts :agents])
@@ -479,7 +479,7 @@
                                (:id row)
                                ""))}
                   {:id :connection_name
-                   :header "Connection Name"
+                   :header "Resource Role Name"
                    :width "30%"
                    :render (fn [_ row]
                              (if (:account-type row)
@@ -490,7 +490,7 @@
                                  [forms/input
                                   {:value current-name
                                    :not-margin-bottom? true
-                                   :placeholder "Enter connection name"
+                                   :placeholder "Enter resource role name"
                                    :on-change #(rf/dispatch [:aws-connect/set-connection-name
                                                              resource-id
                                                              (-> % .-target .-value)])}])))}
@@ -556,14 +556,14 @@
     [:> Flex {:direction "column" :align "center" :gap "7" :mb "4" :class "w-full"}
      [:> Box {:class "max-w-[600px] space-y-3"}
       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-       "Creating Connections"]
+       "Creating Resource Roles"]
       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-       "Please wait while we create your AWS database connections. This process may take a few minutes."]]
+       "Please wait while we create your AWS database resource roles. This process may take a few minutes."]]
 
      [:> Box {:class "w-full"}
       [data-table-simple
        {:columns [{:id :connection-name
-                   :header "Connection Name"
+                   :header "Resource RoleS Name"
                    :width "40%"}
                   {:id :engine
                    :header "Type"

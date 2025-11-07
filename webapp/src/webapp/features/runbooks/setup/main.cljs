@@ -52,7 +52,7 @@
              [:> Box
               [h/h2 "Runbooks" {:class "text-[--gray-12]"}]
               [:> Text {:as "p" :size "3" :class "text-gray-500"}
-               "Manage which paths are accessible for each connection."]
+               "Manage which paths are accessible for each resource role."]
               [:> Text {:as "p" :size "3" :class "text-gray-500"}
                "Configure Git repositories and enhance automation for your organization."]]
              nil]
@@ -62,7 +62,7 @@
              [:> Tabs.Root {:value @active-tab
                             :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}
-               [:> Tabs.Trigger {:value "connections"} "Connections"]
+               [:> Tabs.Trigger {:value "connections"} "Resource Roles"]
                [:> Tabs.Trigger {:value "configurations"} "Configurations"]]
 
               [:> Separator {:size "4" :mb "7"}]

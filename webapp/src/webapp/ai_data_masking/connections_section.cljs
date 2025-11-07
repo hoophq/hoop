@@ -9,7 +9,7 @@
   (let [ai-data-masking-active (rf/subscribe [:ai-data-masking->active-rule])
         connections-loaded (r/atom false)
         selected-connections-cache (r/atom {})] ; id -> {id, name}
-    
+
     (fn []
       (let [current-connection-ids @connection-ids
             stored-connections (get-in @ai-data-masking-active [:data :connections] [])
@@ -34,9 +34,9 @@
         [:> Grid {:columns "7" :gap "7"}
          [:> Box {:grid-column "span 2 / span 2"}
           [:> Flex {:align "center" :gap "2"}
-           [:> Heading {:as "h3" :size "4" :weight "medium"} "Connection configuration"]]
+           [:> Heading {:as "h3" :size "4" :weight "medium"} "Resource Role configuration"]]
           [:> Text {:size "3" :class "text-[--gray-11]"}
-           "Select which connections to apply this configuration."]]
+           "Select which resource roles to apply this configuration."]]
 
          [:> Box {:grid-column "span 5 / span 5"}
           [connections-select/main

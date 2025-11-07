@@ -40,9 +40,9 @@
         [:> Flex {:direction "column" :gap "5"}
          [:> Box
           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-           "Associate Connections"]
+           "Associate Resource Roles"]
           [:> Box {:class "text-sm text-gray-500 mb-2"}
-           "Select connections where this template should be applied"]]
+           "Select resource roles where this template should be applied"]]
 
          [:> Box {:class "mb-5"}
           [connections-select/main

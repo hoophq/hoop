@@ -101,7 +101,7 @@
     [:> Box {:class "space-y-4"}
      [:> Heading {:size "3"} (if title title "Environment variables")]
      [:> Text {:size "2" :color "gray"}
-      (if subtitle subtitle "Include environment variables to be used in your connection.")]
+      (if subtitle subtitle "Include environment variables to be used in your resource role.")]
 
      (when (seq env-vars)
        [:> Grid {:columns "2" :gap "2"}
@@ -148,7 +148,7 @@
     [:> Box {:class "space-y-4"}
      [:> Heading {:size "3"} "Configuration files"]
      [:> Text {:size "2" :color "gray"}
-      "Add values from your configuration file and use them as an environment variable in your connection."]
+      "Add values from your configuration file and use them as an environment variable in your resource role."]
 
      (when (seq config-files)
        [:> Grid {:columns "1" :gap "4"}

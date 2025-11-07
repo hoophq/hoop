@@ -49,7 +49,7 @@
                 os (detect-os)]
             [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
              [:> Flex {:class "h-full px-4 items-center justify-between"}
-              [:> Flex {:class "items-end gap-2"}
+              [:> Flex {:class "items-center gap-2"}
                [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
                 "Runbooks"]
                [:> Badge
@@ -61,7 +61,7 @@
                             (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
                 (if @runbooks-connection
                   (:name @runbooks-connection)
-                  "Connection")
+                  "Resource Role")
                 [:> ChevronDown {:size 12}]]]
 
               [:> Flex {:class "items-center gap-2"}

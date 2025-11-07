@@ -47,7 +47,7 @@
       [:> Flex {:width "100%"}
        [:> Box {:mb "5"}
         [:> Heading {:as "h3" :size "2"}
-         "Connections"]]]
+         "Resource Roles"]]]
 
       (if (empty? connection-items-map)
         [:> Box {:minHeight "300px" :class "content-center"}

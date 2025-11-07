@@ -92,7 +92,7 @@
                                   (rf/dispatch [:connection-setup/add-tag
                                                 full-key
                                                 value-val])
-                                ;; Limpar os valores após adicionar
+                                  ;; Limpar os valores após adicionar
                                   (rf/dispatch [:connection-setup/clear-current-tag])))))}
      [:> Plus {:size 16}]
      "Add"]))
@@ -106,7 +106,7 @@
         value-obj (when value #js{:value value :label value})]
     ^{:key (str "tag-" index)}
     [:<>
-   ;; Select para Key
+     ;; Select para Key
      [multiselect/single-creatable-grouped
       {:key (str "key-" index)
        :default-value key-obj
@@ -126,7 +126,7 @@
                                            new-option])))
        :placeholder "Select or create a key..."}]
 
-   ;; Select para Value
+     ;; Select para Value
      [multiselect/single-creatable-grouped
       {:key (str "value-" index)
        :default-value value-obj
@@ -163,17 +163,17 @@
        [:> Box
         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
          "Tags"]
-        [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-         "Add custom labels to manage and track connections."]]
+        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+         "Add custom labels to manage and track resource roles."]]
 
-     ;; Lista de tags existentes como componente separado
+       ;; Lista de tags existentes como componente separado
        [:> Box
         [existing-tags]
 
-     ;; Inputs substituídos por selects em componentes separados
+        ;; Inputs substituídos por selects em componentes separados
         [:> Grid {:columns "2" :gap "4" :my "4"}
          [:> Box [key-select-component]]
          [:> Box [value-select-component]]]
 
-     ;; Botão Add como componente separado
+        ;; Botão Add como componente separado
         [add-tag-button]]])))

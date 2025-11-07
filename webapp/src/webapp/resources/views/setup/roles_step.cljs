@@ -156,7 +156,7 @@
     [:> Heading {:as "h4" :size "3" :weight "medium"}
      "Additional command"]
     [:> Text {:size "2" :class "text-[--gray-11]"}
-     "Add an additional command that will run on your connection. Variables (like the ones above) can also be used here."]
+     "Add an additional command that will run on your resource role. Variables (like the ones above) can also be used here."]
     [forms/input {:label "Command"
                   :placeholder "$ bash"
                   :value ""

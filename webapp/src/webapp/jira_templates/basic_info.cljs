@@ -16,7 +16,7 @@
     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
      "Integration details"]
     [:> Text {:size "3" :class "text-[--gray-11]"}
-     "Used to identify your Jira configuration in your connections."]]
+     "Used to identify your Jira configuration in your resource roles."]]
 
    [:> Box {:class "space-y-radix-7"}
     [forms/input

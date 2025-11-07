@@ -17,15 +17,15 @@
    [:> Grid {:columns "7" :gap "7"}
     [:> Box {:grid-column "span 2 / span 2"}
      [:> Heading {:as "h4" :size "4" :weight "medium" :class "text-[--gray-12]"}
-      "Connections List"]
+      "Resources"]
      [:> Text {:size "3" :class "text-[--gray-11]"}
-      "These connections can be accessed by this user group."]]
+      "These resource roles can be accessed by this user group."]]
 
     [:> Box {:class "h-fit border border-[--gray-a6] rounded-md" :grid-column "span 5 / span 5"}
      (if (empty? connections)
        [:> Flex {:p "4" :justify "center" :align "center"}
         [:> Text {:size "2" :class "text-[--gray-11] italic"}
-         "No connections assigned to this group"]]
+         "No resource roles assigned to this group"]]
 
        (for [connection connections]
          ^{:key (:name connection)}
@@ -56,7 +56,7 @@
     [:> ArrowRightLeft {:size 16}]
     [:span {:class "text-sm font-semibold"}
      (if (empty? @selected-connection)
-       "Connection"
+       "Resource Roles"
        @selected-connection)]
     (when (seq @selected-connection)
       [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
@@ -81,28 +81,28 @@
                            (rf/dispatch [:ui/close-popover]))}
          [:span "Clear filter"]]])
 
-    [:div {:class "mb-2 relative"}
-     [:> TextField.Root {:class "w-full"
-                         :placeholder "Search connections"
-                         :value @search-term
-                         :onChange (fn [e]
-                                     (let [value (-> e .-target .-value)
-                                           trimmed (cs/trim value)
-                                           should-search? (or (cs/blank? trimmed)
-                                                              (> (count trimmed) 2))
-                                           request (cond-> {:page 1 :force-refresh? true}
-                                                     (seq trimmed) (assoc :search trimmed))]
-                                       (reset! search-term value)
-                                       (when @search-debounce-timer
-                                         (js/clearTimeout @search-debounce-timer))
-                                       (if should-search?
-                                         (reset! search-debounce-timer
-                                                 (js/setTimeout
-                                                  (fn []
-                                                    (rf/dispatch [:connections/get-connections-paginated request]))
-                                                  300))
-                                         (reset! search-debounce-timer nil))))}]
-     [:> Search {:class "absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" :size 16}]]
+     [:div {:class "mb-2 relative"}
+      [:> TextField.Root {:class "w-full"
+                          :placeholder "Search resource roles"
+                          :value @search-term
+                          :onChange (fn [e]
+                                      (let [value (-> e .-target .-value)
+                                            trimmed (cs/trim value)
+                                            should-search? (or (cs/blank? trimmed)
+                                                               (> (count trimmed) 2))
+                                            request (cond-> {:page 1 :force-refresh? true}
+                                                      (seq trimmed) (assoc :search trimmed))]
+                                        (reset! search-term value)
+                                        (when @search-debounce-timer
+                                          (js/clearTimeout @search-debounce-timer))
+                                        (if should-search?
+                                          (reset! search-debounce-timer
+                                                  (js/setTimeout
+                                                   (fn []
+                                                     (rf/dispatch [:connections/get-connections-paginated request]))
+                                                   300))
+                                          (reset! search-debounce-timer nil))))}]
+      [:> Search {:class "absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" :size 16}]]
 
      (if (> (count connections-data) 0)
        [:div {:class "relative"}
@@ -137,8 +137,8 @@
                  [:> Check {:size 16}])]]))]]]
        [:div {:class "px-3 py-4 text-xs text-gray-700 italic"}
         (if (seq @search-term)
-          "No connections found matching your search"
-          "No connections with this criteria")])]]])
+          "No resource roles found matching your search"
+          "No resource roles with this criteria")])]]])
 
 (defn group-item []
   (let [show-connections? (r/atom false)]
@@ -165,7 +165,7 @@
                        :variant "ghost"
                        :color "gray"
                        :on-click #(swap! show-connections? not)}
-            "Connections"
+            "Resource Roles"
             (if @show-connections?
               [:> ChevronUp {:size 14}]
               [:> ChevronDown {:size 14}])])]]

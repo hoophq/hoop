@@ -75,7 +75,7 @@
          ;; Review by Command
          [toggle-section
           {:title "Review by Command"
-           :description "Require approval prior to connection execution."
+           :description "Require approval prior to resource role execution."
            :checked @review?
            :on-change #(rf/dispatch [:connection-setup/toggle-review])
            :disabled? free-license?
@@ -188,7 +188,7 @@
           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-gray-12"}
            "Guardrails"]
           [:> Text {:as "p" :size "2" :class "text-gray-11"}
-           "Create custom rules to guide and protect usage within your connections."]
+           "Create custom rules to guide and protect usage within your resource roles."]
 
           [:> Box {:class "mt-4"}
            [multi-select/main
