@@ -36,6 +36,7 @@ func Get(c *gin.Context) {
 	var (
 		connectionsFound []models.Connection
 		runbooksFound    []string
+		resourcesFound   []models.Resources
 
 		runbookErr error
 	)
@@ -79,6 +80,24 @@ func Get(c *gin.Context) {
 		return nil
 	})
 
+	// Fetch resources in parallel
+	g.Go(func() error {
+		var err error
+		opts := models.ResourceFilterOption{
+			Search:   searchTerm,
+			Page:     1,
+			PageSize: 0,
+		}
+
+		resourcesFound, _, err = models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin(), opts)
+		if err != nil {
+			log.Errorf("failed to list resources: %v", err)
+			return err
+		}
+
+		return nil
+	})
+
 	// Wait for both goroutines
 	if err := g.Wait(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -92,18 +111,24 @@ func Get(c *gin.Context) {
 	}
 
 	// Build response
-	c.JSON(http.StatusOK, buildSearchResponse(connectionsFound, runbooksFound))
+	c.JSON(http.StatusOK, buildSearchResponse(connectionsFound, runbooksFound, resourcesFound))
 }
 
-func buildSearchResponse(connections []models.Connection, runbooks []string) openapi.SearchResponse {
-	var connectionSearchResults []openapi.ConnectionSearch
-	for _, conn := range connections {
-		connectionSearchResults = append(connectionSearchResults, connectionToConnectionSearch(&conn))
+func buildSearchResponse(connections []models.Connection, runbooks []string, resources []models.Resources) openapi.SearchResponse {
+	connectionSearchResults := make([]openapi.ConnectionSearch, len(connections))
+	for i, conn := range connections {
+		connectionSearchResults[i] = connectionToConnectionSearch(&conn)
+	}
+
+	resourcesSearchResults := make([]string, len(resources))
+	for i, res := range resources {
+		resourcesSearchResults[i] = res.Name
 	}
 
 	return openapi.SearchResponse{
 		Connections: connectionSearchResults,
 		Runbooks:    runbooks,
+		Resources:   resourcesSearchResults,
 	}
 }
 
@@ -111,6 +136,7 @@ func connectionToConnectionSearch(conn *models.Connection) openapi.ConnectionSea
 	return openapi.ConnectionSearch{
 		ID:                 conn.ID,
 		Name:               conn.Name,
+		ResourceName:       conn.ResourceName,
 		Status:             conn.Status,
 		Type:               conn.Type,
 		SubType:            conn.SubType.String,

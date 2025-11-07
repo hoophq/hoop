@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -55,12 +56,18 @@ func setResourceOptionDefaults(opts *ResourceFilterOption) {
 	}
 }
 
-func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts ResourceFilterOption) ([]Resources, int64, error) {
+func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInternal bool, opts ResourceFilterOption) ([]Resources, int64, error) {
 	setResourceOptionDefaults(&opts)
 
 	offset := 0
 	if opts.Page > 1 {
 		offset = (opts.Page - 1) * opts.PageSize
+	}
+
+	// Gorm has issues with optional LIMIT in raw queries, so we build the query string conditionally
+	paginationQuery := "LIMIT @page_size OFFSET @offset"
+	if opts.PageSize == 0 {
+		paginationQuery = ""
 	}
 
 	nameQuery := "%"
@@ -84,8 +91,17 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts Resou
 		COALESCE((SELECT envs FROM private.env_vars WHERE (@is_admin_or_internal AND id = r.id)), '{}') AS envs,
 		COUNT(*) OVER() AS total
 	FROM private.resources r
+		LEFT JOIN private.connections c ON r.org_id = c.org_id AND r.name = c.resource_name
+		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
+		LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	WHERE
 		r.org_id = @org_id AND
+		CASE
+				-- do not apply any access control if the plugin is not enabled or it is an admin user
+				WHEN ac.id IS NULL OR (@is_admin_or_internal)::BOOL THEN true
+				-- allow if any of the input user groups are in the access control list
+				ELSE acc.config && (@user_groups)::text[]
+		END AND
 		r.name LIKE @name AND
 		r.subtype LIKE @subtype AND
 		(
@@ -93,10 +109,9 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts Resou
 			COALESCE(r.subtype, '') LIKE @search OR
 			r.type::text LIKE @search
 		)
-	ORDER BY created_at DESC
-	LIMIT @page_size OFFSET @offset
-	`, map[string]interface{}{
+	ORDER BY created_at DESC `+paginationQuery, map[string]interface{}{
 		"org_id":               orgID,
+		"user_groups":          pq.StringArray(userGroups),
 		"is_admin_or_internal": isAdminOrInternal,
 		"search":               searchQuery,
 		"name":                 nameQuery,

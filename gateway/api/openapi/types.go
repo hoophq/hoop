@@ -1805,6 +1805,8 @@ type ConnectionSearch struct {
 	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
 	// Name of the connection. This attribute is immutable when updating it
 	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// The resource name associated with this connection
+	ResourceName string `json:"resource_name" example:"my-resource"`
 	// Type represents the main type of the connection:
 	// * database - Database protocols
 	// * application - Custom applications
@@ -1845,6 +1847,8 @@ type SearchResponse struct {
 	Connections []ConnectionSearch `json:"connections"`
 	// Runbooks found in the search
 	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+	// Resources found in the search
+	Resources []string `json:"resources" example:"my-resource-1,my-resource-2"`
 }
 
 type ConnectionTestResponse struct {

@@ -197,7 +197,7 @@ func ListResources(c *gin.Context) {
 		return
 	}
 
-	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.IsAdmin(), opts)
+	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin(), opts)
 	if err != nil {
 		log.Errorf("failed to list resources: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
