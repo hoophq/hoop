@@ -109,7 +109,7 @@ func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInte
 			COALESCE(r.subtype, '') LIKE @search OR
 			r.type::text LIKE @search
 		)
-	GROUP BY r.id ORDER BY r.created_at DESC `+paginationQuery, map[string]interface{}{
+	GROUP BY r.id ORDER BY r.name ASC `+paginationQuery, map[string]interface{}{
 		"org_id":               orgID,
 		"user_groups":          pq.StringArray(userGroups),
 		"is_admin_or_internal": isAdminOrInternal,
