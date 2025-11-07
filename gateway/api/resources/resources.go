@@ -163,6 +163,8 @@ func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, e
 
 	for key, values := range urlValues {
 		switch key {
+		case "search":
+			o.Search = values[0]
 		case "name":
 			o.Name = values[0]
 		case "subtype":
@@ -178,6 +180,9 @@ func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, e
 //	@Description	Lists all resources for the organization.
 //	@Tags			Resources
 //	@Produces		json
+//	@Param			search			query		string	false	"Search by name, type, subtype"						Format(string)
+//	@Param			name			query		string	false	"Filter by name"																		Format(string)
+//	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Success		200	{object}	openapi.PaginatedResponse[*openapi.ResourceResponse]
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/resources [get]

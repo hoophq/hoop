@@ -44,15 +44,12 @@ func GetResourceByName(db *gorm.DB, orgID, name string, isAdminOrInternal bool) 
 type ResourceFilterOption struct {
 	Page     int
 	PageSize int
+	Search   string
 	Name     string
 	SubType  string
 }
 
 func setResourceOptionDefaults(opts *ResourceFilterOption) {
-	if opts.Name == "" {
-		opts.Name = "%"
-	}
-
 	if opts.SubType == "" {
 		opts.SubType = "%"
 	}
@@ -66,7 +63,15 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts Resou
 		offset = (opts.Page - 1) * opts.PageSize
 	}
 
-	nameQuery := "%" + opts.Name + "%"
+	nameQuery := "%"
+	if opts.Name != "" {
+		nameQuery = "%" + opts.Name + "%"
+	}
+
+	searchQuery := "%"
+	if opts.Search != "" {
+		searchQuery = "%" + opts.Search + "%"
+	}
 
 	var results []struct {
 		Resources
@@ -82,12 +87,18 @@ func ListResources(db *gorm.DB, orgID string, isAdminOrInternal bool, opts Resou
 	WHERE
 		r.org_id = @org_id AND
 		r.name LIKE @name AND
-		r.subtype LIKE @subtype
+		r.subtype LIKE @subtype AND
+		(
+			r.name LIKE @search OR
+			COALESCE(r.subtype, '') LIKE @search OR
+			r.type::text LIKE @search
+		)
 	ORDER BY created_at DESC
 	LIMIT @page_size OFFSET @offset
 	`, map[string]interface{}{
 		"org_id":               orgID,
 		"is_admin_or_internal": isAdminOrInternal,
+		"search":               searchQuery,
 		"name":                 nameQuery,
 		"subtype":              opts.SubType,
 		"page_size":            opts.PageSize,

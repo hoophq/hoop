@@ -339,7 +339,7 @@ func Delete(c *gin.Context) {
 //	@Param			agent_id		query		string	false	"Filter by agent id"																	Format(uuid)
 //	@Param			tags			query		string	false	"DEPRECATED: Filter by tags, separated by comma"										Format(string)
 //	@Param			tag_selector	query		string	false	"Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)"	Format(string)
-//	@Param			search			query		string	false	"Search by name, type, or subtype"						Format(string)
+//	@Param			search			query		string	false	"Search by name, type, subtype, resource name or status"						Format(string)
 //	@Param			type			query		string	false	"Filter by type"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)

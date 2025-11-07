@@ -687,9 +687,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 			ELSE true
 		END AND
 		(
-			c.name ILIKE ?
-			OR c.type::text ILIKE ?
-			OR COALESCE(c.subtype, '') ILIKE ?
+			c.name ILIKE ? OR
+			COALESCE(c.subtype, '') ILIKE ? OR
+			c.type::text ILIKE ? OR
+			c.resource_name ILIKE ? OR
+			c.status::text ILIKE ?
 		) AND
 		(
 			-- return all results if no tag selectors provided
@@ -725,7 +727,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
-		searchPattern, searchPattern, searchPattern,
+		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {
 		return nil, err
@@ -892,9 +894,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			ELSE true
 		END AND
 		(
-			c.name ILIKE ?
-			OR c.type::text ILIKE ?
-			OR COALESCE(c.subtype, '') ILIKE ?
+			c.name ILIKE ? OR
+			COALESCE(c.subtype, '') ILIKE ? OR
+			c.type::text ILIKE ? OR
+			c.resource_name ILIKE ? OR
+			c.status::text ILIKE ?
 		) AND
 		(
 			-- return all results if no tag selectors provided
@@ -931,7 +935,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
-		searchPattern, searchPattern, searchPattern,
+		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
 	if err != nil {
