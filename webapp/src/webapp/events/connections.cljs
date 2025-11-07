@@ -128,17 +128,19 @@
 (rf/reg-event-fx
  :connections/get-connections-paginated
  (fn
-   [{:keys [db]} [_ {:keys [page-size page filters name force-refresh?]
+   [{:keys [db]} [_ {:keys [page-size page filters name search force-refresh?]
                      :or {page-size 50 page 1 force-refresh? false}}]]
    (let [request {:page-size page-size
                   :page page
                   :filters filters
                   :name name
+                  :search search
                   :force-refresh? force-refresh?}
          query-params (cond-> {}
                         page-size (assoc :page_size page-size)
                         page (assoc :page page)
                         name (assoc :name name)
+                        search (assoc :search search)
                         (:tag_selector filters) (assoc :tag_selector (:tag_selector filters))
                         (:type filters) (assoc :type (:type filters))
                         (:subtype filters) (assoc :subtype (:subtype filters)))]
@@ -148,6 +150,7 @@
                           :page-size page-size
                           :current-page page
                           :active-filters filters
+                          :active-search search
                           :active-name name}))
       :fx [[:dispatch
             [:fetch {:method "GET"
