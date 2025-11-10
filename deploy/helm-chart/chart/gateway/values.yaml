@@ -142,7 +142,7 @@ rdpService:
   # Required for accessing through native ssh clients
   enabled: false
   type: LoadBalancer
-  port: 3389
+  port: 13389
   annotations: {}
 
 # -- Define persistence to sessions

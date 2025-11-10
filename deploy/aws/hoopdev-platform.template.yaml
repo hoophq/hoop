@@ -886,8 +886,8 @@ Resources:
       GroupDescription: Allow RDP inbound traffic
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 3389
-          ToPort: 3389
+          FromPort: 13389
+          ToPort: 13389
           SourceSecurityGroupId: !Ref LaunchTemplateSecurityGroup
       SecurityGroupEgress:
         - CidrIp: 0.0.0.0/0

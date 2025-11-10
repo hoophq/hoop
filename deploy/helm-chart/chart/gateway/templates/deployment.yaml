@@ -51,7 +51,7 @@ spec:
           name: grpc
         - containerPort: 8009
           name: api
-        - containerPort: 3389
+        - containerPort: 13389
           name: api
         - containerPort: 12222
           name: api
