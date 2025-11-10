@@ -26,9 +26,11 @@ func migrateOrganizationRunbooks(db *gorm.DB, orgID string) error {
 	}
 
 	if len(obj.EnvVars) == 0 {
-		log.Infof("No runbook configuration found for org %s, skipping", orgID)
-		return nil
+		log.Infof("No runbook configuration found for org %s, only removing plugin", orgID)
+		return models.DeletePlugin(db, obj)
 	}
+
+	log.Infof("Migrating runbooks for org %s", orgID)
 
 	// Parse old Runbook Config
 	gitUrlEnc := obj.EnvVars["GIT_URL"]
@@ -171,7 +173,6 @@ func RunRunbooksV2() error {
 	log.Infof("Found %d organizations to migrate", len(orgs))
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		for _, org := range orgs {
-			log.Infof("Migrating runbooks for org %s", org.ID)
 			if err := migrateOrganizationRunbooks(tx, org.ID); err != nil {
 				return fmt.Errorf("failed to migrate runbooks for org %s, err=%v", org.ID, err)
 			}
