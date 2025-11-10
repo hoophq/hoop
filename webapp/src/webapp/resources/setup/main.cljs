@@ -64,5 +64,8 @@
                   (when (= current-step :agent-selector)
                     (when agent-id
                       (rf/dispatch [:resource-setup->next-step :roles]))))
-       :on-cancel #(rf/dispatch [:navigate :resource-catalog])}}]))
+       :on-cancel (fn []
+                    (if (= current-step :resource-name)
+                      (.back js/history)
+                      (rf/dispatch [:resource-setup->back])))}}]))
 
