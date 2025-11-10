@@ -7,8 +7,7 @@
    [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
-   [webapp.routes :as routes]
-   [webapp.upgrade-plan.main :as upgrade-plan]))
+   [webapp.routes :as routes]))
 
 (defn toggle-section
   [{:keys [title

@@ -46,9 +46,8 @@
        "Test Connection"])]])
 
 (defn loading-view []
-  [:div.flex.items-center.justify-center.rounded-lg.border.bg-white.h-full
-   [:div.flex.items-center.justify-center.h-full
-    [loaders/simple-loader]]])
+  [:> Flex {:justify "center" :align "center" :class "rounded-lg border bg-white h-full"}
+   [loaders/simple-loader]])
 
 (defn main [connection-name]
   (r/with-let
@@ -57,15 +56,13 @@
      jira-templates-list (rf/subscribe [:jira-templates->list])
      test-connection-state (rf/subscribe [:connections->test-connection])
 
-     ;; Local state
      active-tab (r/atom "details")
      from-page (r/atom (get-query-param "from_page"))
-     initialized? (r/atom false)
+     initialized? (r/atom false)]
 
-     ;; Initialize data
-     _ (rf/dispatch-sync [:connections->get-connection-details connection-name])
-     _ (rf/dispatch [:guardrails->get-all])
-     _ (rf/dispatch [:jira-templates->get-all])]
+    (rf/dispatch-sync [:connections->get-connection-details connection-name])
+    (rf/dispatch [:guardrails->get-all])
+    (rf/dispatch [:jira-templates->get-all])
 
     (fn []
       (let [conn-data (:data @connection)
@@ -73,20 +70,16 @@
                          (= (:status @guardrails-list) :loading)
                          (= (:status @jira-templates-list) :loading))
 
-            ;; Submit handler
             handle-save (fn []
                           (let [{:keys [type subtype]} conn-data
                                 form-id (get-form-id type subtype)
                                 form (.getElementById js/document form-id)]
 
-                            ;; Se form não existe, vai para credentials tab
                             (if-not form
                               (reset! active-tab "credentials")
 
-                              ;; Valida e submete
                               (if (.checkValidity form)
                                 (do
-                                  ;; SSH: limpar campos não usados
                                   (when (and (= type "application") (= subtype "ssh"))
                                     (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
                                       (case auth-method
@@ -94,7 +87,6 @@
                                         "key" (rf/dispatch [:connection-setup/update-ssh-credentials "pass" ""])
                                         nil)))
 
-                                  ;; Processar tags pendentes
                                   (when-let [tag-key @(rf/subscribe [:connection-setup/current-key])]
                                     (when (.-value tag-key)
                                       (let [tag-value @(rf/subscribe [:connection-setup/current-value])]
@@ -102,13 +94,11 @@
                                                       (.-value tag-key)
                                                       (if tag-value (.-value tag-value) "")]))))
 
-                                  ;; Submit
                                   (rf/dispatch [:resources->update-role-connection
                                                 {:name connection-name
                                                  :resource-name (:resource_name conn-data)
                                                  :from-page @from-page}]))
 
-                                ;; Form inválido
                                 (do
                                   (reset! active-tab "credentials")
                                   (js/setTimeout #(.reportValidity form) 200))))))]
@@ -141,7 +131,6 @@
                   [:> Tabs.Trigger {:value "terminal"} "Terminal Access"]
                   [:> Tabs.Trigger {:value "native"} "Native Access"]]
 
-                 ;; forceMount + hidden mantido para garantir que forms sejam renderizados
                  [:> Tabs.Content {:value "details" :force-mount true}
                   [:> Box {:class (when (not= @active-tab "details") "hidden")}
                    [details-tab/main conn-data]]]

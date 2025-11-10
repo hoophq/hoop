@@ -65,14 +65,12 @@
 
         [:> Box {:class "max-w-[600px] space-y-8"}
 
-         ;; Terminal access availability
          [toggle-section
           {:title "Terminal access availability"
            :description "Use hoop.dev's Web Terminal or our CLI's One-Offs commands directly in your terminal."
            :checked web-terminal-enabled?
            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]
 
-         ;; Review by Command
          [toggle-section
           {:title "Review by Command"
            :description "Require approval prior to resource role execution."
@@ -115,7 +113,6 @@
              [:> Callout.Text
               "Learn more about Reviews"]]]}]
 
-         ;; AI Data Masking
          [toggle-section
           {:title "AI Data Masking"
            :description "Provide an additional layer of security by ensuring sensitive data is masked in query results with AI-powered data masking."
@@ -172,7 +169,6 @@
                                     [:> Callout.Text
                                      "Go to AI Data Masking Management"]]])]}]
 
-         ;; Runbooks
          [toggle-section
           {:title "Runbooks"
            :description "Automate tasks in your organization from a git server source."
@@ -183,7 +179,6 @@
             [:> ArrowUpRight {:size 16}]
             "Learn more about Runbooks"]}]
 
-         ;; Guardrails
          [:> Box
           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-gray-12"}
            "Guardrails"]
@@ -207,7 +202,6 @@
             [:> Callout.Text
              "Go to Guardrails"]]]]
 
-         ;; Jira Templates
          [:> Box
           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-gray-12"}
            "Jira Templates"]
@@ -232,13 +226,11 @@
             [:> Callout.Text
              "Go to JIRA Integration"]]]]
 
-         ;; Additional configuration
          (when is-database?
            [:<>
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mt-8 mb-4"}
              "Additional configuration"]
 
-            ;; Database schema (only for databases)
             [toggle-section
              {:title "Database schema"
               :description "Show database schema in the Editor section."
