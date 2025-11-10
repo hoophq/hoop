@@ -2,6 +2,8 @@ name: Hoop Release
 
 on:
   push:
+    branches:
+      - build-darwin
 #    tags:
 #      - "*.*.*"
 
@@ -367,6 +369,9 @@ jobs:
           pattern: dist-artifacts-*
           merge-archive: true
           path: dist/
+
+      - name: Merge Artifacts into dist/
+        run: make merge-artifacts
           
       - name: Build Tar Files for All Architectures
         run: |
@@ -622,8 +627,9 @@ jobs:
     name: Publish Release
     environment: production
     needs:
-      - docker-publish-hoopgateway-multiarch
-      - docker-publish-hoopagent-multiarch
+      - build-tar-files
+      #- docker-publish-hoopgateway-multiarch
+      #- docker-publish-hoopagent-multiarch
 
     steps:
       - name: Checkout Hoop
