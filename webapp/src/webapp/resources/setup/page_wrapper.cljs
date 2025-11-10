@@ -51,9 +51,9 @@
 
 (defn stepper-connector [{:keys [show-next?]}]
   (if show-next?
-    [:> Box {:pl "6"}
+    [:> Flex {:direction "column" :pl "6"}
      [:> Box {:class "w-[2px] h-6 bg-gray-6"}]
-     [:> Badge {:size "1" :variant "soft" :color "gray" :radius "full" :class "-ml-[18px]"}
+     [:> Badge {:size "1" :variant "soft" :color "gray" :radius "full" :class "-ml-[18px] w-fit"}
       "Next"]
      [:> Box {:class "w-[2px] h-6 bg-gray-6"}]]
 
