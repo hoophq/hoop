@@ -1926,9 +1926,9 @@ type ResourceRequest struct {
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource
-	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The roles associated with this resource
-	Roles []ResourceRoleRequest `json:"roles" binding:"required,dive"`
+	Roles []ResourceRoleRequest `json:"roles" binding:"dive"`
 }
 
 type ResourceResponse struct {

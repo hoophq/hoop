@@ -156,7 +156,7 @@ func Put(c *gin.Context) {
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
-		ResourceName:        conn.ResourceName,
+		ResourceName:        req.ResourceName,
 		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
 		Name:                conn.Name,
 		Command:             req.Command,

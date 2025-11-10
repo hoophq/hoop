@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tableResources = "private.resources"
@@ -137,25 +138,25 @@ func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInte
 }
 
 func UpsertResource(db *gorm.DB, resource *Resources, updateDependentTables bool) error {
-	// try to find existing resource
-	existing, err := GetResourceByName(db, resource.OrgID, resource.Name, true)
-	switch err {
-	case nil:
-		resource.ID = existing.ID
-		resource.UpdatedAt = time.Now().UTC()
-	case gorm.ErrRecordNotFound:
-		if resource.ID == "" {
-			resource.ID = uuid.NewString()
+	var conflict clause.Expression
+	if resource.ID == "" {
+		resource.ID = uuid.New().String()
+		conflict = clause.OnConflict{
+			Columns:   []clause.Column{{Name: "org_id"}, {Name: "name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"type", "subtype", "agent_id", "updated_at"}),
 		}
-	default:
-		return err
+	} else {
+		conflict = clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name", "type", "subtype", "agent_id", "updated_at"}),
+		}
 	}
 
-	if existing != nil {
-		err = db.Table(tableResources).Updates(&resource).Error
-	} else {
-		err = db.Table(tableResources).Create(&resource).Error
-	}
+	err := db.Table(tableResources).Clauses(
+		conflict,
+		clause.Returning{},
+	).Create(resource).Error
+
 	if err != nil {
 		return err
 	}
