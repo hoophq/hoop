@@ -7,7 +7,7 @@
    [reagent.core :as r]
    [webapp.components.data-table-simple :refer [data-table-simple]]
    [webapp.components.forms :as forms]
-   [webapp.resources.views.setup.main :as setup]))
+   [webapp.resources.setup.main :as setup]))
 
 (defn main []
   [:<>

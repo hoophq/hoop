@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.configuration-inputs
+(ns webapp.resources.setup.configuration-inputs
   (:require
    ["@radix-ui/themes" :refer [Box Button Grid Heading Text]]
    ["lucide-react" :refer [Plus]]

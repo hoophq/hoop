@@ -1,4 +1,4 @@
-(ns webapp.resources.views.main
+(ns webapp.resources.main
   (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
                                         Flex Text Popover TextField]]

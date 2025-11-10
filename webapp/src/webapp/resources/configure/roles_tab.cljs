@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure.roles-tab
+(ns webapp.resources.configure.roles-tab
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Text]]
    [clojure.string :as cs]

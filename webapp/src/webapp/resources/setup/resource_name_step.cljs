@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.resource-name-step
+(ns webapp.resources.setup.resource-name-step
   (:require
    ["@radix-ui/themes" :refer [Box Heading Text Badge Flex Grid]]
    [re-frame.core :as rf]

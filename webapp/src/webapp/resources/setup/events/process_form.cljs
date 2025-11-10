@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.events.process-form
+(ns webapp.resources.setup.events.process-form
   (:require
    [webapp.resources.helpers :as helpers]))
 

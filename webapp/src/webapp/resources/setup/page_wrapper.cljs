@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.page-wrapper
+(ns webapp.resources.setup.page-wrapper
   (:require
    ["@radix-ui/themes" :refer [Avatar Button Box Badge Flex Text]]
    ["lucide-react" :refer [PackagePlus Check BrainCog UserRoundCheck]]

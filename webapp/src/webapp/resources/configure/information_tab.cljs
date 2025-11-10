@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure.information-tab
+(ns webapp.resources.configure.information-tab
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex Grid Heading Text]]
    [clojure.string :as cs]

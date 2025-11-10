@@ -1,8 +1,8 @@
-(ns webapp.resources.views.setup.events.effects
+(ns webapp.resources.setup.events.effects
   (:require
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.resources.views.setup.events.process-form :as process-form]
+   [webapp.resources.setup.events.process-form :as process-form]
    [webapp.resources.helpers :as helpers]))
 
 (rf/reg-event-db
@@ -25,11 +25,6 @@
                                           :agent-id nil
                                           :roles []})
     :fx []}))
-
-(rf/reg-event-db
- :resource-setup->set-step
- (fn [db [_ step]]
-   (assoc-in db [:resource-setup :current-step] step)))
 
 (rf/reg-event-db
  :resource-setup->set-resource-name

@@ -1,12 +1,12 @@
-(ns webapp.resources.views.add-role.main
+(ns webapp.resources.add-role.main
   (:require
    ["@radix-ui/themes" :refer [Box]]
    [re-frame.core :as rf]
    [webapp.components.loaders :as loaders]
-   [webapp.resources.views.setup.page-wrapper :as page-wrapper]
-   [webapp.resources.views.setup.roles-step :as roles-step]
-   [webapp.resources.views.setup.success-step :as success-step]
-   [webapp.resources.views.add-role.events]))
+   [webapp.resources.setup.page-wrapper :as page-wrapper]
+   [webapp.resources.setup.roles-step :as roles-step]
+   [webapp.resources.setup.success-step :as success-step]
+   [webapp.resources.add-role.events]))
 
 (defn loading-view []
   [:div {:class "flex items-center justify-center bg-gray-1 h-full"}

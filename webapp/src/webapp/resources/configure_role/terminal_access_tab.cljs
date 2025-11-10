@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure-role.terminal-access-tab
+(ns webapp.resources.configure-role.terminal-access-tab
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link Switch
                                Text]]

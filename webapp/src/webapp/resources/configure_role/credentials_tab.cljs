@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure-role.credentials-tab
+(ns webapp.resources.configure-role.credentials-tab
   (:require
    ["@radix-ui/themes" :refer [Box]]
    [webapp.connections.views.setup.database :as database]

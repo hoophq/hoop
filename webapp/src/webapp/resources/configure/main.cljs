@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure.main
+(ns webapp.resources.configure.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
    ["lucide-react" :refer [Plus]]
@@ -6,8 +6,8 @@
    [re-frame.core :as rf]
    [webapp.components.loaders :as loaders]
    [webapp.connections.constants :as constants]
-   [webapp.resources.views.configure.information-tab :as information-tab]
-   [webapp.resources.views.configure.roles-tab :as roles-tab]))
+   [webapp.resources.configure.information-tab :as information-tab]
+   [webapp.resources.configure.roles-tab :as roles-tab]))
 
 (defn header [resource]
   [:> Box {:class "pb-[--space-5]"}

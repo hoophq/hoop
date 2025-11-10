@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.roles-step
+(ns webapp.resources.setup.roles-step
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Link Separator
                                Text]]
@@ -7,7 +7,7 @@
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.resources.constants :as constants]
-   [webapp.resources.views.setup.configuration-inputs :as configuration-inputs]))
+   [webapp.resources.setup.configuration-inputs :as configuration-inputs]))
 
 ;; SSH role form - Based on server.cljs
 (defn ssh-role-form [role-index]

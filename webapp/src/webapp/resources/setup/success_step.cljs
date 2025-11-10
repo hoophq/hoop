@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.success-step
+(ns webapp.resources.setup.success-step
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Card Avatar Flex Heading Text]]
    ["lucide-react" :refer [ChevronRight Monitor ShieldCheck Wrench]]

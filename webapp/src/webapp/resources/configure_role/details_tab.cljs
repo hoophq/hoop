@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure-role.details-tab
+(ns webapp.resources.configure-role.details-tab
   (:require
    ["@radix-ui/themes" :refer [Box Heading Text]]
    [webapp.components.forms :as forms]

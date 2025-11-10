@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.agent-step
+(ns webapp.resources.setup.agent-step
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Button Card Dialog Flex Grid Heading Text Link]]
    ["lucide-react" :refer [Plus AlertCircle ArrowUpRight]]

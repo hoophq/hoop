@@ -1,7 +1,7 @@
-(ns webapp.resources.views.add-role.events
+(ns webapp.resources.add-role.events
   (:require
    [re-frame.core :as rf]
-   [webapp.resources.views.setup.events.process-form :as process-form]))
+   [webapp.resources.setup.events.process-form :as process-form]))
 
 ;; Initialize state for adding roles to existing resource
 (rf/reg-event-fx
@@ -33,7 +33,6 @@
    (let [resource-name (get-in db [:resource-setup :name])
          agent-id (get-in db [:resource-setup :agent-id])
          roles (get-in db [:resource-setup :roles] [])
-         connections-metadata (get-in db [:connections :metadata :data :connections])
          total-roles (count roles)]
 
      (if (empty? roles)

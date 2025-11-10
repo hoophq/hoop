@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure-role.native-access-tab
+(ns webapp.resources.configure-role.native-access-tab
   (:require
    ["@radix-ui/themes" :refer [Box Callout Flex Heading Link Switch Text]]
    ["lucide-react" :refer [ArrowUpRight Star]]

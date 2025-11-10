@@ -1,4 +1,4 @@
-(ns webapp.resources.views.setup.events.subs
+(ns webapp.resources.setup.events.subs
   (:require
    [re-frame.core :as rf]))
 

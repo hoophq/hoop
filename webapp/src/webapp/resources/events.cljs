@@ -79,25 +79,6 @@
     :fx (cond-> []
           on-success (conj [:dispatch (conj on-success (:id resource))]))}))
 
-(rf/reg-event-db
- :resources->clear-resource-details
- (fn [db [_]]
-   (assoc db :resources->resource-details {:loading true :data nil})))
-
-;; Delete resource
-(rf/reg-event-fx
- :resources->delete-resource
- (fn
-   [_ [_ resource-id]]
-   {:fx [[:dispatch
-          [:fetch {:method "DELETE"
-                   :uri (str "/resources/" resource-id)
-                   :on-success (fn []
-                                 (rf/dispatch [:show-snackbar {:level :success
-                                                               :text "Resource deleted!"}])
-                                 (rf/dispatch [:resources/get-resources-paginated {:force-refresh? true}])
-                                 (rf/dispatch [:navigate :resources]))}]]]}))
-
 ;; Update role connection (with redirect to resource configure)
 (rf/reg-event-fx
  :resources->update-role-connection

@@ -1,4 +1,4 @@
-(ns webapp.resources.views.configure-role.main
+(ns webapp.resources.configure-role.main
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
    [re-frame.core :as rf]
@@ -9,10 +9,10 @@
    [webapp.connections.views.setup.events.process-form :as helpers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.test-connection-modal :as test-connection-modal]
-   [webapp.resources.views.configure-role.credentials-tab :as credentials-tab]
-   [webapp.resources.views.configure-role.details-tab :as details-tab]
-   [webapp.resources.views.configure-role.native-access-tab :as native-access-tab]
-   [webapp.resources.views.configure-role.terminal-access-tab :as terminal-access-tab]))
+   [webapp.resources.configure-role.credentials-tab :as credentials-tab]
+   [webapp.resources.configure-role.details-tab :as details-tab]
+   [webapp.resources.configure-role.native-access-tab :as native-access-tab]
+   [webapp.resources.configure-role.terminal-access-tab :as terminal-access-tab]))
 
 (defn get-form-id
   "Returns the form ID based on connection type"
