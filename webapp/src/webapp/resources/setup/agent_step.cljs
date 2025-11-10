@@ -76,10 +76,6 @@
                      (when (and (= (:status new-val) :ready)
                                 (not= (:status old-val) :ready)
                                 (not @agent-id-set?))
-                       (js/console.log "🎯 Agent created! Token received")
-                       (js/console.log "📦 Agent data:" (clj->js (:data new-val)))
-                       ;; Now fetch agents list to get the ID
-                       (js/console.log "🔍 Fetching agents list to find agent ID...")
                        (rf/dispatch [:resource-setup->fetch-agent-id-by-name @agent-name])
                        (reset! agent-id-set? true)))))
 
