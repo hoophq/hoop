@@ -364,7 +364,7 @@
          [:> Text {:size "2" :color "red"}
           (str "There was one or more access errors for certain AWS resources. "
                "Please deselect these resources or verify the error details. All selected resources must be properly "
-               "connected before proceeding to create connections.")]]])]))
+               "connected before proceeding to create resource roles.")]]])]))
 
 (defn create-connection-config []
   (let [create-connection @(rf/subscribe [:aws-connect/create-connection])

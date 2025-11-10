@@ -112,7 +112,7 @@
                                      ;; Add-role: go back to resource configure roles tab
                                      (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-id])
                                      ;; Setup: go to connections list
-                                     (rf/dispatch [:navigate :connections])))}]])]
+                                     (rf/dispatch [:navigate :resources])))}]])]
 
      ;; Footer action
      [:> Flex {:justify "center" :class "mt-8"}
@@ -129,5 +129,5 @@
                                   ;; Add-role: go back to resource configure roles tab
                                   (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-id])
                                   ;; Setup: go to connections list
-                                  (rf/dispatch [:navigate :connections])))}
+                                  (rf/dispatch [:navigate :resources])))}
          "Skip and configure later"])]]))
