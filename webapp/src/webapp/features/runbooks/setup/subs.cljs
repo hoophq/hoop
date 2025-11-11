@@ -23,3 +23,14 @@
                  (assoc acc (:id conn) paths)))
              {}
              (or connections [])))))
+
+;; Runbooks Rules Subscriptions
+(rf/reg-sub
+ :runbooks-rules/list
+ (fn [db]
+   (get-in db [:runbooks-rules :list])))
+
+(rf/reg-sub
+ :runbooks-rules/active-rule
+ (fn [db]
+   (get-in db [:runbooks-rules :active-rule])))

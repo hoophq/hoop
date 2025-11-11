@@ -16,13 +16,13 @@
     [:> Flex {:direction "column" :align "center" :gap "3" :class "mb-8 text-center"}
      [:> Text {:size "3" :class "text-gray-11 max-w-md text-center"}
       (if installed?
-        "No connections available to configure with Runbooks yet"
+        "No Runbooks Rules configured in your Organization yet"
         "Activate to enable an additional automation layer. When activated, you can define which runbook paths are accessible for each connection.")]]
 
     (if installed?
       [:> Button {:size "3"
-                  :onClick #(rf/dispatch [:navigate :connections])}
-       "Create Connection"]
+                  :onClick #(rf/dispatch [:navigate :create-runbooks-rule])}
+       "Create new Runbooks Rule"]
 
       [:> Button
        {:size "3"
