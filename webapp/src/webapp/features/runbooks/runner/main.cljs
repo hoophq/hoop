@@ -168,8 +168,7 @@
            [:> Box {:class "h-full flex-1"}
             [connections-dialog/connections-dialog]
             [runbook-form/main {:runbook @selected-template
-                                :preselected-connection (:name @runbooks-connection)
-                                :selected-connections @(rf/subscribe [:execution/target-connections])}]]
+                                :selected-connection @runbooks-connection}]]
            [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
             [log-area/main
              (discover-connection-type @runbooks-connection)
