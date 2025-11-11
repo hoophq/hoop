@@ -1,6 +1,5 @@
 (ns webapp.features.runbooks.runner.events
   (:require
-   [clojure.edn :refer [read-string]]
    [re-frame.core :as rf]))
 
 (rf/reg-event-db
@@ -46,33 +45,35 @@
    (let [selected (get-in db [:runbooks :selected-connection])]
      (.setItem js/localStorage
                "runbooks-selected-connection"
-               (when selected (pr-str selected)))
+               (:name selected))
      {})))
 
 (rf/reg-event-fx
  :runbooks/load-persisted-connection
- (fn [{:keys [db]} _]
-   (let [saved (.getItem js/localStorage "runbooks-selected-connection")
-         parsed (when (and saved (not= saved "null"))
-                  (read-string saved))
-         connection-name (:name parsed)
-         connections (get-in db [:runbooks :connections :list])
-         updated-connection (when (and connection-name connections)
-                              (first (filter #(= (:name %) connection-name) connections)))]
-     (cond
-       updated-connection
-       {:db (assoc-in db [:runbooks :selected-connection] updated-connection)
+ (fn [_ _]
+   (let [saved (.getItem js/localStorage "runbooks-selected-connection")]
+     ;; If old format (starts with "{"), clear it and start fresh
+     (if (and saved (.startsWith saved "{"))
+       (do
+         (.removeItem js/localStorage "runbooks-selected-connection")
+         {})
+       ;; New format - fetch the connection
+       (if (and saved (not= saved "null") (not= saved ""))
+         {:fx [[:dispatch [:connections->get-connection-details
+                           saved
+                           [:runbooks/connection-loaded]]]]}
+         {})))))
+
+(rf/reg-event-fx
+ :runbooks/connection-loaded
+ (fn [{:keys [db]} [_ connection-name]]
+   (let [connection (get-in db [:connections :details connection-name])]
+     (if connection
+       {:db (assoc-in db [:runbooks :selected-connection] connection)
         :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
-       
-       (and parsed (empty? connections))
-       {:db (assoc-in db [:runbooks :selected-connection] parsed)
-        :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
-       
-       (and parsed (seq connections) (not updated-connection))
+       ;; Connection not found - clear selection
        {:db (assoc-in db [:runbooks :selected-connection] nil)
-        :fx [[:dispatch [:runbooks/persist-selected-connection]]]}
-       
-       :else {}))))
+        :fx [[:dispatch [:runbooks/persist-selected-connection]]]}))))
 
 (rf/reg-event-fx
  :runbooks/update-runbooks-for-connection

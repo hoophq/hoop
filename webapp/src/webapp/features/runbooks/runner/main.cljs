@@ -27,13 +27,9 @@
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
       (letfn [(run-disabled? []
                 (let [template @selected-template
-                      connection @runbooks-connection
-                      runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))
-                      exec-enabled? (= "enabled" (:access_mode_exec connection))]
+                      connection @runbooks-connection]
                   (or (nil? connection)
-                      (empty? (:data template))
-                      (not runbooks-enabled?)
-                      (not exec-enabled?))))]
+                      (empty? (:data template)))))]
         (r/with-let [submit-ref (r/atom submit)
                      handle-keydown (let [f (fn [e]
                                               (when (and (= "Enter" (.-key e))
@@ -172,8 +168,7 @@
            [:> Box {:class "h-full flex-1"}
             [connections-dialog/connections-dialog]
             [runbook-form/main {:runbook @selected-template
-                                :preselected-connection (:name @runbooks-connection)
-                                :selected-connections @(rf/subscribe [:execution/target-connections])}]]
+                                :selected-connection @runbooks-connection}]]
            [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
             [log-area/main
              (discover-connection-type @runbooks-connection)
