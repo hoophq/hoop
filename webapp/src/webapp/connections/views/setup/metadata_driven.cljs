@@ -57,9 +57,7 @@
 
 (defn metadata-credentials [connection-subtype form-type]
   (let [configs (get-metadata-credentials-config connection-subtype)
-        ;; No edit, pegar valores já salvos do backend (decodificados)
         saved-credentials @(rf/subscribe [:connection-setup/metadata-credentials])
-        ;; Merge: usar valor do backend se existir, senão vazio
         credentials (if (= form-type :update)
                       saved-credentials
                       @(rf/subscribe [:connection-setup/metadata-credentials]))]
@@ -72,11 +70,9 @@
        [:> Grid {:columns "1" :gap "4"}
         (for [field configs]
           ^{:key (:key field)}
-          ;; O merge acontece aqui: pega do backend ou usa vazio
           [render-field (assoc field
                                :value (get credentials (:key field) ""))])]]
 
-      ;; Debug fallback
       nil)))
 
 (defn credentials-step [connection-subtype form-type]

@@ -280,7 +280,6 @@
         connection-subtype (:subtype connection)
         credentials (process-connection-secret (:secret connection) "envvar")
 
-        ;; Detectar se é metadata-driven connection
         is-metadata-driven? (and (= connection-type "custom")
                                  (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"}
                                                  connection-subtype)))

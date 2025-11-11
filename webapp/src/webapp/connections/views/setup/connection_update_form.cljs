@@ -59,7 +59,6 @@
      ssh-auth-method (rf/subscribe [:connection-setup/ssh-auth-method])
      initialized? (r/atom false)
      check-form-validity! (fn []
-                            ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
                             (when-let [connection-data (:data @connection)]
                               (let [connection-type (:type connection-data)
                                     connection-subtype (:subtype connection-data)
@@ -77,7 +76,6 @@
 
     (let [handle-submit (fn [e]
                           (.preventDefault e)
-                          ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
                           (let [connection-type (:type (:data @connection))
                                 connection-subtype (:subtype (:data @connection))
                                 form-id (cond
@@ -100,22 +98,19 @@
                               (reset! credentials-valid? (.checkValidity form)))
 
                             (when @credentials-valid?
-                              ;; Para conexões SSH, limpar campos não utilizados baseado no método de autenticação
                               (when (and (= connection-type "application")
                                          (= connection-subtype "ssh"))
                                 (let [auth-method @ssh-auth-method]
                                   (case auth-method
                                     "password"
-                                    ;; Limpar campo de chave privada quando usando username & password
                                     (rf/dispatch [:connection-setup/update-ssh-credentials
                                                   "authorized_server_keys" ""])
 
                                     "key"
-                                    ;; Limpar campo de senha quando usando private key authentication
                                     (rf/dispatch [:connection-setup/update-ssh-credentials
                                                   "pass" ""])
 
-                                    nil))) ; não fazer nada se método não definido
+                                    nil)))
 
                               ;; Process current input values before submitting
                               (when (and (not (empty? current-env-key))
@@ -207,12 +202,9 @@
                                    (:subtype (:data @connection))
                                    :update]
                        "custom" (let [subtype (:subtype (:data @connection))]
-                                  ;; Verificar se é metadata-driven
                                   (if (and subtype
                                            (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"} subtype)))
-                                    ;; Metadata-driven: usar componente específico
                                     [metadata-driven/credentials-step subtype :update]
-                                    ;; Hardcoded: usar componente antigo
                                     [server/credentials-step :update]))
                        "application" (if (= (:subtype (:data @connection)) "ssh")
                                        [server/ssh-credentials]
