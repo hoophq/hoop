@@ -51,7 +51,10 @@
              "Name"]
             [:> TextField.Root
              {:value @new-name
-              :onChange #(reset! new-name (-> % .-target .-value))
+              :onChange #(let [value (-> % .-target .-value)
+                               ;; Replace spaces with hyphens automatically
+                               sanitized-value (cs/replace value #"\s+" "-")]
+                           (reset! new-name sanitized-value))
               :disabled @updating?
               :placeholder "Enter resource name"}]]]
           [:> Button {:size "2"

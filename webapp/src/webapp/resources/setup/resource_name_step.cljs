@@ -1,6 +1,7 @@
 (ns webapp.resources.setup.resource-name-step
   (:require
    ["@radix-ui/themes" :refer [Box Heading Text Badge Flex Grid]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.connections.constants :as conn-constants]))
@@ -68,9 +69,13 @@
          "Used to identify this Resource in your environment."]]
 
        [:> Box {:grid-column "span 4 / span 4"}
-        [forms/input {:label "Resource name"
-                      :placeholder "e.g. my-postgres-db"
-                      :value resource-name
-                      :required true
-                      :on-change #(rf/dispatch [:resource-setup->set-resource-name (-> % .-target .-value)])}]]]]]))
+        [:> Box {:class "space-y-1"}
+         [forms/input {:label "Resource name"
+                       :placeholder "e.g. my-postgres-db"
+                       :value resource-name
+                       :required true
+                       :on-change #(let [value (-> % .-target .-value)
+                                         ;; Replace spaces with hyphens automatically
+                                         sanitized-value (cs/replace value #"\s+" "-")]
+                                     (rf/dispatch [:resource-setup->set-resource-name sanitized-value]))}]]]]]]))
 
