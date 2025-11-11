@@ -214,6 +214,8 @@
                  (if (str/starts-with? (name k) secret-start-name)
                    (let [clean-key (-> (name k)
                                        (str/replace secret-start-name "")
+                                       ;; Normalizar igual ao metadata: remover não-alfanuméricos e lowercase
+                                       (str/replace #"[^a-zA-Z0-9]" "")
                                        str/lower-case)]
                      (assoc acc clean-key (decode-base64 v)))
                    acc))
@@ -274,15 +276,22 @@
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
-  (let [credentials (process-connection-secret (:secret connection) "envvar")
-        network-credentials (when (and (= (:type connection) "application")
-                                       (= (:subtype connection) "tcp"))
+  (let [connection-type (:type connection)
+        connection-subtype (:subtype connection)
+        credentials (process-connection-secret (:secret connection) "envvar")
+
+        is-metadata-driven? (and (= connection-type "custom")
+                                 (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"}
+                                                 connection-subtype)))
+
+        network-credentials (when (and (= connection-type "application")
+                                       (= connection-subtype "tcp"))
                               (extract-network-credentials credentials))
-        http-credentials (when (and (= (:type connection) "application")
-                                    (= (:subtype connection) "httpproxy"))
+        http-credentials (when (and (= connection-type "application")
+                                    (= connection-subtype "httpproxy"))
                            (extract-http-credentials credentials))
-        ssh-credentials (when (and (= (:type connection) "application")
-                                   (= (:subtype connection) "ssh"))
+        ssh-credentials (when (and (= connection-type "application")
+                                   (= connection-subtype "ssh"))
                           (extract-ssh-credentials credentials))
         ssh-auth-method (when ssh-credentials
                           (cond
@@ -342,6 +351,7 @@
      :agent-id (:agent_id connection)
      :resource-subtype-override resource-subtype-override
      :database-credentials (when (= connection-type "database") credentials)
+     :metadata-credentials (when is-metadata-driven? credentials)
      :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
      :ssh-auth-method (or ssh-auth-method "password")
