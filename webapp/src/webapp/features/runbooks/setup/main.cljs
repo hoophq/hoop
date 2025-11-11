@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.setup.main
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Separator Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Separator Tabs Text]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -53,7 +53,11 @@
               [h/h2 "Runbooks" {:class "text-[--gray-12]"}]
               [:> Text {:as "p" :size "3" :class "text-gray-500"}
                "Manage access paths per resource role and integrate Git repositories to automate runbook execution."]]
-             nil]
+             (when has-rules?
+               [:> Button {:size "3"
+                           :variant "solid"
+                           :on-click #(rf/dispatch [:navigate :create-runbooks-rule])}
+                "Create Runbooks Rule"])]
 
             [:> Box {:class "flex-grow"}
              [:> Tabs.Root {:value @active-tab
