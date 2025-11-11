@@ -146,3 +146,43 @@
                 :page-size page-size
                 :total total}))))
 
+;; Update resource name
+(rf/reg-event-fx
+ :resources->update-resource-name
+ (fn
+   [{:keys [db]} [_ old-resource-name new-resource-name]]
+   (let [resource (get-in db [:resources->resource-details :data])
+         body (clj->js {:name new-resource-name
+                        :type (:type resource)
+                        :subtype (:subtype resource)
+                        :agent_id (:agent_id resource)
+                        :env_vars (or (:env_vars resource) {})})]
+     {:db (assoc-in db [:resources->resource-details :updating?] true)
+      :fx [[:dispatch
+            [:fetch {:method "PUT"
+                     :uri (str "/resources/" old-resource-name)
+                     :body body
+                     :on-success (fn []
+                                   (rf/dispatch [:resources->update-resource-name-success new-resource-name])
+                                   (rf/dispatch [:show-snackbar
+                                                 {:level :success
+                                                  :text "Resource name updated successfully!"}])
+                                   (rf/dispatch [:navigate :configure-resource {} :resource-id new-resource-name]))
+                     :on-failure (fn [_error]
+                                   (rf/dispatch [:resources->update-resource-name-failure])
+                                   (rf/dispatch [:show-snackbar
+                                                 {:level :error
+                                                  :text "Failed to update resource name"}]))}]]]})))
+
+(rf/reg-event-db
+ :resources->update-resource-name-success
+ (fn [db [_ new-name]]
+   (-> db
+       (assoc-in [:resources->resource-details :updating?] false)
+       (assoc-in [:resources->resource-details :data :name] new-name))))
+
+(rf/reg-event-db
+ :resources->update-resource-name-failure
+ (fn [db _]
+   (assoc-in db [:resources->resource-details :updating?] false)))
+

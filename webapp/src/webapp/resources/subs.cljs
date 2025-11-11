@@ -20,3 +20,9 @@
  (fn [db [_ resource-id]]
    (get-in db [:resources->resource-roles resource-id])))
 
+;; Resource updating state
+(rf/reg-sub
+ :resources->updating?
+ (fn [db _]
+   (get-in db [:resources->resource-details :updating?] false)))
+
