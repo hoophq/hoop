@@ -45,29 +45,28 @@
 (rf/reg-event-fx
  :resource-setup->fetch-agent-id-by-name
  (fn [_ [_ agent-name]]
-   (js/console.log "🔎 Fetching agents to find ID for:" agent-name)
    {:fx [[:dispatch [:fetch
                      {:method "GET"
                       :uri "/agents"
                       :on-success (fn [agents]
-                                    (js/console.log "📋 Agents received:" (clj->js agents))
-                                    ;; Find agent by name
                                     (let [created-agent (->> agents
                                                              (filter #(= (:name %) agent-name))
                                                              first)
                                           agent-id (:id created-agent)]
-                                      (js/console.log "🎯 Found agent:" (clj->js created-agent))
-                                      (js/console.log "🆔 Agent ID:" agent-id)
-                                      (if agent-id
-                                        (do
-                                          (js/console.log "✅ Setting agent-id in resource setup:" agent-id)
-                                          (rf/dispatch [:resource-setup->set-agent-id agent-id])
-                                          ;; Also update agents list in state
-                                          (rf/dispatch [:webapp.events.agents/set-agents agents]))
-                                        (js/console.warn "⚠️ Agent not found in list"))))
+                                      (rf/dispatch [:resource-setup->set-agent-id agent-id])
+                                      (rf/dispatch [:webapp.events.agents/set-agents agents])))
                       :on-failure (fn [error]
-                                    (js/console.error "❌ Failed to fetch agents:" error))}]]]}))
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text "Failed to fetch agents"
+                                                                  :details error}]))}]]]}))
 
+
+(rf/reg-event-fx
+ :resource-setup->clear-agent-state
+ (fn [{:keys [db]} _]
+   {:db (-> db
+            (assoc-in [:resource-setup :agent-id] nil)
+            (assoc-in [:resource-setup :agent-creation-mode] nil))}))
 
 ;; Role management
 (rf/reg-event-db

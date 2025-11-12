@@ -153,7 +153,9 @@
          "Create new Agent"])]]))
 
 (defn main []
-  (r/with-let [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])]
+  (r/with-let
+    [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])
+     _ (rf/dispatch-sync [:agents->get-agents])]
 
     [:> Box {:class "p-8 space-y-16"}
      ;; Header
@@ -178,4 +180,7 @@
 
      ;; Show creation form when in create mode
      (when (= @creation-mode :create)
-       [agent-creation-form])]))
+       [agent-creation-form])]
+
+    (finally
+      (rf/dispatch [:resource-setup->clear-agent-state]))))

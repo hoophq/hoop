@@ -39,4 +39,4 @@ src/webapp/version.js
 **/gen/
 
 # connection metadata
-resources/public/data/*
+resources/public/data/*.json
