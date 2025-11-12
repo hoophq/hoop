@@ -31,6 +31,38 @@
  (fn [db [_ name]]
    (assoc-in db [:resource-setup :name] name)))
 
+;; Validate resource name (check if it already exists)
+(rf/reg-event-fx
+ :resource-setup->validate-resource-name
+ (fn [_ [_ resource-name on-success]]
+   {:fx [[:dispatch
+          [:fetch {:method "GET"
+                   :uri (str "/resources/" resource-name)
+                   :on-success (fn [_resource]
+                                 ;; Resource exists - name is taken
+                                 (rf/dispatch [:resource-setup->set-name-validation-result false]))
+                   :on-failure (fn [error]
+                                 ;; Check if it's a 404 (resource not found) - name is available
+                                 (if (= (:status error) 404)
+                                   (do
+                                     (rf/dispatch [:resource-setup->set-name-validation-result true])
+                                     (when on-success
+                                       (rf/dispatch on-success)))
+                                   ;; Other errors - show error message
+                                   (do
+                                     (rf/dispatch [:resource-setup->set-name-validation-result nil])
+                                     (rf/dispatch [:show-snackbar
+                                                   {:level :error
+                                                    :text "Failed to validate resource name"}]))))}]]]}))
+
+(rf/reg-event-fx
+ :resource-setup->set-name-validation-result
+ (fn [{:keys [db]} [_ is-available?]]
+   {:fx (when (false? is-available?)
+          [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "This resource name is already in use. Please choose a different name."}]]])}))
+
 (rf/reg-event-db
  :resource-setup->set-agent-id
  (fn [db [_ agent-id]]

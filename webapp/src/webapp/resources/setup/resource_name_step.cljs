@@ -17,7 +17,10 @@
     [:form {:id "resource-name-form"
             :on-submit (fn [e]
                          (.preventDefault e)
-                         (rf/dispatch [:resource-setup->next-step :agent-selector]))}
+                         ;; Validate name before proceeding
+                         (rf/dispatch [:resource-setup->validate-resource-name
+                                       resource-name
+                                       [:resource-setup->next-step :agent-selector]]))}
      [:> Box {:class "p-8 space-y-16"}
       ;; Header
       [:> Box
