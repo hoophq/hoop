@@ -49,7 +49,12 @@
         [:> Box
          [:> Text {:size "3" :weight "bold" :class "text-[--gray-12]"}
           (if resource-subtype
-            (:name current-connection-metadata)
+            (case resource-subtype
+              "linux-vm" "Linux VM"
+              "ssh" "SSH"
+              "tcp" "TCP"
+              "httpproxy" "HTTP Proxy"
+              (:name current-connection-metadata))
             "Loading...")]]]]
 
       ;; Resource Name Input

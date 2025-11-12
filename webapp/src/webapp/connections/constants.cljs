@@ -172,9 +172,12 @@
                    :else :custom)]
 
     (cond
-      (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key)
-      (= icon-style "default") (get connection-icons-default-dictionary icon-key)
-      :else (get connection-icons-default-dictionary icon-key))))
+      (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key
+                                    (str config/webapp-url "/icons/connections/custom-ssh.svg"))
+      (= icon-style "default") (get connection-icons-default-dictionary icon-key
+                                    (str config/webapp-url "/icons/connections/custom-ssh.svg"))
+      :else (get connection-icons-default-dictionary icon-key
+                 (str config/webapp-url "/icons/connections/custom-ssh.svg")))))
 
 (def connection-commands
   {"nodejs" "node"

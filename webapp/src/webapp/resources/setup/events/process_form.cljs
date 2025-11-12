@@ -55,8 +55,13 @@
         secret (process-role-secret role)
 
         ;; Build command array for custom types
+        ;; command-args is stored as array of {"value": "...", "label": "..."}
+        ;; Extract just the values
+        command-args (:command-args role [])
         command (if (= type "custom")
-                  (or (:command role) [])
+                  (if (seq command-args)
+                    (mapv #(get % "value") command-args)
+                    (or (:command role) []))
                   [])]
 
     {:name (:name role)

@@ -165,6 +165,16 @@
  (fn [db [_ role-index file-index field value]]
    (assoc-in db [:resource-setup :roles role-index :configuration-files file-index field] value)))
 
+(rf/reg-event-db
+ :resource-setup->set-role-command-args
+ (fn [db [_ role-index args]]
+   (assoc-in db [:resource-setup :roles role-index :command-args] args)))
+
+(rf/reg-event-db
+ :resource-setup->set-role-command-current-arg
+ (fn [db [_ role-index arg]]
+   (assoc-in db [:resource-setup :roles role-index :command-current-arg] arg)))
+
 ;; Submit
 (rf/reg-event-fx
  :resource-setup->submit

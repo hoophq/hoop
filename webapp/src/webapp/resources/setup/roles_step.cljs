@@ -6,6 +6,7 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
+   [webapp.components.multiselect :as multi-select]
    [webapp.resources.constants :as constants]
    [webapp.resources.setup.configuration-inputs :as configuration-inputs]))
 
@@ -147,15 +148,24 @@
    [configuration-inputs/configuration-files-section role-index]
 
    ;; Additional command section
-   [:> Box {:class "space-y-3"}
+   [:> Box {:class "space-y-4"}
     [:> Heading {:as "h4" :size "3" :weight "medium"}
      "Additional command"]
-    [:> Text {:size "2" :class "text-[--gray-11]"}
-     "Add an additional command that will run on your resource role. Variables (like the ones above) can also be used here."]
-    [forms/input {:label "Command"
-                  :placeholder "$ bash"
-                  :value ""
-                  :on-change #()}]]])
+    [:> Text {:size "2" :color "gray"}
+     "Each argument should be entered separately."
+     [:br]
+     "Press Enter after each argument to add it to the list."]
+    [:> Box
+     [multi-select/text-input
+      {:value (clj->js @(rf/subscribe [:resource-setup/role-command-args role-index]))
+       :input-value @(rf/subscribe [:resource-setup/role-command-current-arg role-index])
+       :on-change #(rf/dispatch [:resource-setup->set-role-command-args role-index %])
+       :on-input-change #(rf/dispatch [:resource-setup->set-role-command-current-arg role-index %])
+       :label "Command Arguments"
+       :id "command-args"
+       :name "command-args"}]
+     [:> Text {:size "2" :color "gray" :mt "2"}
+      "Example: 'python', '-m', 'http.server', '8000'"]]]])
 
 ;; Single role configuration
 (defn role-configuration [role-index]

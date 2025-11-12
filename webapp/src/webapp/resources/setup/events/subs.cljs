@@ -56,6 +56,16 @@
  (fn [db [_ role-index]]
    (get-in db [:resource-setup :roles role-index :configuration-files] [])))
 
+(rf/reg-sub
+ :resource-setup/role-command-args
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :command-args] [])))
+
+(rf/reg-sub
+ :resource-setup/role-command-current-arg
+ (fn [db [_ role-index]]
+   (get-in db [:resource-setup :roles role-index :command-current-arg] "")))
+
 ;; Created resource (for success screen)
 (rf/reg-sub
  :resources->last-created
