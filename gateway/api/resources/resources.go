@@ -128,7 +128,7 @@ func CreateResource(c *gin.Context) {
 				AgentID:            sql.NullString{String: role.AgentID, Valid: role.AgentID != ""},
 				Type:               role.Type,
 				SubType:            sql.NullString{String: role.SubType, Valid: role.SubType != ""},
-				Command:            defaultCmd,
+				Command:            role.Command,
 				Status:             connectionStatus,
 				AccessModeRunbooks: "enabled",
 				AccessModeExec:     "enabled",
