@@ -20,7 +20,7 @@
   (cond
     ;; Metadata-driven connections
     (and (= connection-type "custom")
-         (not (contains? #{"tcp" "httpproxy" "ssh"} connection-subtype)))
+         (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} connection-subtype)))
     "metadata-credentials-form"
 
     ;; SSH connections

@@ -348,10 +348,10 @@
                                                            (if (= @active-tab "resources")
                                                              (rf/dispatch [:resources/get-resources-paginated
                                                                            {:page 1 :force-refresh? true
-                                                                            :name trimmed :filters {}}])
+                                                                            :search trimmed :filters {}}])
                                                              (rf/dispatch [:connections/get-connections-paginated
                                                                            {:page 1 :force-refresh? true
-                                                                            :name trimmed :filters {}}])))
+                                                                            :search trimmed :filters {}}])))
                                                          500)))))}
              [:> TextField.Slot [:> Search {:size 16}]]]
 

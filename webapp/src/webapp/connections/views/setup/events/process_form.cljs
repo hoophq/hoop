@@ -49,7 +49,7 @@
                   (not (str/blank? (if (string? value) value (str value))))))
            tags))
 
-(defn process-payload [db]
+(defn process-payload [db & [resource-name]]
   (let [ui-type (get-in db [:connection-setup :type])
         connection-subtype (get-in db [:connection-setup :subtype])
         api-type (get-api-connection-type ui-type connection-subtype)
@@ -157,6 +157,7 @@
         payload {:type api-type
                  :subtype effective-subtype
                  :name connection-name
+                 :resource_name resource-name
                  :agent_id agent-id
                  :connection_tags tags
                  :tags old-tags
