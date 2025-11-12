@@ -1,7 +1,7 @@
 (ns webapp.resources.setup.roles-step
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Link Separator
-                               Text]]
+                               Text Switch]]
    ["lucide-react" :refer [ArrowUpRight Plus Trash2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -81,6 +81,13 @@
 ;; HTTP Proxy role form - Based on network.cljs
 (defn http-proxy-role-form [role-index]
   (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
+
+    (when (nil? (get credentials "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "insecure"
+                    false]))
+
     [:> Box {:class "space-y-4"}
      ;; Remote URL
      [forms/input {:label "Remote URL"
@@ -96,7 +103,20 @@
      ;; HTTP headers section (usando configuration-inputs)
      [configuration-inputs/environment-variables-section role-index
       {:title "HTTP headers"
-       :subtitle "Add HTTP headers that will be used in your requests."}]]))
+       :subtitle "Add HTTP headers that will be used in your requests."}]
+
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get credentials "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index
+                                                  "insecure"
+                                                  %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
 
 ;; Custom/Metadata-driven role form (includes databases)
 (defn metadata-driven-role-form [role-index]
