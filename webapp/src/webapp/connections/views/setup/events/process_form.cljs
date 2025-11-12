@@ -281,7 +281,7 @@
         credentials (process-connection-secret (:secret connection) "envvar")
 
         is-metadata-driven? (and (= connection-type "custom")
-                                 (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"}
+                                 (not (contains? #{"tcp" "httpproxy" "ssh"}
                                                  connection-subtype)))
 
         network-credentials (when (and (= connection-type "application")

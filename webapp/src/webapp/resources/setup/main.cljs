@@ -70,7 +70,10 @@
                     (when agent-id
                       (rf/dispatch [:resource-setup->next-step :roles]))))
        :on-cancel (fn []
-                    (if (= current-step :resource-name)
-                      (.back js/history)
+                    (case current-step
+                      :resource-name (.back js/history)
+                      :agent-selector (do
+                                        (rf/dispatch [:resource-setup->back])
+                                        (rf/dispatch [:resource-setup->clear-agent-state]))
                       (rf/dispatch [:resource-setup->back])))}}]))
 

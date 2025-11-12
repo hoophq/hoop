@@ -17,9 +17,19 @@
 (defn get-form-id
   "Returns the form ID based on connection type"
   [connection-type connection-subtype]
-  (if (and (= connection-type "application")
-           (= connection-subtype "ssh"))
+  (cond
+    ;; Metadata-driven connections
+    (and (= connection-type "custom")
+         (not (contains? #{"tcp" "httpproxy" "ssh"} connection-subtype)))
+    "metadata-credentials-form"
+
+    ;; SSH connections
+    (and (= connection-type "application")
+         (= connection-subtype "ssh"))
     "ssh-credentials-form"
+
+    ;; Default
+    :else
     "credentials-form"))
 
 (defn get-query-param

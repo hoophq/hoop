@@ -80,7 +80,7 @@
                                 connection-subtype (:subtype (:data @connection))
                                 form-id (cond
                                           (and (= connection-type "custom")
-                                               (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"} connection-subtype)))
+                                               (not (contains? #{"tcp" "httpproxy" "ssh"} connection-subtype)))
                                           "metadata-credentials-form"
                                           (and (= connection-type "application")
                                                (= connection-subtype "ssh")) "ssh-credentials-form"
@@ -203,7 +203,7 @@
                                    :update]
                        "custom" (let [subtype (:subtype (:data @connection))]
                                   (if (and subtype
-                                           (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"} subtype)))
+                                           (not (contains? #{"tcp" "httpproxy" "ssh"} subtype)))
                                     [metadata-driven/credentials-step subtype :update]
                                     [server/credentials-step :update]))
                        "application" (if (= (:subtype (:data @connection)) "ssh")

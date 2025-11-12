@@ -180,7 +180,4 @@
 
      ;; Show creation form when in create mode
      (when (= @creation-mode :create)
-       [agent-creation-form])]
-
-    (finally
-      (rf/dispatch [:resource-setup->clear-agent-state]))))
+       [agent-creation-form])]))
