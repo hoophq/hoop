@@ -1754,13 +1754,13 @@ type RDPConnectionInfo struct {
 	// The hostname to access the rdp server pinstance
 	Hostname string `json:"hostname" example:"example.com/198.22.2.2"`
 	// The port of the rdp server instance
-	Port string `json:"port" example:"3389"`
+	Port string `json:"port" example:"13389"`
 	// The username of the rdp server instance
 	Username string `json:"username" example:"noop"`
 	// The password of the rdp server instance
 	Password string `json:"password" example:"noop"`
 	// The command to access the rdp instance
-	Command string `json:"command" example:"xfreerdp /v:0.0.0.0:3389 /u:fake /p:fake"`
+	Command string `json:"command" example:"xfreerdp /v:0.0.0.0:13389 /u:fake /p:fake"`
 }
 
 type PostgresConnectionInfo struct {

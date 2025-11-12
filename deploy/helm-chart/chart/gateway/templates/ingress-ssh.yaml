@@ -1,0 +1,25 @@
+{{- if .Values.sshService.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: hoopgateway-ssh
+  labels:
+    app: hoopgateway-ssh
+  {{- with .Values.sshService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.sshService.type | default "LoadBalancer" }}
+  ports:
+    - name: ssh
+      port: {{ .Values.sshService.port | default 12222 }}
+      targetPort: 12222
+      protocol: TCP
+      {{- if and (eq (.Values.sshService.type | default "LoadBalancer") "NodePort") .Values.sshService.nodePort }}
+      nodePort: {{ .Values.sshService.nodePort }}
+      {{- end }}
+  selector:
+    app: hoopgateway
+{{- end }}
+

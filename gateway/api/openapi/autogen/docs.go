@@ -8026,7 +8026,7 @@ const docTemplate = `{
                 "listen_address": {
                     "description": "The listen address to run the RDP server proxy",
                     "type": "string",
-                    "example": "0.0.0.0:3389"
+                    "example": "0.0.0.0:13389"
                 }
             }
         },
