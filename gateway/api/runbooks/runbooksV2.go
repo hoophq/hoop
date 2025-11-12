@@ -77,7 +77,7 @@ func ListRunbooksV2(c *gin.Context) {
 		Repositories: []openapi.RunbookRepositoryList{},
 	}
 	for _, repoConfig := range runbookConfig.RepositoryConfigs {
-		config, err := buildCommonConfig(&repoConfig)
+		config, err := models.BuildCommonConfig(&repoConfig)
 		if err != nil {
 			log.Errorf("failed creating runbook config, err=%v", err)
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -102,7 +102,7 @@ func ListRunbooksV2(c *gin.Context) {
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Success		200			{object}	openapi.RunbookConfiguration
+//	@Success		200			{object}	openapi.RunbookConfigurationResponse
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [get]
 func GetRunbookConfiguration(c *gin.Context) {
@@ -131,7 +131,7 @@ func GetRunbookConfiguration(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
-//	@Success		200			{object}	openapi.RunbookConfiguration
+//	@Success		200			{object}	openapi.RunbookConfigurationResponse
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [put]
 func UpdateRunbookConfiguration(c *gin.Context) {
@@ -146,7 +146,7 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 	repositoryConfigs := make(map[string]models.RunbookRepositoryConfig)
 	for _, repo := range req.Repositories {
 		mapConfig := buildConfigMapRepository(&repo)
-		config, err := buildCommonConfig(&mapConfig)
+		config, err := models.BuildCommonConfig(&mapConfig)
 		if err != nil {
 			log.Errorf("failed creating runbook config, reason=%v", err)
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed creating runbook config, reason=%v", err)})
@@ -179,22 +179,6 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 	c.JSON(200, buildRunbookConfigurationResponse(&runbooks))
 }
 
-func buildCommonConfig(config *models.RunbookRepositoryConfig) (*runbooks.Config, error) {
-	configInput := &runbooks.ConfigInput{
-		GitURL:        config.GitUrl,
-		GitUser:       config.GitUser,
-		GitPassword:   config.GitPassword,
-		SSHKey:        config.SSHKey,
-		SSHUser:       config.SSHUser,
-		SSHKeyPass:    config.SSHKeyPass,
-		SSHKnownHosts: config.SSHKnownHosts,
-		GitBranch:     "",
-		HookCacheTTL:  config.GitHookTTL,
-	}
-
-	return runbooks.NewConfigV2(configInput)
-}
-
 func buildConfigMapRepository(config *openapi.RunbookRepository) models.RunbookRepositoryConfig {
 	return models.RunbookRepositoryConfig{
 		GitUrl:        config.GitUrl,
@@ -208,8 +192,9 @@ func buildConfigMapRepository(config *openapi.RunbookRepository) models.RunbookR
 	}
 }
 
-func buildRunbookRepositoryResponse(repoConfig *models.RunbookRepositoryConfig) *openapi.RunbookRepository {
-	return &openapi.RunbookRepository{
+func buildRunbookRepositoryResponse(repository string, repoConfig *models.RunbookRepositoryConfig) *openapi.RunbookRepositoryResponse {
+	return &openapi.RunbookRepositoryResponse{
+		Repository:    repository,
 		GitUrl:        repoConfig.GitUrl,
 		GitUser:       repoConfig.GitUser,
 		GitPassword:   repoConfig.GitPassword,
@@ -221,14 +206,14 @@ func buildRunbookRepositoryResponse(repoConfig *models.RunbookRepositoryConfig) 
 	}
 }
 
-func buildRunbookConfigurationResponse(r *models.Runbooks) *openapi.RunbookConfiguration {
-	repositories := make([]openapi.RunbookRepository, 0, len(r.RepositoryConfigs))
-	for _, repoConfig := range r.RepositoryConfigs {
-		repo := buildRunbookRepositoryResponse(&repoConfig)
+func buildRunbookConfigurationResponse(r *models.Runbooks) *openapi.RunbookConfigurationResponse {
+	repositories := make([]openapi.RunbookRepositoryResponse, 0, len(r.RepositoryConfigs))
+	for repository, repoConfig := range r.RepositoryConfigs {
+		repo := buildRunbookRepositoryResponse(repository, &repoConfig)
 		repositories = append(repositories, *repo)
 	}
 
-	return &openapi.RunbookConfiguration{
+	return &openapi.RunbookConfigurationResponse{
 		ID:           r.ID,
 		OrgID:        r.OrgID,
 		Repositories: repositories,
@@ -299,7 +284,7 @@ func RunbookExec(c *gin.Context) {
 		return
 	}
 
-	config, err := buildCommonConfig(&repoConfig)
+	config, err := models.BuildCommonConfig(&repoConfig)
 	if err != nil {
 		log.Errorf("failed creating runbook config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
