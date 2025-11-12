@@ -73,9 +73,7 @@
  (fn
    [{:keys [db]} [_ resource on-success]]
    {:db (-> db
-            (assoc :resources->resource-details {:loading false :data resource})
-            ;; Also store in details map for quick lookup
-            (assoc-in [:resources :details (:id resource)] resource))
+            (assoc :resources->resource-details {:loading false :data resource}))
     :fx (cond-> []
           on-success (conj [:dispatch (conj on-success (:id resource))]))}))
 

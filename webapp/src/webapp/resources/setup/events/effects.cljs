@@ -125,11 +125,12 @@
    (let [current-key (get-in db [:resource-setup :roles role-index :env-current-key])
          current-value (get-in db [:resource-setup :roles role-index :env-current-value])]
      (if (and (not (str/blank? current-key)) (not (str/blank? current-value)))
-       (-> db
-           (update-in [:resource-setup :roles role-index :environment-variables]
-                      (fnil conj []) {:key current-key :value current-value})
-           (assoc-in [:resource-setup :roles role-index :env-current-key] "")
-           (assoc-in [:resource-setup :roles role-index :env-current-value] ""))
+       (update-in db [:resource-setup :roles role-index]
+                  #(-> %
+                       (update :environment-variables (fnil conj [])
+                               {:key current-key
+                                :value current-value})
+                       (merge {:env-current-key "" :env-current-value ""})))
        db))))
 
 (rf/reg-event-db
@@ -154,11 +155,12 @@
    (let [current-name (get-in db [:resource-setup :roles role-index :config-current-name])
          current-content (get-in db [:resource-setup :roles role-index :config-current-content])]
      (if (and (not (str/blank? current-name)) (not (str/blank? current-content)))
-       (-> db
-           (update-in [:resource-setup :roles role-index :configuration-files]
-                      (fnil conj []) {:key current-name :value current-content})
-           (assoc-in [:resource-setup :roles role-index :config-current-name] "")
-           (assoc-in [:resource-setup :roles role-index :config-current-content] ""))
+       (update-in db [:resource-setup :roles role-index]
+                  #(-> %
+                       (update :configuration-files (fnil conj [])
+                               {:key current-name
+                                :value current-content})
+                       (merge {:config-current-name "" :config-current-content ""})))
        db))))
 
 (rf/reg-event-db

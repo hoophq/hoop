@@ -141,10 +141,10 @@
 ;; Linux/Container role form - Based on server.cljs
 (defn linux-container-role-form [role-index]
   [:> Box {:class "space-y-6"}
-   ;; Environment variables section (usando configuration-inputs)
+   ;; Environment variables section
    [configuration-inputs/environment-variables-section role-index {}]
 
-   ;; Configuration files section (usando configuration-inputs)
+   ;; Configuration files section
    [configuration-inputs/configuration-files-section role-index]
 
    ;; Additional command section

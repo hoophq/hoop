@@ -8,7 +8,6 @@
 (rf/reg-event-db
  :connection-setup/initialize-state
  (fn [db [_ initial-data]]
-   (println "initial-data" initial-data)
    (if initial-data
      (assoc db :connection-setup (assoc initial-data
                                         :ssh-auth-method (get initial-data :ssh-auth-method "password")

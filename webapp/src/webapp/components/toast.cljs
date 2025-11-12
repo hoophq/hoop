@@ -8,7 +8,6 @@
 
 
 (defn format-json-colored [obj]
-  (println "Formatting JSON" obj)
   (when (map? obj)
     [:div
      (for [[key value] obj]

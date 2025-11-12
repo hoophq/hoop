@@ -4,7 +4,6 @@
 
 (defn error-handling
   [error]
-  (println "Error handling" error)
   (rf/dispatch [:show-snackbar {:level :error
                                 :text (:message error)
                                 :details error}]))
@@ -45,7 +44,6 @@
                          :on-failure #(on-failure payload)}))))
           (fn [_error]
             ;; JSON failed, return as text
-            (println "JSON failed, returning as text" status)
             (if (.-ok response)
               (on-success text (.-headers response))
               (not-ok {:status status
