@@ -42,7 +42,9 @@
                                    (let [conn (first (filter #(= (:name %) name) (or (:data @connections) [])))]
                                      (or (:id conn) name)))
                                  selected-connection-names)
-            user-group-options (array->select-options @user-groups)]
+            user-group-options (array->select-options @user-groups)
+            runbooks-value @(:runbooks state)
+            runbooks-input (r/atom "")]
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:id "runbook-rule-form"
                  :on-submit (fn [e]
@@ -150,15 +152,13 @@
               "Select which Runbooks or paths are available with this rule."]]
 
             [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             (let [runbooks-value @(:runbooks state)
-                   runbooks-input (r/atom "")]
-               [multiselect/text-input
-                {:label "Runbooks (Optional)"
-                 :label-description "Use @ for repos and / for folders. Optional, defaults to all Runbooks."
-                 :value runbooks-value
-                 :input-value runbooks-input
-                 :on-change #(reset! (:runbooks state) (js->clj %))
-                 :on-input-change #(reset! runbooks-input %)}])]]]]]))))
+             [multiselect/text-input
+              {:label "Runbooks (Optional)"
+               :label-description "Use @ for repos and / for folders. Optional, defaults to all Runbooks."
+               :value runbooks-value
+               :input-value runbooks-input
+               :on-change #(reset! (:runbooks state) (js->clj %))
+               :on-input-change #(reset! runbooks-input %)}]]]]]]))))
 
 (defn- loading []
   [:> Box {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
