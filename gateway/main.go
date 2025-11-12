@@ -65,6 +65,10 @@ func Run() {
 		log.Fatal(err)
 	}
 
+	if err := modelsbootstrap.RunGolangMigrations(); err != nil {
+		log.Fatalf("failed running golang migrations, reason=%v", err)
+	}
+
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
 	if !isOrgMultiTenant {
 		log.Infof("provisioning default organization")

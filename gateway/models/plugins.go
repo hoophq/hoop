@@ -11,7 +11,7 @@ var defaultPluginNames = []string{
 	plugintypes.PluginAuditName,
 	plugintypes.PluginEditorName,
 	plugintypes.PluginSlackName,
-	plugintypes.PluginRunbooksName,
+	// plugintypes.PluginRunbooksName,
 	plugintypes.PluginDLPName,
 	plugintypes.PluginReviewName,
 }
@@ -137,4 +137,31 @@ func upsertPlugin(plugin *Plugin) error {
 		}
 		return nil
 	})
+}
+
+func DeletePlugin(db *gorm.DB, plugin *Plugin) error {
+	// remove all plugin connections before deleting the plugin
+	err := db.Exec(`
+			DELETE FROM private.plugin_connections WHERE org_id = ? AND plugin_id = ?`, plugin.OrgID, plugin.ID).
+		Error
+	if err != nil {
+		return fmt.Errorf("failed deleting plugin connections, reason=%v", err)
+	}
+
+	// remove env vars
+	err = db.Exec(`
+			DELETE FROM private.env_vars WHERE id = ? AND org_id = ?`, plugin.ID, plugin.OrgID).
+		Error
+	if err != nil {
+		return fmt.Errorf("failed deleting plugin env vars, reason=%v", err)
+	}
+
+	// remove the plugin
+	err = db.Exec(`
+			DELETE FROM private.plugins WHERE org_id = ? AND id = ?`, plugin.OrgID, plugin.ID).
+		Error
+	if err != nil {
+		return fmt.Errorf("failed deleting plugin, reason=%v", err)
+	}
+	return nil
 }
