@@ -124,39 +124,45 @@
         credentials-config (get-in connection [:resourceConfiguration :credentials])
         metadata-credentials @(rf/subscribe [:resource-setup/metadata-credentials role-index])]
 
+    (println "credentials-config" credentials-config)
+
     (when (seq credentials-config)
-      [:> Grid {:columns "1" :gap "4"}
-       (for [field credentials-config]
-         (let [sanitized-name (cs/capitalize
-                               (cs/lower-case
-                                (cs/replace (:name field) #"[^a-zA-Z0-9]" " ")))
-               env-var-name (:name field)
-               field-type (case (:type field)
-                            "filesystem" "textarea"
-                            "textarea" "textarea"
-                            "password")]
-           (if (= field-type "textarea")
-             ^{:key env-var-name}
-             [forms/textarea {:label sanitized-name
-                              :placeholder (or (:placeholder field) (:description field))
-                              :value (get metadata-credentials env-var-name "")
-                              :required (:required field)
-                              :helper-text (:description field)
-                              :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
-                                                        role-index
-                                                        env-var-name
-                                                        (-> % .-target .-value)])}]
-             ^{:key env-var-name}
-             [forms/input {:label sanitized-name
-                           :placeholder (or (:placeholder field) (:description field))
-                           :value (get metadata-credentials env-var-name "")
-                           :required (:required field)
-                           :type field-type
-                           :helper-text (:description field)
-                           :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
-                                                     role-index
-                                                     env-var-name
-                                                     (-> % .-target .-value)])}])))])))
+      [:> Box
+       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
+        "Role credentials"]
+
+       [:> Grid {:columns "1" :gap "4"}
+        (for [field credentials-config]
+          (let [sanitized-name (cs/capitalize
+                                (cs/lower-case
+                                 (cs/replace (:name field) #"[^a-zA-Z0-9]" " ")))
+                env-var-name (:name field)
+                field-type (case (:type field)
+                             "filesystem" "textarea"
+                             "textarea" "textarea"
+                             "password")]
+            (if (= field-type "textarea")
+              ^{:key env-var-name}
+              [forms/textarea {:label sanitized-name
+                               :placeholder (or (:placeholder field) (:description field))
+                               :value (get metadata-credentials env-var-name "")
+                               :required (:required field)
+                               :helper-text (:description field)
+                               :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
+                                                         role-index
+                                                         env-var-name
+                                                         (-> % .-target .-value)])}]
+              ^{:key env-var-name}
+              [forms/input {:label sanitized-name
+                            :placeholder (or (:placeholder field) (:description field))
+                            :value (get metadata-credentials env-var-name "")
+                            :required (:required field)
+                            :type field-type
+                            :helper-text (:description field)
+                            :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
+                                                      role-index
+                                                      env-var-name
+                                                      (-> % .-target .-value)])}])))]])))
 
 ;; Linux/Container role form - Based on server.cljs
 (defn linux-container-role-form [role-index]
@@ -216,26 +222,27 @@
                                                role-index
                                                (-> % .-target .-value)])}]]
 
-      ;; Role credentials section
-      [:> Box
-       [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
-        "Role credentials"]
-       ;; Render appropriate form based on type
-       (cond
-         (= resource-subtype "ssh")
-         [ssh-role-form role-index]
+      ;; Render appropriate form based on type
+      (let [component-title
+            (fn [children] [:> Box
+                            [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
+                             "Role credentials"]
+                            children])]
+        (cond
+          (= resource-subtype "ssh")
+          (component-title [ssh-role-form role-index])
 
-         (= resource-subtype "tcp")
-         [tcp-role-form role-index]
+          (= resource-subtype "tcp")
+          (component-title [tcp-role-form role-index])
 
-         (= resource-subtype "httpproxy")
-         [http-proxy-role-form role-index]
+          (= resource-subtype "httpproxy")
+          (component-title [http-proxy-role-form role-index])
 
-         (= resource-subtype "linux-vm")
-         [linux-container-role-form role-index]
+          (= resource-subtype "linux-vm")
+          (component-title [linux-container-role-form role-index])
 
-         :else
-         [metadata-driven-role-form role-index])]
+          :else
+          [metadata-driven-role-form role-index]))
 
       ;; Remove role button (only if more than one role)
       (when can-remove?
