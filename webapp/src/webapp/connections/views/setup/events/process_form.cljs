@@ -281,7 +281,7 @@
         credentials (process-connection-secret (:secret connection) "envvar")
 
         is-metadata-driven? (and (= connection-type "custom")
-                                 (not (contains? #{"tcp" "httpproxy" "ssh"}
+                                 (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"}
                                                  connection-subtype)))
 
         network-credentials (when (and (= connection-type "application")
@@ -348,6 +348,7 @@
     {:type connection-type
      :subtype (if is-custom-with-override? "custom" connection-subtype)
      :name (:name connection)
+     :resource-name (:resource_name connection)
      :agent-id (:agent_id connection)
      :resource-subtype-override resource-subtype-override
      :database-credentials (when (= connection-type "database") credentials)
@@ -361,6 +362,17 @@
      :command-args (if (empty? (:command connection))
                      []
                      (mapv #(hash-map "value" % "label" %) (:command connection)))
+     :environment-variables (cond
+                              (= connection-type "custom")
+                              (process-connection-envvars (:secret connection) "envvar")
+
+                              (and (= connection-type "application")
+                                   (= connection-subtype "httpproxy"))
+                              http-env-vars
+
+                              :else [])
+     :configuration-files (when (= connection-type "custom")
+                            (process-connection-envvars (:secret connection) "filesystem"))
      :credentials {:environment-variables (cond
                                             (= connection-type "custom")
                                             (process-connection-envvars (:secret connection) "envvar")

@@ -14,7 +14,7 @@
      "custom" (let [subtype (:subtype connection)]
                 ;; Verificar se é metadata-driven
                 (if (and subtype
-                         (not (contains? #{"tcp" "httpproxy" "ssh"} subtype)))
+                         (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} subtype)))
                   ;; Metadata-driven: usar componente específico
                   [metadata-driven/credentials-step subtype :update]
                   ;; Hardcoded: usar componente antigo
