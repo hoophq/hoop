@@ -97,6 +97,7 @@
                      :search-results {:status :idle :data {}}}
    :runbooks {:connection-dialog-open? false
               :execute-trigger false
-              :selected-connection nil}
+              :selected-connection nil
+              :list {:status :idle :data nil :error nil}}
    :runbooks-rules {:list {:status :idle :data [] :error nil}
                     :active-rule {:status :idle :data nil :error nil}}})

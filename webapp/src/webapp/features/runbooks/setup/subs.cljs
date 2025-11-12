@@ -34,3 +34,15 @@
  :runbooks-rules/active-rule
  (fn [db]
    (get-in db [:runbooks-rules :active-rule])))
+
+;; Runbooks Configuration Subscriptions
+(rf/reg-sub
+ :runbooks-configurations/data
+ (fn [db]
+   (get-in db [:runbooks-configurations])))
+
+;; Runbooks List Subscriptions
+(rf/reg-sub
+ :runbooks/list
+ (fn [db]
+   (get-in db [:runbooks :list])))

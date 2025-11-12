@@ -23,7 +23,7 @@
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))]
 
-    (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
+    (rf/dispatch [:runbooks/list])
     (rf/dispatch [:runbooks-rules/get-all])
 
     (fn []

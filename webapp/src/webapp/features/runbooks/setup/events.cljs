@@ -135,3 +135,71 @@
  :runbooks-rules/clear-active-rule
  (fn [db]
    (assoc-in db [:runbooks-rules :active-rule] {:status :idle :data nil :error nil})))
+
+;; Runbooks Configuration Events
+(rf/reg-event-fx
+ :runbooks-configurations/get
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:runbooks-configurations :status] :loading)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/runbooks/configurations"
+                             :on-success #(rf/dispatch [:runbooks-configurations/get-success %])
+                             :on-failure #(rf/dispatch [:runbooks-configurations/get-failure %])}]]]}))
+
+(rf/reg-event-db
+ :runbooks-configurations/get-success
+ (fn [db [_ data]]
+   (assoc-in db [:runbooks-configurations] {:status :success :data data})))
+
+(rf/reg-event-db
+ :runbooks-configurations/get-failure
+ (fn [db [_ error]]
+   (assoc-in db [:runbooks-configurations] {:status :error :error error})))
+
+(rf/reg-event-fx
+ :runbooks-configurations/update
+ (fn [{:keys [db]} [_ repositories on-success on-failure]]
+   {:db (assoc-in db [:runbooks-configurations :status] :loading)
+    :fx [[:dispatch [:fetch {:method "PUT"
+                             :uri "/runbooks/configurations"
+                             :body {:repositories repositories}
+                             :on-success #(do
+                                            (rf/dispatch [:runbooks-configurations/update-success %])
+                                            (when on-success (on-success)))
+                             :on-failure #(do
+                                            (rf/dispatch [:runbooks-configurations/update-failure %])
+                                            (rf/dispatch [:show-snackbar
+                                                          {:level :error
+                                                           :text "Failed to save repository configuration"}])
+                                            (when on-failure (on-failure)))}]]]}))
+
+(rf/reg-event-db
+ :runbooks-configurations/update-success
+ (fn [db [_ data]]
+   (assoc-in db [:runbooks-configurations] {:status :success :data data})))
+
+(rf/reg-event-db
+ :runbooks-configurations/update-failure
+ (fn [db [_ error]]
+   (assoc-in db [:runbooks-configurations] {:status :error :error error})))
+
+;; Runbooks List Events
+(rf/reg-event-fx
+ :runbooks/list
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:runbooks :list :status] :loading)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/runbooks"
+                             :on-success #(rf/dispatch [:runbooks/list-success %])
+                             :on-failure #(rf/dispatch [:runbooks/list-failure %])}]]]}))
+
+(rf/reg-event-db
+ :runbooks/list-success
+ (fn [db [_ data]]
+   (assoc-in db [:runbooks :list] {:status :success :data data})))
+
+(rf/reg-event-db
+ :runbooks/list-failure
+ (fn [db [_ error]]
+   (assoc-in db [:runbooks :list] {:status :error :error error})))
+
