@@ -623,7 +623,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
 	namePattern := "%" + opts.Name + "%"
-	resourceNamePattern := "%" + opts.ResourceName + "%"
+	resourceNamePattern := opts.ResourceName
 
 	var items []Connection
 	// TODO: try changing to @ syntax

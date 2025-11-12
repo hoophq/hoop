@@ -73,7 +73,7 @@ func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInte
 
 	nameQuery := "%"
 	if opts.Name != "" {
-		nameQuery = "%" + opts.Name + "%"
+		nameQuery = opts.Name
 	}
 
 	searchQuery := "%"
