@@ -12,7 +12,8 @@
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
         icon-url (conn-constants/get-connection-icon {:type resource-type
                                                       :subtype resource-subtype}
-                                                     "default")]
+                                                     "default")
+        current-connection-metadata @(rf/subscribe [:resource-setup/current-connection-metadata])]
     [:form {:id "resource-name-form"
             :on-submit (fn [e]
                          (.preventDefault e)
@@ -48,16 +49,7 @@
         [:> Box
          [:> Text {:size "3" :weight "bold" :class "text-[--gray-12]"}
           (if resource-subtype
-            (case resource-subtype
-              "postgres" "PostgreSQL"
-              "mysql" "MySQL"
-              "mongodb" "MongoDB"
-              "mssql" "Microsoft SQL Server"
-              "oracledb" "Oracle Database"
-              "ssh" "SSH"
-              "tcp" "TCP"
-              "httpproxy" "HTTP Proxy"
-              resource-subtype)
+            (:name current-connection-metadata)
             "Loading...")]]]]
 
       ;; Resource Name Input
@@ -71,7 +63,7 @@
        [:> Box {:grid-column "span 4 / span 4"}
         [:> Box {:class "space-y-1"}
          [forms/input {:label "Resource name"
-                       :placeholder "e.g. my-postgres-db"
+                       :placeholder (str "e.g. my-" resource-subtype "-db")
                        :value resource-name
                        :required true
                        :on-change #(let [value (-> % .-target .-value)

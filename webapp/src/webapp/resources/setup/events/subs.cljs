@@ -132,3 +132,13 @@
  :resource-setup/role-config-current-content
  (fn [db [_ role-index]]
    (get-in db [:resource-setup :roles role-index :config-current-content] "")))
+
+(rf/reg-sub
+ :resource-setup/current-connection-metadata
+ :<- [:connections->metadata]
+ :<- [:resource-setup/resource-subtype]
+ (fn [[metadata subtype] _]
+   (when (and metadata subtype)
+     (->> (:connections metadata)
+          (filter #(= (get-in % [:resourceConfiguration :subtype]) subtype))
+          first))))

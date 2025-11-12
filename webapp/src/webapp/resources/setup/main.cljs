@@ -15,7 +15,13 @@
         agent-id @(rf/subscribe [:resource-setup/agent-id])
         roles @(rf/subscribe [:resource-setup/roles])
         creating? @(rf/subscribe [:resources->creating?])
-        onboarding? (helpers/is-onboarding-context?)]
+        onboarding? (helpers/is-onboarding-context?)
+        connections-metadata @(rf/subscribe [:connections->metadata])]
+
+    ;; Load metadata and agents on mount if not already loaded
+    (when (nil? connections-metadata)
+      (rf/dispatch [:connections->load-metadata]))
+    (rf/dispatch [:agents->get-agents])
 
     [page-wrapper/main
      {:onboarding? onboarding?

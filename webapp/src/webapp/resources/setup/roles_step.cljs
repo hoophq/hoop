@@ -99,12 +99,7 @@
 
 ;; Custom/Metadata-driven role form (includes databases)
 (defn metadata-driven-role-form [role-index]
-  (let [subtype @(rf/subscribe [:resource-setup/resource-subtype])
-        connections-metadata @(rf/subscribe [:connections->metadata])
-        connection (when connections-metadata
-                     (->> (:connections connections-metadata)
-                          (filter #(= (get-in % [:resourceConfiguration :subtype]) subtype))
-                          first))
+  (let [connection @(rf/subscribe [:resource-setup/current-connection-metadata])
         credentials-config (get-in connection [:resourceConfiguration :credentials])
         metadata-credentials @(rf/subscribe [:resource-setup/metadata-credentials role-index])]
 
@@ -166,7 +161,6 @@
 (defn role-configuration [role-index]
   (let [roles @(rf/subscribe [:resource-setup/roles])
         role (get roles role-index)
-        resource-type @(rf/subscribe [:resource-setup/resource-type])
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
         can-remove? (> (count roles) 1)]
 
