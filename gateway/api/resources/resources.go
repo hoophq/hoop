@@ -54,7 +54,7 @@ func GetResource(c *gin.Context) {
 //	@Produces		json
 //	@Param			request	body	openapi.ResourceRequest	true	"The request body resource"
 //	@Success		201	{object}	openapi.ResourceResponse
-//	@Failure		400,500	{object}	openapi.HTTPError
+//	@Failure		400,403,500	{object}	openapi.HTTPError
 //	@Router			/resources [post]
 func CreateResource(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -71,7 +71,7 @@ func CreateResource(c *gin.Context) {
 		return
 	}
 	if existing != nil {
-		c.JSON(http.StatusForbidden, gin.H{"message": "resource name already exists"})
+		c.JSON(http.StatusConflict, gin.H{"message": "resource name already exists"})
 		return
 	}
 
@@ -84,17 +84,16 @@ func CreateResource(c *gin.Context) {
 		AgentID: sql.NullString{String: req.AgentID, Valid: req.AgentID != ""},
 	}
 
-	err = models.UpsertResource(models.DB, &resource, true)
-	if err != nil {
-		log.Errorf("failed to upsert resource: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
-		return
-	}
-
-	// Insert connections
+	var connections []*models.Connection
 	if len(req.Roles) > 0 {
-		var connections []*models.Connection
+		adminCtx := models.NewAdminContext(ctx.OrgID)
 		for _, role := range req.Roles {
+			foundConnection, _ := models.GetBareConnectionByNameOrID(adminCtx, role.Name, models.DB)
+			if foundConnection != nil {
+				c.JSON(http.StatusConflict, gin.H{"message": "connection with the same name, " + role.Name})
+				return
+			}
+
 			defaultCmd, defaultEnvVars := apiconnections.GetConnectionDefaults(role.Type, role.SubType, true)
 
 			if len(role.Command) == 0 {
@@ -139,12 +138,33 @@ func CreateResource(c *gin.Context) {
 				ConnectionTags:     map[string]string{},
 			})
 		}
-		err = models.UpsertBatchConnections(connections)
+	}
+
+	sess := &gorm.Session{FullSaveAssociations: true}
+	err = models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		// Insert resource
+		err = models.UpsertResource(tx, &resource, true)
 		if err != nil {
-			log.Errorf("failed to upsert connections: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
-			return
+			log.Errorf("failed to upsert resource: %v", err)
+			return err
 		}
+
+		// Insert connections
+		if len(connections) > 0 {
+			err = models.UpsertBatchConnections(tx, connections)
+			if err != nil {
+				log.Errorf("failed to upsert batch connections: %v", err)
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Errorf("failed to create resource: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusCreated, toOpenApi(&resource))
