@@ -1920,13 +1920,18 @@ type ResourceResponse struct {
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
-type RunbookConfiguration struct {
+type RunbookConfigurationRequest struct {
+	// The runbook repository configuration
+	Repositories []RunbookRepository `json:"repositories" binding:"required"`
+}
+
+type RunbookConfigurationResponse struct {
 	// The unique identifier of the runbook
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// Organization ID that owns this configuration
 	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
 	// The runbook repository configuration
-	Repositories []RunbookRepository `json:"repositories"`
+	Repositories []RunbookRepositoryResponse `json:"repositories"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -1948,12 +1953,27 @@ type RunbookRepository struct {
 	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
 	// Git SSH known hosts for host key verification
 	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
-	GitHookTTL    int    `json:"git_hook_ttl" example:1000`
+	GitHookTTL    int    `json:"git_hook_ttl" example:"1000"`
 }
 
-type RunbookConfigurationRequest struct {
-	// The runbook repository configuration
-	Repositories []RunbookRepository `json:"repositories" binding:"required"`
+type RunbookRepositoryResponse struct {
+	// Git repository identifier in the format `host/owner/repo`
+	Repository string `json:"repository" binding:"required" example:"github.com/myorg/myrepo"`
+	// Git repository URL where the runbook is located
+	GitUrl string `json:"git_url" binding:"required" example:"https://github.com/myorg/myrepo"`
+	// Git username for repository authentication
+	GitUser string `json:"git_user" example:"myusername"`
+	// Git password or token for repository authentication
+	GitPassword string `json:"git_password" example:"mypassword"`
+	// SSH private key for Git repository authentication
+	SSHKey string `json:"ssh_key" example:"-----BEGIN PRIVATE KEY-----..."`
+	// SSH username for Git repository authentication
+	SSHUser string `json:"ssh_user" example:"myuser"`
+	// SSH key passphrase for encrypted SSH keys
+	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
+	// Git SSH known hosts for host key verification
+	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
+	GitHookTTL    int    `json:"git_hook_ttl" example:"1000"`
 }
 
 type RunbookV2 struct {

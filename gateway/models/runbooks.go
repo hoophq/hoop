@@ -24,6 +24,7 @@ type RunbookRepositoryConfig struct {
 	SSHKeyPass    string `json:"ssh_key_pass"`
 	SSHKnownHosts string `json:"ssh_known_hosts"`
 	GitHookTTL    int    `json:"git_hook_config_ttl"`
+	GitBranch     string `json:"git_branch"`
 }
 
 type Runbooks struct {
@@ -185,7 +186,7 @@ func BuildCommonConfig(config *RunbookRepositoryConfig) (*commonRunbooks.Config,
 		SSHUser:       config.SSHUser,
 		SSHKeyPass:    config.SSHKeyPass,
 		SSHKnownHosts: config.SSHKnownHosts,
-		GitBranch:     "",
+		GitBranch:     config.GitBranch,
 		HookCacheTTL:  config.GitHookTTL,
 	}
 
