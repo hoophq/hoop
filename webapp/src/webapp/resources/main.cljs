@@ -285,6 +285,7 @@
           :has-more? (:has-more? current-state)
           :loading? current-loading?}
 
+         ^{:key "infinite-scroll-children"}
          [:div
           ;; Add button (admin only)
           (when (-> @user :data :admin?)

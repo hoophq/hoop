@@ -161,18 +161,18 @@
 
               (if (> (count connections-data) 0)
                 [:div {:class "relative"}
-                 [infinite-scroll
-                  {:on-load-more (fn []
-                                   (when (not connections-loading?)
-                                     (let [next-page (inc current-page)
-                                           active-search (:active-search @connections)
-                                           next-request (cond-> {:page next-page
-                                                                 :force-refresh? false}
-                                                          (not (string/blank? active-search)) (assoc :search active-search))]
-                                       (rf/dispatch [:connections/get-connections-paginated next-request]))))
-                   :has-more? has-more?
-                   :loading? connections-loading?}
-                  [:ul
+                 [:ul
+                  [infinite-scroll
+                   {:on-load-more (fn []
+                                    (when (not connections-loading?)
+                                      (let [next-page (inc current-page)
+                                            active-search (:active-search @connections)
+                                            next-request (cond-> {:page next-page
+                                                                  :force-refresh? false}
+                                                           (not (string/blank? active-search)) (assoc :search active-search))]
+                                        (rf/dispatch [:connections/get-connections-paginated next-request]))))
+                    :has-more? has-more?
+                    :loading? connections-loading?}
                    (doall
                     (for [connection connections-data]
                       ^{:key (:name connection)}

@@ -142,6 +142,8 @@
                               (rf/dispatch [:connections/get-connections-paginated next-request]))))
           :has-more? (:has-more? connections-state)
           :loading? connections-loading?}
+
+         ^{:key "infinite-scroll-children"}
          [:div
           (when (-> @user :data :admin?)
             [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10 flex gap-2"}
