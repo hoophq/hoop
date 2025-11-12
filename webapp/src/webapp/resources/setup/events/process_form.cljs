@@ -59,12 +59,14 @@
         ;; Build command array for custom types
         ;; command-args is stored as array of {"value": "...", "label": "..."}
         ;; Extract just the values
+
+        _ (println "role" role)
+
         command-args (:command-args role [])
-        command (if (= type "custom")
-                  (if (seq command-args)
-                    (mapv #(get % "value") command-args)
-                    (or (:command role) []))
-                  [])]
+        command (if (and (= type "custom")
+                         (= subtype "linux-vm"))
+                  (mapv #(get % "value") command-args)
+                  (or (:command role) []))]
 
     {:name (:name role)
      :type type
