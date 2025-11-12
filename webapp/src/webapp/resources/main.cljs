@@ -80,7 +80,9 @@
           {:variant "ghost"
            :color "gray"
            :class "w-full justify-between gap-2"
-           :onClick #(on-change (if (= selected-resource value) nil value))}
+           :onClick #(on-change (if (= selected-resource value)
+                                  nil
+                                  value))}
           [:> Text {:size "2" :class "text-gray-12"}
            label]
           (when (= selected-resource value)
@@ -240,6 +242,7 @@
         url-params (new js/URLSearchParams search-string)
         initial-tab (.get url-params "tab")
         active-tab (r/atom (or initial-tab "resources"))
+        connections-search-status (r/atom nil)
         search-name (r/atom "")
         selected-tags (r/atom {})
         tags-popover-open? (r/atom false)
@@ -270,7 +273,22 @@
             current-state (if (= @active-tab "resources") resources-state connections-state)
             current-data (if (= @active-tab "resources") resources-data connections-data)
             current-loading? (if (= @active-tab "resources") resources-loading? connections-loading?)
-            any-filters? (or (seq @selected-tags) @selected-resource)]
+            any-filters? (or (seq @selected-tags) @selected-resource)
+
+            apply-filter (fn [filter-update]
+                           (when @search-debounce-timer
+                             (js/clearTimeout @search-debounce-timer))
+                           (reset! search-debounce-timer nil)
+                           (reset! connections-search-status :loading)
+                           (let [search-value (cs/trim @search-name)
+                                 request (cond-> {:filters filter-update
+                                                  :page 1
+                                                  :force-refresh? true}
+                                           (and (not (cs/blank? search-value))
+                                                (> (count search-value) 2)) (assoc :search search-value))]
+                             (if (= @active-tab "resources")
+                               (rf/dispatch [:resources/get-resources-paginated request])
+                               (rf/dispatch [:connections/get-connections-paginated request]))))]
 
         [infinite-scroll
          {:on-load-more (fn []
@@ -372,11 +390,18 @@
                [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
                 [tag-selector/tag-selector @selected-tags
                  (fn [new-selected]
-                   (reset! selected-tags new-selected))]]])
+                   (reset! selected-tags new-selected)
+                   (apply-filter (cond-> {}
+                                   (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
+                                   @selected-resource (assoc :subtype @selected-resource))))]]])
 
             ;; Resource Type
             [resource-type-component @selected-resource
-             (fn [resource] (reset! selected-resource resource))]]]
+             (fn [resource]
+               (reset! selected-resource resource)
+               (apply-filter (cond-> {}
+                               (not-empty @selected-tags) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tags))
+                               resource (assoc :subtype resource))))]]]
 
           ;; Test Connection Modal (for roles tab)
           (when (= @active-tab "roles")
