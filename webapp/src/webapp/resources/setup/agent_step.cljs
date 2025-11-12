@@ -153,9 +153,9 @@
          "Create new Agent"])]]))
 
 (defn main []
-  (r/with-let
-    [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])
-     _ (rf/dispatch-sync [:agents->get-agents])]
+  (r/with-let [creation-mode (rf/subscribe [:resource-setup/agent-creation-mode])
+               ;; Fetch agents only once on mount
+               _ (rf/dispatch [:agents->get-agents])]
 
     [:> Box {:class "p-8 space-y-16"}
      ;; Header

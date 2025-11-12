@@ -21,7 +21,6 @@
     ;; Load metadata and agents on mount if not already loaded
     (when (nil? connections-metadata)
       (rf/dispatch [:connections->load-metadata]))
-    (rf/dispatch [:agents->get-agents])
 
     [page-wrapper/main
      {:onboarding? onboarding?

@@ -1,5 +1,6 @@
 (ns webapp.resources.setup.events.process-form
   (:require
+   [clojure.string :as str]
    [webapp.resources.helpers :as helpers]))
 
 (defn process-http-headers
@@ -16,8 +17,8 @@
   (let [subtype (:subtype role)
         credentials (:credentials role)
         metadata-credentials (:metadata-credentials role)
-        env-vars (:environment-variables role [])
-        config-files (:configuration-files role [])
+        env-vars (or (:environment-variables role) [])
+        config-files (or (:configuration-files role) [])
 
         ;; Convert credentials to env-var format
         credential-env-vars (mapv (fn [[k v]]
@@ -39,13 +40,14 @@
                        (let [headers (:environment-variables role [])
                              processed-headers (process-http-headers headers)]
                          (concat all-credential-env-vars processed-headers))
-                       (concat all-credential-env-vars env-vars))]
+                       (concat all-credential-env-vars env-vars))
+
+        envvar-result (helpers/config->json all-env-vars "envvar:")
+        filesystem-result (when (seq config-files)
+                            (helpers/config->json config-files "filesystem:"))]
 
     (clj->js
-     (merge
-      (helpers/config->json all-env-vars "envvar:")
-      (when (seq config-files)
-        (helpers/config->json config-files "filesystem:"))))))
+     (merge envvar-result filesystem-result))))
 
 (defn process-role
   "Process a single role into the format expected by the API"
@@ -78,6 +80,40 @@
      :redact_types []
      :reviewers []}))
 
+(defn finalize-role-current-values
+  "Add current (uncommitted) env vars and config files to a role before processing"
+  [role]
+  (let [;; Get current env var values
+        env-current-key (:env-current-key role)
+        env-current-value (:env-current-value role)
+        has-pending-env? (and (not (str/blank? env-current-key))
+                              (not (str/blank? env-current-value)))
+
+        ;; Get current config file values
+        config-current-name (:config-current-name role)
+        config-current-content (:config-current-content role)
+        has-pending-config? (and (not (str/blank? config-current-name))
+                                 (not (str/blank? config-current-content)))
+
+        ;; Add pending env var if exists
+        updated-env-vars (if has-pending-env?
+                           (conj (or (:environment-variables role) [])
+                                 {:key env-current-key :value env-current-value})
+                           (:environment-variables role))
+
+        ;; Add pending config file if exists
+        updated-config-files (if has-pending-config?
+                               (conj (or (:configuration-files role) [])
+                                     {:key config-current-name :value config-current-content})
+                               (:configuration-files role))]
+
+    (-> role
+        (assoc :environment-variables updated-env-vars)
+        (assoc :configuration-files updated-config-files)
+        ;; Remove temporary fields
+        (dissoc :env-current-key :env-current-value)
+        (dissoc :config-current-name :config-current-content))))
+
 (defn process-payload
   "Process the entire resource setup form into API payload"
   [db]
@@ -85,7 +121,10 @@
         resource-type (get-in db [:resource-setup :type])
         resource-subtype (get-in db [:resource-setup :subtype])
         agent-id (get-in db [:resource-setup :agent-id])
-        roles (get-in db [:resource-setup :roles] [])
+        raw-roles (get-in db [:resource-setup :roles] [])
+
+        ;; Finalize roles by adding any uncommitted current values
+        roles (mapv finalize-role-current-values raw-roles)
 
         ;; Process all roles
         processed-roles (mapv #(process-role % agent-id) roles)]
