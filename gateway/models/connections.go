@@ -622,7 +622,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
-	namePattern := "%" + opts.Name + "%"
+	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
 
 	var items []Connection
@@ -821,8 +821,8 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
-	namePattern := "%" + opts.Name + "%"
-	resourceNamePattern := "%" + opts.ResourceName + "%"
+	namePattern := opts.Name
+	resourceNamePattern := opts.ResourceName
 
 	offset := 0
 	if opts.Page > 1 {
