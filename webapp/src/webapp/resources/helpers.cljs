@@ -10,11 +10,11 @@
   (s/includes? (.. js/window -location -pathname) "/onboarding"))
 
 (defn random-role-name
-  "Generates a random role name based on resource type.
+  "Generates a random role name based on the parameters passed in.
    Example: \"postgres-readonly-1234\""
-  [resource-type]
+  [name]
   (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})]
-    (str resource-type "-role-" numberDictionary)))
+    (str name "-role-" numberDictionary)))
 
 (defn config->json
   "Converts configuration maps to a JSON format with prefixed keys.

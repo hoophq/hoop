@@ -74,8 +74,9 @@
  (fn [db [_]]
    (let [resource-type (get-in db [:resource-setup :type])
          resource-subtype (get-in db [:resource-setup :subtype])
+         resource-name (get-in db [:resource-setup :name])
          command (get-in db [:resource-setup :command])
-         new-role {:name (helpers/random-role-name resource-subtype)
+         new-role {:name (helpers/random-role-name resource-name)
                    :type resource-type
                    :subtype resource-subtype
                    :command command
