@@ -55,9 +55,13 @@
       [forms/textarea base-props]
       [forms/input base-props])))
 
-(defn metadata-credentials [connection-subtype]
+(defn metadata-credentials [connection-subtype form-type]
   (let [configs (get-metadata-credentials-config connection-subtype)
-        credentials @(rf/subscribe [:connection-setup/metadata-credentials])]
+        saved-credentials @(rf/subscribe [:connection-setup/metadata-credentials])
+        credentials (if (= form-type :update)
+                      saved-credentials
+                      @(rf/subscribe [:connection-setup/metadata-credentials]))]
+
     (if configs
       [:> Box {:class "space-y-5"}
        [:> Heading {:as "h3" :size "4" :weight "bold"}
@@ -67,12 +71,11 @@
         (for [field configs]
           ^{:key (:key field)}
           [render-field (assoc field
-                               :value (get credentials (:key field) (:value field)))])]]
+                               :value (get credentials (:key field) ""))])]]
 
-      ;; Debug fallback
       nil)))
 
-(defn credentials-step [connection-subtype _form-type]
+(defn credentials-step [connection-subtype form-type]
   [:form {:class "max-w-[600px]"
           :id "metadata-credentials-form"
           :on-submit (fn [e]
@@ -82,7 +85,7 @@
 
     (when connection-subtype
       [:<>
-       [metadata-credentials connection-subtype]
+       [metadata-credentials connection-subtype form-type]
        [agent-selector/main]])]])
 
 (defn main [form-type]

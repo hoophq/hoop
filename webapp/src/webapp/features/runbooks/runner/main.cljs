@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.main
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Text Tooltip]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton ScrollArea Text Tooltip]]
    ["lucide-react" :refer [LibraryBig PackagePlus Play Sun Moon ChevronDown ChevronsLeft ChevronsRight]]
    ["allotment" :refer [Allotment]]
    [reagent.core :as r]
@@ -27,13 +27,9 @@
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
       (letfn [(run-disabled? []
                 (let [template @selected-template
-                      connection @runbooks-connection
-                      runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))
-                      exec-enabled? (= "enabled" (:access_mode_exec connection))]
+                      connection @runbooks-connection]
                   (or (nil? connection)
-                      (empty? (:data template))
-                      (not runbooks-enabled?)
-                      (not exec-enabled?))))]
+                      (empty? (:data template)))))]
         (r/with-let [submit-ref (r/atom submit)
                      handle-keydown (let [f (fn [e]
                                               (when (and (= "Enter" (.-key e))
@@ -110,7 +106,7 @@
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
     (fn [{:keys [collapsed? on-toggle-collapse]}]
       [:> Box {:as "aside"
-               :class (str "h-full transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
+               :class (str "h-full flex flex-col transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
                            (if collapsed? "w-16" "w-full"))}
        [:> Flex {:align "center"
                  :justify "between"
@@ -124,7 +120,9 @@
                         :onClick on-toggle-collapse}
          [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
        (when-not collapsed?
-         [:> Box {:class "flex-1 p-2 pb-4 h-[calc(100%-2.5rem)] overflow-y-auto"} [runbooks-list/main templates filtered-templates]])])))
+         [:> ScrollArea {:class "flex-1"}
+          [:> Box {:class "h-full p-2 pb-4"}
+           [runbooks-list/main templates filtered-templates]]])])))
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
@@ -172,8 +170,7 @@
            [:> Box {:class "h-full flex-1"}
             [connections-dialog/connections-dialog]
             [runbook-form/main {:runbook @selected-template
-                                :preselected-connection (:name @runbooks-connection)
-                                :selected-connections @(rf/subscribe [:execution/target-connections])}]]
+                                :selected-connection @runbooks-connection}]]
            [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
             [log-area/main
              (discover-connection-type @runbooks-connection)

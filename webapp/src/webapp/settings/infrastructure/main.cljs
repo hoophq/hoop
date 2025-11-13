@@ -107,7 +107,7 @@
                [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}
                 "Proxy Port"]
                [forms/input
-                {:placeholder "e.g. 3389"
+                {:placeholder "e.g. 13389"
                  :value (:rdp-proxy-port data)
                  :on-change #(rf/dispatch [:infrastructure->update-field
                                            :rdp-proxy-port (-> % .-target .-value)])}]]]]]])))))

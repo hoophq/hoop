@@ -1,10 +1,9 @@
 (ns webapp.features.runbooks.runner.views.form
   (:require [clojure.string :as cs]
-            ["@radix-ui/themes" :refer [Box Flex Heading Text]]
+            ["@radix-ui/themes" :refer [Box Flex Heading Text ScrollArea]]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.forms :as forms]
-            [webapp.features.runbooks.runner.views.exec-multiples-runbook-list :as exec-multiples-runbooks-list]
             [webapp.config :as config]))
 
 (defn dynamic-form
@@ -83,13 +82,13 @@
 
     (let [form-ref (r/atom nil)
           prev-execute (r/atom false)]
-      (fn [_ template selected-connections connection-name]
+      (fn [_ template selected-connection]
         ;; TODO: This implementation was made to fix the behavior of defmethod not accepting the re-rendering
         ;; based on its own key.
         (if (nil? (:data template))
           [:> Flex {:class "items-center justify-center h-full"}
-             [:> Text {:size "5" :class "text-gray-11"}
-              "No Runbook selected"]]
+           [:> Text {:size "5" :class "text-gray-11"}
+            "No Runbook selected"]]
 
           (do
             ;; Reset state when template changes
@@ -106,42 +105,37 @@
                   (swap! state assoc param (or (:default metadata) "")))))
 
             (let [handle-submit (fn []
-                                   (when (and @form-ref (not (.reportValidity @form-ref))) nil)
+                                  (when (and @form-ref (not (.reportValidity @form-ref))) nil)
 
-                                   (when (or (nil? @form-ref) (.reportValidity @form-ref))
-                                     (if (> (count selected-connections) 1)
-                                       (let [has-jira-template? (some #(seq (:jira_issue_template_id %))
-                                                                      selected-connections)
-                                             jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
-                                                                              :data
-                                                                              :status)
-                                                                          "enabled")]
-                                         (if (and has-jira-template? jira-integration-enabled?)
-                                           (rf/dispatch [:dialog->open
-                                                         {:title "Running in multiple connections not allowed"
-                                                          :action-button? false
-                                                          :text "For now, it's not possible to run commands in multiple connections with Jira Templates activated. Please select just one connection before running your command."}])
-                                           (reset! exec-multiples-runbooks-list/atom-exec-runbooks-list-open? true)))
+                                  (when (or (nil? @form-ref) (.reportValidity @form-ref))
+                                    (let [connection selected-connection
+                                          has-jira-template? (and connection
+                                                                  (seq (:jira_issue_template_id connection)))
+                                          jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
+                                                                           :data
+                                                                           :status)
+                                                                       "enabled")
+                                          runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))]
 
-                                       (let [connection (first (filter #(= (:name %) connection-name)
-                                                                       selected-connections))
-                                             has-jira-template? (and connection
-                                                                     (seq (:jira_issue_template_id connection)))
-                                             jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
-                                                                              :data
-                                                                              :status)
-                                                                          "enabled")]
-                                         (if (and has-jira-template? jira-integration-enabled?)
-                                           (rf/dispatch [:runbooks-plugin/show-jira-form
-                                                         {:template-id (:jira_issue_template_id connection)
-                                                          :file-name (-> template :data :name)
-                                                          :params @state
-                                                          :connection-name connection-name}])
-                                           (rf/dispatch [:editor-plugin->run-runbook
-                                                         {:file-name (-> template :data :name)
-                                                          :metadata (-> template :data :metadata)
-                                                          :params @state
-                                                          :connection-name connection-name}]))))))]
+                                      (cond
+                                        (not runbooks-enabled?)
+                                        (rf/dispatch [:dialog->open
+                                                      {:title "Runbooks access mode is disabled"
+                                                       :action-button? false
+                                                       :text "Your connection does not have runbooks access mode enabled. Please enable it in the connection settings."}])
+
+                                        (and has-jira-template? jira-integration-enabled?)
+                                        (rf/dispatch [:runbooks-plugin/show-jira-form
+                                                      {:template-id (:jira_issue_template_id connection)
+                                                       :file-name (-> template :data :name)
+                                                       :params @state
+                                                       :connection-name (:name connection)}])
+
+                                        :else (rf/dispatch [:editor-plugin->run-runbook
+                                                            {:file-name (-> template :data :name)
+                                                             :metadata (-> template :data :metadata)
+                                                             :params @state
+                                                             :connection-name (:name connection)}])))))]
 
               (let [execute-req-sub (rf/subscribe [:runbooks/execute-trigger])
                     execute? @execute-req-sub]
@@ -150,20 +144,21 @@
                   (rf/dispatch [:runbooks/execute-handled]))
                 (reset! prev-execute execute?))
 
-              [:> Box {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
-               [:> Box
-                [:form
-                 {:ref (fn [el] (reset! form-ref el))
-                  :on-submit (fn [e] (.preventDefault e))}
-                 [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-1"}
-                  [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
-                   (let [parts (cs/split (-> template :data :name) #"/")
-                         file-name (last parts)
-                         path (cs/join " / " (butlast parts))]
-                     [:> Box
-                      [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
-                      [:> Text {:size "3" :class "font-bold"} file-name]])]]
-                 [:> Box {:class "p-3 space-y-6 h-[calc(100vh-40px)]"}
+              [:> Box {:class "flex flex-col h-full text-[--gray-12]"}
+               [:form
+                {:ref (fn [el] (reset! form-ref el))
+                 :on-submit (fn [e] (.preventDefault e))
+                 :class "flex flex-col h-full"}
+                [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-1 flex-shrink-0"}
+                 [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
+                  (let [parts (cs/split (-> template :data :name) #"/")
+                        file-name (last parts)
+                        path (cs/join " / " (butlast parts))]
+                    [:> Box
+                     [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
+                     [:> Text {:size "3" :class "font-bold"} file-name]])]]
+                [:> ScrollArea
+                 [:> Box {:class "p-3 space-y-6 flex-1"}
                   [:> Text
                    {:size "1" :class "text-gray-11"}
                    "Fill the params below for this Runbook"]
@@ -185,16 +180,7 @@
                                               :default-value (:default metadata)}]))
 
                   (when-let [err (-> template :data :error)]
-                    [error-view err])]]]
-               (when @exec-multiples-runbooks-list/atom-exec-runbooks-list-open?
-                 [exec-multiples-runbooks-list/main (map #(into {} {:connection-name (:name %)
-                                                                    :file_name (-> template :data :name)
-                                                                    :parameters @state
-                                                                    :type (:type %)
-                                                                    :subtype (:subtype %)
-                                                                    :session-id nil
-                                                                    :status :ready})
-                                                         selected-connections)])])))))))
+                    [error-view err])]]]])))))))
 
 (defmethod template-view :loading []
   [:> Flex {:class "items-center justify-center h-full"}
@@ -209,10 +195,10 @@
     "Select an available Runbook on your Library to begin"]])
 
 (defn main []
-  (fn [{:keys [runbook selected-connections preselected-connection only-runbooks?]}]
+  (fn [{:keys [runbook selected-connection only-runbooks?]}]
     [:<>
      (when-not only-runbooks?
        [:> Box {:class "absolute right-4 top-4 transition cursor-pointer z-10"
-              :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}])
-     [template-view (:status runbook) runbook selected-connections preselected-connection]]))
+                :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}])
+     [template-view (:status runbook) runbook selected-connection]]))
 

@@ -3793,7 +3793,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/openapi.RunbookConfiguration"
+                            "$ref": "#/definitions/openapi.RunbookConfigurationResponse"
                         }
                     },
                     "404": {
@@ -3837,7 +3837,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/openapi.RunbookConfiguration"
+                            "$ref": "#/definitions/openapi.RunbookConfigurationResponse"
                         }
                     },
                     "400": {
@@ -8026,7 +8026,7 @@ const docTemplate = `{
                 "listen_address": {
                     "description": "The listen address to run the RDP server proxy",
                     "type": "string",
-                    "example": "0.0.0.0:3389"
+                    "example": "0.0.0.0:13389"
                 }
             }
         },
@@ -8403,7 +8403,22 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.RunbookConfiguration": {
+        "openapi.RunbookConfigurationRequest": {
+            "type": "object",
+            "required": [
+                "repositories"
+            ],
+            "properties": {
+                "repositories": {
+                    "description": "The runbook repository configuration",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRepository"
+                    }
+                }
+            }
+        },
+        "openapi.RunbookConfigurationResponse": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -8430,7 +8445,7 @@ const docTemplate = `{
                     "description": "The runbook repository configuration",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/openapi.RunbookRepository"
+                        "$ref": "#/definitions/openapi.RunbookRepositoryResponse"
                     }
                 },
                 "updated_at": {
@@ -8438,21 +8453,6 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
-                }
-            }
-        },
-        "openapi.RunbookConfigurationRequest": {
-            "type": "object",
-            "required": [
-                "repositories"
-            ],
-            "properties": {
-                "repositories": {
-                    "description": "The runbook repository configuration",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.RunbookRepository"
-                    }
                 }
             }
         },
@@ -8563,7 +8563,8 @@ const docTemplate = `{
             ],
             "properties": {
                 "git_hook_ttl": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 1000
                 },
                 "git_password": {
                     "description": "Git password or token for repository authentication",
@@ -8579,6 +8580,59 @@ const docTemplate = `{
                     "description": "Git username for repository authentication",
                     "type": "string",
                     "example": "myusername"
+                },
+                "ssh_key": {
+                    "description": "SSH private key for Git repository authentication",
+                    "type": "string",
+                    "example": "-----BEGIN PRIVATE KEY-----..."
+                },
+                "ssh_keypass": {
+                    "description": "SSH key passphrase for encrypted SSH keys",
+                    "type": "string",
+                    "example": "mykeypassphrase"
+                },
+                "ssh_known_hosts": {
+                    "description": "Git SSH known hosts for host key verification",
+                    "type": "string",
+                    "example": "github.com ssh-rsa AAAA..."
+                },
+                "ssh_user": {
+                    "description": "SSH username for Git repository authentication",
+                    "type": "string",
+                    "example": "myuser"
+                }
+            }
+        },
+        "openapi.RunbookRepositoryResponse": {
+            "type": "object",
+            "required": [
+                "git_url",
+                "repository"
+            ],
+            "properties": {
+                "git_hook_ttl": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "git_password": {
+                    "description": "Git password or token for repository authentication",
+                    "type": "string",
+                    "example": "mypassword"
+                },
+                "git_url": {
+                    "description": "Git repository URL where the runbook is located",
+                    "type": "string",
+                    "example": "https://github.com/myorg/myrepo"
+                },
+                "git_user": {
+                    "description": "Git username for repository authentication",
+                    "type": "string",
+                    "example": "myusername"
+                },
+                "repository": {
+                    "description": "Git repository identifier in the format ` + "`" + `host/owner/repo` + "`" + `",
+                    "type": "string",
+                    "example": "github.com/myorg/myrepo"
                 },
                 "ssh_key": {
                     "description": "SSH private key for Git repository authentication",

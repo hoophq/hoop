@@ -9,6 +9,7 @@
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.database :as database]
    [webapp.connections.views.setup.events.process-form :as helpers]
+   [webapp.connections.views.setup.metadata-driven :as metadata-driven]
    [webapp.connections.views.setup.network :as network]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.setup.server :as server]
@@ -46,9 +47,18 @@
      guardrails-list (rf/subscribe [:guardrails->list])
      jira-templates-list (rf/subscribe [:jira-templates->list])
      test-connection-state (rf/subscribe [:connections->test-connection])
+     ;; Subscriptions para usar no submit
+     env-current-key (rf/subscribe [:connection-setup/env-current-key])
+     env-current-value (rf/subscribe [:connection-setup/env-current-value])
+     config-current-name (rf/subscribe [:connection-setup/config-current-name])
+     config-current-content (rf/subscribe [:connection-setup/config-current-content])
+     current-tag-key (rf/subscribe [:connection-setup/current-key])
+     current-tag-value (rf/subscribe [:connection-setup/current-value])
+     environment-variables (rf/subscribe [:connection-setup/environment-variables])
+     configuration-files (rf/subscribe [:connection-setup/configuration-files])
+     ssh-auth-method (rf/subscribe [:connection-setup/ssh-auth-method])
      initialized? (r/atom false)
      check-form-validity! (fn []
-                            ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
                             (when-let [connection-data (:data @connection)]
                               (let [connection-type (:type connection-data)
                                     connection-subtype (:subtype connection-data)
@@ -66,53 +76,52 @@
 
     (let [handle-submit (fn [e]
                           (.preventDefault e)
-                          ;; Identificar dinamicamente qual formulário validar baseado no tipo de conexão
                           (let [connection-type (:type (:data @connection))
                                 connection-subtype (:subtype (:data @connection))
                                 form-id (cond
+                                          (and (= connection-type "custom")
+                                               (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"} connection-subtype)))
+                                          "metadata-credentials-form"
                                           (and (= connection-type "application")
                                                (= connection-subtype "ssh")) "ssh-credentials-form"
                                           :else "credentials-form")
                                 form (.getElementById js/document form-id)
-                                current-env-key @(rf/subscribe [:connection-setup/env-current-key])
-                                current-env-value @(rf/subscribe [:connection-setup/env-current-value])
-                                current-file-name @(rf/subscribe [:connection-setup/config-current-name])
-                                current-file-content @(rf/subscribe [:connection-setup/config-current-content])
-                                current-tag-key @(rf/subscribe [:connection-setup/current-key])
-                                current-tag-value @(rf/subscribe [:connection-setup/current-value])]
+                                current-env-key @env-current-key
+                                current-env-value @env-current-value
+                                current-file-name @config-current-name
+                                current-file-content @config-current-content
+                                current-tag-key @current-tag-key
+                                current-tag-value @current-tag-value]
 
                             (when form
                               (.reportValidity form)
                               (reset! credentials-valid? (.checkValidity form)))
 
                             (when @credentials-valid?
-                              ;; Para conexões SSH, limpar campos não utilizados baseado no método de autenticação
                               (when (and (= connection-type "application")
                                          (= connection-subtype "ssh"))
-                                (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
+                                (let [auth-method @ssh-auth-method]
                                   (case auth-method
                                     "password"
-                                    ;; Limpar campo de chave privada quando usando username & password
                                     (rf/dispatch [:connection-setup/update-ssh-credentials
                                                   "authorized_server_keys" ""])
 
                                     "key"
-                                    ;; Limpar campo de senha quando usando private key authentication
                                     (rf/dispatch [:connection-setup/update-ssh-credentials
                                                   "pass" ""])
 
-                                    nil))) ; não fazer nada se método não definido
+                                    nil)))
 
                               ;; Process current input values before submitting
                               (when (and (not (empty? current-env-key))
                                          (not (empty? current-env-value)))
                                 (doall
                                  (rf/dispatch [:connection-setup/update-env-var
-                                               (count @(rf/subscribe [:connection-setup/environment-variables]))
+                                               (count @environment-variables)
                                                :key
                                                current-env-key])
                                  (rf/dispatch [:connection-setup/update-env-var
-                                               (count @(rf/subscribe [:connection-setup/environment-variables]))
+                                               (count @environment-variables)
                                                :value
                                                current-env-value])))
 
@@ -120,11 +129,11 @@
                                          (not (empty? current-file-content)))
                                 (doall
                                  (rf/dispatch [:connection-setup/update-config-file
-                                               (count @(rf/subscribe [:connection-setup/configuration-files]))
+                                               (count @configuration-files)
                                                :key
                                                current-file-name])
                                  (rf/dispatch [:connection-setup/update-config-file
-                                               (count @(rf/subscribe [:connection-setup/configuration-files]))
+                                               (count @configuration-files)
                                                :value
                                                current-file-content])))
 
@@ -192,7 +201,11 @@
                        "database" [database/credentials-step
                                    (:subtype (:data @connection))
                                    :update]
-                       "custom" [server/credentials-step :update]
+                       "custom" (let [subtype (:subtype (:data @connection))]
+                                  (if (and subtype
+                                           (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"} subtype)))
+                                    [metadata-driven/credentials-step subtype :update]
+                                    [server/credentials-step :update]))
                        "application" (if (= (:subtype (:data @connection)) "ssh")
                                        [server/ssh-credentials]
                                        [network/credentials-form
