@@ -67,6 +67,7 @@
         access-modes (get-in config [:access-modes])
         guardrails (get-in db [:connection-setup :config :guardrails])
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
+        metadata-credentials (get-in db [:connection-setup :metadata-credentials])
         all-env-vars (cond
                        (= api-type "database")
                        (let [database-credentials (get-in db [:connection-setup :database-credentials])
@@ -76,23 +77,12 @@
                                                            (seq database-credentials))]
                          (concat credentials-as-env-vars env-vars))
 
-                       (and (= ui-type "custom") connection-subtype (get-in db [:connection-setup :metadata-credentials]))
-                       (let [metadata-credentials (get-in db [:connection-setup :metadata-credentials])
-                             connections-metadata @(rf/subscribe [:connections->metadata])
-                             connection (->> (:connections connections-metadata)
-                                             (filter #(= (get-in % [:resourceConfiguration :subtype]) connection-subtype))
-                                             first)
-                             credentials-config (get-in connection [:resourceConfiguration :credentials])
-                             credentials-as-env-vars (mapv (fn [[field-key field-value]]
-                                                             (let [form-key-normalized (str/lower-case (str/replace (name field-key) #"[^a-zA-Z0-9]" ""))
-                                                                   original-config (->> credentials-config
-                                                                                        (filter #(= (str/lower-case (str/replace (:name %) #"[^a-zA-Z0-9]" ""))
-                                                                                                    form-key-normalized))
-                                                                                        first)]
-                                                               {:key (or (:name original-config) (name field-key))
-                                                                :value field-value}))
+                       (and (= ui-type "custom") connection-subtype (seq metadata-credentials))
+                       (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
+                                                             {:key (name field-key)
+                                                              :value field-value})
                                                            (seq metadata-credentials))]
-                         (concat credentials-as-env-vars env-vars))
+                         credentials-as-env-vars)
 
                        (= connection-subtype "tcp")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
@@ -214,10 +204,7 @@
     (reduce-kv (fn [acc k v]
                  (if (str/starts-with? (name k) secret-start-name)
                    (let [clean-key (-> (name k)
-                                       (str/replace secret-start-name "")
-                                       ;; Normalizar igual ao metadata: remover não-alfanuméricos e lowercase
-                                       (str/replace #"[^a-zA-Z0-9]" "")
-                                       str/lower-case)]
+                                       (str/replace secret-start-name ""))]
                      (assoc acc clean-key (decode-base64 v)))
                    acc))
                {}
