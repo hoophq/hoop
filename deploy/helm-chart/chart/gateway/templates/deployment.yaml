@@ -52,9 +52,9 @@ spec:
         - containerPort: 8009
           name: api
         - containerPort: 13389
-          name: api
+          name: rdp
         - containerPort: 12222
-          name: api
+          name: ssh
       {{- if .Values.defaultAgent.enabled }}
       - image: '{{ .Values.defaultAgent.imageRepository | default "hoophq/hoopdev" }}:{{ .Values.defaultAgent.imageTag | default "latest" }}'
         name: defaultagent
