@@ -245,9 +245,7 @@
                                                 200))
                                   on-failure (fn []
                                                (reset! is-submitting false))]
-                              (rf/dispatch [:runbooks-configurations/update api-repositories on-success on-failure]))))))]
-    
-    (rf/dispatch [:runbooks-configurations/get])
+                              (rf/dispatch [:runbooks-configurations/update api-repositories on-success on-failure]))))))] 
 
     (fn []
       (let [config-status (:status @config-data)

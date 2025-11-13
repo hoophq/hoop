@@ -5,6 +5,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.headings :as h]
+   [webapp.components.loaders :as loaders]
    [webapp.features.promotion :as promotion]
    [webapp.features.runbooks.setup.views.configuration-view :as config-view]
    [webapp.features.runbooks.setup.views.empty-state :as empty-state]
@@ -16,26 +17,33 @@
         params (second params)]
     params))
 
+ (defn loading-view []
+   [:> Flex {:justify "center" :align "center"}
+    [loaders/simple-loader {:size "6" :border-size "4"}]])
+
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
         runbooks-rules-list (rf/subscribe [:runbooks-rules/list])
+        loading-rules? (rf/subscribe [:runbooks-rules/list-loading])
+        loading-config? (rf/subscribe [:runbooks-configurations/data-loading])
         active-tab (r/atom "rules")
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))]
 
     (rf/dispatch [:runbooks/list])
     (rf/dispatch [:runbooks-rules/get-all])
+    (rf/dispatch [:runbooks-configurations/get])
 
     (fn []
       (let [plugin (:plugin @plugin-details)
             installed? (or (:installed? plugin) false)
             has-rules? (seq (or (:data @runbooks-rules-list) []))]
 
-        ;; Initialize active tab from URL
         (when @url-tab
           (reset! active-tab @url-tab)
           (reset! url-tab nil))
-
+        
+        ;; TODO: Check if this check on plugin is still needed
         (if (and
              (or (not installed?)
                  (empty? (:config plugin)))
@@ -69,9 +77,12 @@
               [:> Separator {:size "4" :mb "7"}]
 
               [:> Tabs.Content {:value "rules" :class "h-full"}
-               (if (not has-rules?)
-                 [empty-state/main installed?]
-                 [runbook-list/main])]
+               (cond
+                 @loading-rules? [loading-view]
+                 (not has-rules?) [empty-state/main installed?]
+                 :else [runbook-list/main])]
 
               [:> Tabs.Content {:value "configurations" :class "h-full"}
-               [config-view/main active-tab]]]]]])))))
+               (if @loading-config?
+                 [loading-view]
+                 [config-view/main active-tab])]]]]])))))
