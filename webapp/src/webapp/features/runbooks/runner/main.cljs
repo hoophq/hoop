@@ -106,7 +106,7 @@
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
     (fn [{:keys [collapsed? on-toggle-collapse]}]
       [:> Box {:as "aside"
-               :class (str "h-full transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
+               :class (str "h-full flex flex-col transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
                            (if collapsed? "w-16" "w-full"))}
        [:> Flex {:align "center"
                  :justify "between"
@@ -120,8 +120,8 @@
                         :onClick on-toggle-collapse}
          [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
        (when-not collapsed?
-         [:> ScrollArea {:class "flex-1 h-[calc(100%-2.5rem)]"}
-          [:> Box {:class "p-2 pb-4"}
+         [:> ScrollArea {:class "flex-1"}
+          [:> Box {:class "h-full p-2 pb-4"}
            [runbooks-list/main templates filtered-templates]]])])))
 
 (defn main []
