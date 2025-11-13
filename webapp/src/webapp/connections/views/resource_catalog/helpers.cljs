@@ -33,6 +33,7 @@
 ;; Connections only for onboarding (execute direct actions)
 (def onboarding-connections
   [{:id "postgres-demo"
+    :badges ["new"]
     :name "Demo PostgresSQL"
     :description "Access a preloaded database to see it in action."
     :category "quickstart"
@@ -41,6 +42,7 @@
     :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])
     :special-type :action}
    {:id "aws-discovery"
+    :badges ["beta"]
     :name "Automatic resource discovery"
     :description "Access your resources through your infrastructure providers."
     :category "quickstart"
@@ -127,9 +129,6 @@
     {:categories all-categories
      :tags all-tags}))
 
-(def new-connections #{"postgres-demo"})
-(def beta-connections #{"mongodb" "aws-discovery"})
-
 ;; Connection to setup flow mapping
 (def connection-setup-mappings
   {;; Database connections (new resources flow)
@@ -147,11 +146,14 @@
 
 (defn get-connection-badge
   "Get badge info for a connection (NEW, BETA, etc)"
-  [connection-id]
-  (cond
-    (new-connections connection-id) {:text "NEW" :color "green"}
-    (beta-connections connection-id) {:text "BETA" :color "indigo"}
-    :else nil))
+  [connection-metadata]
+  (let [badges (or (:badges connection-metadata) [])]
+    (mapv (fn [badge]
+            (cond
+              (= badge "new") {:text "NEW" :color "green"}
+              (= badge "beta") {:text "BETA" :color "indigo"}
+              :else {:text (cs/capitalize badge) :color "gray"}))
+          badges)))
 
 (defn get-setup-config
   "Get setup configuration for a connection"
