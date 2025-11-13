@@ -124,8 +124,6 @@
         credentials-config (get-in connection [:resourceConfiguration :credentials])
         metadata-credentials @(rf/subscribe [:resource-setup/metadata-credentials role-index])]
 
-    (println "credentials-config" credentials-config)
-
     (when (seq credentials-config)
       [:> Box
        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}

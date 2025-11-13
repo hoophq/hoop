@@ -29,10 +29,9 @@
      [:> Plus {:size 16}]
      "Add New Role"]]])
 
-(defn loading-view []
-  [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
-   [:div {:class "flex items-center justify-center h-full"}
-    [loaders/simple-loader]]])
+(defn- loading-view []
+  [:> Box {:class "flex items-center justify-center h-full"}
+   [loaders/simple-loader]])
 
 (defn main [resource-id]
   (let [search-string (.. js/window -location -search)

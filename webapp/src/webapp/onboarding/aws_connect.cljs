@@ -563,7 +563,7 @@
      [:> Box {:class "w-full"}
       [data-table-simple
        {:columns [{:id :connection-name
-                   :header "Resource RoleS Name"
+                   :header "Resource Roles Name"
                    :width "40%"}
                   {:id :engine
                    :header "Type"

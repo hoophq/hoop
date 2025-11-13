@@ -43,9 +43,8 @@
      "."]]])
 
 (defn- loading-list-view []
-  [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}
-   [:div {:class "flex items-center justify-center h-full"}
-    [loaders/simple-loader]]])
+  [:> Box {:class "flex items-center justify-center h-96"}
+   [loaders/simple-loader]])
 
 (def resource-types
   [{:id "postgres" :value "postgres" :label "PostgreSQL"}
@@ -66,7 +65,7 @@
       [:> Shapes {:size 16}]
       "Resource"
       (when selected-resource
-        [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
+        [:> Box {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
          [:> Text {:size "1" :weight "bold" :class "text-white"}
           "1"]])]]]
 
@@ -119,14 +118,14 @@
       [:> Box {:class (str "bg-white border border-[--gray-3] "
                            "first:rounded-t-lg last:rounded-b-lg "
                            "p-regular text-xs flex justify-between items-center")}
-       [:div {:class "flex items-center gap-regular"}
-        [:div
+       [:> Box {:class "flex items-center gap-regular"}
+        [:> Box
          [:figure {:class "w-6"}
           [:img {:src (connection-constants/get-connection-icon resource)
                  :class "w-9"
                  :loading "lazy"}]]]
 
-        [:div
+        [:> Box
          [:> Text {:size "3" :weight "medium" :class "text-gray-12"}
           (:name resource)]]]
 
@@ -149,25 +148,25 @@
                            "first:rounded-t-lg last:rounded-b-lg "
                            "first:border-t last:border-b "
                            "p-regular text-xs flex gap-8 justify-between items-center")}
-       [:div {:class "flex truncate items-center gap-regular"}
-        [:div
+       [:> Box {:class "flex truncate items-center gap-regular"}
+        [:> Box
          [:figure {:class "w-6"}
           [:img {:src (connection-constants/get-connection-icon connection)
                  :class "w-9"
                  :loading "lazy"}]]]
-        [:div
+        [:> Box
          [:> Text {:as "p" :size "3" :weight "medium" :class "text-gray-12"}
           (:name connection)]
          [:> Text {:as "p" :size "1" :class "text-gray-11"}
           (:resource_name connection)]
          [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
-          [:div {:class (str "rounded-full h-[6px] w-[6px] "
-                             (if (= (:status connection) "online")
-                               "bg-green-500"
-                               "bg-red-500"))}]
+          [:> Box {:class (str "rounded-full h-[6px] w-[6px] "
+                               (if (= (:status connection) "online")
+                                 "bg-green-500"
+                                 "bg-red-500"))}]
           (cs/capitalize (:status connection))]]]
 
-       [:div {:class "flex gap-6 items-center"}
+       [:> Box {:class "flex gap-6 items-center"}
         (when (can-connect? connection)
           [:> DropdownMenu.Root {:dir "rtl"}
            [:> DropdownMenu.Trigger
@@ -304,10 +303,10 @@
           :loading? current-loading?}
 
          ^{:key "infinite-scroll-children"}
-         [:div
+         [:> Box
           ;; Add button (admin only)
           (when (-> @user :data :admin?)
-            [:div {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
+            [:> Box {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
              [:> Button {:on-click #(rf/dispatch [:navigate :resource-catalog])}
               "Setup new Resource"]])
 
@@ -384,7 +383,7 @@
                  [:> Flex {:gap "2" :align "center"}
                   [:> Tag {:size 16}] "Tags"
                   (when (not-empty @selected-tags)
-                    [:div {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
+                    [:> Box {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"}
                      [:> Text {:size "1" :weight "bold" :class "text-white"}
                       (apply + (map count (vals @selected-tags)))]])]]]
                [:> Popover.Content {:size "2" :align "start" :style {:width "300px"}}
@@ -409,7 +408,7 @@
              (get-in @test-connection-state [:connection-name])])
 
           ;; Tab Content (just the list content, no wrappers)
-          [:div {:class "flex-1 h-full"}
+          [:> Box {:class "flex-1 h-full"}
            (cond
              ;; Loading state when no data
              (and current-loading? (empty? current-data))
