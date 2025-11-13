@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.views.form
   (:require [clojure.string :as cs]
-            ["@radix-ui/themes" :refer [Box Flex Heading Text]]
+            ["@radix-ui/themes" :refer [Box Flex Heading Text ScrollArea]]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.forms :as forms]
@@ -144,20 +144,21 @@
                   (rf/dispatch [:runbooks/execute-handled]))
                 (reset! prev-execute execute?))
 
-              [:> Box {:class "overflow-auto lg:overflow-hidden text-[--gray-12]"}
-               [:> Box
-                [:form
-                 {:ref (fn [el] (reset! form-ref el))
-                  :on-submit (fn [e] (.preventDefault e))}
-                 [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-1"}
-                  [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
-                   (let [parts (cs/split (-> template :data :name) #"/")
-                         file-name (last parts)
-                         path (cs/join " / " (butlast parts))]
-                     [:> Box
-                      [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
-                      [:> Text {:size "3" :class "font-bold"} file-name]])]]
-                 [:> Box {:class "p-3 space-y-6 h-[calc(100vh-40px)]"}
+              [:> Box {:class "flex flex-col h-full text-[--gray-12]"}
+               [:form
+                {:ref (fn [el] (reset! form-ref el))
+                 :on-submit (fn [e] (.preventDefault e))
+                 :class "flex flex-col h-full"}
+                [:> Flex {:class "h-10 items-center px-3 py-2 border-b border-gray-3 bg-gray-1 flex-shrink-0"}
+                 [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
+                  (let [parts (cs/split (-> template :data :name) #"/")
+                        file-name (last parts)
+                        path (cs/join " / " (butlast parts))]
+                    [:> Box
+                     [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
+                     [:> Text {:size "3" :class "font-bold"} file-name]])]]
+                [:> ScrollArea
+                 [:> Box {:class "p-3 space-y-6 flex-1"}
                   [:> Text
                    {:size "1" :class "text-gray-11"}
                    "Fill the params below for this Runbook"]
