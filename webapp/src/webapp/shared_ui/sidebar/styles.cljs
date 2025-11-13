@@ -24,8 +24,8 @@
 ;; Estilos específicos de componentes
 (def sidebar-container
   {:mobile "fixed inset-0 flex"
-   :desktop "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#182449]"
-   :collapsed "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:bg-[#182449]"})
+   :desktop "hidden lg:fixed lg:inset-y-0 lg:z-40 lg:flex lg:w-side-menu lg:flex-col lg:bg-[#182449] dark"
+   :collapsed "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:block lg:w-[72px] lg:overflow-y-auto lg:overflow-x-hidden lg:bg-[#182449] dark"})
 
 ;; Estilos para ícones
 (def icon-styles
