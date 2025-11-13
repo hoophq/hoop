@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.main
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Text Tooltip]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton ScrollArea Text Tooltip]]
    ["lucide-react" :refer [LibraryBig PackagePlus Play Sun Moon ChevronDown ChevronsLeft ChevronsRight]]
    ["allotment" :refer [Allotment]]
    [reagent.core :as r]
@@ -120,7 +120,9 @@
                         :onClick on-toggle-collapse}
          [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
        (when-not collapsed?
-         [:> Box {:class "flex-1 p-2 pb-4 h-[calc(100%-2.5rem)] overflow-y-auto"} [runbooks-list/main templates filtered-templates]])])))
+         [:> ScrollArea {:class "flex-1 h-[calc(100%-2.5rem)]"}
+          [:> Box {:class "p-2 pb-4"}
+           [runbooks-list/main templates filtered-templates]]])])))
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
