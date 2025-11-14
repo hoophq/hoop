@@ -22,6 +22,10 @@
                                                    :listen_address
                                                    (cs/split #":")
                                                    last)
+                      :ssh-proxy-port (some-> (:ssh_server_config data)
+                                              :listen_address
+                                              (cs/split #":")
+                                              last)
                       :rdp-proxy-port (some-> (:rdp_server_config data)
                                               :listen_address
                                               (cs/split #":")
