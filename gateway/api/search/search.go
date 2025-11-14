@@ -38,27 +38,28 @@ func Get(c *gin.Context) {
 		runbooksFound    []string
 		resourcesFound   []models.Resources
 
-		runbookErr error
+		errors []error
 	)
 
 	g, _ := errgroup.WithContext(c)
 
-	// Fetch connections in parallel
+	// Fetch connections
 	g.Go(func() error {
 		var err error
 		connectionsFound, err = models.SearchConnectionsBySimilarity(ctx.GetOrgID(), ctx.GetUserGroups(), searchTerm)
 		if err != nil {
-			return fmt.Errorf("failed fetching connections: %w", err)
+			errors = append(errors, fmt.Errorf("failed fetching connections, reason=%v", err))
 		}
-		return nil
+
+		return err
 	})
 
-	// Fetch runbooks in parallel
+	// Fetch runbooks
 	g.Go(func() error {
 		p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
 		if err != nil {
-			log.Infof("failed on getting the runbooks plugin, err=%v", err)
-			return nil
+			errors = append(errors, fmt.Errorf("failed getting the runbooks plugin, reason=%v", err))
+			return err
 		}
 
 		var configEnvVars map[string]string
@@ -68,19 +69,18 @@ func Get(c *gin.Context) {
 
 		config, err := runbooks.NewConfig(configEnvVars)
 		if err != nil {
-			log.Infof("failed on create config for runbooks, err=%v", err)
-			return nil
+			errors = append(errors, fmt.Errorf("failed creating config for runbooks, reason=%v", err))
+			return err
 		}
 
 		runbooksFound, err = findRunbookFilesByPath(searchTerm, config, ctx.GetOrgID())
 		if err != nil {
-			log.Infof("failed listing runbooks, err=%v", err)
-			runbookErr = fmt.Errorf("failed searching runbooks, reason=%v", err)
+			errors = append(errors, fmt.Errorf("failed searching runbooks, reason=%v", err))
 		}
-		return nil
+		return err
 	})
 
-	// Fetch resources in parallel
+	// Fetch resources
 	g.Go(func() error {
 		var err error
 		opts := models.ResourceFilterOption{
@@ -91,30 +91,22 @@ func Get(c *gin.Context) {
 
 		resourcesFound, _, err = models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin(), opts)
 		if err != nil {
-			log.Errorf("failed to list resources: %v", err)
-			return err
+			errors = append(errors, fmt.Errorf("failed listing resources, reason=%v", err))
 		}
 
-		return nil
+		return err
 	})
 
-	// Wait for both goroutines
+	// Wait for the goroutines
 	if err := g.Wait(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-		return
-	}
-
-	// Handle runbook error separately
-	if runbookErr != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": runbookErr.Error()})
-		return
+		log.Error(err)
 	}
 
 	// Build response
-	c.JSON(http.StatusOK, buildSearchResponse(connectionsFound, runbooksFound, resourcesFound))
+	c.JSON(http.StatusOK, buildSearchResponse(connectionsFound, runbooksFound, resourcesFound, errors))
 }
 
-func buildSearchResponse(connections []models.Connection, runbooks []string, resources []models.Resources) openapi.SearchResponse {
+func buildSearchResponse(connections []models.Connection, runbooks []string, resources []models.Resources, errors []error) openapi.SearchResponse {
 	connectionSearchResults := make([]openapi.ConnectionSearch, len(connections))
 	for i, conn := range connections {
 		connectionSearchResults[i] = connectionToConnectionSearch(&conn)
@@ -125,7 +117,13 @@ func buildSearchResponse(connections []models.Connection, runbooks []string, res
 		resourcesSearchResults[i] = resourceToResourceSearch(&res)
 	}
 
+	var errorMessages []string
+	for _, err := range errors {
+		errorMessages = append(errorMessages, err.Error())
+	}
+
 	return openapi.SearchResponse{
+		Errors:      errorMessages,
 		Connections: connectionSearchResults,
 		Runbooks:    runbooks,
 		Resources:   resourcesSearchResults,
