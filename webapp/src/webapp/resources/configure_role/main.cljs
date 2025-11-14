@@ -19,7 +19,7 @@
   [connection-type connection-subtype]
   (cond
     ;; Metadata-driven connections
-    (and (= connection-type "custom")
+    (and (or (= connection-type "custom") (= connection-type "database"))
          (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} connection-subtype)))
     "metadata-credentials-form"
 
@@ -73,6 +73,7 @@
     (rf/dispatch-sync [:connections->get-connection-details connection-name])
     (rf/dispatch [:guardrails->get-all])
     (rf/dispatch [:jira-templates->get-all])
+    (rf/dispatch [:connections->load-metadata])
 
     (fn []
       (let [conn-data (:data @connection)
