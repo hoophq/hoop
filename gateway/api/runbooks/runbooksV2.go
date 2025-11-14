@@ -31,7 +31,7 @@ import (
 //	@Description	List all Runbooks
 //	@Tags			Runbooks
 //	@Produce		json
-//	@Param			connection	query		string	false	"Filter runbooks by connection name"
+//	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
 //	@Success		200			{object}	openapi.RunbookList
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
@@ -58,12 +58,12 @@ func ListRunbooksV2(c *gin.Context) {
 	}
 
 	urlQuery := c.Request.URL.Query()
-	connection := urlQuery.Get("connection")
+	connectionName := urlQuery.Get("connection_name")
 
 	removeEmptyConnectionsList := true
-	connectionNames := []string{connection}
+	connectionNames := []string{connectionName}
 
-	if connection == "" {
+	if connectionName == "" {
 		removeEmptyConnectionsList = false
 		connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
 		if err != nil {
