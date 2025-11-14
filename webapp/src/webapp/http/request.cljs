@@ -41,7 +41,9 @@
               (if (.-ok response)
                 (on-success payload (.-headers response))
                 (not-ok {:status status
-                         :on-failure #(on-failure payload)}))))
+                         :on-failure #(on-failure (merge
+                                                   {:status status}
+                                                   payload))}))))
           (fn [_error]
             ;; JSON failed, return as text
             (if (.-ok response)

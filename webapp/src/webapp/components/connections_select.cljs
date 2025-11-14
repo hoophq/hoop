@@ -46,13 +46,13 @@
                                   connection-ids)]
 
         [multiselect/paginated
-         {:label "Connections"
+         {:label "Resource Roles"
           :options connections-options
           :default-value (if (empty? selected-values) nil (vec selected-values))
           :loading? connections-loading?
           :has-more? has-more?
           :search-value @search-term
-          :placeholder "Select connections..."
+          :placeholder "Select resource roles..."
           :on-change (fn [selected-options]
                        (let [selected-js-options (js->clj selected-options :keywordize-keys true)]
                          (on-connections-change selected-js-options)))

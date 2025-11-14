@@ -117,8 +117,8 @@
 
        [:> Box {:class "space-y-4 text-gray-11"}
         [:> Text {:as "p" :size "1" :class "py-3 px-4"}
-         "Select similar connections to execute commands at once."]
-        
+         "Select similar resource roles to execute commands at once."]
+
         (if (= :loading (:loading @connections))
           [:> Box {:class "flex items-center justify-center"}
            [:> Spinner {:size "2"}]]

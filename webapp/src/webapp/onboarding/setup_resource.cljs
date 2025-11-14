@@ -7,7 +7,7 @@
    [reagent.core :as r]
    [webapp.components.data-table-simple :refer [data-table-simple]]
    [webapp.components.forms :as forms]
-   [webapp.connections.views.setup.main :as setup]))
+   [webapp.resources.setup.main :as setup]))
 
 (defn main []
   [:<>
@@ -94,7 +94,7 @@
                  {:id :id
                   :header "Account ID"
                   :width "15%"
-                  :render (fn [value row]
+                  :render (fn [_value row]
                             (if (:account-type row)
                               (:id row)
                               ""))}

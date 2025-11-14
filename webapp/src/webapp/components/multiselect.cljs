@@ -180,12 +180,15 @@
 (defn single []
   (fn [{:keys [default-value disabled? helper-text required? clearable? searchble? on-change options label id name]}]
     [:div {:class "mb-regular text-sm"}
-     [:div {:class "flex items-center mb-1 gap-2"}
-      (when label
-        [form-label label])
-      (when (not (cs/blank? helper-text))
-        [:> Tooltip {:content helper-text}
-         [:> HelpCircle {:size 14}]])]
+
+     (when (or label
+               (not (cs/blank? helper-text)))
+       [:div {:class "flex items-center mb-1 gap-2"}
+        (when label
+          [form-label label])
+        (when (not (cs/blank? helper-text))
+          [:> Tooltip {:content helper-text}
+           [:> HelpCircle {:size 14}]])])
 
      [:> Select
       {:value default-value
@@ -292,7 +295,7 @@
 
 (defn paginated
   "A multiselect component with infinite scroll pagination for loading large option sets.
-   
+
    Props:
    - default-value: The currently selected values (array)
    - disabled?: Whether the select is disabled

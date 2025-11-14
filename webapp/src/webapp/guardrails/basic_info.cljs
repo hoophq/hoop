@@ -7,7 +7,7 @@
   [:> Grid {:columns "7" :gap "7"}
    [:> Box {:grid-column "span 2 / span 2"}
     [:> Heading {:as "h3" :size "4" :weight "medium"} "Set Guardrail information"]
-    [:p {:class "text-sm text-gray-500"} "Used to identify your Guardrail in your connections."]]
+    [:p {:class "text-sm text-gray-500"} "Used to identify your Guardrail in your resource roles."]]
 
    [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
     [forms/input
@@ -18,7 +18,7 @@
       :on-change #(on-name-change (-> % .-target .-value))}]
     [forms/input
      {:label "Description (Optional)"
-      :placeholder "Describe how this is used in your connections"
+      :placeholder "Describe how this is used in your resource roles"
       :required false
       :value @description
       :on-change #(on-description-change (-> % .-target .-value))}]]])

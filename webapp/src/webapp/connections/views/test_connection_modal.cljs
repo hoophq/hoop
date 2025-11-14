@@ -22,7 +22,7 @@
      [:> Flex {:direction "column" :justify "between" :class "space-y-2"}
       [:> Heading {:size "4" :weight "bold"} "Connectivity Check"]
       [:> Text {:size "2" :color "gray"}
-       (str "Connection: " connection-name)]
+       (str "Resource Role: " connection-name)]
       (when (not loading?)
         [:> Text {:size "1" :color "gray"}
          "Completed in 3.3 seconds"])]

@@ -135,7 +135,8 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 			// Create new resource if it doesn't exist
 			err = UpsertResource(tx, &Resources{
 				OrgID:   c.OrgID,
-				Type:    c.SubType.String,
+				Type:    c.Type,
+				SubType: c.SubType,
 				Name:    c.ResourceName,
 				AgentID: c.AgentID,
 			}, false)
@@ -250,69 +251,66 @@ func addPluginConnection(orgID, connID, pluginName string, config pq.StringArray
 
 // UpsertBatchConnections updates or creates multiple connections and enable
 // the default plugins for each connection
-func UpsertBatchConnections(connections []*Connection) error {
-	sess := &gorm.Session{FullSaveAssociations: true}
-	return DB.Session(sess).Transaction(func(tx *gorm.DB) error {
-		for i, c := range connections {
-			var connID string
-			err := tx.Raw(`SELECT id FROM private.connections WHERE org_id = ? AND name = ?`, c.OrgID, c.Name).
-				First(&connID).Error
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("failed obtaining connection %v, reason=%v", c.Name, err)
-			}
-			connections[i].ID = connID
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				connections[i].ID = uuid.NewString()
-			}
+func UpsertBatchConnections(db *gorm.DB, connections []*Connection) error {
+	for i, c := range connections {
+		var connID string
+		err := db.Raw(`SELECT id FROM private.connections WHERE org_id = ? AND name = ?`, c.OrgID, c.Name).
+			First(&connID).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("failed obtaining connection %v, reason=%v", c.Name, err)
+		}
+		connections[i].ID = connID
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			connections[i].ID = uuid.NewString()
+		}
 
-			err = tx.Table(tableConnections).
-				Save(c).
-				Error
-			if err != nil {
-				return fmt.Errorf("failed saving connection, reason=%v", err)
-			}
+		err = db.Table(tableConnections).
+			Save(c).
+			Error
+		if err != nil {
+			return fmt.Errorf("failed saving connection, reason=%v", err)
+		}
 
-			err = tx.Table("private.env_vars").Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
-			if err != nil {
-				return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
-			}
+		err = db.Table("private.env_vars").Save(EnvVars{OrgID: c.OrgID, ID: c.ID, Envs: c.Envs}).Error
+		if err != nil {
+			return fmt.Errorf("failed updating env vars from connection, reason=%v", err)
+		}
 
-			if err := updateBatchConnectionTags(tx, c.OrgID, c.ID, c.ConnectionTags); err != nil {
-				return fmt.Errorf("failed updating connection tags, reason=%v", err)
-			}
+		if err := updateBatchConnectionTags(db, c.OrgID, c.ID, c.ConnectionTags); err != nil {
+			return fmt.Errorf("failed updating connection tags, reason=%v", err)
+		}
 
-			// enforce review and dlp plugins are enabled
-			err = tx.Exec(`
+		// enforce review and dlp plugins are enabled
+		err = db.Exec(`
 			INSERT INTO private.plugins (org_id, name)
 			VALUES (?, 'review') ON CONFLICT DO NOTHING`, c.OrgID).Error
-			if err != nil {
-				return fmt.Errorf("failed to create review plugin, reason: %v", err)
-			}
-			err = tx.Exec(`
+		if err != nil {
+			return fmt.Errorf("failed to create review plugin, reason: %v", err)
+		}
+		err = db.Exec(`
 			INSERT INTO private.plugins (org_id, name)
 			VALUES (?, 'dlp') ON CONFLICT DO NOTHING`, c.OrgID).Error
-			if err != nil {
-				return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
-			}
+		if err != nil {
+			return fmt.Errorf("failed to create dlp plugin, reason: %v", err)
+		}
 
-			// add plugin connection to all default plugins
-			for _, pluginName := range defaultPluginNames {
-				var config pq.StringArray
-				switch pluginName {
-				case plugintypes.PluginReviewName:
-					config = c.Reviewers
-				case plugintypes.PluginDLPName:
-					config = c.RedactTypes
-				}
-				err := addPluginConnection(c.OrgID, c.ID, pluginName, config, tx)
-				if err != nil {
-					return fmt.Errorf("failed to create plugin connection for %v, reason: %v",
-						pluginName, err)
-				}
+		// add plugin connection to all default plugins
+		for _, pluginName := range defaultPluginNames {
+			var config pq.StringArray
+			switch pluginName {
+			case plugintypes.PluginReviewName:
+				config = c.Reviewers
+			case plugintypes.PluginDLPName:
+				config = c.RedactTypes
+			}
+			err := addPluginConnection(c.OrgID, c.ID, pluginName, config, db)
+			if err != nil {
+				return fmt.Errorf("failed to create plugin connection for %v, reason: %v",
+					pluginName, err)
 			}
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func updateGuardRailRules(tx *gorm.DB, c *Connection) error {
@@ -531,6 +529,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 
 // ConnectionOption each attribute set applies an AND operator logic
 type ConnectionFilterOption struct {
+	Name          string
 	Type          string
 	SubType       string
 	ManagedBy     string
@@ -539,6 +538,7 @@ type ConnectionFilterOption struct {
 	TagSelector   string
 	Search        string
 	ConnectionIDs []string
+	ResourceName  string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -557,7 +557,7 @@ func (o ConnectionFilterOption) GetSearchPattern() string {
 	if term == "" {
 		return "%"
 	}
-	
+
 	return fmt.Sprintf("%%%s%%", term)
 }
 
@@ -622,6 +622,9 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
+	namePattern := opts.Name
+	resourceNamePattern := opts.ResourceName
+
 	var items []Connection
 	// TODO: try changing to @ syntax
 	err = DB.Raw(`
@@ -631,7 +634,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.jira_issue_template_id,
+		c.jira_issue_template_id, c.resource_name,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -668,6 +671,8 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		COALESCE(c.resource_name::text, '') LIKE ? AND
+		COALESCE(c.name::text, '') LIKE ? AND
 		-- connection ids filter
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c.id::text = ANY((?)::text[])
@@ -679,9 +684,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 			ELSE true
 		END AND
 		(
-			c.name ILIKE ?
-			OR c.type::text ILIKE ?
-			OR COALESCE(c.subtype, '') ILIKE ?
+			c.name ILIKE ? OR
+			COALESCE(c.subtype, '') ILIKE ? OR
+			c.type::text ILIKE ? OR
+			c.resource_name ILIKE ? OR
+			c.status::text ILIKE ?
 		) AND
 		(
 			-- return all results if no tag selectors provided
@@ -713,9 +720,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		resourceNamePattern,
+		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
-		searchPattern, searchPattern, searchPattern,
+		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {
 		return nil, err
@@ -737,6 +746,7 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 			c.type,
 			c.subtype,
 			c.status,
+			c.resource_name,
 			c.access_mode_runbooks,
 			c.access_mode_exec,
 			c.access_mode_connect
@@ -777,6 +787,12 @@ func setConnectionOptionDefaults(opts *ConnectionFilterOption) {
 	if opts.ManagedBy == "" {
 		opts.ManagedBy = "%"
 	}
+	if opts.ResourceName == "" {
+		opts.ResourceName = "%"
+	}
+	if opts.Name == "" {
+		opts.Name = "%"
+	}
 }
 
 func UpdateConnectionStatusByName(orgID, connectionName, status string) error {
@@ -805,6 +821,8 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
+	namePattern := opts.Name
+	resourceNamePattern := opts.ResourceName
 
 	offset := 0
 	if opts.Page > 1 {
@@ -823,7 +841,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	SELECT
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.jira_issue_template_id,
+		c.resource_name,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -861,6 +879,8 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		COALESCE(c.subtype, '') LIKE ? AND
 		COALESCE(c.agent_id::text, '') LIKE ? AND
 		COALESCE(c.managed_by, '') LIKE ? AND
+		COALESCE(c.resource_name::text, '') LIKE ? AND
+		COALESCE(c.name::text, '') LIKE ? AND
 		-- connection ids filter
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c.id::text = ANY((?)::text[])
@@ -872,9 +892,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			ELSE true
 		END AND
 		(
-			c.name ILIKE ?
-			OR c.type::text ILIKE ?
-			OR COALESCE(c.subtype, '') ILIKE ?
+			c.name ILIKE ? OR
+			COALESCE(c.subtype, '') ILIKE ? OR
+			c.type::text ILIKE ? OR
+			c.resource_name ILIKE ? OR
+			c.status::text ILIKE ?
 		) AND
 		(
 			-- return all results if no tag selectors provided
@@ -907,9 +929,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		opts.SubType,
 		opts.AgentID,
 		opts.ManagedBy,
+		resourceNamePattern,
+		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
-		searchPattern, searchPattern, searchPattern,
+		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
 	if err != nil {

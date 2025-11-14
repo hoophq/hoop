@@ -12,18 +12,17 @@
 (defn metadata-credential->form-field
   "Converte credential do metadata (agora array) para formato de formulário"
   [{:keys [name type required description placeholder]}]
-  (let [form-key (cs/lower-case (cs/replace name #"[^a-zA-Z0-9]" ""))]
-    {:key form-key
-     :env-var-name name
-     :label name
-     :value ""
-     :required required
-     :placeholder (or placeholder description)
-     :type (case type
-             "filesystem" "textarea"
-             "textarea" "textarea"
-             "password")
-     :description description}))
+  {:key name
+   :env-var-name name
+   :label (cs/join " " (cs/split name #"_"))
+   :value ""
+   :required required
+   :placeholder (or placeholder description)
+   :type (case type
+           "filesystem" "textarea"
+           "textarea" "textarea"
+           "password")
+   :description description})
 
 (defn get-metadata-credentials-config
   "Busca credentials do metadata para uma conexão específica por subtype"

@@ -14,7 +14,7 @@
     [:> Flex {:align "center" :gap "2"}
      [:> Heading {:as "h3" :size "4" :weight "medium"} "Set rule information"]]
     [:> Text {:size "3" :class "text-[--gray-11]"}
-     "Used to identify the rule in your connections."]]
+     "Used to identify the rule in your resource roles."]]
 
    [:> Box {:class "space-y-radix-5" :grid-column "span 5 / span 5"}
     [:> Box
@@ -33,7 +33,7 @@
        :name "description"
        :value @description
        :on-change #(on-description-change (-> % .-target .-value))
-       :placeholder "Describe how this is used in your connections"
+       :placeholder "Describe how this is used in your resource roles"
        :rows 3}]]
 
     [:> Box

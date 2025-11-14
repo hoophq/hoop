@@ -211,7 +211,7 @@
              [:> ArrowRightLeft {:size 16}]
              [:span {:class "text-sm font-semibold"}
               (if (string/blank? @review-connection)
-                "Connection"
+                "Resource Role"
                 @review-connection)]
              (when (not (string/blank? @review-connection))
                [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
@@ -238,7 +238,7 @@
               [:div {:class "mb-2 relative"}
                [:input {:type "text"
                         :class "w-full pr-10 pl-3 py-2 border border-gray-300 rounded-md text-sm"
-                        :placeholder "Search connections"
+                        :placeholder "Search resource roles"
                         :value @search-term-connections
                         :onChange (fn [e]
                                     (let [value (-> e .-target .-value)
@@ -261,18 +261,18 @@
 
               (if (> (count connections-data) 0)
                 [:div {:class "relative"}
-                 [infinite-scroll
-                  {:on-load-more (fn []
-                                   (when (not connections-loading?)
-                                     (let [next-page (inc current-page)
-                                           active-search (:active-search @connections)
-                                           next-request (cond-> {:page next-page
-                                                                 :force-refresh? false}
-                                                          (not (string/blank? active-search)) (assoc :search active-search))]
-                                       (rf/dispatch [:connections/get-connections-paginated next-request]))))
-                   :has-more? has-more?
-                   :loading? connections-loading?}
-                  [:ul
+                 [:ul
+                  [infinite-scroll
+                   {:on-load-more (fn []
+                                    (when (not connections-loading?)
+                                      (let [next-page (inc current-page)
+                                            active-search (:active-search @connections)
+                                            next-request (cond-> {:page next-page
+                                                                  :force-refresh? false}
+                                                           (not (string/blank? active-search)) (assoc :search active-search))]
+                                        (rf/dispatch [:connections/get-connections-paginated next-request]))))
+                    :has-more? has-more?
+                    :loading? connections-loading?}
                    (doall
                     (for [connection connections-data]
                       ^{:key (:name connection)}

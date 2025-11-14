@@ -52,7 +52,7 @@
      [:> Heading {:size "6" :as "h2" :class "text-[--gray-12] mb-2"}
       "Configure session"]
      [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-      "Specify how long you need access to this connection."]]
+      "Specify how long you need access to this resource role."]]
 
     [:> Box {:class "space-y-4"}
      [:> Box
