@@ -23,6 +23,7 @@ const (
 	SpecClientExecArgsKey        string = "terminal.args"
 	SpecClientExecEnvVar         string = "terminal.envvars"
 	SpecAgentConnectionParamsKey string = "agent.connection_params"
+	SpecWebsocketMessageType     string = "websocket.message_type"
 
 	// DEPRECATED: spec items deprecated
 	SpecAgentDlpProvider             string = "agent.dlp_provider"
@@ -51,6 +52,7 @@ const (
 	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
 	ConnectionTypeSSH         ConnectionType = "ssh"
 	ConnectionTypeRDP         ConnectionType = "rdp"
+	ConnectionTypeSSM         ConnectionType = "ssm"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"

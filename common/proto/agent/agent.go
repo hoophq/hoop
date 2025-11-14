@@ -19,5 +19,6 @@ const (
 	MSSQLConnectionWrite     = "AgentMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "AgentMongoDBConnectionWrite"
 	SSHConnectionWrite       = "AgentSSHConnectionWrite"
+	SSMConnectionWrite       = "AgentSSMConnectionWrite"
 	HttpProxyConnectionWrite = "AgentHttpProxyConnectionWrite"
 )
