@@ -192,7 +192,7 @@
 (rf/reg-event-db
  :runbooks/list-success
  (fn [db [_ data]]
-   (assoc-in db [:runbooks :list] {:status :success :data data})))
+   (assoc-in db [:runbooks :list] {:status :success :data (or (:repositories data) [])})))
 
 (rf/reg-event-db
  :runbooks/list-failure

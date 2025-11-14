@@ -40,7 +40,7 @@
   "Generate select options from runbooks list in format @repo-name/path for both folders and files"
   [runbooks-list]
   (if (and runbooks-list (= :success (:status runbooks-list)))
-    (let [repositories (or (get-in runbooks-list [:data :repositories]) [])]
+    (let [repositories (or (:data runbooks-list) [])]
       (reduce (fn [acc repo-data]
                 (let [repository (:repository repo-data)
                       repo-name (extract-repo-name repository)
