@@ -2,7 +2,9 @@ package transportext
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +19,7 @@ import (
 )
 
 var hookStore = memory.New()
+var hookStoreV2 = sync.Map{} // map[orgID][]*runbookWrapperFiles
 
 const (
 	sessionOpenHookFileName  string = "hoop-hooks/session-open.runbook.py"
@@ -93,40 +96,143 @@ func getRunbookHookFiles(ctx Context) (*runbookWrapperFiles, error) {
 	return f, nil
 }
 
+func getRunbookHookFilesV2(ctx Context) ([]*runbookWrapperFiles, error) {
+	var hooks []*runbookWrapperFiles
+	runbooksConfig, err := models.GetRunbookConfigurationByOrgID(models.DB, ctx.OrgID)
+	if err != nil {
+		if err == models.ErrNotFound {
+			return hooks, nil
+		}
+		return nil, err
+	}
+
+	if cached, ok := hookStoreV2.Load(ctx.OrgID); ok {
+		cachedHooks, ok := cached.([]*runbookWrapperFiles)
+		if !ok {
+			hookStoreV2.Delete(ctx.OrgID)
+			log.With("sid", ctx.SID).Errorf("invalid runbook hook V2 cache structure, resetting cache")
+			return nil, nil
+		}
+		now := time.Now().UTC()
+
+		hasExpired := slices.ContainsFunc(cachedHooks, func(hook *runbookWrapperFiles) bool {
+			return now.After(hook.expireAt)
+		})
+		if !hasExpired {
+			log.With("sid", ctx.SID).Infof("loading runbook hook V2 from cache")
+			return cachedHooks, nil
+		}
+
+		hookStoreV2.Delete(ctx.OrgID)
+	}
+
+	// Fetch hooks from repositories
+	for _, repositoryConfig := range runbooksConfig.RepositoryConfigs {
+		config, err := models.BuildCommonConfig(&repositoryConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		if config.HookCacheTTL == nil {
+			return hooks, nil
+		}
+
+		repository, err := runbooks.FetchRepository(config)
+		if err != nil {
+			return nil, err
+		}
+
+		sessionOpenF, err := repository.ReadFile(sessionOpenHookFileName, map[string]string{})
+		if err != nil {
+			return nil, err
+		}
+		sessionCloseF, err := repository.ReadFile(sessionCloseHookFileName, map[string]string{})
+		if err != nil {
+			return nil, err
+		}
+		f := &runbookWrapperFiles{
+			sessionOpen:   sessionOpenF,
+			sessionClose:  sessionCloseF,
+			expireAt:      time.Now().UTC().Add(*config.HookCacheTTL),
+			cacheDuration: *config.HookCacheTTL,
+		}
+
+		hooks = append(hooks, f)
+	}
+	hookStoreV2.Store(ctx.OrgID, hooks)
+
+	return hooks, nil
+}
+
+func executeOpenSessionRunbookHook(ctx Context, pkt *proto.Packet, hook *runbookWrapperFiles) {
+	requestID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "session-open/%s", ctx.SID)).String()
+	resp := transportsystem.RunRunbookHook(ctx.AgentID, &pbsystem.RunbookHookRequest{
+		ID:        requestID,
+		SID:       ctx.SID,
+		Command:   []string{hookDefaultCommand},
+		InputFile: string(hook.sessionOpen.InputFile),
+		EventSessionOpen: &pbsystem.EventSessionOpen{
+			Verb:                ctx.Verb,
+			ConnectionName:      ctx.ConnectionName,
+			ConnectionType:      ctx.ConnectionType,
+			ConnectionSubType:   ctx.ConnectionSubType,
+			ConnectionEnvs:      ctx.ConnectionEnvs,
+			ConnectionReviewers: ctx.ConnectionReviewers,
+			Input:               string(pkt.Payload),
+			UserEmail:           ctx.UserEmail,
+		},
+	})
+	log.With("sid", ctx.SID).Infof("session-open: runbook hook finished, duration=%v, exit-code=%v, output=%v",
+		resp.ExecutionTimeSec, resp.ExitCode, resp.Output)
+}
+
 func processEventOpenSessionHook(ctx Context, pkt *proto.Packet) {
 	hook, err := getRunbookHookFiles(ctx)
 	if err != nil {
 		log.With("sid", ctx.SID).Warnf("session-open: failed fetching runbook hook, reason=%v", err)
 		return
 	}
-	if hook == nil || hook.sessionOpen == nil {
+	hooksV2, err := getRunbookHookFilesV2(ctx)
+	if err != nil {
+		log.With("sid", ctx.SID).Warnf("session-open: failed fetching runbook hookV2, reason=%v", err)
 		return
 	}
 
-	log.With("sid", ctx.SID).Infof("session-open: runbook hook started, commit=%v, filesize=%v",
-		hook.sessionOpen.CommitSHA, len(hook.sessionOpen.InputFile))
+	// hook execution
+	if hook != nil && hook.sessionOpen != nil {
+		log.With("sid", ctx.SID).Infof("session-open: runbook hook started, commit=%v, filesize=%v",
+			hook.sessionOpen.CommitSHA, len(hook.sessionOpen.InputFile))
 
-	go func() {
-		requestID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "session-open/%s", ctx.SID)).String()
-		resp := transportsystem.RunRunbookHook(ctx.AgentID, &pbsystem.RunbookHookRequest{
-			ID:        requestID,
-			SID:       ctx.SID,
-			Command:   []string{hookDefaultCommand},
-			InputFile: string(hook.sessionOpen.InputFile),
-			EventSessionOpen: &pbsystem.EventSessionOpen{
-				Verb:                ctx.Verb,
-				ConnectionName:      ctx.ConnectionName,
-				ConnectionType:      ctx.ConnectionType,
-				ConnectionSubType:   ctx.ConnectionSubType,
-				ConnectionEnvs:      ctx.ConnectionEnvs,
-				ConnectionReviewers: ctx.ConnectionReviewers,
-				Input:               string(pkt.Payload),
-				UserEmail:           ctx.UserEmail,
-			},
-		})
-		log.With("sid", ctx.SID).Infof("session-open: runbook hook finished, duration=%v, exit-code=%v, output=%v",
-			resp.ExecutionTimeSec, resp.ExitCode, resp.Output)
-	}()
+		go func() { executeOpenSessionRunbookHook(ctx, pkt, hook) }()
+	}
+
+	// hooks v2 execution
+	for _, hookV2 := range hooksV2 {
+		if hookV2.sessionOpen == nil {
+			continue
+		}
+
+		log.With("sid", ctx.SID).Infof("session-open: runbook hook v2 started, commit=%v, filesize=%v",
+			hookV2.sessionOpen.CommitSHA, len(hookV2.sessionOpen.InputFile))
+
+		go func() { executeOpenSessionRunbookHook(ctx, pkt, hookV2) }()
+	}
+}
+
+func executeCloseSessionRunbookHook(ctx Context, hook *runbookWrapperFiles, exitCode int, outputErr *string) {
+	requestID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "session-close/%s", ctx.SID)).String()
+	resp := transportsystem.RunRunbookHook(ctx.AgentID, &pbsystem.RunbookHookRequest{
+		ID:        requestID,
+		SID:       ctx.SID,
+		Command:   []string{hookDefaultCommand},
+		InputFile: string(hook.sessionClose.InputFile),
+		EventSessionClose: &pbsystem.EventSessionClose{
+			ExitCode: exitCode,
+			Output:   outputErr,
+		},
+	})
+	log.With("sid", ctx.SID).Infof("session-close: runbook hook finished, duration=%v, exit-code=%v, output=%v",
+		resp.ExecutionTimeSec, resp.ExitCode, resp.Output)
 }
 
 func processEventCloseSessiontHook(ctx Context, pkt *proto.Packet) {
@@ -135,7 +241,9 @@ func processEventCloseSessiontHook(ctx Context, pkt *proto.Packet) {
 		log.With("sid", ctx.SID).Warnf("session-close: failed fetching runbook hook, reason=%v", err)
 		return
 	}
-	if hook == nil || hook.sessionClose == nil {
+	hooksV2, err := getRunbookHookFilesV2(ctx)
+	if err != nil {
+		log.With("sid", ctx.SID).Warnf("session-close: failed fetching runbook hookV2, reason=%v", err)
 		return
 	}
 
@@ -149,23 +257,21 @@ func processEventCloseSessiontHook(ctx Context, pkt *proto.Packet) {
 		outputErr = func() *string { v := string(pkt.Payload); return &v }()
 	}
 
-	log.With("sid", ctx.SID).Infof("session-close: runbook hook started, commit=%v, filesize=%v",
-		hook.sessionOpen.CommitSHA, len(hook.sessionClose.InputFile))
+	if hook != nil && hook.sessionClose != nil {
+		log.With("sid", ctx.SID).Infof("session-close: runbook hook started, commit=%v, filesize=%v",
+			hook.sessionOpen.CommitSHA, len(hook.sessionClose.InputFile))
 
-	go func() {
-		requestID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "session-close/%s", ctx.SID)).String()
-		resp := transportsystem.RunRunbookHook(ctx.AgentID, &pbsystem.RunbookHookRequest{
-			ID:        requestID,
-			SID:       ctx.SID,
-			Command:   []string{hookDefaultCommand},
-			InputFile: string(hook.sessionClose.InputFile),
-			EventSessionClose: &pbsystem.EventSessionClose{
-				ExitCode: exitCode,
-				Output:   outputErr,
-			},
-		})
-		log.With("sid", ctx.SID).Infof("session-close: runbook hook finished, duration=%v, exit-code=%v, output=%v",
-			resp.ExecutionTimeSec, resp.ExitCode, resp.Output)
-	}()
+		go func() { executeCloseSessionRunbookHook(ctx, hook, exitCode, outputErr) }()
+	}
 
+	for _, hookV2 := range hooksV2 {
+		if hookV2.sessionClose == nil {
+			continue
+		}
+
+		log.With("sid", ctx.SID).Infof("session-close: runbook hook V2 started, commit=%v, filesize=%v",
+			hookV2.sessionOpen.CommitSHA, len(hookV2.sessionClose.InputFile))
+
+		go func() { executeCloseSessionRunbookHook(ctx, hookV2, exitCode, outputErr) }()
+	}
 }

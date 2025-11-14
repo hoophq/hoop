@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -66,7 +67,7 @@ func GetConnectionDefaults(connType, connSubType string, useMongoConnStr bool) (
 	return
 }
 
-func coerceToMapString(src map[string]any) map[string]string {
+func CoerceToMapString(src map[string]any) map[string]string {
 	dst := map[string]string{}
 	for k, v := range src {
 		dst[k] = fmt.Sprintf("%v", v)
@@ -80,6 +81,45 @@ func coerceToAnyMap(src map[string]string) map[string]any {
 		dst[k] = v
 	}
 	return dst
+}
+
+func validatePatchConnectionRequest(req openapi.ConnectionPatch) error {
+	errors := []string{}
+	// TODO: deprecated
+	if req.Tags != nil {
+		for _, val := range *req.Tags {
+			if !tagsValRe.MatchString(val) {
+				errors = append(errors, "tags: values must contain between 1 and 128 alphanumeric characters, it may include (-), (_) or (.) characters")
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+
+	if req.ConnectionTags != nil && len(*req.ConnectionTags) > 10 {
+		return fmt.Errorf("max tag association reached (10)")
+	}
+
+	if req.ConnectionTags != nil {
+		for key, val := range *req.ConnectionTags {
+			if (len(key) < 1 || len(key) > 64) || !connectionTagsKeyRe.MatchString(key) {
+				errors = append(errors,
+					fmt.Sprintf("connection_tags (%v), keys must contain between 1 and 64 alphanumeric characters, ", key)+
+						"it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-)")
+			}
+			if (len(val) < 1 || len(val) > 256) || !connectionTagsValRe.MatchString(val) {
+				errors = append(errors, fmt.Sprintf("connection_tags (%v), values must contain between 1 and 256 alphanumeric characters, ", key)+
+					"it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters")
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf(strings.Join(errors, "; "))
+	}
+	return nil
 }
 
 func validateConnectionRequest(req openapi.Connection) error {
@@ -142,6 +182,9 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			o.ManagedBy = values[0]
 		case "tag_selector":
 			o.TagSelector = values[0]
+		case "search":
+			o.Search = strings.TrimLeft(values[0], " ")
+			continue
 		case "tags":
 			if len(values[0]) > 0 {
 				for _, tagVal := range strings.Split(values[0], ",") {
@@ -149,6 +192,27 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 						return o, errInvalidOptionVal
 					}
 					o.Tags = append(o.Tags, tagVal)
+				}
+			}
+			continue
+		case "resource_name":
+			o.ResourceName = values[0]
+			continue
+		case "name":
+			o.Name = strings.TrimLeft(values[0], " ")
+			continue
+		case "connection_ids":
+			if len(values[0]) > 0 {
+				for _, connID := range strings.Split(values[0], ",") {
+					connID = strings.TrimSpace(connID)
+					if connID == "" {
+						continue
+					}
+					// Validate UUID format
+					if _, err := uuid.Parse(connID); err != nil {
+						return o, fmt.Errorf("invalid connection ID format: %s", connID)
+					}
+					o.ConnectionIDs = append(o.ConnectionIDs, connID)
 				}
 			}
 			continue

@@ -53,6 +53,7 @@
    :ssh (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :custom (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :tcp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
+   :rdp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
    :httpproxy (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
    :mysql (str config/webapp-url "/icons/connections/mysql-rounded.svg")
    :mysql-csv (str config/webapp-url "/icons/connections/mysql-rounded.svg")
@@ -87,7 +88,8 @@
    :kubernetes-exec (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
    :kubernetes-interactive (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
    :aws-cli (str config/webapp-url "/icons/connections/aws-rounded.svg")
-   :aws-ecs (str config/webapp-url "/icons/connections/aws-rounded.svg")})
+   :aws-ecs (str config/webapp-url "/icons/connections/aws-rounded.svg")
+   :aws-ssm (str config/webapp-url "/icons/connections/aws-rounded.svg")})
 
 (def connection-icons-default-dictionary
   {:postgres (str config/webapp-url "/icons/connections/postgres-default.svg")
@@ -96,6 +98,7 @@
    :ssh (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :custom (str config/webapp-url "/icons/connections/custom-ssh.svg")
    :tcp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
+   :rdp (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
    :httpproxy (str config/webapp-url "/icons/connections/custom-tcp-http.svg")
    :mysql (str config/webapp-url "/icons/connections/mysql-default.svg")
    :mysql-csv (str config/webapp-url "/icons/connections/mysql-default.svg")
@@ -130,7 +133,8 @@
    :kubernetes-exec (str config/webapp-url "/icons/connections/kubernetes-default.svg")
    :kubernetes-interactive (str config/webapp-url "/icons/connections/kubernetes-default.svg")
    :aws-cli (str config/webapp-url "/icons/connections/aws-default.svg")
-   :aws-ecs (str config/webapp-url "/icons/connections/aws-default.svg")})
+   :aws-ecs (str config/webapp-url "/icons/connections/aws-default.svg")
+   :aws-ssm (str config/webapp-url "/icons/connections/aws-default.svg")})
 
 (def command-to-icon-key
   {"aws" :aws
@@ -170,9 +174,12 @@
                    :else :custom)]
 
     (cond
-      (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key)
-      (= icon-style "default") (get connection-icons-default-dictionary icon-key)
-      :else (get connection-icons-default-dictionary icon-key))))
+      (= icon-style "rounded") (get connection-icons-rounded-dictionary icon-key
+                                    (str config/webapp-url "/icons/connections/custom-ssh.svg"))
+      (= icon-style "default") (get connection-icons-default-dictionary icon-key
+                                    (str config/webapp-url "/icons/connections/custom-ssh.svg"))
+      :else (get connection-icons-default-dictionary icon-key
+                 (str config/webapp-url "/icons/connections/custom-ssh.svg")))))
 
 (def connection-commands
   {"nodejs" "node"

@@ -34,13 +34,21 @@ const docTemplate = `{
                     "Agents"
                 ],
                 "summary": "List Agent Keys",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by status (CONNECTED or DISCONNECTED)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/openapi.AgentListResponse"
+                                "$ref": "#/definitions/openapi.AgentResponse"
                             }
                         }
                     },
@@ -110,6 +118,45 @@ const docTemplate = `{
             }
         },
         "/agents/{nameOrID}": {
+            "get": {
+                "description": "Get an agent key by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Get Agent Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the resource",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "description": "Remove an agent key. It will invalidate a running agent",
                 "produces": [
@@ -250,6 +297,13 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
+                        "description": "Search by name, type, or subtype",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
                         "description": "Filter by type",
                         "name": "type",
                         "in": "query"
@@ -267,11 +321,32 @@ const docTemplate = `{
                         "description": "Filter by managed by",
                         "name": "managed_by",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by specific connection IDs, separated by comma",
+                        "name": "connection_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Maximum number of items to return (1-100). When provided, enables pagination",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "format": "int",
+                        "description": "Page number (1-based). When provided, enables pagination",
+                        "name": "page",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Returns array of Connection objects",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -446,6 +521,69 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/openapi.Connection"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Connection"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Partial update of a connection resource. Only provided fields will be updated.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Patch Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the resource",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource with fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionPatch"
                         }
                     }
                 ],
@@ -3255,6 +3393,210 @@ const docTemplate = `{
                 }
             }
         },
+        "/resources": {
+            "get": {
+                "description": "Lists all resources for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Lists resources",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.ResourceResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a resource for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Creates a resource",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/resources/{name}": {
+            "get": {
+                "description": "Gets a resource by ID for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Gets a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Updates a resource by ID for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Updates a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ResourceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a resource by ID for the organization.",
+                "tags": [
+                    "Resources"
+                ],
+                "summary": "Deletes a resource",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The resource name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reviews": {
             "get": {
                 "description": "Get all reviews resource",
@@ -3378,6 +3720,414 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/runbooks": {
+            "get": {
+                "description": "List all Runbooks",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "List Runbooks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter runbooks by connection name",
+                        "name": "connection",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookList"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/runbooks/configurations": {
+            "get": {
+                "description": "Get Runbook Configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Get Runbook Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookConfigurationResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update Runbook Configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Update Runbook Configuration",
+                "parameters": [
+                    {
+                        "description": "Runbook Configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookConfigurationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/runbooks/exec": {
+            "post": {
+                "description": "Start a execution using a Runbook as input. If the connection has a JIRA issue template configured, it will create a JIRA issue.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Runbook Exec",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookExec"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The execution has finished",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ExecResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "The execution is still in progress",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ExecResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/runbooks/rules": {
+            "get": {
+                "description": "List all Runbook Rules",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "List Runbook Rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.RunbookRule"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new Runbook Rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Create Runbook Rule",
+                "parameters": [
+                    {
+                        "description": "Runbook Rule",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/runbooks/rules/{id}": {
+            "get": {
+                "description": "Get a single Runbook Rule by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Get Runbook Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runbook Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRule"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing Runbook Rule by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Update Runbook Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runbook Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Runbook Rule",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a Runbook Rule by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Delete Runbook Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runbook Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "404": {
                         "description": "Not Found",
@@ -5109,7 +5859,29 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.AgentListResponse": {
+        "openapi.AgentRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "mode": {
+                    "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
+                    "type": "string",
+                    "default": "standard",
+                    "enum": [
+                        "standard",
+                        "embedded"
+                    ]
+                },
+                "name": {
+                    "description": "Unique name of the resource",
+                    "type": "string",
+                    "example": "default"
+                }
+            }
+        },
+        "openapi.AgentResponse": {
             "type": "object",
             "properties": {
                 "compiler": {
@@ -5188,28 +5960,6 @@ const docTemplate = `{
                 "version": {
                     "type": "string",
                     "example": "1.23.10"
-                }
-            }
-        },
-        "openapi.AgentRequest": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "mode": {
-                    "description": "Mode of execution of the agent\n* standard - Is the default mode, which is suitable to run the agent as a standalone process\n* embedded - This mode is suitable when the agent needs to be run close to another process or application",
-                    "type": "string",
-                    "default": "standard",
-                    "enum": [
-                        "standard",
-                        "embedded"
-                    ]
-                },
-                "name": {
-                    "description": "Unique name of the resource",
-                    "type": "string",
-                    "example": "default"
                 }
             }
         },
@@ -5361,6 +6111,11 @@ const docTemplate = `{
                         "EMAIL_ADDRESS"
                     ]
                 },
+                "resource_name": {
+                    "description": "Resource to which this connection belongs to, it'll be created if it doesn't exist",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
                 "reviewers": {
                     "description": "Reviewers is a list of groups that will review the connection before the user could execute it",
                     "type": "array",
@@ -5480,6 +6235,141 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "openapi.ConnectionPatch": {
+            "type": "object",
+            "properties": {
+                "access_mode_connect": {
+                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_exec": {
+                    "description": "Toggle Ad Hoc Executions\n* enabled - Enable to run ad-hoc executions for this connection\n* disabled - Disable ad-hoc executions for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_runbooks": {
+                    "description": "Toggle Ad Hoc Runbooks Executions\n* enabled - Enable to run runbooks for this connection\n* disabled - Disable runbooks execution for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_schema": {
+                    "description": "Toggle Introspection Schema\n* enabled - Enable the instrospection schema in the webapp\n* disabled - Disable the instrospection schema in the webapp",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "agent_id": {
+                    "description": "The agent associated with this connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "command": {
+                    "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "/bin/bash"
+                    ]
+                },
+                "connection_tags": {
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "environment": "prod",
+                        "tier": "frontend"
+                    }
+                },
+                "guardrail_rules": {
+                    "description": "The guard rail association id rules",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "5701046A-7B7A-4A78-ABB0-A24C95E6FE54",
+                        "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                    ]
+                },
+                "jira_issue_template_id": {
+                    "description": "The jira issue templates ids associated to the connection",
+                    "type": "string",
+                    "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "redact_types": {
+                    "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "EMAIL_ADDRESS"
+                    ]
+                },
+                "resource_name": {
+                    "description": "Resource to which this connection belongs to",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "reviewers": {
+                    "description": "Reviewers is a list of groups that will review the connection before the user could execute it",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-group"
+                    ]
+                },
+                "secret": {
+                    "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "tags": {
+                    "description": "DEPRECATED: Tags to classify the connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod"
+                    ]
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
                 }
             }
         },
@@ -6813,6 +7703,34 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_Connection": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Connection"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
+        "openapi.Pagination": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "openapi.Plugin": {
             "type": "object",
             "required": [
@@ -7102,6 +8020,158 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.RDPServerConfig": {
+            "type": "object",
+            "properties": {
+                "listen_address": {
+                    "description": "The listen address to run the RDP server proxy",
+                    "type": "string",
+                    "example": "0.0.0.0:13389"
+                }
+            }
+        },
+        "openapi.ResourceRequest": {
+            "type": "object",
+            "required": [
+                "agent_id",
+                "env_vars",
+                "name",
+                "roles",
+                "type"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "The agent associated with this resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "env_vars": {
+                    "description": "The resource environment variables",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "The resource name",
+                    "type": "string",
+                    "example": "my-resource"
+                },
+                "roles": {
+                    "description": "The roles associated with this resource",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceRoleRequest"
+                    }
+                },
+                "type": {
+                    "description": "The resource type",
+                    "type": "string",
+                    "example": "mysql"
+                }
+            }
+        },
+        "openapi.ResourceResponse": {
+            "type": "object",
+            "required": [
+                "agent_id"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "The agent associated with this resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "env_vars": {
+                    "description": "The resource environment variables",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "The resource ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "description": "The resource name",
+                    "type": "string",
+                    "example": "my-resource"
+                },
+                "type": {
+                    "description": "The resource type",
+                    "type": "string",
+                    "example": "mysql"
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.ResourceRoleRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "type"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "The agent associated with this connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "command": {
+                    "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "/bin/bash"
+                    ]
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "secret": {
+                    "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
+                }
+            }
+        },
         "openapi.Review": {
             "type": "object",
             "properties": {
@@ -7333,6 +8403,133 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.RunbookConfigurationRequest": {
+            "type": "object",
+            "required": [
+                "repositories"
+            ],
+            "properties": {
+                "repositories": {
+                    "description": "The runbook repository configuration",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRepository"
+                    }
+                }
+            }
+        },
+        "openapi.RunbookConfigurationResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "id": {
+                    "description": "The unique identifier of the runbook",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "org_id": {
+                    "description": "Organization ID that owns this configuration",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "repositories": {
+                    "description": "The runbook repository configuration",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRepositoryResponse"
+                    }
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.RunbookExec": {
+            "type": "object",
+            "required": [
+                "connection_name",
+                "file_name",
+                "repository"
+            ],
+            "properties": {
+                "client_args": {
+                    "description": "Additional arguments to pass down to the connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "--verbose"
+                    ]
+                },
+                "connection_name": {
+                    "description": "Connection name to execute the runbook against",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "env_vars": {
+                    "description": "Environment Variables that will be included in the runtime\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "envvar": "PASSWORD:MTIz",
+                        "filesystem": "SECRET_FILE:bXlzZWNyZXQ="
+                    }
+                },
+                "file_name": {
+                    "description": "The relative path name of the runbook file from the git source",
+                    "type": "string",
+                    "example": "myrunbooks/run-backup.runbook.sql"
+                },
+                "jira_fields": {
+                    "description": "Jira fields to create a Jira issue",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "metadata": {
+                    "description": "Metadata attributes to add in the session",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "parameters": {
+                    "description": "The parameters of the runbook. It must match with the declared attributes",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "amount": "10",
+                        "wallet_id": "6736"
+                    }
+                },
+                "ref_hash": {
+                    "description": "The commit sha reference to obtain the file",
+                    "type": "string",
+                    "example": "20320ebbf9fc612256b67dc9e899bbd6e4745c77"
+                },
+                "repository": {
+                    "description": "Repository name where the runbook is located",
+                    "type": "string",
+                    "example": "github.com/myorg/myrepo"
+                }
+            }
+        },
         "openapi.RunbookList": {
             "type": "object",
             "properties": {
@@ -7356,6 +8553,106 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.Runbook"
                     }
+                }
+            }
+        },
+        "openapi.RunbookRepository": {
+            "type": "object",
+            "required": [
+                "git_url"
+            ],
+            "properties": {
+                "git_hook_ttl": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "git_password": {
+                    "description": "Git password or token for repository authentication",
+                    "type": "string",
+                    "example": "mypassword"
+                },
+                "git_url": {
+                    "description": "Git repository URL where the runbook is located",
+                    "type": "string",
+                    "example": "https://github.com/myorg/myrepo"
+                },
+                "git_user": {
+                    "description": "Git username for repository authentication",
+                    "type": "string",
+                    "example": "myusername"
+                },
+                "ssh_key": {
+                    "description": "SSH private key for Git repository authentication",
+                    "type": "string",
+                    "example": "-----BEGIN PRIVATE KEY-----..."
+                },
+                "ssh_keypass": {
+                    "description": "SSH key passphrase for encrypted SSH keys",
+                    "type": "string",
+                    "example": "mykeypassphrase"
+                },
+                "ssh_known_hosts": {
+                    "description": "Git SSH known hosts for host key verification",
+                    "type": "string",
+                    "example": "github.com ssh-rsa AAAA..."
+                },
+                "ssh_user": {
+                    "description": "SSH username for Git repository authentication",
+                    "type": "string",
+                    "example": "myuser"
+                }
+            }
+        },
+        "openapi.RunbookRepositoryResponse": {
+            "type": "object",
+            "required": [
+                "git_url",
+                "repository"
+            ],
+            "properties": {
+                "git_hook_ttl": {
+                    "type": "integer",
+                    "example": 1000
+                },
+                "git_password": {
+                    "description": "Git password or token for repository authentication",
+                    "type": "string",
+                    "example": "mypassword"
+                },
+                "git_url": {
+                    "description": "Git repository URL where the runbook is located",
+                    "type": "string",
+                    "example": "https://github.com/myorg/myrepo"
+                },
+                "git_user": {
+                    "description": "Git username for repository authentication",
+                    "type": "string",
+                    "example": "myusername"
+                },
+                "repository": {
+                    "description": "Git repository identifier in the format ` + "`" + `host/owner/repo` + "`" + `",
+                    "type": "string",
+                    "example": "github.com/myorg/myrepo"
+                },
+                "ssh_key": {
+                    "description": "SSH private key for Git repository authentication",
+                    "type": "string",
+                    "example": "-----BEGIN PRIVATE KEY-----..."
+                },
+                "ssh_keypass": {
+                    "description": "SSH key passphrase for encrypted SSH keys",
+                    "type": "string",
+                    "example": "mykeypassphrase"
+                },
+                "ssh_known_hosts": {
+                    "description": "Git SSH known hosts for host key verification",
+                    "type": "string",
+                    "example": "github.com ssh-rsa AAAA..."
+                },
+                "ssh_user": {
+                    "description": "SSH username for Git repository authentication",
+                    "type": "string",
+                    "example": "myuser"
                 }
             }
         },
@@ -7418,6 +8715,131 @@ const docTemplate = `{
                     "description": "The commit sha reference to obtain the file",
                     "type": "string",
                     "example": "20320ebbf9fc612256b67dc9e899bbd6e4745c77"
+                }
+            }
+        },
+        "openapi.RunbookRule": {
+            "type": "object",
+            "required": [
+                "connections",
+                "name",
+                "runbooks",
+                "user_groups"
+            ],
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "bash"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Runbook rules for production databases"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Default Runbook Rules"
+                },
+                "org_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                },
+                "runbooks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRuleFile"
+                    }
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "user_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-team",
+                        "devops-team"
+                    ]
+                }
+            }
+        },
+        "openapi.RunbookRuleFile": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "ops/update-user.runbook.sh"
+                },
+                "repository": {
+                    "type": "string",
+                    "example": "github.com/myorg/myrepo"
+                }
+            }
+        },
+        "openapi.RunbookRuleRequest": {
+            "type": "object",
+            "required": [
+                "connections",
+                "name",
+                "runbooks",
+                "user_groups"
+            ],
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "bash"
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Runbook rules for production databases"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Default Runbook Rules"
+                },
+                "runbooks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRuleFile"
+                    }
+                },
+                "user_groups": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-team",
+                        "devops-team"
+                    ]
                 }
             }
         },
@@ -7813,6 +9235,14 @@ const docTemplate = `{
                     "description": "Either to enable or disable the product analytics tracking",
                     "type": "string",
                     "example": "active"
+                },
+                "rdp_server_config": {
+                    "description": "The RDP server proxy configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.RDPServerConfig"
+                        }
+                    ]
                 },
                 "ssh_server_config": {
                     "description": "The SSH server proxy configuration",

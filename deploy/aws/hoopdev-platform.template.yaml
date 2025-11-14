@@ -844,7 +844,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VPC
-      GroupDescription: Enable SSH access and HTTP/GRPC on the inbound port
+      GroupDescription: Enable HTTP/GRPC on the inbound port
       SecurityGroupIngress:
       - IpProtocol: tcp
         FromPort: 8009
@@ -875,8 +875,43 @@ Resources:
         - CidrIp: 0.0.0.0/0
           IpProtocol: "-1"
       Tags:
-      - Key: Name
-        Value: !Sub ${AWS::StackName}-appdb-sg
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-appdb-sg
+
+
+  HoopRDPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Allow RDP inbound traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 13389
+          ToPort: 13389
+          SourceSecurityGroupId: !Ref LaunchTemplateSecurityGroup
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: "-1"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-apprdp-sg
+  
+  HoopSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Allow SSH inbound traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 12222
+          ToPort: 12222
+          SourceSecurityGroupId: !Ref LaunchTemplateSecurityGroup
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: "-1"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-appssh-sg
 
 Outputs:
   URL:

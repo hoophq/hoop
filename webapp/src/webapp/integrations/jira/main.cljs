@@ -24,7 +24,7 @@
          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-gray-12"}
           "Configure integration"]
          [:> Text {:as "p" :size "3" :class "text-gray-11"}
-          "Boost productivity by linking your connections with Jira."]]
+          "Boost productivity by linking your resource roles with Jira."]]
         [:> Box {:grid-column "span 2 /span 2"}
          [:form
           {:on-submit (fn [e]

@@ -5,7 +5,8 @@
    ["react-select/creatable" :default CreatableSelect]
    ["@radix-ui/themes" :refer [Text Tooltip]]
    [clojure.string :as cs]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
 (def styles
   #js {"multiValue" (fn [style]
@@ -179,12 +180,15 @@
 (defn single []
   (fn [{:keys [default-value disabled? helper-text required? clearable? searchble? on-change options label id name]}]
     [:div {:class "mb-regular text-sm"}
-     [:div {:class "flex items-center mb-1 gap-2"}
-      (when label
-        [form-label label])
-      (when (not (cs/blank? helper-text))
-        [:> Tooltip {:content helper-text}
-         [:> HelpCircle {:size 14}]])]
+
+     (when (or label
+               (not (cs/blank? helper-text)))
+       [:div {:class "flex items-center mb-1 gap-2"}
+        (when label
+          [form-label label])
+        (when (not (cs/blank? helper-text))
+          [:> Tooltip {:content helper-text}
+           [:> HelpCircle {:size 14}]])])
 
      [:> Select
       {:value default-value
@@ -260,3 +264,98 @@
      :className "react-select-container"
      :classNamePrefix "react-select"
      :styles styles}]])
+
+(defn- build-paginated-styles
+  "Memoized style builder to avoid recreating styles on every render"
+  []
+  (clj->js (merge (js->clj styles)
+                  {"menu" (fn [style]
+                            (clj->js (merge (js->clj style)
+                                            {"maxHeight" "300px"
+                                             "overflow" "auto"})))})))
+
+(def ^:private memoized-paginated-styles (memoize build-paginated-styles))
+
+(defn- custom-menu-list
+  "Custom MenuList component that integrates infinite scroll"
+  [props children on-load-more has-more? loading?]
+  (let [class-name (.-className props)
+        inner-props (.-innerProps props)
+        ;; Check if we have actual options to show
+        options (.-options (.-selectProps props))
+        has-options? (and options (> (.-length options) 0))]
+    [:div (merge (js->clj inner-props :keywordize-keys true) {:className class-name})
+     (if has-options?
+       [infinite-scroll
+        {:on-load-more on-load-more
+         :has-more? has-more?
+         :loading? loading?}
+        children]
+       children)]))
+
+(defn paginated
+  "A multiselect component with infinite scroll pagination for loading large option sets.
+
+   Props:
+   - default-value: The currently selected values (array)
+   - disabled?: Whether the select is disabled
+   - required?: Whether the select is required
+   - on-change: Function called when selection changes
+   - options: Current loaded options array
+   - label: Label text to display above the select
+   - id: HTML id attribute
+   - name: HTML name attribute
+   - on-load-more: Function called to load more options
+   - has-more?: Boolean indicating if more options are available
+   - loading?: Boolean indicating if options are currently loading
+   - on-input-change: Function called when search input changes (for search functionality)
+   - search-value: Current search input value
+   - placeholder: Placeholder text for the select"
+  [{:keys [default-value disabled? required? on-change options label id name
+           on-load-more has-more? loading? on-input-change search-value placeholder]}]
+  (let [container-ref (r/atom nil)
+        paginated-styles (memoized-paginated-styles)
+
+        menu-list-fn (fn [props]
+                       (r/as-element
+                        [custom-menu-list props (.-children props)
+                         on-load-more has-more? loading?]))]
+
+    [:div {:class "mb-regular text-sm"}
+     [:div {:class "flex items-center mb-1"}
+      (when label
+        [form-label label])]
+     [:> Select
+      {:value default-value
+       :id id
+       :name name
+       :isMulti true
+       :isDisabled disabled?
+       :isLoading loading?
+       :required required?
+       :onChange (fn [value]
+                   (scroll-to-bottom @container-ref)
+                   (on-change value))
+       :onInputChange (fn [input-value action]
+                        (when (and on-input-change
+                                   (= (.-action action) "input-change"))
+                          (on-input-change input-value)))
+       :inputValue search-value
+       :options options
+       :filterOption false
+       :components #js {:MenuList menu-list-fn}
+       :isClearable false
+       :onFocus #(scroll-to-bottom @container-ref)
+       :placeholder (or placeholder "Select options...")
+       :menuPortalTarget (.-body js/document)
+       :theme (fn [theme]
+                (clj->js
+                 (-> (js->clj theme :keywordize-keys true)
+                     (update :colors merge {:primary "#3358d4"
+                                            :primary25 "#d2deff"
+                                            :primary50 "#abbdf9"
+                                            :primary75 "#3e63dd"}))))
+       :className "react-select-container"
+       :classNamePrefix "react-select"
+       :ref #(reset! container-ref %)
+       :styles paginated-styles}]]))

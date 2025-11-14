@@ -28,6 +28,11 @@
                      ["/new" :create-connection]
                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]
                      [["/edit/" :connection-name] :edit-connection]]
+     "/resources" [["" :resources]
+                   ["/new" :resource-setup-new]
+                   [["/configure/" :resource-id] :configure-resource]
+                   [["/roles/" :connection-name "/configure"] :configure-role]
+                   [["/" :resource-id "/add-role"] :add-role-to-resource]]
      "/client" :editor-plugin
      "/runbooks" :runbooks
      "/dashboard" :dashboard

@@ -1,29 +1,10 @@
 (ns webapp.webclient.components.database-schema
-  (:require ["@radix-ui/themes" :refer [Box Text]]
+  (:require ["@radix-ui/themes" :refer [Box Text Spinner]]
             ["lucide-react" :refer [ChevronDown ChevronRight Database File
                                     FolderClosed FolderOpen Table]]
             [reagent.core :as r]
             [re-frame.core :as rf]
-            [webapp.subs :as subs]
-            [webapp.config :as config]))
-
-(defmulti get-database-schema identity)
-(defmethod get-database-schema "oracledb" [_ connection]
-  (rf/dispatch [:database-schema->handle-database-schema connection]))
-(defmethod get-database-schema "mssql" [_ connection]
-  (rf/dispatch [:database-schema->handle-database-schema connection]))
-(defmethod get-database-schema "postgres" [_ connection]
-  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
-(defmethod get-database-schema "mysql" [_ connection]
-  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
-(defmethod get-database-schema "mongodb" [_ connection]
-  (rf/dispatch [:database-schema->handle-multi-database-schema connection]))
-(defmethod get-database-schema "dynamodb" [_ connection]
-  (rf/dispatch [:database-schema->handle-dynamodb-schema connection])
-  (rf/dispatch [:database-schema->set-loading-status connection]))
-(defmethod get-database-schema "cloudwatch" [_ connection]
-  (rf/dispatch [:database-schema->handle-cloudwatch-schema connection])
-  (rf/dispatch [:database-schema->set-loading-status connection]))
+            [webapp.subs :as subs]))
 
 ;; Adding memoization for components that are rendered frequently
 (def memoized-field-type-tree
@@ -36,10 +17,10 @@
   (memoized-field-type-tree type))
 
 (defn- loading-indicator [message]
+
   [:div {:class "flex gap-small items-center pb-small ml-small text-xs"}
    [:span {:class "italic"} message]
-   [:figure {:class "w-3 flex-shrink-0 animate-spin opacity-60"}
-    [:img {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]])
+   [:> Spinner {:size "1" :color "gray"}]])
 
 (defn- empty-state [connection-type]
   (let [message (case connection-type
@@ -160,7 +141,7 @@
 (defn- schema-view []
   (let [dropdown-status (r/atom nil)
         initialized (r/atom false)]
-    (fn [schema-name tables connection-name current-schema database-schema-status & {:keys [is-first] :or {is-first false}}]
+    (fn [schema-name tables connection-name current-schema _database-schema-status & {:keys [is-first] :or {is-first false}}]
       (when (and (not @initialized))
         (reset! dropdown-status (if is-first :open :closed))
         (reset! initialized true))
@@ -332,91 +313,41 @@
         [:> Text {:size "1"}
          "Couldn't load the schema"]))))
 
-(defn tree-view-status [{:keys [use-compact-ui?
-                                status
+(defn tree-view-status [{:keys [status
                                 databases
                                 schema
                                 connection
                                 current-schema
                                 database-schema-status]}]
-  [:> Box {:class (if use-compact-ui?
-                    "text-gray-12"
-                    "text-gray-2")}
+  [:> Box {:class "text-gray-12"}
    (cond
      (and (= status :loading) (empty? schema) (empty? databases))
      [loading-indicator "Loading schema"]
 
-     (= status :failure)
-     [:div
-      {:class "flex gap-small items-center py-regular text-xs"}
+     (or (= status :failure) (= status :error) (= database-schema-status :error))
+     [:div {:class "flex gap-small items-center py-regular text-xs text-red-500"}
       [:span
-       "Couldn't load the schema"]]
+       (or (some-> current-schema :error :message)
+           "Failed to load database schema")]]
 
-     :else
-     [db-view {:type (:connection-type connection)
-               :schema schema
-               :databases databases
-               :connection-name (:connection-name connection)
-               :database-schema-status database-schema-status
-               :current-schema current-schema}])])
+     :else [db-view {:type (:connection-type connection)
+                     :schema schema
+                     :databases databases
+                     :connection-name (:connection-name connection)
+                     :database-schema-status database-schema-status
+                     :current-schema current-schema}])])
 
-;; Simplification of the main component - removing all the complexity of the lifecycle methods
 (defn main []
-  (let [database-schema (rf/subscribe [::subs/database-schema])
-        use-compact-ui? (rf/subscribe [:webclient/use-compact-ui?])
-        ;; Flag to control if we've started loading
-        loading-started (r/atom false)
-        ;; Track current connection to detect changes
-        current-connection-name (r/atom nil)
-        ;; Track last status to detect changes
-        last-status (r/atom nil)]
-
+  (let [database-schema (rf/subscribe [::subs/database-schema])]
     (fn [connection]
-      (let [current-schema (get-in @database-schema [:data (:connection-name connection)])
-            connection-name (:connection-name connection)
-            current-status (:status current-schema)]
+      (let [connection-name (:connection-name connection)
+            current-schema (get-in @database-schema [:data connection-name])]
 
-        (when (not= @current-connection-name connection-name)
-          (reset! current-connection-name connection-name)
-          (reset! loading-started false)
-          (reset! last-status nil)
-          (when (and connection connection-name)
-            (get-database-schema (:connection-type connection) connection)
-            (reset! loading-started true)))
+        (when (and connection connection-name)
+          (rf/dispatch [:database-schema->ensure-loaded connection]))
 
-        ;; Reset loading-started if changed from error to nil (component was unmounted and remounted)
-        (when (and (= @last-status :error)
-                   (nil? current-status))
-          (reset! loading-started false))
-
-
-        ;; Update last status
-        (reset! last-status current-status)
-
-        ;; Simple initialization logic
-        ;; Allows reloading if: not started, no schema, or error
-        (when (and connection
-                   connection-name
-                   (not @loading-started)
-                   (or (not current-schema)
-                       (= (:status current-schema) :error)
-                       (= (:database-schema-status current-schema) :error)))
-          (reset! loading-started true)
-          (get-database-schema (:connection-type connection) connection))
-
-        ;; Restore selected database from localStorage if necessary
-        (when (and (#{:postgres :mongodb} (keyword (:connection-type connection)))
-                   (.getItem js/localStorage "selected-database")
-                   (= (:status current-schema) :success)
-                   (not (get-in current-schema [:open-database])))
-          (rf/dispatch [:database-schema->change-database
-                        {:connection-name connection-name}
-                        (.getItem js/localStorage "selected-database")]))
-
-        ;; Direct rendering without additional complexity
         [tree-view-status
-         {:use-compact-ui? @use-compact-ui?
-          :status (:status current-schema)
+         {:status (:status current-schema)
           :databases (:databases current-schema)
           :schema (:schema-tree current-schema)
           :connection connection

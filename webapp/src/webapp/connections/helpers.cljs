@@ -86,7 +86,7 @@
             (= "disabled" (:access_mode_connect connection)))))
 
 (defn can-open-web-terminal? [connection]
-  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
+  (if-not (#{"tcp" "httpproxy" "ssh" "rdp"} (:subtype connection))
 
     (if (or (= "enabled" (:access_mode_runbooks connection))
             (= "enabled" (:access_mode_exec connection)))
@@ -95,6 +95,13 @@
 
     false))
 
+(defn can-hoop-cli? [connection]
+  (and (= "enabled" (:access_mode_connect connection))
+       (not (and (= (:type connection) "custom")
+                 (= (:subtype connection) "rdp")))))
+
 (defn can-access-native-client? [connection]
   (and (= "enabled" (:access_mode_connect connection))
-      (#{"postgres" "ssh"} (:subtype connection))))
+       (or (#{"postgres" "ssh"} (:subtype connection))
+           (and (= (:type connection) "custom")
+                (= (:subtype connection) "rdp")))))

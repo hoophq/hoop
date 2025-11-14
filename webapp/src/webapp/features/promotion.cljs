@@ -136,7 +136,7 @@
    {:feature-name "Guardrails"
     :mode mode
     :image "guardrails-promotion.png"
-    :description "Create custom rules to guide and protect usage within your connections."
+    :description "Create custom rules to guide and protect usage within your resource roles."
     :feature-items [{:icon [:> ListCheck {:size 20}]
                      :title "Automated Policy Enforcement"
                      :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}

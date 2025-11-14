@@ -35,6 +35,7 @@ import (
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
+	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
@@ -261,6 +262,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateConnection),
 		apiconnections.Put)
+	r.PATCH("/connections/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.TrackRequest(analytics.EventUpdateConnection),
+		apiconnections.Patch)
 	r.GET("/connections",
 		r.AuthMiddleware,
 		apiconnections.List)
@@ -340,6 +346,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apiagents.List)
+	r.GET("/agents/:nameOrID",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apiagents.Get)
 	r.DELETE("/agents/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -723,6 +733,67 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		searchapi.Get,
 	)
 
+	r.GET("/runbooks",
+		r.AuthMiddleware,
+		apirunbooks.ListRunbooksV2,
+	)
+	r.POST("/runbooks/exec",
+		r.AuthMiddleware,
+		apirunbooks.RunbookExec,
+	)
+	r.GET("/runbooks/configurations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.GetRunbookConfiguration,
+	)
+	r.PUT("/runbooks/configurations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.UpdateRunbookConfiguration,
+	)
+
+	r.GET("/runbooks/rules",
+		r.AuthMiddleware,
+		apirunbooks.ListRunbookRules,
+	)
+	r.GET("/runbooks/rules/:id",
+		r.AuthMiddleware,
+		apirunbooks.GetRunbookRule,
+	)
+	r.POST("/runbooks/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.CreateRunbookRule,
+	)
+	r.PUT("/runbooks/rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.UpdateRunbookRule,
+	)
+	r.DELETE("/runbooks/rules/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.DeleteRunbookRule,
+	)
+
 	r.GET("/ws", transport.HandleConnection)
 
+	r.GET("/resources",
+		r.AuthMiddleware,
+		resourcesapi.ListResources)
+	r.GET("/resources/:name",
+		r.AuthMiddleware,
+		resourcesapi.GetResource)
+	r.POST("/resources",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.CreateResource)
+	r.PUT("/resources/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.UpdateResource)
+	r.DELETE("/resources/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		resourcesapi.DeleteResource)
 }

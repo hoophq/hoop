@@ -92,12 +92,12 @@
 
         [:> Box {:class "w-full"}
          [:> Flex {:justify "between" :align "center" :width "100%" :class "px-1 mb-2"}
-          [:> Heading {:as "h3" :size "4"} "Connection Creation Processes"]
+          [:> Heading {:as "h3" :size "4"} "Resource Role Creation Processes"]
           [:> Flex {:align "center" :gap "2"}
            (when running?
              [:> Flex {:align "center" :gap "1" :class "text-primary-11"}
               [:> Spinner {:size "1"}]
-              [:> Text {:size "2"} "Connection creation in progress"]])
+              [:> Text {:size "2"} "Resource role creation in progress"]])
            [:> Button {:size "1"
                        :variant "soft"
                        :on-click #(rf/dispatch [:jobs/fetch-aws-connect-jobs])}
@@ -132,7 +132,9 @@
      [:> Cloud {:size 24 :className "text-blue-500"}]
      [:> Heading {:as "h2" :size "5"} "Automatic AWS Database Discovery"]]
     [:> Text {:as "p" :size "2"}
-     "Connect to your AWS environment to automatically discover and configure your database resources. This automated process will scan your AWS account for database instances and create connections in Hoop, saving you time and ensuring proper configuration."]
+     (str "Connect to your AWS environment to automatically discover and configure your database resources. "
+          "This automated process will scan your AWS account for database instances and create resource roles in Hoop, "
+          "saving you time and ensuring proper configuration.")]
     [:> Button {:size "3"
                 :class "mt-2"
                 :on-click (fn []

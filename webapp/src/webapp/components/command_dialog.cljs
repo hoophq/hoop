@@ -1,7 +1,7 @@
 (ns webapp.components.command-dialog
   (:require
-   ["cmdk" :refer [CommandDialog CommandInput CommandList]]
-   ["@radix-ui/themes" :refer [Box Flex Text]]
+   ["cmdk" :refer [CommandDialog CommandInput CommandList CommandLoading]]
+   ["@radix-ui/themes" :refer [Box Flex Text Spinner]]
    ["lucide-react" :refer [Search X]]
    [webapp.components.theme-provider :refer [theme-provider]]))
 
@@ -9,6 +9,7 @@
   "Tag showing current context"
   [{:keys [current-page context on-close]}]
   (let [label (case current-page
+                :resource-roles (:name context)
                 :connection-actions (:name context)
                 (str current-page))]
     [:> Flex
@@ -28,14 +29,15 @@
 (defn command-dialog
   "Reusable command dialog component"
   [{:keys [open? on-open-change title max-width height class-name
-           search-config breadcrumb-config content children]
+           search-config breadcrumb-config content children loading? should-filter?]
     :or {title "Command Dialog"
          max-width "max-w-2xl"
          height "h-96"
-         class-name ""}}]
+         class-name ""
+         should-filter? false}}]
   [:> CommandDialog
    (merge
-    {:shouldFilter false} ;; Use manual filtering for async search
+    {:shouldFilter should-filter?} ;; Use manual filtering for async search (false) or native filtering (true)
     (when (:on-key-down search-config)
       {:onKeyDown (:on-key-down search-config)})
     {:open open?
@@ -79,6 +81,13 @@
             [breadcrumb-tag {:current-page (:current-page breadcrumb-config)
                              :context (:context breadcrumb-config)
                              :on-close (:on-close breadcrumb-config)}])]])
-      [:> CommandList
-       {:className "flex-1 overflow-y-auto p-4"}
-       (or content children)]]]]])
+      (if loading?
+        [:> CommandLoading {:className "flex-1 flex items-center justify-center p-4"}
+         [:> Flex {:align "center" :gap "2"}
+          [:> Spinner {:size "2"}]
+          [:> Text {:size "2" :class "text-gray-12"}
+           "Loading..."]]]
+
+        [:> CommandList
+         {:className "flex-1 overflow-y-auto p-4"}
+         (or content children)])]]]])

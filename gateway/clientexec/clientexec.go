@@ -141,11 +141,14 @@ func New(opts *Options) (*clientExec, error) {
 	}
 
 	tlsCA := appconfig.Get().GatewayTLSCa()
+	tlsSkipVerify := appconfig.Get().GatewaySkipTLSVerify()
+
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         opts.BearerToken,
 		UserAgent:     userAgent,
 		Insecure:      tlsCA == "",
+		TLSSkipVerify: tlsSkipVerify,
 		TLSCA:         tlsCA,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
@@ -220,7 +223,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 		return newErr("failed sending open session packet, reason=%v", err)
 	}
 	defer func() { c.wlog.Close(); os.RemoveAll(c.folderName) }()
-	recvCh := grpc.NewStreamRecv(c.client)
+	recvCh := grpc.NewStreamRecv(c.ctx, c.client)
 	for {
 		var dstream *grpc.DataStream
 		select {

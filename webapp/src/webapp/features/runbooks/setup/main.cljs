@@ -18,18 +18,17 @@
 
 (defn main []
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        connections (rf/subscribe [:connections])
+        connections (rf/subscribe [:connections->pagination])
         active-tab (r/atom "connections")
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))]
 
     (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
-    (rf/dispatch [:connections->get-connections])
 
     (fn []
       (let [plugin (:plugin @plugin-details)
             installed? (or (:installed? plugin) false)
-            has-connections? (and (:results @connections) (seq (:results @connections)))]
+            has-connections? (and (:data @connections) (seq (:data @connections)))]
 
         ;; Initialize active tab from URL
         (when @url-tab
@@ -53,7 +52,7 @@
              [:> Box
               [h/h2 "Runbooks" {:class "text-[--gray-12]"}]
               [:> Text {:as "p" :size "3" :class "text-gray-500"}
-               "Manage which paths are accessible for each connection."]
+               "Manage which paths are accessible for each resource role."]
               [:> Text {:as "p" :size "3" :class "text-gray-500"}
                "Configure Git repositories and enhance automation for your organization."]]
              nil]
@@ -63,7 +62,7 @@
              [:> Tabs.Root {:value @active-tab
                             :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}
-               [:> Tabs.Trigger {:value "connections"} "Connections"]
+               [:> Tabs.Trigger {:value "connections"} "Resource Roles"]
                [:> Tabs.Trigger {:value "configurations"} "Configurations"]]
 
               [:> Separator {:size "4" :mb "7"}]

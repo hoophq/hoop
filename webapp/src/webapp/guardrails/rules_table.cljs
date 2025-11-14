@@ -63,7 +63,7 @@
     (= "pattern_match" (:type rule))
     [:> Flex {:align "center" :gap "2"}
      [forms/input
-      {:placeholder "Describe how this is used in your connections"
+      {:placeholder "Describe how this is used in your resource roles"
        :full-width? true
        :size "3"
        :not-margin-bottom? true
@@ -170,7 +170,7 @@
                pattern-state
                on-pattern-change])]]))]]
 
-   ;; Action buttons
+     ;; Action buttons
      [rule-buttons/main
       {:on-rule-add #(on-rule-add state)
        :on-toggle-select #(on-toggle-select select-state)

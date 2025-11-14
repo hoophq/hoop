@@ -40,14 +40,14 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		isInsecure := dsn.Scheme == "http" || dsn.Scheme == "grpc"
+		isTLS := dsn.Scheme == "grpcs" || dsn.Scheme == "https" || dsn.Scheme == "wss"
 		return &Config{
 			Name:      dsn.Name,
 			Type:      clientconfig.ModeDsn,
 			AgentMode: dsn.AgentMode,
 			Token:     dsn.Key(),
 			URL:       dsn.Address,
-			insecure:  isInsecure,
+			insecure:  !isTLS,
 			tlsCA:     tlsCA,
 		}, nil
 	}
@@ -73,6 +73,7 @@ func (c *Config) GrpcClientConfig() (grpc.ClientConfig, error) {
 		Insecure:      c.IsInsecure(),
 		TLSServerName: os.Getenv("HOOP_TLSSERVERNAME"),
 		TLSCA:         c.tlsCA,
+		TLSSkipVerify: os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true",
 	}, err
 }
 

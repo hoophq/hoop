@@ -17,7 +17,7 @@
      [:> Heading {:as "h4" :size "4" :weight "medium" :class "text-[--gray-12]"}
       "Connected Resources"]
      [:> Text {:size "3" :class "text-[--gray-11]"}
-      "Resources that are using this AI Data Masking rule."]]
+      "Resource Roles that are using this AI Data Masking rule."]]
 
     [:> Box {:class "h-fit border border-[--gray-a6] rounded-md" :grid-column "span 5 / span 5"}
      (if connections-loading?
@@ -94,7 +94,7 @@
                        :variant "ghost"
                        :color "gray"
                        :on-click #(swap! show-connections? not)}
-            "Connections"
+            "Resource Roles"
             (if @show-connections?
               [:> ChevronUp {:size 14}]
               [:> ChevronDown {:size 14}])])]]

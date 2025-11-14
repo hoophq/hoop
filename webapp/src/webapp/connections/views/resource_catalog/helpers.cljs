@@ -33,6 +33,7 @@
 ;; Connections only for onboarding (execute direct actions)
 (def onboarding-connections
   [{:id "postgres-demo"
+    :badges ["new"]
     :name "Demo PostgresSQL"
     :description "Access a preloaded database to see it in action."
     :category "quickstart"
@@ -41,6 +42,7 @@
     :action #(rf/dispatch [:connections->quickstart-create-postgres-demo])
     :special-type :action}
    {:id "aws-discovery"
+    :badges ["beta"]
     :name "Automatic resource discovery"
     :description "Access your resources through your infrastructure providers."
     :category "quickstart"
@@ -127,31 +129,31 @@
     {:categories all-categories
      :tags all-tags}))
 
-(def new-connections #{"postgres-demo"})
-(def beta-connections #{"mongodb" "aws-discovery"})
-
 ;; Connection to setup flow mapping
 (def connection-setup-mappings
-  {;; Database connections (current flow)
+  {;; Database connections (new resources flow)
    "postgres" {:type "database" :subtype "postgres"}
    "mysql" {:type "database" :subtype "mysql"}
    "mongodb" {:type "database" :subtype "mongodb"}
    "mssql" {:type "database" :subtype "mssql"}
    "oracle" {:type "database" :subtype "oracledb"}
-   ;; Network connections (current flow)
-   "ssh" {:type "server" :subtype "ssh"}
-   "tcp" {:type "network" :subtype "tcp"}
-   "httpproxy" {:type "network" :subtype "httpproxy"}
-   ;; Custom connections (current flow)
-   "linux-vm" {:type "server" :subtype "custom"}})
+   ;; Application connections (new resources flow)
+   "ssh" {:type "application" :subtype "ssh"}
+   "tcp" {:type "application" :subtype "tcp"}
+   "httpproxy" {:type "application" :subtype "httpproxy"}
+   ;; Custom connections (new resources flow)
+   "linux-vm" {:type "custom" :subtype "linux-vm" :command ["bash"]}})
 
 (defn get-connection-badge
   "Get badge info for a connection (NEW, BETA, etc)"
-  [connection-id]
-  (cond
-    (new-connections connection-id) {:text "NEW" :color "green"}
-    (beta-connections connection-id) {:text "BETA" :color "indigo"}
-    :else nil))
+  [connection-metadata]
+  (let [badges (or (:badges connection-metadata) [])]
+    (mapv (fn [badge]
+            (cond
+              (= badge "new") {:text "NEW" :color "green"}
+              (= badge "beta") {:text "BETA" :color "indigo"}
+              :else {:text (cs/capitalize badge) :color "gray"}))
+          badges)))
 
 (defn get-setup-config
   "Get setup configuration for a connection"
@@ -173,9 +175,10 @@
 (defn dispatch-setup-navigation
   "Dispatch navigation to appropriate setup flow"
   [setup-config is-onboarding?]
-  (rf/dispatch [:connection-setup/initialize-from-catalog setup-config])
-  (when (:app-type setup-config)
-    (rf/dispatch [:connection-setup/select-app-type (:app-type setup-config)]))
+  ;; Initialize resource setup with data from catalog
+  (rf/dispatch [:resource-setup->initialize-from-catalog setup-config])
+
+  ;; Navigate to resource setup flow
   (if is-onboarding?
     (rf/dispatch [:navigate :onboarding-setup-resource])
-    (rf/dispatch [:navigate :create-connection])))
+    (rf/dispatch [:navigate :resource-setup-new])))

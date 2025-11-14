@@ -21,8 +21,8 @@
 
     (if installed?
       [:> Button {:size "3"
-                  :onClick #(rf/dispatch [:navigate :connections])}
-       "Create Connection"]
+                  :onClick #(rf/dispatch [:navigate :resource-roles])}
+       "Create Resource Role"]
 
       [:> Button
        {:size "3"

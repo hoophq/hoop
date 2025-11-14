@@ -61,8 +61,8 @@ func GetEnvVarByID(orgID, id string) (*EnvVar, error) {
 	return &env, nil
 }
 
-func UpsertEnvVar(env *EnvVar) error {
-	return DB.Table("private.env_vars").
+func UpsertEnvVar(db *gorm.DB, env *EnvVar) error {
+	return db.Table("private.env_vars").
 		Model(env).
 		Save(env).Error
 }

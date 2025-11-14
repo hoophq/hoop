@@ -43,10 +43,13 @@ func (a Agent) String() string {
 		a.OrgID, a.Name, a.Mode, a.GetMeta("hostname"), a.GetMeta("platform"), a.GetMeta("version"), a.GetMeta("goversion"), a.GetMeta("kernel_version"))
 }
 
-func ListAgents(orgID string) ([]Agent, error) {
+func ListAgents(orgID string, status string) ([]Agent, error) {
 	var agentList []Agent
-	return agentList, DB.Table("private.agents").
-		Where("org_id = ?", orgID).Find(&agentList).Error
+	query := DB.Table("private.agents").Where("org_id = ?", orgID)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	return agentList, query.Find(&agentList).Error
 }
 
 func GetAgentByNameOrID(orgID, nameOrID string) (*Agent, error) {

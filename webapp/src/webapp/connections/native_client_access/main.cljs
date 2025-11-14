@@ -1,6 +1,7 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
+   ["lucide-react" :refer [Info]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -51,7 +52,7 @@
      [:> Heading {:size "6" :as "h2" :class "text-[--gray-12] mb-2"}
       "Configure session"]
      [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-      "Specify how long you need access to this connection."]]
+      "Specify how long you need access to this resource role."]]
 
     [:> Box {:class "space-y-4"}
      [:> Box
@@ -80,11 +81,10 @@
                                @selected-duration])}
      "Confirm and Connect"]]])
 
-(defn- connect-credentials-tab
-  "Credentials tab content"
+(defn- postgres-credentials-fields
+  "PostgreSQL specific credentials fields"
   [native-client-access-data]
   [:> Box {:class "space-y-4"}
-
    ;; Database Name
    (when (:database_name native-client-access-data)
      [:> Box {:class "space-y-2"}
@@ -131,9 +131,65 @@
       :id "port"
       :logs (:port native-client-access-data)}]]])
 
-(defn- connect-uri-tab
-  "Connection URI tab content"
+(defn- rdp-credentials-fields
+  "RDP specific credentials fields"
   [native-client-access-data]
+  [:> Box {:class "space-y-4"}
+
+   [:> Callout.Root {:size "1" :color "blue" :class "w-full"}
+    [:> Callout.Icon
+     [:> Info {:size 16}]]
+    [:> Callout.Text
+     "Works only with FreeRDP client"]]
+
+   ;; Host
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Host"]
+    [logs/new-container
+     {:status :success
+      :id "hostname"
+      :logs (:hostname native-client-access-data)}]]
+
+   ;; Username
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Username"]
+    [logs/new-container
+     {:status :success
+      :id "username"
+      :logs (:username native-client-access-data)}]]
+
+   ;; Password
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Password"]
+    [logs/new-container
+     {:status :success
+      :id "password"
+      :logs (:password native-client-access-data)}]]
+
+   ;; Port
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Port"]
+    [logs/new-container
+     {:status :success
+      :id "port"
+      :logs (:port native-client-access-data)}]]])
+
+(defn- connect-credentials-tab
+  "Credentials tab content - adapts based on connection type"
+  [{:keys [connection_type connection_credentials]}]
+  [:> Box {:class "space-y-4"}
+   (case connection_type
+     "postgres" [postgres-credentials-fields connection_credentials]
+     "rdp" [rdp-credentials-fields connection_credentials]
+     [postgres-credentials-fields connection_credentials])])
+
+(defn- connect-uri-tab
+  "Connection URI tab content - PostgreSQL only"
+  [{:keys [connection_credentials]}]
   [:> Box {:class "space-y-4"}
    [:> Box {:class "space-y-2"}
     [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
@@ -141,7 +197,7 @@
     [logs/new-container
      {:status :success
       :id "connection-string"
-      :logs (:connection_string native-client-access-data)}]]
+      :logs (:connection_string connection_credentials)}]]
 
    [:> Text {:as "p" :size "2" :class "text-[--gray-11] mt-3"}
     "Works with DBeaver, DataGrip and most PostgreSQL clients"]])
@@ -188,24 +244,20 @@
                            (rf/dispatch [:show-snackbar {:level :info
                                                          :text "Native client access session has expired."}]))}]]]
 
-        [:> Tabs.Root {:value @active-tab
-                       :onValueChange #(reset! active-tab %)}
-         [:> Tabs.List {:aria-label "Connection methods"}
-          [:> Tabs.Trigger {:value "credentials"} "Credentials"]
-          (when has-connection-uri?
-            [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"])
-          (when has-command?
-            [:> Tabs.Trigger {:value "command"} "Command"])]
+        (if (= (:connection_type native-client-access-data) "postgres")
+          [:> Tabs.Root {:value @active-tab
+                         :onValueChange #(reset! active-tab %)}
+           [:> Tabs.List {:aria-label "Connection methods"}
+            [:> Tabs.Trigger {:value "credentials"} "Credentials"]
+            [:> Tabs.Trigger {:value "connection-uri"} "Connection URI"]]
 
-         [:> Tabs.Content {:value "credentials" :class "mt-4"}
-          [connect-credentials-tab (:connection_credentials native-client-access-data)]]
+           [:> Tabs.Content {:value "credentials" :class "mt-4"}
+            [connect-credentials-tab native-client-access-data]]
 
-         (when has-connection-uri?
            [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
-            [connect-uri-tab (:connection_credentials native-client-access-data)]])
-         (when has-command?
-           [:> Tabs.Content {:value "command" :class "mt-4"}
-            [connect-command-tab (:connection_credentials native-client-access-data)]])]]
+            [connect-uri-tab native-client-access-data]]]
+
+          [connect-credentials-tab native-client-access-data])]
 
        ;; Sticky footer
        [:footer {:class "sticky bottom-0 z-30 bg-white py-4 flex justify-between items-center"}
@@ -248,7 +300,10 @@
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Type: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      (:connection_type native-client-access-data)]]
+      (case (:connection_type native-client-access-data)
+        "postgres" "PostgreSQL"
+        "rdp" "Remote Desktop"
+        "Unknown" "ssh")]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Time left: "]

@@ -21,7 +21,7 @@
 
 (defn connection-card [connection on-click]
   (let [{:keys [id name icon-name]} connection
-        badge (helpers/get-connection-badge (:id connection))]
+        badge (helpers/get-connection-badge connection)]
     [:> Box {:height "110px" :width "176px"}
      [:> Card {:size "2"
                :class "h-full w-full cursor-pointer"
@@ -31,11 +31,13 @@
         [:> Box
          [connection-icon icon-name id]]
 
-        (when badge
-          [:> Badge {:color (:color badge)
-                     :variant "solid"
-                     :size "1"}
-           (:text badge)])]
+        (when (seq badge)
+          (for [badge badge]
+            ^{:key (:text badge)}
+            [:> Badge {:color (:color badge)
+                       :variant "solid"
+                       :size "1"}
+             (:text badge)]))]
 
        [:> Text {:size "2" :weight "medium" :align "left" :class "text-[--gray-12]"}
         name]]]]))

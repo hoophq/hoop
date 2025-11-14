@@ -44,7 +44,7 @@
           {:connection-ids (:connection-ids state)
            :on-connections-change (:on-connections-change handlers)}]
 
-        ;; Rules section
+         ;; Rules section
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 2 / span 2"}
            [:> Flex {:align "center" :gap "2"}
@@ -55,7 +55,7 @@
             "Setup rules with Presets or Custom regular expression scripts."]]
 
           [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-          ;; Input Rules
+           ;; Input Rules
            [rules-table/main
             (merge
              {:title "Input rules"
@@ -65,7 +65,7 @@
               :select-state (:input-select state)}
              handlers)]
 
-          ;; Output Rules
+           ;; Output Rules
            [rules-table/main
             (merge
              {:title "Output rules"
@@ -84,12 +84,14 @@
   (let [guardrails->active-guardrail (rf/subscribe [:guardrails->active-guardrail])
         scroll-pos (r/atom 0)]
 
-    (rf/dispatch [:guardrails->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
+        
+        (if (= :loading (:status @guardrails->active-guardrail))
+          [loading]
+          [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos])
+        
         (finally
-          (.removeEventListener js/window "scroll" handle-scroll)))
-      (if (= :loading (:status @guardrails->active-guardrail))
-        [loading]
-        [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos]))))
+          (.removeEventListener js/window "scroll" handle-scroll)
+          (rf/dispatch [:guardrails->clear-active-guardrail]))))))

@@ -32,14 +32,19 @@ func CreateRDPSession(
 	connectionInfo models.Connection,
 	clientAddr string,
 	protocol string,
-	extractedCreds string) (*Session, error) {
+	extractedCreds string,
+	expireAt time.Time,
+	ctxDuration time.Duration,
+) (*Session, error) {
 
 	sessionID := uuid.New()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, timeoutCancelFn := context.WithTimeoutCause(context.Background(), ctxDuration,
+		fmt.Errorf("connection access expired (%v)",
+			expireAt.Format(time.RFC3339)))
 
 	client, _ := GetAgent(connectionInfo.AgentName)
 	if client == nil {
-		cancel()
+		timeoutCancelFn()
 		return nil, fmt.Errorf("agent not found: %s", connectionInfo.AgentName)
 	}
 
@@ -56,7 +61,7 @@ func CreateRDPSession(
 		Protocol:            ProtocolRDP,
 		credentialsReceived: credentialsReceived,
 		ctx:                 ctx,
-		cancel:              cancel,
+		cancel:              timeoutCancelFn,
 	}
 
 	// Store session immediately so it can be found by WebSocket handler
@@ -69,6 +74,10 @@ func CreateRDPSession(
 		secrets[k] = string(value)
 	}
 
+	host := secrets["envvar:HOST"]
+	port := secrets["envvar:PORT"]
+	address := fmt.Sprintf("%s:%s", host, port)
+
 	// Send session info to agent using new message format
 	msg := &WebSocketMessage{
 		Type: MessageTypeSessionStarted,
@@ -77,7 +86,7 @@ func CreateRDPSession(
 			"client_address": clientAddr,
 			"username":       secrets["envvar:USER"],
 			"password":       secrets["envvar:PASS"],
-			"target_address": secrets["envvar:HOST"],
+			"target_address": address,
 			"proxy_user":     extractedCreds, // Use the extracted credentials as proxy_user
 		},
 		Payload: []byte{}, // Empty payload since session ID is in header
@@ -94,8 +103,10 @@ func CreateRDPSession(
 		return nil, err
 	}
 
-	timeoutCtx, cancelFn := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancelFn()
+	timeoutCtx, cancelFunc := context.WithTimeout(
+		context.Background(), 20*time.Second)
+
+	defer cancelFunc()
 
 	// Wait for protocol-specific started response
 	select {

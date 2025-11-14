@@ -36,9 +36,9 @@
       [:> Badge {:variant "solid" :color "green" :size "1"} "Beta"]]
 
      [:> Text {:size "2" :color "gray"}
-      "Configure your connection for specific resource types. Select a subtype only if it matches your actual resource, applying the optimal settings for that resource type."]
+      "Configure your resource role for specific resource types. Select a subtype only if it matches your actual resource, applying the optimal settings for that resource type. "]
      [:> Text {:size "2" :color "gray"}
-      "This feature is currently in Beta to streamline connections to most common resource types."]
+      "This feature is currently in Beta to streamline resource roles to most common resource types."]
 
      [:> Box
       [forms/select

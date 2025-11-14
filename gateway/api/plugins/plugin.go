@@ -187,7 +187,7 @@ func PutConfig(c *gin.Context) {
 	}
 
 	existingPlugin.EnvVars = envVars
-	err = models.UpsertEnvVar(&models.EnvVar{
+	err = models.UpsertEnvVar(models.DB, &models.EnvVar{
 		OrgID:     existingPlugin.OrgID,
 		ID:        existingPlugin.ID,
 		Envs:      envVars,

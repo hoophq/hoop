@@ -4,8 +4,8 @@
 
 (rf/reg-event-fx
  :clarity->verify-environment
- (fn [_ [_ user]]
-   (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])
+ (fn [{:keys [db]} [_ user]]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))
          hostname (.-hostname js/window.location)
          clarity-available? (and (exists? js/window.clarity)
                                  (= (type js/window.clarity) js/Function))]

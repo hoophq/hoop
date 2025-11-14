@@ -14,8 +14,9 @@ import (
 )
 
 var (
-	debugGrpcFlag bool
-	debugFlag     bool
+	debugGrpcFlag     bool
+	debugFlag         bool
+	skipTLSVerifyFlag bool
 )
 
 var rootPreRunFn = func(_ *cobra.Command, _ []string) {
@@ -49,6 +50,7 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugGrpcFlag, "debug-grpc", grpc.ShouldDebugGrpc(), "Turn on debugging of gRPC (http2) if applicable")
 	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Turn on debugging")
+	rootCmd.PersistentFlags().BoolVar(&skipTLSVerifyFlag, "skip-tls-verify", false, "Skip TLS verification when connecting to Hoop components")
 
 	rootCmd.AddCommand(runbooks.MainCmd)
 	rootCmd.AddCommand(config.MainCmd)

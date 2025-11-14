@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.main
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Text Tooltip]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton ScrollArea Text Tooltip]]
    ["lucide-react" :refer [LibraryBig PackagePlus Play Sun Moon ChevronDown ChevronsLeft ChevronsRight]]
    ["allotment" :refer [Allotment]]
    [reagent.core :as r]
@@ -9,6 +9,7 @@
    [clojure.string :as cs]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.webclient.components.search :as search]
+   [webapp.components.keyboard-shortcuts :refer [detect-os]]
    [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.log-area.main :as log-area]
    [webapp.webclient.panel :refer [discover-connection-type]]
@@ -21,74 +22,91 @@
         metadata (rf/subscribe [:editor-plugin/metadata])
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
-        runbooks-connection (rf/subscribe [:runbooks/selected-connection])]
+        runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        script-response (rf/subscribe [:editor-plugin->script])]
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
-      (let [has-metadata? (or (seq @metadata)
-                              (seq @metadata-key)
-                              (seq @metadata-value))
-            no-connection-selected? (not @runbooks-connection)
-            runbooks-enabled? (= "enabled" (:access_mode_runbooks @runbooks-connection))
-            exec-enabled? (= "enabled" (:access_mode_exec @runbooks-connection))
-            disable-run-button? (or no-connection-selected?
-                                    (empty? (@selected-template :data))
-                                    (not runbooks-enabled?)
-                                    (not exec-enabled?))]
+      (letfn [(run-disabled? []
+                (let [template @selected-template
+                      connection @runbooks-connection]
+                  (or (nil? connection)
+                      (empty? (:data template)))))]
+        (r/with-let [submit-ref (r/atom submit)
+                     handle-keydown (let [f (fn [e]
+                                              (when (and (= "Enter" (.-key e))
+                                                         (or (.-metaKey e) (.-ctrlKey e))
+                                                         (not (run-disabled?)))
+                                                (.preventDefault e)
+                                                (when-let [fn-submit @submit-ref]
+                                                  (fn-submit))))]
+                                      (.addEventListener js/document "keydown" f)
+                                      f)]
+          (reset! submit-ref submit)
+          (let [has-metadata? (or (seq @metadata)
+                                  (seq @metadata-key)
+                                  (seq @metadata-value))
+                disable-run-button? (run-disabled?)
+                runbook-loading? (= (:status @script-response) :loading)
+                os (detect-os)]
+            [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
+             [:> Flex {:class "h-full px-4 items-center justify-between"}
+              [:> Flex {:class "items-center gap-2"}
+               [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+                "Runbooks"]
+               [:> Badge
+                {:radius "full"
+                 :color (if @runbooks-connection "indigo" "gray")
+                 :class "cursor-pointer"
+                 :onClick (fn []
+                            (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
+                            (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
+                (if @runbooks-connection
+                  (:name @runbooks-connection)
+                  "Resource Role")
+                [:> ChevronDown {:size 12}]]]
 
-        [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
-         [:> Flex {:class "h-full px-4 items-center justify-between"}
-          [:> Flex {:class "items-end gap-2"}
-           [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
-            "Runbooks"]
-           [:> Badge
-            {:radius "full"
-             :color (if @runbooks-connection "indigo" "gray")
-             :class "cursor-pointer"
-             :onClick (fn [] (rf/dispatch [:runbooks/toggle-connection-dialog true]))}
-            (if @runbooks-connection
-              (:name @runbooks-connection)
-              "Connection")
-            [:> ChevronDown {:size 12}]]]
+              [:> Flex {:class "items-center gap-2"}
+               [:> Tooltip {:content "Search"}
+                [search/main :runbooks]]
 
-          [:> Flex {:class "items-center gap-2"}
-           [:> Tooltip {:content "Search"}
-            [search/main :runbooks]]
+               [:> Tooltip {:content "Theme"}
+                [:> IconButton
+                 {:class (when @dark-mode?
+                           "bg-gray-8 text-gray-12")
+                  :size "2"
+                  :color "gray"
+                  :variant "soft"
+                  :onClick (fn []
+                             (swap! dark-mode? not)
+                             (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
+                 (if @dark-mode?
+                   [:> Sun {:size 16}]
+                   [:> Moon {:size 16}])]]
 
-           [:> Tooltip {:content "Theme"}
-            [:> IconButton
-             {:class (when @dark-mode?
-                       "bg-gray-8 text-gray-12")
-              :size "2"
-              :color "gray"
-              :variant "soft"
-              :onClick (fn []
-                         (swap! dark-mode? not)
-                         (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
-             (if @dark-mode?
-               [:> Sun {:size 16}]
-               [:> Moon {:size 16}])]]
+               [:> Tooltip {:content "Metadata"}
+                [notification-badge
+                 {:icon [:> PackagePlus {:size 16}]
+                  :on-click toggle-metadata-open
+                  :active? metadata-open?
+                  :has-notification? has-metadata?
+                  :disabled? false}]]
 
-           [:> Tooltip {:content "Metadata"}
-            [notification-badge
-             {:icon [:> PackagePlus {:size 16}]
-              :on-click toggle-metadata-open
-              :active? metadata-open?
-              :has-notification? has-metadata?
-              :disabled? false}]]
-
-           [:> Tooltip {:content "Run"}
-            [:> Button
-             {:disabled disable-run-button?
-              :class (when disable-run-button? "cursor-not-allowed")
-              :onClick #(submit)}
-             [:> Play {:size 16}]
-             "Run"]]]]]))))
+               [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
+                [:> Button
+                 {:disabled disable-run-button?
+                  :loading runbook-loading?
+                  :class (when disable-run-button? "cursor-not-allowed")
+                  :onClick #(submit)}
+                 [:> Play {:size 16}]
+                 "Run"]]]]])
+          (finally
+            (.removeEventListener js/document "keydown" handle-keydown)))))))
 
 (defn runbooks-library []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
     (fn [{:keys [collapsed? on-toggle-collapse]}]
       [:> Box {:as "aside"
-               :class (str "h-full transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
+               :class (str "h-full flex flex-col transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
                            (if collapsed? "w-16" "w-full"))}
        [:> Flex {:align "center"
                  :justify "between"
@@ -102,7 +120,9 @@
                         :onClick on-toggle-collapse}
          [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
        (when-not collapsed?
-         [:> Box {:class "flex-1 p-2 h-full"} [runbooks-list/main templates filtered-templates]])])))
+         [:> ScrollArea {:class "flex-1"}
+          [:> Box {:class "h-full p-2 pb-4"}
+           [runbooks-list/main templates filtered-templates]]])])))
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
@@ -150,8 +170,7 @@
            [:> Box {:class "h-full flex-1"}
             [connections-dialog/connections-dialog]
             [runbook-form/main {:runbook @selected-template
-                                :preselected-connection (:name @runbooks-connection)
-                                :selected-connections @(rf/subscribe [:execution/target-connections])}]]
+                                :selected-connection @runbooks-connection}]]
            [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
             [log-area/main
              (discover-connection-type @runbooks-connection)
@@ -165,5 +184,5 @@
                       :class "px-4 py-3 border-b border-gray-3"}
              [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Metadata"]]
             [:> Box {:class "p-4"}
-             [metadata-panel/content]]]])]])))
+             [metadata-panel/main]]]])]])))
 

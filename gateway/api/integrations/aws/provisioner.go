@@ -28,6 +28,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/plugins/webhooks"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
+	"gorm.io/gorm"
 )
 
 const (
@@ -324,7 +325,11 @@ func (p *provisioner) handleConnectionProvision(req pbsystem.DBProvisionerReques
 			},
 		})
 	}
-	return models.UpsertBatchConnections(connections)
+
+	sess := &gorm.Session{FullSaveAssociations: true}
+	return models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		return models.UpsertBatchConnections(tx, connections)
+	})
 }
 
 func (p *provisioner) Cancel() { p.cancelFn() }

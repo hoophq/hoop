@@ -58,9 +58,9 @@
           [:> Box
            [:> Flex {:align "center" :gap "2"}
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-             "Configure connection tags mapping"]]
+             "Configure resource role tags mapping"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
-            "Match key-value information in Jira fields with your connection tags."]]
+            "Match key-value information in Jira fields with your resource role tags."]]
 
           [:> Box {:class "space-y-radix-7"}
            [preset-mapping-table/main
@@ -81,7 +81,7 @@
             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
              "Configure automated mapping"]]
            [:> Text {:size "3" :class "text-[--gray-11]"}
-            "Append additional information to your Jira cards when executing a command in your connections."]]
+            "Append additional information to your Jira cards when executing a command in your resource roles."]]
 
           [:> Box {:class "space-y-radix-7"}
            [mapping-table/main
@@ -145,17 +145,14 @@
 (defn main [form-type]
   (let [jira-template (rf/subscribe [:jira-templates->active-template])
         scroll-pos (r/atom 0)]
-
-    (rf/dispatch [:jira-templates->get-connections])
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
-        (finally
-          (.removeEventListener js/window "scroll" handle-scroll)))
 
-      (r/with-let [_ nil]
         (if (= :loading (:status @jira-template))
           [loading]
           [jira-form form-type (:data @jira-template) scroll-pos])
+
         (finally
+          (.removeEventListener js/window "scroll" handle-scroll)
           (rf/dispatch [:jira-templates->clear-active-template]))))))

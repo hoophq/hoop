@@ -49,7 +49,7 @@ func findRunbookFilesByPath(path string, config *runbooks.Config, orgID string) 
 		return nil, err
 	}
 
-	var runbookPaths []string
+	runbookPaths := make([]string, 0)
 
 	ctree, _ := commit.Tree()
 	if ctree == nil {

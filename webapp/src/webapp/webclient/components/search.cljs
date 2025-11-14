@@ -7,8 +7,9 @@
 
 (defn main []
   (let [has-text? (r/atom false)
-        search-term (rf/subscribe [:search/term])]
-    (fn [active-panel]
+        search-term (rf/subscribe [:search/term])
+        active-panel (rf/subscribe [:webclient->active-panel])]
+    (fn []
       (let [input-id "header-search"]
         (reset! has-text? (not (empty? @search-term)))
 
@@ -27,7 +28,7 @@
                               " focus:pl-3 focus:pr-8 "
                               " dark:text-gray-12 ")
                   :id input-id
-                  :placeholder "Search connections"
+                  :placeholder "Search runbooks"
                   :name "header-search"
                   :autoComplete "off"
                   :value @search-term

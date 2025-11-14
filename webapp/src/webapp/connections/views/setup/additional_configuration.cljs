@@ -70,8 +70,6 @@
         default-modes (get-access-mode-defaults @connection-subtype)]
 
     (rf/dispatch [:users->get-user-groups])
-    (rf/dispatch [:guardrails->get-all])
-    (rf/dispatch [:jira-templates->get-all])
 
     (when is-tcp?
       (doseq [[mode value] default-modes]
@@ -114,7 +112,7 @@
             [:> Box {:class "space-y-2"}
              [toggle-section
               {:title "Reviews"
-               :description "Require approval prior to connection execution. Enable Just-in-Time access for 30-minute sessions or Command reviews for individual query approvals."
+               :description "Require approval prior to resource role execution. Enable Just-in-Time access for 30-minute sessions or Command reviews for individual query approvals."
                :checked @review?
                :on-change #(rf/dispatch [:connection-setup/toggle-review])
                :complement-component
@@ -275,7 +273,7 @@
               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
                "Guardrails"]
               [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
-               "Create custom rules to guide and protect usage within your connections."]
+               "Create custom rules to guide and protect usage within your resource roles."]
 
               [multi-select/main {:options (or (mapv #(into {} {"value" (:id %) "label" (:name %)})
                                                      (-> @guardrails-list :data)) [])

@@ -2,16 +2,15 @@
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
    ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
-                           Inbox LayoutDashboard PackageSearch Rotate3d Search
+                           Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
 
-;; Dicionário central de ícones com tamanho flexível (fonte única da verdade)
 (def icons-registry
-  {"Connections" (fn [& [{:keys [size] :or {size 24}}]]
-                   [:> Rotate3d {:size size}])
+  {"Resources" (fn [& [{:keys [size] :or {size 24}}]]
+                 [:> Package {:size size}])
    "Dashboard" (fn [& [{:keys [size] :or {size 24}}]]
                  [:> LayoutDashboard {:size size}])
    "Terminal" (fn [& [{:keys [size] :or {size 24}}]]
@@ -23,7 +22,7 @@
    "Reviews" (fn [& [{:keys [size] :or {size 24}}]]
                [:> Inbox {:size size}])
    "RunbooksSetup" (fn [& [{:keys [size] :or {size 24}}]]
-                [:> BookMarked {:size size}])
+                     [:> BookMarked {:size size}])
    "Guardrails" (fn [& [{:keys [size] :or {size 24}}]]
                   [:> ShieldCheck {:size size}])
    "JiraTemplates" (fn [& [{:keys [size] :or {size 24}}]]
@@ -65,11 +64,11 @@
 
 ;; Menu principal
 (def main-routes
-  [{:name "Connections"
-    :label "Connections"
-    :icon (get icons-registry "Connections")
-    :uri (routes/url-for :connections)
-    :navigate :connections
+  [{:name "Resources"
+    :label "Resources"
+    :icon (get icons-registry "Resources")
+    :uri (routes/url-for :resources)
+    :navigate :resources
     :free-feature? true
     :admin-only? false}
    {:name "Dashboard"
@@ -116,7 +115,7 @@
     :admin-only? false
     :badge (fn []
              [:> Flex {:gap "3"}
-              [:> Text {:weight "regular"} "cmd + k"]
+              [:> Text {:weight "regular"} "cmd + K"]
               [:> Badge {:variant "solid" :color "green"}
                "NEW"]])}])
 
@@ -242,6 +241,3 @@
     :free-feature? true
     :admin-only? true
     :selfhosted-only? false}])
-
-;; Mantemos essa constante para compatibilidade com o código existente
-(def routes main-routes)
