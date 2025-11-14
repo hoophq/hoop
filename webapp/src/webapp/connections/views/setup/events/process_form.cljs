@@ -69,15 +69,9 @@
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
         metadata-credentials (get-in db [:connection-setup :metadata-credentials])
         all-env-vars (cond
-                       (= api-type "database")
-                       (let [database-credentials (get-in db [:connection-setup :database-credentials])
-                             credentials-as-env-vars (mapv (fn [[k v]]
-                                                             {:key (name k)
-                                                              :value v})
-                                                           (seq database-credentials))]
-                         (concat credentials-as-env-vars env-vars))
-
-                       (and (= ui-type "custom") connection-subtype (seq metadata-credentials))
+                       (and (or (= ui-type "custom") (= ui-type "database"))
+                                connection-subtype
+                            (seq metadata-credentials))
                        (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
                                                              {:key (name field-key)
                                                               :value field-value})
@@ -340,7 +334,7 @@
      :agent-id (:agent_id connection)
      :resource-subtype-override resource-subtype-override
      :database-credentials (when (= connection-type "database") credentials)
-     :metadata-credentials (when is-metadata-driven? credentials)
+     :metadata-credentials credentials
      :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
      :ssh-auth-method (or ssh-auth-method "password")

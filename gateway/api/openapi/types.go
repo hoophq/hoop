@@ -1867,6 +1867,8 @@ type ResourceSearch struct {
 }
 
 type SearchResponse struct {
+	// Any errors found during the search
+	Errors []string `json:"errors"`
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
 	// Runbooks found in the search
