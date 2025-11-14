@@ -15,6 +15,7 @@ config: {}
   # LOG_ENCODING: 'console|json'
   # LOG_LEVEL: 'debug|info|warn|error'
   # LOG_GRPC: '0|1|2'
+  # HOOP_GATEWAY_URL: 'https://gateway.example.com'
 
 # -- Define extra secret as environment variables
 extraSecret: {}
