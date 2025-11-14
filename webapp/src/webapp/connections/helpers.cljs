@@ -102,6 +102,6 @@
 
 (defn can-access-native-client? [connection]
   (and (= "enabled" (:access_mode_connect connection))
-       (or (= (:subtype connection) "postgres")
+       (or (#{"postgres" "ssh"} (:subtype connection))
            (and (= (:type connection) "custom")
                 (= (:subtype connection) "rdp")))))

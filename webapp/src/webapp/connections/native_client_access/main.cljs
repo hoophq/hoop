@@ -86,13 +86,14 @@
   [native-client-access-data]
   [:> Box {:class "space-y-4"}
    ;; Database Name
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Database Name"]
-    [logs/new-container
-     {:status :success
-      :id "database-name"
-      :logs (:database_name native-client-access-data)}]]
+   (when (:database_name native-client-access-data)
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Database Name"]
+      [logs/new-container
+       {:status :success
+        :id "database-name"
+        :logs (:database_name native-client-access-data)}]])
 
    ;; Host
    [:> Box {:class "space-y-2"}
@@ -177,6 +178,47 @@
       :id "port"
       :logs (:port native-client-access-data)}]]])
 
+(defn- ssh-credentials-fields
+  "SSH specific credentials fields"
+  [native-client-access-data]
+  [:> Box {:class "space-y-4"}
+
+   ;; Host
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Host"]
+    [logs/new-container
+     {:status :success
+      :id "hostname"
+      :logs (:hostname native-client-access-data)}]]
+
+   ;; Username
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Username"]
+    [logs/new-container
+     {:status :success
+      :id "username"
+      :logs (:username native-client-access-data)}]]
+
+   ;; Password
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Password"]
+    [logs/new-container
+     {:status :success
+      :id "password"
+      :logs (:password native-client-access-data)}]]
+
+   ;; Port
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Port"]
+    [logs/new-container
+     {:status :success
+      :id "port"
+      :logs (:port native-client-access-data)}]]])
+
 (defn- connect-credentials-tab
   "Credentials tab content - adapts based on connection type"
   [{:keys [connection_type connection_credentials]}]
@@ -184,6 +226,7 @@
    (case connection_type
      "postgres" [postgres-credentials-fields connection_credentials]
      "rdp" [rdp-credentials-fields connection_credentials]
+     "ssh" [ssh-credentials-fields connection_credentials]
      [postgres-credentials-fields connection_credentials])])
 
 (defn- connect-uri-tab
@@ -201,10 +244,25 @@
    [:> Text {:as "p" :size "2" :class "text-[--gray-11] mt-3"}
     "Works with DBeaver, DataGrip and most PostgreSQL clients"]])
 
+(defn- connect-command-tab
+  "Command tab content"
+  [native-client-access-data]
+  [:> Box {:class "space-y-4"}
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Connection Command"]
+    [logs/new-container
+     {:status :success
+      :id "command"
+      :logs (:command native-client-access-data)}]]])
+
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [native-client-access-data minimize-fn disconnect-fn]
-  (let [active-tab (r/atom "credentials")]
+  (let [active-tab (r/atom "credentials")
+        has-connection-uri? (some? (get (:connection_credentials native-client-access-data) :connection_string))
+        has-command? (some? (get (:connection_credentials native-client-access-data) :command))]
+
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}
@@ -228,7 +286,8 @@
                            (rf/dispatch [:show-snackbar {:level :info
                                                          :text "Native client access session has expired."}]))}]]]
 
-        (if (= (:connection_type native-client-access-data) "postgres")
+        (cond
+          (= (:connection_type native-client-access-data) "postgres")
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -241,6 +300,22 @@
            [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
             [connect-uri-tab native-client-access-data]]]
 
+          (= (:connection_type native-client-access-data) "ssh")
+          [:> Tabs.Root {:value @active-tab
+                         :onValueChange #(reset! active-tab %)}
+           [:> Tabs.List {:aria-label "Connection methods"}
+            [:> Tabs.Trigger {:value "credentials"} "Credentials"]
+            (when has-command?
+              [:> Tabs.Trigger {:value "command"} "Command"])]
+
+           [:> Tabs.Content {:value "credentials" :class "mt-4"}
+            [connect-credentials-tab native-client-access-data]]
+
+           (when has-command?
+             [:> Tabs.Content {:value "command" :class "mt-4"}
+              [connect-command-tab (:connection_credentials native-client-access-data)]])]
+
+          :else
           [connect-credentials-tab native-client-access-data])]
 
        ;; Sticky footer
@@ -287,6 +362,7 @@
       (case (:connection_type native-client-access-data)
         "postgres" "PostgreSQL"
         "rdp" "Remote Desktop"
+        "ssh" "SSH"
         "Unknown")]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
