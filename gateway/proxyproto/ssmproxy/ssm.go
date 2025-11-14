@@ -3,6 +3,7 @@ package ssmproxy
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/aws/session-manager-plugin/src/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -142,10 +144,17 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		schema = "wss"
 	}
 
+	token, err := createTokenForConnection(connectionId)
+	if err != nil {
+		log.Errorf("failed to create token for connection, reason=%v", err)
+		c.String(http.StatusInternalServerError, "Failed to create connection")
+		return
+	}
+
 	c.JSON(http.StatusOK, ssmStartSessionResponsePacket{
 		SessionId:  connectionId,
 		StreamUrl:  fmt.Sprintf("%s://%s/ws/%s?target=%s", schema, host, connectionId, target.Target),
-		TokenValue: connectionId,
+		TokenValue: token,
 	})
 }
 
@@ -164,14 +173,73 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		return
 	}
 
+	// Generate unique connection id
+	connId := r.connections.Add(1)
+	defer func() {
+		r.connections.Add(-1)
+	}()
+
+	cID := strconv.Itoa(int(connId))
+	sessionID := uuid.NewString()
+
+	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("failed to upgrade websocket connection, reason=%v", err)
+		c.String(http.StatusInternalServerError, "Failed to upgrade websocket")
+		return
+	}
+
+	defer ws.Close()
+
+	// Receive the first message
+	_, msg, err := ws.ReadMessage()
+	if err != nil {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("failed to read first message from websocket, reason=%v", err)
+		return
+	}
+
+	// msg is a JSON for ssmInitWebsocketPacket
+	var initPacket service.OpenDataChannelInput
+	if err := json.Unmarshal(msg, &initPacket); err != nil {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("failed to unmarshal init packet, reason=%v", err)
+		return
+	}
+
+	if initPacket.TokenValue == nil {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("invalid token, reason=%v", err)
+	}
+
+	// Try parse token
+	tokenConnectionId, err := decodeToken(*initPacket.TokenValue)
+	if err != nil {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("failed to decode token, reason=%v", err)
+		return
+	}
+
+	if tokenConnectionId != connectionId {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("invalid token, expected=%s, got=%s", connectionId, tokenConnectionId)
+		return
+	}
+
+	log.With("sid", sessionID, "conn", cID).
+		Infof("connection established for connectionId=%s, target=%s, awsClientId=%s, awsClientVersion=%s",
+			connectionId, target, initPacket.ClientId, initPacket.ClientVersion)
+
 	dbConnection, err := models.GetConnectionByTypeAndID(pb.ConnectionTypeSSM.String(), connectionId)
 	if err != nil {
-		log.Errorf("failed to get connection by id, reason=%v", err)
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("failed to get connection by id, reason=%v", err)
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
-	sessionID := uuid.NewString()
-	log.Infof("starting websocket connection for connectionId=%s, target=%s, sessionID=%s", connectionId, target, sessionID)
+	log.With("sid", sessionID, "conn", cID).
+		Infof("starting websocket connection for connectionId=%s, target=%s, sessionID=%s", connectionId, target, sessionID)
 
 	tlsCA := appconfig.Get().GatewayTLSCa()
 	client, err := grpc.Connect(grpc.ClientConfig{
@@ -189,27 +257,10 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		grpc.WithOption("session-id", sessionID),
 	)
 	if err != nil {
-		log.Errorf("failed connecting to hoop server, reason=%v", err)
+		log.With("sid", sessionID, "conn", cID).Errorf("failed connecting to hoop server, reason=%v", err)
 		c.String(http.StatusInternalServerError, "Failed to connect to hoop server")
 	}
 	defer client.Close()
-
-	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Errorf("failed to upgrade websocket connection, reason=%v", err)
-		c.String(http.StatusInternalServerError, "Failed to upgrade websocket")
-		return
-	}
-
-	defer ws.Close()
-
-	// Generate unique connection id
-	connId := r.connections.Add(1)
-	defer func() {
-		r.connections.Add(-1)
-	}()
-
-	cID := strconv.Itoa(int(connId))
 
 	// Send an open session packet
 	err = client.Send(&pb.Packet{
@@ -241,7 +292,6 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	}
 
 	// Ready for pumping
-
 	// Start RX Pipe (Client -> GRPC)
 	go r.handleRXPipe(ws, client, sessionID, cID)
 	// Start TX Pipe (GRPC -> Client)

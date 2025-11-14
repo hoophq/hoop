@@ -51,6 +51,8 @@ github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.15 h1:kMyK3aKotq1aTBsj1eS8ERJ
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.15/go.mod h1:5uPZU7vSNzb8Y0dm75xTikinegPYK3uJmIHQZFq5Aqo=
 github.com/aws/aws-sdk-go-v2/service/sts v1.33.15 h1:ht1jVmeeo2anR7zDiYJLSnRYnO/9NILXXu42FP3rJg0=
 github.com/aws/aws-sdk-go-v2/service/sts v1.33.15/go.mod h1:xWZ5cOiFe3czngChE4LhCBqUxNwgfwndEF7XlYP/yD8=
+github.com/aws/session-manager-plugin v0.0.0-20250205214155-b2b0bcd769d1 h1:yb9jaXBAhrDTf68kDDHjeqrkiZ1pGDzGu7l2vVCCllQ=
+github.com/aws/session-manager-plugin v0.0.0-20250205214155-b2b0bcd769d1/go.mod h1:7n17tunRPUsniNBu5Ja9C7WwJWTdOzaLqr/H0Ns3uuI=
 github.com/aws/smithy-go v1.22.2 h1:6D9hW43xKFrRx/tXXfAlIZc4JI+yQe6snnWcQyxSyLQ=
 github.com/aws/smithy-go v1.22.2/go.mod h1:irrKGvNn1InZwb2d7fkIRNucdfwR8R+Ts3wxYa/cJHg=
 github.com/beevik/etree v1.5.0 h1:iaQZFSDS+3kYZiGoc9uKeOkUY3nYMXOKLl6KIJxiJWs=
