@@ -229,7 +229,7 @@
               "Select which user groups are able to interact with this rule."]]
 
             [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [multiselect/creatable-select
+             [multiselect/main
               {:label "User Groups"
                :options user-group-options
                :default-value @(:user-groups state)
