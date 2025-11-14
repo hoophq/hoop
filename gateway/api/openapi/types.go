@@ -1874,7 +1874,7 @@ type SearchResponse struct {
 	// Runbooks found in the search
 	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
 	// Resources found in the search
-	Resources []ResourceSearch `json:"resources" example:"my-resource-1,my-resource-2"`
+	Resources []ResourceSearch `json:"resources"`
 }
 
 type ConnectionTestResponse struct {

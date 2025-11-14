@@ -297,7 +297,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
-                        "description": "Search by name, type, or subtype",
+                        "description": "Search by name, type, subtype, resource name or status",
                         "name": "search",
                         "in": "query"
                     },
@@ -320,6 +320,13 @@ const docTemplate = `{
                         "format": "string",
                         "description": "Filter by managed by",
                         "name": "managed_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by resource name",
+                        "name": "resource_name",
                         "in": "query"
                     },
                     {
@@ -3400,14 +3407,34 @@ const docTemplate = `{
                     "Resources"
                 ],
                 "summary": "Lists resources",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Search by name, type, subtype",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by name",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by subtype",
+                        "name": "subtype",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/openapi.ResourceResponse"
-                            }
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_ResourceResponse"
                         }
                     },
                     "400": {
@@ -3450,6 +3477,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3750,7 +3783,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Filter runbooks by connection name",
-                        "name": "connection",
+                        "name": "connection_name",
                         "in": "query"
                     }
                 ],
@@ -6326,11 +6359,6 @@ const docTemplate = `{
                         "EMAIL_ADDRESS"
                     ]
                 },
-                "resource_name": {
-                    "description": "Resource to which this connection belongs to",
-                    "type": "string",
-                    "example": "pgdemo"
-                },
                 "reviewers": {
                     "description": "Reviewers is a list of groups that will review the connection before the user could execute it",
                     "type": "array",
@@ -6418,6 +6446,11 @@ const docTemplate = `{
                     "description": "Name of the connection. This attribute is immutable when updating it",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "resource_name": {
+                    "description": "The resource name associated with this connection",
+                    "type": "string",
+                    "example": "my-resource"
                 },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
@@ -7717,6 +7750,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_ResourceResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceResponse"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.Pagination": {
             "type": "object",
             "properties": {
@@ -8026,17 +8073,16 @@ const docTemplate = `{
                 "listen_address": {
                     "description": "The listen address to run the RDP server proxy",
                     "type": "string",
-                    "example": "0.0.0.0:13389"
+                    "example": "0.0.0.0:3389"
                 }
             }
         },
         "openapi.ResourceRequest": {
             "type": "object",
             "required": [
-                "agent_id",
                 "env_vars",
                 "name",
-                "roles",
+                "subtype",
                 "type"
             ],
             "properties": {
@@ -8065,10 +8111,15 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.ResourceRoleRequest"
                     }
                 },
+                "subtype": {
+                    "description": "The resource subtype",
+                    "type": "string",
+                    "example": "mysql"
+                },
                 "type": {
                     "description": "The resource type",
                     "type": "string",
-                    "example": "mysql"
+                    "example": "database"
                 }
             }
         },
@@ -8109,10 +8160,15 @@ const docTemplate = `{
                     "type": "string",
                     "example": "my-resource"
                 },
+                "subtype": {
+                    "description": "The resource subtype",
+                    "type": "string",
+                    "example": "mysql"
+                },
                 "type": {
                     "description": "The resource type",
                     "type": "string",
-                    "example": "mysql"
+                    "example": "database"
                 },
                 "updated_at": {
                     "description": "The time the resource was updated",
@@ -8154,6 +8210,42 @@ const docTemplate = `{
                     "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
+                }
+            }
+        },
+        "openapi.ResourceSearch": {
+            "type": "object",
+            "required": [
+                "name",
+                "type"
+            ],
+            "properties": {
+                "id": {
+                    "description": "Unique ID of the resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
                 },
                 "subtype": {
                     "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
@@ -8882,6 +8974,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ConnectionSearch"
+                    }
+                },
+                "errors": {
+                    "description": "Any errors found during the search",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "resources": {
+                    "description": "Resources found in the search",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ResourceSearch"
                     }
                 },
                 "runbooks": {
