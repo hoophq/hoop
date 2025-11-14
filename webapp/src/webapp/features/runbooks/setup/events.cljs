@@ -94,9 +94,7 @@
     :fx [[:dispatch [:fetch {:method "POST"
                              :uri "/runbooks/rules"
                              :body rule-data
-                             :on-success #(do
-                                            (rf/dispatch [:runbooks-rules/create-success %])
-                                            (rf/dispatch [:runbooks-rules/get-all]))
+                             :on-success #(rf/dispatch [:runbooks-rules/create-success %])
                              :on-failure #(rf/dispatch [:runbooks-rules/create-failure %])}]]]}))
 
 (rf/reg-event-db
@@ -116,9 +114,7 @@
     :fx [[:dispatch [:fetch {:method "PUT"
                              :uri (str "/runbooks/rules/" rule-id)
                              :body rule-data
-                             :on-success #(do
-                                            (rf/dispatch [:runbooks-rules/update-success %])
-                                            (rf/dispatch [:runbooks-rules/get-all]))
+                             :on-success #(rf/dispatch [:runbooks-rules/update-success %])
                              :on-failure #(rf/dispatch [:runbooks-rules/update-failure %])}]]]}))
 
 (rf/reg-event-db
