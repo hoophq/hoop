@@ -22,7 +22,7 @@
                            (on-load-more))))]
         (reset! observer (js/IntersectionObserver. callback #js {:threshold 1.0}))))
     [:<>
-     (doall children)
+     children
      [:div {:ref (fn [el]
                    (when (and el (not= el (aget @observer "_observedEl")))
                      (when-let [obs @observer]

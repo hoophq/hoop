@@ -27,7 +27,7 @@
     [:> Box {:class "w-2/3 xl:w-1/2 space-y-12 pr-0 2xl:pr-16"}
      [:> Box {:class "space-y-4"}
       [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-[--gray-12]"}
-       "Get more for your connections"]
+       "Get more for your resources"]
       [:> Text {:size "5" :class "text-[--gray-11]"}
        "Upgrade to Enterprise plan and boost your experience."]]
 

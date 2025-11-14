@@ -236,9 +236,6 @@ func Patch(c *gin.Context) {
 	if req.Command != nil {
 		conn.Command = *req.Command
 	}
-	if req.ResourceName != nil {
-		conn.ResourceName = *req.ResourceName
-	}
 	if req.Type != nil {
 		conn.Type = *req.Type
 	}
@@ -342,10 +339,11 @@ func Delete(c *gin.Context) {
 //	@Param			agent_id		query		string	false	"Filter by agent id"																	Format(uuid)
 //	@Param			tags			query		string	false	"DEPRECATED: Filter by tags, separated by comma"										Format(string)
 //	@Param			tag_selector	query		string	false	"Selector tags to fo filter on, supports '=' and '!=' (e.g. key1=value1,key2=value2)"	Format(string)
-//	@Param			search			query		string	false	"Search by name, type, or subtype"						Format(string)
+//	@Param			search			query		string	false	"Search by name, type, subtype, resource name or status"						Format(string)
 //	@Param			type			query		string	false	"Filter by type"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string	false	"Filter by managed by"																	Format(string)
+//	@Param			resource_name		query		string	false	"Filter by resource name"																	Format(string)
 //	@Param			connection_ids	query		string	false	"Filter by specific connection IDs, separated by comma"									Format(string)
 //	@Param			page_size		query		int		false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int		false	"Page number (1-based). When provided, enables pagination"								Format(int)

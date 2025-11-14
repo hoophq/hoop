@@ -1,7 +1,7 @@
 (ns webapp.shared-ui.cmdk.command-palette-pages
   (:require
    ["cmdk" :refer [CommandGroup CommandItem CommandSeparator]]
-   ["lucide-react" :refer [File ChevronRight]] 
+   ["lucide-react" :refer [File ChevronRight Rotate3d Package]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
@@ -30,14 +30,32 @@
   [connection]
   [:> CommandItem
    {:key (:id connection)
-    :value (:name connection)
+    :value (str "role:" (:name connection))
     :keywords [(:type connection) (:subtype connection) (:status connection) "connection"]
     :onSelect #(do
-                (rf/dispatch [:database-schema->clear-schema])
-                (rf/dispatch [:command-palette->navigate-to-page :connection-actions connection]))}
+                 (rf/dispatch [:database-schema->clear-schema])
+                 (rf/dispatch [:command-palette->navigate-to-page :connection-actions connection]))}
    [:div {:class "flex items-center gap-2"}
+    [:> Rotate3d {:size 16 :class "text-gray-11"}]
     [:div {:class "flex flex-col"}
-     [:span {:class "text-sm font-medium"} (:name connection)]]]])
+     [:span {:class "text-sm font-medium"}
+      (:name connection)]]
+    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
+
+(defn resource-result-item
+  "Resource search result item"
+  [resource]
+  [:> CommandItem
+   {:key (:name resource)
+    :value (str "resource:" (:name resource))
+    :keywords [(:name resource) "resource"]
+    :onSelect #(rf/dispatch [:command-palette->navigate-to-page :resource-roles resource])}
+   [:div {:class "flex items-center gap-2"}
+    [:> Package {:size 16 :class "text-gray-11"}]
+    [:div {:class "flex flex-col"}
+     [:span {:class "text-sm font-medium"}
+      (:name resource)]]
+    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
 
 (defn runbook-result-item
   "Runbook search result item"
@@ -67,20 +85,28 @@
   "Main page with all pages + search functionality"
   [search-results user-data]
   (let [search-status (:status search-results)
+        resources (:resources (:data search-results))
         connections (:connections (:data search-results))
         runbooks (:runbooks (:data search-results))
         ;; Filter items based on user permissions
         filtered-items (constants/filter-items-by-permissions user-data)
         ;; Separate items into groups
-        suggestions (filter #(contains? #{"Connections" "Terminal"} (:id %)) filtered-items)
-        quick-access (remove #(contains? #{"Connections" "Terminal"} (:id %)) filtered-items)]
+        suggestions (filter #(contains? #{"Resources" "Terminal"} (:id %)) filtered-items)
+        quick-access (remove #(contains? #{"Resources" "Terminal"} (:id %)) filtered-items)]
     [:<>
      ;; Search results (if any)
-     (when (and (= search-status :ready) (or (seq connections) (seq runbooks)))
+     (when (and (= search-status :ready) (or (seq resources) (seq connections) (seq runbooks)))
        [:<>
+        (when (seq resources)
+          [:> CommandGroup
+           {:heading "Resources"}
+           (for [resource resources]
+             ^{:key (:name resource)}
+             [resource-result-item resource])])
+
         (when (seq connections)
           [:> CommandGroup
-           {:heading "Connections"}
+           {:heading "Roles"}
            (for [connection connections]
              ^{:key (:id connection)}
              [connection-result-item connection])])
@@ -94,7 +120,7 @@
 
         [:> CommandSeparator]])
 
-     ;; Suggestions (Connections and Terminal)
+     ;; Suggestions (Resources and Terminal)
      [:> CommandGroup
       {:heading "Suggestions"}
       (for [item suggestions]
@@ -109,6 +135,50 @@
       (for [item quick-access]
         ^{:key (:id item)}
         [action-item item])]]))
+
+(defn role-item
+  "Role item in resource-roles page"
+  [role]
+  [:> CommandItem
+   {:key (:id role)
+    :value (:name role)
+    :keywords [(:type role) (:subtype role) (:status role) "role"]
+    :onSelect #(do
+                 (rf/dispatch [:database-schema->clear-schema])
+                 (rf/dispatch [:command-palette->navigate-to-page :connection-actions role]))}
+   [:div {:class "flex items-center gap-2"}
+    [:> Rotate3d {:size 16 :class "text-gray-11"}]
+    [:div {:class "flex flex-col"}
+     [:span {:class "text-sm font-medium"}
+      (:name role)]]
+    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
+
+(defn resource-roles-page
+  "Resource roles page - shows all roles (connections) for a specific resource"
+  [resource _user-data]
+  (let [resource-name (:name resource)
+        resource-roles (rf/subscribe [:resources->resource-roles resource-name])
+        roles-data (:data @resource-roles)
+        loading? (:loading @resource-roles)]
+    [:<>
+     ;; Show loading state with timeout to avoid flashing
+     (when (and loading? (empty? roles-data))
+       [:> CommandGroup
+        [:div {:class "flex items-center justify-center py-4 text-sm text-gray-11"}
+         "Loading roles..."]])
+
+     ;; Show roles when loaded
+     (when (and (not loading?) (seq roles-data))
+       [:> CommandGroup
+        (for [role roles-data]
+          ^{:key (:id role)}
+          [role-item role])])
+
+     ;; Empty state
+     (when (and (not loading?) (empty? roles-data))
+       [:> CommandGroup
+        [:div {:class "flex items-center justify-center py-4 text-sm text-gray-11"}
+         "No roles found in this resource"]])]))
 
 (defn connection-actions-page
   "Connection-specific actions page"

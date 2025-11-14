@@ -35,7 +35,7 @@
                            (rf/dispatch [:connection-setup/set-agent-id %]))}]
 
            [:> Text {:as "p" :size "2" :color "gray"}
-            "Agents provide a secure interaction with your connection. "
+            "Agents provide a secure interaction with your resource role. "
             [:> Link {:href (get-in config/docs-url [:concepts :agents])
                       :target "_blank"
                       :size "2"}

@@ -106,7 +106,7 @@
 (defn main [connection open? on-close]
   (when connection
     (let [{:keys [name description overview setupGuide]} connection
-          badge (helpers/get-connection-badge (:id connection))]
+          badge (helpers/get-connection-badge connection)]
 
       [:> Dialog.Root {:open open?
                        :onOpenChange #(when-not % (on-close))}
@@ -119,9 +119,14 @@
            [:> Flex {:align "center" :items "center" :gap "2"}
             [:> Text {:size "8" :weight "bold" :class "text-gray-12"}
              name]
-            (when badge
-              [:> Badge {:color (:color badge) :size "1"}
-               (:text badge)])]]
+
+            (when (seq badge)
+              (for [badge badge]
+                ^{:key (:text badge)}
+                [:> Badge {:color (:color badge)
+                           :size "1"
+                           :variant "solid"}
+                 (:text badge)]))]]
 
           [:> Dialog.Description {:class "mb-6"}
            [:> Text {:color "gray" :size "3"} description]]]

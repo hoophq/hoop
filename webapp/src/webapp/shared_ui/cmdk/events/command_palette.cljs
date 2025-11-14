@@ -21,12 +21,12 @@
    (when @search-debounce-timer
      (js/clearTimeout @search-debounce-timer)
      (reset! search-debounce-timer nil))
-   {:db (-> db
-            (assoc-in [:command-palette :open?] false)
-            (assoc-in [:command-palette :query] "")
-            (assoc-in [:command-palette :current-page] :main)
-            (assoc-in [:command-palette :context] {})
-            (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}))
+   {:db (update-in  db [:command-palette]
+                    merge {:open? false
+                           :query ""
+                           :current-page :main
+                           :context {}
+                           :search-results {:status :idle :data {}}})}))
 
 (rf/reg-event-fx
  :command-palette->toggle
@@ -103,21 +103,32 @@
 (rf/reg-event-fx
  :command-palette->navigate-to-page
  (fn [{:keys [db]} [_ page-type context]]
-   {:db (-> db
-            (assoc-in [:command-palette :current-page] page-type)
-            (assoc-in [:command-palette :context] context)
-            (assoc-in [:command-palette :query] "")
-            (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}))
+   (let [resource-name (:name context)
+         ;; Clear old resource-roles data to prevent flashing
+         db-with-cleared-roles (if (= page-type :resource-roles)
+                                 (assoc-in db [:resources->resource-roles resource-name] {:loading true :data []})
+                                 db)
+         effects {:db (update-in db-with-cleared-roles [:command-palette] merge {:current-page page-type
+                                                                                 :context context
+                                                                                 :query ""
+                                                                                 :search-results {:status :idle :data {}}})}]
+     ;; If navigating to resource-roles, fetch roles with 500ms timeout to avoid flashing
+     (if (= page-type :resource-roles)
+       (assoc effects :fx [[:dispatch-later {:ms 500
+                                             :dispatch [:resources->get-resource-roles
+                                                        resource-name
+                                                        {:force-refresh? true}]}]])
+       effects))))
 
 ;; Go back to main page
 (rf/reg-event-fx
  :command-palette->back
  (fn [{:keys [db]} [_]]
-   {:db (-> db
-            (assoc-in [:command-palette :current-page] :main)
-            (assoc-in [:command-palette :context] {})
-            (assoc-in [:command-palette :query] "")
-            (assoc-in [:command-palette :search-results] {:status :idle :data {}}))}))
+   {:db (update-in db [:command-palette]
+                   merge {:current-page :main
+                          :context {}
+                          :query ""
+                          :search-results {:status :idle :data {}}})}))
 
 ;; Execute action based on type
 (rf/reg-event-fx

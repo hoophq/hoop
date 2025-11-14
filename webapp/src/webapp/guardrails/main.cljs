@@ -35,7 +35,7 @@
               [:> Heading {:size "8" :weight "bold" :as "h1"}
                "Guardrails"]
               [:> Text {:size "5" :class "text-[--gray-11]"}
-               "Create custom rules to guide and protect usage within your connections"]]
+               "Create custom rules to guide and protect usage within your resource roles"]]
 
              (when (seq (:data @guardrails-rules-list))
                [:> Button {:size "3"

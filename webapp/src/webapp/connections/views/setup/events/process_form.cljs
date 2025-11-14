@@ -49,7 +49,7 @@
                   (not (str/blank? (if (string? value) value (str value))))))
            tags))
 
-(defn process-payload [db]
+(defn process-payload [db & [resource-name]]
   (let [ui-type (get-in db [:connection-setup :type])
         connection-subtype (get-in db [:connection-setup :subtype])
         api-type (get-api-connection-type ui-type connection-subtype)
@@ -67,6 +67,7 @@
         access-modes (get-in config [:access-modes])
         guardrails (get-in db [:connection-setup :config :guardrails])
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
+        metadata-credentials (get-in db [:connection-setup :metadata-credentials])
         all-env-vars (cond
                        (= api-type "database")
                        (let [database-credentials (get-in db [:connection-setup :database-credentials])
@@ -76,23 +77,12 @@
                                                            (seq database-credentials))]
                          (concat credentials-as-env-vars env-vars))
 
-                       (and (= ui-type "custom") connection-subtype (get-in db [:connection-setup :metadata-credentials]))
-                       (let [metadata-credentials (get-in db [:connection-setup :metadata-credentials])
-                             connections-metadata @(rf/subscribe [:connections->metadata])
-                             connection (->> (:connections connections-metadata)
-                                             (filter #(= (get-in % [:resourceConfiguration :subtype]) connection-subtype))
-                                             first)
-                             credentials-config (get-in connection [:resourceConfiguration :credentials])
-                             credentials-as-env-vars (mapv (fn [[field-key field-value]]
-                                                             (let [form-key-normalized (str/lower-case (str/replace (name field-key) #"[^a-zA-Z0-9]" ""))
-                                                                   original-config (->> credentials-config
-                                                                                        (filter #(= (str/lower-case (str/replace (:name %) #"[^a-zA-Z0-9]" ""))
-                                                                                                    form-key-normalized))
-                                                                                        first)]
-                                                               {:key (or (:name original-config) (name field-key))
-                                                                :value field-value}))
+                       (and (= ui-type "custom") connection-subtype (seq metadata-credentials))
+                       (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
+                                                             {:key (name field-key)
+                                                              :value field-value})
                                                            (seq metadata-credentials))]
-                         (concat credentials-as-env-vars env-vars))
+                         credentials-as-env-vars)
 
                        (= connection-subtype "tcp")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
@@ -157,6 +147,7 @@
         payload {:type api-type
                  :subtype effective-subtype
                  :name connection-name
+                 :resource_name resource-name
                  :agent_id agent-id
                  :connection_tags tags
                  :tags old-tags
@@ -213,10 +204,7 @@
     (reduce-kv (fn [acc k v]
                  (if (str/starts-with? (name k) secret-start-name)
                    (let [clean-key (-> (name k)
-                                       (str/replace secret-start-name "")
-                                       ;; Normalizar igual ao metadata: remover não-alfanuméricos e lowercase
-                                       (str/replace #"[^a-zA-Z0-9]" "")
-                                       str/lower-case)]
+                                       (str/replace secret-start-name ""))]
                      (assoc acc clean-key (decode-base64 v)))
                    acc))
                {}
@@ -281,7 +269,7 @@
         credentials (process-connection-secret (:secret connection) "envvar")
 
         is-metadata-driven? (and (= connection-type "custom")
-                                 (not (contains? #{"tcp" "httpproxy" "ssh" "rdp"}
+                                 (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"}
                                                  connection-subtype)))
 
         network-credentials (when (and (= connection-type "application")
@@ -348,6 +336,7 @@
     {:type connection-type
      :subtype (if is-custom-with-override? "custom" connection-subtype)
      :name (:name connection)
+     :resource-name (:resource_name connection)
      :agent-id (:agent_id connection)
      :resource-subtype-override resource-subtype-override
      :database-credentials (when (= connection-type "database") credentials)
@@ -361,6 +350,17 @@
      :command-args (if (empty? (:command connection))
                      []
                      (mapv #(hash-map "value" % "label" %) (:command connection)))
+     :environment-variables (cond
+                              (= connection-type "custom")
+                              (process-connection-envvars (:secret connection) "envvar")
+
+                              (and (= connection-type "application")
+                                   (= connection-subtype "httpproxy"))
+                              http-env-vars
+
+                              :else [])
+     :configuration-files (when (= connection-type "custom")
+                            (process-connection-envvars (:secret connection) "filesystem"))
      :credentials {:environment-variables (cond
                                             (= connection-type "custom")
                                             (process-connection-envvars (:secret connection) "envvar")

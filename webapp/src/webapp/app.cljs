@@ -35,7 +35,18 @@
    [webapp.connections.views.setup.main :as connection-setup]
    [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
+   [webapp.resources.setup.main :as resource-setup]
+   [webapp.resources.setup.events.effects]
+   [webapp.resources.setup.events.subs]
+   [webapp.resources.main :as resources-main]
+   [webapp.resources.configure.main :as resource-configure]
+   [webapp.resources.configure-role.main :as configure-role]
+   [webapp.resources.add-role.main :as add-role]
+   [webapp.resources.add-role.events]
+   [webapp.resources.subs]
+   [webapp.resources.events]
    [webapp.events]
+   [webapp.events.resources]
    [webapp.events.agents]
    [webapp.events.ask-ai]
    [webapp.events.audit]
@@ -159,7 +170,7 @@
     (if error
       (rf/dispatch [:navigate :login-hoop])
 
-      (if (and redirect-after-auth (not (empty? redirect-after-auth)))
+      (if (and redirect-after-auth (seq redirect-after-auth))
         (js/setTimeout
          #(do
             (.removeItem js/localStorage "redirect-after-auth")
@@ -302,6 +313,15 @@
   [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 h-full space-y-radix-7"}
                              [resource-catalog/main]]])
 
+(defmethod routes/panels :resource-setup-new-panel []
+  ;; Initialize if not coming from catalog
+  (when-not @(rf/subscribe [:resource-setup/from-catalog?])
+    (rf/dispatch [:resource-setup->initialize-state nil]))
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [resource-setup/main]]]])
+
 (defmethod routes/panels :home-panel []
   [layout :application-hoop [home/home-panel-hoop]])
 
@@ -366,6 +386,36 @@
                              [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
                               "Connections"]
                              [connections/panel]]])
+
+(defmethod routes/panels :resources-panel []
+  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
+                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
+                              "Resources"]
+                             [resources-main/panel]]])
+
+(defmethod routes/panels :configure-resource-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        resource-id (:resource-id (:route-params current-route))]
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [resource-configure/main resource-id]]]))
+
+(defmethod routes/panels :configure-role-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        connection-name (:connection-name (:route-params current-route))]
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [configure-role/main connection-name]]]))
+
+(defmethod routes/panels :add-role-to-resource-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        resource-id (:resource-id (:route-params current-route))]
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [add-role/main resource-id]]]))
 
 (defmethod routes/panels :dashboard-panel []
   [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-12 lg:pt-16 lg:pb-10 h-full overflow-auto"}

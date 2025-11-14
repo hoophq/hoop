@@ -45,7 +45,7 @@
               [:> Heading {:size "8" :weight "bold" :as "h1"}
                "Access Control"]
               [:> Text {:size "5" :class "text-[--gray-11]"}
-               "Manage which user groups have access to specific connections."]
+               "Manage which user groups have access to specific resource roles."]
               [:> Text {:as "p" :size "5" :class "text-[--gray-11]"}
                "Control permissions and enhance security for your organization."]]
              (when (and installed? has-user-groups?)

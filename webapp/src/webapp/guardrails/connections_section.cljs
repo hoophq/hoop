@@ -39,9 +39,9 @@
 
         [:> Grid {:columns "7" :gap "7"}
          [:> Box {:grid-column "span 2 / span 2"}
-          [:> Heading {:as "h3" :size "4" :weight "medium"} "Associate Connections"]
+          [:> Heading {:as "h3" :size "4" :weight "medium"} "Associate Resource Roles"]
           [:p {:class "text-sm text-gray-500"}
-           "Select the connections where this guardrail should be applied."]]
+           "Select the resource roles where this guardrail should be applied."]]
 
          [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
           [:> Flex {:direction "column" :gap "2"}

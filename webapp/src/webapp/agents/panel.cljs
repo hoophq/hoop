@@ -99,7 +99,7 @@
           [:> Box {:flexGrow "1"}
            [h/PageHeader {:text "Agents"}]
            [:> Text {:size "5" :class "text-[--gray-11]"}
-            "View and manage your Agents for your connections"]
+            "View and manage your Agents for your resource roles"]
            [button/DocsBtnCallOut
             {:text "Learn more about Agents"
              :href (get-in config/docs-url [:concepts :agents])}]]

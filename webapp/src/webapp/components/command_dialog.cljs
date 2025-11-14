@@ -9,6 +9,7 @@
   "Tag showing current context"
   [{:keys [current-page context on-close]}]
   (let [label (case current-page
+                :resource-roles (:name context)
                 :connection-actions (:name context)
                 (str current-page))]
     [:> Flex
@@ -28,14 +29,15 @@
 (defn command-dialog
   "Reusable command dialog component"
   [{:keys [open? on-open-change title max-width height class-name
-           search-config breadcrumb-config content children loading?]
+           search-config breadcrumb-config content children loading? should-filter?]
     :or {title "Command Dialog"
          max-width "max-w-2xl"
          height "h-96"
-         class-name ""}}]
+         class-name ""
+         should-filter? false}}]
   [:> CommandDialog
    (merge
-    {:shouldFilter false} ;; Use manual filtering for async search
+    {:shouldFilter should-filter?} ;; Use manual filtering for async search (false) or native filtering (true)
     (when (:on-key-down search-config)
       {:onKeyDown (:on-key-down search-config)})
     {:open open?

@@ -269,8 +269,6 @@ type ConnectionPatch struct {
 	// Is the shell command that is going to be executed when interacting with this connection.
 	// This value is required if the connection is going to be used from the Webapp.
 	Command *[]string `json:"command" example:"/bin/bash"`
-	// Resource to which this connection belongs to
-	ResourceName *string `json:"resource_name" example:"pgdemo"`
 	// Type represents the main type of the connection:
 	// * database - Database protocols
 	// * application - Custom applications
@@ -1807,6 +1805,8 @@ type ConnectionSearch struct {
 	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
 	// Name of the connection. This attribute is immutable when updating it
 	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// The resource name associated with this connection
+	ResourceName string `json:"resource_name" example:"my-resource"`
 	// Type represents the main type of the connection:
 	// * database - Database protocols
 	// * application - Custom applications
@@ -1842,11 +1842,37 @@ type ConnectionSearch struct {
 	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
 }
 
+type ResourceSearch struct {
+	// Unique ID of the resource
+	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// Name of the connection. This attribute is immutable when updating it
+	Name string `json:"name" binding:"required" example:"pgdemo"`
+	// Type represents the main type of the connection:
+	// * database - Database protocols
+	// * application - Custom applications
+	// * custom - Shell applications
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	// Sub Type is the underline implementation of the connection:
+	// * postgres - Implements Postgres protocol
+	// * mysql - Implements MySQL protocol
+	// * mongodb - Implements MongoDB Wire Protocol
+	// * mssql - Implements Microsoft SQL Server Protocol
+	// * oracledb - Implements Oracle Database Protocol
+	// * tcp - Forwards a TCP connection
+	// * ssh - Forwards a SSH connection
+	// * httpproxy - Forwards a HTTP connection
+	// * dynamodb - AWS DynamoDB experimental integration
+	// * cloudwatch - AWS CloudWatch experimental integration
+	SubType string `json:"subtype" example:"postgres"`
+}
+
 type SearchResponse struct {
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
 	// Runbooks found in the search
 	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+	// Resources found in the search
+	Resources []ResourceSearch `json:"resources" example:"my-resource-1,my-resource-2"`
 }
 
 type ConnectionTestResponse struct {
@@ -1894,13 +1920,15 @@ type ResourceRequest struct {
 	// The resource name
 	Name string `json:"name" binding:"required" example:"my-resource"`
 	// The resource type
-	Type string `json:"type" binding:"required" example:"mysql"`
+	Type string `json:"type" binding:"required" example:"database"`
+	// The resource subtype
+	SubType string `json:"subtype" binding:"required" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource
-	AgentID string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	AgentID string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The roles associated with this resource
-	Roles []ResourceRoleRequest `json:"roles" binding:"required,dive"`
+	Roles []ResourceRoleRequest `json:"roles" binding:"dive"`
 }
 
 type ResourceResponse struct {
@@ -1909,7 +1937,9 @@ type ResourceResponse struct {
 	// The resource name
 	Name string `json:"name" example:"my-resource"`
 	// The resource type
-	Type string `json:"type" example:"mysql"`
+	Type string `json:"type" example:"database"`
+	// The resource subtype
+	SubType string `json:"subtype" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars"`
 	// The agent associated with this resource

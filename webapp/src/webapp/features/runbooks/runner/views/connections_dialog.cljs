@@ -1,6 +1,6 @@
 (ns webapp.features.runbooks.runner.views.connections-dialog
-  (:require 
-   ["cmdk" :refer [CommandGroup CommandItem]] 
+  (:require
+   ["cmdk" :refer [CommandGroup CommandItem]]
    ["lucide-react" :refer [ChevronRight]]
    ["@radix-ui/themes" :refer [Badge Flex Text]]
    [clojure.string :as cs]
@@ -70,10 +70,10 @@
                                 (when @search-debounce-timer
                                   (js/clearTimeout @search-debounce-timer)
                                   (reset! search-debounce-timer nil)))))
-          :title "Select or search a connection"
+          :title "Select or search a resource role"
           :search-config {:show-search-icon true
                           :show-input true
-                          :placeholder "Select or search a connection"
+                          :placeholder "Select or search a resource role"
                           :value @search-term
                           :on-value-change (fn [value]
                                              (reset! search-term value)
@@ -97,7 +97,7 @@
                                            (when @search-debounce-timer
                                              (js/clearTimeout @search-debounce-timer)
                                              (reset! search-debounce-timer nil))))}
-          :breadcrumb-config {:context "Runbooks" :current-page "Connections"}
+          :breadcrumb-config {:context "Runbooks" :current-page "Resource Roles"}
           :content
           [infinite-scroll
            {:on-load-more (fn []

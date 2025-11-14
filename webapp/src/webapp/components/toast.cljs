@@ -15,7 +15,7 @@
        [:div
         [:> Text {:size "1" :class "text-warning-10"} (str "\"" (cs/capitalize (name key)) "\"")]
         [:> Text {:size "1" :class "text-gray-1"} ": "]
-        [:> Text {:size "1" :class "text-info-10"} (str "\"" (cs/capitalize (name value)) "\"")]
+        [:> Text {:size "1" :class "text-info-10"} (str "\"" (cs/capitalize (str value)) "\"")]
         [:> Text {:size "1" :class "text-gray-1"} ","]])]))
 
 (defn get-toast-styles [toast-type]

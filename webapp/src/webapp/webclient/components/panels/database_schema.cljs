@@ -5,7 +5,6 @@
    [clojure.string :as cs]
    [webapp.webclient.components.database-schema :as database-schema]))
 
-;; Memoized function to create connection object and avoid unnecessary recreations
 (def create-connection-obj
   (memoize
    (fn [connection-name subtype icon_name type]

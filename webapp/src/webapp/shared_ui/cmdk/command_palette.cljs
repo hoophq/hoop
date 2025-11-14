@@ -14,7 +14,8 @@
    {:className "flex items-center justify-center text-center text-sm text-gray-11 h-full"}
    (case [current-status current-page]
      [:idle :main] "Search for resources, features and more..."
-     [:idle :connection-actions] "Choose an action for this connection"
+     [:idle :resource-roles] "Select a role from this resource"
+     [:idle :connection-actions] "Choose an action for this resource role"
      [:searching :main] "Searching..."
      "No results found.")])
 
@@ -34,14 +35,18 @@
             ;; Dynamic placeholder based on current page
             placeholder (case current-page
                           :main "Search for resources, features and more..."
+                          :resource-roles "Select or search a role"
                           :connection-actions "Select or search an action"
-                          "Search...")]
+                          "Search...")
+            ;; Enable native filtering for non-main pages (client-side search)
+            should-filter? (not= current-page :main)]
         [command-dialog/command-dialog
          {:open? (:open? @palette-state)
           :on-open-change #(if %
                              (rf/dispatch [:command-palette->open])
                              (rf/dispatch [:command-palette->close]))
           :title "Command Palette"
+          :should-filter? should-filter?
           :search-config {:show-search-icon true
                           :show-input true
                           :is-searching? is-searching?
@@ -67,6 +72,9 @@
            (case current-page
              :main
              [pages/main-page @search-results user-data]
+
+             :resource-roles
+             [pages/resource-roles-page context user-data]
 
              :connection-actions
              [pages/connection-actions-page context user-data]
