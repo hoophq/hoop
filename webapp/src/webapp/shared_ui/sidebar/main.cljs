@@ -97,7 +97,7 @@
                              :leaveTo (:fade-leave-to styles/transitions)}
            [:div {:class (:desktop styles/sidebar-container)}
             [:> ScrollArea {:class "h-[calc(100%-2.5rem)] flex grow flex-col"}
-             [:div {:class "flex flex-col gap-y-2 px-4 pb-10"}
+             [:div {:class "h-full flex flex-col gap-y-2 px-4 pb-10"}
               [navigation/main user my-plugins]]]
             [:div {:class "w-full py-2 px-2 absolute bottom-0 bg-[#182449] dark border-t border-primary-5 hover:bg-primary-5 hover:text-white cursor-pointer flex justify-end z-10"
                    :onClick #(rf/dispatch [:sidebar-desktop->close])}
@@ -110,7 +110,7 @@
          (when-not sidebar-open?
           [:div {:class (:collapsed styles/sidebar-container)}
           [:> ScrollArea {:class "h-[calc(100%-2.5rem)] flex grow flex-col overflow-x-hidden bg-[#182449]"}
-           [:div {:class "flex flex-col gap-y-2 px-2 pb-10 w-full max-w-full"}
+           [:div {:class "h-full flex flex-col gap-y-2 px-2 pb-1 w-full max-w-full"}
             [:div {:class "flex my-8 shrink-0 items-center justify-center w-full"}
              [:figure {:class "cursor-pointer w-full flex justify-center"}
               [:img {:src (str config/webapp-url
