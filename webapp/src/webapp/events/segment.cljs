@@ -19,6 +19,32 @@
             {:fx [[:dispatch event-callback]]})))))))
 
 (rf/reg-event-fx
+ :segment->identify
+ (fn [{:keys [db]} [_ user-id traits]]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
+     (if (not analytics-tracking)
+       {}
+       (let [analytics (-> db :segment->analytics)]
+         (if (nil? analytics)
+           {:fx [[:dispatch [:segment->load [:segment->identify user-id traits]]]]}
+           (do
+             (.identify analytics user-id (clj->js traits))
+             {})))))))
+
+(rf/reg-event-fx
+ :segment->group
+ (fn [{:keys [db]} [_ group-id traits]]
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
+     (if (not analytics-tracking)
+       {}
+       (let [analytics (-> db :segment->analytics)]
+         (if (nil? analytics)
+           {:fx [[:dispatch [:segment->load [:segment->group group-id traits]]]]}
+           (do
+             (.group analytics group-id (clj->js traits))
+             {})))))))
+
+(rf/reg-event-fx
  :segment->track
  (fn [{:keys [db]} [_ event-name properties]]
    (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]

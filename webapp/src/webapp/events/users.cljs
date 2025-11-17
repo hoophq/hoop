@@ -39,7 +39,11 @@
  ::users->set-current-user
  (fn
    [{:keys [db]} [_ user server-info]]
-   (let [license-info (:license_info server-info)]
+   (let [license-info (:license_info server-info)
+         user-id (:id user)
+         org-id (:org_id user)
+         is-admin (:is_admin user)
+         environment (or (:environment server-info) "unknown")]
 
      {:db (assoc db :users->current-user {:loading false
                                           :data (assoc user
@@ -49,7 +53,11 @@
                                                        :admin? (:is_admin user)
                                                        ;;:tenancy_type "multi-tenant"
                                                        )})
-      :fx [[:dispatch [:initialize-intercom user]]
+      :fx [[:dispatch [:segment->identify user-id {:org-id org-id
+                                                    :is-admin is-admin
+                                                    :environment environment}]]
+           [:dispatch [:segment->group org-id {:org-id org-id}]]
+           [:dispatch [:initialize-intercom user]]
            [:dispatch [:close-page-loader]]]})))
 
 (rf/reg-event-fx

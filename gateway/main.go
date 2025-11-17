@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/version"
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
@@ -46,6 +47,7 @@ func Run() {
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
+	analytics.InitFromEnv()
 	if err := webappjs.ConfigureServerURL(); err != nil {
 		log.Warnf("failed configuring webappjs server URL, running gateway without it, reason=%v", err)
 	}
