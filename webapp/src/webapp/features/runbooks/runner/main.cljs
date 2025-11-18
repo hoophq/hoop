@@ -102,7 +102,7 @@
             (.removeEventListener js/document "keydown" handle-keydown)))))))
 
 (defn runbooks-library []
-  (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
+  (let [templates (rf/subscribe [:runbooks/runner-data])
         filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
     (fn [{:keys [collapsed? on-toggle-collapse]}]
       [:> Box {:as "aside"
@@ -125,10 +125,10 @@
            [runbooks-list/main templates filtered-templates]]])])))
 
 (defn main []
-  (let [templates (rf/subscribe [:runbooks-plugin->runbooks])
+  (let [templates (rf/subscribe [:runbooks/runner-data])
+        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         search-term (rf/subscribe [:search/term])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
@@ -140,10 +140,11 @@
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]
 
     (rf/dispatch [:runbooks/load-persisted-connection])
+    (rf/dispatch [:runbooks/list nil])
 
     (fn []
       (when (and (seq @search-term)
-                 (= :ready (:status @templates)))
+                 (= :success (:status @templates)))
         (rf/dispatch [:search/filter-runbooks @search-term]))
 
       [:> Box {:class (str "h-full bg-gray-2 overflow-hidden " (when @dark-mode? "dark"))}

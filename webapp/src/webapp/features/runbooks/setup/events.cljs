@@ -182,12 +182,15 @@
 ;; Runbooks List Events
 (rf/reg-event-fx
  :runbooks/list
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:runbooks :list :status] :loading)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/runbooks"
-                             :on-success #(rf/dispatch [:runbooks/list-success %])
-                             :on-failure #(rf/dispatch [:runbooks/list-failure %])}]]]}))
+ (fn [{:keys [db]} [_ connection-name]]
+   (let [query-params (when connection-name
+                       {:connection connection-name})]
+     {:db (assoc-in db [:runbooks :list :status] :loading)
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri "/runbooks"
+                               :query-params query-params
+                               :on-success #(rf/dispatch [:runbooks/list-success %])
+                               :on-failure #(rf/dispatch [:runbooks/list-failure %])}]]]})))
 
 (rf/reg-event-db
  :runbooks/list-success

@@ -5,21 +5,24 @@
 (rf/reg-event-db
  :runbooks/set-active-runbook
  (fn
-   [db [_ template]]
+   [db [_ template repository]]
    (assoc db :runbooks-plugin->selected-runbooks {:status :ready
                                                   :data {:name (:name template)
                                                          :error (:error template)
                                                          :params (keys (:metadata template))
                                                          :file_url (:file_url template)
                                                          :metadata (:metadata template)
-                                                         :connections (:connections template)}})))
+                                                         :connections (:connections template)
+                                                         :repository repository}})))
 
 (rf/reg-event-db
  :runbooks/set-active-runbook-by-name
  (fn
    [db [_ runbook-name]]
-   (let [runbooks (get-in db [:runbooks-plugin->runbooks :data])
-         runbook  (some (fn [r] (when (= (:name r) runbook-name) r)) runbooks)]
+   (let [list-data (get-in db [:runbooks :list])
+         repositories (:data list-data)
+         all-items (mapcat :items (or repositories []))
+         runbook  (some (fn [r] (when (= (:name r) runbook-name) r)) all-items)]
      (if runbook
        (assoc db :runbooks-plugin->selected-runbooks
               {:status :ready
@@ -71,16 +74,17 @@
      (if connection
        {:db (assoc-in db [:runbooks :selected-connection] connection)
         :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
-       ;; Connection not found - clear selection
+       ;; Connection not found - clear selection and reload list without connection
        {:db (assoc-in db [:runbooks :selected-connection] nil)
-        :fx [[:dispatch [:runbooks/persist-selected-connection]]]}))))
+        :fx [[:dispatch [:runbooks/persist-selected-connection]]
+             [:dispatch [:runbooks/list nil]]]}))))
 
 (rf/reg-event-fx
  :runbooks/update-runbooks-for-connection
  (fn [{:keys [db]} _]
-   (let [selected-connection (get-in db [:runbooks :selected-connection])]
-     {:fx [[:dispatch [:runbooks-plugin->get-runbooks
-                       (when selected-connection [(:name selected-connection)])]]]})))
+   (let [selected-connection (get-in db [:runbooks :selected-connection])
+         connection-name (when selected-connection (:name selected-connection))]
+     {:fx [[:dispatch [:runbooks/list connection-name]]]})))
 
 ;; Dialog Events
 (rf/reg-event-db
