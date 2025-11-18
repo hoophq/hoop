@@ -106,8 +106,7 @@
                                                       (if tag-value (.-value tag-value) "")]))))
                                   (let [current-env-key @(rf/subscribe [:connection-setup/env-current-key])
                                         current-env-value @(rf/subscribe [:connection-setup/env-current-value])]
-                                    (when (and (seq current-env-key)
-                                               (seq current-env-value))
+                                    (when (every? not-empty [current-env-key current-env-value])
                                       (rf/dispatch [:connection-setup/add-env-row])))
                                   (rf/dispatch [:resources->update-role-connection
                                                 {:name connection-name
