@@ -4,11 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 	"io"
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
@@ -200,13 +201,13 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 		timeoutCancelFn()
 	}
 	pgConn.ctx = ctx
-	tlsCA := appconfig.Get().GatewayTLSCa()
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "postgres/grpc",
-		Insecure:      tlsCA == "",
-		TLSCA:         tlsCA,
+		Insecure:      appconfig.Get().GatewayUseTLS() == false,
+		TLSCA:         appconfig.Get().GatewayTLSCa(),
+		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
 	},
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
