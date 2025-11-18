@@ -237,23 +237,23 @@
 (defn extract-network-credentials
   "Retrieves HOST and PORT from secrets for network credentials"
   [credentials]
-  {:host (get credentials "host")
-   :port (get credentials "port")})
+  {:host (get credentials "HOST")
+   :port (get credentials "PORT")})
 
 (defn extract-ssh-credentials
   "Retrieves HOST, PORT, USER, PASS and AUTHORIZED_SERVER_KEYS from secrets for ssh credentials"
   [credentials]
-  {"host" (get credentials "host")
-   "port" (get credentials "port")
-   "user" (get credentials "user")
-   "pass" (get credentials "pass")
-   "authorized_server_keys" (get credentials "authorized_server_keys")})
+  {"host" (get credentials "HOST")
+   "port" (get credentials "PORT")
+   "user" (get credentials "USER")
+   "pass" (get credentials "PASS")
+   "authorized_server_keys" (get credentials "AUTHORIZED_SERVER_KEYS")})
 
 (defn extract-http-credentials
   "Retrieves remote_url and insecure flag from secrets for http credentials"
   [credentials]
-  {:remote_url (get credentials "remote_url")
-   :insecure (= (get credentials "insecure") "true")})
+  {:remote_url (get credentials "REMOTE_URL")
+   :insecure (= (get credentials "INSECURE") "true")})
 
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"

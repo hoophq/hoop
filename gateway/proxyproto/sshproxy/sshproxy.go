@@ -236,13 +236,13 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
 
 	// connect to the gateway gRPC server
-	tlsCA := appconfig.Get().GatewayTLSCa()
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "ssh/grpc",
-		Insecure:      tlsCA == "",
-		TLSCA:         tlsCA,
+		Insecure:      appconfig.Get().GatewayUseTLS() == false,
+		TLSCA:         appconfig.Get().GatewayTLSCa(),
+		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
 	},
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),

@@ -1065,8 +1065,12 @@ func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Con
 	}
 
 	// Custom handling for OracleDB, as it returns always exit code 0 even if the command fails
-	if currentConnectionType == pb.ConnectionTypeOracleDB && strings.HasPrefix(strings.ToLower(outcome.Output), "error") {
-		return fmt.Errorf("failed issuing test command, output=%v", outcome.Output)
+	if currentConnectionType == pb.ConnectionTypeOracleDB {
+		normalizedOutput := strings.ToLower(strings.TrimSpace(outcome.Output))
+
+		if strings.HasPrefix(normalizedOutput, "error") || strings.HasPrefix(normalizedOutput, "sp2-") {
+			return fmt.Errorf("failed issuing test command, output=%v", outcome.Output)
+		}
 	}
 
 	log.Infof("successful connection test for connection '%s': %v", conn.Name, outcome.Output)

@@ -739,6 +739,7 @@ Resources:
                     ON CONFLICT DO NOTHING;
                 COMMIT;
                 EOF
+                export HOOP_GATEWAY_URL=https://${AppPublicDNS}
                 HOOP_KEY=grpc://system:$SECRET_KEY@127.0.0.1:8010?mode=standard /opt/hoop/bin/hoop start agent
               mode: "000755"
               owner: root
