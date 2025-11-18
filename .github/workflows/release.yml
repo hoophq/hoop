@@ -356,7 +356,17 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Tar Files
     environment: production
-    needs: [test, darwin-amd64, darwin-arm64, windows-amd64, windows-arm64, linux-amd64, linux-arm64, build-webapp, build-rust-binaries-darwin, build-rust-binaries-linux]
+    needs: 
+      - test
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+      - build-rust-binaries-darwin
+      - build-rust-binaries-linux
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
