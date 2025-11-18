@@ -47,10 +47,11 @@ func MigrateDB(postgresURI, migrationPathFiles string) error {
 
 func RunGolangMigrations() error {
 	log.Info("running golang migration scripts!")
-	// Run the migration scripts
-	runbooksV2 := migrations.RunRunbooksV2()
-	if runbooksV2 != nil {
-		return runbooksV2
+
+	// Run RunbooksV2 migration
+	err := migrations.RunRunbooksV2()
+	if err != nil {
+		return fmt.Errorf("failed running RunbooksV2 migration, err=%v", err)
 	}
 
 	return nil

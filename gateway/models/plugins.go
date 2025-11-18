@@ -140,16 +140,8 @@ func upsertPlugin(plugin *Plugin) error {
 }
 
 func DeletePlugin(db *gorm.DB, plugin *Plugin) error {
-	// remove all plugin connections before deleting the plugin
-	err := db.Exec(`
-			DELETE FROM private.plugin_connections WHERE org_id = ? AND plugin_id = ?`, plugin.OrgID, plugin.ID).
-		Error
-	if err != nil {
-		return fmt.Errorf("failed deleting plugin connections, reason=%v", err)
-	}
-
 	// remove env vars
-	err = db.Exec(`
+	err := db.Exec(`
 			DELETE FROM private.env_vars WHERE id = ? AND org_id = ?`, plugin.ID, plugin.OrgID).
 		Error
 	if err != nil {
@@ -163,5 +155,6 @@ func DeletePlugin(db *gorm.DB, plugin *Plugin) error {
 	if err != nil {
 		return fmt.Errorf("failed deleting plugin, reason=%v", err)
 	}
+
 	return nil
 }
