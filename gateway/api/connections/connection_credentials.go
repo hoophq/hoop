@@ -128,13 +128,12 @@ func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn
 		var databaseName string
 		defaultDBEnc := conn.Envs["envvar:DB"]
 		if defaultDBEnc != "" {
-			defaultDBBytes, _ := base64.RawStdEncoding.DecodeString(defaultDBEnc)
+			defaultDBBytes, _ := base64.StdEncoding.DecodeString(defaultDBEnc)
 			databaseName = string(defaultDBBytes)
 		}
 		if databaseName == "" {
 			databaseName = "postgres"
 		}
-
 		base.ConnectionCredentials = &openapi.PostgresConnectionInfo{
 			Hostname:     serverHost,
 			Port:         serverPort,
