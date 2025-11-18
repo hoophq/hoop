@@ -79,7 +79,7 @@
            [:> Box {:grid-column "span 4 / span 4"}
             [:> Box {:class "space-y-1"}
              [forms/input {:label "Resource name"
-                           :placeholder (str "e.g. my-" @resource-subtype "-db")
+                           :placeholder (str "e.g. my-" @resource-subtype)
                            :value @resource-name
                            :required true
                            :on-change #(let [value (-> % .-target .-value)
