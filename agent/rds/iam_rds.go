@@ -5,14 +5,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	rdsutils "github.com/aws/aws-sdk-go-v2/feature/rds/auth"
 )
 
 func BuildRdsEnvAuth(env map[string]any) (map[string]any, error) {
-	userEnv, ok := env["envvar:USER"].(string)
-	if !ok {
+	userEnv, _ := env["envvar:USER"].(string)
+	if userEnv == "" {
 		return nil, fmt.Errorf("_aws_iam_rds: not found in envvar")
 	}
 
@@ -27,21 +28,28 @@ func BuildRdsEnvAuth(env map[string]any) (map[string]any, error) {
 	}
 	user := values[1]
 
-	encodedHost, ok := env["envvar:HOST"].(string)
-	host, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", encodedHost))
+	encodedHost, _ := env["envvar:HOST"].(string)
+	if encodedHost == "" {
+		return nil, fmt.Errorf("rds_iam_auth: missing HOST value in env")
+	}
 
-	if !ok {
-		return nil, fmt.Errorf("aws rds host not found in env")
+	host, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", encodedHost))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode rds iam host env: %v", err)
 	}
 
 	region, err := regionFromHost(string(host))
 	if err != nil {
-		return nil, fmt.Errorf("aws region not found in the host")
+		return nil, fmt.Errorf("aws region not found in the host: %v", err)
 	}
-	encodedPort, ok := env["envvar:PORT"].(string)
+
+	encodedPort, _ := env["envvar:PORT"].(string)
+	if encodedPort == "" {
+		return nil, fmt.Errorf("rds_iam_auth: missing PORT value in env")
+	}
 	port, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", encodedPort))
-	if !ok {
-		return nil, fmt.Errorf("aws rds port not found in env")
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode rds iam port env: %v", err)
 	}
 
 	token, err := generateToken(string(host), region, string(port), user)
@@ -66,11 +74,12 @@ func regionFromHost(host string) (string, error) {
 }
 
 func generateToken(host, region, port, user string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := config.LoadDefaultConfig(ctx)
 
 	if err != nil {
-		fmt.Printf("unable to load SDK config, %v", err)
 		return "", err
 	}
 
