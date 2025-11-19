@@ -22,8 +22,7 @@
     [loaders/simple-loader {:size "6" :border-size "4"}]])
 
 (defn main []
-  (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        runbooks-rules-list (rf/subscribe [:runbooks-rules/list])
+  (let [runbooks-rules-list (rf/subscribe [:runbooks-rules/list])
         loading-rules? (rf/subscribe [:runbooks-rules/list-loading])
         loading-config? (rf/subscribe [:runbooks-configurations/data-loading])
         active-tab (r/atom "rules")
@@ -35,20 +34,13 @@
     (rf/dispatch [:runbooks-configurations/get])
 
     (fn []
-      (let [plugin (:plugin @plugin-details)
-            installed? (or (:installed? plugin) false)
-            has-rules? (seq (or (:data @runbooks-rules-list) []))]
+      (let [has-rules? (seq (or (:data @runbooks-rules-list) []))]
 
         (when @url-tab
           (reset! active-tab @url-tab)
           (reset! url-tab nil))
-        
-        ;; TODO: Check if this check on plugin is still needed
-        (if (and
-             (or (not installed?)
-                 (empty? (:config plugin)))
-             (not (boolean
-                   (.getItem (.-localStorage js/window) "runbooks-promotion-seen"))))
+
+        (if (not (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/runbooks-promotion {:mode :empty-state
                                           :installed? false}]]
@@ -79,7 +71,7 @@
               [:> Tabs.Content {:value "rules" :class "h-full"}
                (cond
                  @loading-rules? [loading-view]
-                 (not has-rules?) [empty-state/main installed?]
+                 (not has-rules?) [empty-state/main]
                  :else [runbook-list/main])]
 
               [:> Tabs.Content {:value "configurations" :class "h-full"}
