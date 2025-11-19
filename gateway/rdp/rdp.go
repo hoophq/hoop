@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 	"net"
 	"time"
+
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
@@ -79,7 +80,7 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 	if tlsConfig != nil {
 		listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
 	}
-	
+
 	rdpProxyInstance := &RDPProxy{
 		listener:   listener,
 		listenAddr: listenAddr,
@@ -91,7 +92,10 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 			conn, err := listener.Accept()
 			if err != nil {
 				log.Errorf("RDP accept error: %v", err)
-				break
+				if conn != nil {
+					_ = conn.Close()
+				}
+				continue
 			}
 
 			go rdpProxyInstance.handleRDPClient(conn, conn.RemoteAddr())
@@ -141,18 +145,25 @@ func sendGenericRdpError(conn net.Conn) error {
 
 func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	defer conn.Close()
-
 	connection := broker.NewClientCommunicator(conn)
 
-	// Read first RDP packet
-	firstRDPData, err := ReadFirstRDPPacket(conn)
-	if err != nil {
-		log.Errorf("Failed to read first RDP packet: %v", err)
-		return
+	var firstRDPData []byte
+	var err error
+	var extractedCreds string
+	
+	if metaConn, ok := conn.(*tlstermination.TLSConnectionMeta); ok {
+		firstRDPData = metaConn.RDPCookie
+	} else {
+		// Read first RDP packet
+		firstRDPData, err = ReadFirstRDPPacket(conn)
+		if err != nil {
+			log.Errorf("Failed to read first RDP packet: %v", err)
+			return
+		}
 	}
 
 	// Extract credentials from headers
-	extractedCreds, err := ExtractCredentialsFromRDP(firstRDPData)
+	extractedCreds, err = ExtractCredentialsFromRDP(firstRDPData)
 	if err != nil {
 		log.Errorf("Failed to extract credentials: %v", err)
 		return
