@@ -1,4 +1,4 @@
-FROM ubuntu:noble-20250714
+FROM ubuntu:noble-20251013
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
@@ -35,6 +35,7 @@ RUN mkdir -p /app && \
     elfutils \
     libelf-dev \
     bc \
+    bzip2 \
     wget \
     redis-tools && \
     ln -s /usr/bin/python3 /usr/bin/python
@@ -138,13 +139,14 @@ RUN apt update -y && apt install -y \
     mongodb-org-tools=8.0.12 \
     default-mysql-client=1.1.0build1 \
     unixodbc-dev=2.3.12-1ubuntu0.24.04.1 \
-    postgresql-client-16=16.9-0ubuntu0.24.04.1 \
+    postgresql-client-16=16.10-0ubuntu0.24.04.1 \
     google-cloud-cli=$GCLOUD_VERSION \
     google-cloud-sdk-gke-gcloud-auth-plugin=$GCLOUD_GKE_AUTHN_PLUGIN_VERSION && \
-        curl -fsSLO --compressed https://packages.microsoft.com/ubuntu/22.04/prod/pool/main/s/sqlcmd/sqlcmd_1.5.0-1_jammy_all.deb && \
-        dpkg -i sqlcmd_1.5.0-1_jammy_all.deb && \
-        rm sqlcmd_1.5.0-1_jammy_all.deb && \
-        rm -rf /var/lib/apt/lists/*
+    curl -fsSLO --compressed  https://github.com/microsoft/go-sqlcmd/releases/download/v1.8.2/sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 && \
+      tar -xf sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 -C /usr/local/bin/ sqlcmd && \
+      rm -f sqlcmd-linux-$(dpkg --print-architecture).tar.bz2 && \
+      sqlcmd --version && \
+      rm -rf /var/lib/apt/lists/*
 
 # configure libaio symlink for oracle client
 RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
@@ -168,17 +170,18 @@ RUN URL_ORACLE_BASIC= && URL_ORACLE_SQLPLUS= && dpkgArch="$(dpkg --print-archite
     esac \
     && mkdir -p /opt/oracle && \
     cd /opt/oracle && \
-    wget -O instantclient-basic-linux.zip $URL_ORACLE_BASIC && \
-    wget -O instantclient-sqlplus-linux.zip $URL_ORACLE_SQLPLUS && \
-    unzip instantclient-basic-linux.zip && rm -rf META-INF && \
-    unzip instantclient-sqlplus-linux.zip && rm instantclient-basic-linux.zip && rm instantclient-sqlplus-linux.zip && \
-    echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> /opt/oracle/instantclient_23_9/glogin.sql && \
-    LD_LIBRARY_PATH=/opt/oracle/instantclient_23_9 /opt/oracle/instantclient_23_9/sqlplus -V && \
+    wget -qO instantclient-basic-linux.zip $URL_ORACLE_BASIC && \
+    wget -qO instantclient-sqlplus-linux.zip $URL_ORACLE_SQLPLUS && \
+    unzip -j instantclient-basic-linux.zip 'instantclient_*/*' -d instantclient && \
+    unzip -j instantclient-sqlplus-linux.zip 'instantclient_*/*' -d instantclient && \
+    rm -rf META-INF && rm instantclient-basic-linux.zip && rm instantclient-sqlplus-linux.zip && \
+    echo 'set markup csv on delimiter "\t" quote off\nset heading on echo off termout off\nset feedback off trimspool on' >> /opt/oracle/instantclient/glogin.sql && \
+    LD_LIBRARY_PATH=/opt/oracle/instantclient /opt/oracle/instantclient/sqlplus -V && \
     cd /
 
 # Configure environment variables
-ENV PATH="/opt/oracle/instantclient_23_9:$PATH"
-ENV LD_LIBRARY_PATH="/opt/oracle/instantclient_23_9"
+ENV PATH="/opt/oracle/instantclient:$PATH"
+ENV LD_LIBRARY_PATH="/opt/oracle/instantclient"
 
 RUN pip3 install -U \
     boto3==1.40.6 \
@@ -195,3 +198,4 @@ ENV NODE_PATH=/usr/local/lib/node_modules/
 ENV PATH="/app:${PATH}"
 
 ENTRYPOINT ["tini", "--"]
+

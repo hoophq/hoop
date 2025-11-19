@@ -1,4 +1,4 @@
-FROM hoophq/agent-tools:noble-20250812
+FROM hoophq/agent-tools:noble-20251013
 
 RUN mkdir -p /opt/hoop/sessions && \
   mkdir -p /opt/hoop/bin && \

@@ -120,3 +120,16 @@ the new release notes.
 - VERION (X.0.0) – Increment when you make incompatible API changes.
 - MINOR (0.X.0) – Increment when you add functionality in a backward-compatible way.
 - PATCH (0.0.X) – Increment when you make backward-compatible bug fixes.
+
+## Building Docker Agent Tools Image
+
+The docker image agent tools is build manually. It requires Docker and [Docker Buildx](https://github.com/docker/buildx)
+
+```sh
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  -f Dockerfile.tools \
+  --tag hoophq/agent-tools:noble-20251013 \
+  --push .
+```
+
