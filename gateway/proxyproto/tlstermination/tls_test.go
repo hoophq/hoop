@@ -73,7 +73,7 @@ func TestAcceptTLSConnection(t *testing.T) {
 		}
 		defer conn.Close()
 
-		if _, ok := conn.(*tls.Conn); !ok {
+		if _, ok := conn.(TLSConnectionMeta); !ok {
 			t.Errorf("Connection was not upgraded to TLS")
 		}
 		_, _ = conn.Write([]byte("DEADBEEF"))
@@ -205,7 +205,7 @@ func TestAcceptTLSConnectionWhenNonTLSAllowed(t *testing.T) {
 		}
 		defer conn.Close()
 
-		if _, ok := conn.(*tls.Conn); !ok {
+		if _, ok := conn.(TLSConnectionMeta); !ok {
 			t.Errorf("TLS connection was not properly identified")
 		}
 		_, _ = conn.Write([]byte("DEADBEEF"))
