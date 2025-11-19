@@ -19,7 +19,6 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
@@ -219,8 +218,14 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	connectionModel, err := models.GetConnectionByNameOrID(storagev2.NewOrganizationContext(dba.OrgID), dba.ConnectionName)
+	userCtx, err := models.GetUserContext(dba.UserSubject)
 	if err != nil {
+		log.Errorf("failed fetching user context, reason=%v", err)
+		return
+	}
+
+	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
+	if connectionModel == nil || err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
 		return
 	}
@@ -245,7 +250,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	transport.PollingUserToken(r.ctx, func(cause error) {
+	transport.PollingUserToken(context.Background(), func(cause error) {
 		session.Close()
 	}, tokenVerifier, dba.UserSubject)
 
