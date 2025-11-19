@@ -285,6 +285,8 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		return
 	}
 
+	idp.UserTokens.Store(uinfo.Subject, sessionToken)
+
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
