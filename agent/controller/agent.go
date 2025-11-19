@@ -371,6 +371,12 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 
 			//overwrite env vars with rds auth
 			connParams.EnvVars = rdsAuthEnv
+			if connParams.ConnectionType == "mysql" {
+				// if we are using msyql-cli we need to adjust the command list when using aws rds auth
+				// to enable the cleartext plugin for authentication
+				connParams.CmdList = append(connParams.CmdList, "--enable-cleartext-plugin")
+
+			}
 		}
 	}
 	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
