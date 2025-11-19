@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -371,6 +372,16 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 
 			//overwrite env vars with rds auth
 			connParams.EnvVars = rdsAuthEnv
+			if connParams.ConnectionType == "mysql" {
+				// look for --enable-cleartext-plugin
+				hasEnableClearTextPlugin := slices.Contains(connParams.CmdList, "--enable-cleartext-plugin")
+				//https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.IAMDBAuth.Connecting.AWSCLI.html#UsingWithRDS.IAMDBAuth.Connecting.AWSCLI.Connect
+				//--enable-cleartext-plugin – A value that specifies that AWSAuthenticationPlugin must be used for this connection
+				//If you are using a MariaDB client, the --enable-cleartext-plugin option isn't required.
+				if !hasEnableClearTextPlugin {
+					connParams.CmdList = append(connParams.CmdList, "--enable-cleartext-plugin")
+				}
+			}
 		}
 	}
 	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
