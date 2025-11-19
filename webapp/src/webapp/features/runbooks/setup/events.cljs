@@ -97,10 +97,14 @@
                              :on-success #(rf/dispatch [:runbooks-rules/create-success %])
                              :on-failure #(rf/dispatch [:runbooks-rules/create-failure %])}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/create-success
- (fn [db [_ _data]]
-   db))
+ (fn [{:keys [db]} [_ _data]]
+   {:db db
+    :fx [[:dispatch [:navigate :runbooks-setup]]
+         [:dispatch [:show-snackbar
+                     {:level :success
+                      :text "Runbook rule created successfully!"}]]]}))
 
 (rf/reg-event-db
  :runbooks-rules/create-failure
@@ -117,10 +121,14 @@
                              :on-success #(rf/dispatch [:runbooks-rules/update-success %])
                              :on-failure #(rf/dispatch [:runbooks-rules/update-failure %])}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/update-success
- (fn [db [_ _data]]
-   db))
+ (fn [{:keys [db]} [_ _data]]
+   {:db db
+    :fx [[:dispatch [:navigate :runbooks-setup]]
+         [:dispatch [:show-snackbar
+                     {:level :success
+                      :text "Runbook rule updated successfully!"}]]]}))
 
 (rf/reg-event-db
  :runbooks-rules/update-failure
@@ -131,6 +139,29 @@
  :runbooks-rules/clear-active-rule
  (fn [db]
    (assoc-in db [:runbooks-rules :active-rule] {:status :idle :data nil :error nil})))
+
+(rf/reg-event-fx
+ :runbooks-rules/delete
+ (fn [{:keys [db]} [_ rule-id]]
+   {:db db
+    :fx [[:dispatch [:fetch {:method "DELETE"
+                             :uri (str "/runbooks/rules/" rule-id)
+                             :on-success #(rf/dispatch [:runbooks-rules/delete-success rule-id])
+                             :on-failure #(rf/dispatch [:runbooks-rules/delete-failure %])}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/delete-success
+ (fn [{:keys [db]} [_ _rule-id]]
+   {:db db
+    :fx [[:dispatch [:navigate :runbooks-setup]]
+         [:dispatch [:show-snackbar
+                     {:level :success
+                      :text "Runbook rule deleted successfully!"}]]]}))
+
+(rf/reg-event-db
+ :runbooks-rules/delete-failure
+ (fn [db [_ error]]
+   (update-in db [:runbooks-rules :list] merge {:status :error :error error})))
 
 ;; Runbooks Configuration Events
 (rf/reg-event-fx

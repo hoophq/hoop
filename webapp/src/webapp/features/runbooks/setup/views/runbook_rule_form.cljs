@@ -150,16 +150,7 @@
                                                     payload)]
                                 (if (= :edit form-type)
                                   (rf/dispatch [:runbooks-rules/update @(:id state) final-payload])
-                                  (rf/dispatch [:runbooks-rules/create final-payload]))
-                                (js/setTimeout
-                                 #(do
-                                    (rf/dispatch [:navigate :runbooks-setup])
-                                    (rf/dispatch [:show-snackbar
-                                                  {:level :success
-                                                   :text (str "Runbook rule "
-                                                              (if (= :edit form-type) "updated" "created")
-                                                              " successfully!")}]))
-                                 1000)))}
+                                  (rf/dispatch [:runbooks-rules/create final-payload]))))}
 
           [:> Box
            [:> Flex {:p "5" :gap "2"}
@@ -177,9 +168,17 @@
                       :align "center"}
              [:> Heading {:as "h2" :size "8"}
               (if (= :edit form-type)
-                "Edit Runbooks Rule"
+                "Edit Runbooks rule"
                 "Create new Runbooks rule")]
              [:> Flex {:gap "5" :align "center"}
+              (when (= :edit form-type)
+                [:> Button {:size "4"
+                            :variant "ghost"
+                            :color "red"
+                            :type "button"
+                            :disabled @is-submitting
+                            :on-click #(rf/dispatch [:runbooks-rules/delete @(:id state)])}
+                 "Delete"])
               [:> Button {:size "3"
                           :loading @is-submitting
                           :disabled @is-submitting
