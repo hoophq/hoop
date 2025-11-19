@@ -19,6 +19,8 @@ type BufferedConnection interface {
 	// Peek allows peeking into the connection without consuming the bytes
 	// Subsequent calls to Read will still return the peeked bytes
 	Peek(int) ([]byte, error)
+	// Consume consumes the specified number of bytes from the connection
+	Consume(int)
 }
 
 // bufferedConnection is a net.Conn with a buffered reader
@@ -47,4 +49,9 @@ func (b *bufferedConnection) Peek(n int) ([]byte, error) {
 
 func (b *bufferedConnection) Read(p []byte) (int, error) {
 	return b.r.Read(p)
+}
+
+func (b *bufferedConnection) Consume(n int) {
+	d := make([]byte, n)
+	_, _ = b.Read(d)
 }
