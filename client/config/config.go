@@ -70,7 +70,7 @@ func Load() (*Config, error) {
 	grpcURL := os.Getenv("HOOP_GRPCURL")
 	apiServer := os.Getenv("HOOP_APIURL")
 	accessToken := os.Getenv("HOOP_TOKEN")
-	skipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
+	skipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY")
 	tlsCA, err := envloader.GetEnv("HOOP_TLSCA")
 	if err != nil {
 		return nil, err
@@ -80,9 +80,9 @@ func Load() (*Config, error) {
 			Token:         accessToken,
 			ApiURL:        apiServer,
 			GrpcURL:       grpcURL,
-			SkipTLSVerify: skipTLSVerify,
 			TlsCAB64Enc:   base64.StdEncoding.EncodeToString([]byte(tlsCA)),
 			Mode:          clientconfig.ModeEnv,
+			SkipTLSVerify: skipTLSVerify == "true",
 			InsecureGRPC:  hasInsecureScheme(grpcURL)}, nil
 	}
 
@@ -103,7 +103,9 @@ func Load() (*Config, error) {
 		conf.Mode = clientconfig.ModeConfigFile
 		conf.filepath = filepath
 		conf.InsecureGRPC = hasInsecureScheme(conf.GrpcURL)
-		conf.SkipTLSVerify = skipTLSVerify
+		if skipTLSVerify != "" {
+			conf.SkipTLSVerify = skipTLSVerify == "true"
+		}
 		return &conf, nil
 	}
 
