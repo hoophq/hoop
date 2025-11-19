@@ -7,7 +7,9 @@ import (
 	"net"
 	"time"
 
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
+	"github.com/hoophq/hoop/gateway/transport"
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
@@ -150,7 +152,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	var firstRDPData []byte
 	var err error
 	var extractedCreds string
-	
+
 	if metaConn, ok := conn.(*tlstermination.TLSConnectionMeta); ok {
 		firstRDPData = metaConn.RDPCookie
 	} else {
@@ -192,6 +194,16 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		return
+	}
+
 	connectionModel, err := models.GetConnectionByNameOrID(storagev2.NewOrganizationContext(dba.OrgID), dba.ConnectionName)
 	if err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
@@ -217,6 +229,10 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		log.Printf("CreateSession returned nil session")
 		return
 	}
+
+	transport.PollingUserToken(r.ctx, func(cause error) {
+		session.Close()
+	}, tokenVerifier, dba.UserSubject)
 
 	// Register session
 	// Clean up session on exit
