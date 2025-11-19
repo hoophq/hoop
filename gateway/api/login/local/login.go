@@ -74,5 +74,11 @@ func generateNewAccessToken(subject, email string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get local provider instance: %v", err)
 	}
-	return localVerifier.NewAccessToken(subject, email, defaultTokenExpiration)
+
+	token, err := localVerifier.NewAccessToken(subject, email, defaultTokenExpiration)
+	if err == nil {
+		idp.UserTokens.Store(subject, token)
+	}
+
+	return token, err
 }

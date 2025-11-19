@@ -10,6 +10,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/transport"
+
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/keys"
@@ -230,6 +233,16 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, fmt.Errorf("invalid secret access key credentials")
 	}
 
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return nil, err
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		return nil, err
+	}
+
 	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
 		dba.ID, dba.UserSubject, dba.ConnectionName,
 		dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
@@ -241,6 +254,11 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		timeoutCancelFn()
 	}
 	pgConn.ctx = ctx
+
+	transport.PollingUserToken(pgConn.ctx, func(cause error) {
+		pgConn.cancelFn(cause.Error())
+	}, tokenVerifier, dba.UserSubject)
+
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "", // it will use impersonate-auth-key as authentication

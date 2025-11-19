@@ -193,6 +193,8 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
+	idp.UserTokens.Store(subject, token.AccessToken)
+
 	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
 
 	url, _ := url.Parse(login.Redirect)
