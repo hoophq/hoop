@@ -65,7 +65,7 @@ func generateSelfSignedCert() (cert tls.Certificate, err error) {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			CommonName:   "Hoop Gateway",
+			CommonName:   "localhost",
 			Organization: []string{"Hoop Gateway"},
 			Country:      []string{"US"},
 		},

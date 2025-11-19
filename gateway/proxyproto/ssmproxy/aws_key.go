@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Converts a UUID to an AWS Access Key format
-func uuidToAccessKey(id string) (string, error) {
+// UUIDToAccessKey Converts a UUID to an AWS Access Key format
+func UUIDToAccessKey(id string) (string, error) {
 	uid, err := uuid.Parse(id)
 	if err != nil {
 		return "", err
@@ -23,8 +23,8 @@ func uuidToAccessKey(id string) (string, error) {
 	return "AKIA" + cleaned, nil
 }
 
-// Reverse: Access Key back to UUID
-func accessKeyToUUID(accessKey string) (string, error) {
+// AccessKeyToUUID Reverse: Access Key back to UUID
+func AccessKeyToUUID(accessKey string) (string, error) {
 	// Remove AKIA prefix
 	base32Str := accessKey[4:]
 

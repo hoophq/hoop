@@ -24,6 +24,7 @@ const (
 	SpecClientExecEnvVar         string = "terminal.envvars"
 	SpecAgentConnectionParamsKey string = "agent.connection_params"
 	SpecWebsocketMessageType     string = "websocket.message_type"
+	SpecInstanceId               string = "aws.instance_id"
 
 	// DEPRECATED: spec items deprecated
 	SpecAgentDlpProvider             string = "agent.dlp_provider"

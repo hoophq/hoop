@@ -12,24 +12,25 @@ import (
 )
 
 var (
-	tokenSecret = "" // Any runtime random value so we can encrypt tokens
+	tokenSecret []byte // Any runtime random value so we can encrypt tokens
 )
 
+type ssmProxyToken struct {
+	ConnID    string    `json:"conn_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 func init() {
-	if tokenSecret == "" {
-		b := make([]byte, 32)
-		if _, err := io.ReadFull(rand.Reader, b); err != nil {
+	if tokenSecret == nil {
+		tokenSecret = make([]byte, 32)
+		if _, err := io.ReadFull(rand.Reader, tokenSecret); err != nil {
 			panic(fmt.Sprintf("failed to generate token secret: %v", err))
 		}
-		tokenSecret = base64.StdEncoding.EncodeToString(b)
 	}
 }
 
 func createTokenForConnection(connID string) (string, error) {
-	payload := struct {
-		ConnID    string    `json:"conn_id"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}{
+	payload := &ssmProxyToken{
 		ConnID:    connID,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}
@@ -89,10 +90,7 @@ func decodeToken(token string) (string, error) {
 		return "", fmt.Errorf("failed to decrypt token: %v", err)
 	}
 
-	var payload struct {
-		ConnID    string    `json:"conn_id"`
-		ExpiresAt time.Time `json:"expires_at"`
-	}
+	var payload ssmProxyToken
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
 		return "", fmt.Errorf("failed to unmarshal token payload: %v", err)
 	}

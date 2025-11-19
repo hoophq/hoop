@@ -15,10 +15,11 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "ssm"}
 
 // CreateConnectionCredentials
 //
@@ -168,6 +169,19 @@ func buildConnectionCredentialsResponse(
 			Password: secretKey,
 			Command:  fmt.Sprintf("xfreerdp /v:%s:%s /u:%s /p:%s", serverHost, serverPort, secretKey, secretKey),
 		}
+	case proto.ConnectionTypeSSM:
+		accessKeyId, err := ssmproxy.UUIDToAccessKey(cred.ID)
+		if err != nil {
+			log.Errorf("failed to convert connection id to access key, err=%v", err) // Should NOT happen
+			return nil
+		}
+		base.ConnectionCredentials = &openapi.SSMConnectionInfo{
+			EndpointURL:    "https://localhost:8080",
+			AwsAccessKeyId: accessKeyId,
+			// We pass hash here, since it's used for signing
+			// Trimmed secret key since AWS only handles 40 characters
+			AwsSecretAccessKey: cred.SecretKeyHash[:40],
+		}
 	default:
 		return nil
 	}
@@ -188,6 +202,8 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
+	case proto.ConnectionTypeSSM:
+		return true // Same as API router
 	default:
 		return false
 	}
@@ -228,6 +244,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("ssh", keySize)
 	case proto.ConnectionTypeRDP:
 		return keys.GenerateSecureRandomKey("rdp", keySize)
+	case proto.ConnectionTypeSSM:
+		return keys.GenerateSecureRandomKey("ssm", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

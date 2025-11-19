@@ -185,6 +185,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeCloudWatch)
 		case "rdp":
 			return ConnectionType(ConnectionTypeRDP)
+		case "ssm":
+			return ConnectionType(ConnectionTypeSSM)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}

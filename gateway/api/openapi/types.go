@@ -1761,6 +1761,12 @@ type RDPConnectionInfo struct {
 	Command string `json:"command" example:"xfreerdp /v:0.0.0.0:13389 /u:fake /p:fake"`
 }
 
+type SSMConnectionInfo struct {
+	EndpointURL        string `json:"endpoint_url" example:"https://hoop.gateway/ssm"`
+	AwsAccessKeyId     string `json:"aws_access_key_id" example:"AKIAIOSFODNN7EXAMPLE"`
+	AwsSecretAccessKey string `json:"aws_secret_access_key" example:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
+}
+
 type PostgresConnectionInfo struct {
 	// The hostname to access the database instance
 	Hostname string `json:"hostname" example:"db.example.com"`

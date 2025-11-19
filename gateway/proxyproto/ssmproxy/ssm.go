@@ -1,16 +1,15 @@
 package ssmproxy
 
 import (
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/aws/session-manager-plugin/src/service"
 	"github.com/gin-gonic/gin"
@@ -22,10 +21,8 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 )
 
 var (
@@ -40,8 +37,7 @@ var (
 type SSMProxy struct {
 	listener    net.Listener
 	listenAddr  string
-	router      *gin.Engine
-	httpServer  *http.Server
+	router      gin.IRouter
 	connections atomic.Int32
 }
 
@@ -51,50 +47,19 @@ func GetServerInstance() *SSMProxy {
 	return server.(*SSMProxy)
 }
 
-func (r *SSMProxy) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) error {
-	if _, ok := store.Load(instanceKey); ok && r.listener != nil {
-		return nil
-	}
-
-	log.Infof("starting SSM server proxy at %v", listenAddr)
-	//start new tcp listener for rdp clients
-	server, err := runSSMProxyServer(listenAddr, tlsConfig, acceptPlainText)
-	if err != nil {
-		return err
-	}
-	store.Store(instanceKey, server)
-	return nil
-}
-
-func (r *SSMProxy) Stop() error {
-	if server, ok := store.LoadAndDelete(instanceKey); ok {
-		for _, session := range broker.GetSessions() {
-			if session != nil {
-				session.Close()
-			}
-		}
-		if server.(*SSMProxy).listener != nil {
-			log.Infof("stopping SSM server proxy at %v", server.(*SSMProxy).listener.Addr().String())
-			_ = server.(*SSMProxy).listener.Close()
-		}
-	}
-	return nil
-}
-
-func (r *SSMProxy) attachHandlers(router *gin.Engine) {
+func (r *SSMProxy) AttachHandlers(router gin.IRouter) {
+	r.router = router
 	router.Handle(http.MethodGet, "/", func(c *gin.Context) {
 		c.String(http.StatusBadRequest, "Invalid request")
 	})
 	router.Handle(http.MethodPost, "/", r.handleStartSession)
 	router.Handle(http.MethodGet, "/ws/:connectionId", r.handleWebsocket)
-
-	r.httpServer = &http.Server{Handler: router}
 }
 
 func (r *SSMProxy) handleStartSession(c *gin.Context) {
 	// X-Amz-Target
 	xAmzTarget := c.GetHeader("X-Amz-Target")
-	if xAmzTarget != "AmazonEC2SessionManager.StartSession" {
+	if xAmzTarget != "AmazonSSM.StartSession" {
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
@@ -107,7 +72,7 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		return
 	}
 
-	connectionId, err := accessKeyToUUID(aws4.Credential)
+	connectionId, err := AccessKeyToUUID(aws4.AccessKey)
 	if err != nil {
 		log.Errorf("failed to convert access key to UUID, reason=%v", err)
 		c.String(http.StatusBadRequest, "Invalid request")
@@ -120,7 +85,7 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		return
 	}
 
-	secretKey := dba.SecretKeyHash
+	secretKey := dba.SecretKeyHash[:40] // Trimmed secret key since AWS only handles 40 characters
 
 	if !validateAWS4Signature(c, secretKey, aws4) {
 		c.String(http.StatusBadRequest, "Invalid request")
@@ -150,10 +115,10 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to create connection")
 		return
 	}
-
+	targetUrl := fmt.Sprintf("%s://%s/ssm/ws/%s?target=%s", schema, host, connectionId, target.Target)
 	c.JSON(http.StatusOK, ssmStartSessionResponsePacket{
 		SessionId:  connectionId,
-		StreamUrl:  fmt.Sprintf("%s://%s/ws/%s?target=%s", schema, host, connectionId, target.Target),
+		StreamUrl:  targetUrl,
 		TokenValue: token,
 	})
 }
@@ -193,7 +158,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	defer ws.Close()
 
 	// Receive the first message
-	_, msg, err := ws.ReadMessage()
+	msgType, msg, err := ws.ReadMessage()
 	if err != nil {
 		log.With("sid", sessionID, "conn", cID).
 			Errorf("failed to read first message from websocket, reason=%v", err)
@@ -241,13 +206,14 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	log.With("sid", sessionID, "conn", cID).
 		Infof("starting websocket connection for connectionId=%s, target=%s, sessionID=%s", connectionId, target, sessionID)
 
-	tlsCA := appconfig.Get().GatewayTLSCa()
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "ssm/grpc",
-		Insecure:      tlsCA == "",
-		TLSCA:         tlsCA,
+		Insecure:      appconfig.Get().GatewayUseTLS() == false,
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, dbConnection.ConnectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
@@ -285,15 +251,23 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	}
 
 	connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
-	if pkt.Type != pbagent.SessionOpen || connectionType != pb.ConnectionTypeSSM {
+	if pkt.Type != pbclient.SessionOpenOK || connectionType != pb.ConnectionTypeSSM {
 		log.With("sid", sessionID, "conn", cID).
 			Errorf("unsupported connection type, got=%v", connectionType)
 		return
 	}
 
+	log.With("sid", sessionID, "conn", cID).Debugf("Starting pipes")
+	err = sendWebsocketMessageHelper(client, msgType, msg, target, sessionID, cID)
+	if err != nil {
+		log.With("sid", sessionID, "conn", cID).
+			Errorf("error sending initial websocket message: %v", err)
+		return
+	}
+
 	// Ready for pumping
 	// Start RX Pipe (Client -> GRPC)
-	go r.handleRXPipe(ws, client, sessionID, cID)
+	go r.handleRXPipe(ws, client, target, sessionID, cID)
 	// Start TX Pipe (GRPC -> Client)
 	r.handleTXPipe(ws, client, sessionID, cID)
 
@@ -304,38 +278,64 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, sessionID, cID string) {
 	defer ws.Close()
 	defer client.Close()
+	// We need to read GRPC from another routine and pipe channel here
+	// Because otherwise we can't do websocket ping packets.
+	running := &atomic.Bool{}
+	running.Store(true)
+	packetChan := make(chan *pb.Packet)
 
-	for {
-		msg, err := client.Recv()
-		if err != nil {
-			log.With("sid", sessionID, "conn", cID).Errorf("failed to receive packet from hoop server, reason=%v", err)
-			break
-		}
+	const wsPingInterval = time.Second * 5
 
-		switch msg.Type {
-		case pbagent.SSMConnectionWrite:
-			err = ws.WriteMessage(int(msg.Spec[pb.SpecWebsocketMessageType][0]), msg.Payload)
+	ticker := time.NewTicker(wsPingInterval)
+	defer ticker.Stop()
+
+	go func() {
+		for running.Load() {
+			msg, err := client.Recv()
 			if err != nil {
-				log.Errorf("failed to write message to websocket, reason=%v", err)
-				break
+				log.With("sid", sessionID, "conn", cID).Errorf("failed to receive packet from hoop server, reason=%v", err)
+				running.Store(false)
 			}
-
-		case pbclient.TCPConnectionClose, pbclient.SessionClose:
-			log.With("sid", sessionID, "conn", cID).Infof("connection closed by server, payload=%v", string(msg.Payload))
-			return
-
-		default:
-			log.With("sid", sessionID, "conn", cID).Errorf("received invalid packet type %T", msg.Type)
-			return
+			packetChan <- msg
 		}
+	}()
+
+	for running.Load() {
+		select {
+		case msg := <-packetChan:
+			switch msg.Type {
+			case pbclient.SSMConnectionWrite:
+				err := ws.WriteMessage(int(msg.Spec[pb.SpecWebsocketMessageType][0]), msg.Payload)
+				if err != nil {
+					log.Errorf("failed to write message to websocket, reason=%v", err)
+					break
+				}
+
+			case pbclient.TCPConnectionClose, pbclient.SessionClose:
+				log.With("sid", sessionID, "conn", cID).Infof("connection closed by server, payload=%v", string(msg.Payload))
+				return
+
+			default:
+				log.With("sid", sessionID, "conn", cID).Errorf("received invalid packet type %T", msg.Type)
+				return
+			}
+		case <-ticker.C:
+			if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(wsPingInterval/2)); err != nil {
+				log.With("sid", sessionID, "conn", cID).Errorf("ws ping timeout")
+				return
+			}
+			// We could use default: here to allow the running flag to be read
+			// But if something stopped, the ws ping will trigger every 5 seconds
+			// So worse case scenario, this routine will take 5 seconds to die
+		}
+
 	}
 }
 
-func (r *SSMProxy) handleRXPipe(ws *websocket.Conn, client pb.ClientTransport, sessionID, cID string) {
+func (r *SSMProxy) handleRXPipe(ws *websocket.Conn, client pb.ClientTransport, target, sessionID, cID string) {
 	defer ws.Close()
 	defer client.Close()
 
-	encodedType := make([]byte, 4)
 	for {
 		msgType, msgData, err := ws.ReadMessage()
 		if err != nil {
@@ -343,18 +343,7 @@ func (r *SSMProxy) handleRXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 				Errorf("failed to read websocket message, reason=%v", err)
 			break
 		}
-
-		binary.LittleEndian.PutUint32(encodedType, uint32(msgType))
-
-		err = client.Send(&pb.Packet{
-			Type:    pbagent.SSMConnectionWrite,
-			Payload: msgData,
-			Spec: map[string][]byte{
-				pb.SpecWebsocketMessageType: encodedType,
-				pb.SpecGatewaySessionID:     []byte(sessionID),
-				pb.SpecClientConnectionID:   []byte(cID),
-			},
-		})
+		err = sendWebsocketMessageHelper(client, msgType, msgData, target, sessionID, cID)
 		if err != nil {
 			log.With("sid", sessionID, "conn", cID).
 				Errorf("failed to send packet to hoop server, reason=%v", err)
@@ -363,28 +352,18 @@ func (r *SSMProxy) handleRXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 	}
 }
 
-func runSSMProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) (*SSMProxy, error) {
-	listener, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start SSM proxy server at %v, reason=%v", listenAddr, err)
-	}
+func sendWebsocketMessageHelper(client pb.ClientTransport, msgType int, msgData []byte, target, sessionID, cID string) error {
+	encodedType := make([]byte, 4)
+	binary.LittleEndian.PutUint32(encodedType, uint32(msgType))
 
-	if tlsConfig != nil {
-		listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
-	}
-
-	ssmInstance := &SSMProxy{
-		listener:   listener,
-		listenAddr: listenAddr,
-	}
-	ssmInstance.attachHandlers(gin.Default())
-
-	go func() {
-		log.Infof("SSM server started at %v", listenAddr)
-		if err := ssmInstance.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Errorf("SSM server error: %v", err)
-		}
-	}()
-
-	return ssmInstance, nil
+	return client.Send(&pb.Packet{
+		Type:    pbagent.SSMConnectionWrite,
+		Payload: msgData,
+		Spec: map[string][]byte{
+			pb.SpecWebsocketMessageType: encodedType,
+			pb.SpecGatewaySessionID:     []byte(sessionID),
+			pb.SpecClientConnectionID:   []byte(cID),
+			pb.SpecInstanceId:           []byte(target),
+		},
+	})
 }
