@@ -256,7 +256,6 @@ func (p *auditPlugin) foundLogsOnDiskToClose(pctx plugintypes.Context, walogm *w
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
 	if pctx.FlushLogsToDisk {
-
 		return p.flushLogsFromDisk(pctx, errMsg)
 	}
 
