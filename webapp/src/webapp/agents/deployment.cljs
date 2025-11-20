@@ -15,12 +15,18 @@
        "  repository: hoophq/hoopdev\n"
        "  tag: latest\n"))
 
-(defn installing-helm [hoop-key]
-  (str "VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)\n"
-       "helm template hoopagent \\\n"
-       "https://releases.hoop.dev/release/$VERSION/hoopagent-chart-$VERSION.tgz \\\n"
+(defn set-version []
+  "VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)\n ")
+
+(defn install-helm [hoop-key]
+  (str "helm upgrade --install hoopagent \\\n"
+       "oci://ghcr.io/hoophq/helm-charts/hoopagent-chart --version $VERSION \\\n"
+       "--set config.HOOP_KEY=" hoop-key " \n"))
+
+(defn installing-helm-manifests [hoop-key]
+  (str "helm template hoopagent \\\n"
+       "oci://ghcr.io/hoophq/helm-charts/hoopagent-chart --version $VERSION \\\n"
        "--set 'config.HOOP_KEY=" hoop-key "' \\\n"
-       "--set 'image.tag=1.25.2' \\\n"
        "--set 'extraSecret=AWS_REGION=us-east-1' \\\n"))
 
 (defn deployment-yml [hoop-key]
@@ -55,7 +61,10 @@
       [:> Text {:size "2" :weight "bold"}
        "Minimal configuration"]
       [:> Text {:size "1" :color "gray"}
-       "Include the following parameters for standard installation."]]
+       "Include the following parameters for standard installation, for a full configuration."
+       [:> Link {:href "https://hoop.dev/docs/setup/deployment/kubernetes#agent-deployment"
+                 :target "_blank"}
+        " Check your docs."]]]
      [:> Flex {:direction "column" :gap "5"}
       [:> Text {:size "2" :weight "bold"}
        "values.yml"]
@@ -71,12 +80,23 @@
       "Make sure you have Helm installed. Check the "
       [:> Link {:href "https://helm.sh/docs/intro/install/"
                 :target "_blank"}
-       "Helm installation guide"]]]
-    [code-snippet/main
-     {:code (installing-helm hoop-key)}]]
+       "Helm installation guide"]]
+     [code-snippet/main
+      {:code (set-version)}]
+     [code-snippet/main
+      {:code (install-helm hoop-key)}]
+     [:> Text {:size "1" :color "gray"}
+      "Using helm manifests "]
+     [code-snippet/main
+      {:code (installing-helm-manifests hoop-key)}]]]
    [:> Flex {:direction "column" :gap "5"}
     [:> Text {:size "2" :weight "bold"}
      "deployment.yml"]
+    [:> Text {:size "1" :color "gray"}
+     "For more kubernetes configuration. Check the "
+     [:> Link {:href "https://hoop.dev/docs/setup/deployment/kubernetes#sidecar-container"
+               :target "_blank"}
+      "Hoop docs"]]
     [code-snippet/main
      {:code (deployment-yml hoop-key)}]]])
 
