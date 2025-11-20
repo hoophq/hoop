@@ -77,8 +77,6 @@
    :reports->session {:status :loading, :data nil}
    :routes->route (.-pathname (.-location js/window))
    :runbooks-plugin->selected-runbooks {:status :idle, :data nil}
-   :runbooks-plugin->runbooks {:status :idle, :data nil}
-   :runbooks-plugin->runbooks-by-connection {:status :loading, :data nil, :message ""}
    :segment->analytics nil
    :sidebar-desktop {:status (or (keyword (.getItem js/localStorage "sidebar")) :closed)}
    :sidebar-mobile {:status :closed}
@@ -98,6 +96,11 @@
    :runbooks {:connection-dialog-open? false
               :execute-trigger false
               :selected-connection nil
-              :list {:status :idle :data [] :error nil}}
+              :list {:status :idle :data [] :error nil}
+              :metadata []
+              :metadata-key ""
+              :metadata-value ""
+              :keep-metadata? false}
+   :runbooks->exec {:status :idle :data nil}
    :runbooks-rules {:list {:status :idle :data [] :error nil}
                     :active-rule {:status :idle :data nil :error nil}}})

@@ -10,7 +10,7 @@
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.webclient.components.search :as search]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
-   [webapp.webclient.components.panels.metadata :as metadata-panel]
+   [webapp.features.runbooks.runner.views.metadata-panel :as metadata-panel]
    [webapp.webclient.log-area.main :as log-area]
    [webapp.webclient.panel :refer [discover-connection-type]]
    [webapp.features.runbooks.runner.views.connections-dialog :as connections-dialog]
@@ -19,11 +19,11 @@
 
 (defn header []
   (let [selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
-        metadata (rf/subscribe [:editor-plugin/metadata])
-        metadata-key (rf/subscribe [:editor-plugin/metadata-key])
-        metadata-value (rf/subscribe [:editor-plugin/metadata-value])
+        metadata (rf/subscribe [:runbooks/metadata])
+        metadata-key (rf/subscribe [:runbooks/metadata-key])
+        metadata-value (rf/subscribe [:runbooks/metadata-value])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
-        script-response (rf/subscribe [:editor-plugin->script])]
+        script-response (rf/subscribe [:runbooks->exec])]
     (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
       (letfn [(run-disabled? []
                 (let [template @selected-template

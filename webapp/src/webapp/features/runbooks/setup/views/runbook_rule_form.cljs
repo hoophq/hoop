@@ -16,7 +16,15 @@
         items))
 
 (defn- js-select-options->list [options]
-  (mapv #(get % "value") (js->clj options)))
+  (->> options
+       (mapv (fn [option]
+               (let [option-map (if (map? option)
+                                  option
+                                  (js->clj option :keywordize-keys true)) ;; Handle both keyword and string keys for compatibility
+                     value (or (:value option-map)
+                               (get option-map "value"))]
+                 value)))
+       (filter some?)))
 
 (defn- extract-repo-name
   "Extract the last part of repository URL (e.g., 'github.com/myorg/myrepo' -> 'myrepo')"
@@ -232,7 +240,7 @@
               {:label "User Groups"
                :options user-group-options
                :default-value @(:user-groups state)
-               :on-change #(reset! (:user-groups state) (js->clj %))}]]]
+               :on-change #(reset! (:user-groups state) (js->clj % :keywordize-keys true))}]]]
 
            [:> Grid {:columns "7" :gap "7"}
             [:> Box {:grid-column "span 2 / span 2"}

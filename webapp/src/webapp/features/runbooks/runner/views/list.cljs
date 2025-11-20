@@ -248,9 +248,6 @@
                                            (cs/lower-case (:name %))
                                            (cs/lower-case @search-term))
                                          items))
-
-            ;; Auto-open if search matches or item is selected (only for this repository)
-            ;; Only auto-open if state is nil (not yet set), not if user manually closed it
             _ (when (and (nil? (get @dropdown-status repo-id))
                          (or has-search-match? has-selected?))
                 (swap! dropdown-status assoc repo-id :open))
@@ -273,11 +270,8 @@
                        :on-click #(swap! dropdown-status
                                          assoc-in [repo-id]
                                          (if (= (get @dropdown-status repo-id) :open) :closed :open))}
-              (if is-open?
-                [:> FolderGit2 {:size 16
-                               :class "text-[--gray-11]"}]
-                [:> FolderGit2 {:size 16
-                               :class "text-[--gray-11]"}])
+              [:> FolderGit2 {:size 16
+                              :class "text-[--gray-11]"}]
               [:> Text {:size "2" :weight "bold" :class "hover:underline"} display-repo-name]
               [:> Box
                (if is-open?

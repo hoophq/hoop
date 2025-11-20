@@ -91,6 +91,7 @@
 (defn- re-run-session [session]
   (if (-> session :labels :runbookFile)
     (do
+      ;; TODO: Use new event to run a runbook
       (rf/dispatch [:runbooks-plugin->run-runbook
                     {:file-name (-> session :labels :runbookFile)
                      :params (js/JSON.parse (-> session :labels :runbookParameters))

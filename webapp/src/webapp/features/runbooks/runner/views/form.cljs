@@ -65,6 +65,15 @@
                           (or required (nil? required)))
                      {:required true}))])])
 
+(defn- extract-repo-name
+  "Extract just the repository name from a full repository path.
+   Example: 'github.com/hoophq/runbooks' -> 'runbooks'"
+  [repo-path]
+  (if (string? repo-path)
+    (let [parts (cs/split repo-path #"/")]
+      (last parts))
+    repo-path))
+
 (defn- error-view [error]
   [:> Flex {:class "pt-large flex-col gap-regular items-center"}
    [:> Flex {:class "flex-col items-center text-center"}
@@ -81,7 +90,8 @@
         update-state #(swap! state assoc %1 %2)]
 
     (let [form-ref (r/atom nil)
-          prev-execute (r/atom false)]
+          prev-execute (r/atom false)
+          runbooks-list (rf/subscribe [:runbooks/list])]
       (fn [_ template selected-connection]
         ;; TODO: This implementation was made to fix the behavior of defmethod not accepting the re-rendering
         ;; based on its own key.
@@ -129,13 +139,16 @@
                                                       {:template-id (:jira_issue_template_id connection)
                                                        :file-name (-> template :data :name)
                                                        :params @state
-                                                       :connection-name (:name connection)}])
+                                                       :connection-name (:name connection)
+                                                       :repository (-> template :data :repository)
+                                                       :ref-hash (-> template :data :ref-hash)}])
 
-                                        :else (rf/dispatch [:editor-plugin->run-runbook
+                                        :else (rf/dispatch [:runbooks/exec
                                                             {:file-name (-> template :data :name)
-                                                             :metadata (-> template :data :metadata)
                                                              :params @state
-                                                             :connection-name (:name connection)}])))))]
+                                                             :connection-name (:name connection)
+                                                             :repository (-> template :data :repository)
+                                                             :ref-hash (-> template :data :ref-hash)}])))))]
 
               (let [execute-req-sub (rf/subscribe [:runbooks/execute-trigger])
                     execute? @execute-req-sub]
@@ -153,8 +166,15 @@
                  [:> Heading {:as "h1" :size "3" :class "text-gray-12"}
                   (let [parts (cs/split (-> template :data :name) #"/")
                         file-name (last parts)
-                        path (cs/join " / " (butlast parts))]
+                        path (cs/join " / " (butlast parts))
+                        runbook-name (-> template :data :name)
+                        repositories (or (:data @runbooks-list) [])
+                        repository (or (-> template :data :repository)
+                                       (let [repo (first (filter #(some (fn [item] (= (:name item) runbook-name)) (:items %)) repositories))]
+                                         (when repo (:repository repo))))
+                        repo-name (extract-repo-name repository)]
                     [:> Box
+                     [:> Text {:size "1" :class "font-normal text-gray-11"} (str repo-name " / ")]
                      [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
                      [:> Text {:size "3" :class "font-bold"} file-name]])]]
                 [:> ScrollArea
@@ -195,10 +215,5 @@
     "Select an available Runbook on your Library to begin"]])
 
 (defn main []
-  (fn [{:keys [runbook selected-connection only-runbooks?]}]
-    [:<>
-     (when-not only-runbooks?
-       [:> Box {:class "absolute right-4 top-4 transition cursor-pointer z-10"
-                :on-click #(rf/dispatch [:runbooks-plugin->clear-active-runbooks])}])
-     [template-view (:status runbook) runbook selected-connection]]))
-
+  (fn [{:keys [runbook selected-connection]}]
+    [template-view (:status runbook) runbook selected-connection]))
