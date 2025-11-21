@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: hoopgateway-ssh
+  name: hoopgateway-sshproxy
   labels:
-    app: hoopgateway-ssh
+    app: hoopgateway-sshproxy
   {{- with .Values.sshService.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

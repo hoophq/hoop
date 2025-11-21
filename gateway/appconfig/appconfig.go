@@ -52,7 +52,7 @@ type Config struct {
 	webappStaticUIPath              string
 	disableSessionsDownload         bool
 	gatewayUseTLS                   bool
-	gatewayTLSCa                    string
+	grpcClientTLSCa                 string
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
 	gatewayAllowPlainText           bool
@@ -136,9 +136,9 @@ func Load() error {
 		}
 	}
 
-	gatewayTLSCa, err := envloader.GetEnv("TLS_CA")
+	grpcClientTLSCa, err := envloader.GetEnv("HOOP_TLSCA")
 	if err != nil {
-		return fmt.Errorf("failed loading env TLS_CA, reason=%v", err)
+		return fmt.Errorf("failed loading env HOOP_TLSCA, reason=%v", err)
 	}
 	gatewayTLSKey, err := envloader.GetEnv("TLS_KEY")
 	if err != nil {
@@ -175,7 +175,7 @@ func Load() error {
 
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
 	// For backwards compatibility, we also allow plaintext if no TLS envs are set
-	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || gatewayTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
+	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
 	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
 
 	runtimeConfig = Config{
@@ -207,7 +207,7 @@ func Load() error {
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
 		gatewayUseTLS:                   gatewayUseTLS,
-		gatewayTLSCa:                    gatewayTLSCa,
+		grpcClientTLSCa:                 grpcClientTLSCa,
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
 		gatewayAllowPlainText:           allowPlainText,
@@ -360,7 +360,7 @@ func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
 func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
 func (c Config) GatewayUseTLS() bool                   { return c.gatewayUseTLS }
-func (c Config) GatewayTLSCa() string                  { return c.gatewayTLSCa }
+func (c Config) GrpcClientTLSCa() string               { return c.grpcClientTLSCa }
 func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }
 func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }

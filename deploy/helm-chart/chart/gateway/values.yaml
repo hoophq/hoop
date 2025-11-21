@@ -17,8 +17,9 @@ defaultAgent:
   imageRepository: 'hoophq/hoopdev'
   imageTag: latest
   imagePullPolicy: Always
+  grpcScheme: grpc
   grpcHost: 127.0.0.1:8010
-
+  grpcSkipVerify: false
 
 # -- Enable PostgreSQL
 postgres:

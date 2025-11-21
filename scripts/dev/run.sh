@@ -56,6 +56,7 @@ if [[ $HOOP_RS_BUILD == "1" ]]; then
   echo "You need to have Rust installed to build the Rust agent."
   echo "You need to have Cross installed to build the Rust agent for multiple architectures."
   make build-dev-rust
+  cp $HOME/.hoop/bin/hoop_rs ./dist/dev/bin/hoop_rs
 fi
 
 
@@ -68,11 +69,11 @@ docker rm hoopdev &> /dev/null || true
 
 docker run --rm --name hoopdev \
   -p 2225:22 \
-  -p 8009:8009 \
+  -p 443:8009 \
   -p 8010:8010 \
   -p 15432:15432 \
   -p 12222:12222 \
-  -p 13389:13389 \
+  -p 3389:13389 \
   --env-file=.env \
   --cap-add=NET_ADMIN \
   --add-host=host.docker.internal:host-gateway \

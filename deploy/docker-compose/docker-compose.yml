@@ -55,6 +55,8 @@ services:
     env_file: ".env"
     environment:
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+      - HOOP_TLS_SKIP_VERIFY=true
+      - DEFAULT_AGENT_GRPC_SCHEME=grpc
       - DEFAULT_AGENT_GRPC_HOST=gateway:8010
       - HOOP_GATEWAY_URL=ws://gateway:8009
     depends_on:

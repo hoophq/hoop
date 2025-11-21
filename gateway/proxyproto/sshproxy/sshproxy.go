@@ -241,8 +241,9 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "ssh/grpc",
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSCA:         appconfig.Get().GatewayTLSCa(),
-		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),

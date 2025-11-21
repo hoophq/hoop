@@ -6,15 +6,16 @@ import (
 	"io"
 	"strings"
 )
+
 // TPKTHeader represents a TPKT (ISO 8073) header
 type TPKTHeader struct {
-	Version      uint8
-	Reserved     uint8
-	Length       uint16
+	Version  uint8
+	Reserved uint8
+	Length   uint16
 }
 
 const (
-	TPKTVersion = 0x03
+	TPKTVersion    = 0x03
 	TPKTHeaderSize = 4
 )
 
@@ -167,6 +168,9 @@ func ReadFirstRDPPacket(conn io.Reader) ([]byte, error) {
 	header := make([]byte, TPKTHeaderSize)
 	_, err := io.ReadFull(conn, header)
 	if err != nil {
+		if err == io.EOF {
+			return nil, io.EOF
+		}
 		return nil, fmt.Errorf("failed to read TPKT header: %w", err)
 	}
 

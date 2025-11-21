@@ -152,7 +152,7 @@ func UpdateServerMisc(c *gin.Context) {
 	switch state {
 	case instanceStateStart:
 		_ = pgInstance.Stop()
-		err = pgInstance.Start(pgConf.ListenAddress, tlsConfig, globalConfig.GatewayAllowPlaintext())
+		err = pgInstance.Start(pgConf.ListenAddress, tlsConfig)
 	case instanceStateStop:
 		err = pgInstance.Stop()
 	}

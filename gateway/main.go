@@ -146,7 +146,7 @@ func Run() {
 	log.Infof("starting proxy servers")
 	if serverConfig != nil {
 		if serverConfig.PostgresServerConfig != nil {
-			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext())
+			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress, tlsConfig)
 			if err != nil {
 				log.Fatalf("failed to start postgres server, reason=%v", err)
 			}
