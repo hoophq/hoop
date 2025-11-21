@@ -66,6 +66,9 @@ type Context struct {
 
 	// hook to cleanup the transport extensions package handlers
 	ExtensionsOnDisconnectFn func(sid string)
+
+	// additional attribute to flush from disk the logs
+	FlushLogsToDisk bool
 }
 
 type PluginResource interface {
