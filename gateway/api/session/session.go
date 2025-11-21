@@ -423,6 +423,17 @@ func Get(c *gin.Context) {
 		}
 	}
 
+	// it will only load the input blob stream if it's allowed and the client requested to expand the attribute
+	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "input_stream")
+	if isAllowed && expandInputStream {
+		session.BlobInput, err = session.GetBlobInput()
+		if err != nil {
+			log.Errorf("failed fetching blob stream from session, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+			return
+		}
+	}
+
 	mustParseBlobStream := c.Query("event_stream") != "" && expandEventStream
 	if mustParseBlobStream {
 		err = encodeBlobStream(session, openapi.SessionEventStreamType(c.Query("event_stream")))
@@ -437,7 +448,7 @@ func Get(c *gin.Context) {
 			return
 		}
 	}
-	obj := toOpenApiSession(session)
+	obj := toOpenApiSession(session, expandInputStream)
 
 	// encode the object manually to obtain any encoding errors.
 	c.Writer.Header().Set("Content-Type", "application/json")
@@ -536,6 +547,12 @@ func DownloadSession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  http.StatusInternalServerError,
 			"message": "failed fetching session"})
+		return
+	}
+	session.BlobInput, err = session.GetBlobInput()
+	if err != nil {
+		log.Errorf("failed fetching blob input from session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob input from session"})
 		return
 	}
 	session.BlobStream, err = session.GetBlobStream()

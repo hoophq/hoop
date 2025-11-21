@@ -27,15 +27,21 @@ type sessionParseOption struct {
 	events        []string
 }
 
-func toOpenApiSession(s *models.Session) *openapi.Session {
+func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session {
 	var blobStream json.RawMessage
 	if s.BlobStream != nil {
 		blobStream = s.BlobStream.BlobStream
 	}
+	var blobInputStream openapi.SessionScriptType
+	if hasInputExpanded {
+		blobInputStream = openapi.SessionScriptType{"data": string(s.BlobInput)}
+	}
+
 	return &openapi.Session{
 		ID:                   s.ID,
 		OrgID:                s.OrgID,
-		Script:               openapi.SessionScriptType{"data": string(s.BlobInput)},
+		Script:               blobInputStream,
+		ScriptSize:           s.BlobInputSize,
 		Labels:               s.Labels,
 		IntegrationsMetadata: s.IntegrationsMetadata,
 		Metadata:             s.Metadata,
@@ -66,7 +72,7 @@ func toOpenApiSessionList(s *models.SessionList) *openapi.SessionList {
 	}
 	for _, item := range s.Items {
 		item.BlobInput = "" // not displayed when listing
-		newObj.Items = append(newObj.Items, *toOpenApiSession(&item))
+		newObj.Items = append(newObj.Items, *toOpenApiSession(&item, false))
 	}
 	return newObj
 }
