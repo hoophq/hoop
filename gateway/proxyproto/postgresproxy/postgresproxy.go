@@ -3,6 +3,7 @@ package postgresproxy
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -104,6 +105,10 @@ func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, erro
 			connectionID++
 			pgClient, err := lis.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.With("conn", connectionID).Warnf("failed obtaining postgres connection, err=%v", err)
 				continue
 			}

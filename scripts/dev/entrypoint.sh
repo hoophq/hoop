@@ -50,18 +50,12 @@ echo "--> STARTING AGENT ..."
 # get digest of the agent secret key
 # echo -n xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg |sha256sum
 # export HOOP_TLS_HOOP_TLS_SKIP_VERIFY=true
-# mkdir $HOME/.hoop
-# cat > $HOME/.hoop/config.toml <<EOF
-# Hostname = "dev.hoop.dev"
-# Token = "grpcs://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@dev.hoop.dev:8010?mode=standard"
-# TlsCertificateSource = "External"
-# TlsCertificateFile = "/app/ui/public/server-full.crt"
-# TlsPrivateKeyFile = "/app/ui/public/server.key"
-# TlsVerifyStrict = true
-# EOF
-# export HOOP_TLSCA=file:///app/ui/public/ca.crt
-# export HOOP_TLS_SKIP_VERIFY=true
-HOOP_KEY="grpcs://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
+GRPC_SCHEME=grpc
+if [[ "$API_URL" == "https"* ]]; then
+  GRPC_SCHEME=grpcs
+fi
+export HOOP_TLS_SKIP_VERIFY=true
+HOOP_KEY="${GRPC_SCHEME}://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
 
 echo "--> STARTING SSHD SERVER ..."
 

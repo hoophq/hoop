@@ -145,14 +145,16 @@ func Run() {
 
 	log.Infof("starting proxy servers")
 	if serverConfig != nil {
-		if serverConfig.PostgresServerConfig != nil {
+		pgc := serverConfig.PostgresServerConfig
+		if pgc != nil && pgc.ListenAddress != "" {
 			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress, tlsConfig)
 			if err != nil {
 				log.Fatalf("failed to start postgres server, reason=%v", err)
 			}
 		}
 
-		if serverConfig.SSHServerConfig != nil {
+		sshc := serverConfig.SSHServerConfig
+		if sshc != nil && sshc.ListenAddress != "" && len(sshc.HostsKey) > 0 {
 			err := sshproxy.GetServerInstance().Start(
 				serverConfig.SSHServerConfig.ListenAddress,
 				serverConfig.SSHServerConfig.HostsKey,
@@ -162,7 +164,8 @@ func Run() {
 			}
 		}
 
-		if serverConfig.RDPServerConfig != nil {
+		rdpc := serverConfig.RDPServerConfig
+		if rdpc != nil && rdpc.ListenAddress != "" {
 			err = rdp.GetServerInstance().Start(
 				serverConfig.RDPServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext(),
 			)

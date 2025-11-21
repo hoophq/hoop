@@ -3,6 +3,7 @@ package rdp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -91,6 +92,10 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.Errorf("RDP accept error: %v", err)
 				if conn != nil {
 					_ = conn.Close()
