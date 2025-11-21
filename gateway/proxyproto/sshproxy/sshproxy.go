@@ -125,6 +125,7 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 			sessionID := uuid.NewString()
 			conn, err := newSSHConnection(sessionID, connectionID, netConn, hostKey)
 			if err != nil {
+				// Prevents log pollution from health check requests on this port
 				if err == io.EOF {
 					log.With("sid", sessionID, "conn", connectionID).
 						Debugf("failed creating new SSH connection, reason=%v", err)

@@ -116,6 +116,7 @@ func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, erro
 			sid := uuid.NewString()
 			conn, err := newPostgresConnection(sid, strconv.Itoa(connectionID), pgClient, server.tlsConfig)
 			if err != nil {
+				// Prevents log pollution from health check requests on this port
 				if err == io.EOF {
 					log.With("conn", connectionID).Debugf("failed creating new postgres connection, reason=EOF error")
 					_ = pgClient.Close()
@@ -158,9 +159,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, err
 	}
 
-	// Handle SSL request
 	if isFrontendTLSRequest {
-		// Accept SSL request
 		log.With("conn", connID).Infof("accepting SSL request")
 		if _, err = conn.Write([]byte{pgtypes.ServerSSLSupported.Byte()}); err != nil {
 			return nil, fmt.Errorf("failed writing ssl supported response, err=%v", err)

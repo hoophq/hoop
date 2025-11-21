@@ -162,6 +162,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		// Read first RDP packet
 		firstRDPData, err = ReadFirstRDPPacket(conn)
 		if err != nil {
+			// Prevents log pollution from health check requests on this port
 			if err == io.EOF {
 				log.Debugf("failed to read first RDP packet, reason=EOF error")
 				return
