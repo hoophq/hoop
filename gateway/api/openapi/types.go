@@ -499,7 +499,7 @@ type SessionGetByIDParams struct {
 	// * `raw-queries` - encode each event stream parsing the input of queries based on the database wire protocol (available databases: postgres)
 	EventStream SessionEventStreamType `json:"event_stream" default:""`
 	// Expand the given attributes
-	Expand string `json:"expand" enums:"event_stream,input_stream" example:"event_stream" default:""`
+	Expand string `json:"expand" enums:"event_stream,session_input" example:"event_stream" default:""`
 }
 
 type SessionOption struct {
