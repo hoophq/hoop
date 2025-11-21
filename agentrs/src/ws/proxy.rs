@@ -14,7 +14,6 @@ use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
 // Start a persistent RDP proxy session
-#[instrument]
 pub async fn start_rdp_proxy_session(
     session_info: SessionInfo,
     ws_sender: WsWriter,

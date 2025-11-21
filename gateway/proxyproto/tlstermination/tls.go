@@ -58,8 +58,6 @@ func (t *tlsTermination) Accept() (net.Conn, error) {
 		return nil, errors.Wrap(err, "failed to determine if connection is TLS")
 	}
 
-	log.Debugf("connection isTLS=%v", isTLS)
-
 	if isTLS {
 		return t.toTLSConn(bconn, cookie), nil
 	}

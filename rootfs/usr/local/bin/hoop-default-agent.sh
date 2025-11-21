@@ -1,7 +1,9 @@
 #!/bin/bash
 
 : "${POSTGRES_DB_URI:?env is required}"
+: "${DEFAULT_AGENT_GRPC_SCHEME:-"grpc"}"
 : "${DEFAULT_AGENT_GRPC_HOST:-"127.0.0.1:8010"}"
+: "${DEFAULT_AGENT_GRPC_SKIP_VERIFY:-"false"}"
 
 SECRET_KEY=xagt-$(LC_ALL=C tr -dc A-Za-z0-9_ < /dev/urandom | head -c 43 | xargs)
 set -eo pipefail
@@ -18,9 +20,17 @@ INSERT INTO private.agents (id, org_id, name, mode, key_hash, status)
 COMMIT;
 EOF
 
-GRPC_SCHEME=grpcs
-if [[ -z $TLS_CA ]]; then
-  GRPC_SCHEME=grpc
+WS_SCHEME=ws
+if [[ "$DEFAULT_AGENT_GRPC_SCHEME" == "grpcs" ]]; then
+  WS_SCHEME=wss
 fi
 
-HOOP_TLSCA=$TLS_CA HOOP_KEY="${GRPC_SCHEME}://default:${SECRET_KEY}@${DEFAULT_AGENT_GRPC_HOST}?mode=standard" hoop start agent
+export HOOP_GATEWAY_URL="${WS_SCHEME}://127.0.0.1:8009"
+if [[ -n $DEFAULT_AGENT_GATEWAY_URL ]]; then
+  export HOOP_GATEWAY_URL=$DEFAULT_AGENT_GATEWAY_URL
+fi
+
+export HOOP_TLS_SKIP_VERIFY=${DEFAULT_AGENT_GRPC_SKIP_VERIFY}
+export HOOP_TLSCA=$DEFAULT_AGENT_GRPC_TLS_CA
+export HOOP_KEY="${DEFAULT_AGENT_GRPC_SCHEME}://default:${SECRET_KEY}@${DEFAULT_AGENT_GRPC_HOST}?mode=standard"
+hoop start agent

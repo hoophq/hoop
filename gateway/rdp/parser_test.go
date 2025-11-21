@@ -3,6 +3,7 @@ package rdp
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"strings"
 	"testing"
 )
@@ -205,68 +206,68 @@ func TestExtractCredentialsFromRDP(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name: "valid RDP data with mstshash",
-			rdpData: createValidRDPPacket("mstshash=testuser"),
-			expected: "testuser",
+			name:        "valid RDP data with mstshash",
+			rdpData:     createValidRDPPacket("mstshash=testuser"),
+			expected:    "testuser",
 			expectError: false,
 		},
 		{
-			name: "valid RDP data with msthash",
-			rdpData: createValidRDPPacket("msthash=anotheruser"),
-			expected: "anotheruser",
+			name:        "valid RDP data with msthash",
+			rdpData:     createValidRDPPacket("msthash=anotheruser"),
+			expected:    "anotheruser",
 			expectError: false,
 		},
 		{
-			name: "valid RDP data with mstshash and newline",
-			rdpData: createValidRDPPacket("mstshash=user123\r\n"),
-			expected: "user123",
+			name:        "valid RDP data with mstshash and newline",
+			rdpData:     createValidRDPPacket("mstshash=user123\r\n"),
+			expected:    "user123",
 			expectError: false,
 		},
 		{
-			name: "valid RDP data with mstshash and null terminator",
-			rdpData: createValidRDPPacket("mstshash=user456\x00"),
-			expected: "user456",
+			name:        "valid RDP data with mstshash and null terminator",
+			rdpData:     createValidRDPPacket("mstshash=user456\x00"),
+			expected:    "user456",
 			expectError: false,
 		},
 		{
-			name: "valid RDP data with mstshash in middle of string",
-			rdpData: createValidRDPPacket("prefix mstshash=user789 suffix"),
-			expected: "user789 suffix",
+			name:        "valid RDP data with mstshash in middle of string",
+			rdpData:     createValidRDPPacket("prefix mstshash=user789 suffix"),
+			expected:    "user789 suffix",
 			expectError: false,
 		},
 		{
-			name: "valid RDP data without credentials (fallback to default)",
-			rdpData: createValidRDPPacket("some other data"),
-			expected: "default_user",
+			name:        "valid RDP data without credentials (fallback to default)",
+			rdpData:     createValidRDPPacket("some other data"),
+			expected:    "default_user",
 			expectError: false,
 		},
 		{
-			name: "invalid TPKT header",
-			rdpData: []byte{0x02, 0x00, 0x00, 0x10}, // wrong version
-			expected: "",
+			name:        "invalid TPKT header",
+			rdpData:     []byte{0x02, 0x00, 0x00, 0x10}, // wrong version
+			expected:    "",
 			expectError: true,
-			errorMsg: "failed to parse TPKT header",
+			errorMsg:    "failed to parse TPKT header",
 		},
 		{
-			name: "incomplete TPKT packet",
-			rdpData: []byte{0x03, 0x00, 0x00, 0x20, 0x01, 0x02}, // length=32 but only 6 bytes
-			expected: "",
+			name:        "incomplete TPKT packet",
+			rdpData:     []byte{0x03, 0x00, 0x00, 0x20, 0x01, 0x02}, // length=32 but only 6 bytes
+			expected:    "",
 			expectError: true,
-			errorMsg: "incomplete TPKT packet",
+			errorMsg:    "incomplete TPKT packet",
 		},
 		{
-			name: "empty data",
-			rdpData: []byte{},
-			expected: "",
+			name:        "empty data",
+			rdpData:     []byte{},
+			expected:    "",
 			expectError: true,
-			errorMsg: "failed to parse TPKT header",
+			errorMsg:    "failed to parse TPKT header",
 		},
 		{
-			name: "TPKT header only",
-			rdpData: []byte{0x03, 0x00, 0x00, 0x04}, // only header, no payload
-			expected: "",
+			name:        "TPKT header only",
+			rdpData:     []byte{0x03, 0x00, 0x00, 0x04}, // only header, no payload
+			expected:    "",
 			expectError: true,
-			errorMsg: "no TPDU data",
+			errorMsg:    "no TPDU data",
 		},
 	}
 
@@ -386,21 +387,21 @@ func TestReadFirstRDPPacket(t *testing.T) {
 		errorMsg    string
 	}{
 		{
-			name:     "valid RDP packet",
-			data:     createValidRDPPacket("test data"),
-			expected: createValidRDPPacket("test data"),
+			name:        "valid RDP packet",
+			data:        createValidRDPPacket("test data"),
+			expected:    createValidRDPPacket("test data"),
 			expectError: false,
 		},
 		{
-			name:     "valid RDP packet with longer data",
-			data:     createValidRDPPacket("mstshash=testuser\r\nadditional data"),
-			expected: createValidRDPPacket("mstshash=testuser\r\nadditional data"),
+			name:        "valid RDP packet with longer data",
+			data:        createValidRDPPacket("mstshash=testuser\r\nadditional data"),
+			expected:    createValidRDPPacket("mstshash=testuser\r\nadditional data"),
 			expectError: false,
 		},
 		{
-			name:     "empty packet",
-			data:     []byte{0x03, 0x00, 0x00, 0x04}, // header only
-			expected: []byte{0x03, 0x00, 0x00, 0x04},
+			name:        "empty packet",
+			data:        []byte{0x03, 0x00, 0x00, 0x04}, // header only
+			expected:    []byte{0x03, 0x00, 0x00, 0x04},
 			expectError: false,
 		},
 		{
@@ -463,7 +464,7 @@ func TestReadFirstRDPPacketWithIncompleteRead(t *testing.T) {
 	// Test with a reader that returns partial data
 	partialData := []byte{0x03, 0x00, 0x00, 0x10, 0x01, 0x02} // length=16 but only 6 bytes
 	reader := bytes.NewReader(partialData)
-	
+
 	_, err := ReadFirstRDPPacket(reader)
 	if err == nil {
 		t.Errorf("expected error for incomplete read but got none")
@@ -477,14 +478,8 @@ func TestReadFirstRDPPacketWithIncompleteRead(t *testing.T) {
 func TestReadFirstRDPPacketWithEmptyReader(t *testing.T) {
 	// Test with an empty reader
 	reader := bytes.NewReader([]byte{})
-	
-	_, err := ReadFirstRDPPacket(reader)
-	if err == nil {
-		t.Errorf("expected error for empty reader but got none")
-		return
-	}
-	if !strings.Contains(err.Error(), "failed to read TPKT header") {
-		t.Errorf("expected error message to contain 'failed to read TPKT header', got %q", err.Error())
+	if _, err := ReadFirstRDPPacket(reader); err != io.EOF {
+		t.Errorf("expected io.EOF error, got=%#v", err)
 	}
 }
 
@@ -494,22 +489,22 @@ func createValidRDPPacket(payload string) []byte {
 	tpktHeader := make([]byte, TPKTHeaderSize)
 	tpktHeader[0] = TPKTVersion
 	tpktHeader[1] = 0x00 // reserved
-	
+
 	// Create TPDU header
 	tpduHeader := make([]byte, 2)
-	tpduHeader[0] = uint8(len(payload)) // length indicator
+	tpduHeader[0] = uint8(len(payload))   // length indicator
 	tpduHeader[1] = TPDUConnectionRequest // code
-	
+
 	// Calculate total length
 	totalLength := TPKTHeaderSize + len(tpduHeader) + len(payload)
 	binary.BigEndian.PutUint16(tpktHeader[2:4], uint16(totalLength))
-	
+
 	// Combine all parts
 	packet := make([]byte, totalLength)
 	copy(packet[:TPKTHeaderSize], tpktHeader)
 	copy(packet[TPKTHeaderSize:TPKTHeaderSize+2], tpduHeader)
 	copy(packet[TPKTHeaderSize+2:], []byte(payload))
-	
+
 	return packet
 }
 
@@ -533,7 +528,7 @@ func TestTPKTHeaderStruct(t *testing.T) {
 		Reserved: 0x00,
 		Length:   16,
 	}
-	
+
 	if header.Version != 0x03 {
 		t.Errorf("expected Version to be 0x03, got 0x%02x", header.Version)
 	}
@@ -552,7 +547,7 @@ func TestTPDUHeaderStruct(t *testing.T) {
 		Code:            0xE0,
 		Data:            []byte{0x01, 0x02, 0x03},
 	}
-	
+
 	if header.LengthIndicator != 5 {
 		t.Errorf("expected LengthIndicator to be 5, got %d", header.LengthIndicator)
 	}

@@ -3,11 +3,11 @@ package rdp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
-
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
@@ -15,6 +15,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -77,9 +78,9 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 		return nil, fmt.Errorf("failed to start RDP proxy server at %v, reason=%v", listenAddr, err)
 	}
 
-	if tlsConfig != nil {
-		listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
-	}
+	// if tlsConfig != nil {
+	// 	listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
+	// }
 
 	rdpProxyInstance := &RDPProxy{
 		listener:   listener,
@@ -91,6 +92,10 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.Errorf("RDP accept error: %v", err)
 				if conn != nil {
 					_ = conn.Close()
@@ -150,14 +155,19 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	var firstRDPData []byte
 	var err error
 	var extractedCreds string
-	
+
 	if metaConn, ok := conn.(*tlstermination.TLSConnectionMeta); ok {
 		firstRDPData = metaConn.RDPCookie
 	} else {
 		// Read first RDP packet
 		firstRDPData, err = ReadFirstRDPPacket(conn)
 		if err != nil {
-			log.Errorf("Failed to read first RDP packet: %v", err)
+			// Prevents log pollution from health check requests on this port
+			if err == io.EOF {
+				log.Debugf("failed to read first RDP packet, reason=EOF error")
+				return
+			}
+			log.Warnf("Failed to read first RDP packet: %v", err)
 			return
 		}
 	}
@@ -170,6 +180,10 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	}
 
 	secretKeyHash, err := keys.Hash256Key(extractedCreds)
+	if err != nil {
+		log.Errorf("failed hashing rdp secret key, reason=%v", err)
+		return
+	}
 
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
 		pb.ConnectionTypeRDP.String(),

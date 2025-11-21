@@ -3,6 +3,7 @@ package sshproxy
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	sshtypes "libhoop/proxy/ssh/types"
@@ -112,6 +113,10 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 			// accepts a new standard TCP connection
 			netConn, err := lis.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.With("conn", connectionID).Warnf("failed obtaining tcp connection, err=%v", err)
 				break
 			}
@@ -120,10 +125,15 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 			sessionID := uuid.NewString()
 			conn, err := newSSHConnection(sessionID, connectionID, netConn, hostKey)
 			if err != nil {
-				log.
-					With("sid", sessionID, "conn", connectionID).
-					Warnf("failed creating new SSH connection, err=%v", err)
-
+				// Prevents log pollution from health check requests on this port
+				if err == io.EOF {
+					log.With("sid", sessionID, "conn", connectionID).
+						Debugf("failed creating new SSH connection, reason=%v", err)
+					_ = netConn.Close()
+					continue
+				}
+				log.With("sid", sessionID, "conn", connectionID).
+					Warnf("failed creating new SSH connection, reason=%v", err)
 				_ = netConn.Close()
 				continue
 			}
@@ -207,6 +217,9 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 
 	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, sshServerConfig)
 	if err != nil {
+		if err == io.EOF {
+			return nil, io.EOF
+		}
 		return nil, fmt.Errorf("failed establishing SSH connection: %v", err)
 	}
 
@@ -241,8 +254,9 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "ssh/grpc",
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSCA:         appconfig.Get().GatewayTLSCa(),
-		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),

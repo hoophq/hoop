@@ -17,8 +17,12 @@ defaultAgent:
   imageRepository: 'hoophq/hoopdev'
   imageTag: latest
   imagePullPolicy: Always
+  grpcScheme: grpc
   grpcHost: 127.0.0.1:8010
-
+  # 'base64://<base64-encoded-ca-cert>'
+  # 'file:///path/to/ca-cert.pem'
+  grpcTlsCa: ''
+  grpcSkipVerify: false
 
 # -- Enable PostgreSQL
 postgres:
@@ -129,21 +133,26 @@ ingressGrpc:
   #   - grpc01.domain.tld
   #   - grpc02.domain.tld
 
-sshService:
-  # --- Enables direct SSH access
-  # Required for accessing through native ssh clients
+# --- Expose proxy protocols direct access
+proxyService:
   enabled: false
   type: LoadBalancer
-  port: 12222
-  annotations: {}
-  
-rdpService:
-  # --- Enables direct RDP access
-  # Required for accessing through native ssh clients
-  enabled: false
-  type: LoadBalancer
-  port: 13389
-  annotations: {}
+  # annotations: {}
+  #   service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  #   service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+  # ports:
+  # - name: pgproxy
+  #   port: 15432
+  #   targetPort: 15432
+  #   protocol: TCP
+  # - name: sshproxy
+  #   port: 12222
+  #   targetPort: 12222
+  #   protocol: TCP
+  # - name: rdpproxy
+  #   port: 13389
+  #   targetPort: 13389
+  #   protocol: TCP
 
 # -- Define persistence to sessions
 persistence:
