@@ -26,28 +26,7 @@ type runbookCache struct {
 
 var runbooksCache sync.Map // sync.Map[orgId]map[gitUrl]*runbookCache
 
-func setRunbookCache(orgId, gitUrl string, commit *object.Commit) {
-	var inner map[string]*runbookCache
-
-	v, ok := runbooksCache.Load(orgId)
-	if ok {
-		inner, ok = v.(map[string]*runbookCache)
-		if !ok {
-			log.Errorf("invalid runbook cache structure for orgId=%s", orgId)
-			inner = make(map[string]*runbookCache)
-		}
-	} else {
-		inner = make(map[string]*runbookCache)
-		runbooksCache.Store(orgId, inner)
-	}
-
-	inner[gitUrl] = &runbookCache{
-		commit:   commit,
-		cachedAt: time.Now().UTC(),
-	}
-}
-
-func GetRunbookCache(orgId, gitUrl string) (*object.Commit, bool) {
+func getRunbookCache(orgId, gitUrl string) (*object.Commit, bool) {
 	if v, ok := runbooksCache.Load(orgId); ok {
 		inner, ok := v.(map[string]*runbookCache)
 		if !ok {
@@ -70,6 +49,27 @@ func GetRunbookCache(orgId, gitUrl string) (*object.Commit, bool) {
 		return rb.commit, ok
 	}
 	return nil, false
+}
+
+func setRunbookCache(orgId, gitUrl string, commit *object.Commit) {
+	var inner map[string]*runbookCache
+
+	v, ok := runbooksCache.Load(orgId)
+	if ok {
+		inner, ok = v.(map[string]*runbookCache)
+		if !ok {
+			log.Errorf("invalid runbook cache structure for orgId=%s", orgId)
+			inner = make(map[string]*runbookCache)
+		}
+	} else {
+		inner = make(map[string]*runbookCache)
+		runbooksCache.Store(orgId, inner)
+	}
+
+	inner[gitUrl] = &runbookCache{
+		commit:   commit,
+		cachedAt: time.Now().UTC(),
+	}
 }
 
 func deleteRunbookCache(orgId string, gitUrl string) {
@@ -100,6 +100,22 @@ func slicesHasIntersection[T comparable](a, b []T) bool {
 	})
 }
 
+func GetRunbooks(orgId string, config *runbooks.Config) (*object.Commit, error) {
+	commit, ok := getRunbookCache(orgId, config.GetNormalizedGitURL())
+
+	if !ok {
+		var err error
+		commit, err = runbooks.CloneRepositoryInMemory(config)
+		if err != nil {
+			return nil, err
+		}
+
+		setRunbookCache(orgId, config.GetNormalizedGitURL(), commit)
+	}
+
+	return commit, nil
+}
+
 func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []string, runbookRepository, runbookName string, userGroups []string) []string {
 	// If no connections available, return empty list
 	if len(connectionList) == 0 {
@@ -123,12 +139,11 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 		hasMatchingUserGroup := len(rule.UserGroups) == 0 || slicesHasIntersection(rule.UserGroups, userGroups)
 
 		// Check if runbook is listed in the rule
-		// Only runs if no matching user group found
-		hasMatchingRunbook := !hasMatchingUserGroup && (len(rule.Runbooks) == 0 || slices.ContainsFunc(rule.Runbooks, func(runbook models.RunbookRuleFile) bool {
+		hasMatchingRunbook := hasMatchingUserGroup && (len(rule.Runbooks) == 0 || slices.ContainsFunc(rule.Runbooks, func(runbook models.RunbookRuleFile) bool {
 			return runbook.Repository == runbookRepository && strings.HasPrefix(runbookName, runbook.Name)
 		}))
 
-		if hasMatchingUserGroup || hasMatchingRunbook {
+		if hasMatchingUserGroup && hasMatchingRunbook {
 			if len(rule.Connections) == 0 {
 				return connectionList
 			}
@@ -155,16 +170,9 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 }
 
 func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionList, userGroups []string, removeEmptyConnections bool) (*openapi.RunbookRepositoryList, error) {
-	commit, ok := GetRunbookCache(orgId, config.GetNormalizedGitURL())
-
-	if !ok {
-		var err error
-		commit, err = runbooks.CloneRepositoryInMemory(config)
-		if err != nil {
-			return nil, err
-		}
-
-		setRunbookCache(orgId, config.GetNormalizedGitURL(), commit)
+	commit, err := GetRunbooks(orgId, config)
+	if err != nil {
+		return nil, err
 	}
 
 	runbookList := &openapi.RunbookRepositoryList{
@@ -218,6 +226,7 @@ func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.Ru
 	})
 }
 
+// Runbooks v1 functions for backward compatibility
 func listRunbookFiles(pluginConnectionList []*models.PluginConnection, config *runbooks.Config) (*openapi.RunbookList, error) {
 	commit, err := runbooks.CloneRepositoryInMemory(config)
 	if err != nil {

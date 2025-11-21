@@ -48,21 +48,6 @@
    (:connections->connection-details db)))
 
 (re-frame/reg-sub
- :runbooks-plugin->runbooks-by-connection
- (fn [db _]
-   (:runbooks-plugin->runbooks-by-connection db)))
-
-(re-frame/reg-sub
- :runbooks->settings
- (fn [db _]
-   (:runbooks->settings db)))
-
-(re-frame/reg-sub
- :runbooks->github-connection-info
- (fn [db _]
-   (:runbooks->github-connection-info db)))
-
-(re-frame/reg-sub
  :new-task
  (fn [db _]
    (:new-task db)))
@@ -268,11 +253,6 @@
  :ask-ai->question-responses
  (fn [db _]
    (:ask-ai->question-responses db)))
-
-(re-frame/reg-sub
- :runbooks-plugin->runbooks
- (fn [db _]
-   (:runbooks-plugin->runbooks db)))
 
 (re-frame/reg-sub
  :runbooks-plugin->selected-runbooks

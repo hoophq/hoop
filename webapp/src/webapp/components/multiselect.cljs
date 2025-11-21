@@ -51,7 +51,7 @@
   (let [container-ref (r/atom nil)]
     (fn [{:keys [default-value disabled? required? on-change options label id name]}]
       [:div {:class "mb-regular text-sm"}
-       [:div {:class "flex items-center gap-2"}
+       [:div {:class "flex items-center gap-2 mb-1"}
         (when label
           [form-label label])]
        [:> Select
@@ -82,7 +82,7 @@
 
 (defn creatable-select [{:keys [default-value disabled? required? on-change options label id name]}]
   [:div {:class "mb-regular text-sm"}
-   [:div {:class "flex items-center gap-2"}
+   [:div {:class "flex items-center gap-2 mb-1"}
     (when label
       [form-label label])]
    [:> CreatableSelect
