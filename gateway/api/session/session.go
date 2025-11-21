@@ -391,15 +391,26 @@ func Get(c *gin.Context) {
 		hash := sha256.Sum256([]byte(uuid.NewString()))
 		downloadToken := hex.EncodeToString(hash[:])
 		expireAtTime := time.Now().UTC().Add(defaultDownloadExpireTime).Format(time.RFC3339Nano)
-		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&events=%v",
-			ctx.ApiURL,
-			sessionID,
-			downloadToken,
-			fileExt,
-			c.Query("newline"),
-			c.Query("event-time"),
-			c.Query("events"),
-		)
+		blobType := c.Query("blob-type")
+
+		var downloadURL string
+		if blobType == "session_input" {
+			downloadURL = fmt.Sprintf("%s/api/sessions/%s/download/input?token=%s",
+				ctx.ApiURL,
+				sessionID,
+				downloadToken,
+			)
+		} else {
+			downloadURL = fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&events=%v",
+				ctx.ApiURL,
+				sessionID,
+				downloadToken,
+				fileExt,
+				c.Query("newline"),
+				c.Query("event-time"),
+				c.Query("events"),
+			)
+		}
 		requestPayload := map[string]any{
 			"token":               downloadToken,
 			"expire-at":           expireAtTime,
@@ -424,12 +435,12 @@ func Get(c *gin.Context) {
 	}
 
 	// it will only load the input blob stream if it's allowed and the client requested to expand the attribute
-	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "input_stream")
+	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "session_input")
 	if isAllowed && expandInputStream {
 		session.BlobInput, err = session.GetBlobInput()
 		if err != nil {
-			log.Errorf("failed fetching blob stream from session, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+			log.Errorf("failed fetching input from session, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session"})
 			return
 		}
 	}
@@ -549,12 +560,6 @@ func DownloadSession(c *gin.Context) {
 			"message": "failed fetching session"})
 		return
 	}
-	session.BlobInput, err = session.GetBlobInput()
-	if err != nil {
-		log.Errorf("failed fetching blob input from session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob input from session"})
-		return
-	}
 	session.BlobStream, err = session.GetBlobStream()
 	if err != nil {
 		log.Errorf("failed fetching blob stream from session, err=%v", err)
@@ -579,6 +584,92 @@ func DownloadSession(c *gin.Context) {
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
 	wrote, err := c.Writer.Write(output)
+	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
+		fileExt, len(output), wrote, err == nil, err)
+}
+
+// DownloadSessionInput
+//
+//	@Summary		Download Session Input Command
+//	@Description	Download session input session by id
+//	@Tags			Sessions
+//	@Produce		octet-stream,json
+//	@Param			session_id	path		string	true	"The id of the resource"
+//	@Success		200			{string}	string
+//	@Header			200			{string}	Content-Type		"application/octet-stream"
+//	@Header			200			{string}	Content-Disposition	"application/octet-stream"
+//	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
+//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/download/input_stream [get]
+func DownloadSessionInput(c *gin.Context) {
+	sid := c.Param("session_id")
+	requestToken := c.Query("token")
+
+	store, _ := downloadTokenStore.Pop(sid).(map[string]any)
+	if len(store) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  http.StatusNotFound,
+			"message": "not found"})
+		return
+	}
+
+	expireAt, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%v", store["expire-at"]))
+	if err != nil {
+		log.Errorf("failed parsing request time, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed processing request"})
+		return
+	}
+	token := fmt.Sprintf("%v", store["token"])
+	if token == "" {
+		log.Error("download token is empty")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed processing request"})
+		return
+	}
+
+	if time.Now().UTC().After(expireAt) {
+		c.JSON(http.StatusGone, gin.H{
+			"status":  http.StatusGone,
+			"message": "session download link expired"})
+		return
+	}
+
+	fileExt := "txt"
+	ctx := storagev2.NewContext(
+		fmt.Sprintf("%v", store["context-user-id"]),
+		fmt.Sprintf("%v", store["context-org-id"]))
+	ctx.UserGroups, _ = store["context-user-groups"].([]string)
+	log.With("sid", sid, "ext", fileExt).
+		Infof("session download input request, valid=%v, org=%v, user=%v, groups=%#v, user-agent=%v",
+			token == requestToken, ctx.OrgID, ctx.UserID, ctx.UserGroups, apiutils.NormalizeUserAgent(c.Request.Header.Values))
+	if token != requestToken {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"status":  http.StatusUnauthorized,
+			"message": "unauthorized"})
+		return
+	}
+	session, err := models.GetSessionByID(ctx.OrgID, sid)
+	if err != nil || session == nil {
+		log.Errorf("failed fetching session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed fetching session"})
+		return
+	}
+	output, err := session.GetBlobInput()
+	if err != nil {
+		log.Errorf("failed fetching input from session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session"})
+		return
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
+	wrote, err := c.Writer.Write([]byte(output))
 	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
 		fileExt, len(output), wrote, err == nil, err)
 }
