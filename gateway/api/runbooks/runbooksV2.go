@@ -291,15 +291,11 @@ func RunbookExec(c *gin.Context) {
 		return
 	}
 
-	commit, ok := GetRunbookCache(ctx.GetOrgID(), config.GetNormalizedGitURL())
-	if !ok {
-		var err error
-		commit, err = runbooks.CloneRepositoryInMemory(config)
-		if err != nil {
-			log.Errorf("failed cloning runbook repository, reason=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-			return
-		}
+	commit, err := GetRunbooks(ctx.GetOrgID(), config)
+	if err != nil {
+		log.Errorf("failed cloning runbook repository, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
 	}
 
 	repo, err := runbooks.BuildRepositoryFromCommit(commit)

@@ -1866,13 +1866,20 @@ type ResourceSearch struct {
 	SubType string `json:"subtype" example:"postgres"`
 }
 
+type RunbookSearch struct {
+	// Repository name
+	Repository string `json:"repository" example:"github.com/myorg/myrunbooks"`
+	// The runbook name
+	Name string `json:"name" example:"myrunbooks/run-backup.runbook.sql"`
+}
+
 type SearchResponse struct {
 	// Any errors found during the search
 	Errors []string `json:"errors"`
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
 	// Runbooks found in the search
-	Runbooks []string `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
+	Runbooks []*RunbookSearch `json:"runbooks" example:"myrunbooks/run-backup.runbook.sql,myrunbooks/run-update.runbook.sql"`
 	// Resources found in the search
 	Resources []ResourceSearch `json:"resources"`
 }
