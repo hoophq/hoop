@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/guardrails"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
@@ -62,6 +63,12 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	clientVerb := stream.GetMeta("verb")
 	clientOrigin := stream.GetMeta("origin")
 	pctx := stream.PluginContext()
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return err
+	}
+
 	if err := requestProxyConnection(stream); err != nil {
 		return err
 	}
@@ -79,6 +86,10 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	// The stream will be closed when receiving a SessionClose packet
 	// from the agent or when the stream process manager closes it.
 	if clientOrigin == pb.ConnectionOriginClient {
+		PollingUserToken(pctx.Context, func(cause error) {
+			_ = stream.Close(cause)
+		}, tokenVerifier, pctx.UserID)
+
 		// defer inside a function will bind any returned error
 		defer func() { stream.Close(err) }()
 	}
