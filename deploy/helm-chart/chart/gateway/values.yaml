@@ -19,7 +19,10 @@ defaultAgent:
   imagePullPolicy: Always
   grpcScheme: grpc
   grpcHost: 127.0.0.1:8010
+  grpcTlsCa: ''
   grpcSkipVerify: false
+  # 'base64://<base64-encoded-ca-cert>'
+  # 'file:///path/to/ca-cert.pem'
 
 # -- Enable PostgreSQL
 postgres:

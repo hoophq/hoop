@@ -59,8 +59,9 @@ echo "--> STARTING AGENT ..."
 # TlsPrivateKeyFile = "/app/ui/public/server.key"
 # TlsVerifyStrict = true
 # EOF
-export HOOP_TLSCA=file:///app/ui/public/ca.crt
-HOOP_KEY="grpcs://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@dev.hoop.dev:8010?mode=standard" /app/bin/hooplinux start agent &
+# export HOOP_TLSCA=file:///app/ui/public/ca.crt
+# export HOOP_TLS_SKIP_VERIFY=true
+HOOP_KEY="grpcs://default:xagt-zKQQA9PAjCVJ4O8VlE2QZScNEbfmFisg_OerkI21NEg@127.0.0.1:8010?mode=standard" /app/bin/hooplinux start agent &
 
 echo "--> STARTING SSHD SERVER ..."
 
