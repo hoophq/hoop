@@ -580,7 +580,10 @@ func DownloadSession(c *gin.Context) {
 			"message": "failed parsing blob stream"})
 		return
 	}
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
+
+	now := time.Now().UTC()
+	timePart := now.Format("20060102-150405")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s-%s-%s.%s", session.Connection, sid, timePart, fileExt))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
 	wrote, err := c.Writer.Write(output)
@@ -666,7 +669,9 @@ func DownloadSessionInput(c *gin.Context) {
 		return
 	}
 
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
+	now := time.Now().UTC()
+	timePart := now.Format("20060102-150405")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s-%s-%s.%s", session.Connection, sid, timePart, fileExt))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
 	wrote, err := c.Writer.Write([]byte(output))
