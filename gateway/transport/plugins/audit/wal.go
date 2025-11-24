@@ -111,11 +111,8 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 
 		if err != nil {
 			log.With("sid", pctx.SID).Warnf("failed updating session event stream: %v", err)
-		} else {
-			if err := os.RemoveAll(walFolder); err != nil {
-				log.Errorf("failed removing wal file %q, err=%v", walFolder, err)
-			}
 		}
+
 		log.With("sid", pctx.SID).Debugf("no wal log found on disk for session, path=%v, err=%v", walFolder, err)
 		p.walSessionStore.Pop(pctx.SID)
 		return err
