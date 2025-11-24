@@ -12,8 +12,6 @@ OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(su
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
 POSTREST_ARCH_SUFFIX := $(if $(filter $(GOARCH),amd64),linux-static-x64.tar.xz,$(if $(filter $(GOARCH),arm64),ubuntu-aarch64.tar.xz,$(ARCH)))
 
-RUST_TARGET := $(if $(filter $(GOOS),linux),$(if $(filter $(GOARCH),amd64),x86_64-unknown-linux-gnu,$(if $(filter $(GOARCH),arm64),aarch64-unknown-linux-gnu)),$(if $(filter $(GOOS),windows),$(if $(filter $(GOARCH),amd64),x86_64-pc-windows-gnu,$(if $(filter $(GOARCH),arm64),aarch64-pc-windows-gnu))))
-
 LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
 -X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
@@ -24,6 +22,7 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
 build-dev-rust:
+	# since we are in osx machine cross needs to be used to build linux binary because some crypto libs does not have cross compilation
 	echo "Building hoop_rs for dev"
 	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
 	mkdir -p ${HOME}/.hoop/bin
@@ -69,29 +68,36 @@ swag-fmt:
 publish:
 	./scripts/publish-release.sh
 
-build-rust:
-	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} && mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
-	@if [ "${GOOS}" = "windows" ] || [ "${GOOS}" = "darwin" ]; then \
-		echo "Skipping Rust build for ${GOOS} - not supported"; \
-	elif [ -n "${RUST_TARGET}" ]; then \
-		cd agentrs && cross build --release --target ${RUST_TARGET} && \
-		if [ -f "target/${RUST_TARGET}/release/agentrs" ]; then \
-			BINARY_PATH="target/${RUST_TARGET}/release/agentrs"; \
-		else \
-			BINARY_PATH=$$(find . -name "agentrs" -type f | head -1); \
-		fi && \
-		cp "$$BINARY_PATH" ../${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/hoop_rs; \
-	else \
-		echo "Skipping Rust build for ${GOOS} - no RUST_TARGET defined"; \
-	fi 
+merge-artifacts:
+	./scripts/merge-artifacts.sh
 
-build: build-rust
-	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
+# Build all Darwin Rust binaries (for CI) - uses GOOS/GOARCH
+build-rust-darwin-all:
+	GOOS=darwin GOARCH=amd64 RUST_TARGET=x86_64-apple-darwin  $(MAKE) build-rust-single
+	GOOS=darwin GOARCH=arm64 RUST_TARGET=aarch64-apple-darwin $(MAKE) build-rust-single
+# Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH  
+build-rust-linux-all:
+	GOOS=linux GOARCH=amd64 RUST_TARGET=x86_64-unknown-linux-gnu $(MAKE) build-rust-single
+	GOOS=linux GOARCH=arm64 RUST_TARGET=aarch64-unknown-linux-gnu $(MAKE) build-rust-single
+
+# Build single Rust binary using GOOS/GOARCH variables
+build-rust-single: build-emtpy-folder
+	cd agentrs && cargo build --release --target ${RUST_TARGET} && \
+	cp target/${RUST_TARGET}/release/agentrs ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs
+
+build-empty-folder:
+	mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
+
+build-tar-files:
+	mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	tar -czvf ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz -C ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH} .
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${GOARCH}_checksum.txt
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
+
+build-go: build-empty-folder
+	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
 
 build-webapp:
 	mkdir -p ${DIST_FOLDER}
@@ -153,4 +159,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt build-rust build-dev-rust install-rust
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts

@@ -28,6 +28,76 @@ jobs:
       - name: Test
         run: make test
 
+  build-rust-binaries-darwin:
+    runs-on: macos-latest
+    name: Build Darwin Rust Binaries
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Add Darwin Rust targets
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build Darwin Rust Binaries
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make build-rust-darwin-all
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  build-rust-binaries-linux:
+    runs-on: ubuntu-latest
+    name: Build Linux Rust Binaries
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Add Linux Rust targets
+        run: |
+          rustup target add x86_64-unknown-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build Linux Rust Binaries
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make build-rust-linux-all
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
   darwin-amd64:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
@@ -57,7 +127,7 @@ jobs:
       - name: amd64
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=darwin GOARCH=amd64 make build
+        run: GOOS=darwin GOARCH=amd64 make build-go
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,7 +163,7 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=darwin GOARCH=arm64 make build
+        run: GOOS=darwin GOARCH=arm64 make build-go
 
       - uses: actions/upload-artifact@v4
         with:
@@ -129,7 +199,7 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=windows GOARCH=amd64 make build
+        run: GOOS=windows GOARCH=amd64 make build-go
 
       - uses: actions/upload-artifact@v4
         with:
@@ -165,7 +235,7 @@ jobs:
       - name: Build
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: GOOS=windows GOARCH=arm64 make build
+        run: GOOS=windows GOARCH=arm64 make build-go
 
       - uses: actions/upload-artifact@v4
         with:
@@ -195,16 +265,6 @@ jobs:
           go-version: ">=1.23.8"
           cache-dependency-path: "**/go.sum"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          override: true
-
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
@@ -215,7 +275,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
-        run: GOOS=linux GOARCH=amd64 make build
+        run: GOOS=linux GOARCH=amd64 make build-go
 
       - uses: actions/upload-artifact@v4
         with:
@@ -245,16 +305,6 @@ jobs:
           go-version: ">=1.23.8"
           cache-dependency-path: "**/go.sum"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-          override: true
-
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
@@ -265,7 +315,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
-        run: GOOS=linux GOARCH=arm64 make build
+        run: GOOS=linux GOARCH=arm64 make build-go
 
       - uses: actions/upload-artifact@v4
         with:
@@ -302,11 +352,12 @@ jobs:
           name: dist-artifacts-${{ github.job }}
           path: dist/
 
-  docker-publish-hoopgateway-arm64:
-    runs-on: GitHub-Linux-Arm-Runner
-    name: Dck Publish Gateway (arm64)
+  build-tar-files:
+    runs-on: ubuntu-latest
+    name: Build Tar Files
     environment: production
-    needs:
+    needs: 
+      - test
       - darwin-amd64
       - darwin-arm64
       - windows-amd64
@@ -314,6 +365,43 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-webapp
+      - build-rust-binaries-darwin
+      - build-rust-binaries-linux
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+        
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-archive: true
+          path: dist/
+
+      - name: Merge Artifacts into dist/
+        run: make merge-artifacts
+          
+      - name: Build Tar Files for All Architectures
+        run: |
+          GOOS=darwin GOARCH=amd64 make build-tar-files
+          GOOS=darwin GOARCH=arm64 make build-tar-files
+          GOOS=windows GOARCH=amd64 make build-tar-files
+          GOOS=windows GOARCH=arm64 make build-tar-files
+          GOOS=linux GOARCH=amd64 make build-tar-files
+          GOOS=linux GOARCH=arm64 make build-tar-files
+        
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  docker-publish-hoopgateway-arm64:
+    runs-on: GitHub-Linux-Arm-Runner
+    name: Dck Publish Gateway (arm64)
+    environment: production
+    needs:
+      - build-webapp
+      - build-tar-files
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -353,13 +441,8 @@ jobs:
     name: Dck Publish Gateway (amd64)
     environment: production
     needs:
-      - darwin-amd64
-      - darwin-arm64
-      - windows-amd64
-      - windows-arm64
-      - linux-amd64
-      - linux-arm64
       - build-webapp
+      - build-tar-files
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -437,13 +520,8 @@ jobs:
     name: Dck Publish Agent (arm64)
     environment: production
     needs:
-      - darwin-amd64
-      - darwin-arm64
-      - windows-amd64
-      - windows-arm64
-      - linux-amd64
-      - linux-arm64
       - build-webapp
+      - build-tar-files
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -481,13 +559,8 @@ jobs:
     name: Dck Publish Agent (amd64)
     environment: production
     needs:
-      - darwin-amd64
-      - darwin-arm64
-      - windows-amd64
-      - windows-arm64
-      - linux-amd64
-      - linux-arm64
       - build-webapp
+      - build-tar-files
     steps:
       - name: Checkout
         uses: actions/checkout@v3
