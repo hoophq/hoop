@@ -84,10 +84,9 @@ func (p *auditPlugin) dropWalLog(sid string) {
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
-	logsFileExist := wal.FileExists(walFolder)
-	if !logsFileExist {
+	if exists := wal.FileExists(walFolder); exists {
 		// if the wal file does not exist we neet to update the session event stream
-		blobStream := fmt.Sprintf(`[ [1.0, "%s", "%s"] ]`, "e", base64.StdEncoding.EncodeToString([]byte("no log found on disk")))
+		blobStream := fmt.Sprintf(`[ [0, "%s", "%s"] ]`, "e", base64.StdEncoding.EncodeToString([]byte("no log found on disk")))
 		emptyMetrics := make(map[string]any, 0)
 
 		var blobFormat *string
@@ -108,7 +107,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 			EndSession: &endDate,
 		})
 		log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-			Infof("finished persisting session to store, update-session-err=%v, context-err=%v", err, errMsg)
+			Infof("finished persisting session to store (empty log), update-session-err=%v, context-err=%v", err, errMsg)
 
 		if err != nil {
 			log.With("sid", pctx.SID).Warnf("failed updating session event stream: %v", err)

@@ -50,7 +50,7 @@ func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 // Check if file exists
 func FileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
-	return !os.IsNotExist(err)
+	return os.IsNotExist(err)
 }
 
 // OpenWithHeader opens the wallog and returns the header of the log, it's up to the caller to close the wal file
