@@ -93,7 +93,7 @@ func IsUserAllowedToRunRunbook(orgId, connection, runbookRepository, runbookName
 		(JSONB_ARRAY_LENGTH(runbooks) = 0 OR EXISTS (
 			SELECT 1
 			FROM JSONB_ARRAY_ELEMENTS(runbooks) file
-			WHERE file ->> 'repository' = ? AND (file ->> 'name' = '' OR ? ILIKE (file ->> 'name') || '%')
+			WHERE file ->> 'repository' = ? AND (file ->> 'name' = '' OR ? ILIKE (file ->> 'name') || '%') LIMIT 1
 		))`, orgId, pq.StringArray(userGroups), pq.StringArray([]string{connection}), runbookRepository, runbookName).
 		Count(&count).Error
 	if err != nil {
