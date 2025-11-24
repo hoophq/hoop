@@ -12,6 +12,22 @@ OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(su
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
 POSTREST_ARCH_SUFFIX := $(if $(filter $(GOARCH),amd64),linux-static-x64.tar.xz,$(if $(filter $(GOARCH),arm64),ubuntu-aarch64.tar.xz,$(ARCH)))
 
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_S),Darwin)
+  ifeq ($(UNAME_M),x86_64)
+    RUST_TARGET := x86_64-apple-darwin
+  else ifeq ($(UNAME_M),arm64)
+    RUST_TARGET := aarch64-apple-darwin
+  endif
+else ifeq ($(UNAME_S),Linux)
+  ifeq ($(UNAME_M),x86_64)
+    RUST_TARGET := x86_64-unknown-linux-gnu
+  else ifeq ($(UNAME_M),aarch64)
+    RUST_TARGET := aarch64-unknown-linux-gnu
+  endif
+endif
+
 LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
 -X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
@@ -73,12 +89,12 @@ merge-artifacts:
 
 # Build all Darwin Rust binaries (for CI) - uses GOOS/GOARCH
 build-rust-darwin-all:
-	GOOS=darwin GOARCH=amd64 RUST_TARGET=x86_64-apple-darwin  $(MAKE) build-rust-single
-	GOOS=darwin GOARCH=arm64 RUST_TARGET=aarch64-apple-darwin $(MAKE) build-rust-single
+	GOOS=darwin GOARCH=amd64 $(MAKE) build-rust-single
+	GOOS=darwin GOARCH=arm64 $(MAKE) build-rust-single
 # Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH  
 build-rust-linux-all:
-	GOOS=linux GOARCH=amd64 RUST_TARGET=x86_64-unknown-linux-gnu $(MAKE) build-rust-single
-	GOOS=linux GOARCH=arm64 RUST_TARGET=aarch64-unknown-linux-gnu $(MAKE) build-rust-single
+	GOOS=linux GOARCH=amd64 $(MAKE) build-rust-single
+	GOOS=linux GOARCH=arm64 $(MAKE) build-rust-single
 
 # Build single Rust binary using GOOS/GOARCH variables
 build-rust-single: build-empty-folder
