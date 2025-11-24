@@ -18,7 +18,7 @@
    [webapp.features.runbooks.runner.views.form :as runbook-form]))
 
 (defn header []
-  (let [selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+  (let [selected-template (rf/subscribe [:runbooks->selected-runbooks])
         metadata (rf/subscribe [:runbooks/metadata])
         metadata-key (rf/subscribe [:runbooks/metadata-key])
         metadata-value (rf/subscribe [:runbooks/metadata-value])
@@ -103,7 +103,7 @@
 
 (defn runbooks-library []
   (let [templates (rf/subscribe [:runbooks/runner-data])
-        filtered-templates (rf/subscribe [:runbooks-plugin->filtered-runbooks])]
+        filtered-templates (rf/subscribe [:runbooks->filtered-runbooks])]
     (fn [{:keys [collapsed? on-toggle-collapse]}]
       [:> Box {:as "aside"
                :class (str "h-full flex flex-col transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
@@ -126,7 +126,7 @@
 
 (defn main []
   (let [templates (rf/subscribe [:runbooks/runner-data])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])
+        selected-template (rf/subscribe [:runbooks->selected-runbooks])
         search-term (rf/subscribe [:search/term])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
         collapsed? (r/atom false)

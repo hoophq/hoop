@@ -10,30 +10,6 @@
     path))
 
 (rf/reg-event-fx
- :runbooks/add-path-to-connection
- (fn [{:keys [db]} [_ {:keys [path connection-id]}]]
-   (let [normalized-path (normalize-path path)
-         plugin (get-in db [:plugins->plugin-details :plugin])
-         connections (or (:connections plugin) [])
-         connection-exists? (some #(= (:id %) connection-id) connections)
-         updated-connections (if connection-exists?
-                               ;; Update existing connection
-                               (map (fn [conn]
-                                      (if (= (:id conn) connection-id)
-                                        (if (or (nil? normalized-path) (empty? normalized-path))
-                                          (assoc conn :config nil)
-                                          (update conn :config (fn [_] [normalized-path])))
-                                        conn))
-                                    connections)
-                               ;; Add new connection to existing list
-                               (conj connections {:id connection-id
-                                                  :config (if (or (nil? normalized-path) (empty? normalized-path))
-                                                            nil
-                                                            [normalized-path])}))
-         updated-plugin (assoc plugin :connections (vec updated-connections))]
-     {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]})))
-
-(rf/reg-event-fx
  :runbooks/delete-path
  (fn [{:keys [db]} [_ path]]
    (let [plugin (get-in db [:plugins->plugin-details :plugin])
@@ -215,7 +191,7 @@
  :runbooks/list
  (fn [{:keys [db]} [_ connection-name]]
    (let [query-params (when connection-name
-                       {:connection connection-name})]
+                       {:connection_name connection-name})]
      {:db (assoc-in db [:runbooks :list :status] :loading)
       :fx [[:dispatch [:fetch {:method "GET"
                                :uri "/runbooks"

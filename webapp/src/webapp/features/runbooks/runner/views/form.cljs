@@ -106,7 +106,7 @@
                       :let [metadata ((keyword param) (-> template :data :metadata))]]
                 (when (nil? (get @state param))
                   (swap! state assoc param (or (:default metadata) "")))))
-
+            
             (let [handle-submit (fn []
                                   (when (and @form-ref (not (.reportValidity @form-ref))) nil)
 
@@ -119,7 +119,6 @@
                                                                            :status)
                                                                        "enabled")
                                           runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))]
-
                                       (cond
                                         (not runbooks-enabled?)
                                         (rf/dispatch [:dialog->open

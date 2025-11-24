@@ -10,4 +10,3 @@
     (let [parts (cs/split repo-path #"/")]
       (last parts))
     repo-path))
-

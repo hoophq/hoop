@@ -76,7 +76,8 @@
    :plugins->plugin-details {:status :loading, :plugin {}}
    :reports->session {:status :loading, :data nil}
    :routes->route (.-pathname (.-location js/window))
-   :runbooks-plugin->selected-runbooks {:status :idle, :data nil}
+   :runbooks->selected-runbooks {:status :idle, :data nil}
+   :runbooks->filtered-runbooks []
    :segment->analytics nil
    :sidebar-desktop {:status (or (keyword (.getItem js/localStorage "sidebar")) :closed)}
    :sidebar-mobile {:status :closed}

@@ -71,7 +71,7 @@
 (defn directory []
   (let [dropdown-status (r/atom {})
         search-term (rf/subscribe [:search/term])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
+        selected-template (rf/subscribe [:runbooks->selected-runbooks])]
 
     (fn [name items level filter-template-selected parent-path repository]
       (let [current-path (if parent-path (str parent-path "/" name) name)
@@ -221,7 +221,7 @@
 (defn repository-folder []
   (let [dropdown-status (r/atom {})
         search-term (rf/subscribe [:search/term])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
+        selected-template (rf/subscribe [:runbooks->selected-runbooks])]
     (fn [repository filter-template-selected level]
       (let [repo-name (:repository repository)
             items (:items repository)
@@ -291,7 +291,6 @@
   (fn [templates filtered-templates]
     (let [templates-data (:data @templates)
           repositories (or (:repositories templates-data) [])
-          all-items (or (:items templates-data) [])
           filter-template-selected (fn [template-name repository]
                                      (when repository
                                        (let [repo (first (filter #(= (:repository %) repository) repositories))]
@@ -301,32 +300,24 @@
           filtered-data (or @filtered-templates [])
           has-search? (seq @search-term)
 
-          ;; For backward compatibility: if no repositories, use old flat list
-          use-repositories? (seq repositories)
-
-          ;; For old format or search results
-          display-templates (if has-search?
-                              filtered-data
-                              (if use-repositories?
-                                []
-                                all-items))
-          transformed-payload (when (seq display-templates)
-                               (sort-tree (transform-payload display-templates)))]
+          ;; Group filtered results by repository for proper display
+          filtered-repositories (when (and has-search? (seq filtered-data))
+                                 (let [filtered-by-repo (group-by :repository filtered-data)]
+                                   (map (fn [[repo-name filtered-items]]
+                                          {:repository repo-name
+                                           :items filtered-items})
+                                        filtered-by-repo)))]
 
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
-        (and (empty? all-items) (empty? repositories) (= :success (:status @templates))) [empty-templates-view]
-        (and use-repositories? (empty? repositories)) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
-                                                       [:> Text {:size "1" :class "text-gray-8"}
-                                                        "No repositories available."]]
-        (and use-repositories? (not has-search?)) [repositories-view repositories filter-template-selected]
-        (and use-repositories? has-search? (empty? filtered-data)) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
-                                                                     [:> Text {:size "1" :class "text-gray-8"}
-                                                                      (str "No runbooks matching \"" @search-term "\".")]]
-        (empty? display-templates) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
-                                    [:> Text {:size "1" :class "text-gray-8"}
-                                     (if has-search?
-                                       (str "No runbooks matching \"" @search-term "\".")
-                                       "There are no runbooks available.")]]
-        :else [directory-tree transformed-payload filter-template-selected nil]))))
+        (and (empty? repositories) (= :success (:status @templates))) [empty-templates-view]
+        (empty? repositories) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
+                              [:> Text {:size "1" :class "text-gray-8"}
+                               "No repositories available."]]
+        (not has-search?) [repositories-view repositories filter-template-selected]
+        (and has-search? (empty? filtered-data)) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
+                                                   [:> Text {:size "1" :class "text-gray-8"}
+                                                    (str "No runbooks matching \"" @search-term "\".")]]
+        (and has-search? (seq filtered-repositories)) [repositories-view filtered-repositories filter-template-selected]
+        :else [empty-templates-view]))))

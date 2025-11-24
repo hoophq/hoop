@@ -86,7 +86,6 @@
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
-   [webapp.features.runbooks.setup.views.runbook-form :as runbook-form] ;; TODO: Remove this
    [webapp.features.runbooks.setup.views.runbook-rule-form :as runbook-rule-form]
    [webapp.features.runbooks.runner.events]
    [webapp.features.runbooks.runner.main :as runbooks-runner]
@@ -648,26 +647,6 @@
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
       [routes/wrap-admin-only
        [runbook-rule-form/main :edit {:rule-id rule-id}]]]]))
-
-(defmethod routes/panels :runbooks-edit-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        connection-id (:connection-id (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop
-     [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [runbook-form/main :edit {:connection-id connection-id}]]]]))
-
-(defmethod routes/panels :runbooks-edit-path-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        path-id (:path-id (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop
-     [routes/wrap-admin-only
-      [:div {:class "bg-gray-1 min-h-full h-max relative"}
-       [runbook-form/main :edit {:path-id path-id}]]]]))
 
 (defmethod routes/panels :ai-data-masking-panel []
   (rf/dispatch [:destroy-page-loader])

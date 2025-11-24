@@ -6,15 +6,24 @@
 (rf/reg-event-db
  :runbooks/set-active-runbook
  (fn
-   [db [_ template repository]]
-   (assoc db :runbooks-plugin->selected-runbooks {:status :ready
-                                                  :data {:name (:name template)
-                                                         :error (:error template)
-                                                         :params (keys (:metadata template))
-                                                         :file_url (:file_url template)
-                                                         :metadata (:metadata template)
-                                                         :connections (:connections template)
-                                                         :repository (:repository repository) :ref-hash (:commit repository)}})))
+   [db [_ template repository]] 
+   (let [repository-str (if (string? repository) repository (:repository repository))
+         ;; If repository is a string, look up the repository object from list data
+         repository-obj (if (string? repository)
+                          (let [list-data (get-in db [:runbooks :list])
+                                repositories (or (:data list-data) [])]
+                            (first (filter #(= (:repository %) repository-str) repositories)))
+                          repository)
+         ref-hash (when repository-obj (:commit repository-obj))]
+     (assoc db :runbooks->selected-runbooks {:status :ready
+                                             :data {:name (:name template)
+                                                    :error (:error template)
+                                                    :params (keys (:metadata template))
+                                                    :file_url (:file_url template)
+                                                    :metadata (:metadata template)
+                                                    :connections (:connections template)
+                                                    :repository repository-str
+                                                    :ref-hash ref-hash}}))))
 
 (rf/reg-event-db
  :runbooks/set-active-runbook-by-name
@@ -23,17 +32,24 @@
    (let [list-data (get-in db [:runbooks :list])
          repositories (:data list-data)
          all-items (mapcat :items (or repositories []))
-         runbook  (some (fn [r] (when (= (:name r) runbook-name) r)) all-items)]
+         runbook  (some (fn [r] (when (= (:name r) runbook-name) r)) all-items)
+         repository (when runbook
+                      (some (fn [repo]
+                              (when (some #(= (:name %) runbook-name) (:items repo))
+                                repo))
+                            repositories))]
      (if runbook
-       (assoc db :runbooks-plugin->selected-runbooks
+       (assoc db :runbooks->selected-runbooks
               {:status :ready
                :data {:name        (:name runbook)
                       :error       (:error runbook)
                       :params      (keys (:metadata runbook))
                       :file_url    (:file_url runbook)
                       :metadata    (:metadata runbook)
-                      :connections (:connections runbook)}})
-       (assoc db :runbooks-plugin->selected-runbooks {:status :error :data nil})))))
+                      :connections (:connections runbook)
+                      :repository  (when repository (:repository repository))
+                      :ref-hash    (when repository (:commit repository))}})
+       (assoc db :runbooks->selected-runbooks {:status :error :data nil})))))
 
 ;; Connection Events
 (rf/reg-event-fx
@@ -41,7 +57,7 @@
  (fn [{:keys [db]} [_ connection]]
    {:db (assoc-in db [:runbooks :selected-connection] connection)
     :fx [[:dispatch [:runbooks/persist-selected-connection]]
-         [:dispatch [:runbooks-plugin->clear-active-runbooks]]
+         [:dispatch [:runbooks/clear-active-runbooks]]
          [:dispatch [:runbooks/update-runbooks-for-connection]]]}))
 
 (rf/reg-event-fx
@@ -240,3 +256,27 @@
  :runbooks/keep-metadata?
  (fn [db]
    (get-in db [:runbooks :keep-metadata?] false)))
+
+;; Selected Runbook Events
+(rf/reg-event-db
+ :runbooks/clear-active-runbooks
+ (fn [db _]
+   (assoc db :runbooks->selected-runbooks {:status :idle :data nil})))
+
+;; Filtered Runbooks Events
+(rf/reg-event-db
+ :runbooks/set-filtered-runbooks
+ (fn [db [_ runbooks]]
+   (assoc db :runbooks->filtered-runbooks runbooks)))
+
+;; Selected Runbook Subscriptions
+(rf/reg-sub
+ :runbooks->selected-runbooks
+ (fn [db]
+   (get-in db [:runbooks->selected-runbooks] {:status :idle :data nil})))
+
+;; Filtered Runbooks Subscriptions
+(rf/reg-sub
+ :runbooks->filtered-runbooks
+ (fn [db]
+   (get-in db [:runbooks->filtered-runbooks] [])))

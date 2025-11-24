@@ -254,15 +254,6 @@
  (fn [db _]
    (:ask-ai->question-responses db)))
 
-(re-frame/reg-sub
- :runbooks-plugin->selected-runbooks
- (fn [db _]
-   (:runbooks-plugin->selected-runbooks db)))
-
-(re-frame/reg-sub
- :runbooks-plugin->filtered-runbooks
- (fn [db _]
-   (:runbooks-plugin->filtered-runbooks db)))
 
 (re-frame/reg-sub
  :use-cases->list

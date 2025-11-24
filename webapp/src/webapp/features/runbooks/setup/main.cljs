@@ -71,7 +71,7 @@
               [:> Tabs.Content {:value "rules" :class "h-full"}
                (cond
                  @loading-rules? [loading-view]
-                 (not has-rules?) [empty-state/main]
+                 (not has-rules?) [empty-state/main true]
                  :else [runbook-list/main])]
 
               [:> Tabs.Content {:value "configurations" :class "h-full"}

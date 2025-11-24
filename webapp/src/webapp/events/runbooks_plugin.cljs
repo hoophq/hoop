@@ -1,19 +1,5 @@
 (ns webapp.events.runbooks-plugin
-  (:require [clojure.string :as cs]
-            [re-frame.core :as rf]))
-
-
-(rf/reg-event-db
- :runbooks-plugin->set-filtered-runbooks
- (fn
-   [db [_ runbooks]]
-   (assoc db :runbooks-plugin->filtered-runbooks runbooks)))
-
-(rf/reg-event-db
- :runbooks-plugin->clear-active-runbooks
- (fn
-   [db [_ template]]
-   (assoc db :runbooks-plugin->selected-runbooks {:status :idle :data nil})))
+  (:require [re-frame.core :as rf]))
 
 
 ;; TODO: to be removed after migrate session call to the new event
