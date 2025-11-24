@@ -149,6 +149,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 			Addr:      "0.0.0.0:8009",
 			Handler:   route,
 			TLSConfig: a.TLSConfig,
+			ErrorLog:  log.NewStdHttpLogger(),
 		}
 		if err := server.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("Failed to start HTTPS server, err=%v", err)
