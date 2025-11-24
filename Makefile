@@ -81,7 +81,7 @@ build-rust-linux-all:
 	GOOS=linux GOARCH=arm64 RUST_TARGET=aarch64-unknown-linux-gnu $(MAKE) build-rust-single
 
 # Build single Rust binary using GOOS/GOARCH variables
-build-rust-single: build-emtpy-folder
+build-rust-single: build-empty-folder
 	cd agentrs && cargo build --release --target ${RUST_TARGET} && \
 	cp target/${RUST_TARGET}/release/agentrs ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs
 
