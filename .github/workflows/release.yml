@@ -63,7 +63,7 @@ jobs:
           name: dist-artifacts-${{ github.job }}
           path: dist/
 
-  build-rust-binarie-linux-amd64:
+  build-rust-binary-linux-amd64:
     runs-on: ubuntu-latest
     name: Build Linux Rust Binaries Amd64
     environment: production
@@ -97,7 +97,7 @@ jobs:
           name: dist-artifacts-${{ github.job }}
           path: dist/
 
-  build-rust-binarie-linux-arm64:
+  build-rust-binary-linux-arm64:
     runs-on: ubuntu-latest-arm
     name: Build Linux Rust Binaries Arm64
     environment: production
@@ -399,8 +399,8 @@ jobs:
       - linux-arm64
       - build-webapp
       - build-rust-binaries-darwin
-      - build-rust-binarie-linux-amd64
-      - build-rust-binarie-linux-arm64
+      - build-rust-binary-linux-amd64
+      - build-rust-binary-linux-arm64
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
