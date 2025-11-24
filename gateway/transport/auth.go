@@ -17,7 +17,8 @@ func CheckUserToken(tokenVerifier idp.UserInfoTokenVerifier, userID string) erro
 		return fmt.Errorf("access token not found for user subject")
 	}
 
-	uinfo, err := tokenVerifier.VerifyAccessToken(token.(string))
+	tokenStr, _ := token.(string)
+	uinfo, err := tokenVerifier.VerifyAccessToken(tokenStr)
 	if err != nil {
 		if strings.Contains(err.Error(), "token is expired") {
 			return fmt.Errorf("access token is expired, try logging in again")
