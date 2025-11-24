@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/proto"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -29,6 +30,7 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 )
 
@@ -627,7 +629,16 @@ func Kill(c *gin.Context) {
 	}
 
 	log.With("user", ctx.UserEmail, "sid", sid).Infof("user initiated a kill process")
-	if err := transportsystem.KillSession(sid); err != nil {
+
+	pctx := plugintypes.Context{
+		OrgID:             sess.OrgID,
+		ConnectionType:    sess.ConnectionType,
+		ConnectionSubType: sess.ConnectionSubtype,
+		ClientOrigin:      proto.ConnectionOriginClient,
+		ClientVerb:        sess.Verb,
+		SID:               sid,
+	}
+	if err := transportsystem.KillSession(pctx, sid); err != nil {
 		log.With("sid", sid).Warnf("failed killing session, reason=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
