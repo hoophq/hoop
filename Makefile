@@ -99,7 +99,8 @@ build-rust-linux-all:
 # Build single Rust binary using GOOS/GOARCH variables
 build-rust-single: build-empty-folder
 	cd agentrs && cargo build --release --target ${RUST_TARGET} && \
-	cp target/${RUST_TARGET}/release/agentrs ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs
+	cp target/${RUST_TARGET}/release/agentrs ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs && \
+	chmod +x ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs
 
 build-empty-folder:
 	mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
