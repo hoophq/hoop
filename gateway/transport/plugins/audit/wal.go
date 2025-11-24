@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
+	"github.com/hoophq/hoop/gateway/session/wal"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -81,38 +82,22 @@ func (p *auditPlugin) dropWalLog(sid string) {
 	walogm.mu.Unlock()
 }
 
-func (p *auditPlugin) flushLogsFromDisk(pctx plugintypes.Context, errMsg error) error {
+func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
-	// Open the WAL log from disk and get the header
-	walog, wh, err := sessionwal.OpenWithHeader(walFolder)
-
-	walogm := &walLogRWMutex{
-		log:        walog,
-		mu:         sync.RWMutex{},
-		folderName: walFolder,
-	}
-
-	walogm.mu.Lock()
-	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
-	if err != nil {
-		// WAL file might not exist on disk (e.g., already cleaned up )
-		// if for some reason we can't open the wal log
-		// when the file does not exist we need to update the session event stream
-		// but need to add an information that no wal log was found
-		blobStream := "[]"
-		if wh == nil {
-			blobStream = fmt.Sprintf(`[ [0, "%s", "%s"] ]`, "e", base64.StdEncoding.EncodeToString([]byte("no log found on disk")))
-		}
+	logsFileExist := wal.FileExists(walFolder)
+	if !logsFileExist {
+		// if the wal file does not exist we neet to update the session event stream
+		blobStream := fmt.Sprintf(`[ [1.0, "%s", "%s"] ]`, "e", base64.StdEncoding.EncodeToString([]byte("no log found on disk")))
 		emptyMetrics := make(map[string]any, 0)
 
 		var blobFormat *string
-
 		switch pctx.ProtoConnectionType() {
 		case pb.ConnectionTypePostgres:
 			blobFormat = ptr.String(models.BlobFormatWireProtoType)
 		}
+
 		endDate := time.Now().UTC()
-		err = models.UpdateSessionEventStream(models.SessionDone{
+		err := models.UpdateSessionEventStream(models.SessionDone{
 			ID:         pctx.SID,
 			OrgID:      pctx.OrgID,
 			Metrics:    emptyMetrics,
@@ -135,12 +120,39 @@ func (p *auditPlugin) flushLogsFromDisk(pctx plugintypes.Context, errMsg error) 
 		log.With("sid", pctx.SID).Debugf("no wal log found on disk for session, path=%v, err=%v", walFolder, err)
 		p.walSessionStore.Pop(pctx.SID)
 		return err
+
+	}
+	// first we gonna try to obtain the wal from memory because could have unflushed logs from memory to disk
+	walLogObjMemory := p.walSessionStore.Pop(pctx.SID)
+	walogm, ok := walLogObjMemory.(*walLogRWMutex)
+
+	if !ok {
+		log.With("sid", pctx.SID).Warnf("failed obtaining write ahead log from memory for session %v", pctx.SID)
+		// then if not found on memory we try to open from disk
+		// so we can be sure everything is flushed to disk
+		walog, _, err := sessionwal.OpenWithHeader(walFolder)
+		if err != nil {
+			return fmt.Errorf("failed opening wal file to read header, err=%v", err)
+		}
+
+		walogm = &walLogRWMutex{
+			log:        walog,
+			mu:         sync.RWMutex{},
+			folderName: walFolder,
+		}
 	}
 
-	return p.foundLogsOnDiskToClose(pctx, walogm, errMsg)
-}
+	walogm.mu.Lock()
+	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
+	// we could add an attribute to have the last message
+	// propagated as metadata instead inside the stream
+	if errMsg != nil && errMsg != io.EOF {
+		err := walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, []byte(errMsg.Error()), nil))
+		if err != nil {
+			log.With("sid", pctx.SID).Warnf("failed writing end error message, err=%v", err)
+		}
+	}
 
-func (p *auditPlugin) foundLogsOnDiskToClose(pctx plugintypes.Context, walogm *walLogRWMutex, errMsg error) error {
 	wh, err := walogm.log.Header()
 	if err != nil {
 		return fmt.Errorf("failed decoding wal header object, err=%v", err)
@@ -252,29 +264,6 @@ func (p *auditPlugin) foundLogsOnDiskToClose(pctx plugintypes.Context, walogm *w
 		}
 	}
 	return err
-}
-
-func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
-	if pctx.FlushLogsToDisk {
-		return p.flushLogsFromDisk(pctx, errMsg)
-	}
-
-	walLogObj := p.walSessionStore.Pop(pctx.SID)
-	walogm, ok := walLogObj.(*walLogRWMutex)
-	if !ok {
-		return nil
-	}
-	walogm.mu.Lock()
-	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
-	// we could add an attribute to have the last message
-	// propagated as metadata instead inside the stream
-	if errMsg != nil && errMsg != io.EOF {
-		err := walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, []byte(errMsg.Error()), nil))
-		if err != nil {
-			log.With("sid", pctx.SID).Warnf("failed writing end error message, err=%v", err)
-		}
-	}
-	return p.foundLogsOnDiskToClose(pctx, walogm, errMsg)
 }
 
 func (p *auditPlugin) truncateTCPEventStream(eventStream []byte, protoConnType pb.ConnectionType) []byte {

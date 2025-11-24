@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/proto"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -633,10 +634,9 @@ func Kill(c *gin.Context) {
 		OrgID:             sess.OrgID,
 		ConnectionType:    sess.ConnectionType,
 		ConnectionSubType: sess.ConnectionSubtype,
-		ClientOrigin:      "client",
+		ClientOrigin:      proto.ConnectionOriginClient,
 		ClientVerb:        sess.Verb,
 		SID:               sid,
-		FlushLogsToDisk:   true,
 	}
 	if err := transportsystem.KillSession(pctx, sid); err != nil {
 		log.With("sid", sid).Warnf("failed killing session, reason=%v", err)

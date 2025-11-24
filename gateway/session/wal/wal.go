@@ -3,6 +3,7 @@ package wal
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/hoophq/hoop/gateway/session/eventlog"
 	"github.com/tidwall/wal"
@@ -44,6 +45,12 @@ func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 		return nil, err
 	}
 	return wlog, wlog.WriteHeader(h)
+}
+
+// Check if file exists
+func FileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	return !os.IsNotExist(err)
 }
 
 // OpenWithHeader opens the wallog and returns the header of the log, it's up to the caller to close the wal file

@@ -20,7 +20,6 @@ func KillSession(pctx plugintypes.Context, sid string) error {
 			err := plugin.OnDisconnect(pctx,
 				fmt.Errorf("Logs flushed not found in disk"))
 			if err != nil {
-				fmt.Println("failed processing audit plugin on-disconnect, err=", err)
 				return fmt.Errorf("failed processing audit plugin on-disconnect, err=%v", err)
 			}
 
