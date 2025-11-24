@@ -9,14 +9,16 @@ import (
 	"net"
 	"time"
 
+	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
+	"github.com/hoophq/hoop/gateway/transport"
+
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
-	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
@@ -206,8 +208,24 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	connectionModel, err := models.GetConnectionByNameOrID(storagev2.NewOrganizationContext(dba.OrgID), dba.ConnectionName)
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
 	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		return
+	}
+
+	userCtx, err := models.GetUserContext(dba.UserSubject)
+	if err != nil {
+		log.Errorf("failed fetching user context, reason=%v", err)
+		return
+	}
+
+	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
+	if connectionModel == nil || err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
 		return
 	}
@@ -231,6 +249,10 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		log.Printf("CreateSession returned nil session")
 		return
 	}
+
+	transport.PollingUserToken(context.Background(), func(cause error) {
+		session.Close()
+	}, tokenVerifier, dba.UserSubject)
 
 	// Register session
 	// Clean up session on exit

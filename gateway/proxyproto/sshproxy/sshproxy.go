@@ -21,8 +21,10 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/transport"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -244,6 +246,16 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		return nil, fmt.Errorf("failed parsing context duration: %v", err)
 	}
 
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return nil, err
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, userSubject); err != nil {
+		return nil, err
+	}
+
 	log.
 		With("sid", sid, "remote-addr", conn.RemoteAddr()).
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
@@ -271,8 +283,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
-
-	return &sshConnection{
+	sessionConn := &sshConnection{
 		id:  connID,
 		sid: sid,
 		ctx: ctx,
@@ -283,7 +294,13 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		sshConn:             sshConn,
 		grpcClient:          client,
 		clientNewSshChannel: clientNewCh,
-	}, nil
+	}
+
+	transport.PollingUserToken(sessionConn.ctx, func(cause error) {
+		sessionConn.cancelFn(cause.Error())
+	}, tokenVerifier, userSubject)
+
+	return sessionConn, nil
 }
 
 func (c *sshConnection) handleConnection() {
