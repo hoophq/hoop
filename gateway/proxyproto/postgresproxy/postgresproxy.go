@@ -55,8 +55,11 @@ func (s *PGServer) Start(listenAddr string, tlsConfig *tls.Config) error {
 	}
 
 	log.Infof("starting postgres server proxy at %v", listenAddr)
-	serverTLSConfig := tlsConfig.Clone()
-	serverTLSConfig.NextProtos = []string{"postgresql"}
+	var serverTLSConfig *tls.Config
+	if tlsConfig != nil {
+		serverTLSConfig = tlsConfig.Clone()
+		serverTLSConfig.NextProtos = []string{"postgresql"}
+	}
 
 	// start new instance
 	server, err := runPgProxyServer(listenAddr, serverTLSConfig)
