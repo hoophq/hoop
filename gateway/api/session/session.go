@@ -434,9 +434,9 @@ func Get(c *gin.Context) {
 		}
 	}
 
-	// it will only load the input blob stream if it's allowed and the client requested to expand the attribute
+	// it will only load the input blob stream if client requested to expand the attribute
 	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "session_input")
-	if isAllowed && expandInputStream {
+	if expandInputStream {
 		session.BlobInput, err = session.GetBlobInput()
 		if err != nil {
 			log.Errorf("failed fetching input from session, err=%v", err)
