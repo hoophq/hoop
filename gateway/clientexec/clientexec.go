@@ -145,8 +145,9 @@ func New(opts *Options) (*clientExec, error) {
 		Token:         opts.BearerToken,
 		UserAgent:     userAgent,
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
-		TLSCA:         appconfig.Get().GatewayTLSCa(),
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
 		grpc.WithOption("origin", opts.Origin),

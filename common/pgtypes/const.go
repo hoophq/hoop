@@ -47,6 +47,7 @@ const (
 	ServerReadyForQuery        PacketType = 'Z'
 	ServerRowDescription       PacketType = 'T'
 	ServerSSLNotSupported      PacketType = 'N'
+	ServerSSLSupported         PacketType = 'S'
 )
 
 const ClientCancelRequestMessage uint32 = 80877102
