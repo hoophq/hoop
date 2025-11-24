@@ -12,23 +12,6 @@ OS := $(shell echo "$(GOOS)" | awk '{print toupper(substr($$0, 1, 1)) tolower(su
 SYMLINK_ARCH := $(if $(filter $(GOARCH),amd64),x86_64,$(if $(filter $(GOARCH),arm64),aarch64,$(ARCH)))
 POSTREST_ARCH_SUFFIX := $(if $(filter $(GOARCH),amd64),linux-static-x64.tar.xz,$(if $(filter $(GOARCH),arm64),ubuntu-aarch64.tar.xz,$(ARCH)))
 
-# Set Rust target based on uname -s and uname -m
-UNAME_S := $(shell uname -s)
-UNAME_M := $(shell uname -m)
-ifeq ($(UNAME_S),Darwin)
-  ifeq ($(UNAME_M),x86_64)
-    RUST_TARGET := x86_64-apple-darwin
-  else ifeq ($(UNAME_M),arm64)
-    RUST_TARGET := aarch64-apple-darwin
-  endif
-else ifeq ($(UNAME_S),Linux)
-  ifeq ($(UNAME_M),x86_64)
-    RUST_TARGET := x86_64-unknown-linux-gnu
-  else ifeq ($(UNAME_M),aarch64)
-    RUST_TARGET := aarch64-unknown-linux-gnu
-  endif
-endif
-
 LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/common/version.version=${VERSION} \
 -X github.com/hoophq/hoop/common/version.gitCommit=${GITCOMMIT} \
@@ -90,19 +73,19 @@ merge-artifacts:
 
 # Build all Darwin Rust binaries (for CI) - uses GOOS/GOARCH
 build-rust-darwin-all:
-	GOOS=darwin GOARCH=amd64 $(MAKE) build-rust-single
-	GOOS=darwin GOARCH=arm64 $(MAKE) build-rust-single
+	GOOS=darwin GOARCH=amd64 RUST_TARGET=x86_64-apple-darwin  $(MAKE) build-rust-single
+	GOOS=darwin GOARCH=arm64 RUST_TARGET=aarch64-apple-darwin $(MAKE) build-rust-single
 # Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH  
 build-rust-linux-all:
-	GOOS=linux GOARCH=amd64 $(MAKE) build-rust-single
-	GOOS=linux GOARCH=arm64 $(MAKE) build-rust-single
+	GOOS=linux GOARCH=amd64 RUST_TARGET=x86_64-unknown-linux-gnu $(MAKE) build-rust-single
+	GOOS=linux GOARCH=arm64 RUST_TARGET=aarch64-unknown-linux-gnu $(MAKE) build-rust-single
 
 # Build single Rust binary using GOOS/GOARCH variables
-build-rust-single: build-clean-folder
+build-rust-single: build-emtpy-folder
 	cd agentrs && cargo build --release --target ${RUST_TARGET} && \
 	cp target/${RUST_TARGET}/release/agentrs ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs
 
-build-clean-folder:
+build-empty-folder:
 	mkdir -p ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
 build-tar-files:
@@ -113,7 +96,7 @@ build-tar-files:
 	sha256sum ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}.tar.gz > ${DIST_FOLDER}/binaries/hoop_${VERSION}_${OS}_${SYMLINK_ARCH}_checksum.txt
 	rm -rf ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}
 
-build-go: build-clean-folder
+build-go: build-empty-folder
 	env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build -ldflags ${LDFLAGS} -o ${DIST_FOLDER}/binaries/${GOOS}_${GOARCH}/ client/hoop.go
 
 build-webapp:
@@ -176,4 +159,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-clean-folder build-dev-rust install-rust merge-artifacts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release release-aws-cf-templates swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts
