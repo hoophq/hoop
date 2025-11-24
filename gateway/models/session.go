@@ -245,7 +245,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	return session, nil
 }
 
-func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
+func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt SessionOption) (*SessionList, error) {
 	sessionList := &SessionList{Items: []Session{}}
 	return sessionList, DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Raw(`
@@ -253,8 +253,18 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 		FROM private.sessions s
 		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 		WHERE s.org_id = @org_id AND
+		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id
+				THEN
+					EXISTS (
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
+						WHERE rg.review_id = rv.id AND u.email = @user_id
+					)
+				ELSE true
+		END AND
 		(
-			COALESCE(s.user_id::text, '') LIKE @user_id AND
+			COALESCE(s.user_id::text, '') LIKE @filter_user_id AND
 			COALESCE(s.connection::text, '') LIKE @connection AND
 			COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type AND
 			COALESCE(rv.status::text, '')::TEXT LIKE @review_status AND
@@ -274,13 +284,15 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			END
 		)`, map[string]any{
 			"org_id":                orgID,
-			"user_id":               opt.User,
+			"filter_user_id":        opt.User,
 			"connection":            opt.ConnectionName,
 			"connection_type":       opt.ConnectionType,
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
+			"is_auditor_or_admin":   isAuditorOrAdmin,
+			"user_id":               userId,
 		}).First(&sessionList.Total).Error
 		if err != nil {
 			return fmt.Errorf("unable to obtain total count of sessions, reason=%v", err)
@@ -322,8 +334,18 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 		FROM private.sessions s
 		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 		WHERE s.org_id = @org_id AND
+		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id
+				THEN
+					EXISTS (
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
+						WHERE rg.review_id = rv.id AND u.email = @user_id
+					)
+				ELSE true
+		END AND
 		(
-			COALESCE(s.user_id::text, '') LIKE @user_id AND
+			COALESCE(s.user_id::text, '') LIKE @filter_user_id AND
 			COALESCE(s.connection::text, '') LIKE @connection AND
 			COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type AND
 			COALESCE(rv.status::text, '')::TEXT LIKE @review_status AND
@@ -347,7 +369,7 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 		OFFSET @offset
 		`, map[string]any{
 			"org_id":                orgID,
-			"user_id":               opt.User,
+			"filter_user_id":        opt.User,
 			"connection":            opt.ConnectionName,
 			"connection_type":       opt.ConnectionType,
 			"review_status":         opt.ReviewStatus,
@@ -356,6 +378,8 @@ func ListSessions(orgID string, opt SessionOption) (*SessionList, error) {
 			"end_date":              opt.EndDate,
 			"limit":                 opt.Limit,
 			"offset":                opt.Offset,
+			"is_auditor_or_admin":   isAuditorOrAdmin,
+			"user_id":               userId,
 		}).Find(&sessionList.Items).Error
 		if err == nil {
 			sessionList.HasNextPage = len(sessionList.Items) == opt.Limit
