@@ -4,7 +4,8 @@
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.components.forms :as forms]
-            [webapp.config :as config]))
+            [webapp.config :as config]
+            [webapp.features.runbooks.helpers :refer [extract-repo-name]]))
 
 (defn dynamic-form
   [type {:keys [label
@@ -65,14 +66,6 @@
                           (or required (nil? required)))
                      {:required true}))])])
 
-(defn- extract-repo-name
-  "Extract just the repository name from a full repository path.
-   Example: 'github.com/hoophq/runbooks' -> 'runbooks'"
-  [repo-path]
-  (if (string? repo-path)
-    (let [parts (cs/split repo-path #"/")]
-      (last parts))
-    repo-path))
 
 (defn- error-view [error]
   [:> Flex {:class "pt-large flex-col gap-regular items-center"}

@@ -6,7 +6,8 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.tooltip :as tooltip]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.features.runbooks.helpers :refer [extract-repo-name]]))
 
 (defn sort-tree [data]
   (let [folders (->> data
@@ -20,14 +21,6 @@
 (defn split-path [path]
   (cs/split path #"/"))
 
-(defn extract-repo-name
-  "Extract just the repository name from a full repository path.
-   Example: 'github.com/hoophq/runbooks' -> 'runbooks'"
-  [repo-path]
-  (if (string? repo-path)
-    (let [parts (cs/split repo-path #"/")]
-      (last parts))
-    repo-path))
 
 (defn is-file? [item]
   (or (string? item)

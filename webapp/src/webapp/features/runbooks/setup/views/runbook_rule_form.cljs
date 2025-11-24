@@ -8,7 +8,8 @@
    [webapp.components.loaders :as loaders]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multiselect]
-   [webapp.components.connections-select :as connections-select]))
+   [webapp.components.connections-select :as connections-select]
+   [webapp.features.runbooks.helpers :refer [extract-repo-name]]))
 
 (defn- array->select-options [items]
   (mapv (fn [item]
@@ -26,13 +27,6 @@
                  value)))
        (filter some?)))
 
-(defn- extract-repo-name
-  "Extract the last part of repository URL (e.g., 'github.com/myorg/myrepo' -> 'myrepo')"
-  [repository]
-  (if (string? repository)
-    (let [parts (str/split repository #"/")]
-      (last parts))
-    ""))
 
 (defn- extract-folder
   "Extract folder from runbook name (e.g., 'ops/update-user.runbook.sh' -> 'ops/')"
