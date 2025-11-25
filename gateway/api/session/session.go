@@ -603,7 +603,7 @@ func DownloadSession(c *gin.Context) {
 //	@Header			200			{string}	Content-Disposition	"application/octet-stream"
 //	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
 //	@Failure		404,500		{object}	openapi.HTTPError
-//	@Router			/sessions/{session_id}/download/input_stream [get]
+//	@Router			/sessions/{session_id}/download/input [get]
 func DownloadSessionInput(c *gin.Context) {
 	sid := c.Param("session_id")
 	requestToken := c.Query("token")
