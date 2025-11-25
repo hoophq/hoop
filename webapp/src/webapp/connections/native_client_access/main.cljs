@@ -23,6 +23,12 @@
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
 
+(defn- get-hostname []
+  (let [hostname (.-hostname js/location)]
+    (if (= hostname "localhost")
+      "0.0.0.0"
+      hostname)))
+
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
   [{:keys [error-message]}]
@@ -102,7 +108,7 @@
     [logs/new-container
      {:status :success
       :id "hostname"
-      :logs (:hostname native-client-access-data)}]]
+      :logs (get-hostname)}]]
 
    ;; Username
    [:> Box {:class "space-y-2"}
@@ -149,7 +155,7 @@
     [logs/new-container
      {:status :success
       :id "hostname"
-      :logs (.-hostname js/location)}]]
+      :logs (get-hostname)}]]
 
    ;; Username
    [:> Box {:class "space-y-2"}
@@ -190,7 +196,7 @@
     [logs/new-container
      {:status :success
       :id "hostname"
-      :logs (:hostname native-client-access-data)}]]
+      :logs (get-hostname)}]]
 
    ;; Username
    [:> Box {:class "space-y-2"}
