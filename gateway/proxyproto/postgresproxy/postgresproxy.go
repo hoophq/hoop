@@ -243,6 +243,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 	}
 
 	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
 		return nil, err
 	}
 

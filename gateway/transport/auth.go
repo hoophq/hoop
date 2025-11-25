@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/idp"
 )
 
@@ -52,6 +53,7 @@ func PollingUserToken(ctx context.Context, cancel context.CancelCauseFunc, token
 
 				err := CheckUserToken(tokenVerifier, userID)
 				if err != nil {
+					log.Errorf("Error verifying the user token: %v", err)
 					cancel(err)
 					return
 				}
