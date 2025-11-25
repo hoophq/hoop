@@ -119,20 +119,25 @@
                         (if (= "postgres" (:connection_subtype session))
                           "event_stream=raw-queries"
                           ""))
-         expand-parts (cond-> ["event_stream"]
+         expand-parts (cond-> []
+                        (not has-large-event?) (conj "event_stream")
                         (not has-large-input?) (conj "session_input"))
-         expand-param (string/join "," expand-parts)]
-     (if has-large-event?
-       {:db (assoc db
-                   :audit->session-details
-                   {:session session
-                    :status :success
-                    :has-large-payload? true
-                    :has-large-input? has-large-input?})}
-       {:db (assoc-in db [:audit->session-details :has-large-input?] has-large-input?)
+         expand-param (string/join "," expand-parts)
+         query-parts (cond-> []
+                       (seq expand-param) (conj (str "expand=" expand-param))
+                       (and (not has-large-event?) (seq event-stream)) (conj event-stream))
+         query-string (when (seq query-parts)
+                        (str "?" (string/join "&" query-parts)))
+         base-state {:session session
+                     :status :success
+                     :has-large-payload? has-large-event?
+                     :has-large-input? has-large-input?}]
+     (if (and has-large-event? has-large-input?)
+       {:db (assoc db :audit->session-details base-state)}
+       {:db (assoc db :audit->session-details (assoc base-state :status :loading))
         :fx [[:dispatch [:fetch
                          {:method "GET"
-                          :uri (str "/sessions/" (:id session) "?expand=" expand-param "&" event-stream)
+                          :uri (str "/sessions/" (:id session) query-string)
                           :on-success (fn [session-data]
                                         (rf/dispatch [:audit->set-session session-data])
                                         (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]}))))
@@ -152,14 +157,16 @@
    [{:keys [db]} [_ details]]
    (let [cached-session (-> db :audit->session-details :session)
          updated-session (merge cached-session details)
-         has-large-input? (:has-large-input? (:audit->session-details db))]
+         session-details-state (:audit->session-details db)
+         has-large-payload? (:has-large-payload? session-details-state)
+         has-large-input? (:has-large-input? session-details-state)]
      {:db (assoc db
                  :audit->session-details
                  {:session updated-session
                   :status :success
-                  :has-large-payload? false
+                  :has-large-payload? has-large-payload?
                   :has-large-input? has-large-input?
-                  :session-logs (:session-logs (:audit->session-details db))})})))
+                  :session-logs (:session-logs session-details-state)})})))
 
 (rf/reg-event-fx
  :audit->clear-session
