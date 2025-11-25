@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -22,8 +21,6 @@ import (
 )
 
 var ErrUnknownIdpProvider = fmt.Errorf("unknown idp provider")
-
-var UserTokens = sync.Map{}
 
 type TokenVerifier interface {
 	VerifyAccessToken(accessToken string) (subject string, err error)
