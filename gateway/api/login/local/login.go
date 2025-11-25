@@ -76,9 +76,14 @@ func generateNewAccessToken(subject, email string) (string, error) {
 	}
 
 	token, err := localVerifier.NewAccessToken(subject, email, defaultTokenExpiration)
-	if err == nil {
-		idp.UserTokens.Store(subject, token)
+	if err != nil {
+		return "", err
 	}
 
-	return token, err
+	err = models.UpsertUserToken(models.DB, subject, token)
+	if err != nil {
+		return "", fmt.Errorf("failed upserting user token: %v", err)
+	}
+
+	return token, nil
 }

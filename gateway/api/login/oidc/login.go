@@ -193,7 +193,14 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	idp.UserTokens.Store(subject, token.AccessToken)
+	err = models.UpsertUserToken(models.DB, subject, token.AccessToken)
+	if err != nil {
+		login.Outcome = fmt.Sprintf("failed upserting user token subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
+		log.Error(login.Outcome)
+		sentry.CaptureException(err)
+		c.Redirect(http.StatusTemporaryRedirect, redirectErrorURL)
+		return
+	}
 
 	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
 
