@@ -161,15 +161,8 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL str
 			WithProviderType(providerType),
 	)
 
-	token, err := parseToken(c)
-	if err != nil {
-		log.Errorf("failed parsing token for storing in user tokens map, reason=%v", err)
-	}
-	// if already there skip the add
-	_, ok := idp.UserTokens.Load(token)
-	if !ok {
-		idp.UserTokens.Store(ctx.UserSubject, token)
-	}
+	token, _ := parseToken(c)
+	idp.UserTokens.Store(ctx.UserSubject, token)
 	c.Next()
 }
 
