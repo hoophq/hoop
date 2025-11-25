@@ -73,7 +73,6 @@
    [webapp.events.reports]
    [webapp.events.reviews-plugin]
    [webapp.events.routes]
-   [webapp.events.runbooks-plugin]
    [webapp.events.segment]
    [webapp.events.slack-plugin]
    [webapp.events.tracking]

@@ -116,7 +116,7 @@
 (rf/reg-event-fx
  :runbooks/exec
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields client-args]}]]
+   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields on-success on-failure]}]]
    (let [selected-connection (get-in db [:runbooks :selected-connection])
          selected-db (.getItem js/localStorage "selected-database")
          is-dynamodb? (= (:subtype selected-connection) "dynamodb")
@@ -133,8 +133,7 @@
                           (when repo (:repository repo))))
          env-vars (cond
                     (and is-dynamodb? selected-db)
-                    {"envvar:TABLE_NAME" (js/btoa selected-db)}
-
+                    {"envvar:TABLE_NAME" (js/btoa selected-db)} 
                     (and is-cloudwatch? selected-db)
                     {"envvar:LOG_GROUP_NAME" (js/btoa selected-db)}
 
@@ -144,28 +143,31 @@
                           :repository repository
                           :parameters params
                           :env_vars env-vars
-                          :metadata (metadata->json-stringify metadata)
-                          :client_args (or client-args [])}
+                          :metadata (metadata->json-stringify metadata)}
                    ref-hash (assoc :ref_hash ref-hash)
                    jira_fields (assoc :jira_fields jira_fields)
                    cmdb_fields (assoc :cmdb_fields cmdb_fields))
-         on-failure (fn [_error-message error]
-                      (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
-                                                    :level :error
-                                                    :details _error-message}])
-                      (rf/dispatch [:runbooks/exec-failure error]))
-         on-success (fn [res]
-                      (rf/dispatch
-                       [:show-snackbar {:level :success
-                                        :text "Runbook was executed!"}])
-                      (rf/dispatch [:runbooks/exec-success res file-name])
-                      (rf/dispatch [:webapp.events.editor-plugin/editor-plugin->set-script-success res file-name]))
+         default-on-failure (fn [_error-message error]
+                              (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
+                                                            :level :error
+                                                            :details _error-message}])
+                              (rf/dispatch [:runbooks/exec-failure error])
+                              (when on-failure
+                                (on-failure _error-message error)))
+         default-on-success (fn [res]
+                              (rf/dispatch
+                               [:show-snackbar {:level :success
+                                                :text "Runbook was executed!"}])
+                              (rf/dispatch [:runbooks/exec-success res file-name])
+                              (rf/dispatch [:webapp.events.editor-plugin/editor-plugin->set-script-success res file-name])
+                              (when on-success
+                                (on-success res)))
          base-db (assoc db :runbooks->exec {:status :loading :data nil})]
      (merge {:db base-db
              :fx [[:dispatch [:fetch {:method "POST"
                                       :uri "/runbooks/exec"
-                                      :on-success on-success
-                                      :on-failure on-failure
+                                      :on-success default-on-success
+                                      :on-failure default-on-failure
                                       :body payload}]]]}
             (when-not keep-metadata?
               {:db (-> base-db
