@@ -25,8 +25,8 @@ ENV LC_ALL=en_US.UTF-8
 COPY rootfs /
 COPY dist/binaries/ /tmp/
 RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
-    chown root:root /app/hoop && \
-    chmod 755 /app/hoop && \
+    chown root:root /app/hoop* && \
+    chmod 755 /app/hoop* && \
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 

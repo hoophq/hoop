@@ -63,9 +63,9 @@ jobs:
           name: dist-artifacts-${{ github.job }}
           path: dist/
 
-  build-rust-binaries-linux:
+  build-rust-binary-linux-amd64:
     runs-on: ubuntu-latest
-    name: Build Linux Rust Binaries
+    name: Build Linux Rust Binaries Amd64
     environment: production
     needs: [test]
 
@@ -83,6 +83,39 @@ jobs:
       - name: Add Linux Rust targets
         run: |
           rustup target add x86_64-unknown-linux-gnu
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Build Linux Rust Binaries
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=linux GOARCH=amd64 make build-rust-single
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  build-rust-binary-linux-arm64:
+    runs-on: ubuntu-latest-arm
+    name: Build Linux Rust Binaries Arm64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Add Linux Rust targets
+        run: |
           rustup target add aarch64-unknown-linux-gnu
 
       - name: Set Git Tag
@@ -91,7 +124,7 @@ jobs:
       - name: Build Linux Rust Binaries
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        run: make build-rust-linux-all
+        run: GOOS=linux GOARCH=arm64 make build-rust-single
 
       - uses: actions/upload-artifact@v4
         with:
@@ -366,7 +399,8 @@ jobs:
       - linux-arm64
       - build-webapp
       - build-rust-binaries-darwin
-      - build-rust-binaries-linux
+      - build-rust-binary-linux-amd64
+      - build-rust-binary-linux-arm64
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
