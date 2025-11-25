@@ -98,7 +98,7 @@ jobs:
           path: dist/
 
   build-rust-binary-linux-arm64:
-    runs-on: ubuntu-latest-arm
+    runs-on: ubuntu-24.04-arm
     name: Build Linux Rust Binaries Arm64
     environment: production
     needs: [test]
