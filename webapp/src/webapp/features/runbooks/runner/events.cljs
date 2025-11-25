@@ -8,48 +8,31 @@
  (fn
    [db [_ template repository]] 
    (let [repository-str (if (string? repository) repository (:repository repository))
+         list-data (get-in db [:runbooks :list])
+         repositories (or (:data list-data) [])
          ;; If repository is a string, look up the repository object from list data
          repository-obj (if (string? repository)
-                          (let [list-data (get-in db [:runbooks :list])
-                                repositories (or (:data list-data) [])]
-                            (first (filter #(= (:repository %) repository-str) repositories)))
+                          (first (filter #(= (:repository %) repository-str) repositories))
                           repository)
-         ref-hash (when repository-obj (:commit repository-obj))]
+         ;; If template only has :name (minimal from search), look up full runbook data
+         full-template (if (and (:name template) (nil? (:metadata template)))
+                         (let [repo-items (if repository-obj
+                                            (:items repository-obj)
+                                            (mapcat :items repositories))
+                               runbook (some (fn [r] (when (= (:name r) (:name template)) r)) repo-items)]
+                           (or runbook template))
+                         template)
+         ref-hash (when repository-obj (:commit repository-obj))
+         metadata (or (:metadata full-template) {})]
      (assoc db :runbooks->selected-runbooks {:status :ready
-                                             :data {:name (:name template)
-                                                    :error (:error template)
-                                                    :params (keys (:metadata template))
-                                                    :file_url (:file_url template)
-                                                    :metadata (:metadata template)
-                                                    :connections (:connections template)
+                                             :data {:name (:name full-template)
+                                                    :error (:error full-template)
+                                                    :params (keys metadata)
+                                                    :file_url (:file_url full-template)
+                                                    :metadata metadata
+                                                    :connections (:connections full-template)
                                                     :repository repository-str
                                                     :ref-hash ref-hash}}))))
-
-(rf/reg-event-db
- :runbooks/set-active-runbook-by-name
- (fn
-   [db [_ runbook-name]]
-   (let [list-data (get-in db [:runbooks :list])
-         repositories (:data list-data)
-         all-items (mapcat :items (or repositories []))
-         runbook  (some (fn [r] (when (= (:name r) runbook-name) r)) all-items)
-         repository (when runbook
-                      (some (fn [repo]
-                              (when (some #(= (:name %) runbook-name) (:items repo))
-                                repo))
-                            repositories))]
-     (if runbook
-       (assoc db :runbooks->selected-runbooks
-              {:status :ready
-               :data {:name        (:name runbook)
-                      :error       (:error runbook)
-                      :params      (keys (:metadata runbook))
-                      :file_url    (:file_url runbook)
-                      :metadata    (:metadata runbook)
-                      :connections (:connections runbook)
-                      :repository  (when repository (:repository repository))
-                      :ref-hash    (when repository (:commit repository))}})
-       (assoc db :runbooks->selected-runbooks {:status :error :data nil})))))
 
 ;; Connection Events
 (rf/reg-event-fx
