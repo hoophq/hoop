@@ -215,6 +215,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	}
 
 	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
 		return
 	}
 
