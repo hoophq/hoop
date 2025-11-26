@@ -9016,6 +9016,21 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.RunbookSearch": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "The runbook name",
+                    "type": "string",
+                    "example": "myrunbooks/run-backup.runbook.sql"
+                },
+                "repository": {
+                    "description": "Repository name",
+                    "type": "string",
+                    "example": "github.com/myorg/myrunbooks"
+                }
+            }
+        },
         "openapi.SSHServerConfig": {
             "type": "object",
             "properties": {
@@ -9075,12 +9090,8 @@ const docTemplate = `{
                     "description": "Runbooks found in the search",
                     "type": "array",
                     "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "myrunbooks/run-backup.runbook.sql",
-                        "myrunbooks/run-update.runbook.sql"
-                    ]
+                        "$ref": "#/definitions/openapi.RunbookSearch"
+                    }
                 }
             }
         },
