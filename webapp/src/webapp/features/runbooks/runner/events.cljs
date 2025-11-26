@@ -1,7 +1,9 @@
 (ns webapp.features.runbooks.runner.events
   (:require
    [clojure.string :as cs]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
+   [webapp.jira-templates.prompt-form :as prompt-form]))
 
 (rf/reg-event-db
  :runbooks/set-active-runbook
@@ -265,3 +267,94 @@
  :runbooks->filtered-runbooks
  (fn [db]
    (get-in db [:runbooks->filtered-runbooks] [])))
+
+;; Runbooks Jira Template Events
+
+(rf/reg-event-fx
+ :runbooks/show-jira-form
+ (fn [_ [_ {:keys [template-id file-name params connection-name repository ref-hash]}]]
+   {:fx [[:dispatch [:modal->open
+                     {:maxWidth "540px"
+                      :custom-on-click-out #(.preventDefault %)
+                      :content [loading-jira-templates/main]}]]
+         [:dispatch [:jira-templates->get-submit-template template-id]]
+         [:dispatch-later
+          {:ms 1000
+           :dispatch [:runbooks/check-jira-template-and-show-form
+                      {:template-id template-id
+                       :file-name file-name
+                       :params params
+                       :connection-name connection-name
+                       :repository repository
+                       :ref-hash ref-hash}]}]]}))
+
+(defn- needs-form? [template]
+  (let [has-prompts? (seq (get-in template [:data :prompt_types :items]))
+        has-cmdb? (when-let [cmdb-items (get-in template [:data :cmdb_types :items])]
+                    (some (fn [{:keys [value jira_values]}]
+                            (when (and value jira_values)
+                              (not-any? #(= value (:name %)) jira_values)))
+                          cmdb-items))]
+    (or has-prompts? has-cmdb?)))
+
+(rf/reg-event-fx
+ :runbooks/check-jira-template-and-show-form
+ (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name repository ref-hash] :as context}]]
+   (let [template (get-in db [:jira-templates->submit-template])]
+     (cond
+       ;; Still loading
+       (or (nil? (:data template))
+           (= :loading (:status template)))
+       {:fx [[:dispatch-later
+              {:ms 500
+               :dispatch [:runbooks/check-jira-template-and-show-form
+                          {:template-id template-id
+                           :file-name file-name
+                           :params params
+                           :connection-name connection-name
+                           :repository repository
+                           :ref-hash ref-hash}]}]]}
+
+       ;; Ready but with failed CMDB requests
+       (and (= :ready (:status template))
+            (some :request-failed (get-in template [:data :cmdb_types :items])))
+       {:fx [[:dispatch [:jira-templates->handle-cmdb-error
+                         (assoc context :flow :runbooks)]]]}
+
+       ;; Ready and needs form
+       (needs-form? template)
+       {:fx [[:dispatch [:modal->open
+                         {:content [prompt-form/main
+                                    {:prompts (get-in template [:data :prompt_types :items])
+                                     :cmdb-items (get-in template [:data :cmdb_types :items])
+                                     :on-submit #(rf/dispatch
+                                                  [:runbooks/handle-jira-template-submit
+                                                   {:form-data %
+                                                    :file-name file-name
+                                                    :params params
+                                                    :connection-name connection-name
+                                                    :repository repository
+                                                    :ref-hash ref-hash}])}]}]]]}
+
+       ;; Ready and doesn't need form
+       :else
+       {:fx [[:dispatch [:runbooks/handle-jira-template-submit
+                         {:form-data nil
+                          :file-name file-name
+                          :params params
+                          :connection-name connection-name
+                          :repository repository
+                          :ref-hash ref-hash}]]]}))))
+
+(rf/reg-event-fx
+ :runbooks/handle-jira-template-submit
+ (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash]}]]
+   {:fx [[:dispatch [:modal->close]]
+         [:dispatch [:runbooks/exec
+                     (cond-> {:file-name file-name
+                              :params params
+                              :connection-name connection-name
+                              :repository repository
+                              :ref-hash ref-hash}
+                       (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
+                       (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]]}))

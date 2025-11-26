@@ -127,7 +127,7 @@
                                                        :text "Your connection does not have runbooks access mode enabled. Please enable it in the connection settings."}])
 
                                         (and has-jira-template? jira-integration-enabled?)
-                                        (rf/dispatch [:runbooks-plugin/show-jira-form
+                                        (rf/dispatch [:runbooks/show-jira-form
                                                       {:template-id (:jira_issue_template_id connection)
                                                        :file-name (-> template :data :name)
                                                        :params @state
