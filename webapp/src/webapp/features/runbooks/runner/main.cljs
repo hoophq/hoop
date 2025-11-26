@@ -32,15 +32,19 @@
             has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
                               (seq @metadata-value))
-            handle-keydown #(when (and (= "Enter" (.-key %))
-                                       (or (.-metaKey %) (.-ctrlKey %))
-                                       (not run-disabled?))
-                              (.preventDefault %)
-                              (when-let [form (.getElementById js/document "runbook-form")]
-                                (.requestSubmit form)))
             runbook-loading? (= (:status @script-response) :loading)
             os (detect-os)]
-        (r/with-let [_ (.addEventListener js/document "keydown" handle-keydown)]
+        (r/with-let [handle-keydown (fn [e]
+                                      (when (and (= "Enter" (.-key e))
+                                                 (or (.-metaKey e) (.-ctrlKey e))
+                                                 (let [current-template @selected-template
+                                                       current-connection @runbooks-connection]
+                                                   (not (or (nil? current-connection)
+                                                            (empty? (:data current-template))))))
+                                        (.preventDefault e)
+                                        (when-let [form (.getElementById js/document "runbook-form")]
+                                          (.requestSubmit form))))
+                     _ (.addEventListener js/document "keydown" handle-keydown)]
           [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
            [:> Flex {:class "h-full px-4 items-center justify-between"}
             [:> Flex {:class "items-center gap-2"}
