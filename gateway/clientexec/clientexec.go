@@ -224,10 +224,14 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 	recvCh := grpc.NewStreamRecv(c.ctx, c.client)
 	for {
 		var dstream *grpc.DataStream
+		var ok bool
 		select {
 		case <-c.ctx.Done():
 			return newRawErr(context.Cause(c.ctx))
-		case dstream = <-recvCh:
+		case dstream, ok = <-recvCh:
+			if !ok {
+				return newErr("grpc stream recv closed")
+			}
 		}
 
 		pkt, err := dstream.Recv()
