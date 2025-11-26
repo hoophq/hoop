@@ -22,49 +22,53 @@
                 helper-text
                 options
                 default-value]}]
-  [:> Box
-   (case type
-     "select" [forms/select (merge
-                             {:label label
-                              :full-width? true
-                              :required required
-                              :on-change on-change
-                              :selected (or value default-value "")
-                              :options (map #(into {} {:value % :text %}) options)
-                              :helper-text helper-text}
-                             (when (and
-                                    (not= required "false")
-                                    (or required (nil? required)))
-                               {:required true}))]
-     "textarea" [forms/textarea (merge
-                                 {:label label
-                                  :placeholder (or placeholder (str "Define a value for " label))
-                                  :value (or value default-value "")
-                                  :on-change on-change
-                                  :minLength minlength
-                                  :maxLength maxlength
-                                  :helper-text helper-text}
-                                 (when (and
-                                        (not= required "false")
-                                        (or required (nil? required)))
-                                   {:required true}))]
-     [forms/input (merge
-                   {:label label
-                    :placeholder (or placeholder (str "Define a value for " label))
-                    :value (or value default-value "")
-                    :type type
-                    :pattern pattern
-                    :on-change on-change
-                    :minLength minlength
-                    :maxLength maxlength
-                    :min min
-                    :max max
-                    :step step
-                    :helper-text helper-text}
-                   (when (and
-                          (not= required "false")
-                          (or required (nil? required)))
-                     {:required true}))])])
+  (let [number-input-keydown (when (= type "number")
+                               #(when (contains? #{"e" "." ","} (.-key %))
+                                  (.preventDefault %)))]
+    [:> Box
+     (case type
+       "select" [forms/select (merge
+                               {:label label
+                                :full-width? true
+                                :required required
+                                :on-change on-change
+                                :selected (or value default-value "")
+                                :options (map #(into {} {:value % :text %}) options)
+                                :helper-text helper-text}
+                               (when (and
+                                      (not= required "false")
+                                      (or required (nil? required)))
+                                 {:required true}))]
+       "textarea" [forms/textarea (merge
+                                   {:label label
+                                    :placeholder (or placeholder (str "Define a value for " label))
+                                    :value (or value default-value "")
+                                    :on-change on-change
+                                    :minLength minlength
+                                    :maxLength maxlength
+                                    :helper-text helper-text}
+                                   (when (and
+                                          (not= required "false")
+                                          (or required (nil? required)))
+                                     {:required true}))]
+       [forms/input (merge
+                     {:label label
+                      :placeholder (or placeholder (str "Define a value for " label))
+                      :value (or value default-value "")
+                      :type type
+                      :pattern pattern
+                      :on-change on-change
+                      :on-keyDown number-input-keydown
+                      :minLength minlength
+                      :maxLength maxlength
+                      :min min
+                      :max max
+                      :step step
+                      :helper-text helper-text}
+                     (when (and
+                            (not= required "false")
+                            (or required (nil? required)))
+                       {:required true}))])]))
 
 
 (defn- error-view [error]
