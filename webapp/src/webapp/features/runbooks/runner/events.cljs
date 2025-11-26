@@ -95,17 +95,6 @@
  (fn [db [_ open?]]
    (assoc-in db [:runbooks :connection-dialog-open?] open?)))
 
-;; Execution Events
-(rf/reg-event-db
- :runbooks/trigger-execute
- (fn [db _]
-   (assoc-in db [:runbooks :execute-trigger] true)))
-
-(rf/reg-event-db
- :runbooks/execute-handled
- (fn [db _]
-   (assoc-in db [:runbooks :execute-trigger] false)))
-
 (defn metadata->json-stringify
   [metadata]
   (->> metadata

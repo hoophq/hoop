@@ -95,7 +95,6 @@
                      :context {}
                      :search-results {:status :idle :data {}}}
    :runbooks {:connection-dialog-open? false
-              :execute-trigger false
               :selected-connection nil
               :list {:status :idle :data [] :error nil}
               :metadata []

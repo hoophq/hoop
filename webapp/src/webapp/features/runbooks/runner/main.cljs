@@ -24,10 +24,9 @@
         metadata-value (rf/subscribe [:runbooks/metadata-value])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
         script-response (rf/subscribe [:runbooks->exec])]
-    (fn [{:keys [dark-mode? submit metadata-open? toggle-metadata-open]}]
+    (fn [{:keys [dark-mode? metadata-open? toggle-metadata-open]}]
       (let [template @selected-template
             connection @runbooks-connection
-            submit-ref (r/atom submit)
             run-disabled? (or (nil? connection)
                               (empty? (:data template)))
             has-metadata? (or (seq @metadata)
@@ -37,12 +36,11 @@
                                        (or (.-metaKey %) (.-ctrlKey %))
                                        (not run-disabled?))
                               (.preventDefault %)
-                              (@submit-ref))
+                              (when-let [form (.getElementById js/document "runbook-form")]
+                                (.requestSubmit form)))
             runbook-loading? (= (:status @script-response) :loading)
             os (detect-os)]
         (r/with-let [_ (.addEventListener js/document "keydown" handle-keydown)]
-          (.addEventListener js/document "keydown" handle-keydown)
-          (reset! submit-ref submit)
           [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
            [:> Flex {:class "h-full px-4 items-center justify-between"}
             [:> Flex {:class "items-center gap-2"}
@@ -88,10 +86,11 @@
 
              [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
               [:> Button
-               {:disabled run-disabled?
+               {:form "runbook-form"
+                :type "submit"
+                :disabled run-disabled?
                 :loading runbook-loading?
-                :class (when run-disabled? "cursor-not-allowed")
-                :onClick #(submit)}
+                :class (when run-disabled? "cursor-not-allowed")}
                [:> Play {:size 16}]
                "Run"]]]]]
           (finally
@@ -145,7 +144,6 @@
 
       [:> Box {:class (str "h-full bg-gray-2 overflow-hidden " (when @dark-mode? "dark"))}
        [header {:dark-mode? dark-mode?
-                :submit (fn [] (rf/dispatch [:runbooks/trigger-execute]))
                 :metadata-open? @metadata-open?
                 :toggle-metadata-open #(swap! metadata-open? not)}]
        [:> Allotment {:key "outer-allotment"
