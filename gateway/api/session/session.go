@@ -32,6 +32,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 var (
@@ -49,6 +50,23 @@ type SessionPostBody struct {
 	Metadata   map[string]any            `json:"metadata"`
 	ClientArgs []string                  `json:"client_args"`
 	JiraFields map[string]string         `json:"jira_fields"`
+}
+
+func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
+	if session.UserID == ctx.UserID || ctx.IsAuditorOrAdminUser() {
+		return true
+	}
+
+	if session.Review != nil {
+		reviewersGroups := make([]string, 0)
+		for _, group := range session.Review.ReviewGroups {
+			reviewersGroups = append(reviewersGroups, group.GroupName)
+		}
+
+		return utils.SlicesHasIntersection(ctx.UserGroups, reviewersGroups)
+	}
+
+	return false
 }
 
 // RunExec
@@ -333,7 +351,7 @@ func List(c *gin.Context) {
 		}
 	}
 
-	sessionList, err := models.ListSessions(ctx.OrgID, option)
+	sessionList, err := models.ListSessions(ctx.OrgID, ctx.UserID, ctx.IsAuditorOrAdminUser(), option)
 	if err != nil {
 		log.Errorf("failed listing sessions (v2), err=%v", err)
 		sentry.CaptureException(err)
@@ -370,6 +388,12 @@ func Get(c *gin.Context) {
 		log.Errorf("failed fetching session, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		return
+	}
+
+	canAccessSession := canAccessSession(ctx, session)
+	if !canAccessSession {
+		c.JSON(http.StatusForbidden, gin.H{"message": "user is not allowed to access this session"})
 		return
 	}
 
