@@ -111,20 +111,33 @@
  (fn
    [{:keys [db]} [_ session]]
    (let [event-size (:event_size session)
+         script-size (:script_size session)
+         has-large-event? (and event-size (> event-size size-threshold))
+         has-large-input? (and script-size (> script-size size-threshold))
          event-stream (if (= "exec" (:verb session))
                         "event_stream=base64"
                         (if (= "postgres" (:connection_subtype session))
                           "event_stream=raw-queries"
-                          ""))]
-     (if (and event-size (> event-size size-threshold))
-       {:db (assoc db
-                   :audit->session-details
-                   {:session session
-                    :status :success
-                    :has-large-payload? true})}
-       {:fx [[:dispatch [:fetch
+                          ""))
+         expand-parts (cond-> []
+                        (not has-large-event?) (conj "event_stream")
+                        (not has-large-input?) (conj "session_input"))
+         expand-param (string/join "," expand-parts)
+         query-parts (cond-> []
+                       (seq expand-param) (conj (str "expand=" expand-param))
+                       (and (not has-large-event?) (seq event-stream)) (conj event-stream))
+         query-string (when (seq query-parts)
+                        (str "?" (string/join "&" query-parts)))
+         base-state {:session session
+                     :status :success
+                     :has-large-payload? has-large-event?
+                     :has-large-input? has-large-input?}]
+     (if (and has-large-event? has-large-input?)
+       {:db (assoc db :audit->session-details base-state)}
+       {:db (assoc db :audit->session-details (assoc base-state :status :loading))
+        :fx [[:dispatch [:fetch
                          {:method "GET"
-                          :uri (str "/sessions/" (:id session) "?expand=event_stream&" event-stream)
+                          :uri (str "/sessions/" (:id session) query-string)
                           :on-success (fn [session-data]
                                         (rf/dispatch [:audit->set-session session-data])
                                         (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]}))))
@@ -143,13 +156,17 @@
  (fn
    [{:keys [db]} [_ details]]
    (let [cached-session (-> db :audit->session-details :session)
-         updated-session (merge cached-session details)]
+         updated-session (merge cached-session details)
+         session-details-state (:audit->session-details db)
+         has-large-payload? (:has-large-payload? session-details-state)
+         has-large-input? (:has-large-input? session-details-state)]
      {:db (assoc db
                  :audit->session-details
                  {:session updated-session
                   :status :success
-                  :has-large-payload? false
-                  :session-logs (:session-logs (:audit->session-details db))})})))
+                  :has-large-payload? has-large-payload?
+                  :has-large-input? has-large-input?
+                  :session-logs (:session-logs session-details-state)})})))
 
 (rf/reg-event-fx
  :audit->clear-session
@@ -341,6 +358,22 @@
                                :on-failure failure}]]]})))
 
 (rf/reg-event-fx
+ :audit->session-input-download
+ (fn
+   [{:keys [_]} [_ session-id]]
+   (let [success (fn [res] (.open js/window (:download_url res)))
+         failure (fn [error]
+                   (rf/dispatch [:show-snackbar {:text "Failed to download session input"
+                                                 :level :error
+                                                 :details error}]))]
+     {:fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/sessions/"
+                                         session-id
+                                         "?blob-type=session_input&extension=txt")
+                               :on-success success
+                               :on-failure failure}]]]})))
+
+(rf/reg-event-fx
  :audit->connect-session
  (fn
    [{:keys [db]} [_ session connecting-status]]
@@ -397,7 +430,7 @@
    {:db (assoc-in db [:audit->session-logs] {:status :loading :data nil})
     :fx [[:dispatch [:fetch
                      {:method "GET"
-                      :uri (str "/sessions/" session-id "?expand=event_stream&event_stream=base64")
+                      :uri (str "/sessions/" session-id "?expand=event_stream,session_input&event_stream=base64")
                       :on-success #(rf/dispatch [:audit->set-session-logs-data %])
                       :on-failure (fn [error]
                                     (rf/dispatch [:show-snackbar

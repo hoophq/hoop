@@ -71,6 +71,7 @@ type Session struct {
 	Metrics              map[string]any    `gorm:"column:metrics;serializer:json"`
 	BlobInputID          sql.NullString    `gorm:"column:blob_input_id"`
 	BlobInput            BlobInputType     `gorm:"-"`
+	BlobInputSize        int64             `gorm:"column:blob_input_size;->"`
 	BlobStream           *Blob             `gorm:"-"`
 	BlobStreamSize       int64             `gorm:"column:blob_stream_size;->"`
 	UserID               string            `gorm:"column:user_id"`
@@ -147,7 +148,7 @@ func (r *SessionReview) Scan(value any) error {
 	return json.Unmarshal(data, r)
 }
 
-func (s *Session) getBlobInput() (string, error) {
+func (s *Session) GetBlobInput() (BlobInputType, error) {
 	var blob Blob
 	err := DB.Raw(`
 	SELECT b.id, b.org_id, b.blob_stream, b.type, b.format
@@ -169,7 +170,7 @@ func (s *Session) getBlobInput() (string, error) {
 	if len(result) == 0 {
 		return "", nil
 	}
-	return result[0], nil
+	return BlobInputType(result[0]), nil
 }
 
 // GetBlobStream retrieves the blob stream associated with the session
@@ -198,6 +199,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id,
+		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		CASE
 			WHEN rv.id IS NULL THEN NULL
 			ELSE jsonb_build_object(
@@ -227,6 +229,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 		END AS review,
 		s.created_at, s.ended_at
 	FROM private.sessions s
+	LEFT JOIN private.blobs b ON b.id = s.blob_input_id
 	LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 	WHERE s.org_id = ? AND s.id = ?
 	`, orgID, sid).First(session).Error
@@ -237,11 +240,6 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 		return nil, err
 	}
 
-	blobInput, err := session.getBlobInput()
-	if err != nil {
-		return nil, fmt.Errorf("failed obtaining blob input: %v", err)
-	}
-	session.BlobInput = BlobInputType(blobInput)
 	return session, nil
 }
 
@@ -303,6 +301,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id,
+			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
 			CASE
 				WHEN rv.id IS NULL THEN NULL
 				ELSE jsonb_build_object(
@@ -332,6 +331,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			END AS review,
 			s.created_at, s.ended_at
 		FROM private.sessions s
+		LEFT JOIN private.blobs b ON b.id = s.blob_input_id
 		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 		WHERE s.org_id = @org_id AND
 		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id

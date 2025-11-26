@@ -3,10 +3,10 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Box Button Flex Text Tooltip]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Text Tooltip]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown]]
+   ["lucide-react" :refer [Download FileDown Info]]
    ["react" :as react]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -58,6 +58,25 @@
                                              "txt")])}
     "Download file"
     [:> Download {:size 18}]]])
+
+(defn large-input-warning [{:keys [session]}]
+  [:> Box {:class "w-full p-regular rounded-lg bg-[--gray-2]"}
+   [:> Callout.Root {:variant "surface"
+                     :size "2"
+                     :class "flex items-center mb-small justify-between"}
+    [:> Callout.Icon
+     [:> Info {:size 16}]]
+    [:> Callout.Text {:class "w-full"}
+     [:> Flex {:gap "4"
+               :class "items-center justify-between"}
+      [:> Text
+       "Input script is too large to display"]
+      [:> Button {:size "2"
+                  :variant "soft"
+                  :class "flex-shrink-0"
+                  :on-click #(rf/dispatch [:audit->session-input-download (:id session)])}
+       "Download"
+       [:> Download {:size 16}]]]]]])
 
 (defmulti ^:private session-event-stream identity)
 (defmethod ^:private session-event-stream "command-line"
@@ -237,6 +256,7 @@
               verb (:verb session)
               session-status (:status session)
               has-large-payload? (:has-large-payload? @session-details)
+              has-large-input? (:has-large-input? @session-details)
               disabled-download (-> @gateway-info :data :disable_sessions_download)
               review-groups (-> session :review :review_groups_data)
               in-progress? (or (= end-date nil)
@@ -468,14 +488,16 @@
            ;; end metadata
 
            ;; script area
-           (when (and script-data
-                      (> (count script-data) 0))
+           (when (or script-data has-large-input?)
              [:section {:id "session-script"}
-              [:div
-               {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
-                            "rounded-lg bg-gray-100 "
-                            "text-xs text-gray-800 font-mono")}
-               [:article script-data]]])
+              (if has-large-input?
+                [large-input-warning {:session session}]
+                (when (and script-data (> (count script-data) 0))
+                  [:div
+                   {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
+                                "rounded-lg bg-gray-100 "
+                                "text-xs text-gray-800 font-mono")}
+                   [:article script-data]]))])
            ;; end script area
 
            ;; data masking analytics
