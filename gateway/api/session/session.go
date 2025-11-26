@@ -482,7 +482,7 @@ func Get(c *gin.Context) {
 //	@Header			200			{string}	Content-Type		"application/octet-stream"
 //	@Header			200			{string}	Content-Disposition	"application/octet-stream"
 //	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
-//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Failure		401,404,410,500		{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
 	sid := c.Param("session_id")
@@ -602,7 +602,7 @@ func DownloadSession(c *gin.Context) {
 //	@Header			200			{string}	Content-Type		"application/octet-stream"
 //	@Header			200			{string}	Content-Disposition	"application/octet-stream"
 //	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
-//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Failure		401,404,410,500		{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download/input [get]
 func DownloadSessionInput(c *gin.Context) {
 	sid := c.Param("session_id")
@@ -659,13 +659,13 @@ func DownloadSessionInput(c *gin.Context) {
 		log.Errorf("failed fetching session, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status":  http.StatusInternalServerError,
-			"message": "failed fetching session"})
+			"message": "failed fetching session, reason: " + err.Error()})
 		return
 	}
 	output, err := session.GetBlobInput()
 	if err != nil {
 		log.Errorf("failed fetching input from session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session, reason: " + err.Error()})
 		return
 	}
 
