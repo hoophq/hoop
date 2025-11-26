@@ -23,6 +23,12 @@
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
 
+(defn- get-hostname []
+  (let [hostname (.-hostname js/location)]
+    (if (= hostname "localhost")
+      "0.0.0.0"
+      hostname)))
+
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
   [{:keys [error-message]}]
@@ -102,7 +108,7 @@
     [logs/new-container
      {:status :success
       :id "hostname"
-      :logs (:hostname native-client-access-data)}]]
+      :logs (get-hostname)}]]
 
    ;; Username
    [:> Box {:class "space-y-2"}
@@ -149,7 +155,7 @@
     [logs/new-container
      {:status :success
       :id "hostname"
-      :logs (:hostname native-client-access-data)}]]
+      :logs (get-hostname)}]]
 
    ;; Username
    [:> Box {:class "space-y-2"}
@@ -190,7 +196,7 @@
     [logs/new-container
      {:status :success
       :id "hostname"
-      :logs (:hostname native-client-access-data)}]]
+      :logs (get-hostname)}]]
 
    ;; Username
    [:> Box {:class "space-y-2"}
@@ -259,10 +265,8 @@
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [native-client-access-data minimize-fn disconnect-fn]
-  (let [active-tab (r/atom "credentials")
-        has-connection-uri? (some? (get (:connection_credentials native-client-access-data) :connection_string))
+  (let [active-tab (r/atom "credentials") 
         has-command? (some? (get (:connection_credentials native-client-access-data) :command))]
-
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}

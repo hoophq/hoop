@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
+	"github.com/hoophq/hoop/common/proto"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -29,7 +30,9 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 var (
@@ -47,6 +50,23 @@ type SessionPostBody struct {
 	Metadata   map[string]any            `json:"metadata"`
 	ClientArgs []string                  `json:"client_args"`
 	JiraFields map[string]string         `json:"jira_fields"`
+}
+
+func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
+	if session.UserID == ctx.UserID || ctx.IsAuditorOrAdminUser() {
+		return true
+	}
+
+	if session.Review != nil {
+		reviewersGroups := make([]string, 0)
+		for _, group := range session.Review.ReviewGroups {
+			reviewersGroups = append(reviewersGroups, group.GroupName)
+		}
+
+		return utils.SlicesHasIntersection(ctx.UserGroups, reviewersGroups)
+	}
+
+	return false
 }
 
 // RunExec
@@ -331,7 +351,7 @@ func List(c *gin.Context) {
 		}
 	}
 
-	sessionList, err := models.ListSessions(ctx.OrgID, option)
+	sessionList, err := models.ListSessions(ctx.OrgID, ctx.UserID, ctx.IsAuditorOrAdminUser(), option)
 	if err != nil {
 		log.Errorf("failed listing sessions (v2), err=%v", err)
 		sentry.CaptureException(err)
@@ -371,6 +391,12 @@ func Get(c *gin.Context) {
 		return
 	}
 
+	canAccessSession := canAccessSession(ctx, session)
+	if !canAccessSession {
+		c.JSON(http.StatusForbidden, gin.H{"message": "user is not allowed to access this session"})
+		return
+	}
+
 	// display or allow download the session stream only for the owner, admin or auditor roles
 	isAllowed := session.UserID == ctx.UserID || ctx.IsAuditorOrAdminUser()
 	fileExt := c.Query("extension")
@@ -389,15 +415,26 @@ func Get(c *gin.Context) {
 		hash := sha256.Sum256([]byte(uuid.NewString()))
 		downloadToken := hex.EncodeToString(hash[:])
 		expireAtTime := time.Now().UTC().Add(defaultDownloadExpireTime).Format(time.RFC3339Nano)
-		downloadURL := fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&events=%v",
-			ctx.ApiURL,
-			sessionID,
-			downloadToken,
-			fileExt,
-			c.Query("newline"),
-			c.Query("event-time"),
-			c.Query("events"),
-		)
+		blobType := c.Query("blob-type")
+
+		var downloadURL string
+		if blobType == "session_input" {
+			downloadURL = fmt.Sprintf("%s/api/sessions/%s/download/input?token=%s",
+				ctx.ApiURL,
+				sessionID,
+				downloadToken,
+			)
+		} else {
+			downloadURL = fmt.Sprintf("%s/api/sessions/%s/download?token=%s&extension=%v&newline=%v&event-time=%v&events=%v",
+				ctx.ApiURL,
+				sessionID,
+				downloadToken,
+				fileExt,
+				c.Query("newline"),
+				c.Query("event-time"),
+				c.Query("events"),
+			)
+		}
 		requestPayload := map[string]any{
 			"token":               downloadToken,
 			"expire-at":           expireAtTime,
@@ -421,6 +458,17 @@ func Get(c *gin.Context) {
 		}
 	}
 
+	// it will only load the input blob stream if client requested to expand the attribute
+	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "session_input")
+	if expandInputStream {
+		session.BlobInput, err = session.GetBlobInput()
+		if err != nil {
+			log.Errorf("failed fetching input from session, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session"})
+			return
+		}
+	}
+
 	mustParseBlobStream := c.Query("event_stream") != "" && expandEventStream
 	if mustParseBlobStream {
 		err = encodeBlobStream(session, openapi.SessionEventStreamType(c.Query("event_stream")))
@@ -435,7 +483,7 @@ func Get(c *gin.Context) {
 			return
 		}
 	}
-	obj := toOpenApiSession(session)
+	obj := toOpenApiSession(session, expandInputStream)
 
 	// encode the object manually to obtain any encoding errors.
 	c.Writer.Header().Set("Content-Type", "application/json")
@@ -458,7 +506,7 @@ func Get(c *gin.Context) {
 //	@Header			200			{string}	Content-Type		"application/octet-stream"
 //	@Header			200			{string}	Content-Disposition	"application/octet-stream"
 //	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
-//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Failure		401,404,410,500		{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
 	sid := c.Param("session_id")
@@ -556,10 +604,101 @@ func DownloadSession(c *gin.Context) {
 			"message": "failed parsing blob stream"})
 		return
 	}
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.%s", sid, fileExt))
+
+	now := time.Now().UTC()
+	timePart := now.Format("20060102-150405")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s-%s-%s.%s", session.Connection, sid, timePart, fileExt))
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
 	wrote, err := c.Writer.Write(output)
+	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
+		fileExt, len(output), wrote, err == nil, err)
+}
+
+// DownloadSessionInput
+//
+//	@Summary		Download Session Input Command
+//	@Description	Download session input session by id
+//	@Tags			Sessions
+//	@Produce		octet-stream,json
+//	@Param			session_id	path		string	true	"The id of the resource"
+//	@Success		200			{string}	string
+//	@Header			200			{string}	Content-Type		"application/octet-stream"
+//	@Header			200			{string}	Content-Disposition	"application/octet-stream"
+//	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
+//	@Failure		401,404,410,500		{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/download/input [get]
+func DownloadSessionInput(c *gin.Context) {
+	sid := c.Param("session_id")
+	requestToken := c.Query("token")
+
+	store, _ := downloadTokenStore.Pop(sid).(map[string]any)
+	if len(store) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  http.StatusNotFound,
+			"message": "not found"})
+		return
+	}
+
+	expireAt, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%v", store["expire-at"]))
+	if err != nil {
+		log.Errorf("failed parsing request time, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed processing request"})
+		return
+	}
+	token := fmt.Sprintf("%v", store["token"])
+	if token == "" {
+		log.Error("download token is empty")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed processing request"})
+		return
+	}
+
+	if time.Now().UTC().After(expireAt) {
+		c.JSON(http.StatusGone, gin.H{
+			"status":  http.StatusGone,
+			"message": "session download link expired"})
+		return
+	}
+
+	fileExt := "txt"
+	ctx := storagev2.NewContext(
+		fmt.Sprintf("%v", store["context-user-id"]),
+		fmt.Sprintf("%v", store["context-org-id"]))
+	ctx.UserGroups, _ = store["context-user-groups"].([]string)
+	log.With("sid", sid, "ext", fileExt).
+		Infof("session download input request, valid=%v, org=%v, user=%v, groups=%#v, user-agent=%v",
+			token == requestToken, ctx.OrgID, ctx.UserID, ctx.UserGroups, apiutils.NormalizeUserAgent(c.Request.Header.Values))
+	if token != requestToken {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"status":  http.StatusUnauthorized,
+			"message": "unauthorized"})
+		return
+	}
+	session, err := models.GetSessionByID(ctx.OrgID, sid)
+	if err != nil || session == nil {
+		log.Errorf("failed fetching session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  http.StatusInternalServerError,
+			"message": "failed fetching session, reason: " + err.Error()})
+		return
+	}
+	output, err := session.GetBlobInput()
+	if err != nil {
+		log.Errorf("failed fetching input from session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session, reason: " + err.Error()})
+		return
+	}
+
+	now := time.Now().UTC()
+	timePart := now.Format("20060102-150405")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s-%s-%s.%s", session.Connection, sid, timePart, fileExt))
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Accept-Length", fmt.Sprintf("%d", len(output)))
+	wrote, err := c.Writer.Write([]byte(output))
 	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
 		fileExt, len(output), wrote, err == nil, err)
 }
@@ -627,7 +766,16 @@ func Kill(c *gin.Context) {
 	}
 
 	log.With("user", ctx.UserEmail, "sid", sid).Infof("user initiated a kill process")
-	if err := transportsystem.KillSession(sid); err != nil {
+
+	pctx := plugintypes.Context{
+		OrgID:             sess.OrgID,
+		ConnectionType:    sess.ConnectionType,
+		ConnectionSubType: sess.ConnectionSubtype,
+		ClientOrigin:      proto.ConnectionOriginClient,
+		ClientVerb:        sess.Verb,
+		SID:               sid,
+	}
+	if err := transportsystem.KillSession(pctx, sid); err != nil {
 		log.With("sid", sid).Warnf("failed killing session, reason=%v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return

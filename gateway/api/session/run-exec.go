@@ -76,6 +76,12 @@ func RunReviewedExec(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching sessions"})
 		return
 	}
+	session.BlobInput, err = session.GetBlobInput()
+	if err != nil {
+		log.Errorf("failed fetching session blob input, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session input"})
+		return
+	}
 
 	isAllowed := session.UserEmail == ctx.UserEmail || ctx.IsAuditorOrAdminUser()
 	if !isAllowed {

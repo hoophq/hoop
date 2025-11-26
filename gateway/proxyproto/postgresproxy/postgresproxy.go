@@ -3,13 +3,15 @@ package postgresproxy
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"time"
 
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
+	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/transport"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
@@ -34,6 +36,7 @@ type PGServer struct {
 	connectionStore memory.Store
 	listener        net.Listener
 	listenAddr      string
+	tlsConfig       *tls.Config
 }
 
 // GetServerInstance returns the singleton instance of PGServer.
@@ -46,15 +49,20 @@ func GetServerInstance() *PGServer {
 	return server
 }
 
-func (s *PGServer) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) error {
+func (s *PGServer) Start(listenAddr string, tlsConfig *tls.Config) error {
 	if _, ok := instanceStore.Get(instanceKey).(*PGServer); ok && s.listener != nil {
 		return nil
 	}
 
 	log.Infof("starting postgres server proxy at %v", listenAddr)
+	var serverTLSConfig *tls.Config
+	if tlsConfig != nil {
+		serverTLSConfig = tlsConfig.Clone()
+		serverTLSConfig.NextProtos = []string{"postgresql"}
+	}
 
 	// start new instance
-	server, err := runPgProxyServer(listenAddr, tlsConfig, acceptPlainText)
+	server, err := runPgProxyServer(listenAddr, serverTLSConfig)
 	if err != nil {
 		return err
 	}
@@ -83,15 +91,19 @@ func (s *PGServer) Stop() error {
 
 func (s *PGServer) ListenAddr() string { return s.listenAddr }
 
-func runPgProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) (*PGServer, error) {
+func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, error) {
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
-	if tlsConfig != nil {
-		lis = tlstermination.NewTLSTermination(lis, tlsConfig, acceptPlainText)
+
+	server := &PGServer{
+		connectionStore: memory.New(),
+		listener:        lis,
+		listenAddr:      listenAddr,
+		tlsConfig:       tlsConfig,
 	}
-	server := &PGServer{connectionStore: memory.New(), listener: lis, listenAddr: listenAddr}
+
 	go func() {
 		defer lis.Close()
 		connectionID := 0
@@ -99,20 +111,30 @@ func runPgProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText 
 			connectionID++
 			pgClient, err := lis.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.With("conn", connectionID).Warnf("failed obtaining postgres connection, err=%v", err)
-				break
+				continue
 			}
 
 			sid := uuid.NewString()
-			conn, err := newPostgresConnection(sid, strconv.Itoa(connectionID), pgClient)
+			conn, err := newPostgresConnection(sid, strconv.Itoa(connectionID), pgClient, server.tlsConfig)
 			if err != nil {
+				// Prevents log pollution from health check requests on this port
+				if err == io.EOF {
+					log.With("conn", connectionID).Debugf("failed creating new postgres connection, reason=EOF error")
+					_ = pgClient.Close()
+					continue
+				}
 				log.With("conn", connectionID).Warnf("failed creating new postgres connection, err=%v", err)
 				_, _ = pgClient.Write(pgtypes.NewFatalError("failed creating new postgres connection, err=%v", err).Encode())
 				_ = pgClient.Close()
 				continue
 			}
-			server.connectionStore.Set(sid, conn)
 
+			server.connectionStore.Set(sid, conn)
 			go func() {
 				defer server.connectionStore.Del(sid)
 				conn.handleTcpConnection()
@@ -132,19 +154,43 @@ type postgresConn struct {
 	net.Conn
 }
 
-func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, error) {
+func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Config) (*postgresConn, error) {
 	pgpkt, err := pgtypes.Decode(conn)
 	if err != nil {
-		return nil, fmt.Errorf("failed decoding startup packet, err=%v", err)
+		return nil, err
 	}
-	pgConn := &postgresConn{sid: sid, id: connID, Conn: conn, initialPacket: pgpkt.Encode()}
-	if pgpkt.IsFrontendSSLRequest() {
-		// TODO(san): handle SSL request in the future
-		if _, err = pgConn.Write([]byte{pgtypes.ServerSSLNotSupported.Byte()}); err != nil {
-			return nil, fmt.Errorf("failed writing ssl not supported response, err=%v", err)
+
+	isFrontendTLSRequest, err := validateClientTLSConn(pgpkt, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if isFrontendTLSRequest {
+		log.With("conn", connID).Infof("accepting SSL request")
+		if _, err = conn.Write([]byte{pgtypes.ServerSSLSupported.Byte()}); err != nil {
+			return nil, fmt.Errorf("failed writing ssl supported response, err=%v", err)
 		}
-		return nil, fmt.Errorf("ssl request not supported")
+
+		// Upgrade connection to TLS
+		tlsConn := tls.Server(conn, tlsConfig)
+		if err := tlsConn.Handshake(); err != nil {
+			return nil, fmt.Errorf("failed performing TLS handshake, err=%v", err)
+		}
+
+		log.With("conn", connID).Infof("TLS handshake completed successfully")
+
+		// Now read the actual startup packet over the encrypted connection
+		pgpkt, err = pgtypes.Decode(tlsConn)
+		if err != nil {
+			return nil, fmt.Errorf("failed decoding startup packet after TLS, err=%v", err)
+		}
+
+		// Replace connection with TLS connection
+		conn = tlsConn
 	}
+
+	pgConn := &postgresConn{sid: sid, id: connID, Conn: conn, initialPacket: pgpkt.Encode()}
+
 	if pgpkt.IsCancelRequest() {
 		// TODO(san): handle cancel request in the future
 		return nil, fmt.Errorf("cancel request not implemented")
@@ -190,6 +236,17 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 		return nil, fmt.Errorf("invalid secret access key credentials")
 	}
 
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return nil, err
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
+		return nil, err
+	}
+
 	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
 		dba.ID, dba.UserSubject, dba.ConnectionName,
 		dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
@@ -201,13 +258,19 @@ func newPostgresConnection(sid, connID string, conn net.Conn) (*postgresConn, er
 		timeoutCancelFn()
 	}
 	pgConn.ctx = ctx
+
+	transport.PollingUserToken(pgConn.ctx, func(cause error) {
+		pgConn.cancelFn(cause.Error())
+	}, tokenVerifier, dba.UserSubject)
+
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "postgres/grpc",
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSCA:         appconfig.Get().GatewayTLSCa(),
-		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
@@ -335,4 +398,18 @@ func (c *postgresConn) handleServerWrite() {
 			return
 		}
 	}
+}
+
+// validateClientTLSConn checks if the client connection requests TLS
+// and whether it aligns with the server's TLS configuration.
+func validateClientTLSConn(pkt *pgtypes.Packet, tlsConfig *tls.Config) (bool, error) {
+	isFrontendTLSRequest := pkt.IsFrontendSSLRequest()
+	if tlsConfig == nil && isFrontendTLSRequest {
+		return isFrontendTLSRequest, fmt.Errorf("hoop server proxy is not enforcing TLS. The client must establish connection without TLS")
+	}
+
+	if tlsConfig != nil && !isFrontendTLSRequest {
+		return isFrontendTLSRequest, fmt.Errorf("hoop server proxy is enforcing TLS. The client must establish connection with TLS")
+	}
+	return isFrontendTLSRequest, nil
 }

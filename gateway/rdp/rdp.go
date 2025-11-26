@@ -3,10 +3,15 @@ package rdp
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
-	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
+	"io"
 	"net"
 	"time"
+
+	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
+	"github.com/hoophq/hoop/gateway/transport"
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
@@ -14,7 +19,6 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
@@ -76,10 +80,10 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 		return nil, fmt.Errorf("failed to start RDP proxy server at %v, reason=%v", listenAddr, err)
 	}
 
-	if tlsConfig != nil {
-		listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
-	}
-	
+	// if tlsConfig != nil {
+	// 	listener = tlstermination.NewTLSTermination(listener, tlsConfig, acceptPlainText)
+	// }
+
 	rdpProxyInstance := &RDPProxy{
 		listener:   listener,
 		listenAddr: listenAddr,
@@ -90,8 +94,15 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.Errorf("RDP accept error: %v", err)
-				break
+				if conn != nil {
+					_ = conn.Close()
+				}
+				continue
 			}
 
 			go rdpProxyInstance.handleRDPClient(conn, conn.RemoteAddr())
@@ -141,24 +152,40 @@ func sendGenericRdpError(conn net.Conn) error {
 
 func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	defer conn.Close()
-
 	connection := broker.NewClientCommunicator(conn)
 
-	// Read first RDP packet
-	firstRDPData, err := ReadFirstRDPPacket(conn)
-	if err != nil {
-		log.Errorf("Failed to read first RDP packet: %v", err)
-		return
+	var firstRDPData []byte
+	var err error
+	var extractedCreds string
+
+	if metaConn, ok := conn.(*tlstermination.TLSConnectionMeta); ok {
+		firstRDPData = metaConn.RDPCookie
+	} else {
+		// Read first RDP packet
+		firstRDPData, err = ReadFirstRDPPacket(conn)
+		if err != nil {
+			// Prevents log pollution from health check requests on this port
+			if err == io.EOF {
+				log.Debugf("failed to read first RDP packet, reason=EOF error")
+				return
+			}
+			log.Warnf("Failed to read first RDP packet: %v", err)
+			return
+		}
 	}
 
 	// Extract credentials from headers
-	extractedCreds, err := ExtractCredentialsFromRDP(firstRDPData)
+	extractedCreds, err = ExtractCredentialsFromRDP(firstRDPData)
 	if err != nil {
 		log.Errorf("Failed to extract credentials: %v", err)
 		return
 	}
 
 	secretKeyHash, err := keys.Hash256Key(extractedCreds)
+	if err != nil {
+		log.Errorf("failed hashing rdp secret key, reason=%v", err)
+		return
+	}
 
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
 		pb.ConnectionTypeRDP.String(),
@@ -181,8 +208,25 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
-	connectionModel, err := models.GetConnectionByNameOrID(storagev2.NewOrganizationContext(dba.OrgID), dba.ConnectionName)
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
 	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
+		return
+	}
+
+	userCtx, err := models.GetUserContext(dba.UserSubject)
+	if err != nil {
+		log.Errorf("failed fetching user context, reason=%v", err)
+		return
+	}
+
+	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
+	if connectionModel == nil || err != nil {
 		log.Errorf("failed fetching connection by name or id, reason=%v", err)
 		return
 	}
@@ -206,6 +250,10 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		log.Printf("CreateSession returned nil session")
 		return
 	}
+
+	transport.PollingUserToken(context.Background(), func(cause error) {
+		session.Close()
+	}, tokenVerifier, dba.UserSubject)
 
 	// Register session
 	// Clean up session on exit

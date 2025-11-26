@@ -499,7 +499,7 @@ type SessionGetByIDParams struct {
 	// * `raw-queries` - encode each event stream parsing the input of queries based on the database wire protocol (available databases: postgres)
 	EventStream SessionEventStreamType `json:"event_stream" default:""`
 	// Expand the given attributes
-	Expand string `json:"expand" enums:"event_stream" example:"event_stream" default:""`
+	Expand string `json:"expand" enums:"event_stream,session_input" example:"event_stream" default:""`
 }
 
 type SessionOption struct {
@@ -546,6 +546,8 @@ type Session struct {
 	OrgID string `json:"org_id" format:"uuid" example:"0CD7F941-2BB8-4F9F-93B0-11620D4652AB"`
 	// The input of the session. This value is only set for the verb `exec`
 	Script SessionScriptType `json:"script" example:"data:SELECT NOW()"`
+	// The input size of the session in bytes
+	ScriptSize int64 `json:"script_size" example:"12"`
 	// DEPRECATED in flavor of metrics and metadata
 	Labels SessionLabelsType `json:"labels"`
 	// Metadata attributes related to integrations with third party services

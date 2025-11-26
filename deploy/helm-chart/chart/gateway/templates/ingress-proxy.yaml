@@ -1,0 +1,19 @@
+{{- if .Values.proxyService.enabled -}}
+{{- $_ := required "proxyService.ports must have at least one port defined when proxyService.enabled is true" .Values.proxyService.ports -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: hoopgateway-proxy
+  {{- with .Values.proxyService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.proxyService.type | default "LoadBalancer" }}
+  selector:
+    app: hoopgateway
+  ports:
+  {{- with .Values.proxyService.ports }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

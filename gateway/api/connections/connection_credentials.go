@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -109,7 +110,11 @@ func CreateConnectionCredentials(c *gin.Context) {
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey))
 }
 
-func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn *models.Connection, serverConf *models.ServerMiscConfig, secretKey string) *openapi.ConnectionCredentialsResponse {
+func buildConnectionCredentialsResponse(
+	cred *models.ConnectionCredentials,
+	conn *models.Connection,
+	serverConf *models.ServerMiscConfig,
+	secretKey string) *openapi.ConnectionCredentialsResponse {
 	const dummyString = "hoop"
 
 	base := openapi.ConnectionCredentialsResponse{
@@ -128,21 +133,24 @@ func buildConnectionCredentialsResponse(cred *models.ConnectionCredentials, conn
 		var databaseName string
 		defaultDBEnc := conn.Envs["envvar:DB"]
 		if defaultDBEnc != "" {
-			defaultDBBytes, _ := base64.RawStdEncoding.DecodeString(defaultDBEnc)
+			defaultDBBytes, _ := base64.StdEncoding.DecodeString(defaultDBEnc)
 			databaseName = string(defaultDBBytes)
 		}
 		if databaseName == "" {
 			databaseName = "postgres"
 		}
-
+		sslMode := "disable"
+		if appconfig.Get().GatewayTLSKey() != "" {
+			sslMode = "require"
+		}
 		base.ConnectionCredentials = &openapi.PostgresConnectionInfo{
 			Hostname:     serverHost,
 			Port:         serverPort,
 			Username:     secretKey,
 			Password:     dummyString,
 			DatabaseName: databaseName,
-			ConnectionString: fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-				secretKey, dummyString, serverHost, serverPort, databaseName),
+			ConnectionString: fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+				secretKey, dummyString, serverHost, serverPort, databaseName, sslMode),
 		}
 	case proto.ConnectionTypeSSH:
 		base.ConnectionCredentials = &openapi.SSHConnectionInfo{

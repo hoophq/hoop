@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
+	"github.com/hoophq/hoop/gateway/session/wal"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -82,11 +83,61 @@ func (p *auditPlugin) dropWalLog(sid string) {
 }
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
-	walLogObj := p.walSessionStore.Pop(pctx.SID)
-	walogm, ok := walLogObj.(*walLogRWMutex)
-	if !ok {
-		return nil
+	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
+	if exists := wal.FileExists(walFolder); exists {
+		// if the wal file does not exist we neet to update the session event stream
+		blobStream := fmt.Sprintf(`[ [0, "%s", "%s"] ]`, "e", base64.StdEncoding.EncodeToString([]byte("no log found on disk")))
+		emptyMetrics := make(map[string]any, 0)
+
+		var blobFormat *string
+		switch pctx.ProtoConnectionType() {
+		case pb.ConnectionTypePostgres:
+			blobFormat = ptr.String(models.BlobFormatWireProtoType)
+		}
+
+		endDate := time.Now().UTC()
+		err := models.UpdateSessionEventStream(models.SessionDone{
+			ID:         pctx.SID,
+			OrgID:      pctx.OrgID,
+			Metrics:    emptyMetrics,
+			BlobStream: json.RawMessage(blobStream),
+			BlobFormat: blobFormat,
+			Status:     string(openapi.SessionStatusDone),
+			ExitCode:   parseExitCodeFromErr(errMsg),
+			EndSession: &endDate,
+		})
+		log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
+			Infof("finished persisting session to store (empty log), update-session-err=%v, context-err=%v", err, errMsg)
+
+		if err != nil {
+			log.With("sid", pctx.SID).Warnf("failed updating session event stream: %v", err)
+		}
+
+		log.With("sid", pctx.SID).Debugf("no wal log found on disk for session, path=%v, err=%v", walFolder, err)
+		p.walSessionStore.Pop(pctx.SID)
+		return err
+
 	}
+	// first we gonna try to obtain the wal from memory because could have unflushed logs from memory to disk
+	walLogObjMemory := p.walSessionStore.Pop(pctx.SID)
+	walogm, ok := walLogObjMemory.(*walLogRWMutex)
+
+	if !ok {
+		log.With("sid", pctx.SID).Warnf("failed obtaining write ahead log from memory for session %v", pctx.SID)
+		// then if not found on memory we try to open from disk
+		// so we can be sure everything is flushed to disk
+		walog, _, err := sessionwal.OpenWithHeader(walFolder)
+		if err != nil {
+			return fmt.Errorf("failed opening wal file to read header, err=%v", err)
+		}
+
+		walogm = &walLogRWMutex{
+			log:        walog,
+			mu:         sync.RWMutex{},
+			folderName: walFolder,
+		}
+	}
+
 	walogm.mu.Lock()
 	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
 	// we could add an attribute to have the last message
@@ -97,6 +148,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 			log.With("sid", pctx.SID).Warnf("failed writing end error message, err=%v", err)
 		}
 	}
+
 	wh, err := walogm.log.Header()
 	if err != nil {
 		return fmt.Errorf("failed decoding wal header object, err=%v", err)
@@ -186,6 +238,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	if err != nil {
 		log.With("sid", pctx.SID).Warnf("failed parsing session metrics to map, reason=%v", err)
 	}
+
 	err = models.UpdateSessionEventStream(models.SessionDone{
 		ID:         wh.SessionID,
 		OrgID:      wh.OrgID,

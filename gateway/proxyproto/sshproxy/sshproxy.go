@@ -3,6 +3,7 @@ package sshproxy
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	sshtypes "libhoop/proxy/ssh/types"
@@ -20,8 +21,10 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/transport"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -112,6 +115,10 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 			// accepts a new standard TCP connection
 			netConn, err := lis.Accept()
 			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					log.Info("proxy server listener closed, stopping accepting new connections")
+					return
+				}
 				log.With("conn", connectionID).Warnf("failed obtaining tcp connection, err=%v", err)
 				break
 			}
@@ -120,10 +127,15 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 			sessionID := uuid.NewString()
 			conn, err := newSSHConnection(sessionID, connectionID, netConn, hostKey)
 			if err != nil {
-				log.
-					With("sid", sessionID, "conn", connectionID).
-					Warnf("failed creating new SSH connection, err=%v", err)
-
+				// Prevents log pollution from health check requests on this port
+				if err == io.EOF {
+					log.With("sid", sessionID, "conn", connectionID).
+						Debugf("failed creating new SSH connection, reason=%v", err)
+					_ = netConn.Close()
+					continue
+				}
+				log.With("sid", sessionID, "conn", connectionID).
+					Warnf("failed creating new SSH connection, reason=%v", err)
 				_ = netConn.Close()
 				continue
 			}
@@ -207,6 +219,9 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 
 	sshConn, clientNewCh, sshReq, err := ssh.NewServerConn(conn, sshServerConfig)
 	if err != nil {
+		if err == io.EOF {
+			return nil, io.EOF
+		}
 		return nil, fmt.Errorf("failed establishing SSH connection: %v", err)
 	}
 
@@ -231,6 +246,16 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		return nil, fmt.Errorf("failed parsing context duration: %v", err)
 	}
 
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return nil, err
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, userSubject); err != nil {
+		return nil, err
+	}
+
 	log.
 		With("sid", sid, "remote-addr", conn.RemoteAddr()).
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
@@ -241,8 +266,9 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		Token:         "", // it will use impersonate-auth-key as authentication
 		UserAgent:     "ssh/grpc",
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSCA:         appconfig.Get().GatewayTLSCa(),
-		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, connectionName),
 		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
@@ -257,8 +283,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
-
-	return &sshConnection{
+	sessionConn := &sshConnection{
 		id:  connID,
 		sid: sid,
 		ctx: ctx,
@@ -269,7 +294,13 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		sshConn:             sshConn,
 		grpcClient:          client,
 		clientNewSshChannel: clientNewCh,
-	}, nil
+	}
+
+	transport.PollingUserToken(sessionConn.ctx, func(cause error) {
+		sessionConn.cancelFn(cause.Error())
+	}, tokenVerifier, userSubject)
+
+	return sessionConn, nil
 }
 
 func (c *sshConnection) handleConnection() {

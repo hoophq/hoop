@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 const maxTemplateSize = 1_000_000 // 1MB
@@ -89,17 +90,6 @@ func deleteRunbookCache(orgId string, gitUrl string) {
 	}
 }
 
-func slicesHasIntersection[T comparable](a, b []T) bool {
-	// Ensure 'a' is the smaller slice to optimize performance
-	if len(a) > len(b) {
-		a, b = b, a
-	}
-
-	return slices.ContainsFunc(a, func(x T) bool {
-		return slices.Contains(b, x)
-	})
-}
-
 func GetRunbooks(orgId string, config *runbooks.Config) (*object.Commit, error) {
 	commit, ok := getRunbookCache(orgId, config.GetNormalizedGitURL())
 
@@ -136,7 +126,7 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 	var matchedRules []models.RunbookRules
 	for _, rule := range runbookRules {
 		// Check if user groups intersect with rule user groups
-		hasMatchingUserGroup := len(rule.UserGroups) == 0 || slicesHasIntersection(rule.UserGroups, userGroups)
+		hasMatchingUserGroup := len(rule.UserGroups) == 0 || utils.SlicesHasIntersection(rule.UserGroups, userGroups)
 
 		// Check if runbook is listed in the rule
 		hasMatchingRunbook := hasMatchingUserGroup && (len(rule.Runbooks) == 0 || slices.ContainsFunc(rule.Runbooks, func(runbook models.RunbookRuleFile) bool {

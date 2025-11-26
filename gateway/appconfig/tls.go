@@ -7,10 +7,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
-	"github.com/hoophq/hoop/common/log"
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/hoophq/hoop/common/log"
 )
 
 // loadTlsConfigOnce ensures TLS config is loaded or generated only once.
@@ -31,33 +32,22 @@ func (c Config) GatewayAllowPlaintext() bool {
 
 // loadOrGenerateTlsConfig loads TLS configuration from files or generates a self-signed certificate if files are not provided.
 func loadOrGenerateTlsConfig() (tlsConfig *tls.Config, err error) {
-	var certPool *x509.CertPool
-	caFile, certData, keyData := Get().GatewayTLSCa(), Get().GatewayTLSCert(), Get().GatewayTLSKey()
-
-	if caFile != "" {
-		certPool = x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM([]byte(caFile)) {
-			return tlsConfig, fmt.Errorf("failed creating cert pool for TLS_CA")
-		}
-		log.Infof("loaded TLS CA certificate from caFile=%s", caFile)
-	}
-
+	certData, keyData := Get().GatewayTLSCert(), Get().GatewayTLSKey()
 	if certData != "" && keyData != "" {
 		cert, err := tls.X509KeyPair([]byte(certData), []byte(keyData))
 		if err != nil {
-			return tlsConfig, err
+			return nil, err
 		}
 		log.Info("loaded TLS certificate from config")
-		return buildTLSConfig(cert, certPool), nil
+		return buildTLSConfig(cert), nil
 	}
 
 	log.Warnf("no TLS certificate and/or key file provided, generating self-signed certificate")
 	cert, err := generateSelfSignedCert()
 	if err != nil {
-		return tlsConfig, err
+		return nil, err
 	}
-
-	return buildTLSConfig(cert, certPool), nil
+	return buildTLSConfig(cert), nil
 }
 
 // generateSelfSignedCert creates a self-signed TLS certificate
@@ -98,10 +88,9 @@ func generateSelfSignedCert() (cert tls.Certificate, err error) {
 }
 
 // buildTLSConfig constructs a tls.Config from the provided certificate and certificate pool.
-func buildTLSConfig(cert tls.Certificate, certPool *x509.CertPool) *tls.Config {
+func buildTLSConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		RootCAs:      certPool,
 		MinVersion:   tls.VersionTLS12,
 	}
 }

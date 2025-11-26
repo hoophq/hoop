@@ -3,10 +3,11 @@ package tlstermination
 import (
 	"bytes"
 	"crypto/tls"
-	"github.com/hoophq/hoop/common/log"
-	"github.com/pkg/errors"
 	"net"
 	"time"
+
+	"github.com/hoophq/hoop/common/log"
+	"github.com/pkg/errors"
 )
 
 var _ net.Listener = (*tlsTermination)(nil)
@@ -15,6 +16,11 @@ type tlsTermination struct {
 	net.Listener
 	tlsConfig       *tls.Config
 	acceptPlainText bool
+}
+
+type TLSConnectionMeta struct {
+	net.Conn
+	RDPCookie []byte
 }
 
 // NewTLSTermination wraps a net.Listener and terminates TLS using the provided certificate.
@@ -36,12 +42,14 @@ func (t *tlsTermination) Accept() (net.Conn, error) {
 	// Postgres has a special check before TLS
 	isPostgresTLS, err := isPostgresTLSCheck(bconn)
 	if isPostgresTLS {
-		return t.toTLSConn(bconn), nil
+		return t.toTLSConn(bconn, nil), nil
 	}
 	log.Debugf("isPostgresTLS=%v, err=%v", isPostgresTLS, err)
 
+	cookie := handleRDPLoadbalancerHash(bconn)
+
 	if !t.acceptPlainText { // force TLS
-		return t.toTLSConn(bconn), nil
+		return t.toTLSConn(bconn, cookie), nil
 	}
 
 	isTLS, err := isTLSConn(bconn)
@@ -50,18 +58,19 @@ func (t *tlsTermination) Accept() (net.Conn, error) {
 		return nil, errors.Wrap(err, "failed to determine if connection is TLS")
 	}
 
-	log.Debugf("connection isTLS=%v", isTLS)
-
 	if isTLS {
-		return t.toTLSConn(bconn), nil
+		return t.toTLSConn(bconn, cookie), nil
 	}
 
 	return bconn, nil
 }
 
 // toTLSConn converts a tcp connection to a tls connection
-func (t *tlsTermination) toTLSConn(conn net.Conn) *tls.Conn {
-	return tls.Server(conn, t.tlsConfig)
+func (t *tlsTermination) toTLSConn(conn net.Conn, cookie []byte) net.Conn {
+	return TLSConnectionMeta{
+		tls.Server(conn, t.tlsConfig),
+		cookie,
+	}
 }
 
 // isTLSConn checks if the connection handshake is currently sent by the connector
@@ -104,6 +113,51 @@ func isTLSConn(conn BufferedConnection) (bool, error) {
 	minorSupported := protoVersionMinor <= 4
 
 	return contentIsHandshake && majorSupported && minorSupported, nil
+}
+
+func handleRDPLoadbalancerHash(conn BufferedConnection) []byte {
+	var netErr net.Error
+	data, err := conn.Peek(4)
+
+	if err != nil {
+		// if err is timeout, return false but nil
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			log.Warn("timeout while peeking connection for RDP Cookies.")
+			err = nil
+		}
+		return nil
+	}
+
+	if data[0] == 0x03 && data[1] == 0x00 && data[2] == 0x00 {
+		// Check for size and fetch cookie data
+		pktLen := data[3]
+		data, err = conn.Peek(int(pktLen) + 4)
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			log.Warn("timeout while peeking connection for TLS detection. Assuming plain text.")
+			err = nil
+			return nil
+		}
+		if bytes.Contains(data, []byte("Cookie:")) {
+			conn.Consume(4 + int(pktLen))
+			// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b2975bdc-6d56-49ee-9c57-f2ff3a0b6817
+			response := []byte{
+				0x03, 0x00, 0x00, 0x13, // TPKT: version=3, reserved=0, length=11
+				0x0e,       // COTP: length=6
+				0xD0,       // COTP: CC (Connection Confirm)
+				0x00, 0x00, // DST-REF
+				0x12, 0x34, // SRC-REF
+				0x00,       // CLASS-OPTION
+				0x02,       // RDP Negotiation Response
+				0x1F,       // Flags
+				0x08, 0x00, // Length of RDP Negotiation Response
+				0x01, 0x00, 0x00, 0x00, // Hybrid
+			}
+			_, _ = conn.Write(response)
+			return data
+		}
+	}
+
+	return nil
 }
 
 func isPostgresTLSCheck(conn BufferedConnection) (bool, error) {

@@ -285,6 +285,13 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		return
 	}
 
+	err = models.UpsertUserToken(models.DB, uinfo.Subject, sessionToken)
+	if err != nil {
+		log.Errorf("failed upserting user token, reason=%v", err)
+		redirectToErrURL(c, login.Redirect, "unable to store user token")
+		return
+	}
+
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress {

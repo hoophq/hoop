@@ -74,5 +74,16 @@ func generateNewAccessToken(subject, email string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get local provider instance: %v", err)
 	}
-	return localVerifier.NewAccessToken(subject, email, defaultTokenExpiration)
+
+	token, err := localVerifier.NewAccessToken(subject, email, defaultTokenExpiration)
+	if err != nil {
+		return "", err
+	}
+
+	err = models.UpsertUserToken(models.DB, subject, token)
+	if err != nil {
+		return "", fmt.Errorf("failed upserting user token: %v", err)
+	}
+
+	return token, nil
 }

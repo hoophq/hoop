@@ -149,6 +149,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 			Addr:      "0.0.0.0:8009",
 			Handler:   route,
 			TLSConfig: a.TLSConfig,
+			ErrorLog:  log.NewStdHttpLogger(),
 		}
 		if err := server.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("Failed to start HTTPS server, err=%v", err)
@@ -443,6 +444,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
+	r.GET("/sessions/:session_id/download/input", sessionapi.DownloadSessionInput)
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)

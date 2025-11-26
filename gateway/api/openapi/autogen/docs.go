@@ -4905,7 +4905,8 @@ const docTemplate = `{
                     },
                     {
                         "enum": [
-                            "event_stream"
+                            "event_stream",
+                            "session_input"
                         ],
                         "type": "string",
                         "example": "event_stream",
@@ -5015,8 +5016,88 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/download/input": {
+            "get": {
+                "description": "Download session input session by id",
+                "produces": [
+                    "application/octet-stream",
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Download Session Input Command",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "headers": {
+                            "Accept-Length": {
+                                "type": "integer",
+                                "description": "size in bytes of the content"
+                            },
+                            "Content-Disposition": {
+                                "type": "string",
+                                "description": "application/octet-stream"
+                            },
+                            "Content-Type": {
+                                "type": "string",
+                                "description": "application/octet-stream"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -9521,6 +9602,11 @@ const docTemplate = `{
                     "example": {
                         "data": "SELECT NOW()"
                     }
+                },
+                "script_size": {
+                    "description": "The input size of the session in bytes",
+                    "type": "integer",
+                    "example": 12
                 },
                 "start_date": {
                     "description": "When the execution started",

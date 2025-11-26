@@ -60,8 +60,6 @@
         ;; command-args is stored as array of {"value": "...", "label": "..."}
         ;; Extract just the values
 
-        _ (println "role" role)
-
         command-args (:command-args role [])
         command (if (and (= type "custom")
                          (= subtype "linux-vm"))

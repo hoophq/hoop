@@ -145,8 +145,9 @@ func New(opts *Options) (*clientExec, error) {
 		Token:         opts.BearerToken,
 		UserAgent:     userAgent,
 		Insecure:      appconfig.Get().GatewayUseTLS() == false,
-		TLSSkipVerify: appconfig.Get().GatewaySkipTLSVerify(),
-		TLSCA:         appconfig.Get().GatewayTLSCa(),
+		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
+		// it should be safe to skip verify here as we are connecting to localhost
+		TLSSkipVerify: true,
 	},
 		grpc.WithOption(grpc.OptionConnectionName, opts.ConnectionName),
 		grpc.WithOption("origin", opts.Origin),
@@ -223,10 +224,14 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 	recvCh := grpc.NewStreamRecv(c.ctx, c.client)
 	for {
 		var dstream *grpc.DataStream
+		var ok bool
 		select {
 		case <-c.ctx.Done():
 			return newRawErr(context.Cause(c.ctx))
-		case dstream = <-recvCh:
+		case dstream, ok = <-recvCh:
+			if !ok {
+				return newErr("grpc stream recv closed")
+			}
 		}
 
 		pkt, err := dstream.Recv()

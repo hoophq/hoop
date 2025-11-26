@@ -709,6 +709,7 @@ Resources:
                 rm -rf /opt/hoop/migrations
                 tar --extract --file hoopgateway_$VERSION-Linux_amd64.tar.gz -C / --strip 1 && rm -f hoopgateway_$VERSION-Linux_amd64.tar.gz
                 chown -R root: /opt/hoop
+                chmod +x /op/hoop/bin/* || true
                 SECRET_JSON=$(aws secretsmanager get-secret-value \
                   --secret-id hoopdev/${AWS::StackName}/pgmaster \
                   --region ${AWS::Region} \

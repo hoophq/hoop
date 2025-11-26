@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
+	"github.com/hoophq/hoop/agent/rds"
 	"github.com/hoophq/hoop/agent/secretsmanager"
 	term "github.com/hoophq/hoop/agent/terminal"
 	"github.com/hoophq/hoop/common/log"
@@ -353,6 +355,35 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		}
 	}
 
+	userValue, ok := connParams.EnvVars["envvar:USER"]
+	if ok {
+		d, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", userValue))
+		if err != nil {
+			log.With("sid", sessionIDKey).Warnf("failed decoding USER env var, err=%v", err)
+			return nil, fmt.Errorf("failed decoding USER env var, err=%v", err)
+		}
+
+		if strings.HasPrefix(string(d), "_aws_iam_rds:") {
+			rdsAuthEnv, err := rds.BuildRdsEnvAuth(connParams.EnvVars)
+			if err != nil {
+				log.With("sid", sessionIDKey).Warnf("failed generating aws rds auth token, err=%v", err)
+				return nil, fmt.Errorf("failed generating aws rds auth token, err=%v", err)
+			}
+
+			//overwrite env vars with rds auth
+			connParams.EnvVars = rdsAuthEnv
+			if connParams.ConnectionType == "mysql" {
+				// look for --enable-cleartext-plugin
+				hasEnableClearTextPlugin := slices.Contains(connParams.CmdList, "--enable-cleartext-plugin")
+				//https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.IAMDBAuth.Connecting.AWSCLI.html#UsingWithRDS.IAMDBAuth.Connecting.AWSCLI.Connect
+				//--enable-cleartext-plugin – A value that specifies that AWSAuthenticationPlugin must be used for this connection
+				//If you are using a MariaDB client, the --enable-cleartext-plugin option isn't required.
+				if !hasEnableClearTextPlugin {
+					connParams.CmdList = append(connParams.CmdList, "--enable-cleartext-plugin")
+				}
+			}
+		}
+	}
 	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
 		switch connType {
 		case pb.ConnectionTypePostgres:

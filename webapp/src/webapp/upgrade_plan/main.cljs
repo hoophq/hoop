@@ -18,12 +18,12 @@
      description]]])
 
 (defn main [remove-back?]
-  [:> Box {:class "bg-white relative overflow-hidden"}
+  [:> Box {:class "bg-white relative overflow-hidden min-h-screen flex flex-col"}
    (when-not remove-back?
      [:> Box {:p "5"}
       [button/HeaderBack]])
 
-   [:> Flex {:align "center" :justify "between" :gap "8" :p "9"}
+   [:> Flex {:align "start" :justify "between" :gap "8" :p "9"}
     [:> Box {:class "w-2/3 xl:w-1/2 space-y-12 pr-0 2xl:pr-16"}
      [:> Box {:class "space-y-4"}
       [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-[--gray-12]"}
@@ -52,10 +52,10 @@
                               "I want to upgrade my current plan"))}
       "Request a demo"]]
 
-    [:> Box {:class (str "mt-[--space-9] absolute top-1/2 -translate-y-1/2 right-0 w-1/2 h-auto "
+    [:> Box {:class (str "absolute top-[--space-9] right-0 w-1/2 h-auto "
                          "transform translate-x-1/4 xl:translate-x-16 2xl:translate-x-10")}
      [:> Box {:class "h-full w-full relative"}
       [:img {:src (str config/webapp-url "/images/upgrade-plan.png")
              :alt "Terminal interface"
-             :class (str "w-full h-[578px] "
+             :class (str "w-full h-[800px] "
                          "object-cover object-left")}]]]]])
