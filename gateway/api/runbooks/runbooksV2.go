@@ -74,20 +74,20 @@ func ListRunbooksV2(c *gin.Context) {
 	}
 
 	runbookList := &openapi.RunbookListV2{
+		Errors:       make([]string, 0),
 		Repositories: []openapi.RunbookRepositoryList{},
 	}
 	for _, repoConfig := range runbookConfig.RepositoryConfigs {
 		config, err := models.BuildCommonConfig(&repoConfig)
 		if err != nil {
-			log.Errorf("failed creating runbook config, err=%v", err)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-			return
+			runbookList.Errors = append(runbookList.Errors, fmt.Sprintf("failed creating runbook config for repo %s, err=%v", repoConfig.GitUrl, err))
+			continue
 		}
+
 		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, removeEmptyConnectionsList)
 		if err != nil {
-			log.Errorf("failed listing runbooks, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
-			return
+			runbookList.Errors = append(runbookList.Errors, fmt.Sprintf("failed listing runbooks for repo %s, err=%v", repoConfig.GitUrl, err))
+			continue
 		}
 		runbookList.Repositories = append(runbookList.Repositories, *repositoryList)
 	}

@@ -2062,6 +2062,9 @@ type RunbookRepositoryList struct {
 }
 
 type RunbookListV2 struct {
+	// Errors encountered during fetching runbooks
+	Errors []string `json:"errors"`
+	// List of runbook repositories
 	Repositories []RunbookRepositoryList `json:"repositories"`
 }
 
