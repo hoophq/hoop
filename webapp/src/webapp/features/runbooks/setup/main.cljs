@@ -59,7 +59,7 @@
                            :on-click #(rf/dispatch [:navigate :create-runbooks-rule])}
                 "Create Runbooks Rule"])]
 
-            [:> Box {:class "flex-grow"}
+            [:> Box {:class "flex flex-col"}
              [:> Tabs.Root {:value @active-tab
                             :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}

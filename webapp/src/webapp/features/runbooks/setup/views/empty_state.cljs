@@ -44,8 +44,7 @@
    [:> Flex {:align "center" :class "text-sm"}
     [:> Text {:class "text-gray-11 mr-1"}
      "Need more information? Check out"]
-    [:a {:href (config/docs-url :features :runbooks)
+    [:a {:href (get-in config/docs-url [:features :runbooks])
+         :target "_blank"
          :class "text-blue-600 hover:underline"}
-     "runbooks documentation"]
-    [:> Text {:class "text-gray-11 ml-1"}
-     "."]]])
+     "Runbooks documentation."]]])

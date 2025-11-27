@@ -39,10 +39,15 @@
  (fn [db [_ data]]
    (update-in db [:runbooks-rules :list] merge {:status :success :data data})))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/get-all-failure
- (fn [db [_ error]]
-   (update-in db [:runbooks-rules :list] merge {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbook rules"
+                        :details error-message}]]]})))
 
 (rf/reg-event-fx
  :runbooks-rules/get-by-id
@@ -58,10 +63,15 @@
  (fn [db [_ data]]
    (update-in db [:runbooks-rules :active-rule] merge {:status :success :data data})))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/get-by-id-failure
- (fn [db [_ error]]
-   (update-in db [:runbooks-rules :active-rule] merge {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :active-rule] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbook rule"
+                        :details error-message}]]]})))
 
 (rf/reg-event-fx
  :runbooks-rules/create
@@ -82,10 +92,15 @@
                      {:level :success
                       :text "Runbook rule created successfully!"}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/create-failure
- (fn [db [_ error]]
-   (update-in db [:runbooks-rules :list] merge {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to create runbook rule"
+                        :details error-message}]]]})))
 
 (rf/reg-event-fx
  :runbooks-rules/update
@@ -106,10 +121,15 @@
                      {:level :success
                       :text "Runbook rule updated successfully!"}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/update-failure
- (fn [db [_ error]]
-   (update-in db [:runbooks-rules :list] merge {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to update runbook rule"
+                        :details error-message}]]]})))
 
 (rf/reg-event-db
  :runbooks-rules/clear-active-rule
@@ -134,10 +154,15 @@
                      {:level :success
                       :text "Runbook rule deleted successfully!"}]]]}))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-rules/delete-failure
- (fn [db [_ error]]
-   (update-in db [:runbooks-rules :list] merge {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to delete runbook rule"
+                        :details error-message}]]]})))
 
 ;; Runbooks Configuration Events
 (rf/reg-event-fx
@@ -154,10 +179,15 @@
  (fn [db [_ data]]
    (assoc-in db [:runbooks-configurations] {:status :success :data data})))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-configurations/get-failure
- (fn [db [_ error]]
-   (assoc-in db [:runbooks-configurations] {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (assoc-in db [:runbooks-configurations] {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbook configurations"
+                        :details error-message}]]]})))
 
 (rf/reg-event-fx
  :runbooks-configurations/update
@@ -171,9 +201,6 @@
                                             (when on-success (on-success)))
                              :on-failure #(do
                                             (rf/dispatch [:runbooks-configurations/update-failure %])
-                                            (rf/dispatch [:show-snackbar
-                                                          {:level :error
-                                                           :text "Failed to save repository configuration"}])
                                             (when on-failure (on-failure)))}]]]}))
 
 (rf/reg-event-db
@@ -181,10 +208,15 @@
  (fn [db [_ data]]
    (assoc-in db [:runbooks-configurations] {:status :success :data data})))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks-configurations/update-failure
- (fn [db [_ error]]
-   (assoc-in db [:runbooks-configurations] {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (assoc-in db [:runbooks-configurations] {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to save repository configuration"
+                        :details error-message}]]]})))
 
 ;; Runbooks List Events
 (rf/reg-event-fx
@@ -204,8 +236,13 @@
  (fn [db [_ data]]
    (assoc-in db [:runbooks :list] {:status :success :data (or (:repositories data) [])})))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks/list-failure
- (fn [db [_ error]]
-   (assoc-in db [:runbooks :list] {:status :error :error error})))
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (assoc-in db [:runbooks :list] {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbooks"
+                        :details error-message}]]]})))
 
