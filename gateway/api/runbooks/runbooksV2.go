@@ -32,7 +32,7 @@ import (
 //	@Tags			Runbooks
 //	@Produce		json
 //	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
-//	@Success		200			{object}	openapi.RunbookList
+//	@Success		200			{object}	openapi.RunbookListV2
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
 func ListRunbooksV2(c *gin.Context) {

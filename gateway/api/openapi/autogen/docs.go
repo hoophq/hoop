@@ -3791,7 +3791,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/openapi.RunbookList"
+                            "$ref": "#/definitions/openapi.RunbookListV2"
                         }
                     },
                     "404": {
@@ -8729,6 +8729,25 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.RunbookListV2": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "description": "Errors encountered during fetching runbooks",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "repositories": {
+                    "description": "List of runbook repositories",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.RunbookRepositoryList"
+                    }
+                }
+            }
+        },
         "openapi.RunbookRepository": {
             "type": "object",
             "required": [
@@ -8773,6 +8792,37 @@ const docTemplate = `{
                     "description": "SSH username for Git repository authentication",
                     "type": "string",
                     "example": "myuser"
+                }
+            }
+        },
+        "openapi.RunbookRepositoryList": {
+            "type": "object",
+            "properties": {
+                "commit": {
+                    "description": "The commit sha",
+                    "type": "string",
+                    "example": "03c25fd64c74712c71798250d256d4b859dd5853"
+                },
+                "commit_author": {
+                    "description": "The commit author",
+                    "type": "string",
+                    "example": "John Wick \u003cjohn.wick@bad.org\u003e"
+                },
+                "commit_message": {
+                    "description": "The commit message",
+                    "type": "string",
+                    "example": "runbook update"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Runbook"
+                    }
+                },
+                "repository": {
+                    "description": "Repository url",
+                    "type": "string",
+                    "example": "github.com/myorg/myrepo"
                 }
             }
         },
