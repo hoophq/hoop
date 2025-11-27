@@ -15,12 +15,12 @@
    (let [plugin (get-in db [:plugins->plugin-details :plugin])
          connections (or (:connections plugin) [])
          updated-connections (map (fn [conn]
-                                   (if (and (:config conn) (some #(= % path) (:config conn)))
-                                     (update conn :config (fn [config]
-                                                            (let [filtered (vec (remove #(= % path) config))]
-                                                              (if (empty? filtered) nil filtered))))
-                                     conn))
-                                 connections)
+                                    (if (and (:config conn) (some #(= % path) (:config conn)))
+                                      (update conn :config (fn [config]
+                                                             (let [filtered (vec (remove #(= % path) config))]
+                                                               (if (empty? filtered) nil filtered))))
+                                      conn))
+                                  connections)
          updated-plugin (assoc plugin :connections (vec updated-connections))]
      {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]})))
 
@@ -223,7 +223,7 @@
  :runbooks/list
  (fn [{:keys [db]} [_ connection-name]]
    (let [query-params (when connection-name
-                       {:connection_name connection-name})]
+                        {:connection_name connection-name})]
      {:db (assoc-in db [:runbooks :list :status] :loading)
       :fx [[:dispatch [:fetch {:method "GET"
                                :uri "/runbooks"
@@ -231,10 +231,18 @@
                                :on-success #(rf/dispatch [:runbooks/list-success %])
                                :on-failure #(rf/dispatch [:runbooks/list-failure %])}]]]})))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :runbooks/list-success
- (fn [db [_ data]]
-   (assoc-in db [:runbooks :list] {:status :success :data (or (:repositories data) [])})))
+ (fn [{:keys [db]} [_ data]]
+   (let [errors (:errors data)
+         has-errors? (and errors (seq errors))
+         repositories (or (:repositories data) [])]
+     {:db (update-in db [:runbooks :list] merge {:status :success :data repositories})
+      :fx (cond-> []
+            has-errors? (conj [:dispatch [:show-snackbar
+                                          {:level :error
+                                           :text "Failed to load runbooks"
+                                           :details {:error errors}}]]))})))
 
 (rf/reg-event-fx
  :runbooks/list-failure

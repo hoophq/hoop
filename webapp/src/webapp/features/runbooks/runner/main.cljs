@@ -139,7 +139,6 @@
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]
 
     (rf/dispatch [:runbooks/load-persisted-connection])
-    (rf/dispatch [:runbooks/list nil])
 
     (fn []
       (when (and (seq @search-term)

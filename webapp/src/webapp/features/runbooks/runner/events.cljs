@@ -62,13 +62,13 @@
      (if (and saved (.startsWith saved "{"))
        (do
          (.removeItem js/localStorage "runbooks-selected-connection")
-         {})
+         {:fx [[:dispatch [:runbooks/list nil]]]})
        ;; New format - fetch the connection
        (if (and saved (not= saved "null") (not= saved ""))
          {:fx [[:dispatch [:connections->get-connection-details
                            saved
                            [:runbooks/connection-loaded]]]]}
-         {})))))
+         {:fx [[:dispatch [:runbooks/list nil]]]})))))
 
 (rf/reg-event-fx
  :runbooks/connection-loaded
@@ -77,7 +77,7 @@
      (if connection
        {:db (assoc-in db [:runbooks :selected-connection] connection)
         :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
-       ;; Connection not found - clear selection and reload list without connection
+       ;; Connection not found - clear selection
        {:db (assoc-in db [:runbooks :selected-connection] nil)
         :fx [[:dispatch [:runbooks/persist-selected-connection]]
              [:dispatch [:runbooks/list nil]]]}))))
