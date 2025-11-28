@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
    ["lucide-react" :refer [ArrowLeft]]
-   [clojure.string :as str]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
@@ -32,7 +32,7 @@
   "Extract folder from runbook name (e.g., 'ops/update-user.runbook.sh' -> 'ops/')"
   [name]
   (if (string? name)
-    (let [parts (str/split name #"/")]
+    (let [parts (cs/split name #"/")]
       (if (> (count parts) 1)
         (str (first parts) "/")
         ""))
@@ -126,14 +126,15 @@
         runbooks-list (rf/subscribe [:runbooks/list])]
     (fn []
       (let [selected-connection-names @(:connection-names state)
+            conns (or (:data @connections) [])
+            conn-by-name (into {} (map (juxt :name identity)) conns)
             selected-connections-data (mapv (fn [name]
-                                              (let [conn (first (filter #(= (:name %) name) (or (:data @connections) [])))]
+                                              (let [conn (get conn-by-name name)]
                                                 {:id (or (:id conn) name)
                                                  :name name}))
                                             selected-connection-names)
             connection-ids (mapv (fn [name]
-                                   (let [conn (first (filter #(= (:name %) name) (or (:data @connections) [])))]
-                                     (or (:id conn) name)))
+                                   (or (:id (get conn-by-name name)) name))
                                  selected-connection-names)
             user-group-options (array->select-options @user-groups)
             runbook-options (generate-runbook-options @runbooks-list)]

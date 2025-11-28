@@ -6,7 +6,6 @@
   "Extract just the repository name from a full repository path.
    Example: 'github.com/hoophq/runbooks' -> 'runbooks'"
   [repo-path]
-  (if (string? repo-path)
-    (let [parts (cs/split repo-path #"/")]
-      (last parts))
-    repo-path))
+  (when
+   (string? repo-path)
+    (->> (cs/split repo-path #"/") (remove cs/blank?) last)))
