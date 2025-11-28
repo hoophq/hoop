@@ -8,6 +8,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/models/bootstrap/migrations"
 	_ "github.com/lib/pq"
 )
 
@@ -40,5 +41,18 @@ func MigrateDB(postgresURI, migrationPathFiles string) error {
 		}
 		return fmt.Errorf("failed running db migration, err=%v", err)
 	}
+
+	return nil
+}
+
+func RunGolangMigrations() error {
+	log.Info("running golang migration scripts!")
+
+	// Run RunbooksV2 migration
+	err := migrations.RunRunbooksV2()
+	if err != nil {
+		return fmt.Errorf("failed running RunbooksV2 migration, err=%v", err)
+	}
+
 	return nil
 }
