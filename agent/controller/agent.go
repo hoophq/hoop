@@ -53,6 +53,9 @@ type (
 		connectionString   string
 		httpProxyRemoteURL string
 		httpProxyHeaders   map[string]string
+		awsRegion          string
+		awsSecretAccessKey string
+		awsAccessKeyID     string
 	}
 )
 
@@ -601,9 +604,9 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
 		}
 	case pb.ConnectionTypeSSM:
-		env.user = envVarS.Getenv("AWS_ACCESS_KEY_ID")
-		env.pass = envVarS.Getenv("AWS_SECRET_ACCESS_KEY")
-		env.host = envVarS.Getenv("AWS_REGION")
+		env.awsAccessKeyID = envVarS.Getenv("AWS_ACCESS_KEY_ID")
+		env.awsSecretAccessKey = envVarS.Getenv("AWS_SECRET_ACCESS_KEY")
+		env.awsSecretAccessKey = envVarS.Getenv("AWS_REGION")
 		if env.user == "" || env.pass == "" {
 			return nil, fmt.Errorf("missing required secrets for SSM connection [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]")
 		}

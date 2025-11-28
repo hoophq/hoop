@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"libhoop"
-	"strings"
 
 	"github.com/aws/session-manager-plugin/src/service"
 	"github.com/hoophq/hoop/common/log"
@@ -42,7 +41,7 @@ func (a *Agent) processSSMProtocol(pkt *pb.Packet) {
 		return
 	}
 
-	targetInstance := string(pkt.Spec[pb.SpecInstanceId])
+	targetInstance := string(pkt.Spec[pb.SpecAwsSSMEc2InstanceId])
 	if targetInstance == "" {
 		log.Println("missing aws instance id")
 		a.sendClientSessionClose(sessionID, "missing aws instance id, contact the administrator")
@@ -51,21 +50,12 @@ func (a *Agent) processSSMProtocol(pkt *pb.Packet) {
 
 	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeSSM)
 	if err != nil {
-		log.Error("postgres credentials not found in memory, err=%v", err)
+		log.Error("AWS SSM credentials not found in memory, err=%v", err)
 		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
 		return
 	}
 
-	log.Infof("session=%v - starting postgres connection at %v:%v", sessionID, connenv.host, connenv.port)
-
-	var dataMaskingEntityTypesData string
-	if connParams.DataMaskingEntityTypesData != nil {
-		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
-	}
-	var guardRailRules string
-	if connParams.GuardRailRules != nil {
-		guardRailRules = string(connParams.GuardRailRules)
-	}
+	log.Infof("session=%v - starting AWS SSM connection at %v:%v", sessionID, connenv.host, connenv.port)
 
 	var initPacket service.OpenDataChannelInput
 	if err := json.Unmarshal(pkt.Payload, &initPacket); err != nil {
@@ -76,20 +66,11 @@ func (a *Agent) processSSMProtocol(pkt *pb.Packet) {
 	}
 
 	opts := map[string]string{
-		"sid":                       sessionID,
-		"dlp_provider":              connParams.DlpProvider,
-		"dlp_mode":                  connParams.DlpMode,
-		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
-		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
-		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
-		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
-		"dlp_masking_character":     "#",
-		"data_masking_entity_data":  dataMaskingEntityTypesData,
-		"guard_rail_rules":          guardRailRules,
-		"aws_access_key_id":         connenv.user,
-		"aws_secret_access_key":     connenv.pass,
-		"aws_region":                connenv.host,
-		"aws_instance_id":           targetInstance,
+		"sid":                   sessionID,
+		"aws_access_key_id":     connenv.awsAccessKeyID,
+		"aws_secret_access_key": connenv.awsSecretAccessKey,
+		"aws_region":            connenv.awsRegion,
+		"aws_instance_id":       targetInstance,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).SSM()
 	if err != nil {

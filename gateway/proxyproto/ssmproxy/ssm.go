@@ -85,6 +85,12 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		return
 	}
 
+	if len(dba.SecretKeyHash) < 40 {
+		// Realistically, this should never happen
+		log.Errorf("invalid secret key hash, reason=%v", err)
+		c.String(http.StatusInternalServerError, "Internal server error")
+	}
+
 	secretKey := dba.SecretKeyHash[:40] // Trimmed secret key since AWS only handles 40 characters
 
 	if !validateAWS4Signature(c, secretKey, aws4) {
@@ -305,7 +311,7 @@ func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 		case msg := <-packetChan:
 			switch msg.Type {
 			case pbclient.SSMConnectionWrite:
-				err := ws.WriteMessage(int(msg.Spec[pb.SpecWebsocketMessageType][0]), msg.Payload)
+				err := ws.WriteMessage(int(msg.Spec[pb.SpecAwsSSMWebsocketMsgType][0]), msg.Payload)
 				if err != nil {
 					log.Errorf("failed to write message to websocket, reason=%v", err)
 					break
@@ -360,10 +366,10 @@ func sendWebsocketMessageHelper(client pb.ClientTransport, msgType int, msgData 
 		Type:    pbagent.SSMConnectionWrite,
 		Payload: msgData,
 		Spec: map[string][]byte{
-			pb.SpecWebsocketMessageType: encodedType,
-			pb.SpecGatewaySessionID:     []byte(sessionID),
-			pb.SpecClientConnectionID:   []byte(cID),
-			pb.SpecInstanceId:           []byte(target),
+			pb.SpecAwsSSMWebsocketMsgType: encodedType,
+			pb.SpecGatewaySessionID:       []byte(sessionID),
+			pb.SpecClientConnectionID:     []byte(cID),
+			pb.SpecAwsSSMEc2InstanceId:    []byte(target),
 		},
 	})
 }

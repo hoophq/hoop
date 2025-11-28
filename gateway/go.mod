@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.37.9
 	github.com/aws/aws-sdk-go-v2/service/rds v1.93.14
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.15
+	github.com/aws/session-manager-plugin v0.0.0-20250205214155-b2b0bcd769d1
 	github.com/aws/smithy-go v1.22.2
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/getkin/kin-openapi v0.131.0
@@ -29,6 +30,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/lib/pq v1.10.7
+	github.com/pkg/errors v0.9.1
 	github.com/russellhaering/gosaml2 v0.10.0
 	github.com/russellhaering/goxmldsig v1.5.0
 	github.com/segmentio/analytics-go/v3 v3.2.1
@@ -64,7 +66,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.24.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.15 // indirect
-	github.com/aws/session-manager-plugin v0.0.0-20250205214155-b2b0bcd769d1 // indirect
 	github.com/beevik/etree v1.5.0 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/bytedance/sonic v1.10.0 // indirect

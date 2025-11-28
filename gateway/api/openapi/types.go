@@ -1761,10 +1761,17 @@ type RDPConnectionInfo struct {
 	Command string `json:"command" example:"xfreerdp /v:0.0.0.0:13389 /u:fake /p:fake"`
 }
 
+// SSMConnectionInfo represents the connection information required to establish
+// a session with an AWS Systems Manager (SSM) managed instance.
 type SSMConnectionInfo struct {
-	EndpointURL        string `json:"endpoint_url" example:"https://hoop.gateway/ssm"`
-	AwsAccessKeyId     string `json:"aws_access_key_id" example:"AKIAIOSFODNN7EXAMPLE"`
+	// The hostname to access the ssm server instance
+	EndpointURL string `json:"endpoint_url" example:"https://hoop.gateway/ssm"`
+	// The AWS access key ID for the AWS CLI
+	AwsAccessKeyId string `json:"aws_access_key_id" example:"AKIAIOSFODNN7EXAMPLE"`
+	// The AWS secret access key for the AWS CLI
 	AwsSecretAccessKey string `json:"aws_secret_access_key" example:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
+	// Command line arguments to access the ssm server instance
+	ConnectionString string `json:"connection_string" example:"aws ssm start-session --target ... --endpoint-url ..."`
 }
 
 type PostgresConnectionInfo struct {

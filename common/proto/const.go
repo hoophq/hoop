@@ -23,8 +23,8 @@ const (
 	SpecClientExecArgsKey        string = "terminal.args"
 	SpecClientExecEnvVar         string = "terminal.envvars"
 	SpecAgentConnectionParamsKey string = "agent.connection_params"
-	SpecWebsocketMessageType     string = "websocket.message_type"
-	SpecInstanceId               string = "aws.instance_id"
+	SpecAwsSSMWebsocketMsgType   string = "aws.websocket.message_type"
+	SpecAwsSSMEc2InstanceId      string = "aws.ssm.ec2.instance_id"
 
 	// DEPRECATED: spec items deprecated
 	SpecAgentDlpProvider             string = "agent.dlp_provider"
@@ -53,7 +53,7 @@ const (
 	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
 	ConnectionTypeSSH         ConnectionType = "ssh"
 	ConnectionTypeRDP         ConnectionType = "rdp"
-	ConnectionTypeSSM         ConnectionType = "ssm"
+	ConnectionTypeSSM         ConnectionType = "aws-ssm"
 
 	ConnectionOriginAgent              = "agent"
 	ConnectionOriginClient             = "client"
