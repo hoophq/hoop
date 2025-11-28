@@ -1,6 +1,9 @@
 package slack
 
 import (
+	"fmt"
+	"slices"
+
 	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
@@ -47,6 +50,13 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 		slackApproverGroupsList = append(slackApproverGroupsList, group.Name)
 	}
 
+	// Check if msg.GroupName is in slackApproverGroupList
+	if !slices.Contains(slackApproverGroupsList, ev.msg.GroupName) {
+		log.With("sid", sid).Infof("approver is not allowed because its not on group %q", ev.msg.GroupName)
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "You do not belong to group %q.", ev.msg.GroupName)
+		return
+	}
+
 	log.With("sid", sid).Infof("found a valid approver user=%s, slackid=%s",
 		slackApprover.Email, ev.msg.SlackID)
 	userContext := storagev2.NewContext(slackApprover.Subject, ev.orgID)
@@ -84,7 +94,12 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 		msg = "You're not eligible to approve/reject this review"
 	case nil:
 		isApproved := rev.Status == models.ReviewStatusApproved
-		err = ev.ss.UpdateMessage(ev.msg, isApproved)
+		isStillPending := rev.Status == models.ReviewStatusPending
+		if isStillPending {
+			err = fmt.Errorf("user was able to approve it, but the resource is still pending")
+		} else {
+			err = ev.ss.UpdateMessage(ev.msg, isApproved)
+		}
 		log.With("sid", ev.msg.SessionID).Infof("review id=%s, isapproved=%v, status=%v, update-msg-err=%v",
 			ev.msg.ID, isApproved, rev.Status, err)
 		if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
