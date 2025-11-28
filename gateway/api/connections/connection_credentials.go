@@ -202,6 +202,10 @@ func buildConnectionCredentialsResponse(
 }
 
 func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
+	if connType == proto.ConnectionTypeSSM {
+		return true // Same API router so always configured
+	}
+
 	serverConf, err := models.GetServerMiscConfig()
 	if err != nil || serverConf == nil {
 		return false
@@ -214,8 +218,6 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeSSM:
-		return true // Same as API router
 	default:
 		return false
 	}
