@@ -110,10 +110,23 @@
 (defn- re-run-session [session]
   (if (-> session :labels :runbookFile)
     (do
-      (rf/dispatch [:runbooks-plugin->run-runbook
-                    {:file-name (-> session :labels :runbookFile)
-                     :params (js/JSON.parse (-> session :labels :runbookParameters))
-                     :connection-name (:connection session)}])
+      (let [labels (:labels session)
+            file-name (:runbookFile labels)
+            params (js/JSON.parse (:runbookParameters labels))
+            connection-name (:connection session)
+            repository (:runbookRepository labels)
+            on-success (fn [res]
+                         (rf/dispatch [:audit->get-session-by-id {:id (:session_id res) :verb "exec"}])
+                         (rf/dispatch [:audit->get-sessions]))
+            on-failure (fn [_error-message error]
+                         (rf/dispatch [:audit->get-session-by-id {:id (:session_id error) :verb "exec"}])
+                         (rf/dispatch [:audit->get-sessions]))]
+        (rf/dispatch [:runbooks/exec {:file-name file-name
+                                      :params params
+                                      :connection-name connection-name
+                                      :repository repository
+                                      :on-success on-success
+                                      :on-failure on-failure}]))
       (rf/dispatch [:audit->clear-session-details-state {:status :loading}]))
     (do
       (rf/dispatch [:jira-integration->get])

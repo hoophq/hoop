@@ -40,6 +40,8 @@
                   ["/access-control/new" :access-control-new]
                   ["/access-control/edit" :access-control-edit]
                   ["/runbooks/setup" :runbooks-setup]
+                  ["/runbooks/rules/new" :create-runbooks-rule]
+                  [["/runbooks/rules/edit/" :rule-id] :edit-runbooks-rule]
                   [["/runbooks/edit/" :connection-id] :runbooks-edit]
                   ["/data-masking" :ai-data-masking]
                   ["/data-masking/new" :create-ai-data-masking]

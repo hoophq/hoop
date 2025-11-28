@@ -31,8 +31,8 @@ import (
 //	@Description	List all Runbooks
 //	@Tags			Runbooks
 //	@Produce		json
-//	@Param			connection	query		string	false	"Filter runbooks by connection name"
-//	@Success		200			{object}	openapi.RunbookList
+//	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
+//	@Success		200			{object}	openapi.RunbookListV2
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
 func ListRunbooksV2(c *gin.Context) {
@@ -58,12 +58,12 @@ func ListRunbooksV2(c *gin.Context) {
 	}
 
 	urlQuery := c.Request.URL.Query()
-	connection := urlQuery.Get("connection")
+	connectionName := urlQuery.Get("connection_name")
 
 	removeEmptyConnectionsList := true
-	connectionNames := []string{connection}
+	connectionNames := []string{connectionName}
 
-	if connection == "" {
+	if connectionName == "" {
 		removeEmptyConnectionsList = false
 		connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
 		if err != nil {
@@ -74,20 +74,20 @@ func ListRunbooksV2(c *gin.Context) {
 	}
 
 	runbookList := &openapi.RunbookListV2{
+		Errors:       make([]string, 0),
 		Repositories: []openapi.RunbookRepositoryList{},
 	}
 	for _, repoConfig := range runbookConfig.RepositoryConfigs {
 		config, err := models.BuildCommonConfig(&repoConfig)
 		if err != nil {
-			log.Errorf("failed creating runbook config, err=%v", err)
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-			return
+			runbookList.Errors = append(runbookList.Errors, fmt.Sprintf("failed creating runbook config for repo %s, err=%v", repoConfig.GitUrl, err))
+			continue
 		}
+
 		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, removeEmptyConnectionsList)
 		if err != nil {
-			log.Errorf("failed listing runbooks, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed listing runbooks, reason=%v", err)})
-			return
+			runbookList.Errors = append(runbookList.Errors, fmt.Sprintf("failed listing runbooks for repo %s, err=%v", repoConfig.GitUrl, err))
+			continue
 		}
 		runbookList.Repositories = append(runbookList.Repositories, *repositoryList)
 	}
@@ -291,15 +291,11 @@ func RunbookExec(c *gin.Context) {
 		return
 	}
 
-	commit, ok := GetRunbookCache(ctx.GetOrgID(), config.GetNormalizedGitURL())
-	if !ok {
-		var err error
-		commit, err = runbooks.CloneRepositoryInMemory(config)
-		if err != nil {
-			log.Errorf("failed cloning runbook repository, reason=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-			return
-		}
+	commit, err := GetRunbooks(ctx.GetOrgID(), config)
+	if err != nil {
+		log.Errorf("failed cloning runbook repository, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
 	}
 
 	repo, err := runbooks.BuildRepositoryFromCommit(commit)

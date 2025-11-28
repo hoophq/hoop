@@ -168,12 +168,14 @@
                           :script (:script context)
                           :metadata (:metadata context)
                           :keep-metadata? (:keep-metadata? context)}]]
-             ;; Runbooks plugin flow
-             [:dispatch [:runbooks-plugin/check-template-and-show-form
+             ;; Runbooks flow
+             [:dispatch [:runbooks/check-jira-template-and-show-form
                          {:template-id template-id
                           :file-name (:file-name context)
                           :params (:params context)
-                          :connection-name (:connection-name context)}]])]})))
+                          :connection-name (:connection-name context)
+                          :repository (:repository context)
+                          :ref-hash (:ref-hash context)}]])]})))
 
 ;; JIRA
 

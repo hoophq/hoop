@@ -6,11 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,8 +33,8 @@ func Get(c *gin.Context) {
 
 	var (
 		connectionsFound []models.Connection
-		runbooksFound    []string
 		resourcesFound   []models.Resources
+		runbooksFound    []*openapi.RunbookSearch
 
 		errors []error
 	)
@@ -56,24 +54,13 @@ func Get(c *gin.Context) {
 
 	// Fetch runbooks
 	g.Go(func() error {
-		p, err := models.GetPluginByName(ctx.GetOrgID(), plugintypes.PluginRunbooksName)
+		config, err := models.GetRunbookConfigurationByOrgID(models.DB, ctx.GetOrgID())
 		if err != nil {
 			errors = append(errors, fmt.Errorf("failed getting the runbooks plugin, reason=%v", err))
 			return err
 		}
 
-		var configEnvVars map[string]string
-		if p.EnvVars != nil {
-			configEnvVars = p.EnvVars
-		}
-
-		config, err := runbooks.NewConfig(configEnvVars)
-		if err != nil {
-			errors = append(errors, fmt.Errorf("failed creating config for runbooks, reason=%v", err))
-			return err
-		}
-
-		runbooksFound, err = findRunbookFilesByPath(searchTerm, config, ctx.GetOrgID())
+		runbooksFound, err = findRunbookFilesByPath(ctx.GetOrgID(), config, searchTerm)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("failed searching runbooks, reason=%v", err))
 		}
@@ -106,7 +93,7 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, buildSearchResponse(connectionsFound, runbooksFound, resourcesFound, errors))
 }
 
-func buildSearchResponse(connections []models.Connection, runbooks []string, resources []models.Resources, errors []error) openapi.SearchResponse {
+func buildSearchResponse(connections []models.Connection, runbooks []*openapi.RunbookSearch, resources []models.Resources, errors []error) openapi.SearchResponse {
 	connectionSearchResults := make([]openapi.ConnectionSearch, len(connections))
 	for i, conn := range connections {
 		connectionSearchResults[i] = connectionToConnectionSearch(&conn)

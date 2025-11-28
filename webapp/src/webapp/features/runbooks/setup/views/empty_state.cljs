@@ -16,13 +16,13 @@
     [:> Flex {:direction "column" :align "center" :gap "3" :class "mb-8 text-center"}
      [:> Text {:size "3" :class "text-gray-11 max-w-md text-center"}
       (if installed?
-        "No connections available to configure with Runbooks yet"
+        "No Runbooks Rules configured in your Organization yet"
         "Activate to enable an additional automation layer. When activated, you can define which runbook paths are accessible for each connection.")]]
 
     (if installed?
       [:> Button {:size "3"
-                  :onClick #(rf/dispatch [:navigate :resource-roles])}
-       "Create Resource Role"]
+                  :onClick #(rf/dispatch [:navigate :create-runbooks-rule])}
+       "Create new Runbooks Rule"]
 
       [:> Button
        {:size "3"
@@ -44,8 +44,7 @@
    [:> Flex {:align "center" :class "text-sm"}
     [:> Text {:class "text-gray-11 mr-1"}
      "Need more information? Check out"]
-    [:a {:href (config/docs-url :features :runbooks)
+    [:a {:href (get-in config/docs-url [:features :runbooks])
+         :target "_blank"
          :class "text-blue-600 hover:underline"}
-     "runbooks documentation"]
-    [:> Text {:class "text-gray-11 ml-1"}
-     "."]]])
+     "Runbooks documentation."]]])

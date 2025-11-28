@@ -7,10 +7,6 @@
  (fn [db]
    (get-in db [:runbooks :connection-dialog-open?])))
 
-(rf/reg-sub
- :runbooks/execute-trigger
- (fn [db _]
-   (get-in db [:runbooks :execute-trigger] false)))
 
 (rf/reg-sub
  :runbooks/selected-connection

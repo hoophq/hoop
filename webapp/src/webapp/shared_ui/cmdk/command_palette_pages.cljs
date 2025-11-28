@@ -4,6 +4,7 @@
    ["lucide-react" :refer [File ChevronRight Rotate3d Package]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [webapp.features.runbooks.helpers :as runbooks-helpers]
    [webapp.shared-ui.cmdk.command-palette-constants :as constants]))
 
 (defn action-item
@@ -59,27 +60,32 @@
 
 (defn runbook-result-item
   "Runbook search result item"
-  [runbook-path]
-  (let [[folder filename] (if (re-find #"/" runbook-path)
-                            (let [parts (cs/split runbook-path #"/" 2)]
+  [runbook]
+  (let [runbook-name (:name runbook)
+        repository (:repository runbook)
+        repo-name (runbooks-helpers/extract-repo-name repository)
+        [folder filename] (if (re-find #"/" runbook-name)
+                            (let [parts (cs/split runbook-name #"/" 2)]
                               [(str (first parts) "/") (second parts)])
-                            [nil runbook-path])]
+                            [nil runbook-name])
+        template {:name runbook-name}]
     [:> CommandItem
-     {:key (:id runbook-path)
-      :value runbook-path
-      :keywords (filterv some? [(:category runbook-path) (:tags runbook-path) "runbook"])
+     {:key (str repository ":" runbook-name)
+      :value (str repository ":" runbook-name)
+      :keywords (filterv some? [repository runbook-name "runbook"])
       :onSelect #(do
-                   (rf/dispatch [:runbooks/set-active-runbook-by-name runbook-path])
+                   (rf/dispatch [:runbooks/set-active-runbook template repository])
                    (rf/dispatch [:navigate :runbooks])
                    (rf/dispatch [:command-palette->close]))}
      [:div {:class "flex items-center gap-2"}
       [:> File {:size 16 :class "text-gray-9"}]
-      [:div {:class "flex flex-col"}
-       [:span {:class "text-sm font-medium"}
-        (when folder
-          [:span {:class "text-gray-9"} folder " "])
-        filename]]
-      [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]]))
+      [:div {:class "flex flex-1 min-w-0 items-center gap-3"}
+       (when repository
+         [:span {:class "text-sm font-medium text-gray-9"} "@" repo-name])
+       (when folder
+         [:span {:class "text-sm font-medium text-gray-9"} folder])
+       [:span {:class "text-sm font-medium truncate"} filename]]
+      [:> ChevronRight {:size 16 :class "ml-auto text-gray-9 flex-shrink-0"}]]]))
 
 (defn main-page
   "Main page with all pages + search functionality"
@@ -115,7 +121,7 @@
           [:> CommandGroup
            {:heading "Runbooks"}
            (for [runbook runbooks]
-             ^{:key runbook}
+             ^{:key (str (:repository runbook) ":" (:name runbook))}
              [runbook-result-item runbook])])
 
         [:> CommandSeparator]])

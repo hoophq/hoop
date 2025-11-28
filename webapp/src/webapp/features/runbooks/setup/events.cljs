@@ -5,33 +5,9 @@
 (defn normalize-path
   "Remove leading slash from path if present"
   [path]
-  (if (and (string? path) (not (empty? path)) (= (first path) "/"))
+  (if (and (string? path) (seq path) (= (first path) "/"))
     (subs path 1)
     path))
-
-(rf/reg-event-fx
- :runbooks/add-path-to-connection
- (fn [{:keys [db]} [_ {:keys [path connection-id]}]]
-   (let [normalized-path (normalize-path path)
-         plugin (get-in db [:plugins->plugin-details :plugin])
-         connections (or (:connections plugin) [])
-         connection-exists? (some #(= (:id %) connection-id) connections)
-         updated-connections (if connection-exists?
-                               ;; Update existing connection
-                               (map (fn [conn]
-                                      (if (= (:id conn) connection-id)
-                                        (if (or (nil? normalized-path) (empty? normalized-path))
-                                          (assoc conn :config nil)
-                                          (update conn :config (fn [_] [normalized-path])))
-                                        conn))
-                                    connections)
-                               ;; Add new connection to existing list
-                               (conj connections {:id connection-id
-                                                  :config (if (or (nil? normalized-path) (empty? normalized-path))
-                                                            nil
-                                                            [normalized-path])}))
-         updated-plugin (assoc plugin :connections (vec updated-connections))]
-     {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]})))
 
 (rf/reg-event-fx
  :runbooks/delete-path
@@ -47,3 +23,234 @@
                                   connections)
          updated-plugin (assoc plugin :connections (vec updated-connections))]
      {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]})))
+
+;; Runbooks Rules Events
+(rf/reg-event-fx
+ :runbooks-rules/get-all
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:runbooks-rules :list :status] :loading)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/runbooks/rules"
+                             :on-success #(rf/dispatch [:runbooks-rules/get-all-success %])
+                             :on-failure #(rf/dispatch [:runbooks-rules/get-all-failure %])}]]]}))
+
+(rf/reg-event-db
+ :runbooks-rules/get-all-success
+ (fn [db [_ data]]
+   (update-in db [:runbooks-rules :list] merge {:status :success :data data})))
+
+(rf/reg-event-fx
+ :runbooks-rules/get-all-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbook rules"
+                        :details error-message}]]]})))
+
+(rf/reg-event-fx
+ :runbooks-rules/get-by-id
+ (fn [{:keys [db]} [_ rule-id]]
+   {:db (assoc-in db [:runbooks-rules :active-rule :status] :loading)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/runbooks/rules/" rule-id)
+                             :on-success #(rf/dispatch [:runbooks-rules/get-by-id-success %])
+                             :on-failure #(rf/dispatch [:runbooks-rules/get-by-id-failure %])}]]]}))
+
+(rf/reg-event-db
+ :runbooks-rules/get-by-id-success
+ (fn [db [_ data]]
+   (update-in db [:runbooks-rules :active-rule] merge {:status :success :data data})))
+
+(rf/reg-event-fx
+ :runbooks-rules/get-by-id-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :active-rule] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbook rule"
+                        :details error-message}]]]})))
+
+(rf/reg-event-fx
+ :runbooks-rules/create
+ (fn [{:keys [db]} [_ rule-data]]
+   {:db db
+    :fx [[:dispatch [:fetch {:method "POST"
+                             :uri "/runbooks/rules"
+                             :body rule-data
+                             :on-success #(rf/dispatch [:runbooks-rules/create-success %])
+                             :on-failure #(rf/dispatch [:runbooks-rules/create-failure %])}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/create-success
+ (fn [{:keys [db]} [_ _data]]
+   {:db db
+    :fx [[:dispatch [:navigate :runbooks-setup]]
+         [:dispatch [:show-snackbar
+                     {:level :success
+                      :text "Runbook rule created successfully!"}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/create-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to create runbook rule"
+                        :details error-message}]]]})))
+
+(rf/reg-event-fx
+ :runbooks-rules/update
+ (fn [{:keys [db]} [_ rule-id rule-data]]
+   {:db db
+    :fx [[:dispatch [:fetch {:method "PUT"
+                             :uri (str "/runbooks/rules/" rule-id)
+                             :body rule-data
+                             :on-success #(rf/dispatch [:runbooks-rules/update-success %])
+                             :on-failure #(rf/dispatch [:runbooks-rules/update-failure %])}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/update-success
+ (fn [{:keys [db]} [_ _data]]
+   {:db db
+    :fx [[:dispatch [:navigate :runbooks-setup]]
+         [:dispatch [:show-snackbar
+                     {:level :success
+                      :text "Runbook rule updated successfully!"}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/update-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to update runbook rule"
+                        :details error-message}]]]})))
+
+(rf/reg-event-db
+ :runbooks-rules/clear-active-rule
+ (fn [db]
+   (assoc-in db [:runbooks-rules :active-rule] {:status :idle :data nil :error nil})))
+
+(rf/reg-event-fx
+ :runbooks-rules/delete
+ (fn [{:keys [db]} [_ rule-id]]
+   {:db db
+    :fx [[:dispatch [:fetch {:method "DELETE"
+                             :uri (str "/runbooks/rules/" rule-id)
+                             :on-success #(rf/dispatch [:runbooks-rules/delete-success rule-id])
+                             :on-failure #(rf/dispatch [:runbooks-rules/delete-failure %])}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/delete-success
+ (fn [{:keys [db]} [_ _rule-id]]
+   {:db db
+    :fx [[:dispatch [:navigate :runbooks-setup]]
+         [:dispatch [:show-snackbar
+                     {:level :success
+                      :text "Runbook rule deleted successfully!"}]]]}))
+
+(rf/reg-event-fx
+ :runbooks-rules/delete-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (update-in db [:runbooks-rules :list] merge {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to delete runbook rule"
+                        :details error-message}]]]})))
+
+;; Runbooks Configuration Events
+(rf/reg-event-fx
+ :runbooks-configurations/get
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:runbooks-configurations :status] :loading)
+    :fx [[:dispatch [:fetch {:method "GET"
+                             :uri "/runbooks/configurations"
+                             :on-success #(rf/dispatch [:runbooks-configurations/get-success %])
+                             :on-failure #(rf/dispatch [:runbooks-configurations/get-failure %])}]]]}))
+
+(rf/reg-event-db
+ :runbooks-configurations/get-success
+ (fn [db [_ data]]
+   (assoc-in db [:runbooks-configurations] {:status :success :data data})))
+
+(rf/reg-event-fx
+ :runbooks-configurations/get-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (assoc-in db [:runbooks-configurations] {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbook configurations"
+                        :details error-message}]]]})))
+
+(rf/reg-event-fx
+ :runbooks-configurations/update
+ (fn [{:keys [db]} [_ repositories on-success on-failure]]
+   {:db (assoc-in db [:runbooks-configurations :status] :loading)
+    :fx [[:dispatch [:fetch {:method "PUT"
+                             :uri "/runbooks/configurations"
+                             :body {:repositories repositories}
+                             :on-success #(do
+                                            (rf/dispatch [:runbooks-configurations/update-success %])
+                                            (when on-success (on-success)))
+                             :on-failure #(do
+                                            (rf/dispatch [:runbooks-configurations/update-failure %])
+                                            (when on-failure (on-failure)))}]]]}))
+
+(rf/reg-event-db
+ :runbooks-configurations/update-success
+ (fn [db [_ data]]
+   (assoc-in db [:runbooks-configurations] {:status :success :data data})))
+
+(rf/reg-event-fx
+ :runbooks-configurations/update-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (assoc-in db [:runbooks-configurations] {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to save repository configuration"
+                        :details error-message}]]]})))
+
+;; Runbooks List Events
+(rf/reg-event-fx
+ :runbooks/list
+ (fn [{:keys [db]} [_ connection-name]]
+   (let [query-params (when connection-name
+                        {:connection_name connection-name})]
+     {:db (assoc-in db [:runbooks :list :status] :loading)
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri "/runbooks"
+                               :query-params query-params
+                               :on-success #(rf/dispatch [:runbooks/list-success %])
+                               :on-failure #(rf/dispatch [:runbooks/list-failure %])}]]]})))
+
+(rf/reg-event-fx
+ :runbooks/list-success
+ (fn [{:keys [db]} [_ data]]
+   (let [errors (:errors data)
+         has-errors? (and errors (seq errors))
+         repositories (or (:repositories data) [])]
+     {:db (update-in db [:runbooks :list] merge {:status :success :data repositories})
+      :fx (cond-> []
+            has-errors? (conj [:dispatch [:show-snackbar
+                                          {:level :error
+                                           :text "Failed to load runbooks"
+                                           :details {:error errors}}]]))})))
+
+(rf/reg-event-fx
+ :runbooks/list-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [error-message (or (:message error) (str error))]
+     {:db (assoc-in db [:runbooks :list] {:status :error :error error})
+      :fx [[:dispatch [:show-snackbar
+                       {:level :error
+                        :text "Failed to load runbooks"
+                        :details error-message}]]]})))
+

@@ -1,10 +1,11 @@
 (ns webapp.features.runbooks.setup.main
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Separator Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Separator Tabs Text]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.headings :as h]
+   [webapp.components.loaders :as loaders]
    [webapp.features.promotion :as promotion]
    [webapp.features.runbooks.setup.views.configuration-view :as config-view]
    [webapp.features.runbooks.setup.views.empty-state :as empty-state]
@@ -16,30 +17,30 @@
         params (second params)]
     params))
 
+ (defn loading-view []
+   [:> Flex {:justify "center" :align "center"}
+    [loaders/simple-loader {:size "6" :border-size "4"}]])
+
 (defn main []
-  (let [plugin-details (rf/subscribe [:plugins->plugin-details])
-        connections (rf/subscribe [:connections->pagination])
-        active-tab (r/atom "connections")
+  (let [runbooks-rules-list (rf/subscribe [:runbooks-rules/list])
+        loading-rules? (rf/subscribe [:runbooks-rules/list-loading])
+        loading-config? (rf/subscribe [:runbooks-configurations/data-loading])
+        active-tab (r/atom "rules")
         params (.-search (.-location js/window))
         url-tab (r/atom (parse-params params))]
 
-    (rf/dispatch [:plugins->get-plugin-by-name "runbooks"])
+    (rf/dispatch [:runbooks/list])
+    (rf/dispatch [:runbooks-rules/get-all])
+    (rf/dispatch [:runbooks-configurations/get])
 
     (fn []
-      (let [plugin (:plugin @plugin-details)
-            installed? (or (:installed? plugin) false)
-            has-connections? (and (:data @connections) (seq (:data @connections)))]
+      (let [has-rules? (seq (or (:data @runbooks-rules-list) []))]
 
-        ;; Initialize active tab from URL
         (when @url-tab
           (reset! active-tab @url-tab)
           (reset! url-tab nil))
 
-        (if (and
-             (or (not installed?)
-                 (empty? (:config plugin)))
-             (not (boolean
-                   (.getItem (.-localStorage js/window) "runbooks-promotion-seen"))))
+        (if (not (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/runbooks-promotion {:mode :empty-state
                                           :installed? false}]]
@@ -47,30 +48,33 @@
           [:> Box {:class "flex flex-col bg-white px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
            [:> Flex {:direction "column" :gap "5" :class "h-full"}
 
-            ;; Cabeçalho
             [:> Flex {:justify "between" :align "center"}
              [:> Box
               [h/h2 "Runbooks" {:class "text-[--gray-12]"}]
               [:> Text {:as "p" :size "3" :class "text-gray-500"}
-               "Manage which paths are accessible for each resource role."]
-              [:> Text {:as "p" :size "3" :class "text-gray-500"}
-               "Configure Git repositories and enhance automation for your organization."]]
-             nil]
+               "Manage access paths per resource role and integrate Git repositories to automate runbook execution."]]
+             (when has-rules?
+               [:> Button {:size "3"
+                           :variant "solid"
+                           :on-click #(rf/dispatch [:navigate :create-runbooks-rule])}
+                "Create Runbooks Rule"])]
 
-            [:> Box {:class "flex-grow"}
-             ;; Tabs
+            [:> Box {:class "flex flex-col"}
              [:> Tabs.Root {:value @active-tab
                             :onValueChange #(reset! active-tab %)}
               [:> Tabs.List {:aria-label "Runbooks tabs"}
-               [:> Tabs.Trigger {:value "connections"} "Resource Roles"]
+               [:> Tabs.Trigger {:value "rules"} "Runbooks Rules"]
                [:> Tabs.Trigger {:value "configurations"} "Configurations"]]
 
               [:> Separator {:size "4" :mb "7"}]
 
-              [:> Tabs.Content {:value "connections" :class "h-full"}
-               (if (not has-connections?)
-                 [empty-state/main installed?]
-                 [runbook-list/main])]
+              [:> Tabs.Content {:value "rules" :class "h-full"}
+               (cond
+                 @loading-rules? [loading-view]
+                 (not has-rules?) [empty-state/main true]
+                 :else [runbook-list/main])]
 
               [:> Tabs.Content {:value "configurations" :class "h-full"}
-               [config-view/main active-tab]]]]]])))))
+               (if @loading-config?
+                 [loading-view]
+                 [config-view/main active-tab])]]]]])))))

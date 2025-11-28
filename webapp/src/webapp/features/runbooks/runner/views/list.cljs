@@ -1,12 +1,13 @@
 (ns webapp.features.runbooks.runner.views.list
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Text Callout Link]]
-   ["lucide-react" :refer [ChevronDown ChevronUp File Folder FolderOpen Info]]
+   ["lucide-react" :refer [ChevronDown ChevronUp File Folder FolderOpen Info FolderGit2]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.tooltip :as tooltip]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.features.runbooks.helpers :refer [extract-repo-name]]))
 
 (defn sort-tree [data]
   (let [folders (->> data
@@ -19,6 +20,7 @@
 
 (defn split-path [path]
   (cs/split path #"/"))
+
 
 (defn is-file? [item]
   (or (string? item)
@@ -54,12 +56,12 @@
 
     (into folder-tree root-files)))
 
-(defn file [filename filter-template-selected level selected?]
+(defn file [filename filter-template-selected level selected? repository]
   [:> Flex {:class (str "items-center gap-2 pb-3 hover:underline cursor-pointer text-xs text-gray-12 whitespace-pre overflow-x-hidden "
                         (when (pos? level) "pl-4"))
             :on-click (fn []
-                        (let [template (filter-template-selected filename)]
-                          (rf/dispatch [:runbooks/set-active-runbook template])))}
+                        (let [template (filter-template-selected filename repository)]
+                          (rf/dispatch [:runbooks/set-active-runbook template repository])))}
    [:> Flex {:class (str "w-fit gap-2 items-center py-1.5 px-2" (when selected?  " bg-[--indigo-a3] rounded-2"))}
     [:> File {:size 16
               :class "text-[--gray-11]"}]
@@ -69,43 +71,53 @@
 (defn directory []
   (let [dropdown-status (r/atom {})
         search-term (rf/subscribe [:search/term])
-        selected-template (rf/subscribe [:runbooks-plugin->selected-runbooks])]
+        selected-template (rf/subscribe [:runbooks->selected-runbooks])]
 
-    (fn [name items level filter-template-selected parent-path]
+    (fn [name items level filter-template-selected parent-path repository]
       (let [current-path (if parent-path (str parent-path "/" name) name)
-            selected-name (get-in @selected-template [:data :name])]
+            selected-name (get-in @selected-template [:data :name])
+            selected-repo (get-in @selected-template [:data :repository])
+            is-selected? (and (= selected-name current-path)
+                             (= selected-repo repository))
+            ;; Make dropdown key unique per repository to avoid conflicts
+            dropdown-key (str (hash repository) "-" name)]
 
+        ;; Only auto-open if state is nil (not yet set), not if user manually closed it
         (when (and (seq @search-term)
-                   (not= (get @dropdown-status name) :open))
-          (swap! dropdown-status assoc name :open))
+                   (nil? (get @dropdown-status dropdown-key)))
+          (swap! dropdown-status assoc dropdown-key :open))
 
+        ;; Only auto-open if the selected item is in this repository
+        ;; Only auto-open if state is nil (not yet set), not if user manually closed it
         (when (and selected-name
-                   (not= (get @dropdown-status name) :open)
+                   selected-repo
+                   (= selected-repo repository)
+                   (nil? (get @dropdown-status dropdown-key))
                    (or (= selected-name current-path)
                        (cs/starts-with? selected-name (str current-path "/"))))
-          (swap! dropdown-status assoc name :open))
+          (swap! dropdown-status assoc dropdown-key :open))
 
         (if (is-file? items)
-          [file current-path filter-template-selected level (= current-path (get-in @selected-template [:data :name]))]
+          [file current-path filter-template-selected level is-selected? repository]
           [:> Box {:class (str "text-xs text-gray-12 " (when (pos? level) "pl-4"))}
            [:> Flex {:class "flex pb-4 items-center gap-small cursor-pointer"
                      :on-click #(swap! dropdown-status
-                                       assoc-in [name]
-                                       (if (= (get @dropdown-status name) :open) :closed :open))}
-            (if (= (get @dropdown-status name) :open)
+                                       assoc dropdown-key
+                                       (if (= (get @dropdown-status dropdown-key) :open) :closed :open))}
+            (if (= (get @dropdown-status dropdown-key) :open)
               [:> FolderOpen {:size 16
                               :class "text-[--gray-11]"}]
               [:> Folder {:size 16
                           :class "text-[--gray-11]"}])
             [:> Text {:size "2" :weight "medium" :class "hover:underline"} name]
             [:> Box
-             (if (= (get @dropdown-status name) :open)
+             (if (= (get @dropdown-status dropdown-key) :open)
                [:> ChevronUp {:size 16
                               :class "text-[--gray-11]"}]
                [:> ChevronDown {:size 16
                                 :class "text-[--gray-11]"}])]]
 
-           [:> Box {:class (when (not= (get @dropdown-status name) :open)
+           [:> Box {:class (when (not= (get @dropdown-status dropdown-key) :open)
                              "h-0 overflow-hidden")}
             (if (map? items)
               (let [subfolders-and-files (group-by (fn [[_ subcontents]]
@@ -124,17 +136,21 @@
                 [:<>
                  (for [[subdirname subcontents] sorted-subfolders]
                    ^{:key subdirname}
-                   [directory subdirname subcontents child-level filter-template-selected current-path])
+                   [directory subdirname subcontents child-level filter-template-selected current-path repository])
 
                  (for [[filename subcontents] sorted-files]
                    ^{:key filename}
-                   [directory filename subcontents child-level filter-template-selected current-path])])
+                   [directory filename subcontents child-level filter-template-selected current-path repository])])
 
               (for [item items]
                 ^{:key item}
-                [file item filter-template-selected (inc level) (= item (get-in @selected-template [:data :name]))]))]])))))
+                (let [selected-name (get-in @selected-template [:data :name])
+                      selected-repo (get-in @selected-template [:data :repository])
+                      is-selected? (and (= selected-name item)
+                                       (= selected-repo repository))]
+                  [file item filter-template-selected (inc level) is-selected? repository])))]])))))
 
-(defn directory-tree [tree filter-template-selected]
+(defn directory-tree [tree filter-template-selected repository]
   (let [folders-and-files (group-by (fn [[_ contents]]
                                       (if (or (map? contents)
                                               (and (vector? contents)
@@ -150,11 +166,11 @@
     [:> Box
      (for [[dirname contents] sorted-folders]
        ^{:key dirname}
-       [directory dirname contents 0 filter-template-selected nil])
+       [directory dirname contents 0 filter-template-selected nil repository])
 
      (for [[filename contents] sorted-files]
        ^{:key filename}
-       [directory filename contents 0 filter-template-selected nil])]))
+       [directory filename contents 0 filter-template-selected nil repository])]))
 
 (defn- loading-list-view []
   [:> Flex {:class "h-full text-center flex-col justify-center items-center"}
@@ -202,26 +218,106 @@
    [:> Box {:class "self-end mt-8 mb-2 mx-4"}
     [runbooks-extension-callout]]])
 
+(defn repository-folder []
+  (let [dropdown-status (r/atom {})
+        search-term (rf/subscribe [:search/term])
+        selected-template (rf/subscribe [:runbooks->selected-runbooks])]
+    (fn [repository filter-template-selected level]
+      (let [repo-name (:repository repository)
+            items (:items repository)
+            repo-id (str "repo-" (hash repo-name))
+            is-open? (= (get @dropdown-status repo-id) :open)
+            has-items? (seq items)
+
+            ;; Check if any item matches search or is selected
+            selected-name (get-in @selected-template [:data :name])
+            selected-repo (get-in @selected-template [:data :repository])
+            has-selected? (and selected-name
+                               selected-repo
+                               (= selected-repo repo-name)
+                               (some #(= (:name %) selected-name) items))
+            has-search-match? (and (seq @search-term)
+                                   (some #(cs/includes?
+                                           (cs/lower-case (:name %))
+                                           (cs/lower-case @search-term))
+                                         items))
+            _ (when (and (nil? (get @dropdown-status repo-id))
+                         (or has-search-match? has-selected?))
+                (swap! dropdown-status assoc repo-id :open))
+
+            ;; Transform items for tree view
+            display-items (if (seq @search-term)
+                            (filter (fn [item]
+                                     (cs/includes?
+                                      (cs/lower-case (:name item))
+                                      (cs/lower-case @search-term)))
+                                   items)
+                            items)
+            transformed-payload (when (seq display-items)
+                                (sort-tree (transform-payload display-items)))]
+
+        (when has-items?
+          (let [display-repo-name (extract-repo-name repo-name)]
+            [:> Box {:class (str "text-xs text-gray-12 " (when (pos? level) "pl-4"))}
+             [:> Flex {:class "flex pb-4 items-center gap-small cursor-pointer"
+                       :on-click #(swap! dropdown-status
+                                         assoc-in [repo-id]
+                                         (if (= (get @dropdown-status repo-id) :open) :closed :open))}
+              [:> FolderGit2 {:size 16
+                              :class "text-[--gray-11]"}]
+              [:> Text {:size "2" :weight "bold" :class "hover:underline"} display-repo-name]
+              [:> Box
+               (if is-open?
+                 [:> ChevronUp {:size 16
+                                :class "text-[--gray-11]"}]
+                 [:> ChevronDown {:size 16
+                                  :class "text-[--gray-11]"}])]]
+
+             [:> Box {:class (when (not= (get @dropdown-status repo-id) :open)
+                               "h-0 overflow-hidden")}
+              [:> Box {:class "pl-4"}
+               (if (seq display-items)
+                 [directory-tree transformed-payload filter-template-selected repo-name]
+                 [:> Text {:size "1" :class "text-gray-8 px-2"}
+                  "No runbooks match the search criteria."])]]]))))))
+
+(defn repositories-view [repositories filter-template-selected]
+  [:> Box
+   (for [repo repositories]
+     ^{:key (:repository repo)}
+     [repository-folder repo filter-template-selected 0])])
+
 (defn main []
   (fn [templates filtered-templates]
-    (let [filter-template-selected (fn [template-name]
-                                     (first (filter #(= (:name %) template-name) (:data @templates))))
+    (let [templates-data (:data @templates)
+          repositories (or (:repositories templates-data) [])
+          filter-template-selected (fn [template-name repository]
+                                     (when repository
+                                       (let [repo (first (filter #(= (:repository %) repository) repositories))]
+                                         (when repo
+                                           (first (filter #(= (:name %) template-name) (:items repo)))))))
           search-term (rf/subscribe [:search/term])
-          templates-data (:data @templates)
           filtered-data (or @filtered-templates [])
           has-search? (seq @search-term)
-          display-templates (if has-search?
-                              filtered-data
-                              (or templates-data []))
-          transformed-payload (sort-tree (transform-payload display-templates))]
+
+          ;; Group filtered results by repository for proper display
+          filtered-repositories (when (and has-search? (seq filtered-data))
+                                 (let [filtered-by-repo (group-by :repository filtered-data)]
+                                   (map (fn [[repo-name filtered-items]]
+                                          {:repository repo-name
+                                           :items filtered-items})
+                                        filtered-by-repo)))]
 
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
-        (and (empty? templates-data) (= :ready (:status @templates))) [empty-templates-view]
-        (empty? display-templates) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
-                                    [:> Text {:size "1" :class "text-gray-8"}
-                                     (if has-search?
-                                       (str "No runbooks matching \"" @search-term "\".")
-                                       "There are no runbooks available.")]]
-        :else [directory-tree transformed-payload filter-template-selected]))))
+        (and (empty? repositories) (= :success (:status @templates))) [empty-templates-view]
+        (empty? repositories) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
+                              [:> Text {:size "1" :class "text-gray-8"}
+                               "No repositories available."]]
+        (not has-search?) [repositories-view repositories filter-template-selected]
+        (and has-search? (empty? filtered-data)) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
+                                                   [:> Text {:size "1" :class "text-gray-8"}
+                                                    (str "No runbooks matching \"" @search-term "\".")]]
+        (and has-search? (seq filtered-repositories)) [repositories-view filtered-repositories filter-template-selected]
+        :else [empty-templates-view]))))

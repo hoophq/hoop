@@ -203,7 +203,7 @@ func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, e
 //	@Param			search			query		string	false	"Search by name, type, subtype"						Format(string)
 //	@Param			name			query		string	false	"Filter by name"																		Format(string)
 //	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
-//	@Success		200	{object}	openapi.PaginatedResponse[*openapi.ResourceResponse]
+//	@Success		200	{object}	openapi.PaginatedResponse[openapi.ResourceResponse]
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/resources [get]
 func ListResources(c *gin.Context) {
