@@ -1,6 +1,7 @@
 package ssmproxy
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -76,6 +77,7 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 	if err != nil {
 		log.Errorf("failed to convert access key to UUID, reason=%v", err)
 		c.String(http.StatusBadRequest, "Invalid request")
+		return
 	}
 
 	dba, err := models.GetConnectionByTypeAndID(pb.ConnectionTypeSSM.String(), connectionId)
@@ -89,9 +91,24 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		// Realistically, this should never happen
 		log.Errorf("invalid secret key hash, reason=%v", err)
 		c.String(http.StatusInternalServerError, "Internal server error")
+		return
 	}
 
 	secretKey := dba.SecretKeyHash[:40] // Trimmed secret key since AWS only handles 40 characters
+
+	// Check if the credentials have expired
+	if dba.ExpireAt.Before(time.Now().UTC()) {
+		log.Errorf("invalid secret access key credentials: expired")
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	// Session duration remaining based on the expiration time
+	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
+
+	log.Infof("obtained access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
+		dba.ID, dba.UserSubject, dba.ConnectionName,
+		dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 	if !validateAWS4Signature(c, secretKey, aws4) {
 		c.String(http.StatusBadRequest, "Invalid request")
@@ -115,7 +132,7 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		schema = "wss"
 	}
 
-	token, err := createTokenForConnection(connectionId)
+	token, err := createTokenForConnection(connectionId, ctxDuration)
 	if err != nil {
 		log.Errorf("failed to create token for connection, reason=%v", err)
 		c.String(http.StatusInternalServerError, "Failed to create connection")
@@ -143,6 +160,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
+	userAgent := c.GetHeader("User-Agent")
 
 	// Generate unique connection id
 	connId := r.connections.Add(1)
@@ -152,6 +170,9 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 
 	cID := strconv.Itoa(int(connId))
 	sessionID := uuid.NewString()
+
+	log.With("sid", sessionID, "conn", cID).Infof("new websocket connection request for connectionId=%q, target=%q, userAgent=%q",
+		connectionId, target, userAgent)
 
 	ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -185,7 +206,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	}
 
 	// Try parse token
-	tokenConnectionId, err := decodeToken(*initPacket.TokenValue)
+	tokenConnectionId, expiration, err := decodeToken(*initPacket.TokenValue)
 	if err != nil {
 		log.With("sid", sessionID, "conn", cID).
 			Errorf("failed to decode token, reason=%v", err)
@@ -199,8 +220,8 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	}
 
 	log.With("sid", sessionID, "conn", cID).
-		Infof("connection established for connectionId=%s, target=%s, awsClientId=%s, awsClientVersion=%s",
-			connectionId, target, initPacket.ClientId, initPacket.ClientVersion)
+		Infof("connection established for connectionId=%s, target=%s, awsClientId=%s, awsClientVersion=%s, expiration=%s",
+			connectionId, target, *initPacket.ClientId, *initPacket.ClientVersion, expiration)
 
 	dbConnection, err := models.GetConnectionByTypeAndID(pb.ConnectionTypeSSM.String(), connectionId)
 	if err != nil {
@@ -271,17 +292,22 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		return
 	}
 
+	ctx, timeoutCancelFn := context.WithTimeoutCause(
+		context.Background(), expiration.Sub(time.Now().UTC()), fmt.Errorf("connection access expired, resourceid=%v", cID))
+
+	defer timeoutCancelFn()
+
 	// Ready for pumping
 	// Start RX Pipe (Client -> GRPC)
-	go r.handleRXPipe(ws, client, target, sessionID, cID)
+	go r.handleRXPipe(ctx, ws, client, target, sessionID, cID)
 	// Start TX Pipe (GRPC -> Client)
-	r.handleTXPipe(ws, client, sessionID, cID)
+	r.handleTXPipe(ctx, ws, client, sessionID, cID)
 
 	log.With("sid", sessionID, "conn", cID).
 		Infof("connection closed for connectionId=%s, target=%s, sessionID=%s", connectionId, target, sessionID)
 }
 
-func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, sessionID, cID string) {
+func (r *SSMProxy) handleTXPipe(ctx context.Context, ws *websocket.Conn, client pb.ClientTransport, sessionID, cID string) {
 	defer ws.Close()
 	defer client.Close()
 	// We need to read GRPC from another routine and pipe channel here
@@ -304,10 +330,14 @@ func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 			}
 			packetChan <- msg
 		}
+		close(packetChan)
 	}()
 
 	for running.Load() {
 		select {
+		case <-ctx.Done():
+			log.With("sid", sessionID, "conn", cID).Infof("tx-pipe context done, reason=%v", ctx.Err())
+			break
 		case msg := <-packetChan:
 			switch msg.Type {
 			case pbclient.SSMConnectionWrite:
@@ -317,7 +347,7 @@ func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 					break
 				}
 
-			case pbclient.TCPConnectionClose, pbclient.SessionClose:
+			case pbclient.SessionClose:
 				log.With("sid", sessionID, "conn", cID).Infof("connection closed by server, payload=%v", string(msg.Payload))
 				return
 
@@ -326,6 +356,10 @@ func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 				return
 			}
 		case <-ticker.C:
+			// We send a ping every ping interval to keep the websocket connection alive
+			// By default, WS follows the HTTP Standard 2-minute timeout for inactivity
+			// This allows us to prolong the connection for longer than 2 minutes
+			// in case user does not send anything.
 			if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(wsPingInterval/2)); err != nil {
 				log.With("sid", sessionID, "conn", cID).Errorf("ws ping timeout")
 				return
@@ -338,7 +372,7 @@ func (r *SSMProxy) handleTXPipe(ws *websocket.Conn, client pb.ClientTransport, s
 	}
 }
 
-func (r *SSMProxy) handleRXPipe(ws *websocket.Conn, client pb.ClientTransport, target, sessionID, cID string) {
+func (r *SSMProxy) handleRXPipe(ctx context.Context, ws *websocket.Conn, client pb.ClientTransport, target, sessionID, cID string) {
 	defer ws.Close()
 	defer client.Close()
 
@@ -349,6 +383,14 @@ func (r *SSMProxy) handleRXPipe(ws *websocket.Conn, client pb.ClientTransport, t
 				Errorf("failed to read websocket message, reason=%v", err)
 			break
 		}
+
+		select {
+		case <-ctx.Done():
+			log.With("sid", sessionID, "conn", cID).Infof("rx-pipe context done, reason=%v", ctx.Err())
+			break
+		default:
+		}
+
 		err = sendWebsocketMessageHelper(client, msgType, msgData, target, sessionID, cID)
 		if err != nil {
 			log.With("sid", sessionID, "conn", cID).

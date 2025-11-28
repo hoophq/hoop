@@ -29,10 +29,10 @@ func init() {
 	}
 }
 
-func createTokenForConnection(connID string) (string, error) {
+func createTokenForConnection(connID string, duration time.Duration) (string, error) {
 	payload := &ssmProxyToken{
 		ConnID:    connID,
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().UTC().Add(duration),
 	}
 
 	plaintext, err := json.Marshal(payload)
@@ -40,7 +40,7 @@ func createTokenForConnection(connID string) (string, error) {
 		return "", fmt.Errorf("failed to marshal token payload: %v", err)
 	}
 
-	block, err := aes.NewCipher([]byte(tokenSecret))
+	block, err := aes.NewCipher(tokenSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to create cipher: %v", err)
 	}
@@ -62,24 +62,24 @@ func createTokenForConnection(connID string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-func decodeToken(token string) (string, error) {
+func decodeToken(token string) (string, time.Time, error) {
 	ciphertext, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode token: %v", err)
+		return "", time.Time{}, fmt.Errorf("failed to decode token: %v", err)
 	}
 
 	block, err := aes.NewCipher([]byte(tokenSecret))
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %v", err)
+		return "", time.Time{}, fmt.Errorf("failed to create cipher: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %v", err)
+		return "", time.Time{}, fmt.Errorf("failed to create GCM: %v", err)
 	}
 
 	if len(ciphertext) < gcm.NonceSize() {
-		return "", fmt.Errorf("invalid token")
+		return "", time.Time{}, fmt.Errorf("invalid token")
 	}
 
 	nonce := ciphertext[:gcm.NonceSize()]
@@ -87,17 +87,17 @@ func decodeToken(token string) (string, error) {
 
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to decrypt token: %v", err)
+		return "", time.Time{}, fmt.Errorf("failed to decrypt token: %v", err)
 	}
 
 	var payload ssmProxyToken
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
-		return "", fmt.Errorf("failed to unmarshal token payload: %v", err)
+		return "", time.Time{}, fmt.Errorf("failed to unmarshal token payload: %v", err)
 	}
 
 	if time.Now().After(payload.ExpiresAt) {
-		return "", fmt.Errorf("token expired")
+		return "", time.Time{}, fmt.Errorf("token expired")
 	}
 
-	return payload.ConnID, nil
+	return payload.ConnID, payload.ExpiresAt, nil
 }
