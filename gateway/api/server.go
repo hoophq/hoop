@@ -12,6 +12,7 @@ import (
 	"github.com/gin-contrib/static"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"go.uber.org/zap"
 
 	"github.com/hoophq/hoop/common/log"
@@ -133,6 +134,10 @@ func (a *Api) StartAPI(sentryInit bool) {
 			return
 		}
 	})
+
+	ssmGroup := route.Group(baseURL + "/ssm")
+	ssmInstance := ssmproxy.GetServerInstance()
+	ssmInstance.AttachHandlers(ssmGroup)
 
 	rg := route.Group(baseURL + "/api")
 	if sentryInit {

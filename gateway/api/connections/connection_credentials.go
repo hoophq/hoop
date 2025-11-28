@@ -15,10 +15,11 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm"}
 
 // CreateConnectionCredentials
 //
@@ -168,6 +169,31 @@ func buildConnectionCredentialsResponse(
 			Password: secretKey,
 			Command:  fmt.Sprintf("xfreerdp /v:%s:%s /u:%s /p:%s", serverHost, serverPort, secretKey, secretKey),
 		}
+	case proto.ConnectionTypeSSM:
+		accessKeyId, err := ssmproxy.UUIDToAccessKey(cred.ID)
+		if err != nil {
+			log.Errorf("failed to convert connection id to access key, err=%v", err) // Should NOT happen
+			return nil
+		}
+
+		if len(cred.SecretKeyHash) < 40 {
+			// Realistically, this should never happen
+			log.Errorf("invalid secret key hash, reason=%v", err)
+			return nil
+		}
+
+		endpoint := fmt.Sprintf("%s/ssm", appconfig.Get().ApiURL())
+		// We pass hash here, since it's used for signing
+		// Trimmed secret key since AWS only handles 40 characters
+		accessSecret := cred.SecretKeyHash[:40]
+		base.ConnectionCredentials = &openapi.SSMConnectionInfo{
+			EndpointURL:        endpoint,
+			AwsAccessKeyId:     accessKeyId,
+			AwsSecretAccessKey: accessSecret,
+			ConnectionString: fmt.Sprintf(
+				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
+				accessKeyId, accessSecret, endpoint),
+		}
 	default:
 		return nil
 	}
@@ -176,6 +202,10 @@ func buildConnectionCredentialsResponse(
 }
 
 func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
+	if connType == proto.ConnectionTypeSSM {
+		return true // Same API router so always configured
+	}
+
 	serverConf, err := models.GetServerMiscConfig()
 	if err != nil || serverConf == nil {
 		return false
@@ -228,6 +258,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("ssh", keySize)
 	case proto.ConnectionTypeRDP:
 		return keys.GenerateSecureRandomKey("rdp", keySize)
+	case proto.ConnectionTypeSSM:
+		return keys.GenerateSecureRandomKey("aws-ssm", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

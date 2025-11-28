@@ -18,6 +18,7 @@ const (
 	MSSQLConnectionWrite     = "ClientMSSQLConnectionWrite"
 	MongoDBConnectionWrite   = "ClientMongoDBConnectionWrite"
 	SSHConnectionWrite       = "ClientSSHConnectionWrite"
+	SSMConnectionWrite       = "ClientSSMConnectionWrite"
 	WriteStdout              = "ClientWriteStdout"
 	WriteStderr              = "ClientWriteStderr"
 	HttpProxyConnectionWrite = "ClientHttpProxyConnectionWrite"

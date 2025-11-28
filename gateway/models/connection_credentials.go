@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -27,7 +28,7 @@ func GetConnectionCredentialsByID(orgID, id string) (*ConnectionCredentials, err
 		Where("org_id = ? AND id = ?", orgID, id).
 		First(&resp).
 		Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
 	return &resp, err
@@ -41,7 +42,20 @@ func GetValidConnectionCredentialsBySecretKey(connectionType, secretKeyHash stri
 		Where("connection_type = ? AND secret_key_hash = ?", connectionType, secretKeyHash).
 		First(&resp).
 		Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	return &resp, err
+}
+
+// GetConnectionByTypeAndID retrieves a connection credential by its type and ID
+func GetConnectionByTypeAndID(connectionType, id string) (*ConnectionCredentials, error) {
+	var resp ConnectionCredentials
+	err := DB.Table("private.connection_credentials").
+		Where("connection_type = ? AND id = ?", connectionType, id).
+		First(&resp).
+		Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
 	return &resp, err
