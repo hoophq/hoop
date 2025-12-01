@@ -10,7 +10,7 @@
    [webapp.connections.views.test-connection-modal :as test-connection-modal]))
 
 (defn empty-roles-view []
-  [:div {:class "py-16 text-center"}
+  [:> Flex {:direction "column" :align "center" :justify "center" :class "py-16 text-center"}
    [:> Text {:size "3" :weight "bold" :class "text-gray-12 mb-2"}
     "No roles configured yet"]
    [:> Text {:size "2" :class "text-gray-11"}
