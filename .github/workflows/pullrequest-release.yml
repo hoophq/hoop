@@ -669,5 +669,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_TAG: ${{ env.GIT_TAG }}
         run: |-
-          gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Successful (${GIT_TAG})" || true
+          gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Completed with Success, Version=${GIT_TAG}" || true
 
