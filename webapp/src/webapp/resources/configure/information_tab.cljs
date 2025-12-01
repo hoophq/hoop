@@ -1,18 +1,16 @@
 (ns webapp.resources.configure.information-tab
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text TextField]]
+   ["@radix-ui/themes" :refer [Box Flex Grid Heading Text TextField]]
    [clojure.string :as cs]
-   [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.connections.constants :as conn-constants]))
 
-(defn main [resource]
+(defn main [resource new-name-atom]
   (let [icon-url (conn-constants/get-connection-icon {:type (:type resource)
                                                       :subtype (:subtype resource)}
                                                      "default")
-        new-name (r/atom (:name resource))
         updating? (rf/subscribe [:resources->updating?])]
-    (fn [resource]
+    (fn []
       [:> Box {:class "space-y-16"}
        ;; Resource type
        [:> Grid {:columns "7" :gap "7"}
@@ -44,26 +42,15 @@
           "Used to identify this Resource in your environment."]]
 
         [:> Box {:grid-column "span 4 / span 4"}
-         [:> Flex {:gap "2" :align "end"}
-          [:> Box {:class "flex-1"}
-           [:> Box {:class "space-y-1"}
-            [:> Text {:as "label" :size "2" :weight "medium" :class "text-[--gray-12]"}
-             "Name"]
-            [:> TextField.Root
-             {:value @new-name
-              :onChange #(let [value (-> % .-target .-value)
-                               ;; Replace spaces with hyphens automatically
-                               sanitized-value (cs/replace value #"\s+" "-")]
-                           (reset! new-name sanitized-value))
-              :disabled @updating?
-              :placeholder "Enter resource name"}]]]
-          [:> Button {:size "2"
-                      :variant "solid"
-                      :disabled (or @updating?
-                                    (cs/blank? @new-name)
-                                    (= @new-name (:name resource)))
-                      :on-click (fn []
-                                  (when (and (not (cs/blank? @new-name))
-                                             (not= @new-name (:name resource)))
-                                    (rf/dispatch [:resources->update-resource-name (:name resource) @new-name])))}
-           "Save"]]]]])))
+         [:> Box {:class "flex-1"}
+          [:> Box {:class "space-y-1"}
+           [:> Text {:as "label" :size "2" :weight "medium" :class "text-[--gray-12]"}
+            "Name"]
+           [:> TextField.Root
+            {:value @new-name-atom
+             :onChange #(let [value (-> % .-target .-value)
+                              ;; Replace spaces with hyphens automatically
+                              sanitized-value (cs/replace value #"\s+" "-")]
+                          (reset! new-name-atom sanitized-value))
+             :disabled @updating?
+             :placeholder "Enter resource name"}]]]]]])))
