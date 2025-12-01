@@ -203,6 +203,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	if initPacket.TokenValue == nil {
 		log.With("sid", sessionID, "conn", cID).
 			Errorf("invalid token, reason=%v", err)
+		return
 	}
 
 	// Try parse token
@@ -252,6 +253,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	if err != nil {
 		log.With("sid", sessionID, "conn", cID).Errorf("failed connecting to hoop server, reason=%v", err)
 		c.String(http.StatusInternalServerError, "Failed to connect to hoop server")
+		return
 	}
 	defer client.Close()
 
@@ -337,14 +339,14 @@ func (r *SSMProxy) handleTXPipe(ctx context.Context, ws *websocket.Conn, client 
 		select {
 		case <-ctx.Done():
 			log.With("sid", sessionID, "conn", cID).Infof("tx-pipe context done, reason=%v", ctx.Err())
-			break
+			return
 		case msg := <-packetChan:
 			switch msg.Type {
 			case pbclient.SSMConnectionWrite:
 				err := ws.WriteMessage(int(msg.Spec[pb.SpecAwsSSMWebsocketMsgType][0]), msg.Payload)
 				if err != nil {
 					log.Errorf("failed to write message to websocket, reason=%v", err)
-					break
+					return
 				}
 
 			case pbclient.SessionClose:
@@ -381,13 +383,13 @@ func (r *SSMProxy) handleRXPipe(ctx context.Context, ws *websocket.Conn, client 
 		if err != nil {
 			log.With("sid", sessionID, "conn", cID).
 				Errorf("failed to read websocket message, reason=%v", err)
-			break
+			return
 		}
 
 		select {
 		case <-ctx.Done():
 			log.With("sid", sessionID, "conn", cID).Infof("rx-pipe context done, reason=%v", ctx.Err())
-			break
+			return
 		default:
 		}
 
@@ -395,7 +397,7 @@ func (r *SSMProxy) handleRXPipe(ctx context.Context, ws *websocket.Conn, client 
 		if err != nil {
 			log.With("sid", sessionID, "conn", cID).
 				Errorf("failed to send packet to hoop server, reason=%v", err)
-			break
+			return
 		}
 	}
 }
