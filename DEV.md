@@ -121,6 +121,18 @@ the new release notes.
 - MINOR (0.X.0) – Increment when you add functionality in a backward-compatible way.
 - PATCH (0.0.X) – Increment when you make backward-compatible bug fixes.
 
+### Development Production Builds
+
+Every new commit in a Pull Request generates a production build for testing purporses.
+The assets are tagged with the following semantic version:
+
+- `{PR_NUMBER}.0.0-{PR_GIT_SHA_SHORT}`
+
+> SHA_SHORT is the first 8 characters of the commit
+
+To test it, access the [releases page](https://github.com/hoophq/hoop/releases) to see all the available assets.
+Make sure to change the version of each asset with the new tag.
+
 ## Building Docker Agent Tools Image
 
 The docker image agent tools is build manually. It requires Docker and [Docker Buildx](https://github.com/docker/buildx)

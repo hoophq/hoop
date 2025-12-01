@@ -1,38 +1,18 @@
-name: Hoop Release
+name: Development Release
 
 on:
-  push:
-    tags:
-      - "*.*.*"
+  pull_request:
+    paths-ignore:
+      - '*.md'
+      - 'webapp/*.md'
+      - '.github/**'
+      - 'LICENSE'
+      - '.env.sample'
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    environment: production
-
-    steps:
-      - name: Checkout Hoop
-        uses: actions/checkout@v3
-
-      - name: Checkout libhoop
-        uses: actions/checkout@v3
-        with:
-          repository: hoophq/libhoop
-          path: "./libhoop"
-          token: ${{ secrets.GH_TOKEN }}
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: ">=1.23.8"
-      - name: Test
-        run: make test
-
   build-rust-binaries-darwin:
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -51,7 +31,7 @@ jobs:
           rustup target add aarch64-apple-darwin
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Darwin Rust Binaries
         env:
@@ -66,8 +46,6 @@ jobs:
   build-rust-binary-linux-amd64:
     runs-on: ubuntu-latest
     name: Build Linux Rust Binaries Amd64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -85,7 +63,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -100,8 +78,6 @@ jobs:
   build-rust-binary-linux-arm64:
     runs-on: ubuntu-24.04-arm
     name: Build Linux Rust Binaries Arm64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -119,7 +95,7 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -134,8 +110,6 @@ jobs:
   darwin-amd64:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -155,7 +129,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: amd64
         env:
@@ -170,8 +144,6 @@ jobs:
   darwin-arm64:
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -191,7 +163,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -206,8 +178,6 @@ jobs:
   windows-amd64:
     runs-on: ubuntu-latest
     name: Build Windows Amd64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -227,7 +197,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -242,8 +212,6 @@ jobs:
   windows-arm64:
     runs-on: ubuntu-latest
     name: Build Windows Arm64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -263,7 +231,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -278,8 +246,6 @@ jobs:
   linux-amd64:
     runs-on: ubuntu-latest
     name: Build Linux Amd64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -299,7 +265,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -318,8 +284,6 @@ jobs:
   linux-arm64:
     runs-on: ubuntu-latest
     name: Build Linux Arm64
-    environment: production
-    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -339,7 +303,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -358,8 +322,6 @@ jobs:
   build-webapp:
     runs-on: ubuntu-latest
     name: Build Webapp
-    environment: production
-    needs: [test]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -388,16 +350,14 @@ jobs:
   build-tar-files:
     runs-on: ubuntu-latest
     name: Build Tar Files
-    environment: production
     needs: 
-      - test
+      - build-webapp
       - darwin-amd64
       - darwin-arm64
       - windows-amd64
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-webapp
       - build-rust-binaries-darwin
       - build-rust-binary-linux-amd64
       - build-rust-binary-linux-arm64
@@ -413,7 +373,7 @@ jobs:
           path: dist/
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Merge Artifacts into dist/
         env:
@@ -439,7 +399,6 @@ jobs:
   docker-publish-hoopgateway-arm64:
     runs-on: GitHub-Linux-Arm-Runner
     name: Dck Publish Gateway (arm64)
-    environment: production
     needs:
       - build-tar-files
     steps:
@@ -479,7 +438,6 @@ jobs:
   docker-publish-hoopgateway-amd64:
     runs-on: ubuntu-latest
     name: Dck Publish Gateway (amd64)
-    environment: production
     needs:
       - build-tar-files
     steps:
@@ -519,7 +477,6 @@ jobs:
   docker-publish-hoopgateway-multiarch:
     runs-on: ubuntu-latest
     name: Publish Gateway Image
-    environment: production
     needs:
       - docker-publish-hoopgateway-amd64
       - docker-publish-hoopgateway-arm64
@@ -539,7 +496,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -547,17 +504,12 @@ jobs:
           docker manifest create hoophq/hoop:${{ env.GIT_TAG }} \
             --amend hoophq/hoop:${{ github.sha }}-amd64 \
             --amend hoophq/hoop:${{ github.sha }}-arm64
-          docker manifest create hoophq/hoop:latest \
-            --amend hoophq/hoop:${{ github.sha }}-amd64 \
-            --amend hoophq/hoop:${{ github.sha }}-arm64
           docker manifest push hoophq/hoop:${{ env.GIT_TAG }}
-          docker manifest push hoophq/hoop:latest
 
 
   docker-publish-hoopagent-arm64:
     runs-on: GitHub-Linux-Arm-Runner
     name: Dck Publish Agent (arm64)
-    environment: production
     needs:
       - build-tar-files
     steps:
@@ -595,7 +547,6 @@ jobs:
   docker-publish-hoopagent-amd64:
     runs-on: ubuntu-latest
     name: Dck Publish Agent (amd64)
-    environment: production
     needs:
       - build-tar-files
     steps:
@@ -633,7 +584,6 @@ jobs:
   docker-publish-hoopagent-multiarch:
     runs-on: ubuntu-latest
     name: Publish Hoopagent Image
-    environment: production
     needs:
       - docker-publish-hoopagent-amd64
       - docker-publish-hoopagent-arm64
@@ -653,7 +603,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -661,16 +611,11 @@ jobs:
           docker manifest create hoophq/hoopdev:${{ env.GIT_TAG }} \
             --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
-          docker manifest create hoophq/hoopdev:latest \
-            --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
-            --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
-          docker manifest push hoophq/hoopdev:latest
 
   publish-release:
     runs-on: ubuntu-latest
     name: Publish Release
-    environment: production
     needs:
       - docker-publish-hoopgateway-multiarch
       - docker-publish-hoopagent-multiarch
@@ -686,11 +631,9 @@ jobs:
           merge-multiple: true
           path: dist/
 
-      - uses: matbour/setup-sentry-cli@v2
-        id: sentry-cli
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Gateway Bundle (amd64)
         env:
@@ -706,7 +649,7 @@ jobs:
 
       - name: Build Helm Chart
         env:
-          GIT_TAG: ${{ env.GIT_TAG }}
+          GIT_TAG: "${{ env.GIT_TAG }}"
           GITHUB_CONTAINER_REGISTRY_TOKEN: ${{ secrets.GH_CONTAINER_REGISTRY_TOKEN }}
           GITHUB_USERNAME: ${{ github.actor }}
         run: make build-helm-chart
@@ -718,18 +661,13 @@ jobs:
           AWS_REGION: us-east-1
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: |-
-          make release-s3
-          make release-s3-latest
-          make release-s3-cf-templates-latest
+        run: make release-s3
 
-      - name: Publish Brew Recipe
-        run: gh workflow run release.yml -f version=$GIT_TAG --repo hoophq/brew
+      - name: Comment on PR on Success
+        if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_TAG: ${{ env.GIT_TAG }}
+        run: |-
+          gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Completed with Success, Version=${GIT_TAG}" || true
 
-      - name: Publish Sentry Sourcemaps
-        run: make publish-sentry-sourcemaps
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

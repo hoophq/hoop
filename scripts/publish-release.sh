@@ -43,15 +43,16 @@ $NOTE_CONTENT
 - [hoophq/hoop:latest](https://hub.docker.com/repository/docker/hoophq/hoop)
 - [hoophq/hoop:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoop)
 
-### Agent Image | amd64
-
-- [hoophq/hoopdev:latest](https://hub.docker.com/repository/docker/hoophq/hoopdev)
-- [hoophq/hoopdev:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoopdev)
-
 ## Helm Chart
 
 - [hoop-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
 - [hoopagent-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
+
+# Bundles
+
+- [hoop-gateway-bundle-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoopgateway_${GIT_TAG}-Linux_amd64.tar.gz)
+- [hoop-gateway-bundle-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoopgateway_${GIT_TAG}-Linux_arm64.tar.gz)
+- [webapp-bundle](https://releases.hoop.dev/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
 
 EOF
 
