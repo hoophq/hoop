@@ -18,10 +18,114 @@ jobs:
       - name: Test
         run: make test-oss
 
+  build-rust-binaries-darwin:
+    runs-on: macos-latest
+    name: Build Darwin Rust Binaries
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Add Darwin Rust targets
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build Darwin Rust Binaries
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: make build-rust-darwin-all
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  build-rust-binary-linux-amd64:
+    runs-on: ubuntu-latest
+    name: Build Linux Rust Binaries Amd64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Add Linux Rust targets
+        run: |
+          rustup target add x86_64-unknown-linux-gnu
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build Linux Rust Binaries
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=linux GOARCH=amd64 make build-rust-single
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  build-rust-binary-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    name: Build Linux Rust Binaries Arm64
+    environment: production
+    needs: [test]
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Add Linux Rust targets
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build Linux Rust Binaries
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=linux GOARCH=arm64 make build-rust-single
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
   darwin-amd64:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
     environment: production
+    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -57,6 +161,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
     environment: production
+    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -92,6 +197,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Amd64
     environment: production
+    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -127,6 +233,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Arm64
     environment: production
+    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -162,6 +269,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Amd64
     environment: production
+    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -211,6 +319,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Arm64
     environment: production
+    needs: [test]
 
     steps:
       - name: Checkout Hoop
@@ -260,6 +369,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Webapp
     environment: production
+    needs: [test]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -297,6 +407,9 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-webapp
+      - build-rust-binary-linux-amd64
+      - build-rust-binary-linux-arm64
+      - build-rust-binaries-darwin
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -343,6 +456,9 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-webapp
+      - build-rust-binary-linux-amd64
+      - build-rust-binary-linux-arm64
+      - build-rust-binaries-darwin
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -422,6 +538,9 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-webapp
+      - build-rust-binary-linux-amd64
+      - build-rust-binary-linux-arm64
+      - build-rust-binaries-darwin
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -466,6 +585,9 @@ jobs:
       - linux-amd64
       - linux-arm64
       - build-webapp
+      - build-rust-binary-linux-amd64
+      - build-rust-binary-linux-arm64
+      - build-rust-binaries-darwin
     steps:
       - name: Checkout
         uses: actions/checkout@v3
