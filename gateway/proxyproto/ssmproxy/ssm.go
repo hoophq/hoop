@@ -125,11 +125,9 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 
 	// Get host and port from connection to pass as target websocket url
 	host := c.Request.Host
-	schema := c.Request.URL.Scheme
-	if schema == "http" {
-		schema = "ws"
-	} else {
-		schema = "wss"
+	scheme := "ws"
+	if c.Request.URL.Scheme == "https" {
+		scheme = "wss"
 	}
 
 	token, err := createTokenForConnection(connectionId, ctxDuration)
@@ -138,7 +136,7 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to create connection")
 		return
 	}
-	targetUrl := fmt.Sprintf("%s://%s/ssm/ws/%s?target=%s", schema, host, connectionId, target.Target)
+	targetUrl := fmt.Sprintf("%s://%s/ssm/ws/%s?target=%s", scheme, host, connectionId, target.Target)
 	c.JSON(http.StatusOK, ssmStartSessionResponsePacket{
 		SessionId:  connectionId,
 		StreamUrl:  targetUrl,
@@ -322,6 +320,7 @@ func (r *SSMProxy) handleTXPipe(ctx context.Context, ws *websocket.Conn, client 
 
 	ticker := time.NewTicker(wsPingInterval)
 	defer ticker.Stop()
+	defer running.Store(false)
 
 	go func() {
 		for running.Load() {
@@ -362,7 +361,7 @@ func (r *SSMProxy) handleTXPipe(ctx context.Context, ws *websocket.Conn, client 
 			// By default, WS follows the HTTP Standard 2-minute timeout for inactivity
 			// This allows us to prolong the connection for longer than 2 minutes
 			// in case user does not send anything.
-			if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(wsPingInterval/2)); err != nil {
+			if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().UTC().Add(wsPingInterval/2)); err != nil {
 				log.With("sid", sessionID, "conn", cID).Errorf("ws ping timeout")
 				return
 			}

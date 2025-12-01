@@ -95,7 +95,7 @@ func decodeToken(token string) (string, time.Time, error) {
 		return "", time.Time{}, fmt.Errorf("failed to unmarshal token payload: %v", err)
 	}
 
-	if time.Now().After(payload.ExpiresAt) {
+	if time.Now().UTC().After(payload.ExpiresAt) {
 		return "", time.Time{}, fmt.Errorf("token expired")
 	}
 
