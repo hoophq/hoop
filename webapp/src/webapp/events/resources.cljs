@@ -30,4 +30,4 @@
    {:db (assoc-in db [:resources :creating?] false)
     :fx [[:dispatch [:show-snackbar {:level :error
                                      :text "Failed to create resource"
-                                     :details (or (:message error) "Unknown error")}]]]}))
+                                     :details error}]]]}))
