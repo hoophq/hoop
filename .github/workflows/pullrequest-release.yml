@@ -11,6 +11,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Release Start Build
+        run: echo "Release Start Build"
+
   build-rust-binaries-darwin:
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
@@ -34,7 +37,7 @@ jobs:
           rustup target add aarch64-apple-darwin
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Darwin Rust Binaries
         env:
@@ -68,7 +71,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -102,7 +105,7 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -138,7 +141,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: amd64
         env:
@@ -174,7 +177,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -210,7 +213,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -246,7 +249,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -282,7 +285,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -322,7 +325,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -395,7 +398,7 @@ jobs:
           path: dist/
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Merge Artifacts into dist/
         env:
@@ -423,7 +426,6 @@ jobs:
     name: Dck Publish Gateway (arm64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -523,7 +525,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -635,7 +637,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -666,7 +668,7 @@ jobs:
 
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Gateway Bundle (amd64)
         env:
@@ -682,7 +684,8 @@ jobs:
 
       - name: Build Helm Chart
         env:
-          GIT_TAG: ${{ env.GIT_TAG }}
+          # it must be prefixed with "1.0.0-" to be a valid semver for helm
+          GIT_TAG: "1.0.0-${{ env.GIT_TAG }}"
           GITHUB_CONTAINER_REGISTRY_TOKEN: ${{ secrets.GH_CONTAINER_REGISTRY_TOKEN }}
           GITHUB_USERNAME: ${{ github.actor }}
         run: make build-helm-chart
