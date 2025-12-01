@@ -217,7 +217,7 @@
                                       (rf/dispatch [:show-snackbar {:level :success
                                                                     :text "Connection created!"}])
 
-                                      (rf/dispatch [:navigate :connections]))}]]]})))
+                                      (rf/dispatch [:navigate :resources]))}]]]})))
 
 
 (rf/reg-event-fx
@@ -236,7 +236,7 @@
                                                      :text (str "Connection " (:name connection) " updated!")}])
                                       (rf/dispatch [:plugins->get-my-plugins])
                                       (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
-                                      (rf/dispatch [:navigate :connections]))}]]]})))
+                                      (rf/dispatch [:navigate :resources]))}]]]})))
 
 (rf/reg-event-fx
  :connections->test-connection
@@ -326,7 +326,7 @@
               :body body
               :on-success (fn []
                             (rf/dispatch [:show-snackbar {:level :success
-                                                          :text "Connection created!"}])
+                                                          :text "Role created!"}])
                             (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
                             (rf/dispatch [:plugins->get-my-plugins])
                             (rf/dispatch [:navigate :home]))}]]]})))
@@ -377,6 +377,6 @@ ORDER BY total_amount DESC;")
                                      (.removeItem js/localStorage "run-connection-list-selected"))
 
                                    (rf/dispatch [:show-snackbar {:level :success
-                                                                 :text "Connection deleted!"}])
+                                                                 :text "Role deleted!"}])
                                    (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
-                                   (rf/dispatch [:navigate :connections])))}]]]}))
+                                   (rf/dispatch [:navigate :resources])))}]]]}))
