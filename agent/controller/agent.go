@@ -53,6 +53,9 @@ type (
 		connectionString   string
 		httpProxyRemoteURL string
 		httpProxyHeaders   map[string]string
+		awsRegion          string
+		awsSecretAccessKey string
+		awsAccessKeyID     string
 	}
 )
 
@@ -119,6 +122,9 @@ func (a *Agent) Run() error {
 		// terminal exec
 		case pbagent.ExecWriteStdin:
 			a.doExec(pkt)
+
+		case pbagent.SSMConnectionWrite:
+			a.processSSMProtocol(pkt)
 
 		// PG protocol
 		case pbagent.PGConnectionWrite:
@@ -596,6 +602,13 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		}
 		if _, err := url.Parse(env.httpProxyRemoteURL); err != nil {
 			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
+		}
+	case pb.ConnectionTypeSSM:
+		env.awsAccessKeyID = envVarS.Getenv("AWS_ACCESS_KEY_ID")
+		env.awsSecretAccessKey = envVarS.Getenv("AWS_SECRET_ACCESS_KEY")
+		env.awsRegion = envVarS.Getenv("AWS_REGION")
+		if env.awsAccessKeyID == "" || env.awsSecretAccessKey == "" {
+			return nil, fmt.Errorf("missing required secrets for SSM connection [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY]")
 		}
 	}
 	return env, nil
