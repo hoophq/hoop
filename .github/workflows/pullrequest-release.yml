@@ -3,22 +3,10 @@ name: Release PR
 on: pull_request
 
 jobs:
-  release:
-    name: PR Release
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Release Start Build
-        run: echo "Release Start Build"
-
   build-rust-binaries-darwin:
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -37,7 +25,7 @@ jobs:
           rustup target add aarch64-apple-darwin
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Darwin Rust Binaries
         env:
@@ -53,7 +41,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Rust Binaries Amd64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -71,7 +58,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -87,7 +74,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
     name: Build Linux Rust Binaries Arm64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -105,7 +91,7 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Linux Rust Binaries
         env:
@@ -121,7 +107,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -141,7 +126,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: amd64
         env:
@@ -157,7 +142,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -177,7 +161,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -193,7 +177,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Amd64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -213,7 +196,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -229,7 +212,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Windows Arm64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -249,7 +231,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -265,7 +247,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Amd64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -285,7 +266,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -305,7 +286,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Linux Arm64
     environment: production
-    needs: [release]
 
     steps:
       - name: Checkout Hoop
@@ -325,7 +305,7 @@ jobs:
           cache-dependency-path: "**/go.sum"
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build
         env:
@@ -345,7 +325,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Webapp
     environment: production
-    needs: [release]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -376,13 +355,13 @@ jobs:
     name: Build Tar Files
     environment: production
     needs: 
+      - build-webapp
       - darwin-amd64
       - darwin-arm64
       - windows-amd64
       - windows-arm64
       - linux-amd64
       - linux-arm64
-      - build-webapp
       - build-rust-binaries-darwin
       - build-rust-binary-linux-amd64
       - build-rust-binary-linux-arm64
@@ -398,7 +377,7 @@ jobs:
           path: dist/
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Merge Artifacts into dist/
         env:
@@ -466,7 +445,6 @@ jobs:
     name: Dck Publish Gateway (amd64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -525,7 +503,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -541,7 +519,6 @@ jobs:
     name: Dck Publish Agent (arm64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -580,7 +557,6 @@ jobs:
     name: Dck Publish Agent (amd64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -637,7 +613,7 @@ jobs:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - name: Create SHA manifest and push
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -668,7 +644,7 @@ jobs:
 
 
       - name: Set Git Tag
-        run: echo "GIT_TAG=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}-.0.0-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
       - name: Build Gateway Bundle (amd64)
         env:
@@ -684,8 +660,7 @@ jobs:
 
       - name: Build Helm Chart
         env:
-          # it must be prefixed with "1.0.0-" to be a valid semver for helm
-          GIT_TAG: "1.0.0-${{ env.GIT_TAG }}"
+          GIT_TAG: "${{ env.GIT_TAG }}"
           GITHUB_CONTAINER_REGISTRY_TOKEN: ${{ secrets.GH_CONTAINER_REGISTRY_TOKEN }}
           GITHUB_USERNAME: ${{ github.actor }}
         run: make build-helm-chart
