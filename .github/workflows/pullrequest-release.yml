@@ -667,7 +667,6 @@ jobs:
         if: success()
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
-        uses: actions/github-script@v7
-        with:
-          script:
-            gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Successful (${GIT_TAG})" || true
+        run: |-
+          gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Successful (${GIT_TAG})" || true
+
