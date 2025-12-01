@@ -666,6 +666,7 @@ jobs:
       - name: Comment on PR on Success
         if: success()
         env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           GIT_TAG: ${{ env.GIT_TAG }}
         run: |-
           gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Successful (${GIT_TAG})" || true
