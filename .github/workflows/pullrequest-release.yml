@@ -680,3 +680,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: make release-s3
+
+      - name: Comment on PR on Success
+        if: success()
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        uses: actions/github-script@v7
+        with:
+          script:
+            gh pr comment ${{ github.event.pull_request.number }} -b "✅ Build Successful (${GIT_TAG})" || true
