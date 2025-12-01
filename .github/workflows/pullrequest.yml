@@ -17,3 +17,566 @@ jobs:
 
       - name: Test
         run: make test-oss
+
+  darwin-amd64:
+    runs-on: ubuntu-latest
+    name: Build Darwin Amd64
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: amd64
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=amd64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  darwin-arm64:
+    runs-on: ubuntu-latest
+    name: Build Darwin Arm64
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=darwin GOARCH=arm64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  windows-amd64:
+    runs-on: ubuntu-latest
+    name: Build Windows Amd64
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=windows GOARCH=amd64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  windows-arm64:
+    runs-on: ubuntu-latest
+    name: Build Windows Arm64
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: GOOS=windows GOARCH=arm64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  linux-amd64:
+    runs-on: ubuntu-latest
+    name: Build Linux Amd64
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
+        run: GOOS=linux GOARCH=amd64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  linux-arm64:
+    runs-on: ubuntu-latest
+    name: Build Linux Arm64
+    environment: production
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ">=1.23.8"
+          cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          HONEYCOMB_API_KEY: ${{ secrets.HONEYCOMB_API_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SEGMENT_API_KEY: ${{ secrets.SEGMENT_API_KEY }}
+          INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
+        run: GOOS=linux GOARCH=arm64 make build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  build-webapp:
+    runs-on: ubuntu-latest
+    name: Build Webapp
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "zulu"
+          java-version: "21"
+      - name: Install clojure tools
+        uses: DeLaGuardo/setup-clojure@12.5
+        with:
+          cli: 1.12.0.1479 # releases: https://clojure.org/releases/tools
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: webapp/package-lock.json
+      - name: Build
+        run: make build-webapp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ github.job }}
+          path: dist/
+
+  docker-publish-hoopgateway-arm64:
+    runs-on: GitHub-Linux-Arm-Runner
+    name: Dck Publish Gateway (arm64)
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoop
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Extract Webapp
+        run: make extract-webapp
+      - name: Build and Push
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoop:${{ github.sha }}-arm64
+
+  docker-publish-hoopgateway-amd64:
+    runs-on: ubuntu-latest
+    name: Dck Publish Gateway (amd64)
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoop
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Extract Webapp
+        run: make extract-webapp
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoop:${{ github.sha }}-amd64
+
+  docker-publish-hoopgateway-multiarch:
+    runs-on: ubuntu-latest
+    name: Publish Gateway Image
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-amd64
+      - docker-publish-hoopgateway-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoop
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+      - name: Create SHA manifest and push
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          docker manifest create hoophq/hoop:${{ env.GIT_TAG }} \
+            --amend hoophq/hoop:${{ github.sha }}-amd64 \
+            --amend hoophq/hoop:${{ github.sha }}-arm64
+          docker manifest push hoophq/hoop:${{ env.GIT_TAG }}
+
+  docker-publish-hoopagent-arm64:
+    runs-on: GitHub-Linux-Arm-Runner
+    name: Dck Publish Agent (arm64)
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoopdev
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Build and Push
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.dev
+          context: '.'
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopdev:${{ github.sha }}-arm64
+
+  docker-publish-hoopagent-amd64:
+    runs-on: ubuntu-latest
+    name: Dck Publish Agent (amd64)
+    environment: production
+    needs:
+      - darwin-amd64
+      - darwin-arm64
+      - windows-amd64
+      - windows-arm64
+      - linux-amd64
+      - linux-arm64
+      - build-webapp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoopdev
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.dev
+          context: '.'
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopdev:${{ github.sha }}-amd64
+
+  docker-publish-hoopagent-multiarch:
+    runs-on: ubuntu-latest
+    name: Publish Hoopagent Image
+    environment: production
+    needs:
+      - docker-publish-hoopagent-amd64
+      - docker-publish-hoopagent-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: hoophq/hoopdev
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+      - name: Create SHA manifest and push
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+        run: |
+          docker manifest create hoophq/hoopdev:${{ env.GIT_TAG }} \
+            --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
+            --amend hoophq/hoopdev:${{ github.sha }}-arm64
+          docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
+
+  publish-release:
+    runs-on: ubuntu-latest
+    name: Publish Release
+    environment: production
+    needs:
+      - docker-publish-hoopgateway-multiarch
+      - docker-publish-hoopagent-multiarch
+
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v4
+        id: download
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV
+
+      - name: Build Gateway Bundle (amd64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          GOARCH: amd64
+        run: make build-gateway-bundle
+
+      - name: Build Gateway Bundle (arm64)
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          GOARCH: arm64
+        run: make build-gateway-bundle
+
+      - name: Build Helm Chart
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          GITHUB_CONTAINER_REGISTRY_TOKEN: ${{ secrets.GH_CONTAINER_REGISTRY_TOKEN }}
+          GITHUB_USERNAME: ${{ github.actor }}
+        run: make build-helm-chart
+
+      - name: Publish Release
+        env:
+          GIT_TAG: ${{ env.GIT_TAG }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: make release-s3
