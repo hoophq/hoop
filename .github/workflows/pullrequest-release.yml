@@ -6,7 +6,7 @@ jobs:
   build-rust-binaries-darwin:
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -40,7 +40,7 @@ jobs:
   build-rust-binary-linux-amd64:
     runs-on: ubuntu-latest
     name: Build Linux Rust Binaries Amd64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -73,7 +73,7 @@ jobs:
   build-rust-binary-linux-arm64:
     runs-on: ubuntu-24.04-arm
     name: Build Linux Rust Binaries Arm64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -106,7 +106,7 @@ jobs:
   darwin-amd64:
     runs-on: ubuntu-latest
     name: Build Darwin Amd64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -141,7 +141,7 @@ jobs:
   darwin-arm64:
     runs-on: ubuntu-latest
     name: Build Darwin Arm64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -176,7 +176,7 @@ jobs:
   windows-amd64:
     runs-on: ubuntu-latest
     name: Build Windows Amd64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -211,7 +211,7 @@ jobs:
   windows-arm64:
     runs-on: ubuntu-latest
     name: Build Windows Arm64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -246,7 +246,7 @@ jobs:
   linux-amd64:
     runs-on: ubuntu-latest
     name: Build Linux Amd64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -285,7 +285,7 @@ jobs:
   linux-arm64:
     runs-on: ubuntu-latest
     name: Build Linux Arm64
-    environment: production
+    environment: development
 
     steps:
       - name: Checkout Hoop
@@ -324,7 +324,7 @@ jobs:
   build-webapp:
     runs-on: ubuntu-latest
     name: Build Webapp
-    environment: production
+    environment: development
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -353,7 +353,7 @@ jobs:
   build-tar-files:
     runs-on: ubuntu-latest
     name: Build Tar Files
-    environment: production
+    environment: development
     needs: 
       - build-webapp
       - darwin-amd64
@@ -403,7 +403,7 @@ jobs:
   docker-publish-hoopgateway-arm64:
     runs-on: GitHub-Linux-Arm-Runner
     name: Dck Publish Gateway (arm64)
-    environment: production
+    environment: development
     needs:
       - build-tar-files
     steps:
@@ -443,7 +443,7 @@ jobs:
   docker-publish-hoopgateway-amd64:
     runs-on: ubuntu-latest
     name: Dck Publish Gateway (amd64)
-    environment: production
+    environment: development
     needs:
       - build-tar-files
     steps:
@@ -483,7 +483,7 @@ jobs:
   docker-publish-hoopgateway-multiarch:
     runs-on: ubuntu-latest
     name: Publish Gateway Image
-    environment: production
+    environment: development
     needs:
       - docker-publish-hoopgateway-amd64
       - docker-publish-hoopgateway-arm64
@@ -517,7 +517,7 @@ jobs:
   docker-publish-hoopagent-arm64:
     runs-on: GitHub-Linux-Arm-Runner
     name: Dck Publish Agent (arm64)
-    environment: production
+    environment: development
     needs:
       - build-tar-files
     steps:
@@ -555,7 +555,7 @@ jobs:
   docker-publish-hoopagent-amd64:
     runs-on: ubuntu-latest
     name: Dck Publish Agent (amd64)
-    environment: production
+    environment: development
     needs:
       - build-tar-files
     steps:
@@ -593,7 +593,7 @@ jobs:
   docker-publish-hoopagent-multiarch:
     runs-on: ubuntu-latest
     name: Publish Hoopagent Image
-    environment: production
+    environment: development
     needs:
       - docker-publish-hoopagent-amd64
       - docker-publish-hoopagent-arm64
@@ -626,7 +626,7 @@ jobs:
   publish-release:
     runs-on: ubuntu-latest
     name: Publish Release
-    environment: production
+    environment: development
     needs:
       - docker-publish-hoopgateway-multiarch
       - docker-publish-hoopagent-multiarch

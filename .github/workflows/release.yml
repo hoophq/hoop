@@ -441,7 +441,6 @@ jobs:
     name: Dck Publish Gateway (arm64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -482,7 +481,6 @@ jobs:
     name: Dck Publish Gateway (amd64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -561,7 +559,6 @@ jobs:
     name: Dck Publish Agent (arm64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
@@ -600,7 +597,6 @@ jobs:
     name: Dck Publish Agent (amd64)
     environment: production
     needs:
-      - build-webapp
       - build-tar-files
     steps:
       - name: Checkout
