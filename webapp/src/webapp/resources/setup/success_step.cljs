@@ -83,7 +83,9 @@
            [action-card {:icon Wrench
                          :title "Setup Native Access"
                          :description "Connect your IDE or database tools"
-                         :on-click #(js/console.log "Setup native access clicked")}])
+                         :on-click (fn []
+                                     (rf/dispatch-sync [:navigate :resources])
+                                     (rf/dispatch [:native-client-access->start-flow (:name first-role)]))}])
 
          ;; Configure Additional Features - always show
          [action-card {:icon ShieldCheck
@@ -111,7 +113,7 @@
                                    (if (= context :add-role)
                                      ;; Add-role: go back to resource configure roles tab
                                      (rf/dispatch [:navigate :configure-resource {:tab "roles"} :resource-id resource-id])
-                                     ;; Setup: go to connections list
+                                     ;; Setup: go to resources list
                                      (rf/dispatch [:navigate :resources])))}]])]
 
      ;; Footer action
