@@ -1,6 +1,13 @@
-name: Release PR
+name: Development Release
 
-on: pull_request
+on:
+  pull_request:
+    paths-ignore:
+      - '*.md'
+      - 'webapp/*.md'
+      - '.github/**'
+      - 'LICENSE'
+      - '.env.sample'
 
 jobs:
   build-rust-binaries-darwin:
