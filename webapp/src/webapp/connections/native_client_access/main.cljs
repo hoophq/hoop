@@ -404,22 +404,27 @@
 
 (defn main
   "Main native client access component - manages the complete flow"
-  [connection-name]
+  [connection-name-or-map]
   (let [selected-duration (r/atom 30)
         requesting? (rf/subscribe [:native-client-access->requesting?])
         native-client-access-data (rf/subscribe [:native-client-access->current-session])
-        session-valid? (rf/subscribe [:native-client-access->session-valid?])]
+        session-valid? (rf/subscribe [:native-client-access->session-valid?])
+        connection-name (if (string? connection-name-or-map)
+                          connection-name-or-map
+                          (:name connection-name-or-map))
+        session-matches-connection? (and @native-client-access-data
+                                         (= (:id @native-client-access-data) connection-name))]
 
     [:> Box {:class "flex max-h-[696px] overflow-hidden -m-radix-5"}
      [:> Flex {:direction "column" :justify "between" :gap "6" :class "w-full px-10 pt-10 overflow-y-auto"}
       ;; Main content based on current state
       (cond
-        ;; Step 2: Connected - show connection details
-        (and @session-valid? @native-client-access-data)
+        ;; Step 2: Connected - show connection details (only if session matches requested connection)
+        (and @session-valid? @native-client-access-data session-matches-connection?)
         [connection-established-view @native-client-access-data minimize-modal disconnect-session]
 
-        ;; Step 1: Configure session duration
-        (not @native-client-access-data)
+        ;; Step 1: Configure session duration (no session or session for different connection)
+        (or (not @native-client-access-data) (not session-matches-connection?))
         [configure-session-view connection-name selected-duration requesting?]
 
         ;; Fallback: Session expired
