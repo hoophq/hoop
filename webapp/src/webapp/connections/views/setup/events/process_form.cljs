@@ -69,8 +69,16 @@
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
         metadata-credentials (get-in db [:connection-setup :metadata-credentials])
         all-env-vars (cond
+                       (= connection-subtype "kubernetes-token")
+                       (let [kubernetes-token (get-in db [:connection-setup :kubernetes-token])
+                             kubernetes-token-env-vars (filterv #(not (str/blank? (:value %)))
+                                                                [{:key "REMOTE_URL" :value (:cluster_url kubernetes-token)}
+                                                                 {:key "HEADER_AUTHORIZATION" :value (str "Bearer " (:authorization kubernetes-token ""))}
+                                                                 {:key "INSECURE" :value (:insecure kubernetes-token)}])]
+                         kubernetes-token-env-vars)
+
                        (and (or (= ui-type "custom") (= ui-type "database"))
-                                connection-subtype
+                            connection-subtype
                             (seq metadata-credentials))
                        (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
                                                              {:key (name field-key)
@@ -255,6 +263,13 @@
   {:remote_url (get credentials "REMOTE_URL")
    :insecure (= (get credentials "INSECURE") "true")})
 
+(defn extract-kubernetes-token-credentials
+  "Retrieves remote_url, authorization and insecure flag from secrets for http credentials"
+  [credentials]
+  {:cluster_url (get credentials "REMOTE_URL")
+   :authorization (subs (get credentials "HEADER_AUTHORIZATION") 7)
+   :insecure (= (get credentials "INSECURE") "true")})
+
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
@@ -275,6 +290,9 @@
         ssh-credentials (when (and (= connection-type "application")
                                    (= connection-subtype "ssh"))
                           (extract-ssh-credentials credentials))
+        kubernetes-token (when (and (= connection-type "custom")
+                                    (= connection-subtype "kubernetes-token"))
+                           (extract-kubernetes-token-credentials credentials))
         ssh-auth-method (when ssh-credentials
                           (cond
                             (and (not (empty? (get ssh-credentials "authorized_server_keys")))
@@ -337,6 +355,7 @@
      :metadata-credentials credentials
      :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
+     :kubernetes-token kubernetes-token
      :ssh-auth-method (or ssh-auth-method "password")
      :command (if (empty? (:command connection))
                 (get constants/connection-commands connection-subtype)

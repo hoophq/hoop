@@ -78,7 +78,51 @@
                                                (:key field)
                                                (-> % .-target .-value)])}])]))
 
-;; HTTP Proxy role form - Based on network.cljs
+;; Kubernetes Token role form - Based on network.cljs
+(defn kubernetes-token-role-form [role-index]
+  (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
+
+    (when (nil? (get credentials "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "insecure"
+                    false]))
+
+    [:> Box {:class "space-y-4"}
+     ;; Cluster URL
+     [forms/input {:label "Cluster URL"
+                   :placeholder "e.g. https://example.com:51434"
+                   :value (get credentials "remote_url" "")
+                   :required true
+                   :type "text"
+                   :on-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                             role-index
+                                             "remote_url"
+                                             (-> % .-target .-value)])}]
+
+     [forms/input {:label "Authorization token"
+                   :placeholder "e.g. jwt.token.example"
+                   :value (subs (get credentials "header_Authorization" "") 7)
+                   :required true
+                   :type "text"
+                   :on-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                             role-index
+                                             "header_Authorization"
+                                             (str "Bearer " (-> % .-target .-value))])}]
+
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get credentials "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index
+                                                  "insecure"
+                                                  %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
+
 (defn http-proxy-role-form [role-index]
   (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])]
 
@@ -238,6 +282,9 @@
 
           (= resource-subtype "linux-vm")
           (component-title [linux-container-role-form role-index])
+
+          (= resource-subtype "kubernetes-token")
+          (component-title [kubernetes-token-role-form role-index])
 
           :else
           [metadata-driven-role-form role-index]))
