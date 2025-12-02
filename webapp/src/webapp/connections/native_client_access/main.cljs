@@ -413,7 +413,7 @@
                           connection-name-or-map
                           (:name connection-name-or-map))
         session-matches-connection? (and @native-client-access-data
-                                         (= (:id @native-client-access-data) connection-name))]
+                                         (= (:connection_name @native-client-access-data) connection-name))]
 
     [:> Box {:class "flex max-h-[696px] overflow-hidden -m-radix-5"}
      [:> Flex {:direction "column" :justify "between" :gap "6" :class "w-full px-10 pt-10 overflow-y-auto"}
