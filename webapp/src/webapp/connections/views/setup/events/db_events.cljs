@@ -195,6 +195,19 @@
            (assoc-in [:connection-setup :credentials :current-file-content] ""))
        db))))
 
+(rf/reg-event-db
+ :connection-setup/update-config-file-by-key
+ (fn [db [_ file-key value]]
+   (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])
+         existing-index (first (keep-indexed (fn [idx {:keys [key]}]
+                                               (when (= key file-key) idx))
+                                             config-files))]
+     (if existing-index
+       (assoc-in db [:connection-setup :credentials :configuration-files existing-index :value] value)
+       (update-in db [:connection-setup :credentials :configuration-files]
+                  (fnil conj [])
+                  {:key file-key :value value})))))
+
 ;; Navigation events
 (rf/reg-event-db
  :connection-setup/next-step

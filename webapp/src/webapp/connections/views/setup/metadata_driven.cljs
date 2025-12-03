@@ -18,6 +18,7 @@
    :value ""
    :required required
    :placeholder (or placeholder description)
+   :original-type type
    :type (case type
            "filesystem" "textarea"
            "textarea" "textarea"
@@ -40,16 +41,20 @@
                             vec)]
             fields))))))
 
-(defn render-field [{:keys [key label value required placeholder type description]}]
+(defn render-field [{:keys [key label value required placeholder type description is-filesystem?]}]
   (let [base-props {:label label
                     :placeholder (or placeholder (str "e.g. " key))
                     :value value
                     :required required
                     :helper-text description
                     :type (or type "password")
-                    :on-change #(rf/dispatch [:connection-setup/update-metadata-credentials
-                                              key
-                                              (-> % .-target .-value)])}]
+                    :on-change #(if is-filesystem?
+                                  (rf/dispatch [:connection-setup/update-config-file-by-key
+                                                key
+                                                (-> % .-target .-value)])
+                                  (rf/dispatch [:connection-setup/update-metadata-credentials
+                                                key
+                                                (-> % .-target .-value)]))}]
     (if (= type "textarea")
       [forms/textarea base-props]
       [forms/input base-props])))
@@ -59,18 +64,24 @@
         saved-credentials @(rf/subscribe [:connection-setup/metadata-credentials])
         credentials (if (= form-type :update)
                       saved-credentials
-                      @(rf/subscribe [:connection-setup/metadata-credentials]))]
-
+                      @(rf/subscribe [:connection-setup/metadata-credentials]))
+        config-files @(rf/subscribe [:connection-setup/configuration-files])
+        config-files-map (into {} (map (fn [{:keys [key value]}] [key value]) config-files))] 
     (if configs
       [:> Box {:class "space-y-5"}
        [:> Heading {:as "h3" :size "4" :weight "bold"}
-        "Environment credentials"]
+        "Environment credentialssss"]
 
        [:> Grid {:columns "1" :gap "4"}
         (for [field configs]
-          ^{:key (:key field)}
-          [render-field (assoc field
-                               :value (get credentials (:key field) ""))])]]
+          (let [is-filesystem? (= (:original-type field) "filesystem")
+                field-value (if is-filesystem?
+                              (get config-files-map (:key field) "")
+                              (get credentials (:key field) ""))]
+            ^{:key (:key field)}
+            [render-field (assoc field
+                                 :value field-value
+                                 :is-filesystem? is-filesystem?)]))]]
 
       nil)))
 
