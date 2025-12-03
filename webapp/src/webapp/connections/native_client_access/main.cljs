@@ -29,6 +29,30 @@
       "0.0.0.0"
       hostname)))
 
+(defn- get-ssl-mode
+  "Determine SSL mode based on current page protocol"
+  []
+  (if (= (.-protocol js/location) "https:")
+    "require"
+    "disable"))
+
+(defn- build-postgres-connection-string
+  [{:keys [port username password database_name]}]
+  (let [db-name (or database_name "postgres")
+        ssl-mode (get-ssl-mode)
+        hostname (get-hostname)]
+    (str "postgres://" username ":" password "@" hostname ":" port "/" db-name "?sslmode=" ssl-mode)))
+
+(defn- build-ssh-command
+  [{:keys [port username]}]
+  (let [hostname (get-hostname)]
+    (str "ssh " username "@" hostname " -p " port)))
+
+(defn- build-rdp-command
+  [{:keys [port username password]}]
+  (let [hostname (get-hostname)]
+    (str "xfreerdp /v:" hostname ":" port " /u:" username " /p:" password)))
+
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
   [{:keys [error-message]}]
@@ -89,17 +113,17 @@
 
 (defn- postgres-credentials-fields
   "PostgreSQL specific credentials fields"
-  [native-client-access-data]
+  [connection-credentials]
   [:> Box {:class "space-y-4"}
    ;; Database Name
-   (when (:database_name native-client-access-data)
+   (when (:database_name connection-credentials)
      [:> Box {:class "space-y-2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
        "Database Name"]
       [logs/new-container
        {:status :success
         :id "database-name"
-        :logs (:database_name native-client-access-data)}]])
+        :logs (:database_name connection-credentials)}]])
 
    ;; Host
    [:> Box {:class "space-y-2"}
@@ -117,7 +141,7 @@
     [logs/new-container
      {:status :success
       :id "username"
-      :logs (:username native-client-access-data)}]]
+      :logs (:username connection-credentials)}]]
 
    ;; Password
    [:> Box {:class "space-y-2"}
@@ -126,7 +150,7 @@
     [logs/new-container
      {:status :success
       :id "password"
-      :logs (:password native-client-access-data)}]]
+      :logs (:password connection-credentials)}]]
 
    ;; Port
    [:> Box {:class "space-y-2"}
@@ -135,11 +159,11 @@
     [logs/new-container
      {:status :success
       :id "port"
-      :logs (:port native-client-access-data)}]]])
+      :logs (:port connection-credentials)}]]])
 
 (defn- rdp-credentials-fields
   "RDP specific credentials fields"
-  [native-client-access-data]
+  [connection-credentials]
   [:> Box {:class "space-y-4"}
 
    [:> Callout.Root {:size "1" :color "blue" :class "w-full"}
@@ -164,7 +188,7 @@
     [logs/new-container
      {:status :success
       :id "username"
-      :logs (:username native-client-access-data)}]]
+      :logs (:username connection-credentials)}]]
 
    ;; Password
    [:> Box {:class "space-y-2"}
@@ -173,7 +197,7 @@
     [logs/new-container
      {:status :success
       :id "password"
-      :logs (:password native-client-access-data)}]]
+      :logs (:password connection-credentials)}]]
 
    ;; Port
    [:> Box {:class "space-y-2"}
@@ -182,11 +206,11 @@
     [logs/new-container
      {:status :success
       :id "port"
-      :logs (:port native-client-access-data)}]]])
+      :logs (:port connection-credentials)}]]])
 
 (defn- ssh-credentials-fields
   "SSH specific credentials fields"
-  [native-client-access-data]
+  [connection-credentials]
   [:> Box {:class "space-y-4"}
 
    ;; Host
@@ -205,7 +229,7 @@
     [logs/new-container
      {:status :success
       :id "username"
-      :logs (:username native-client-access-data)}]]
+      :logs (:username connection-credentials)}]]
 
    ;; Password
    [:> Box {:class "space-y-2"}
@@ -214,7 +238,7 @@
     [logs/new-container
      {:status :success
       :id "password"
-      :logs (:password native-client-access-data)}]]
+      :logs (:password connection-credentials)}]]
 
    ;; Port
    [:> Box {:class "space-y-2"}
@@ -223,7 +247,7 @@
     [logs/new-container
      {:status :success
       :id "port"
-      :logs (:port native-client-access-data)}]]])
+      :logs (:port connection-credentials)}]]])
 
 (defn- connect-credentials-tab
   "Credentials tab content - adapts based on connection type"
@@ -238,35 +262,43 @@
 (defn- connect-uri-tab
   "Connection URI tab content - PostgreSQL only"
   [{:keys [connection_credentials]}]
-  [:> Box {:class "space-y-4"}
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Connection String"]
-    [logs/new-container
-     {:status :success
-      :id "connection-string"
-      :logs (:connection_string connection_credentials)}]]
+  (let [connection-string (build-postgres-connection-string connection_credentials)]
+    [:> Box {:class "space-y-4"}
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Connection String"]
+      [logs/new-container
+       {:status :success
+        :id "connection-string"
+        :logs connection-string}]]
 
-   [:> Text {:as "p" :size "2" :class "text-[--gray-11] mt-3"}
-    "Works with DBeaver, DataGrip and most PostgreSQL clients"]])
+     [:> Text {:as "p" :size "2" :class "text-[--gray-11] mt-3"}
+      "Works with DBeaver, DataGrip and most PostgreSQL clients"]]))
 
 (defn- connect-command-tab
   "Command tab content"
   [native-client-access-data]
-  [:> Box {:class "space-y-4"}
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Connection Command"]
-    [logs/new-container
-     {:status :success
-      :id "command"
-      :logs (:command native-client-access-data)}]]])
+  (let [connection-type (:connection_type native-client-access-data)
+        connection-credentials (:connection_credentials native-client-access-data)
+        command (case connection-type
+                  "ssh" (build-ssh-command connection-credentials)
+                  "rdp" (build-rdp-command connection-credentials)
+                  (:command connection-credentials))]
+    [:> Box {:class "space-y-4"}
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Connection Command"]
+      [logs/new-container
+       {:status :success
+        :id "command"
+        :logs command}]]]))
 
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [native-client-access-data minimize-fn disconnect-fn]
-  (let [active-tab (r/atom "credentials") 
-        has-command? (some? (get (:connection_credentials native-client-access-data) :command))]
+  (let [active-tab (r/atom "credentials")
+        connection-type (:connection_type native-client-access-data)
+        has-command? (contains? #{"ssh" "rdp"} connection-type)]
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}
@@ -315,9 +347,9 @@
            [:> Tabs.Content {:value "credentials" :class "mt-4"}
             [connect-credentials-tab native-client-access-data]]
 
-           (when has-command?
-             [:> Tabs.Content {:value "command" :class "mt-4"}
-              [connect-command-tab (:connection_credentials native-client-access-data)]])]
+          (when has-command?
+            [:> Tabs.Content {:value "command" :class "mt-4"}
+             [connect-command-tab native-client-access-data]])]
 
           :else
           [connect-credentials-tab native-client-access-data])]
