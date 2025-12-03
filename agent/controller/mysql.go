@@ -62,6 +62,10 @@ func (a *Agent) processMySQLProtocol(pkt *pb.Packet) {
 		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
 		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
+		// #TODO: (chico) we are connecting with insecure true. To not introduce breaking changes, we will keep it true for now.
+		// Later we should add this to connection params and set it accordingly.
+		// and we need pass the CA cert too in case of secure connection, to verify server cert and do the tls upgrade.
+		"insecure": "true",
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MySQL()
 	if err != nil {
