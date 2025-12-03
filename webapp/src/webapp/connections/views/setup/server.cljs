@@ -302,7 +302,7 @@
                                                  (.dispatchEvent form event))
                                                (js/console.warn "Invalid form!"))))))
                   :installation (fn []
-                                  (rf/dispatch [:navigate :connections])
+                                  (rf/dispatch [:navigate :resources])
                                   (rf/dispatch [:connection-setup/initialize-state nil]))
                   (fn []
                     (let [form-id (if (= connection-subtype "ssh")

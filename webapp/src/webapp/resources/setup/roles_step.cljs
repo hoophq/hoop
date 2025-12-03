@@ -122,7 +122,9 @@
 (defn metadata-driven-role-form [role-index]
   (let [connection @(rf/subscribe [:resource-setup/current-connection-metadata])
         credentials-config (get-in connection [:resourceConfiguration :credentials])
-        metadata-credentials @(rf/subscribe [:resource-setup/metadata-credentials role-index])]
+        metadata-credentials @(rf/subscribe [:resource-setup/metadata-credentials role-index])
+        config-files @(rf/subscribe [:resource-setup/role-config-files role-index])
+        config-files-map (into {} (map (fn [{:keys [key value]}] [key value]) config-files))]
 
     (when (seq credentials-config)
       [:> Box
@@ -135,27 +137,37 @@
                                 (cs/lower-case
                                  (cs/replace (:name field) #"[^a-zA-Z0-9]" " ")))
                 env-var-name (:name field)
-                field-type (case (:type field)
-                             "filesystem" "textarea"
-                             "textarea" "textarea"
-                             "password")]
-            (if (= field-type "textarea")
+                field-type (:type field)
+                is-filesystem? (= field-type "filesystem")
+                field-value (if is-filesystem?
+                              (get config-files-map env-var-name "")
+                              (get metadata-credentials env-var-name ""))
+                display-type (case field-type
+                               "filesystem" "textarea"
+                               "textarea" "textarea"
+                               "password")]
+            (if (= display-type "textarea")
               ^{:key env-var-name}
               [forms/textarea {:label sanitized-name
                                :placeholder (or (:placeholder field) (:description field))
-                               :value (get metadata-credentials env-var-name "")
+                               :value field-value
                                :required (:required field)
                                :helper-text (:description field)
-                               :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
-                                                         role-index
-                                                         env-var-name
-                                                         (-> % .-target .-value)])}]
+                               :on-change #(if is-filesystem?
+                                            (rf/dispatch [:resource-setup->update-role-config-file-by-key
+                                                          role-index
+                                                          env-var-name
+                                                          (-> % .-target .-value)])
+                                            (rf/dispatch [:resource-setup->update-role-metadata-credentials
+                                                          role-index
+                                                          env-var-name
+                                                          (-> % .-target .-value)]))}]
               ^{:key env-var-name}
               [forms/input {:label sanitized-name
                             :placeholder (or (:placeholder field) (:description field))
-                            :value (get metadata-credentials env-var-name "")
+                            :value field-value
                             :required (:required field)
-                            :type field-type
+                            :type display-type
                             :helper-text (:description field)
                             :on-change #(rf/dispatch [:resource-setup->update-role-metadata-credentials
                                                       role-index

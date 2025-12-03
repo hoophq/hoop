@@ -353,7 +353,8 @@
                               http-env-vars
 
                               :else [])
-     :configuration-files (when (= connection-type "custom")
+     :configuration-files (when (or (= connection-type "custom")
+                                    (= connection-type "database"))
                             (process-connection-envvars (:secret connection) "filesystem"))
      :credentials {:environment-variables (cond
                                             (= connection-type "custom")
@@ -364,7 +365,8 @@
                                             http-env-vars
 
                                             :else [])
-                   :configuration-files (when (= connection-type "custom")
+                   :configuration-files (when (or (= connection-type "custom")
+                                                  (= connection-type "database"))
                                           (process-connection-envvars (:secret connection) "filesystem"))}
      :tags {:data valid-tags}
      :old-tags (:tags connection)

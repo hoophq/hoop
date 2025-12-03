@@ -22,8 +22,8 @@
      "/agents" [["" :agents]
                 ["/new" :new-agent]]
      "/auth/callback" :auth-callback-hoop
-     "/connections" [["" :connections]
-                     ["/resource-catalog" :resource-catalog]
+     "/resource-catalog" :resource-catalog
+     "/connections" [["" :connections] 
                      ["/details" :connection-details]
                      ["/new" :create-connection]
                      [["/connections/" :connection-type "/new"] :onboarding-create-connection]
@@ -31,8 +31,8 @@
      "/resources" [["" :resources]
                    ["/new" :resource-setup-new]
                    [["/configure/" :resource-id] :configure-resource]
-                   [["/roles/" :connection-name "/configure"] :configure-role]
                    [["/" :resource-id "/add-role"] :add-role-to-resource]]
+     ["/roles/" :connection-name "/configure"] :configure-role
      "/client" :editor-plugin
      "/runbooks" :runbooks
      "/dashboard" :dashboard

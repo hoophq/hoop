@@ -117,9 +117,8 @@
  (fn [{:keys [db]} [_]]
    ;; Get connection from current session data
    (let [current-session (get-in db [:native-client-access :current])
-         connection {:name (:id current-session)
-                     :connection_name (:connection_name current-session)}]
-     {:fx [[:dispatch [:modal->open {:content [native-client-access-main/main connection]
+         connection-name (:connection_name current-session)]
+     {:fx [[:dispatch [:modal->open {:content [native-client-access-main/main connection-name]
                                      :maxWidth "1100px"
                                      :custom-on-click-out native-client-access-main/minimize-modal}]]]})))
 

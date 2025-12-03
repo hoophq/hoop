@@ -186,3 +186,24 @@
  (fn [db _]
    (assoc-in db [:resources->resource-details :updating?] false)))
 
+;; Delete resource
+(rf/reg-event-fx
+ :resources->delete-resource
+ (fn
+   [_ [_ resource-name]]
+   {:fx [[:dispatch
+          [:fetch {:method "DELETE"
+                   :uri (str "/resources/" resource-name)
+                   :on-success (fn []
+                                 (rf/dispatch [:show-snackbar
+                                               {:level :success
+                                                :text "Resource deleted successfully!"}])
+                                 (rf/dispatch [:navigate :resources {:force-refresh? true}]))
+                   :on-failure (fn [error]
+                                 (let [error-message (or (:message error)
+                                                         "Failed to delete resource")]
+                                   (rf/dispatch [:show-snackbar
+                                                 {:level :error
+                                                  :text error-message
+                                                  :details error}])))}]]]}))
+

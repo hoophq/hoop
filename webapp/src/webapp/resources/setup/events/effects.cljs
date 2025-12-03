@@ -201,6 +201,19 @@
    (assoc-in db [:resource-setup :roles role-index :configuration-files file-index field] value)))
 
 (rf/reg-event-db
+ :resource-setup->update-role-config-file-by-key
+ (fn [db [_ role-index file-key value]]
+   (let [config-files (get-in db [:resource-setup :roles role-index :configuration-files] [])
+         existing-index (first (keep-indexed (fn [idx {:keys [key]}]
+                                               (when (= key file-key) idx))
+                                             config-files))]
+     (if existing-index
+       (assoc-in db [:resource-setup :roles role-index :configuration-files existing-index :value] value)
+       (update-in db [:resource-setup :roles role-index :configuration-files]
+                  (fnil conj [])
+                  {:key file-key :value value})))))
+
+(rf/reg-event-db
  :resource-setup->set-role-command-args
  (fn [db [_ role-index args]]
    (assoc-in db [:resource-setup :roles role-index :command-args] args)))

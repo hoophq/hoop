@@ -94,20 +94,20 @@
              :size "6"
              :weight "bold"
              :class (str "cursor-pointer transition-colors "
-                         (if (= active-tab "resources")
-                           "text-gray-12"
-                           "text-gray-8 hover:text-gray-11"))
-             :onClick #(on-change "resources")}
-    "My Resources"]
-   [:> Text {:as "h2"
-             :size "6"
-             :weight "bold"
-             :class (str "cursor-pointer transition-colors "
                          (if (= active-tab "roles")
                            "text-gray-12"
                            "text-gray-8 hover:text-gray-11"))
              :onClick #(on-change "roles")}
-    "My Roles"]])
+    "My Roles"]
+   [:> Text {:as "h2"
+             :size "6"
+             :weight "bold"
+             :class (str "cursor-pointer transition-colors "
+                         (if (= active-tab "resources")
+                           "text-gray-12"
+                           "text-gray-8 hover:text-gray-11"))
+             :onClick #(on-change "resources")}
+    "My Resources"]])
 
 ;; Resources List Content (pure rendering, no infinite-scroll)
 (defn resources-list-content [resources-data user]
@@ -240,7 +240,7 @@
         search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
         initial-tab (.get url-params "tab")
-        active-tab (r/atom (or initial-tab "resources"))
+        active-tab (r/atom (or initial-tab "roles"))
         connections-search-status (r/atom nil)
         search-name (r/atom "")
         selected-tags (r/atom {})
