@@ -48,10 +48,17 @@
   (let [hostname (get-hostname)]
     (str "ssh " username "@" hostname " -p " port)))
 
-(defn- build-rdp-command
-  [{:keys [port username password]}]
-  (let [hostname (get-hostname)]
-    (str "xfreerdp /v:" hostname ":" port " /u:" username " /p:" password)))
+(defn- build-aws-ssm-command
+  [{:keys [aws_access_key_id aws_secret_access_key endpoint_url]}]
+  (let [hostname (get-hostname)
+        origin (.-origin js/location)
+        endpoint-url (if (= hostname "localhost")
+                       (or endpoint_url (str origin "/ssm"))
+                       (str origin "/ssm"))]
+    (str "AWS_ACCESS_KEY_ID=\"" aws_access_key_id "\" "
+         "AWS_SECRET_ACCESS_KEY=\"" aws_secret_access_key "\" "
+         "aws ssm start-session --target {TARGET_INSTANCE} "
+         "--endpoint-url \"" endpoint-url "\"")))
 
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
@@ -277,27 +284,41 @@
 
 (defn- connect-command-tab
   "Command tab content"
+  [command-text]
+  [:> Box {:class "space-y-4"}
+   [:> Box {:class "space-y-2"}
+    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+     "Command"]
+    [logs/new-container
+     {:status :success
+      :id "command"
+      :logs command-text}]]])
+
+(defn- aws-ssm-command-view 
   [native-client-access-data]
-  (let [connection-type (:connection_type native-client-access-data)
-        connection-credentials (:connection_credentials native-client-access-data)
-        command (case connection-type
-                  "ssh" (build-ssh-command connection-credentials)
-                  "rdp" (build-rdp-command connection-credentials)
-                  (:command connection-credentials))]
-    [:> Box {:class "space-y-4"}
+  (let [connection-credentials (:connection_credentials native-client-access-data)
+        command (build-aws-ssm-command connection-credentials)]
+    [:> Box {:class "space-y-8"}
      [:> Box {:class "space-y-2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-       "Connection Command"]
+       "Command"]
       [logs/new-container
        {:status :success
-        :id "command"
-        :logs command}]]]))
+        :id "aws-ssm-command"
+        :logs command}]]
+
+     [:> Callout.Root {:size "1" :class "w-full"}
+      [:> Callout.Icon
+       [:> Info {:size 16}]]
+      [:> Callout.Text
+       "These credentials are valid for 30 minutes starting now"]]]))
 
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
-        connection-type (:connection_type native-client-access-data)
+        connection-type (or (:connection_type native-client-access-data)
+                            (:subtype native-client-access-data))
         has-command? (contains? #{"ssh" "rdp"} connection-type)]
 
     (fn []
@@ -323,7 +344,7 @@
                                                          :text "Native client access session has expired."}]))}]]]
 
         (cond
-          (= (:connection_type native-client-access-data) "postgres")
+          (= connection-type "postgres")
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -336,7 +357,7 @@
            [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
             [connect-uri-tab native-client-access-data]]]
 
-          (= (:connection_type native-client-access-data) "ssh")
+          (= connection-type "ssh")
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -347,9 +368,12 @@
            [:> Tabs.Content {:value "credentials" :class "mt-4"}
             [connect-credentials-tab native-client-access-data]]
 
-          (when has-command?
-            [:> Tabs.Content {:value "command" :class "mt-4"}
-             [connect-command-tab native-client-access-data]])]
+           (when has-command?
+             [:> Tabs.Content {:value "command" :class "mt-4"}
+              [connect-command-tab (build-ssh-command (:connection_credentials native-client-access-data))]])]
+
+          (= connection-type "aws-ssm")
+          [aws-ssm-command-view native-client-access-data]
 
           :else
           [connect-credentials-tab native-client-access-data])]
@@ -395,10 +419,12 @@
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Type: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      (case (:connection_type native-client-access-data)
+      (case (or (:connection_type native-client-access-data)
+                (:subtype native-client-access-data))
         "postgres" "PostgreSQL"
         "rdp" "Remote Desktop"
         "ssh" "SSH"
+        "aws-ssm" "AWS SSM"
         "Unknown")]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
