@@ -107,7 +107,7 @@ func Post(c *gin.Context) {
 // UpdateConnection
 //
 //	@Summary		Update Connection
-//	@Description	Update a connection resource.
+//	@Description	Update a connection resource
 //	@Tags			Connections
 //	@Accept			json
 //	@Produce		json
