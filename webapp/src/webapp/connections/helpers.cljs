@@ -104,4 +104,4 @@
   (and (= "enabled" (:access_mode_connect connection))
        (or (#{"postgres" "ssh"} (:subtype connection))
            (and (= (:type connection) "custom")
-                (= (:subtype connection) "rdp")))))
+                (contains? #{"rdp" "aws-ssm"} (:subtype connection))))))

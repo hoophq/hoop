@@ -46,4 +46,4 @@
   "Check if a role/connection can access native client based on subtype and access mode"
   [role]
   (and (= "enabled" (:access_mode_connect role))
-       (#{"postgres" "ssh" "rdp"} (:subtype role))))
+       (#{"postgres" "ssh" "rdp" "aws-ssm"} (:subtype role))))
