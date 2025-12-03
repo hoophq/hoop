@@ -104,7 +104,7 @@ func Post(c *gin.Context) {
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
-// UpdateConnection
+// UpdateConnection c
 //
 //	@Summary		Update Connection
 //	@Description	Update a connection resource.
