@@ -303,3 +303,9 @@
  :connection-setup/clear-ssh-credentials
  (fn [db _]
    (assoc-in db [:connection-setup :ssh-credentials] {})))
+
+;; Kubernetes Token events
+(rf/reg-event-db
+ :connection-setup/set-kubernetes-token
+ (fn [db [_ field value]]
+   (assoc-in db [:connection-setup :kubernetes-token (keyword field)] value)))

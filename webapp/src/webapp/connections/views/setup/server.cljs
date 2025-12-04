@@ -184,18 +184,6 @@
 
         [agent-selector/main]]]]]))
 
-;; Registrar o estado do kubernetes-token
-(rf/reg-sub
- :connection-setup/kubernetes-token
- (fn [db]
-   (get-in db [:connection-setup :kubernetes-token] {})))
-
-;; Registrar o evento para atualizar o kubernetes-token
-(rf/reg-event-db
- :connection-setup/set-kubernetes-token
- (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :kubernetes-token (keyword field)] value)))
-
 (defn kubernetes-token []
   (let [credentials @(rf/subscribe [:connection-setup/kubernetes-token])]
     [:form

@@ -233,3 +233,9 @@
  :connection-setup/resource-subtype-override
  (fn [db]
    (get-in db [:connection-setup :resource-subtype-override])))
+
+;; Kubernetes Token subscription
+(rf/reg-sub
+ :connection-setup/kubernetes-token
+ (fn [db]
+   (get-in db [:connection-setup :kubernetes-token] {})))
