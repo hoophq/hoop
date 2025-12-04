@@ -51,7 +51,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.insecure)
 	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
 	if err != nil {
-		log.Infof("failed connecting to %v, err=%v", sessionID, connenv.host, err)
+		log.Infof("failed connecting to %v, err=%v", connenv.host, err)
 		a.sendClientSessionClose(sessionID, fmt.Sprintf("failed connecting to internal service, reason=%v", err))
 		return
 	}

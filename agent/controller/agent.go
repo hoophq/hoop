@@ -98,82 +98,94 @@ func (a *Agent) Close(cause error) {
 	_, _ = a.client.Close()
 }
 
+func (a *Agent) processPacket(pkt *pb.Packet) {
+	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+	log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
+	switch pkt.Type {
+	case pbagent.GatewayConnectOK:
+		log.Infof("connected with success to %v", a.config.URL)
+	case pbagent.SessionOpen:
+		a.processSessionOpen(pkt)
+
+	// terminal exec
+	case pbagent.ExecWriteStdin:
+		a.doExec(pkt)
+
+	case pbagent.SSMConnectionWrite:
+		a.processSSMProtocol(pkt)
+
+	// PG protocol
+	case pbagent.PGConnectionWrite:
+		a.processPGProtocol(pkt)
+
+	// MySQL protocol
+	case pbagent.MySQLConnectionWrite:
+		a.processMySQLProtocol(pkt)
+
+	// MSSQL Protocol
+	case pbagent.MSSQLConnectionWrite:
+		a.processMSSQLProtocol(pkt)
+
+	// MongoDB Protocol
+	case pbagent.MongoDBConnectionWrite:
+		a.processMongoDBProtocol(pkt)
+
+	// raw tcp
+	case pbagent.TCPConnectionWrite:
+		a.processTCPWriteServer(pkt)
+
+	// http proxy
+	case pbagent.HttpProxyConnectionWrite:
+		a.processHttpProxyWriteServer(pkt)
+
+	// SSH protocol
+	case pbagent.SSHConnectionWrite:
+		a.processSSHProtocol(pkt)
+
+	// terminal
+	case pbagent.TerminalWriteStdin:
+		a.doTerminalWriteAgentStdin(pkt)
+	case pbagent.TerminalResizeTTY:
+		a.doTerminalResizeTTY(pkt)
+
+	case pbagent.SessionClose:
+		a.processSessionClose(pkt)
+
+	case pbagent.TCPConnectionClose:
+		a.processTCPCloseConnection(pkt)
+
+	// system
+	case pbsystem.ProvisionDBRolesRequest:
+		dbprovisioner.ProcessDBProvisionerRequest(a.client, pkt)
+
+	case pbsystem.RunbookHookRequestType:
+		runbookhook.ProcessRequest(a.client, pkt)
+	}
+}
+
 func (a *Agent) Run() error {
 	a.client.StartKeepAlive()
+
 	for {
-		select {
-		case <-a.shutdownCtx.Done():
-			log.Infof("returning context done ...")
-			return context.Cause(a.shutdownCtx)
-		default:
-		}
 		pkt, err := a.client.Recv()
 		if err != nil {
-			return err
+			if !errors.Is(err, io.EOF) {
+				log.Errorf("receiving channel error: %v", err)
+			}
+			break
 		}
-		sid := string(pkt.Spec[pb.SpecGatewaySessionID])
-		log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
-		switch pkt.Type {
-		case pbagent.GatewayConnectOK:
-			log.Infof("connected with success to %v", a.config.URL)
-		case pbagent.SessionOpen:
-			a.processSessionOpen(pkt)
 
-		// terminal exec
-		case pbagent.ExecWriteStdin:
-			a.doExec(pkt)
-
-		case pbagent.SSMConnectionWrite:
-			a.processSSMProtocol(pkt)
-
-		// PG protocol
-		case pbagent.PGConnectionWrite:
-			a.processPGProtocol(pkt)
-
-		// MySQL protocol
-		case pbagent.MySQLConnectionWrite:
-			a.processMySQLProtocol(pkt)
-
-		// MSSQL Protocol
-		case pbagent.MSSQLConnectionWrite:
-			a.processMSSQLProtocol(pkt)
-
-		// MongoDB Protocol
-		case pbagent.MongoDBConnectionWrite:
-			a.processMongoDBProtocol(pkt)
-
-		// raw tcp
-		case pbagent.TCPConnectionWrite:
-			a.processTCPWriteServer(pkt)
-
-		// http proxy
-		case pbagent.HttpProxyConnectionWrite:
-			a.processHttpProxyWriteServer(pkt)
-
-		// SSH protocol
-		case pbagent.SSHConnectionWrite:
-			a.processSSHProtocol(pkt)
-
-		// terminal
-		case pbagent.TerminalWriteStdin:
-			a.doTerminalWriteAgentStdin(pkt)
-		case pbagent.TerminalResizeTTY:
-			a.doTerminalResizeTTY(pkt)
-
-		case pbagent.SessionClose:
-			a.processSessionClose(pkt)
-
-		case pbagent.TCPConnectionClose:
-			a.processTCPCloseConnection(pkt)
-
-		// system
-		case pbsystem.ProvisionDBRolesRequest:
-			dbprovisioner.ProcessDBProvisionerRequest(a.client, pkt)
-
-		case pbsystem.RunbookHookRequestType:
-			runbookhook.ProcessRequest(a.client, pkt)
+		select {
+		case <-a.shutdownCtx.Done():
+			break
+		default:
 		}
+
+		// We don't need to wait here for the result, so we just spawn a goroutine to process it.
+		go a.processPacket(pkt)
 	}
+
+	return context.Cause(a.shutdownCtx)
 }
 
 func (a *Agent) processSessionOpen(pkt *pb.Packet) {
@@ -204,7 +216,7 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 	connParams.EnvVars["envvar:HOOP_SESSION_ID"] = b64Enc(sessionID)
 
 	// Embedded mode usually has the context of the application.
-	// By having all environment variable in the context of execution
+	// By having all environment variables in the context of execution
 	// permits a more seamless integration with internal language tooling.
 	if a.config.AgentMode == pb.AgentModeEmbeddedType {
 		for _, envKeyVal := range os.Environ() {
