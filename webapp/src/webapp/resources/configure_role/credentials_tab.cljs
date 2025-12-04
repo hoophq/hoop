@@ -11,9 +11,11 @@
      "database" [metadata-driven/credentials-step (:subtype connection) :update]
 
      "custom" (let [subtype (:subtype connection)]
-                (if (and subtype
-                         (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} subtype)))
+                (cond
+                  (= subtype "kubernetes-token") [server/kubernetes-token]
+                  (and subtype (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} subtype)))
                   [metadata-driven/credentials-step subtype :update]
+                  :else
                   [server/credentials-step :update]))
 
      "application" (if (= (:subtype connection) "ssh")

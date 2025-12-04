@@ -18,6 +18,11 @@
   "Returns the form ID based on connection type"
   [connection-type connection-subtype]
   (cond
+    ;; Kubernetes Token connections
+    (and (= connection-type "custom")
+         (= connection-subtype "kubernetes-token"))
+    "kubernetes-token-form"
+
     ;; Metadata-driven connections
     (and (or (= connection-type "custom") (= connection-type "database"))
          (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} connection-subtype)))

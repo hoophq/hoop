@@ -187,6 +187,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeRDP)
 		case "aws-ssm":
 			return ConnectionType(ConnectionTypeSSM)
+		case "kubernetes-token":
+			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}

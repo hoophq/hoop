@@ -1,7 +1,7 @@
 ;; server.cljs
 (ns webapp.connections.views.setup.server
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Badge Card Flex Grid Heading RadioGroup Text]]
+   ["@radix-ui/themes" :refer [Avatar Box Badge Card Flex Grid Heading RadioGroup Text Switch]]
    ["lucide-react" :refer [Blocks SquareTerminal]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -184,6 +184,46 @@
 
         [agent-selector/main]]]]]))
 
+(defn kubernetes-token []
+  (let [credentials @(rf/subscribe [:connection-setup/kubernetes-token])]
+    [:form
+     {:id "kubernetes-token-form"
+      :on-submit (fn [e]
+                   (.preventDefault e)
+                   (rf/dispatch [:connection-setup/next-step :additional-config]))}
+     [:> Box {:class "space-y-8 max-w-[600px]"}
+      [:> Box {:class "space-y-4"}
+       ;; Cluster URL
+       [forms/input {:label "Cluster URL"
+                     :placeholder "e.g. https://example.com:51434"
+                     :value (:cluster_url credentials "")
+                     :required true
+                     :type "text"
+                     :on-change #(rf/dispatch [:connection-setup/set-kubernetes-token
+                                               "cluster_url"
+                                               (-> % .-target .-value)])}]
+
+       [forms/input {:label "Authorization token"
+                     :placeholder "e.g. jwt.token.example"
+                     :value (:authorization credentials "")
+                     :required true
+                     :type "text"
+                     :on-change #(rf/dispatch [:connection-setup/set-kubernetes-token
+                                               "authorization"
+                                               (-> % .-target .-value)])}]
+
+       [:> Flex {:align "center" :gap "3"}
+        [:> Switch {:checked (:insecure credentials false)
+                    :size "3"
+                    :onCheckedChange #(rf/dispatch [:connection-setup/set-kubernetes-token
+                                                    "insecure"
+                                                    %])}]
+        [:> Box
+         [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+          "Allow insecure SSL"]
+         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+          "Skip SSL certificate verification for HTTPS connections."]]] [agent-selector/main]]]]))
+
 (defn resource-step []
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
         app-type @(rf/subscribe [:connection-setup/app-type])
@@ -216,6 +256,9 @@
 
      (when (= connection-subtype "ssh")
        [ssh-credentials])
+
+     (when (= connection-subtype "kubernetes-token")
+       [kubernetes-token])
 
      (when (= connection-subtype "console")
        [application-type-step])
@@ -280,8 +323,12 @@
                      (let [form (.getElementById js/document
                                                  (cond
                                                    (= current-step :credentials)
-                                                   (if (= connection-subtype "ssh")
+                                                   (cond
+                                                     (= connection-subtype "ssh")
                                                      "ssh-credentials-form"
+                                                     (= connection-subtype "kubernetes-token")
+                                                     "kubernetes-token-form"
+                                                     :else
                                                      "credentials-form")
 
                                                    :else
@@ -305,9 +352,10 @@
                                   (rf/dispatch [:navigate :resources])
                                   (rf/dispatch [:connection-setup/initialize-state nil]))
                   (fn []
-                    (let [form-id (if (= connection-subtype "ssh")
-                                    "ssh-credentials-form"
-                                    "credentials-form")
+                    (let [form-id (cond
+                                    (= connection-subtype "ssh") "ssh-credentials-form"
+                                    (= connection-subtype "kubernetes-token") "kubernetes-token-form"
+                                    :else "credentials-form")
                           form (.getElementById js/document form-id)]
                       (when form
                         (if (and (.reportValidity form)
