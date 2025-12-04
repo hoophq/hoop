@@ -32,9 +32,9 @@
  (fn
    [{:keys [db]} [_ session-id-list]]
    (let [on-failure (fn [error]
-                      (rf/dispatch [::audit->set-filtered-sessions-by-id error session-id-list]))
+                      (rf/dispatch [::audit->set-filtered-sessions-by-id nil session-id-list error]))
          on-success (fn [res]
-                      (rf/dispatch [::audit->set-filtered-sessions-by-id res session-id-list]))
+                      (rf/dispatch [::audit->set-filtered-sessions-by-id res session-id-list nil]))
          dispatchs (mapv (fn [session-id]
                            [:dispatch-later
                             {:ms 1000
@@ -43,21 +43,38 @@
                                                 :on-success on-success
                                                 :on-failure on-failure}]}])
                          session-id-list)]
-     {:db (assoc db :audit->filtered-session-by-id {:data [] :status :loading})
+     {:db (assoc db :audit->filtered-session-by-id {:data [] :status :loading :errors []})
       :fx dispatchs})))
 
 (rf/reg-event-fx
  ::audit->set-filtered-sessions-by-id
  (fn
-   [{:keys [db]} [_ session session-id-list]]
-   (let [new-filtered-sessions-by-id (concat [session] (:data (:audit->filtered-session-by-id db)))
-         finished? (if (= (count session-id-list) (count new-filtered-sessions-by-id))
-                     true
-                     false)]
-     {:db (assoc db :audit->filtered-session-by-id {:data new-filtered-sessions-by-id
+   [{:keys [db]} [_ session session-id-list error]]
+   (let [current-state (:audit->filtered-session-by-id db)
+         current-data (:data current-state)
+         current-errors (:errors current-state)
+         ;; Only add session if it's not an error (has an :id field and no :status error field)
+         new-data (if (and session (not error) (:id session))
+                    (concat [session] current-data)
+                    current-data)
+         ;; Track errors (404s)
+         new-errors (if error
+                      (conj (or current-errors []) error)
+                      current-errors)
+         ;; Count successful sessions and errors to determine if we're done
+         total-processed (+ (count new-data) (count new-errors))
+         finished? (>= total-processed (count session-id-list))]
+     {:db (assoc db :audit->filtered-session-by-id {:data new-data
+                                                    :errors new-errors
                                                     :status (if finished?
                                                               :ready
                                                               :loading)})})))
+
+(rf/reg-event-db
+ :audit->clear-filtered-sessions-by-id
+ (fn
+   [db [_]]
+   (assoc db :audit->filtered-session-by-id {:data [] :status :idle :errors []})))
 
 (rf/reg-event-fx
  :audit->set-audit-status

@@ -28,17 +28,21 @@
       (rf/dispatch [:users->get-user]))
 
     (fn []
-      [:div {:class "px-large flex flex-col bg-white rounded-lg py-regular h-full"}
-       (when (and (= (:status @session-list) :loading) (empty? (:data @session-list)))
-         [loading-list-view])
-       (when (and (empty? (:data @session-list)) (not= (:status @session-list) :loading))
-         [empty-list-view])
+      (let [has-sessions? (seq (:data @session-list))
+            is-ready? (= (:status @session-list) :ready)
+            is-loading? (= (:status @session-list) :loading)]
+        [:div {:class "px-large flex flex-col bg-white rounded-lg py-regular h-full"}
+         (when (and is-loading? (empty? (:data @session-list)))
+           [loading-list-view])
+         
+         (when (and is-ready? (not has-sessions?))
+           [empty-list-view])
 
-       (when (= (:status @session-list) :ready)
-         [:div {:class "relative border h-full rounded-lg overflow-auto"}
-          (doall
-           (for [session (:data @session-list)]
-             ^{:key (:id session)}
-             [:div
-              [session-item/session-item session @user]]))])])))
+         (when (and is-ready? has-sessions?)
+           [:div {:class "relative border h-full rounded-lg overflow-auto"}
+            (doall
+             (for [session (:data @session-list)]
+               ^{:key (:id session)}
+               [:div
+                [session-item/session-item session @user]]))])]))))
 

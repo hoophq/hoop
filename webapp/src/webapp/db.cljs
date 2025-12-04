@@ -9,7 +9,7 @@
    :ask-ai->question-responses []
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
-   :audit->filtered-session-by-id {:status :loading, :data []}
+   :audit->filtered-session-by-id {:status :loading, :data [] :errors []}
    :connections {:loading true :details {}}
    :connections->pagination {:data []
                              :loading false
