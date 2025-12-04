@@ -75,8 +75,8 @@
                                               connection-types-options
                                               @searched-connections-types)]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
-         [:> TextField.Root {:class "relative w-80 h-[40px]"
-                             :placeholder "Search by IDs (comma-separated)"
+         [:> TextField.Root {:class "relative w-80 h-[40px] rounded-lg"
+                             :placeholder "Search by IDs (separated by comma)"
                              :value @session-id-search
                              :onChange (fn [e]
                                          (handle-session-id-search (-> e .-target .-value)))
@@ -91,7 +91,7 @@
                                                   (when (seq session-ids)
                                                     (rf/dispatch [:audit->get-filtered-sessions-by-id session-ids])))))))}
           [:> TextField.Slot
-           [:> Search {:size 16 :class "text-gray-400"}]]]
+           [:> Search {:size 16 :class "text-gray-500"}]]]
 
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
@@ -294,7 +294,7 @@
                           :placeholder "Period"
                           :separator "-"
                           :displayFormat "DD/MM/YYYY"
-                          :containerClassName "relative w-fit text-gray-700"
+                          :containerClassName "relative w-56 text-gray-700"
                           :toggleClassName (str "absolute rounded-l-lg "
                                                 "text-gray-500 "
                                                 "left-0 h-full px-3 "

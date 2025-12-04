@@ -22,7 +22,7 @@
             display-status (if is-filtered-search-active?
                              (:status @filtered-sessions)
                              (:status @sessions))]
-        [:div {:class "flex flex-col bg-white rounded-lg h-full p-6 overflow-y-auto"}
+        [:div {:class "flex flex-col bg-white rounded-lg h-full overflow-y-auto"}
          [:header
           [filters/audit-filters
            (:filters @sessions)]]
