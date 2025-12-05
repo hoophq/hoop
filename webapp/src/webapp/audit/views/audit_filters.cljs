@@ -1,6 +1,6 @@
 (ns webapp.audit.views.audit-filters
   (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
-            ["@radix-ui/themes" :refer [Popover Button]]
+            ["@radix-ui/themes" :refer [Popover Button TextField]]
             ["lucide-react" :refer [Search]]
             ["react-tailwindcss-datepicker" :as Datepicker]
             [clojure.string :as string]
@@ -25,6 +25,9 @@
         searched-connections-types (r/atom nil)
         searched-criteria-connections-types (r/atom "")
 
+        session-id-search (r/atom "")
+        session-id-debounce-timer (r/atom nil)
+
         date (r/atom #js{"startDate" (if-let [date (get filters "start_date")]
                                        (subs date 0 10) "")
                          "endDate" (if-let [date (get filters "end_date")]
@@ -41,7 +44,25 @@
                                                    (str date " 00:00:00.000Z")
                                                    (str date " 23:59:59.000Z"))))))]
                           (rf/dispatch [:audit->filter-sessions {"start_date" (iso-date "start_date" (.-startDate date))
-                                                                 "end_date" (iso-date "end_date" (.-endDate date))}])))]
+                                                                 "end_date" (iso-date "end_date" (.-endDate date))}])))
+        handle-session-id-search (fn [value]
+                                   (reset! session-id-search value)
+                                   (when @session-id-debounce-timer
+                                     (js/clearTimeout @session-id-debounce-timer))
+                                   (let [trimmed (string/trim value)]
+                                     (if (string/blank? trimmed)
+                                       ;; Clear filtered sessions when input is empty
+                                       (rf/dispatch [:audit->clear-filtered-sessions-by-id])
+                                       ;; Parse comma-separated UUIDs and dispatch filtered sessions
+                                       (let [session-ids (->> (string/split trimmed #",")
+                                                              (map string/trim)
+                                                              (filter #(not (string/blank? %))))]
+                                         (when (seq session-ids)
+                                           (reset! session-id-debounce-timer
+                                                   (js/setTimeout
+                                                    (fn []
+                                                      (rf/dispatch [:audit->get-filtered-sessions-by-id session-ids]))
+                                                    500)))))))]
     (fn [filters]
       (let [connections-data (or (:data @connections) [])
             connections-loading? (:loading @connections)
@@ -54,6 +75,24 @@
                                               connection-types-options
                                               @searched-connections-types)]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
+         [:> TextField.Root {:class "relative w-80 h-[40px] rounded-lg"
+                             :placeholder "Search by IDs (separated by comma)"
+                             :value @session-id-search
+                             :onChange (fn [e]
+                                         (handle-session-id-search (-> e .-target .-value)))
+                             :onKeyDown (fn [e]
+                                          (when (= (.-key e) "Enter")
+                                            (let [value (-> e .-target .-value)
+                                                  trimmed (string/trim value)]
+                                              (when (not (string/blank? trimmed))
+                                                (let [session-ids (->> (string/split trimmed #",")
+                                                                       (map string/trim)
+                                                                       (filter #(not (string/blank? %))))]
+                                                  (when (seq session-ids)
+                                                    (rf/dispatch [:audit->get-filtered-sessions-by-id session-ids])))))))}
+          [:> TextField.Slot
+           [:> Search {:size 16 :class "text-gray-500"}]]]
+
          [:> Popover.Root
           [:> Popover.Trigger {:asChild true}
            [:> Button {:size "3"
@@ -255,7 +294,7 @@
                           :placeholder "Period"
                           :separator "-"
                           :displayFormat "DD/MM/YYYY"
-                          :containerClassName "relative w-64 text-gray-700"
+                          :containerClassName "relative w-56 text-gray-700"
                           :toggleClassName (str "absolute rounded-l-lg "
                                                 "text-gray-500 "
                                                 "left-0 h-full px-3 "
