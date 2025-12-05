@@ -169,23 +169,18 @@ func (a *Agent) Run() error {
 	for {
 		pkt, err := a.client.Recv()
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				log.Errorf("receiving channel error: %v", err)
-			}
-			break
+			return err
 		}
 
 		select {
 		case <-a.shutdownCtx.Done():
-			break
+			return context.Cause(a.shutdownCtx)
 		default:
 		}
 
 		// We don't need to wait here for the result, so we just spawn a goroutine to process it.
 		go a.processPacket(pkt)
 	}
-
-	return context.Cause(a.shutdownCtx)
 }
 
 func (a *Agent) processSessionOpen(pkt *pb.Packet) {
