@@ -80,8 +80,11 @@
 
       [:> Grid {:columns "7" :gap "7"}
        [:> Box {:grid-column "span 2 / span 2"}
-        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-         "Audience (Optional)"]
+        [:> Flex {:align "baseline" :gap "1"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "Audience"]
+         [:> Text {:size "4" :weight "500" :class "text-[--gray-12]"}
+          "(Optional)"]]
         [:> Text {:size "3" :class "text-[--gray-11]"}
          "API identifier for token validation (required by some providers like Auth0)."]]
 
@@ -92,6 +95,27 @@
           :value (:audience @config)
           :on-change #(rf/dispatch [:authentication->update-config-field
                                     :audience (-> % .-target .-value)])}]]]
+
+      [:> Grid {:columns "7" :gap "7"}
+       [:> Box {:grid-column "span 2 / span 2"}
+        [:> Flex {:align "baseline" :gap "1"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+          "Groups Claim"]
+         [:> Text {:size "4" :weight "500" :class "text-[--gray-12]"}
+          "(Optional)"]]
+        [:> Text {:size "3" :class "text-[--gray-11]"}
+         "Specifies the claim identifier used to configure group propagation."]]
+
+       [:> Box {:grid-column "span 5 / span 5"}
+        [forms/input
+         {:full-width? true
+          :not-margin-bottom? true
+          :placeholder "e.g. company-groups"
+          :value (:groups-claim @config)
+          :on-change #(rf/dispatch [:authentication->update-config-field
+                                    :groups-claim (-> % .-target .-value)])}]
+        [:> Text {:size "2" :class "text-[--gray-11]" :style {:margin-top "4px"}}
+         "If not explicitly set, the system defaults to groups."]]]
 
       [:> Grid {:columns "7" :gap "7"}
        [:> Box {:grid-column "span 2 / span 2"}
