@@ -13,11 +13,12 @@
 
 (defn get-api-url []
   (if (cs/blank? env/api-url)
-    (let [hostname (.-host js/location)
+    (let [hostname (.-hostname js/location)
+          host (.-host js/location)
           protocol (.-protocol js/location)]
       (if (or (= hostname "localhost") (= hostname "127.0.0.1"))
         (str protocol "//" hostname ":8009/api")
-        (str protocol "//" hostname "/api")))
+        (str protocol "//" host "/api")))
 
     env/api-url))
 
