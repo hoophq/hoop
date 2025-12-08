@@ -34,7 +34,7 @@
                              webapp.env/sentry-sample-rate #shadow/env ["SENTRY_SAMPLE_RATE" "1.0"]
                              webapp.env/sentry-dsn #shadow/env ["SENTRY_DSN"
                                                                 "https://38e03773be6b0d77219d6678a90ed6a5@o4504559799566336.ingest.us.sentry.io/4508377639092224"]
-                             webapp.env/api-url #shadow/env ["API_URL"]}}}
+                             webapp.env/api-url #shadow/env ["API_URL" ""]}}}
    :release {:compiler-options {:output-to "resources/public/js"
                                 :output-dir "resources/public/js"
                                 :source-maps "resources/public/js/app.js.map"
@@ -49,7 +49,7 @@
                                  webapp.env/sentry-sample-rate #shadow/env ["SENTRY_SAMPLE_RATE" "1.0"]
                                  webapp.env/sentry-dsn #shadow/env ["SENTRY_DSN"
                                                                     "https://b2bf390e5cd94bfc83c0005312d796fd@o919346.ingest.sentry.io/6707471"]
-                                 webapp.env/api-url #shadow/env ["API_URL"]}}
+                                 webapp.env/api-url #shadow/env ["API_URL" ""]}}
              :build-options {}}}
   ;; end :hoop-ui
 
