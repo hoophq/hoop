@@ -8,6 +8,7 @@ const (
 	SessionOpenApproveOK       = "ClientSessionOpenApproveOK"
 	SessionOpenAgentOffline    = "ClientSessionOpenAgentOffline"
 	SessionClose               = "ClientSessionClose"
+	SessionAnalyzerMetrics     = "ClientSessionAnalyzerMetrics"
 
 	ProxyManagerConnectOK = "ClientProxyManagerConnectOK"
 

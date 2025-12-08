@@ -492,6 +492,20 @@ func UpdateSessionIntegrationMetadata(orgID, sid string, metadata map[string]any
 	return res.Error
 }
 
+func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]any) error {
+	res := DB.Table("private.sessions").
+		Where("id = ? AND org_id = ?", sid, orgID).
+		Update("metrics", gorm.Expr(
+			"jsonb_set(COALESCE(metrics, '{}'::jsonb), '{data_analyzer}', ?::jsonb)",
+			metrics,
+		))
+
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
 func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any) error {
 	res := DB.Table("private.sessions").
 		Where("org_id = ? AND id = ? AND user_email = ?", orgID, sid, userEmail).
