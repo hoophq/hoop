@@ -363,7 +363,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		var analyzerMetricsRulesJsonData json.RawMessage
-		if entityTypesJsonData == nil {
+		if len(entityTypesJsonData) <= 2 {
 			var err error
 			analyzerMetricsRulesJsonData, err = getAnalyzerMetricsRulesForConnection()
 			if err != nil {
