@@ -51,10 +51,13 @@
 
 (defn process-role
   "Process a single role into the format expected by the API"
-  [role agent-id]
+  [role agent-id & [command-role]]
   (let [type (:type role)
         subtype (:subtype role)
         secret (process-role-secret role)
+        command-role (if command-role
+                       command-role
+                       (:command role))
 
         ;; Build command array for custom types
         ;; command-args is stored as array of {"value": "...", "label": "..."}
@@ -64,7 +67,7 @@
         command (if (and (= type "custom")
                          (= subtype "linux-vm"))
                   (mapv #(get % "value") command-args)
-                  (or (:command role) []))]
+                  (or command-role []))]
 
     {:name (:name role)
      :type type

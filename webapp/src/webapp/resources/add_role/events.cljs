@@ -31,6 +31,7 @@
  :add-role->submit
  (fn [{:keys [db]} _]
    (let [resource-name (get-in db [:resource-setup :name])
+         resource-metadata (get-in db [:connections :metadata :data :connections] {})
          agent-id (get-in db [:resource-setup :agent-id])
          roles (get-in db [:resource-setup :roles] [])
          total-roles (count roles)]
@@ -42,7 +43,12 @@
        {:db (assoc-in db [:resource-setup :submitting?] true)
         :fx (vec (map-indexed
                   (fn [idx role]
-                    (let [processed-role (process-form/process-role role agent-id)
+                    (let [metadata (->> resource-metadata
+                                        (filter #(= (get-in % [:resourceConfiguration :subtype])
+                                                    (:subtype role)))
+                                        first)
+                          command-role (get-in metadata [:resourceConfiguration :command])
+                          processed-role (process-form/process-role role agent-id command-role)
                           body (assoc processed-role :resource_name resource-name)]
                       [:dispatch [:fetch {:method "POST"
                                           :uri "/connections"
