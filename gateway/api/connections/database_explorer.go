@@ -192,6 +192,7 @@ func ListTables(c *gin.Context) {
 
 	// Verify if dbName is needed (except for DynamoDB)
 	needsDbName := currentConnectionType == pb.ConnectionTypePostgres ||
+		currentConnectionType == pb.ConnectionTypeMSSQL ||
 		currentConnectionType == pb.ConnectionTypeMySQL ||
 		currentConnectionType == pb.ConnectionTypeMongoDB
 

@@ -16,7 +16,7 @@ func getTablesQuery(connType pb.ConnectionType, dbName string) string {
 	case pb.ConnectionTypePostgres:
 		return getPostgresTablesQuery(dbName)
 	case pb.ConnectionTypeMSSQL:
-		return getMSSQLTablesQuery()
+		return getMSSQLTablesQuery(dbName)
 	case pb.ConnectionTypeMySQL:
 		return getMySQLTablesQuery(dbName)
 	case pb.ConnectionTypeOracleDB:
@@ -72,8 +72,13 @@ WHERE c.relkind IN ('r', 'v', 'm')
 ORDER BY n.nspname, c.relname;`, dbName)
 }
 
-func getMSSQLTablesQuery() string {
-	return `
+func getMSSQLTablesQuery(dbName string) string {
+	return fmt.Sprintf(`
+-- connect to the target database
+USE %s;
+GO
+
+-- Run the schema query
 SET NOCOUNT ON;
 SELECT
     s.name as schema_name,
@@ -86,7 +91,7 @@ SELECT
 FROM sys.schemas s
 JOIN sys.objects o ON o.schema_id = s.schema_id
 WHERE o.type IN ('U', 'V')  -- U for user-defined tables, V for views
-ORDER BY s.name, o.name;`
+ORDER BY s.name, o.name;`, dbName)
 }
 
 func getMySQLTablesQuery(dbName string) string {
