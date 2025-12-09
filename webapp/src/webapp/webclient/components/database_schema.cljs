@@ -22,30 +22,66 @@
    [:span {:class "italic"} message]
    [:> Spinner {:size "1" :color "gray"}]])
 
-(defn- empty-state [connection-type]
-  (let [message (case connection-type
-                  "postgres" "No databases found"
-                  "mysql" "No databases found"
-                  "mongodb" "No databases found"
-                  "oracledb" "No schemas found"
-                  "mssql" "No schemas found"
-                  "dynamodb" "No tables found"
-                  "cloudwatch" "No log groups found"
-                  "No data found")]
-    [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
-     [:> Text {:size "2" :mb "2" :weight "medium"} message]
-     [:> Text {:size "1" :weight "medium"}
-      "We couldn't find any "
-      (case connection-type
-        "postgres" "databases"
-        "mysql" "databases"
-        "mongodb" "databases"
-        "oracledb" "schemas"
-        "mssql" "schemas"
-        "dynamodb" "tables"
-        "cloudwatch" "log groups"
-        "data")
-      " for this connection."]]))
+(defn- empty-state [connection-type & {:keys [for-database?] :or {for-database? false}}]
+  (let [message (if for-database?
+                  ;; Empty state for a specific database (no schemas/tables)
+                  (case connection-type
+                    "postgres" "No schemas found"
+                    "mysql" "No schemas found"
+                    "mongodb" "No collections found"
+                    "oracledb" "No schemas found"
+                    "mssql" "No schemas found"
+                    "dynamodb" "No columns found"
+                    "cloudwatch" "No log streams found"
+                    "No data found")
+                  ;; Empty state for the database list (no databases)
+                  (case connection-type
+                    "postgres" "No databases found"
+                    "mysql" "No databases found"
+                    "mongodb" "No databases found"
+                    "oracledb" "No schemas found"
+                    "mssql" "No databases found"
+                    "dynamodb" "No tables found"
+                    "cloudwatch" "No log groups found"
+                    "No data found"))
+        detail-text (if for-database?
+                      ;; Detail for specific database
+                      (case connection-type
+                        "postgres" "schemas"
+                        "mysql" "schemas"
+                        "mongodb" "collections"
+                        "oracledb" "schemas"
+                        "mssql" "schemas"
+                        "dynamodb" "columns"
+                        "cloudwatch" "log streams"
+                        "data")
+                      ;; Detail for database list
+                      (case connection-type
+                        "postgres" "databases"
+                        "mysql" "databases"
+                        "mongodb" "databases"
+                        "oracledb" "schemas"
+                        "mssql" "databases"
+                        "dynamodb" "tables"
+                        "cloudwatch" "log groups"
+                        "data"))
+        context-text (if for-database?
+                       " for this database."
+                       " for this resource role.")]
+    (if (not for-database?)
+      [:div {:class "flex flex-col items-center justify-center py-8 text-center"}
+       [:> Text {:size "2" :mb "2" :weight "medium"} message]
+       [:> Text {:size "1" :weight "medium"}
+        "We couldn't find any "
+        detail-text
+        context-text]]
+
+      [:div {:class "flex flex-col pt-1 pb-2 px-2"}
+       [:> Text {:size "1" :weight "bold"} message]
+       [:> Text {:size "1" :weight "light"}
+        "We couldn't find any "
+        detail-text
+        context-text]])))
 
 (defn- fields-tree [fields]
   (let [dropdown-status (r/atom {})
@@ -142,7 +178,7 @@
   (let [dropdown-status (r/atom nil)
         initialized (r/atom false)]
     (fn [schema-name tables connection-name current-schema _database-schema-status & {:keys [is-first] :or {is-first false}}]
-      (when (and (not @initialized))
+      (when (not @initialized)
         (reset! dropdown-status (if is-first :open :closed))
         (reset! initialized true))
 
@@ -166,11 +202,18 @@
             loading-columns
             columns-cache])]))))
 
-(defn- database-item [db schema connection-name database-schema-status current-schema type]
+(defn- database-item [db connection-name database-schema-status current-schema type]
   (let [is-selected (= db (get-in current-schema [:open-database]))
+        current-database (get-in current-schema [:current-database])
         loading-databases (get-in current-schema [:loading-databases] #{})
         is-loading-this-db (contains? loading-databases db)
-        db-schemas (or (not-empty schema) {})]
+        ;; For the selected database, use the schema-tree (which contains the loaded schemas)
+        ;; For other databases, use empty schema (they haven't been loaded yet)
+        db-schemas (if (and is-selected (= db current-database))
+                     (or (not-empty (get-in current-schema [:schema-tree])) {})
+                     {})
+        database-errors (get-in current-schema [:database-errors] {})
+        db-error (get database-errors db)]
     [:div
      [:div {:class "flex items-center gap-smal mb-2"}
       [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
@@ -204,6 +247,11 @@
                                (= type "dynamodb") "Loading columns..."
                                (= type "cloudwatch") "Selecting log group..."
                                :else "Loading tables...")]
+
+          ;; Check for database-specific error first
+          db-error
+          [:> Text {:as "p" :weight "medium" :size "1" :mb "2" :ml "2" :color "red"}
+           db-error]
 
           (= "mysql" type)
           (let [schema-name (first (keys db-schemas))
@@ -247,20 +295,16 @@
              db-schemas))]
 
           :else
-          (if (and (= :error database-schema-status) (:error current-schema))
-            [:> Text {:as "p" :weight "medium" :size "1" :mb "2" :ml "2"}
-             (:error current-schema)]
-            [empty-state type]))])]))
+          [empty-state type :for-database? true])])]))
 
 (defn- databases-tree []
-  (fn [databases schema connection-name database-schema-status current-schema type]
+  (fn [databases _schema connection-name database-schema-status current-schema type]
     [:div.text-xs
      (doall
       (for [db databases]
         ^{:key db}
         [database-item
          db
-         schema
          connection-name
          database-schema-status
          current-schema
@@ -293,13 +337,24 @@
          schema)))]))
 
 (defn db-view [{:keys [type schema databases connection-name current-schema database-schema-status]}]
-  (let [is-empty? (get current-schema :empty?)]
-    (if (and (= database-schema-status :success) is-empty?)
+  (let [is-empty? (get current-schema :empty?)
+        ;; For multi-database types, empty? means no databases in the list
+        ;; For single-database types (oracledb), empty? means no schemas
+        is-multi-db-type? (contains? #{"mssql" "mysql" "postgres" "mongodb" "dynamodb" "cloudwatch"} type)]
+    (cond
+      ;; Only show global empty state for multi-db types when there are no databases at all
+      (and is-multi-db-type? (= database-schema-status :success) is-empty? (empty? databases))
       [empty-state type]
+
+      ;; For single-db types (oracledb), show empty state if no schemas
+      (and (not is-multi-db-type?) (= database-schema-status :success) is-empty?)
+      [empty-state type]
+
+      :else
       (case type
         "oracledb" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
-        "mssql" [sql-databases-tree (into (sorted-map) schema) connection-name current-schema database-schema-status]
 
+        "mssql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
         "mysql" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
         "postgres" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
         "mongodb" [databases-tree databases (into (sorted-map) schema) connection-name database-schema-status current-schema type]
@@ -324,7 +379,11 @@
      (and (= status :loading) (empty? schema) (empty? databases))
      [loading-indicator "Loading schema"]
 
-     (or (= status :failure) (= status :error) (= database-schema-status :error))
+     ;; Only show global error if it's not a database-specific error
+     ;; Database-specific errors are shown in database-item component
+     (and (or (= status :failure) (= status :error) (= database-schema-status :error))
+          (empty? (get-in current-schema [:database-errors] {}))
+          (:error current-schema))
      [:div {:class "flex gap-small items-center py-regular text-xs text-red-500"}
       [:span
        (or (some-> current-schema :error :message)
