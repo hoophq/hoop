@@ -95,6 +95,34 @@ func (h *handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, openapiReviews)
 }
 
+func parseTimeWindow(req openapi.ReviewRequest) (*models.ReviewTimeWindow, error) {
+	if req.TimeWindow == nil {
+		return nil, nil
+	}
+
+	startTime := req.TimeWindow.Configuration["start_time"]
+	endTime := req.TimeWindow.Configuration["end_time"]
+
+	if startTime == "" || endTime == "" {
+		return nil, fmt.Errorf("both from and to time must be provided")
+	}
+
+	_, err := time.Parse("15:04", startTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start_time format, expected HH:MM in 24-hour format")
+	}
+
+	_, err = time.Parse("15:04", endTime)
+	if err != nil {
+		return nil, fmt.Errorf("invalid end_time format, expected HH:MM in 24-hour format")
+	}
+
+	return &models.ReviewTimeWindow{
+		Type:          string(req.TimeWindow.Type),
+		Configuration: req.TimeWindow.Configuration,
+	}, nil
+}
+
 // UpdateReview
 //
 //	@Summary				Update Review Status
@@ -121,8 +149,16 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+
+	// Validate time window if provided
+	reviewTimeWindow, err := parseTimeWindow(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
-	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status))
+	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow)
 	switch err {
 	case ErrNotEligible, ErrSelfApproval, ErrWrongState:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -158,7 +194,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 //	@Router					/sessions/{session_id}/review [put]
 func (h *handler) ReviewBySid(c *gin.Context) { h.ReviewByIdOrSid(c) }
 
-func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType) (*models.Review, error) {
+func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow) (*models.Review, error) {
 	rev, err := models.GetReviewByIdOrSid(ctx.OrgID, reviewIdOrSid)
 	switch err {
 	case models.ErrNotFound:
@@ -173,6 +209,9 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	rev, err = doReview(ctx, rev, status)
 	if err != nil {
 		return nil, err
+	}
+	if rev.Status == models.ReviewStatusApproved {
+		rev.TimeWindow = timeWindow
 	}
 	if err := models.UpdateReview(rev); err != nil {
 		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
@@ -310,6 +349,14 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 			ReviewDate: rg.ReviewedAt,
 		})
 	}
+	var timeWindow *openapi.ReviewSessionTimeWindow
+	if r.TimeWindow != nil {
+		timeWindow = &openapi.ReviewSessionTimeWindow{
+			Type:          openapi.ReviewTimeWindowType(r.TimeWindow.Type),
+			Configuration: r.TimeWindow.Configuration,
+		}
+	}
+
 	return &openapi.Review{
 		ID:      r.ID,
 		Session: r.SessionID,
@@ -321,5 +368,6 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		RevokeAt:         r.RevokedAt,
 		CreatedAt:        r.CreatedAt,
 		ReviewGroupsData: itemGroups,
+		TimeWindow:       timeWindow,
 	}
 }

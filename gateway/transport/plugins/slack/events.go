@@ -81,7 +81,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 }
 
 func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {
-	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status)
+	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil)
 	var msg string
 	switch err {
 	case reviewapi.ErrNotFound:
