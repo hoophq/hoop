@@ -502,7 +502,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update a connection resource.",
+                "description": "Update a connection resource",
                 "consumes": [
                     "application/json"
                 ],
@@ -682,6 +682,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -906,6 +912,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
