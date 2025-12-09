@@ -355,6 +355,7 @@ func GetTableColumns(c *gin.Context) {
 
 	// Verify if dbName is needed (except for DynamoDB)
 	needsDbName := currentConnectionType == pb.ConnectionTypePostgres ||
+		currentConnectionType == pb.ConnectionTypeMSSQL ||
 		currentConnectionType == pb.ConnectionTypeMySQL ||
 		currentConnectionType == pb.ConnectionTypeMongoDB
 
@@ -380,8 +381,11 @@ func GetTableColumns(c *gin.Context) {
 
 	if schemaName == "" {
 		schemaName = dbName
-		if currentConnectionType == pb.ConnectionTypePostgres {
+		switch currentConnectionType {
+		case pb.ConnectionTypePostgres:
 			schemaName = "public"
+		case pb.ConnectionTypeMSSQL:
+			schemaName = "dbo"
 		}
 	}
 

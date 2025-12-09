@@ -36,7 +36,7 @@ func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName s
 	case pb.ConnectionTypePostgres:
 		return getPostgresColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeMSSQL:
-		return getMSSQLColumnsQuery(tableName, schemaName)
+		return getMSSQLColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeMySQL:
 		return getMySQLColumnsQuery(dbName, tableName, schemaName)
 	case pb.ConnectionTypeOracleDB:
@@ -195,8 +195,11 @@ WHERE
 ORDER BY a.attnum;`, dbName, tableName, schemaName)
 }
 
-func getMSSQLColumnsQuery(tableName, schemaName string) string {
+func getMSSQLColumnsQuery(dbName, tableName, schemaName string) string {
 	return fmt.Sprintf(`
+USE %s;
+GO
+
 SET NOCOUNT ON;
 SELECT
     c.name as column_name,
@@ -213,7 +216,7 @@ JOIN sys.objects o ON o.schema_id = s.schema_id
 JOIN sys.columns c ON o.object_id = c.object_id
 JOIN sys.types t ON c.user_type_id = t.user_type_id
 WHERE s.name = '%s' AND o.name = '%s' AND o.type IN ('U', 'V')
-ORDER BY c.column_id;`, schemaName, tableName)
+ORDER BY c.column_id;`, dbName, schemaName, tableName)
 }
 
 func getMySQLColumnsQuery(dbName, tableName, schemaName string) string {
