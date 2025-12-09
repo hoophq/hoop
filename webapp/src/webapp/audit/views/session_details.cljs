@@ -3,10 +3,10 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Text Tooltip]]
+   ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu Flex Text Tooltip ScrollArea]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info]]
+   ["lucide-react" :refer [Download FileDown Info ChevronDown CalendarClock Check]]
    ["react" :as react]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -516,11 +516,12 @@
               (if has-large-input?
                 [large-input-warning {:session session}]
                 (when (and script-data (> (count script-data) 0))
-                  [:div
-                   {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
-                                "rounded-lg bg-gray-100 "
-                                "text-xs text-gray-800 font-mono")}
-                   [:article script-data]]))])
+                  [:> ScrollArea {:style {:maxHeight "160px"}}
+                   [:div
+                    {:class (str "w-full p-regular whitespace-pre "
+                                 "rounded-lg bg-gray-100 "
+                                 "text-xs text-gray-800 font-mono")}
+                    [:article script-data]]]))])
            ;; end script area
 
            ;; data masking analytics
@@ -531,28 +532,48 @@
               [data-masking-analytics @session-report]])
            ;; end data masking analytics
 
-           [:section {:id "session-event-stream"
-                      :class "pt-regular max-h-[700px]"}
-            (if (= (:status @session-details) :loading)
-              [loading-player]
+           (when-not (or ready?
+                         (some #(= "PENDING" (:status %))
+                               review-groups))
+             [:section {:id "session-event-stream"
+                        :class "pt-regular max-h-[700px]"}
+              (if (= (:status @session-details) :loading)
+                [loading-player]
 
-              [:<>
-               (if has-large-payload?
-                 [large-payload-warning
-                  {:session session}]
+                [:<>
+                 (if has-large-payload?
+                   [large-payload-warning
+                    {:session session}]
 
-                 [:div {:class "h-full px-small"}
-                  (if (= (:verb session) "exec")
-                    [results-container/main
-                     connection-subtype
-                     {:results (sanitize-response
-                                (utilities/decode-b64 (or (first (:event_stream session)) ""))
-                                connection-subtype)
-                      :results-status (:status @session-details)
-                      :fixed-height? true
-                      :results-id (:id session)
-                      :not-clipboard? disabled-download}]
-                    [session-event-stream (:type session) session])])])]])
+                   [:div {:class "h-full px-small"}
+                    (if (= (:verb session) "exec")
+                      [results-container/main
+                       connection-subtype
+                       {:results (sanitize-response
+                                  (utilities/decode-b64 (or (first (:event_stream session)) ""))
+                                  connection-subtype)
+                        :results-status (:status @session-details)
+                        :fixed-height? true
+                        :results-id (:id session)
+                        :not-clipboard? disabled-download}]
+                      [session-event-stream (:type session) session])])])])
+
+           [:> Flex {:justify "end" :gap "2" :mt "4"}
+            [:> Button {:color "red" :size "2" :variant "soft"}
+             "Reject"]
+
+            [:> DropdownMenu.Root
+             [:> DropdownMenu.Trigger
+              [:> Button {:color "green" :size "2"}
+               "Approve"
+               [:> ChevronDown {:size 16}]]]
+             [:> DropdownMenu.Content
+              [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"}
+               "Approve in a Time Window"
+               [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+              [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"}
+               "Approve"
+               [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]]])
 
         (finally
           (.destroy clipboard-url)
