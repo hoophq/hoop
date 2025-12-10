@@ -6,14 +6,16 @@
    ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu Flex Text Tooltip ScrollArea]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info ChevronDown CalendarClock Check]]
+   ["lucide-react" :refer [Download FileDown Info ChevronDown CalendarClock Check MessageCircle XCircle]]
    ["react" :as react]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.audit.views.reject-details-modal :as reject-details-modal]
    [webapp.audit.views.results-container :as results-container]
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
+   [webapp.audit.views.time-window-modal :as time-window-modal]
    [webapp.components.button :as button]
    [webapp.components.headings :as h]
    [webapp.components.icon :as icon]
@@ -309,6 +311,41 @@
                                             session
                                             status])
                               (reset! add-review-popover-open? false))
+              handle-reject (fn []
+                              (rf/dispatch [:audit->add-review
+                                            session
+                                            "rejected"]))
+              handle-reject-with-description (fn [data]
+                                               (rf/dispatch [:audit->add-review
+                                                             session
+                                                             "rejected"
+                                                             :description (:description data)
+                                                             :include-username (:include-username data)])
+                                               (rf/dispatch [:modal->close]))
+              open-reject-modal (fn []
+                                  (rf/dispatch [:modal->open {:id "reject-details-modal"
+                                                              :maxWidth "500px"
+                                                              :content [reject-details-modal/main
+                                                                        {:on-confirm handle-reject-with-description
+                                                                         :on-cancel #(rf/dispatch [:modal->close])}]}]))
+              handle-approve (fn []
+                               (rf/dispatch [:audit->add-review
+                                             session
+                                             "approved"]))
+              handle-approve-time-window (fn [data]
+                                           (rf/dispatch [:audit->add-review
+                                                         session
+                                                         "approved"
+                                                         :time-window-start (:time-window-start data)
+                                                         :time-window-end (:time-window-end data)
+                                                         :action "approve_time_window"])
+                                           (rf/dispatch [:modal->close]))
+              open-time-window-modal (fn []
+                                       (rf/dispatch [:modal->open {:id "time-window-modal"
+                                                                   :maxWidth "500px"
+                                                                   :content [time-window-modal/main
+                                                                             {:on-confirm handle-approve-time-window
+                                                                              :on-cancel #(rf/dispatch [:modal->close])}]}]))
               script-data (-> session :script :data)
               metadata (-> session :metadata)
               runbook-params (js->clj
@@ -335,18 +372,6 @@
                  [:span {:class "text-xs text-gray-500"}
                   "This session has pending items"]])
 
-              (when (and ready?
-                         (= (:verb session) "exec")
-                         is-session-owner?)
-                [:div {:class "flex gap-regular justify-end items-center mx-large"}
-                 [:span {:class "text-xs text-gray-500"}
-                  "This session is ready to be executed"]
-                 [button/primary {:text "Execute"
-                                  :status @executing-status
-                                  :on-click (fn []
-                                              (reset! executing-status :loading)
-                                              (rf/dispatch [:audit->execute-session session]))
-                                  :variant :small}]])
               (when can-connect?
                 [:div {:class "flex gap-regular justify-end items-center mx-large"}
                  [:span {:class "text-xs text-gray-500"}
@@ -558,22 +583,112 @@
                         :not-clipboard? disabled-download}]
                       [session-event-stream (:type session) session])])])])
 
-           [:> Flex {:justify "end" :gap "2" :mt "4"}
-            [:> Button {:color "red" :size "2" :variant "soft"}
-             "Reject"]
+           ;; action buttons section
+           (when can-review?
+             [:> Flex {:justify "end" :gap "2" :mt "4"}
+              ;; Reject dropdown
+              [:> DropdownMenu.Root
+               [:> DropdownMenu.Trigger
+                [:> Button {:color "red" :size "2" :variant "soft"}
+                 "Reject"
+                 [:> ChevronDown {:size 16}]]]
+               [:> DropdownMenu.Content
+                [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"
+                                       :on-click handle-reject}
+                 "Reject"
+                 [:> XCircle {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"
+                                       :on-click open-reject-modal}
+                 "Reject with a Description"
+                 [:> MessageCircle {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]
 
-            [:> DropdownMenu.Root
-             [:> DropdownMenu.Trigger
-              [:> Button {:color "green" :size "2"}
-               "Approve"
-               [:> ChevronDown {:size 16}]]]
-             [:> DropdownMenu.Content
-              [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"}
-               "Approve in a Time Window"
-               [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]]
-              [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"}
-               "Approve"
-               [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]]])
+              ;; Approve dropdown
+              [:> DropdownMenu.Root
+               [:> DropdownMenu.Trigger
+                [:> Button {:color "green" :size "2"}
+                 "Approve"
+                 [:> ChevronDown {:size 16}]]]
+               [:> DropdownMenu.Content
+                [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"
+                                       :on-click open-time-window-modal}
+                 "Approve in a Time Window"
+                 [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                [:> DropdownMenu.Item {:class "flex justify-between gap-2 group"
+                                       :on-click handle-approve}
+                 "Approve"
+                 [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]])
+
+           (when (and ready?
+                      (= (:verb session) "exec")
+                      is-session-owner?)
+             [:> Flex {:justify "end" :gap "2" :mt "4"}
+              [:> Button {:loading (when (= @executing-status :loading)
+                                     true)
+                          :on-click (fn []
+                                      (reset! executing-status :loading)
+                                      (rf/dispatch [:audit->execute-session session]))}
+               "Execute"]])
+
+           ;; execution schedule information (time window)
+           (when (and ready?
+                      (= (:verb session) "exec")
+                      (get-in session [:review :time_window_start])
+                      (get-in session [:review :time_window_end]))
+             (let [time-window-start (get-in session [:review :time_window_start])
+                   time-window-end (get-in session [:review :time_window_end])
+                   format-time (fn [time-str]
+                                 (let [date (js/Date. time-str)
+                                       hours (.getUTCHours date)
+                                       minutes (.getUTCMinutes date)
+                                       period (if (>= hours 12) "PM" "AM")
+                                       display-hours (cond
+                                                       (= hours 0) 12
+                                                       (> hours 12) (- hours 12)
+                                                       :else hours)
+                                       display-minutes (if (< minutes 10)
+                                                         (str "0" minutes)
+                                                         minutes)]
+                                   (str display-hours ":" display-minutes " " period)))
+                   start-time (format-time time-window-start)
+                   end-time (format-time time-window-end)
+                   now (js/Date.)
+                   start-date (js/Date. time-window-start)
+                   end-date (js/Date. time-window-end)
+                   within-window? (and (>= (.getTime now) (.getTime start-date))
+                                       (<= (.getTime now) (.getTime end-date)))]
+               [:div {:class "mt-6 p-4 rounded-lg bg-blue-50 border border-blue-200"}
+                [:> Flex {:align "center" :justify "between" :gap "4"}
+                 [:> Text {:size "2" :class "text-blue-900"}
+                  (str "This session is ready and available to be executed from "
+                       start-time " (UTC) to " end-time " (UTC).")]
+                 (when (and within-window? is-session-owner?)
+                   [:> Flex {:justify "end" :gap "2"}
+                    [:> Button {:loading (when (= @executing-status :loading)
+                                           true)
+                                :on-click (fn []
+                                            (reset! executing-status :loading)
+                                            (rf/dispatch [:audit->execute-session session]))}
+                     "Execute"]])]]))
+
+           ;; rejection details section (at the bottom)
+           (when (and has-review?
+                      (some #(= "REJECTED" (:status %)) review-groups))
+             (let [rejected-group (first (filter #(= "REJECTED" (:status %)) review-groups))
+                   rejection-description (get-in rejected-group [:rejection_details :description])
+                   rejected-by (get-in rejected-group [:reviewed_by :email])]
+               [:div {:class "mt-6 p-4 rounded-lg bg-red-50 border border-red-200"}
+                [:> Flex {:align "start" :gap "3"}
+                 [:> Box {:class "flex-shrink-0"}
+                  [:> Info {:size 20 :class "text-red-600"}]]
+                 [:> Box {:class "flex-grow"}
+                  [:> Text {:size "3" :weight "bold" :class "mb-2 text-red-900"}
+                   "Rejection Details"]
+                  (when rejection-description
+                    [:> Text {:size "2" :class "mb-2 text-red-800 whitespace-pre-wrap"}
+                     rejection-description])
+                  (when rejected-by
+                    [:> Text {:size "1" :class "text-red-700 italic"}
+                     rejected-by])]]]))])
 
         (finally
           (.destroy clipboard-url)

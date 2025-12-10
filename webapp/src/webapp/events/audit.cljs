@@ -338,24 +338,39 @@
 (rf/reg-event-fx
  :audit->add-review
  (fn
-   [{:keys [db]} [_ session status]]
-   {:fx [[:dispatch
-          [:fetch {:method "PUT"
-                   :uri (str "/reviews/" (-> session :review :id))
-                   :body {:status status}
-                   :on-success
-                   (fn []
-                     (rf/dispatch [:show-snackbar
-                                   {:level :success
-                                    :text "Your review was added"}])
-                     (js/setTimeout
-                      (fn []
-                        (rf/dispatch [:audit->get-sessions])
-                        (rf/dispatch [:audit->get-session-by-id session]))
-                      500))
-                   :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
-                                                              :level :error
-                                                              :details %}])}]]]}))
+   [{:keys [db]} [_ session status & {:keys [description
+                                              include-username
+                                              time-window-start
+                                              time-window-end
+                                              action]}]]
+   (let [body (merge {:status status}
+                     ;; TODO: API parameter name for rejection description
+                     (when description {:description description})
+                     ;; TODO: API parameter name for including username in rejection
+                     (when (some? include-username) {:include_username include-username})
+                     ;; TODO: API parameter name for time window start
+                     (when time-window-start {:time_window_start (.toISOString time-window-start)})
+                     ;; TODO: API parameter name for time window end
+                     (when time-window-end {:time_window_end (.toISOString time-window-end)})
+                     ;; TODO: API parameter name for review action type
+                     (when action {:action action}))]
+     {:fx [[:dispatch
+            [:fetch {:method "PUT"
+                     :uri (str "/reviews/" (-> session :review :id))
+                     :body body
+                     :on-success
+                     (fn []
+                       (rf/dispatch [:show-snackbar
+                                     {:level :success
+                                      :text "Your review was added"}])
+                       (js/setTimeout
+                        (fn []
+                          (rf/dispatch [:audit->get-sessions])
+                          (rf/dispatch [:audit->get-session-by-id session]))
+                        500))
+                     :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
+                                                                :level :error
+                                                                :details %}])}]]]})))
 
 (rf/reg-event-fx
  :audit->session-file-generate
