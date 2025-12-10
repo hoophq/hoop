@@ -336,9 +336,8 @@
                                            (rf/dispatch [:audit->add-review
                                                          session
                                                          "approved"
-                                                         :time-window-start (:time-window-start data)
-                                                         :time-window-end (:time-window-end data)
-                                                         :action "approve_time_window"])
+                                                         :start-time (:start-time data)
+                                                         :end-time (:end-time data)])
                                            (rf/dispatch [:modal->close]))
               open-time-window-modal (fn []
                                        (rf/dispatch [:modal->open {:id "time-window-modal"
@@ -618,28 +617,17 @@
                  "Approve"
                  [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]])
 
-           (when (and ready?
-                      (= (:verb session) "exec")
-                      is-session-owner?)
-             [:> Flex {:justify "end" :gap "2" :mt "4"}
-              [:> Button {:loading (when (= @executing-status :loading)
-                                     true)
-                          :on-click (fn []
-                                      (reset! executing-status :loading)
-                                      (rf/dispatch [:audit->execute-session session]))}
-               "Execute"]])
-
            ;; execution schedule information (time window)
            (when (and ready?
                       (= (:verb session) "exec")
-                      (get-in session [:review :time_window_start])
-                      (get-in session [:review :time_window_end]))
-             (let [time-window-start (get-in session [:review :time_window_start])
-                   time-window-end (get-in session [:review :time_window_end])
+                      (get-in session [:review :time_window :configuration :start_time])
+                      (get-in session [:review :time_window :configuration :end_time]))
+             (let [start-time-str (get-in session [:review :time_window :configuration :start_time])
+                   end-time-str (get-in session [:review :time_window :configuration :end_time])
                    format-time (fn [time-str]
-                                 (let [date (js/Date. time-str)
-                                       hours (.getUTCHours date)
-                                       minutes (.getUTCMinutes date)
+                                 (let [parts (cs/split time-str #":")
+                                       hours (js/parseInt (first parts))
+                                       minutes (js/parseInt (second parts))
                                        period (if (>= hours 12) "PM" "AM")
                                        display-hours (cond
                                                        (= hours 0) 12
@@ -649,26 +637,54 @@
                                                          (str "0" minutes)
                                                          minutes)]
                                    (str display-hours ":" display-minutes " " period)))
-                   start-time (format-time time-window-start)
-                   end-time (format-time time-window-end)
+                   start-time (format-time start-time-str)
+                   end-time (format-time end-time-str)
                    now (js/Date.)
-                   start-date (js/Date. time-window-start)
-                   end-date (js/Date. time-window-end)
-                   within-window? (and (>= (.getTime now) (.getTime start-date))
-                                       (<= (.getTime now) (.getTime end-date)))]
+                   ;; Create date objects for today with the UTC times
+                   now-utc (js/Date. (.getUTCFullYear now)
+                                     (.getUTCMonth now)
+                                     (.getUTCDate now)
+                                     (js/parseInt (first (cs/split start-time-str #":")))
+                                     (js/parseInt (second (cs/split start-time-str #":"))))
+                   end-utc (js/Date. (.getUTCFullYear now)
+                                     (.getUTCMonth now)
+                                     (.getUTCDate now)
+                                     (js/parseInt (first (cs/split end-time-str #":")))
+                                     (js/parseInt (second (cs/split end-time-str #":"))))
+                   current-utc-time (js/Date. (.getUTCFullYear now)
+                                              (.getUTCMonth now)
+                                              (.getUTCDate now)
+                                              (.getUTCHours now)
+                                              (.getUTCMinutes now))
+                   within-window? (and (>= (.getTime current-utc-time) (.getTime now-utc))
+                                       (<= (.getTime current-utc-time) (.getTime end-utc)))]
                [:div {:class "mt-6 p-4 rounded-lg bg-blue-50 border border-blue-200"}
                 [:> Flex {:align "center" :justify "between" :gap "4"}
                  [:> Text {:size "2" :class "text-blue-900"}
                   (str "This session is ready and available to be executed from "
                        start-time " (UTC) to " end-time " (UTC).")]
-                 (when (and within-window? is-session-owner?)
+                 (when is-session-owner?
                    [:> Flex {:justify "end" :gap "2"}
                     [:> Button {:loading (when (= @executing-status :loading)
                                            true)
+                                :disabled (not within-window?)
                                 :on-click (fn []
                                             (reset! executing-status :loading)
                                             (rf/dispatch [:audit->execute-session session]))}
                      "Execute"]])]]))
+
+           ;; Execute button (when no time window is configured)
+           (when (and ready?
+                      (= (:verb session) "exec")
+                      is-session-owner?
+                      (not (get-in session [:review :time_window :configuration :start_time])))
+             [:> Flex {:justify "end" :gap "2" :mt "4"}
+              [:> Button {:loading (when (= @executing-status :loading)
+                                     true)
+                          :on-click (fn []
+                                      (reset! executing-status :loading)
+                                      (rf/dispatch [:audit->execute-session session]))}
+               "Execute"]])
 
            ;; rejection details section (at the bottom)
            (when (and has-review?

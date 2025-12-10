@@ -5,20 +5,45 @@
    [reagent.core :as r]
    [webapp.components.forms :as forms]))
 
-(defn- parse-time-to-date
-  "Converts time string (HH:mm format) to Date object in UTC"
-  [time-str]
-  (when (and time-str (> (count time-str) 0))
-    (let [parts (cs/split time-str #":")
+(defn- validate-time-range
+  "Validates that end time is after start time"
+  [start-time end-time]
+  (when (and start-time end-time (> (count start-time) 0) (> (count end-time) 0))
+    (let [start-parts (cs/split start-time #":")
+          end-parts (cs/split end-time #":")
+          start-hours (js/parseInt (first start-parts))
+          start-minutes (js/parseInt (second start-parts))
+          end-hours (js/parseInt (first end-parts))
+          end-minutes (js/parseInt (second end-parts))
+          start-total (+ (* start-hours 60) start-minutes)
+          end-total (+ (* end-hours 60) end-minutes)]
+      (> end-total start-total))))
+
+(defn- convert-local-time-to-utc
+  "Converts local time string (HH:mm) to UTC time string (HH:mm)"
+  [local-time-str]
+  (when (and local-time-str (> (count local-time-str) 0))
+    (let [parts (cs/split local-time-str #":")
           hours (js/parseInt (first parts))
           minutes (js/parseInt (second parts))
+          ;; Create a date with today's date and the selected time in local timezone
           now (js/Date.)
-          date (js/Date. (.getUTCFullYear now)
-                         (.getUTCMonth now)
-                         (.getUTCDate now)
-                         hours
-                         minutes)]
-      date)))
+          local-date (js/Date. (.getFullYear now)
+                               (.getMonth now)
+                               (.getDate now)
+                               hours
+                               minutes)
+          ;; Get UTC hours and minutes
+          utc-hours (.getUTCHours local-date)
+          utc-minutes (.getUTCMinutes local-date)
+          ;; Format as HH:mm
+          formatted-hours (if (< utc-hours 10)
+                            (str "0" utc-hours)
+                            (str utc-hours))
+          formatted-minutes (if (< utc-minutes 10)
+                              (str "0" utc-minutes)
+                              (str utc-minutes))]
+      (str formatted-hours ":" formatted-minutes))))
 
 (defn main [{:keys [on-confirm on-cancel]}]
   (let [start-time (r/atom "")
@@ -47,10 +72,11 @@
                     :on-click on-cancel}
          "Cancel"]
         [:> Button {:color "green"
-                    :on-click #(let [start (parse-time-to-date @start-time)
-                                     end (parse-time-to-date @end-time)]
-                                 (when (and start end (> (.getTime end) (.getTime start)))
-                                   (on-confirm {:time-window-start start
-                                                :time-window-end end})))}
+                    :on-click #(when (validate-time-range @start-time @end-time)
+                                 (let [start-utc (convert-local-time-to-utc @start-time)
+                                       end-utc (convert-local-time-to-utc @end-time)]
+                                   (when (and start-utc end-utc)
+                                     (on-confirm {:start-time start-utc
+                                                  :end-time end-utc}))))}
          "Approve and Set Time Window"]]])))
 

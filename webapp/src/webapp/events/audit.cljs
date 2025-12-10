@@ -339,21 +339,19 @@
  :audit->add-review
  (fn
    [{:keys [db]} [_ session status & {:keys [description
-                                              include-username
-                                              time-window-start
-                                              time-window-end
-                                              action]}]]
-   (let [body (merge {:status status}
+                                             include-username
+                                             start-time
+                                             end-time]}]]
+   (let [body (merge {:status (string/upper-case status)}
                      ;; TODO: API parameter name for rejection description
                      (when description {:description description})
                      ;; TODO: API parameter name for including username in rejection
                      (when (some? include-username) {:include_username include-username})
-                     ;; TODO: API parameter name for time window start
-                     (when time-window-start {:time_window_start (.toISOString time-window-start)})
-                     ;; TODO: API parameter name for time window end
-                     (when time-window-end {:time_window_end (.toISOString time-window-end)})
-                     ;; TODO: API parameter name for review action type
-                     (when action {:action action}))]
+                     ;; Time window configuration
+                     (when (and start-time end-time)
+                       {:time_window {:type "time_range"
+                                      :configuration {:start_time start-time
+                                                      :end_time end-time}}}))]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (-> session :review :id))
