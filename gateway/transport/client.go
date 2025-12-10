@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	redactor "libhoop/redactor"
+	"libhoop/redactor"
 
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/grpc"
