@@ -31,6 +31,11 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
 	}
 
+	var analyzerMetricsRules string
+	if connParams.AnalyzerMetricsRules != nil {
+		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	}
+
 	opts := map[string]string{
 		"sid":                       sid,
 		"dlp_provider":              connParams.DlpProvider,
@@ -40,6 +45,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
+		"analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 
 	args := append(connParams.CmdList, connParams.ClientArgs...)
