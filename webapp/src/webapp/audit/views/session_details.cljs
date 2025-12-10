@@ -33,6 +33,16 @@
    :custom "txt"
    :command-line "txt"})
 
+;; TODO: Change it for send DB in the payload and not the response
+(defn- sanitize-response [response connection-type]
+  (cond
+    (= connection-type "mssql")
+    (when response
+      (if-let [idx (cs/index-of response "\n")]
+        (subs response (inc idx))
+        response))
+    :else response))
+
 (defn- loading-player []
   [:div {:class "flex gap-small items-center justify-center py-large"}
    [:span {:class "italic text-xs text-gray-600"}
@@ -535,7 +545,9 @@
                   (if (= (:verb session) "exec")
                     [results-container/main
                      connection-subtype
-                     {:results (utilities/decode-b64 (or (first (:event_stream session)) ""))
+                     {:results (sanitize-response
+                                (utilities/decode-b64 (or (first (:event_stream session)) ""))
+                                connection-subtype)
                       :results-status (:status @session-details)
                       :fixed-height? true
                       :results-id (:id session)
