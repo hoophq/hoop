@@ -67,5 +67,9 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		a.connStore.Del(sessionIDKey)
 		log.With("sid", sid).Infof("exitcode=%v - err=%v", exitCode, errMsg)
 		a.sendClientSessionCloseWithExitCode(sid, errMsg, strconv.Itoa(exitCode))
+
+		// since the doExec kill the connection after the commnad runs we can flush
+		cmd.FlushMetrics(newIoMetricFlush(a.client, sid))
 	})
+
 }
