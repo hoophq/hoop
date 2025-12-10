@@ -622,42 +622,11 @@
                       (= (:verb session) "exec")
                       (get-in session [:review :time_window :configuration :start_time])
                       (get-in session [:review :time_window :configuration :end_time]))
-             (let [start-time-str (get-in session [:review :time_window :configuration :start_time])
-                   end-time-str (get-in session [:review :time_window :configuration :end_time])
-                   format-time (fn [time-str]
-                                 (let [parts (cs/split time-str #":")
-                                       hours (js/parseInt (first parts))
-                                       minutes (js/parseInt (second parts))
-                                       period (if (>= hours 12) "PM" "AM")
-                                       display-hours (cond
-                                                       (= hours 0) 12
-                                                       (> hours 12) (- hours 12)
-                                                       :else hours)
-                                       display-minutes (if (< minutes 10)
-                                                         (str "0" minutes)
-                                                         minutes)]
-                                   (str display-hours ":" display-minutes " " period)))
-                   start-time (format-time start-time-str)
-                   end-time (format-time end-time-str)
-                   now (js/Date.)
-                   ;; Create date objects for today with the UTC times
-                   now-utc (js/Date. (.getUTCFullYear now)
-                                     (.getUTCMonth now)
-                                     (.getUTCDate now)
-                                     (js/parseInt (first (cs/split start-time-str #":")))
-                                     (js/parseInt (second (cs/split start-time-str #":"))))
-                   end-utc (js/Date. (.getUTCFullYear now)
-                                     (.getUTCMonth now)
-                                     (.getUTCDate now)
-                                     (js/parseInt (first (cs/split end-time-str #":")))
-                                     (js/parseInt (second (cs/split end-time-str #":"))))
-                   current-utc-time (js/Date. (.getUTCFullYear now)
-                                              (.getUTCMonth now)
-                                              (.getUTCDate now)
-                                              (.getUTCHours now)
-                                              (.getUTCMinutes now))
-                   within-window? (and (>= (.getTime current-utc-time) (.getTime now-utc))
-                                       (<= (.getTime current-utc-time) (.getTime end-utc)))]
+             (let [start-time-utc (get-in session [:review :time_window :configuration :start_time])
+                   end-time-utc (get-in session [:review :time_window :configuration :end_time])
+                   start-time (formatters/utc-time->display-time start-time-utc)
+                   end-time (formatters/utc-time->display-time end-time-utc)
+                   within-window? (formatters/is-within-time-window? start-time-utc end-time-utc)]
                [:div {:class "mt-6 p-4 rounded-lg bg-blue-50 border border-blue-200"}
                 [:> Flex {:align "center" :justify "between" :gap "4"}
                  [:> Text {:size "2" :class "text-blue-900"}

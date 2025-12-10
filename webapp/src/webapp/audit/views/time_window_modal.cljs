@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Box Button Flex Text]]
    [clojure.string :as cs]
    [reagent.core :as r]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.formatters :as formatters]))
 
 (defn- validate-time-range
   "Validates that end time is after start time"
@@ -18,32 +19,6 @@
           start-total (+ (* start-hours 60) start-minutes)
           end-total (+ (* end-hours 60) end-minutes)]
       (> end-total start-total))))
-
-(defn- convert-local-time-to-utc
-  "Converts local time string (HH:mm) to UTC time string (HH:mm)"
-  [local-time-str]
-  (when (and local-time-str (> (count local-time-str) 0))
-    (let [parts (cs/split local-time-str #":")
-          hours (js/parseInt (first parts))
-          minutes (js/parseInt (second parts))
-          ;; Create a date with today's date and the selected time in local timezone
-          now (js/Date.)
-          local-date (js/Date. (.getFullYear now)
-                               (.getMonth now)
-                               (.getDate now)
-                               hours
-                               minutes)
-          ;; Get UTC hours and minutes
-          utc-hours (.getUTCHours local-date)
-          utc-minutes (.getUTCMinutes local-date)
-          ;; Format as HH:mm
-          formatted-hours (if (< utc-hours 10)
-                            (str "0" utc-hours)
-                            (str utc-hours))
-          formatted-minutes (if (< utc-minutes 10)
-                              (str "0" utc-minutes)
-                              (str utc-minutes))]
-      (str formatted-hours ":" formatted-minutes))))
 
 (defn main [{:keys [on-confirm on-cancel]}]
   (let [start-time (r/atom "")
@@ -73,8 +48,8 @@
          "Cancel"]
         [:> Button {:color "green"
                     :on-click #(when (validate-time-range @start-time @end-time)
-                                 (let [start-utc (convert-local-time-to-utc @start-time)
-                                       end-utc (convert-local-time-to-utc @end-time)]
+                                 (let [start-utc (formatters/local-time->utc-time @start-time)
+                                       end-utc (formatters/local-time->utc-time @end-time)]
                                    (when (and start-utc end-utc)
                                      (on-confirm {:start-time start-utc
                                                   :end-time end-utc}))))}

@@ -1,5 +1,7 @@
 (ns webapp.formatters
-  (:require [clojure.string :as string]))
+  (:require
+   ["date-fns" :as dfns]
+   [clojure.string :as string]))
 
 (defn comma-string-to-list
   "Transform a comma separated string to list"
@@ -140,3 +142,80 @@
          (insert-0-before (.getHours date)) ":"
          (insert-0-before (.getMinutes date)) ":"
          (insert-0-before (.getSeconds date)))))
+
+;; Time window helpers for UTC conversion using date-fns
+
+(defn local-time->utc-time
+  "Converts local time string (HH:mm format) to UTC time string (HH:mm format).
+
+  Example:
+  (local-time->utc-time \"09:00\") => \"12:00\" (if user is in UTC-3)
+
+  Parameters:
+  - local-time-str: String in format \"HH:mm\" representing local time"
+  [local-time-str]
+  (when (and local-time-str (> (count local-time-str) 0))
+    (let [now (js/Date.)
+          ;; Create a date with today's date and the selected time in local timezone
+          [hours minutes] (map js/parseInt (string/split local-time-str #":"))
+          local-date (js/Date. (.getFullYear now)
+                               (.getMonth now)
+                               (.getDate now)
+                               hours
+                               minutes)
+          ;; Get UTC hours and minutes from the local date
+          utc-hours (.getUTCHours local-date)
+          utc-minutes (.getUTCMinutes local-date)]
+      ;; Format as HH:mm directly (date-fns format uses local timezone, so we format manually)
+      (str (if (< utc-hours 10) "0" "") utc-hours ":"
+           (if (< utc-minutes 10) "0" "") utc-minutes))))
+
+(defn utc-time->display-time
+  "Converts UTC time string (HH:mm format) to 12-hour format with AM/PM for display.
+
+  Example:
+  (utc-time->display-time \"22:00\") => \"10:00 PM\"
+  (utc-time->display-time \"09:00\") => \"9:00 AM\"
+
+  Parameters:
+  - utc-time-str: String in format \"HH:mm\" representing UTC time"
+  [utc-time-str]
+  (when (and utc-time-str (> (count utc-time-str) 0))
+    (let [now (js/Date.)
+          [hours minutes] (map js/parseInt (string/split utc-time-str #":"))
+          ;; Create a UTC date for today with the specified time
+          utc-date (js/Date. (js/Date.UTC (.getUTCFullYear now)
+                                          (.getUTCMonth now)
+                                          (.getUTCDate now)
+                                          hours
+                                          minutes))]
+      ;; Format as 12-hour time with AM/PM using date-fns
+      (dfns/format utc-date "h:mm a"))))
+
+(defn is-within-time-window?
+  "Checks if current UTC time is within the specified time window.
+
+  Parameters:
+  - start-time-utc: String in format \"HH:mm\" representing UTC start time
+  - end-time-utc: String in format \"HH:mm\" representing UTC end time
+
+  Returns:
+  - Boolean indicating if current UTC time is within the window"
+  [start-time-utc end-time-utc]
+  (when (and start-time-utc end-time-utc (> (count start-time-utc) 0) (> (count end-time-utc) 0))
+    (let [now (js/Date.)
+          ;; Get current UTC time directly (not using date-fns format which uses local timezone)
+          current-utc-hours (.getUTCHours now)
+          current-utc-minutes (.getUTCMinutes now)
+          current-minutes (+ (* current-utc-hours 60) current-utc-minutes)
+          ;; Parse start and end times
+          start-parts (string/split start-time-utc #":")
+          end-parts (string/split end-time-utc #":")
+          start-hours (js/parseInt (first start-parts))
+          start-minutes (js/parseInt (second start-parts))
+          end-hours (js/parseInt (first end-parts))
+          end-minutes (js/parseInt (second end-parts))
+          start-total-minutes (+ (* start-hours 60) start-minutes)
+          end-total-minutes (+ (* end-hours 60) end-minutes)]
+      (and (>= current-minutes start-total-minutes)
+           (<= current-minutes end-total-minutes)))))
