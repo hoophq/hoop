@@ -137,7 +137,7 @@ func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packe
 	handled = true
 	log.With("sid", pctx.SID).Debugf("received analyzer metrics packet, length=%v", len(pkt.Payload))
 
-	var data map[string]interface{}
+	var data map[string]int
 	if err := json.Unmarshal(pkt.Payload, &data); err != nil {
 		log.With("sid", pctx.SID).Errorf("unable to unmarshal analyzer metrics packet, reason=%v", err)
 		return

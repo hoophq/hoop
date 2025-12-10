@@ -492,13 +492,27 @@ func UpdateSessionIntegrationMetadata(orgID, sid string, metadata map[string]any
 	return res.Error
 }
 
-func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]any) error {
-	res := DB.Table("private.sessions").
-		Where("id = ? AND org_id = ?", sid, orgID).
-		Update("metrics", gorm.Expr(
-			"jsonb_set(COALESCE(metrics, '{}'::jsonb), '{data_analyzer}', ?::jsonb)",
-			metrics,
-		))
+func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int) error {
+	res := DB.Table("private.sessions AS s").
+		Where("s.id = ? AND s.org_id = ?", sid, orgID).
+		Update("metrics", gorm.Expr(`
+        jsonb_set(
+            COALESCE(s.metrics, '{}'::jsonb),
+            '{data_analyzer}',
+            COALESCE(s.metrics->'data_analyzer', '{}'::jsonb)
+            ||
+            (
+                SELECT jsonb_object_agg(
+                    k,
+                    to_jsonb(
+                        COALESCE((s.metrics->'data_analyzer'->>k)::int, 0) + v::int
+                    )
+                )
+                FROM jsonb_each_text(?::jsonb) AS t(k, v)
+            ),
+            true
+        )
+    `, metrics))
 
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound
