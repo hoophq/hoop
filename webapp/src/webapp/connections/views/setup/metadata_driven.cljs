@@ -70,7 +70,7 @@
     (if configs
       [:> Box {:class "space-y-5"}
        [:> Heading {:as "h3" :size "4" :weight "bold"}
-        "Environment credentialssss"]
+        "Environment credentials"]
 
        [:> Grid {:columns "1" :gap "4"}
         (for [field configs]
