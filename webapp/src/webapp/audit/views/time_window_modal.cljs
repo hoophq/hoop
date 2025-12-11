@@ -27,11 +27,16 @@
                      :value @start-time
                      :on-change #(reset! start-time (-> % .-target .-value))}]
 
-       [forms/input {:label "End Time"
-                     :type "time"
-                     :required true
-                     :value @end-time
-                     :on-change #(reset! end-time (-> % .-target .-value))}]
+       [:> Box
+        [forms/input {:label "End Time"
+                      :type "time"
+                      :required true
+                      :value @end-time
+                      :on-change #(reset! end-time (-> % .-target .-value))}]
+
+        [:> Text {:as "p" :size "2" :class "text-gray-11"}
+         "If the end time is earlier than the start time, the time window continues to the next day."]]
+
 
        [:> Flex {:justify "between" :align "center"}
         [:> Button {:ml "3"
