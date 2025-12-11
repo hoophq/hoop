@@ -338,15 +338,9 @@
 (rf/reg-event-fx
  :audit->add-review
  (fn
-   [{:keys [db]} [_ session status & {:keys [description
-                                             include-username
-                                             start-time
+   [{:keys [db]} [_ session status & {:keys [start-time
                                              end-time]}]]
    (let [body (merge {:status (string/upper-case status)}
-                     ;; TODO: API parameter name for rejection description
-                     (when description {:description description})
-                     ;; TODO: API parameter name for including username in rejection
-                     (when (some? include-username) {:include_username include-username})
                      ;; Time window configuration
                      (when (and start-time end-time)
                        {:time_window {:type "time_range"

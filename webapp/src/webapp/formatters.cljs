@@ -16,10 +16,6 @@
   [roles]
   (string/join ", " roles))
 
-(defn replace-empty-space->dash
-  [string]
-  (string/replace string #"\s" "-"))
-
 (defn time-elapsed
   "PARAMETERS
   time -> a value in miliseconds
@@ -68,36 +64,6 @@
                     (.getSeconds)
                     (#(str (if (< % 10) (str "0" %) %))))]
     (str "[" hours ":" minutes ":" seconds "]")))
-
-(defn time-ago
-  "DEPRECATED
-  It receives our Hoop API date format, a simple string containing YYYY/MM/DD HH:MM
-  and parses to a readable string containing `x time ago`, for instance:
-  - 10 minutes ago
-  - 1 hour ago
-
-  Important: `time` parameters will always be assumed as UTC timezone, so make sure you're passing a UTC timezone date formatted as `YYYY/MM/DD HH:MM` in here.
-  "
-  [time]
-  (let [units [{:name "second" :limit 60 :in-second 1}
-               {:name "minute" :limit 3600 :in-second 60}
-               {:name "hour" :limit 86400 :in-second 3600}
-               {:name "day" :limit 604800 :in-second 86400}
-               {:name "week" :limit 2629743 :in-second 604800}
-               {:name "month" :limit 31556926 :in-second 2629743}
-               {:name "year" :limit 99999999999999 :in-second 31556926}]
-        ts (/ (.parse js/Date (str time " UTC")) 1000)
-        now (/ (.getTime (new js/Date)) 1000)
-        diff (- now ts)]
-    (if (< diff 30)
-      "just now"
-      (let [unit (first (drop-while #(or (>= diff (:limit %))
-                                         (not (:limit %)))
-                                    units))]
-        (-> (/ diff (:in-second unit))
-            Math/floor
-            int
-            (#(str % " " (:name unit) (when (> % 1) "s") " ago")))))))
 
 (defn time-ago-full-date
   "It receives our hoop API date format, a simple string containing 2022-10-28T16:09:17.772Z
