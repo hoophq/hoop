@@ -15,6 +15,7 @@
            checked
            disabled?
            on-change
+           complement-component
            upgrade-plan-component
            learning-component]}]
   [:> Flex {:align "center" :gap "5"}
@@ -25,6 +26,9 @@
    [:> Box
     [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"} title]
     [:> Text {:as "p" :size "2" :class "text-[--gray-11]"} description]
+
+    (when complement-component
+      complement-component)
 
     (when upgrade-plan-component
       upgrade-plan-component)
