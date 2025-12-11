@@ -19,6 +19,7 @@ func (p *noopProxy) Run(onErr func(int, string)) {
 	errMsg := fmt.Sprintf("missing protocol hoop library for %v, contact your administrator", p.connectionType)
 	onErr(1, errMsg)
 }
+func (p *noopProxy) FlushMetrics(client io.Writer) error { return nil }
 func (p *noopProxy) Write(data []byte) (int, error) { return len(data), nil }
 func (p *noopProxy) Done() <-chan struct{}          { return nil }
 func (p *noopProxy) Close() error                   { return nil }

@@ -54,6 +54,10 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 	log.With("sid", sid, "conn", clientConnectionID, "legacy", connenv.connectionString == "").
 		Infof("starting mongodb connection at %v", connenv.Address())
 
+	var analyzerMetricsRules string
+	if connParams.AnalyzerMetricsRules != nil {
+		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	}
 	opts := map[string]string{
 		"sid":                       sid,
 		"connection_string":         connenv.connectionString,
@@ -62,10 +66,11 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		"mspresidio_analyzer_url":   connParams.DlpPresidioAnalyzerURL,
 		"mspresidio_anonymizer_url": connParams.DlpPresidioAnonymizerURL,
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
-		"dlp_mode":              connParams.DlpMode,
-		"dlp_gcp_credentials":   connParams.DlpGcpRawCredentialsJSON,
-		"dlp_info_types":        strings.Join(connParams.DLPInfoTypes, ","),
-		"dlp_masking_character": "#",
+		"dlp_mode":                  connParams.DlpMode,
+		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
+		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
+		"dlp_masking_character":     "#",
+		"analyzer_metrics_rules": analyzerMetricsRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MongoDB()
 	if err != nil {

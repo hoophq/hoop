@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const defaulMaxBackoff = 9
+const defaulMaxBackoff = 4
 
 var backoffFn = time.Sleep
 
