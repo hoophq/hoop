@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as string]
    [re-frame.core :as rf]
+   [webapp.formatters :as formatters]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]))
 
 (rf/reg-event-fx
@@ -338,14 +339,14 @@
 (rf/reg-event-fx
  :audit->add-review
  (fn
-   [{:keys [db]} [_ session status & {:keys [start-time
-                                             end-time]}]]
+   [_ [_ session status & {:keys [start-time
+                                  end-time]}]]
    (let [body (merge {:status (string/upper-case status)}
                      ;; Time window configuration
                      (when (and start-time end-time)
                        {:time_window {:type "time_range"
-                                      :configuration {:start_time start-time
-                                                      :end_time end-time}}}))]
+                                      :configuration {:start_time (formatters/local-time->utc-time start-time)
+                                                      :end_time (formatters/local-time->utc-time end-time)}}}))]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (-> session :review :id))

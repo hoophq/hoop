@@ -569,8 +569,13 @@
                    within-window? (formatters/is-within-time-window? start-time-utc end-time-utc)]
                [:> Flex {:align "center" :justify "end" :gap "4"}
                 [:> Text {:size "2" :class "text-gray-11"}
-                 (str "This session is ready and available to be executed from "
-                      start-time " (UTC) to " end-time " (UTC).")]
+                 "This session is ready and available to be executed from "
+                 [:> Text {:size "2" :weight "medium" :class "text-gray-11"}
+                  start-time]
+                 " to "
+                 [:> Text {:size "2" :weight "medium" :class "text-gray-11"}
+                  end-time]
+                 "."]
                 (when is-session-owner?
                   [:> Flex {:justify "end" :gap "2"}
                    [:> Button {:loading (when (= @executing-status :loading)
@@ -586,7 +591,10 @@
                       (= (:verb session) "exec")
                       is-session-owner?
                       (not (get-in session [:review :time_window :configuration :start_time])))
-             [:> Flex {:justify "end" :gap "2"}
+             [:> Flex {:align "center" :justify "end" :gap "4"}
+              [:> Text {:size "2" :class "text-gray-11"}
+               "This session is ready to be executed."]
+
               [:> Button {:loading (when (= @executing-status :loading)
                                      true)
                           :on-click (fn []
