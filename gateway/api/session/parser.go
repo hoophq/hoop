@@ -100,6 +100,13 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 			ReviewDate: rg.ReviewedAt,
 		})
 	}
+	var timeWindow *openapi.ReviewSessionTimeWindow
+	if r.TimeWindow != nil {
+		timeWindow = &openapi.ReviewSessionTimeWindow{
+			Type:          openapi.ReviewTimeWindowType(r.TimeWindow.Type),
+			Configuration: r.TimeWindow.Configuration,
+		}
+	}
 	return &openapi.SessionReview{
 		ID:   r.ID,
 		Type: openapi.ReviewType(r.Type),
@@ -110,6 +117,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		CreatedAt:        r.CreatedAt,
 		RevokeAt:         r.RevokedAt,
 		ReviewGroupsData: itemGroups,
+		TimeWindow:       timeWindow,
 	}
 }
 
