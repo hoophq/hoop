@@ -267,23 +267,9 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 func getAnalyzerMetricsRulesForConnection() (json.RawMessage, error) {
 	rules := []redactor.DataMaskingEntityData{
 		{
-			Name: "Analyzer Metrics",
 			SupportedEntityTypes: []redactor.SupportedEntityTypesEntry{
 				{
-					Name:        "NAME",
-					EntityTypes: []string{"PERSON"},
-				},
-				{
-					Name:        "PHONE_NUMBER",
-					EntityTypes: []string{"PHONE_NUMBER"},
-				},
-				{
-					Name:        "ADDRESS",
-					EntityTypes: []string{"LOCATION"},
-				},
-				{
-					Name:        "EMAIL_ADDRESS",
-					EntityTypes: []string{"EMAIL_ADDRESS"},
+					EntityTypes: []string{"PERSON", "PHONE_NUMBER", "LOCATION", "EMAIL_ADDRESS"},
 				},
 			},
 		},
@@ -362,14 +348,10 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 			entityTypesJsonData = nil
 		}
 
-		var analyzerMetricsRulesJsonData json.RawMessage
-		if len(entityTypesJsonData) <= 2 {
-			var err error
-			analyzerMetricsRulesJsonData, err = getAnalyzerMetricsRulesForConnection()
-			if err != nil {
-				log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed getting analyzer metrics rules, err=%v", err)
-				return status.Errorf(codes.Internal, "failed getting analyzer metrics rules, err=%v", err)
-			}
+		analyzerMetricsRulesJsonData, err := getAnalyzerMetricsRulesForConnection()
+		if err != nil {
+			log.With("sid", pctx.SID, "connection", pctx.ConnectionName).Errorf("failed getting analyzer metrics rules, err=%v", err)
+			return status.Errorf(codes.Internal, "failed getting analyzer metrics rules, err=%v", err)
 		}
 
 		var guardRailRulesJsonData json.RawMessage
