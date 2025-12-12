@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/gateway/idp"
@@ -15,14 +16,13 @@ import (
 
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
 )
 
 var (
-	store       = memory.New() // TODO change memory for sync.Map
+	store       = sync.Map{}
 	instanceKey = "rdp_instance"
 )
 
@@ -34,16 +34,12 @@ type RDPProxy struct {
 
 // GetServerInstance returns the singleton instance of PGServer.
 func GetServerInstance() *RDPProxy {
-	if server, ok := store.Get(instanceKey).(*RDPProxy); ok {
-		return server
-	}
-	server := &RDPProxy{}
-	store.Set(instanceKey, server)
-	return server
+	server, _ := store.LoadOrStore(instanceKey, &RDPProxy{})
+	return server.(*RDPProxy)
 }
 
 func (r *RDPProxy) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainText bool) error {
-	if _, ok := store.Get(instanceKey).(*RDPProxy); ok && r.listener != nil {
+	if _, ok := store.Load(instanceKey); ok && r.listener != nil {
 		return nil
 	}
 
@@ -53,13 +49,13 @@ func (r *RDPProxy) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainTe
 	if err != nil {
 		return err
 	}
-	store.Set(instanceKey, server)
+	store.Store(instanceKey, server)
 	return nil
 }
 
 func (r *RDPProxy) Stop() error {
-	if server, ok := store.Pop(instanceKey).(*RDPProxy); ok {
-
+	if serverAny, ok := store.LoadAndDelete(instanceKey); ok {
+		server := serverAny.(*RDPProxy)
 		for _, session := range broker.GetSessions() {
 			if session != nil {
 				session.Close()
@@ -112,9 +108,7 @@ func runRDPProxyServer(listenAddr string, tlsConfig *tls.Config, acceptPlainText
 	return rdpProxyInstance, nil
 }
 
-// sendGenericRdpError tells the RDP client "something went wrong".
-// Most clients (mstsc, FreeRDP) will show a generic protocol/security error dialog.
-func sendGenericRdpError(conn net.Conn) error {
+func buildGenericRdpErrorPacket() []byte {
 	// It depends on the client to show specific error messages.
 	// X.224 Connection Confirm header
 	x224 := []byte{
@@ -141,8 +135,13 @@ func sendGenericRdpError(conn net.Conn) error {
 		byte(totalLen >> 8), byte(totalLen & 0xff),
 	}
 
-	packet := append(tpkt, userData...)
+	return append(tpkt, userData...)
+}
 
+// sendGenericRdpError tells the RDP client "something went wrong".
+// Most clients (mstsc, FreeRDP) will show a generic protocol/security error dialog.
+func sendGenericRdpError(conn net.Conn) error {
+	packet := buildGenericRdpErrorPacket()
 	// Write the failure once, then close
 	if _, err := conn.Write(packet); err != nil {
 		return err
@@ -156,12 +155,11 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 
 	var firstRDPData []byte
 	var err error
-	var extractedCreds string
 
 	if metaConn, ok := conn.(*tlstermination.TLSConnectionMeta); ok {
 		firstRDPData = metaConn.RDPCookie
 	} else {
-		// Read first RDP packet
+		// Read the first RDP packet
 		firstRDPData, err = ReadFirstRDPPacket(conn)
 		if err != nil {
 			// Prevents log pollution from health check requests on this port
@@ -174,60 +172,10 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		}
 	}
 
-	// Extract credentials from headers
-	extractedCreds, err = ExtractCredentialsFromRDP(firstRDPData)
+	ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, err := checkAndPrepareRDP(firstRDPData)
 	if err != nil {
-		log.Errorf("Failed to extract credentials: %v", err)
-		return
-	}
-
-	secretKeyHash, err := keys.Hash256Key(extractedCreds)
-	if err != nil {
-		log.Errorf("failed hashing rdp secret key, reason=%v", err)
-		return
-	}
-
-	dba, err := models.GetValidConnectionCredentialsBySecretKey(
-		pb.ConnectionTypeRDP.String(),
-		secretKeyHash)
-
-	if err != nil {
-		if err == models.ErrNotFound {
-			// it is possible use just mapped errors for client responses
-			log.Errorf("invalid credentials provided by rdp client, reason=%v", err)
-			_ = sendGenericRdpError(conn)
-			return
-		}
-		log.Errorf("failed obtaining secret access key, reason=%v", err)
-		return
-	}
-
-	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
-	if ctxDuration <= 0 {
-		log.Errorf("invalid secret access key credentials")
-		return
-	}
-
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		log.Errorf("failed to load IDP provider: %v", err)
-		return
-	}
-
-	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		log.Errorf("Error verifying the user token: %v", err)
-		return
-	}
-
-	userCtx, err := models.GetUserContext(dba.UserSubject)
-	if err != nil {
-		log.Errorf("failed fetching user context, reason=%v", err)
-		return
-	}
-
-	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
-	if connectionModel == nil || err != nil {
-		log.Errorf("failed fetching connection by name or id, reason=%v", err)
+		log.Printf("Failed to check and prepare RDP: %v", err)
+		_ = sendGenericRdpError(conn)
 		return
 	}
 
@@ -267,4 +215,64 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	go session.ForwardToAgent(firstRDPData)
 	session.ForwardToClient()
 
+}
+
+func checkAndPrepareRDP(firstRDPData []byte) (duration time.Duration, at *models.ConnectionCredentials, model *models.Connection, verifier idp.UserInfoTokenVerifier, creds string, err error) {
+	// Extract credentials from headers
+	extractedCreds, err := ExtractCredentialsFromRDP(firstRDPData)
+	if err != nil {
+		log.Errorf("Failed to extract credentials: %v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	secretKeyHash, err := keys.Hash256Key(extractedCreds)
+	if err != nil {
+		log.Errorf("failed hashing rdp secret key, reason=%v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	dba, err := models.GetValidConnectionCredentialsBySecretKey(
+		pb.ConnectionTypeRDP.String(),
+		secretKeyHash)
+
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			// it is possible to use just mapped errors for client responses
+			log.Errorf("invalid credentials provided by rdp client, reason=%v", err)
+			return duration, at, model, verifier, creds, err
+		}
+		log.Errorf("failed obtaining secret access key, reason=%v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
+	if ctxDuration <= 0 {
+		log.Errorf("invalid secret access key credentials")
+		return duration, at, model, verifier, creds, fmt.Errorf("expired credentials")
+	}
+
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	userCtx, err := models.GetUserContext(dba.UserSubject)
+	if err != nil {
+		log.Errorf("failed fetching user context, reason=%v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	connectionModel, err := models.GetConnectionByNameOrID(userCtx, dba.ConnectionName)
+	if connectionModel == nil || err != nil {
+		log.Errorf("failed fetching connection by name or id, reason=%v", err)
+		return duration, at, model, verifier, creds, err
+	}
+
+	return ctxDuration, dba, connectionModel, tokenVerifier, extractedCreds, nil
 }

@@ -13,6 +13,7 @@ import (
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
+	"github.com/hoophq/hoop/gateway/rdp"
 	"go.uber.org/zap"
 
 	"github.com/hoophq/hoop/common/log"
@@ -138,6 +139,10 @@ func (a *Api) StartAPI(sentryInit bool) {
 	ssmGroup := route.Group(baseURL + "/ssm")
 	ssmInstance := ssmproxy.GetServerInstance()
 	ssmInstance.AttachHandlers(ssmGroup)
+
+	ironRdpGroup := route.Group(baseURL + "/iron")
+	ironRdpInstance := rdp.GetIronServerInstance()
+	ironRdpInstance.AttachHandlers(ironRdpGroup)
 
 	rg := route.Group(baseURL + "/api")
 	if sentryInit {
