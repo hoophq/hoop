@@ -24,8 +24,8 @@ import (
 //	@Description	Gets a resource by ID for the organization.
 //	@Tags			Resources
 //	@Produces		json
-//	@Param			name	path		string	true	"The resource name"
-//	@Success		200	{object}	openapi.ResourceResponse
+//	@Param			name		path		string	true	"The resource name"
+//	@Success		200			{object}	openapi.ResourceResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/resources/{name} [get]
 func GetResource(c *gin.Context) {
@@ -52,8 +52,8 @@ func GetResource(c *gin.Context) {
 //	@Description	Creates a resource for the organization.
 //	@Tags			Resources
 //	@Produces		json
-//	@Param			request	body	openapi.ResourceRequest	true	"The request body resource"
-//	@Success		201	{object}	openapi.ResourceResponse
+//	@Param			request		body		openapi.ResourceRequest	true	"The request body resource"
+//	@Success		201			{object}	openapi.ResourceResponse
 //	@Failure		400,403,500	{object}	openapi.HTTPError
 //	@Router			/resources [post]
 func CreateResource(c *gin.Context) {
@@ -200,10 +200,10 @@ func validateListOptions(urlValues url.Values) (o models.ResourceFilterOption, e
 //	@Description	Lists all resources for the organization.
 //	@Tags			Resources
 //	@Produces		json
-//	@Param			search			query		string	false	"Search by name, type, subtype"						Format(string)
-//	@Param			name			query		string	false	"Filter by name"																		Format(string)
-//	@Param			subtype			query		string	false	"Filter by subtype"																		Format(string)
-//	@Success		200	{object}	openapi.PaginatedResponse[openapi.ResourceResponse]
+//	@Param			search	query		string	false	"Search by name, type, subtype"	Format(string)
+//	@Param			name	query		string	false	"Filter by name"				Format(string)
+//	@Param			subtype	query		string	false	"Filter by subtype"				Format(string)
+//	@Success		200		{object}	openapi.PaginatedResponse[openapi.ResourceResponse]
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/resources [get]
 func ListResources(c *gin.Context) {
@@ -247,9 +247,9 @@ func ListResources(c *gin.Context) {
 //	@Description	Updates a resource by ID for the organization.
 //	@Tags			Resources
 //	@Produces		json
-//	@Param			name	path		string					true	"The resource name"
-//	@Param			request	body		openapi.ResourceRequest	true	"The request body resource"
-//	@Success		200	{object}	openapi.ResourceResponse
+//	@Param			name		path		string					true	"The resource name"
+//	@Param			request		body		openapi.ResourceRequest	true	"The request body resource"
+//	@Success		200			{object}	openapi.ResourceResponse
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/resources/{name} [put]
 func UpdateResource(c *gin.Context) {
@@ -310,7 +310,7 @@ func UpdateResource(c *gin.Context) {
 //	@Description	Deletes a resource by ID for the organization.
 //	@Tags			Resources
 //	@Produces		json
-//	@Param			name	path		string	true	"The resource name"
+//	@Param			name	path	string	true	"The resource name"
 //	@Success		204
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/resources/{name} [delete]

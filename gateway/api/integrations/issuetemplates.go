@@ -99,7 +99,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Param			object_type_id		query		string	true	"The Jira object type to filter values for"
 //	@Param			object_schema_id	query		string	false	"The Jira object schema id to fetch values for"
 //	@Param			name				query		string	false	"Specify a name to filter"
-//	@Success		200					{object} openapi.JiraAssetObjects
+//	@Success		200					{object}	openapi.JiraAssetObjects
 //	@Failure		400,404,500			{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
 func GetAssetObjects(c *gin.Context) {
