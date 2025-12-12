@@ -11,14 +11,13 @@
 
 (defn disconnect-session
   "Handle disconnect with confirmation"
-  []
+  [connection-name]
   (let [dialog-text "Are you sure you want to disconnect this native client session?"
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
                                                   :action-button? true
                                                   :on-success (fn []
-                                                                (rf/dispatch [:native-client-access->clear-session])
-                                                                (rf/dispatch [:draggable-card->close])
+                                                                (rf/dispatch [:native-client-access->clear-session connection-name])
                                                                 (rf/dispatch [:modal->close]))
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
@@ -315,7 +314,7 @@
 
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
-  [native-client-access-data minimize-fn disconnect-fn]
+  [connection-name native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
         connection-type (or (:connection_type native-client-access-data)
                             (:subtype native-client-access-data))
@@ -338,7 +337,7 @@
                               [:> Text {:size "3" :weight "bold" :class "text-[--gray-11]"}
                                timer-text])
             :on-complete (fn []
-                           (rf/dispatch [:native-client-access->clear-session])
+                           (rf/dispatch [:native-client-access->clear-session connection-name])
                            (rf/dispatch [:modal->close])
                            (rf/dispatch [:show-snackbar {:level :info
                                                          :text "Native client access session has expired."}]))}]]]
@@ -407,7 +406,7 @@
      :on-click #(rf/dispatch [:modal->close])}
     "Close"]])
 
-(defn minimize-modal-content [native-client-access-data]
+(defn minimize-modal-content [connection-name native-client-access-data]
   [:> Box {:class "min-w-32"}
    [:> Box {:class "space-y-2"}
     [:> Box
@@ -434,55 +433,55 @@
        :text-component (fn [timer-text]
                          [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
                           timer-text])
-       :on-complete (fn []
-                      (rf/dispatch [:native-client-access->clear-session])
-                      (rf/dispatch [:draggable-card->close])
-                      (rf/dispatch [:show-snackbar {:level :info
-                                                    :text "Native client access session has expired."}]))}]]]
+                       :on-complete (fn []
+                                      (rf/dispatch [:native-client-access->clear-session connection-name])
+                                      (rf/dispatch [:show-snackbar {:level :info
+                                                                    :text "Native client access session has expired."}]))}]]]
 
    [:> Box {:class "mt-4"}
     [:> Button
      {:variant "solid"
       :size "1"
       :color "red"
-      :on-click disconnect-session}
+      :on-click #(disconnect-session connection-name)}
      "Disconnect"]]])
 
 (defn minimize-modal
   "Minimize modal to draggable card"
-  []
-  (let [native-client-access-data @(rf/subscribe [:native-client-access->current-session])]
+  [connection-name]
+  (let [native-client-access-data @(rf/subscribe [:native-client-access->current-session connection-name])]
     (rf/dispatch [:modal->close])
     (when native-client-access-data
-      (rf/dispatch [:draggable-card->open
-                    {:component [minimize-modal-content native-client-access-data]
+      (rf/dispatch [:draggable-cards->open
+                    connection-name
+                    {:component [minimize-modal-content connection-name native-client-access-data]
                      :on-click-expand (fn []
-                                        (rf/dispatch [:draggable-card->close])
-                                        (rf/dispatch [:native-client-access->reopen-connect-modal]))}]))))
+                                        (rf/dispatch [:draggable-cards->close connection-name])
+                                        (rf/dispatch [:native-client-access->reopen-connect-modal connection-name]))}]))))
 
 (defn main
   "Main native client access component - manages the complete flow"
   [connection-name-or-map]
-  (let [selected-duration (r/atom 30)
-        requesting? (rf/subscribe [:native-client-access->requesting?])
-        native-client-access-data (rf/subscribe [:native-client-access->current-session])
-        session-valid? (rf/subscribe [:native-client-access->session-valid?])
-        connection-name (if (string? connection-name-or-map)
+  (let [connection-name (if (string? connection-name-or-map)
                           connection-name-or-map
                           (:name connection-name-or-map))
-        session-matches-connection? (and @native-client-access-data
-                                         (= (:connection_name @native-client-access-data) connection-name))]
+        selected-duration (r/atom 30)
+        requesting? (rf/subscribe [:native-client-access->requesting? connection-name])
+        native-client-access-data (rf/subscribe [:native-client-access->current-session connection-name])
+        session-valid? (rf/subscribe [:native-client-access->session-valid? connection-name])]
 
     [:> Box {:class "flex max-h-[696px] overflow-hidden -m-radix-5"}
      [:> Flex {:direction "column" :justify "between" :gap "6" :class "w-full px-10 pt-10 overflow-y-auto"}
       ;; Main content based on current state
       (cond
-        ;; Step 2: Connected - show connection details (only if session matches requested connection)
-        (and @session-valid? @native-client-access-data session-matches-connection?)
-        [connection-established-view @native-client-access-data minimize-modal disconnect-session]
+        ;; Step 2: Connected - show connection details
+        (and @session-valid? @native-client-access-data)
+        [connection-established-view connection-name @native-client-access-data 
+         #(minimize-modal connection-name) 
+         #(disconnect-session connection-name)]
 
-        ;; Step 1: Configure session duration (no session or session for different connection)
-        (or (not @native-client-access-data) (not session-matches-connection?))
+        ;; Step 1: Configure session duration (no session)
+        (not @native-client-access-data)
         [configure-session-view connection-name selected-duration requesting?]
 
         ;; Fallback: Session expired
