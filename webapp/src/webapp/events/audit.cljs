@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as string]
    [re-frame.core :as rf]
+   [webapp.formatters :as formatters]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]))
 
 (rf/reg-event-fx
@@ -338,24 +339,31 @@
 (rf/reg-event-fx
  :audit->add-review
  (fn
-   [{:keys [db]} [_ session status]]
-   {:fx [[:dispatch
-          [:fetch {:method "PUT"
-                   :uri (str "/reviews/" (-> session :review :id))
-                   :body {:status status}
-                   :on-success
-                   (fn []
-                     (rf/dispatch [:show-snackbar
-                                   {:level :success
-                                    :text "Your review was added"}])
-                     (js/setTimeout
-                      (fn []
-                        (rf/dispatch [:audit->get-sessions])
-                        (rf/dispatch [:audit->get-session-by-id session]))
-                      500))
-                   :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
-                                                              :level :error
-                                                              :details %}])}]]]}))
+   [_ [_ session status & {:keys [start-time
+                                  end-time]}]]
+   (let [body (merge {:status (string/upper-case status)}
+                     ;; Time window configuration
+                     (when (and start-time end-time)
+                       {:time_window {:type "time_range"
+                                      :configuration {:start_time (formatters/local-time->utc-time start-time)
+                                                      :end_time (formatters/local-time->utc-time end-time)}}}))]
+     {:fx [[:dispatch
+            [:fetch {:method "PUT"
+                     :uri (str "/reviews/" (-> session :review :id))
+                     :body body
+                     :on-success
+                     (fn []
+                       (rf/dispatch [:show-snackbar
+                                     {:level :success
+                                      :text "Your review was added"}])
+                       (js/setTimeout
+                        (fn []
+                          (rf/dispatch [:audit->get-sessions])
+                          (rf/dispatch [:audit->get-session-by-id session]))
+                        500))
+                     :on-failure #(rf/dispatch [:show-snackbar {:text "Failed to add review"
+                                                                :level :error
+                                                                :details %}])}]]]})))
 
 (rf/reg-event-fx
  :audit->session-file-generate

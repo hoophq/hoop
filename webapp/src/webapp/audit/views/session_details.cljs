@@ -3,10 +3,11 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Text Tooltip]]
+   ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu Flex Text Tooltip ScrollArea]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info]]
+   ["lucide-react" :refer [Download FileDown Info ChevronDown
+                           CalendarClock Check CircleCheckBig Clock2 OctagonX]]
    ["react" :as react]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -14,12 +15,10 @@
    [webapp.audit.views.results-container :as results-container]
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
+   [webapp.audit.views.time-window-modal :as time-window-modal]
    [webapp.components.button :as button]
    [webapp.components.headings :as h]
-   [webapp.components.icon :as icon]
    [webapp.components.loaders :as loaders]
-   [webapp.components.popover :as popover]
-   [webapp.components.tooltip :as tooltip]
    [webapp.components.user-icon :as user-icon]
    [webapp.config :as config]
    [webapp.formatters :as formatters]
@@ -147,44 +146,22 @@
 (defmethod ^:private review-status-icon "APPROVED" [] "check-black")
 (defmethod ^:private review-status-icon "REJECTED" [] "close-red")
 
-(defn- add-review-popover [add-review-cb]
-  [:div
-   {:class "flex gap-small p-regular"}
-   [button/secondary {:text "Reject"
-                      :variant :small
-                      :on-click #(add-review-cb "rejected")}]
-   [button/primary {:text "Approve"
-                    :variant :small
-                    :on-click #(add-review-cb "approved")}]])
-
-(defn- review-group-item [group session]
-  (let [add-review-popover-open? (r/atom false)
-        add-review (fn [status]
-                     (rf/dispatch [:audit->add-review
-                                   session
-                                   status
-                                   (:group group)])
-                     (reset! add-review-popover-open? false))]
-    (fn [group _]
-      [:> Box {:class "flex w-full relative items-center gap-small text-xs"}
-       [:> Box
-        [icon/regular {:size 4
-                       :icon-name "user-group"}]]
-       [tooltip/truncate-tooltip {:text (:group group)}]
-       [:> Box
-        [:span {:class "text-xxs italic text-gray-500 text-right"}
-         (:status group)]
-        (when (or (= (:status group) "APPROVED")
-                  (= (:status group) "REJECTED"))
-          [:> Box {:class "text-xxs italic text-gray-500 text-right max-w-[100px]"}
-           [tooltip/truncate-tooltip {:text (-> group :reviewed_by :email)}]])]
-       [:> Box
-        [icon/regular {:size 4
-                       :icon-name (review-status-icon
-                                   (cs/upper-case (:status group)))}]]
-       [popover/right {:open @add-review-popover-open?
-                       :component [add-review-popover add-review]
-                       :on-click-outside #(reset! add-review-popover-open? false)}]])))
+(defmulti ^:private review-status-text identity)
+(defmethod ^:private review-status-text "PENDING" [_ group-name]
+  [:> Flex {:gap "1" :align "center"}
+   [:> Clock2 {:size 16 :class "text-gray-11"}]
+   [:> Text {:size "2" :class "text-gray-11"}
+    (str "Pending by " group-name)]])
+(defmethod ^:private review-status-text "APPROVED" [_ group-name]
+  [:> Flex {:gap "1" :align "center"}
+   [:> CircleCheckBig {:size 16 :class "text-success-11"}]
+   [:> Text {:size "2" :class "text-success-11"}
+    (str "Approved by " group-name)]])
+(defmethod ^:private review-status-text "REJECTED" [_ group-name]
+  [:> Flex {:gap "1" :align "center"}
+   [:> OctagonX {:size 16 :class "text-error-11"}]
+   [:> Text {:size "2" :class "text-error-11"}
+    (str "Rejected by " group-name)]])
 
 (defn data-masking-analytics [session-report]
   (let [redacted-types (map #(utilities/sanitize-string (:info_type %))
@@ -259,8 +236,7 @@
         gateway-info (rf/subscribe [:gateway->info])
         executing-status (r/atom :ready)
         connecting-status (r/atom :ready)
-        killing-status (r/atom :ready)
-        add-review-popover-open? (r/atom false)]
+        killing-status (r/atom :ready)]
     (rf/dispatch [:gateway->get-info])
     (when session
       (rf/dispatch [:audit->get-session-by-id session]))
@@ -284,6 +260,7 @@
               review-groups (-> session :review :review_groups_data)
               in-progress? (or (= end-date nil)
                                (= end-date ""))
+              all-groups-pending? (every? #(= (:status %) "PENDING") review-groups)
               has-review? (boolean (seq (-> session :review)))
               review-status (when has-review?
                               (some #(when (= (:status %) "APPROVED") "APPROVED") review-groups))
@@ -296,19 +273,33 @@
                           (js/Date. (get-in session [:review :revoke_at])))
               not-revoked? (when revoke-at (> (.getTime revoke-at) (.getTime (js/Date.))))
               can-connect? (and ready? (= verb "connect") not-revoked?)
-              can-review? (and
-                           (some #(= "PENDING" (:status %))
-                                 review-groups)
-                           (some (fn [review-group]
-                                   (some #(= (:group review-group) %)
-                                         (-> user :groups)))
-                                 review-groups))
+              can-review? (let [user-groups (set (:groups user))]
+                            (some (fn [review-group]
+                                    (and (= "PENDING" (:status review-group))
+                                         (contains? user-groups (:group review-group))))
+                                  review-groups))
               is-session-owner? (= session-user-id current-user-id)
-              add-review-cb (fn [status]
+              handle-reject (fn []
                               (rf/dispatch [:audit->add-review
                                             session
-                                            status])
-                              (reset! add-review-popover-open? false))
+                                            "rejected"]))
+              handle-approve (fn []
+                               (rf/dispatch [:audit->add-review
+                                             session
+                                             "approved"]))
+              handle-approve-time-window (fn [data]
+                                           (rf/dispatch [:audit->add-review
+                                                         session
+                                                         "approved"
+                                                         :start-time (:start-time data)
+                                                         :end-time (:end-time data)])
+                                           (rf/dispatch [:modal->close]))
+              open-time-window-modal (fn []
+                                       (rf/dispatch [:modal->open {:id "time-window-modal"
+                                                                   :maxWidth "500px"
+                                                                   :content [time-window-modal/main
+                                                                             {:on-confirm handle-approve-time-window
+                                                                              :on-cancel #(rf/dispatch [:modal->close])}]}]))
               script-data (-> session :script :data)
               metadata (-> session :metadata)
               runbook-params (js->clj
@@ -317,8 +308,8 @@
               kill-session (fn []
                              (reset! killing-status :loading)
                              (rf/dispatch [:audit->kill-session session killing-status]))]
-          [:div
-           [:header {:class "mb-regular mr-large"}
+          [:> Box {:class "space-y-radix-5"}
+           [:header {:class "mr-large"}
             [:div {:class "flex"}
              [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
               [:div {:class "flex flex-col"}
@@ -335,18 +326,6 @@
                  [:span {:class "text-xs text-gray-500"}
                   "This session has pending items"]])
 
-              (when (and ready?
-                         (= (:verb session) "exec")
-                         is-session-owner?)
-                [:div {:class "flex gap-regular justify-end items-center mx-large"}
-                 [:span {:class "text-xs text-gray-500"}
-                  "This session is ready to be executed"]
-                 [button/primary {:text "Execute"
-                                  :status @executing-status
-                                  :on-click (fn []
-                                              (reset! executing-status :loading)
-                                              (rf/dispatch [:audit->execute-session session]))
-                                  :variant :small}]])
               (when can-connect?
                 [:div {:class "flex gap-regular justify-end items-center mx-large"}
                  [:span {:class "text-xs text-gray-500"}
@@ -413,13 +392,14 @@
               [:div {:class "text-xs text-gray-500"}
                "Runbook: " (-> session :labels :runbookFile)])]
 
-           [:section {:class "grid grid-cols-1 gap-regular pb-regular lg:grid-cols-3"}
+           [:section {:class "grid grid-cols-1 gap-6 lg:grid-cols-4"}
             [:div {:class "col-span-1 flex gap-large items-center"}
              [:div {:class "flex flex-grow gap-regular items-center"}
               [user-icon/initials-black session-user-name]
               [:span
                {:class "text-gray-800 text-sm"}
                session-user-name]]]
+
             [:div {:class (str "flex flex-col gap-small self-center justify-center"
                                " rounded-lg bg-gray-100 p-3")}
              [:div
@@ -449,36 +429,32 @@
                 [:span
                  (formatters/time-parsed->full-date (get-in session [:review :revoke_at]))]])]
 
-            [:div {:id "session-reviews" :class "self-center"}
-             [:header {:class "relative flex text-xs text-gray-800 mb-small"}
-              [:span {:class "flex-grow font-bold"} "Reviewers"]
+            (when has-review?
               [:<>
-               (when can-review?
-                 [:span {:class (str "flex items-center cursor-pointer "
-                                     "text-xxs text-blue-500 font-semibold")
-                         :on-click #(reset! add-review-popover-open? true)}
-                  [:span "Add your review"]
-                  [icon/regular {:size 5
-                                 :icon-name "cheveron-down-blue"}]])
+               [:> Flex {:direction "column" :gap "1"}
+                [:> Text {:size "2" :weight "bold" :class "text-gray-12"}
+                 "Reviewers"]
+                [:> Text {:size "2" :class "text-gray-11"}
+                 (cs/join ", " (map :group review-groups))]]
 
-               [popover/right {:open @add-review-popover-open?
-                               :component [add-review-popover add-review-cb]
-                               :on-click-outside #(reset! add-review-popover-open? false)}]]]
+               [:> Flex {:direction "column" :gap "1"}
+                [:> Text {:size "2" :weight "bold" :class "text-gray-12"}
+                 "Status"]
+                [:> Flex {:direction "column" :gap "1"}
+                 (if all-groups-pending?
+                   [:> Flex {:gap "1" :align "center"}
+                    [:> Clock2 {:size 16 :class "text-gray-11"}]
+                    [:> Text {:size "2" :class "text-gray-11"}
+                     "Pending"]]
 
-             (when (nil? (-> session :review))
-               [:div
-                {:class "py-small text-xs italic text-gray-500 text-left"}
-                "No review info"])
-             [:div {:class "rounded-lg w-full flex flex-col gap-2"}
-              (doall
-               (for [group review-groups]
-                 ^{:key (:id group)}
-                 [review-group-item group session user]))]]]
+                   (for [group review-groups]
+                     ^{:key (:id group)}
+                     [review-status-text (:status group) (:group group)]))]]])]
 
            ;; runbook params
            (when (and runbook-params
                       (seq runbook-params))
-             [:div {:class "flex gap-regular items-center mb-regular py-small border-b border-t"}
+             [:div {:class "flex gap-regular items-center py-small border-b border-t"}
               [:header {:class "px-small text-sm font-bold"}
                "Parameters"]
               [:section {:class "flex items-center gap-regular flex-grow text-xs border-l p-regular"}
@@ -494,7 +470,7 @@
            ;; metadata
            (when (and metadata
                       (seq metadata))
-             [:div {:class " mb-regular"}
+             [:div
               (doall
                (for [[metadata-key metadata-value] metadata]
                  ^{:key metadata-key}
@@ -516,43 +492,115 @@
               (if has-large-input?
                 [large-input-warning {:session session}]
                 (when (and script-data (> (count script-data) 0))
-                  [:div
-                   {:class (str "w-full max-h-40 overflow-auto p-regular whitespace-pre "
-                                "rounded-lg bg-gray-100 "
-                                "text-xs text-gray-800 font-mono")}
-                   [:article script-data]]))])
+                  [:> ScrollArea {:style {:maxHeight "160px"}}
+                   [:div
+                    {:class (str "w-full p-regular whitespace-pre "
+                                 "rounded-lg bg-gray-100 "
+                                 "text-xs text-gray-800 font-mono")}
+                    [:article script-data]]]))])
            ;; end script area
 
            ;; data masking analytics
            (when-not (or has-review?
                          (= :loading (:status @session-report))
                          (not has-session-report?))
-             [:div {:class "mt-6"}
+             [:div
               [data-masking-analytics @session-report]])
            ;; end data masking analytics
 
-           [:section {:id "session-event-stream"
-                      :class "pt-regular max-h-[700px]"}
-            (if (= (:status @session-details) :loading)
-              [loading-player]
+           ;; response logs area
+           (when-not (or ready?
+                         (some #(= "PENDING" (:status %))
+                               review-groups))
+             [:section {:id "session-event-stream"
+                        :class "max-h-[700px]"}
+              (if (= (:status @session-details) :loading)
+                [loading-player]
 
-              [:<>
-               (if has-large-payload?
-                 [large-payload-warning
-                  {:session session}]
+                [:<>
+                 (if has-large-payload?
+                   [large-payload-warning
+                    {:session session}]
 
-                 [:div {:class "h-full px-small"}
-                  (if (= (:verb session) "exec")
-                    [results-container/main
-                     connection-subtype
-                     {:results (sanitize-response
-                                (utilities/decode-b64 (or (first (:event_stream session)) ""))
-                                connection-subtype)
-                      :results-status (:status @session-details)
-                      :fixed-height? true
-                      :results-id (:id session)
-                      :not-clipboard? disabled-download}]
-                    [session-event-stream (:type session) session])])])]])
+                   [:div {:class "h-full px-small"}
+                    (if (= (:verb session) "exec")
+                      [results-container/main
+                       connection-subtype
+                       {:results (sanitize-response
+                                  (utilities/decode-b64 (or (first (:event_stream session)) ""))
+                                  connection-subtype)
+                        :results-status (:status @session-details)
+                        :fixed-height? true
+                        :results-id (:id session)
+                        :not-clipboard? disabled-download}]
+                      [session-event-stream (:type session) session])])])])
+
+           ;; action buttons section
+           (when can-review?
+             [:> Flex {:justify "end" :gap "2"}
+              [:> Button {:color "red" :size "2" :variant "soft" :on-click handle-reject}
+               "Reject"]
+
+              ;; Approve dropdown
+              [:> DropdownMenu.Root
+               [:> DropdownMenu.Trigger
+                [:> Button {:size "2" :color "green"}
+                 "Approve"
+                 [:> ChevronDown {:size 16}]]]
+               [:> DropdownMenu.Content
+                [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                                       :on-click open-time-window-modal}
+                 "Approve in a Time Window"
+                 [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                                       :on-click handle-approve}
+                 "Approve"
+                 [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]])
+
+           ;; execution schedule information (time window)
+           (when (and ready?
+                      (= (:verb session) "exec")
+                      (get-in session [:review :time_window :configuration :start_time])
+                      (get-in session [:review :time_window :configuration :end_time]))
+             (let [start-time-utc (get-in session [:review :time_window :configuration :start_time])
+                   end-time-utc (get-in session [:review :time_window :configuration :end_time])
+                   start-time (formatters/utc-time->display-time start-time-utc)
+                   end-time (formatters/utc-time->display-time end-time-utc)
+                   within-window? (formatters/is-within-time-window? start-time-utc end-time-utc)]
+               [:> Flex {:align "center" :justify "end" :gap "4"}
+                [:> Text {:size "2" :class "text-gray-11"}
+                 "This session is ready and available to be executed from "
+                 [:> Text {:size "2" :weight "medium" :class "text-gray-11"}
+                  start-time]
+                 " to "
+                 [:> Text {:size "2" :weight "medium" :class "text-gray-11"}
+                  end-time]
+                 "."]
+                (when is-session-owner?
+                  [:> Flex {:justify "end" :gap "2"}
+                   [:> Button {:loading (when (= @executing-status :loading)
+                                          true)
+                               :disabled (not within-window?)
+                               :on-click (fn []
+                                           (reset! executing-status :loading)
+                                           (rf/dispatch [:audit->execute-session session]))}
+                    "Execute"]])]))
+
+           ;; Execute button (when no time window is configured)
+           (when (and ready?
+                      (= (:verb session) "exec")
+                      is-session-owner?
+                      (not (get-in session [:review :time_window :configuration :start_time])))
+             [:> Flex {:align "center" :justify "end" :gap "4"}
+              [:> Text {:size "2" :class "text-gray-11"}
+               "This session is ready to be executed."]
+
+              [:> Button {:loading (when (= @executing-status :loading)
+                                     true)
+                          :on-click (fn []
+                                      (reset! executing-status :loading)
+                                      (rf/dispatch [:audit->execute-session session]))}
+               "Execute"]])])
 
         (finally
           (.destroy clipboard-url)
