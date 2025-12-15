@@ -82,6 +82,11 @@ func Run() {
 			log.Fatal(err)
 		}
 
+		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
