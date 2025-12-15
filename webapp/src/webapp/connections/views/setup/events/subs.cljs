@@ -48,7 +48,26 @@
 (rf/reg-sub
  :connection-setup/metadata-credentials
  (fn [db _]
-   (get-in db [:connection-setup :metadata-credentials])))
+   (let [credentials (get-in db [:connection-setup :metadata-credentials] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") (str v))))
+                {}
+                credentials))))
+
+(rf/reg-sub
+ :connection-setup/connection-method
+ (fn [db _]
+   (get-in db [:connection-setup :connection-method] "manual-input")))
+
+(rf/reg-sub
+ :connection-setup/secrets-manager-provider
+ (fn [db _]
+   (get-in db [:connection-setup :secrets-manager-provider])))
+
+(rf/reg-sub
+ :connection-setup/field-source
+ (fn [db [_ field-key]]
+   (get-in db [:connection-setup :field-sources field-key])))
 
 (rf/reg-sub
  :connection-setup/command-args
@@ -162,7 +181,13 @@
 (rf/reg-sub
  :connection-setup/configuration-files
  (fn [db]
-   (get-in db [:connection-setup :credentials :configuration-files])))
+   (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])]
+     ;; Extract only :value from {:value :prefix} format for backward compatibility
+     (mapv (fn [file]
+             (if (map? (:value file))
+               (assoc file :value (:value (:value file)))
+               file))
+           config-files))))
 
 ;; Tags subs
 (rf/reg-sub

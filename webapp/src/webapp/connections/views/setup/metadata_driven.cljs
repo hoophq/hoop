@@ -1,13 +1,282 @@
 (ns webapp.connections.views.setup.metadata-driven
   (:require
-   ["@radix-ui/themes" :refer [Box Grid Heading]]
+   ["@radix-ui/themes" :refer [Avatar Box Card Flex Grid Heading Link Select Text]]
+   ["lucide-react" :refer [FileSpreadsheet GlobeLock]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.forms :as forms]
+   [webapp.config :as config]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.headers :as headers]
-   [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
+   [webapp.connections.views.setup.page-wrapper :as page-wrapper]
+   [webapp.resources.helpers :as helpers]))
+
+;; Credential normalization functions (also used in process_form.cljs)
+(defn normalize-credential-value
+  "Convert a prefixed string to {:value :prefix} format"
+  [value]
+  (cond
+    (map? value) value
+    (string? value)
+    (let [prefixes ["_aws_iam_rds:" "_vaultkv1:" "_vaultkv2:" "_aws:"]
+          matched-prefix (some (fn [prefix]
+                                 (when (cs/starts-with? value prefix)
+                                   prefix))
+                               prefixes)]
+      (if matched-prefix
+        {:value (subs value (count matched-prefix))
+         :prefix matched-prefix}
+        {:value value
+         :prefix ""}))
+    :else {:value (str value) :prefix ""}))
+
+(defn normalize-credentials
+  "Normalize a map of credentials from prefixed strings to {:value :prefix} format"
+  [credentials]
+  (reduce-kv (fn [acc k v]
+               (assoc acc k (normalize-credential-value v)))
+             {}
+             credentials))
+
+(defn infer-connection-method
+  "Infer connection method from credential prefixes"
+  [credentials]
+  (let [normalized (normalize-credentials credentials)
+        prefixes (keep (fn [[_k v]]
+                         (when (map? v)
+                           (:prefix v)))
+                       normalized)
+        non-empty-prefixes (filter seq prefixes)]
+    (cond
+      (some #(= % "_aws_iam_rds:") non-empty-prefixes)
+      {:connection-method "aws-iam-role"
+       :secrets-manager-provider nil}
+      
+      (some #(or (= % "_vaultkv1:") (= % "_vaultkv2:")) non-empty-prefixes)
+      {:connection-method "secrets-manager"
+       :secrets-manager-provider (if (some #(= % "_vaultkv1:") non-empty-prefixes)
+                                   "vault-kv1"
+                                   "vault-kv2")}
+
+      (some #(= % "_aws:") non-empty-prefixes)
+      {:connection-method "secrets-manager"
+       :secrets-manager-provider "aws-secrets-manager"}
+
+      :else
+      {:connection-method "manual-input"
+       :secrets-manager-provider nil})))
+
+;; Connection method selector components
+(defn connection-method-card [{:keys [icon title description selected? on-click icon-class]}]
+  [:> Card {:size "1"
+            :variant "surface"
+            :class (str "w-full cursor-pointer transition-all "
+                        (if selected?
+                          "before:bg-primary-12"
+                          ""))
+            :on-click on-click}
+   [:> Flex {:align "start" :gap "3" :class (if selected? "text-[--gray-1]" "text-[--gray-12]")}
+    (when icon
+      [:> Avatar {:radius "large"
+                  :fallback (if (fn? icon)
+                              (r/as-element [icon])
+                              (r/as-element [:> icon {:size 20}]))
+                  :size "4"
+                  :variant "soft"
+                  :color "gray"
+                  :class (str "flex-shrink-0 "
+                              (when selected? "dark")
+                              (or icon-class ""))}])
+    [:> Flex {:direction "column" :gap "1"}
+     [:> Text {:size "3" :weight "medium" :class (if selected? "text-[--gray-1]" "text-[--gray-12]")}
+      title]
+     [:> Text {:size "2" :class (if selected? "text-[--gray-1]" "text-[--gray-11]")}
+      description]]]])
+
+(defn connection-method-selector
+  "Connection method selector for connection setup (not role-based)"
+  [connection-subtype]
+  (let [connection-method @(rf/subscribe [:connection-setup/connection-method])
+        supports-aws-iam? (contains? #{"mysql" "postgres"} connection-subtype)]
+    [:> Box {:class "space-y-3"}
+     [connection-method-card
+      {:icon FileSpreadsheet
+       :title "Manual Input"
+       :description "Enter credentials directly, including host, user, password, and other connection details."
+       :selected? (= connection-method "manual-input")
+       :on-click #(rf/dispatch [:connection-setup/update-connection-method "manual-input"])}]
+     [connection-method-card
+      {:icon GlobeLock
+       :title "Secrets Manager"
+       :description "Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials."
+       :selected? (= connection-method "secrets-manager")
+       :on-click #(rf/dispatch [:connection-setup/update-connection-method "secrets-manager"])}]
+     (when supports-aws-iam?
+       (let [aws-icon (fn [] (r/as-element
+                              [:> Box {:class "w-5 h-5 flex items-center justify-center"}
+                               [:img {:role "aws-icon"
+                                      :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
+                                      :class "w-full h-full"
+                                      :alt "AWS"}]]))
+             icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
+         [connection-method-card
+          {:icon aws-icon
+           :icon-class icon-class
+           :title "AWS IAM Role"
+           :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
+           :selected? (= connection-method "aws-iam-role")
+           :on-click #(rf/dispatch [:connection-setup/update-connection-method "aws-iam-role"])}]))]))
+
+(defn secrets-manager-provider-selector []
+  (let [provider @(rf/subscribe [:connection-setup/secrets-manager-provider])]
+    [:> Box
+     [forms/select {:label "Secrets manager provider"
+                    :options [{:value "vault-kv1" :text "HashiCorp Vault"}
+                              {:value "aws-secrets-manager" :text "AWS Secrets Manager"}]
+                    :selected provider
+                    :full-width? true
+                    :not-margin-bottom? true
+                    :on-change #(rf/dispatch [:connection-setup/update-secrets-manager-provider %])}]
+
+     [:> Flex {:align "center" :gap "1" :mt "1"}
+      [:> Text {:size "2" :class "text-[--gray-11]"}
+       (str "Learn more about " (if (= provider "aws-secrets-manager")
+                                  "AWS Secrets Manager"
+                                  "HashiCorp Vault") " setup in")]
+      [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
+                :target "_blank"
+                :class "inline-flex items-center"}
+       [:> Text {:size "2"}
+        "our Docs ↗"]]]]))
+
+(defn aws-iam-role-section []
+  [:> Flex {:align "center" :gap "1" :mt "1"}
+   [:> Text {:size "2" :class "text-[--gray-11]"}
+    "Learn more about AWS IAM Role setup in"]
+   [:> Link {:href (get-in config/docs-url [:setup :configuration :aws-iam-role])
+             :target "_blank"
+             :class "inline-flex items-center"}
+    [:> Text {:size "2"}
+     "our Docs ↗"]]])
+
+;; Credential field components
+(defn infer-source-from-prefix
+  "Infer source/provider from prefix string"
+  [prefix]
+  (cond
+    (= prefix "_vaultkv1:") "vault-kv1"
+    (= prefix "_vaultkv2:") "vault-kv2"
+    (= prefix "_aws:") "aws-secrets-manager"
+    (= prefix "_aws_iam_rds:") "aws-iam-role"
+    :else "manual-input"))
+
+(defn get-field-prefix
+  "Get the prefix for a field based on its source or provider default"
+  [field-key connection-method secrets-manager-provider]
+  (let [current-source @(rf/subscribe [:connection-setup/field-source field-key])
+        actual-source (or current-source
+                          (if (= connection-method "secrets-manager")
+                            (or secrets-manager-provider "vault-kv1")
+                            connection-method))]
+    (helpers/get-secret-prefix actual-source)))
+
+(defn source-selector [field-key connection-method secrets-manager-provider]
+  (let [open? (r/atom false)]
+    (fn []
+      (let [;; Get the actual credential from metadata-credentials to check its prefix
+            full-credentials (get-in @(rf/subscribe [:connection-setup/form-data]) [:metadata-credentials] {})
+            credential-value (get full-credentials field-key)
+            prefix-from-credential (when (map? credential-value)
+                                     (:prefix credential-value))
+            ;; Infer source from prefix if available
+            inferred-source-from-prefix (when prefix-from-credential
+                                          (infer-source-from-prefix prefix-from-credential))
+            ;; Fall back to field-source subscription, then defaults
+            field-source @(rf/subscribe [:connection-setup/field-source field-key])
+            actual-source (or inferred-source-from-prefix
+                              field-source
+                              (if (= connection-method "secrets-manager")
+                                (if (= secrets-manager-provider "aws-secrets-manager")
+                                  "aws-secrets-manager"
+                                  "vault-kv1")
+                                "manual-input"))
+            all-sources [{:value "vault-kv1" :text "Vault V1"}
+                         {:value "vault-kv2" :text "Vault V2"}
+                         {:value "aws-secrets-manager" :text "AWS Secrets Manager"}
+                         {:value "manual-input" :text "Manual"}]
+            available-sources (if (= secrets-manager-provider "aws-secrets-manager")
+                                (let [aws-source (first (filter #(= (:value %) "aws-secrets-manager") all-sources))
+                                      other-sources (remove #(= (:value %) "aws-secrets-manager") all-sources)]
+                                  (cons aws-source other-sources))
+                                all-sources)
+            selected-text (some #(when (= (:value %) actual-source) (:text %)) available-sources)]
+        [:> Select.Root {:value actual-source
+                         :open @open?
+                         :onOpenChange #(reset! open? %)
+                         :onValueChange (fn [new-source]
+                                          (reset! open? false)
+                                          (rf/dispatch [:connection-setup/update-field-source
+                                                        field-key
+                                                        new-source]))}
+         [:> Select.Trigger {:variant "ghost"
+                             :size "1"
+                             :class "border-none shadow-none text-xsm font-medium text-[--gray-11]"
+                             :placeholder (or selected-text "Vault V1")}]
+         [:> Select.Content
+          (for [source available-sources]
+            ^{:key (:value source)}
+            [:> Select.Item {:value (:value source)} (:text source)])]]))))
+
+(defn metadata-credential-field
+  [{:keys [key label value required placeholder type description
+           connection-method secrets-manager-provider is-filesystem?]}]
+  (let [show-source-selector? (= connection-method "secrets-manager")
+        field-value (if (map? value) (:value value) (str value))
+        ;; Get the current prefix from the value to preserve it
+        current-prefix (if (map? value)
+                        (:prefix value)
+                        "")
+        handle-change (fn [e]
+                        (let [new-value (-> e .-target .-value)
+                              ;; Preserve the existing prefix, or get default if no prefix exists
+                              actual-prefix (if (and show-source-selector? (seq current-prefix))
+                                              current-prefix  ; Keep existing prefix
+                                              (if show-source-selector?
+                                                (get-field-prefix key connection-method secrets-manager-provider)
+                                                ""))]
+                          (if is-filesystem?
+                            (rf/dispatch [:connection-setup/update-config-file-by-key
+                                          key
+                                          new-value])
+                            (rf/dispatch [:connection-setup/update-metadata-credentials
+                                          key
+                                          new-value
+                                          actual-prefix]))))]
+    (if (= type "textarea")
+      [forms/textarea {:label label
+                       :placeholder (or placeholder (str "e.g. " key))
+                       :value field-value
+                       :required required
+                       :helper-text description
+                       :on-change handle-change}]
+      (if show-source-selector?
+        [forms/input-with-adornment {:label label
+                                     :placeholder (or placeholder (str "e.g. " key))
+                                     :value field-value
+                                     :required required
+                                     :type (or type "password")
+                                     :helper-text description
+                                     :on-change handle-change
+                                     :start-adornment [source-selector key connection-method secrets-manager-provider]}]
+        [forms/input {:label label
+                      :placeholder (or placeholder (str "e.g. " key))
+                      :value field-value
+                      :required required
+                      :type (or type "password")
+                      :helper-text description
+                      :on-change handle-change}]))))
 
 (defn metadata-credential->form-field
   "Converte credential do metadata (agora array) para formato de formulário"
@@ -41,48 +310,60 @@
                             vec)]
             fields))))))
 
-(defn render-field [{:keys [key label value required placeholder type description is-filesystem?]}]
-  (let [base-props {:label label
-                    :placeholder (or placeholder (str "e.g. " key))
-                    :value value
-                    :required required
-                    :helper-text description
-                    :type (or type "password")
-                    :on-change #(if is-filesystem?
-                                  (rf/dispatch [:connection-setup/update-config-file-by-key
-                                                key
-                                                (-> % .-target .-value)])
-                                  (rf/dispatch [:connection-setup/update-metadata-credentials
-                                                key
-                                                (-> % .-target .-value)]))}]
-    (if (= type "textarea")
-      [forms/textarea base-props]
-      [forms/input base-props])))
+
 
 (defn metadata-credentials [connection-subtype form-type]
   (let [configs (get-metadata-credentials-config connection-subtype)
         saved-credentials @(rf/subscribe [:connection-setup/metadata-credentials])
-        credentials (if (= form-type :update)
-                      saved-credentials
-                      @(rf/subscribe [:connection-setup/metadata-credentials]))
+        raw-credentials (if (= form-type :update)
+                          saved-credentials
+                          @(rf/subscribe [:connection-setup/metadata-credentials]))
+        full-credentials (get-in @(rf/subscribe [:connection-setup/form-data]) [:metadata-credentials] {})
+        connection-method @(rf/subscribe [:connection-setup/connection-method])
+        secrets-manager-provider @(rf/subscribe [:connection-setup/secrets-manager-provider])
         config-files @(rf/subscribe [:connection-setup/configuration-files])
-        config-files-map (into {} (map (fn [{:keys [key value]}] [key value]) config-files))] 
+        full-config-files (get-in @(rf/subscribe [:connection-setup/form-data]) [:credentials :configuration-files] [])
+        config-files-map (into {} (map (fn [{:keys [key value]}]
+                                         [key (if (map? value) (:value value) (str value))])
+                                       config-files))
+        full-config-files-map (into {} (map (fn [{:keys [key value]}]
+                                              ;; Extract value from {:value :prefix} format, handling double-wrapped case
+                                              [key (if (map? value)
+                                                    (let [inner-value (:value value)]
+                                                      (if (map? inner-value)
+                                                        ;; Double-wrapped: extract the inner value
+                                                        {:value (if (map? inner-value) (:value inner-value) (str inner-value))
+                                                         :prefix ""}
+                                                        ;; Single wrapped: use as-is
+                                                        value))
+                                                    ;; Plain value: wrap it
+                                                    {:value (str value) :prefix ""})])
+                                            full-config-files))]
     (if configs
       [:> Box {:class "space-y-5"}
        [:> Heading {:as "h3" :size "4" :weight "bold"}
-        "Environment credentialssss"]
-
+        "Environment credentials"]
        [:> Grid {:columns "1" :gap "4"}
         (for [field configs]
-          (let [is-filesystem? (= (:original-type field) "filesystem")
-                field-value (if is-filesystem?
-                              (get config-files-map (:key field) "")
-                              (get credentials (:key field) ""))]
-            ^{:key (:key field)}
-            [render-field (assoc field
-                                 :value field-value
-                                 :is-filesystem? is-filesystem?)]))]]
-
+          (let [field-key (:key field)
+                is-filesystem? (= (:original-type field) "filesystem")]
+            ^{:key field-key}
+            (if is-filesystem?
+              [metadata-credential-field (assoc field
+                                                 :key field-key
+                                                 :value (get full-config-files-map field-key (get config-files-map field-key ""))
+                                                 :connection-method connection-method
+                                                 :secrets-manager-provider secrets-manager-provider
+                                                 :is-filesystem? true)]
+              (let [full-value (get full-credentials field-key)
+                    credential-value (if (map? full-value)
+                                      full-value
+                                      (get raw-credentials field-key ""))]
+                [metadata-credential-field (assoc field
+                                                  :key field-key
+                                                  :value credential-value
+                                                  :connection-method connection-method
+                                                  :secrets-manager-provider secrets-manager-provider)]))))]]
       nil)))
 
 (defn credentials-step [connection-subtype form-type]
@@ -92,9 +373,21 @@
                        (.preventDefault e)
                        (rf/dispatch [:connection-setup/next-step :additional-config]))}
    [:> Box {:class "space-y-7"}
-
     (when connection-subtype
       [:<>
+       [:> Box {:class "space-y-6"}
+        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
+         "Connection method"]
+        [connection-method-selector connection-subtype]
+
+        (let [connection-method @(rf/subscribe [:connection-setup/connection-method])]
+          (cond
+            (= connection-method "secrets-manager")
+            [secrets-manager-provider-selector]
+
+            (= connection-method "aws-iam-role")
+            [aws-iam-role-section]))]
+
        [metadata-credentials connection-subtype form-type]
        [agent-selector/main]])]])
 

@@ -1,10 +1,10 @@
 (ns webapp.connections.views.setup.events.process-form
   (:require
-   [clojure.string :as str]
-   [re-frame.core :as rf]
+   [clojure.string :as str] 
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]
-   [webapp.connections.views.setup.tags-utils :as tags-utils]))
+   [webapp.connections.views.setup.tags-utils :as tags-utils]
+   [webapp.connections.views.setup.metadata-driven :as metadata-driven]))
 
 (defn process-http-headers
   "Process HTTP headers by adding HEADER_ prefix to each key"
@@ -82,7 +82,13 @@
                             (seq metadata-credentials))
                        (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
                                                              {:key (name field-key)
-                                                              :value field-value})
+                                                              :value (if (map? field-value)
+                                                                       (let [prefix (:prefix field-value "")
+                                                                             value (:value field-value "")]
+                                                                         (if (seq prefix)
+                                                                           (str prefix value)
+                                                                           value))
+                                                                       (str field-value))})
                                                            (seq metadata-credentials))]
                          credentials-as-env-vars)
 
@@ -343,7 +349,31 @@
         connection-subtype (:subtype connection)
         is-custom-with-override? (and (= connection-type "custom")
                                       (contains? #{"dynamodb" "cloudwatch"} connection-subtype))
-        resource-subtype-override (when is-custom-with-override? connection-subtype)]
+        resource-subtype-override (when is-custom-with-override? connection-subtype)
+
+        needs-normalization? (or (= connection-type "database")
+                                 is-metadata-driven?)
+        normalized-credentials (when needs-normalization?
+                                 (metadata-driven/normalize-credentials credentials))
+        config-files-raw (when (or (= connection-type "custom")
+                                   (= connection-type "database"))
+                           (process-connection-envvars (:secret connection) "filesystem"))
+        normalized-config-files (when config-files-raw
+                                  (mapv (fn [{:keys [key value]}]
+                                          {:key key
+                                           :value (if (map? value)
+                                                    (let [inner-value (:value value)]
+                                                      (if (map? inner-value)
+                                                        {:value (if (map? inner-value) (:value inner-value) (str inner-value))
+                                                         :prefix ""}
+                                                        value))
+                                                    {:value (str value) :prefix ""})})
+                                        config-files-raw))
+
+        inferred-connection-info (if (seq normalized-credentials)
+                                   (metadata-driven/infer-connection-method normalized-credentials)
+                                   {:connection-method "manual-input"
+                                    :secrets-manager-provider nil})]
 
     {:type connection-type
      :subtype (if is-custom-with-override? "custom" connection-subtype)
@@ -351,8 +381,14 @@
      :resource-name (:resource_name connection)
      :agent-id (:agent_id connection)
      :resource-subtype-override resource-subtype-override
-     :database-credentials (when (= connection-type "database") credentials)
-     :metadata-credentials credentials
+     :database-credentials (when (= connection-type "database")
+                             (or normalized-credentials credentials))
+     :metadata-credentials (or normalized-credentials credentials)
+     :connection-method (if inferred-connection-info
+                          (:connection-method inferred-connection-info)
+                          "manual-input")
+     :secrets-manager-provider (when inferred-connection-info
+                                 (:secrets-manager-provider inferred-connection-info))
      :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
      :kubernetes-token kubernetes-token
@@ -372,9 +408,10 @@
                               http-env-vars
 
                               :else [])
-     :configuration-files (when (or (= connection-type "custom")
-                                    (= connection-type "database"))
-                            (process-connection-envvars (:secret connection) "filesystem"))
+     :configuration-files (or normalized-config-files
+                              (when (or (= connection-type "custom")
+                                        (= connection-type "database"))
+                                (process-connection-envvars (:secret connection) "filesystem")))
      :credentials {:environment-variables (cond
                                             (= connection-type "custom")
                                             (process-connection-envvars (:secret connection) "envvar")
@@ -384,9 +421,10 @@
                                             http-env-vars
 
                                             :else [])
-                   :configuration-files (when (or (= connection-type "custom")
-                                                  (= connection-type "database"))
-                                          (process-connection-envvars (:secret connection) "filesystem"))}
+                   :configuration-files (or normalized-config-files
+                                            (when (or (= connection-type "custom")
+                                                      (= connection-type "database"))
+                                              (process-connection-envvars (:secret connection) "filesystem")))}
      :tags {:data valid-tags}
      :old-tags (:tags connection)
 

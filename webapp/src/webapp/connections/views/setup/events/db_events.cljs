@@ -2,7 +2,8 @@
   (:require
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.tags-utils :as tags-utils]))
+   [webapp.connections.views.setup.tags-utils :as tags-utils]
+   [webapp.resources.helpers :as helpers]))
 
 ;; Basic db updates
 (rf/reg-event-fx
@@ -57,8 +58,35 @@
 ;; Metadata-driven specific events
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
- (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :metadata-credentials field] value)))
+ (fn [db [_ field value prefix]]
+   ;; Store as {:value :prefix} format
+   (assoc-in db [:connection-setup :metadata-credentials field]
+             {:value (str value)
+              :prefix (or prefix "")})))
+
+(rf/reg-event-db
+ :connection-setup/update-connection-method
+ (fn [db [_ method]]
+   (assoc-in db [:connection-setup :connection-method] method)))
+
+(rf/reg-event-db
+ :connection-setup/update-secrets-manager-provider
+ (fn [db [_ provider]]
+   (assoc-in db [:connection-setup :secrets-manager-provider] provider)))
+
+(rf/reg-event-db
+ :connection-setup/update-field-source
+ (fn [db [_ field-key source]]
+   (let [new-prefix (helpers/get-secret-prefix source)
+         current-credential (get-in db [:connection-setup :metadata-credentials field-key])
+         current-value (if (map? current-credential)
+                         (:value current-credential)
+                         (str current-credential))]
+     (-> db
+         (assoc-in [:connection-setup :field-sources field-key] source)
+         (assoc-in [:connection-setup :metadata-credentials field-key]
+                   {:value current-value
+                    :prefix new-prefix})))))
 
 ;; Configuration toggles
 (rf/reg-event-db
@@ -201,12 +229,14 @@
    (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])
          existing-index (first (keep-indexed (fn [idx {:keys [key]}]
                                                (when (= key file-key) idx))
-                                             config-files))]
+                                             config-files))
+         ;; Store as {:value :prefix} format (config files don't use prefixes, so prefix is "")
+         normalized-value {:value (str value) :prefix ""}]
      (if existing-index
-       (assoc-in db [:connection-setup :credentials :configuration-files existing-index :value] value)
+       (assoc-in db [:connection-setup :credentials :configuration-files existing-index :value] normalized-value)
        (update-in db [:connection-setup :credentials :configuration-files]
                   (fnil conj [])
-                  {:key file-key :value value})))))
+                  {:key file-key :value normalized-value})))))
 
 ;; Navigation events
 (rf/reg-event-db
