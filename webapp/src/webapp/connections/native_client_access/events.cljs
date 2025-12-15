@@ -103,7 +103,7 @@
  (fn [{:keys [db]} [_ connection-name]]
    ;; Remove from localStorage
    (constants/remove-session connection-name)
-   
+
    {:db (update-in db [:native-client-access :sessions] dissoc connection-name)
     :fx [[:dispatch [:draggable-cards->close connection-name]]]}))
 
@@ -134,7 +134,7 @@
 (rf/reg-event-fx
  :native-client-access->show-active-session
  (fn [_ [_ connection-name session-data]]
-   {:fx [[:dispatch [:draggable-cards->open 
+   {:fx [[:dispatch [:draggable-cards->open
                      connection-name
                      {:component [native-client-access-main/minimize-modal-content connection-name session-data]
                       :on-click-expand (fn []
@@ -164,13 +164,3 @@
  (fn [db [_ connection-name]]
    (let [session (get-in db [:native-client-access :sessions connection-name])]
      (constants/native-client-access-valid? session))))
-
-(rf/reg-sub
- :native-client-access->all-sessions
- (fn [db _]
-   (get-in db [:native-client-access :sessions] {})))
-
-(rf/reg-sub
- :native-client-access->active-connections
- (fn [db _]
-   (keys (get-in db [:native-client-access :sessions] {}))))

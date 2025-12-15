@@ -42,7 +42,7 @@
            component])
         [:div {:class (str "draggable-" connection-name)}]))}))
 
-(defn multiple-cards
+(defn main
   "Render multiple draggable cards"
   []
   (let [cards @(rf/subscribe [:draggable-cards])
@@ -55,36 +55,3 @@
          ^{:key connection-name}
          [markup-single-draggable-card connection-name card-data idx total])
        cards-vec))]))
-
-;; Legacy single card component (for backward compatibility)
-(defn- markup-draggable-card [_ _]
-  (r/create-class {:display-name "draggable-card"
-                   :component-did-mount #(.create Draggable ".draggable")
-                   :reagent-render (fn [status {:keys [component on-click-expand]}]
-                                     (if (= status :open)
-                                       [:div {:class (str "draggable bg-white shadow-lg absolute bottom-10 "
-                                                          "left-10 z-50 rounded-5 border border-gray-200 "
-                                                          "overflow-auto p-radix-4 space-y-radix-4")}
-                                        (when on-click-expand
-                                          [:> IconButton {:size "2"
-                                                          :variant "soft"
-                                                          :color "gray"
-                                                          :on-click on-click-expand}
-                                           [:> Expand {:size 16}]])
-
-                                        component]
-                                       [:div {:class "draggable"}]))}))
-
-(defn main
-  "Main component that renders both legacy single card and new multiple cards"
-  []
-  (let [card-options @(rf/subscribe [:draggable-card])
-        multiple-cards-data @(rf/subscribe [:draggable-cards])]
-    [:<>
-     ;; Legacy single card (if exists)
-     (when (= (:status card-options) :open)
-       [markup-draggable-card (:status card-options) card-options])
-
-     ;; New multiple cards system
-     (when (seq multiple-cards-data)
-       [multiple-cards])]))

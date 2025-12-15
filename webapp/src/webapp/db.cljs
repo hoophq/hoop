@@ -54,7 +54,6 @@
    :dialog-text ""
    :dialog-title ""
    :draggable-cards {}
-   :draggable-card {:status :closed, :component nil, :on-click-close nil, :on-click-expand nil}
    :editor {}
    :editor-plugin->connections-exec-list {:status :ready :data nil}
    :editor-plugin->connections-runbook-list {:status :ready :data nil}

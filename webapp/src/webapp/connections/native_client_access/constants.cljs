@@ -46,10 +46,6 @@
     (catch js/Error e
       (js/console.error "Failed to save sessions to localStorage:" e))))
 
-;; Get session by connection name
-(defn get-session-by-connection [connection-name]
-  (get (get-all-sessions) connection-name))
-
 ;; Add or update session
 (defn save-session [connection-name session-data]
   (let [all-sessions (get-all-sessions)

@@ -111,14 +111,6 @@
       :size (:size modal)
       :on-click-out (:on-click-out modal)})))
 
-(re-frame/reg-sub
- :draggable-card
- (fn [db _]
-   (let [draggable-card (:draggable-card db)]
-     {:status (:status draggable-card)
-      :component (:component draggable-card)
-      :on-click-close (:on-click-close draggable-card)
-      :on-click-expand (:on-click-expand draggable-card)})))
 
 (re-frame/reg-sub
  :draggable-card->modal
