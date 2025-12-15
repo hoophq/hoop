@@ -234,18 +234,17 @@
            connection-method secrets-manager-provider is-filesystem?]}]
   (let [show-source-selector? (= connection-method "secrets-manager")
         field-value (if (map? value) (:value value) (str value))
-        ;; Get the current prefix from the value to preserve it
-        current-prefix (if (map? value)
-                        (:prefix value)
-                        "")
         handle-change (fn [e]
                         (let [new-value (-> e .-target .-value)
                               ;; Preserve the existing prefix, or get default if no prefix exists
+                              current-prefix (if (map? value)
+                                               (:prefix value)
+                                               "")
                               actual-prefix (if (and show-source-selector? (seq current-prefix))
-                                              current-prefix  ; Keep existing prefix
-                                              (if show-source-selector?
-                                                (get-field-prefix key connection-method secrets-manager-provider)
-                                                ""))]
+                                             current-prefix  ; Keep existing prefix
+                                             (if show-source-selector?
+                                               (get-field-prefix key connection-method secrets-manager-provider)
+                                               ""))]
                           (if is-filesystem?
                             (rf/dispatch [:connection-setup/update-config-file-by-key
                                           key

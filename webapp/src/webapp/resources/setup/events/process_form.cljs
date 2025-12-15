@@ -11,21 +11,22 @@
            :value value})
         headers))
 
-(defn extract-value-with-prefix
-  "Extract value from ({:value, :prefix}) and apply prefix."
+(defn extract-value
+  "Extract value from map or string, applying prefix if present."
   [v connection-method field-key]
-  (let [value (:value v "")
-        prefix (:prefix v "")
+  (let [value (if (map? v) (:value v "") (str v))
+        prefix (if (map? v) (:prefix v "") "")
         is-aws-iam-role? (= connection-method "aws-iam-role")
         field-key-lower (str/lower-case (name field-key))
-        is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))]
-    (cond
-      (and is-aws-iam-role? is-user-or-pass?)
-      (str "_aws_iam_rds:" value)
-      (str/blank? prefix)
-      value
-      :else
-      (str prefix value))))
+        is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))
+        final-value (cond
+                      (and is-aws-iam-role? is-user-or-pass?)
+                      (str "_aws_iam_rds:" value)
+                      (not (str/blank? prefix))
+                      (str prefix value)
+                      :else
+                      value)]
+    final-value))
 
 (defn process-role-secret
   "Process role credentials into secret format with base64 encoding"
@@ -39,12 +40,12 @@
 
         credential-env-vars (mapv (fn [[k v]]
                                     {:key (name k)
-                                     :value (extract-value-with-prefix v connection-method k)})
+                                     :value (extract-value v connection-method k)})
                                   (seq credentials))
 
         metadata-credential-env-vars (mapv (fn [[k v]]
                                              {:key (name k)
-                                              :value (extract-value-with-prefix v connection-method k)})
+                                              :value (extract-value v connection-method k)})
                                            (seq metadata-credentials))
 
         ;; Combine all credentials
@@ -59,7 +60,7 @@
 
         processed-config-files (mapv (fn [file]
                                        {:key (:key file)
-                                        :value (extract-value-with-prefix (:value file) connection-method (:key file))})
+                                        :value (extract-value (:value file) connection-method (:key file))})
                                      config-files)
 
         envvar-result (helpers/config->json all-env-vars "envvar:")

@@ -42,7 +42,7 @@
 (defn filter-valid-tags
   "Remove tags que possuem key ou value vazios"
   [tags]
-  (filterv (fn [{:keys [key value label]}]
+  (filterv (fn [{:keys [key value]}]
              (and key
                   (not (str/blank? (if (string? key) key (str key))))
                   value
@@ -364,10 +364,9 @@
                                            :value (if (map? value)
                                                     (let [inner-value (:value value)]
                                                       (if (map? inner-value)
-                                                        {:value (if (map? inner-value) (:value inner-value) (str inner-value))
-                                                         :prefix ""}
-                                                        value))
-                                                    {:value (str value) :prefix ""})})
+                                                        (str (:value inner-value))
+                                                        (str inner-value)))
+                                                    (str value))})
                                         config-files-raw))
 
         inferred-connection-info (if (seq normalized-credentials)

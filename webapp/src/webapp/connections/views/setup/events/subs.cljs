@@ -181,13 +181,7 @@
 (rf/reg-sub
  :connection-setup/configuration-files
  (fn [db]
-   (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])]
-     ;; Extract only :value from {:value :prefix} format for backward compatibility
-     (mapv (fn [file]
-             (if (map? (:value file))
-               (assoc file :value (:value (:value file)))
-               file))
-           config-files))))
+   (get-in db [:connection-setup :credentials :configuration-files] [])))
 
 ;; Tags subs
 (rf/reg-sub

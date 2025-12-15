@@ -144,9 +144,9 @@
              pass-key (or (first (filter #(= (str/lower-case %) "pass") (keys metadata-credentials)))
                           "PASS")
              pass-value (get metadata-credentials pass-key)
-             ;; Auto-set pass field to "authtoken" (without prefix - prefix applied on submit, field is hidden)
+             ;; Auto-set pass field to "authtoken" (field is hidden)
              updated-metadata-credentials (if (or (nil? pass-value)
-                                                  (str/blank? (if (map? pass-value) (:value pass-value) pass-value)))
+                                                  (str/blank? (if (map? pass-value) (:value pass-value) (str pass-value))))
                                             (assoc metadata-credentials pass-key {:value "authtoken" :prefix ""})
                                             metadata-credentials)]
          ;; Don't prefill user field - leave it empty for user to fill
@@ -155,15 +155,8 @@
 
 (rf/reg-event-db
  :resource-setup->update-role-credentials
- (fn [db [_ role-index key value prefix]]
-   (if (or (boolean? value) (nil? prefix))
-     (assoc-in db [:resource-setup :roles role-index :credentials key] value)
-     (let [current-value (get-in db [:resource-setup :roles role-index :credentials key])
-           existing-prefix (if (map? current-value)
-                             (:prefix current-value)
-                             prefix)
-           new-value {:value value :prefix existing-prefix}]
-       (assoc-in db [:resource-setup :roles role-index :credentials key] new-value)))))
+ (fn [db [_ role-index key value]]
+   (assoc-in db [:resource-setup :roles role-index :credentials key] value)))
 
 (rf/reg-event-db
  :resource-setup->update-role-metadata-credentials
@@ -185,22 +178,10 @@
                                                    (assoc acc k (assoc v :prefix new-prefix)))
                                                  {}
                                                  metadata-credentials)
-         credentials (get-in db [:resource-setup :roles role-index :credentials] {})
-         updated-credentials (reduce-kv (fn [acc k v]
-                                          (assoc acc k (assoc v :prefix new-prefix)))
-                                        {}
-                                        credentials)
-         ;; Update all config-files prefixes
-         config-files (get-in db [:resource-setup :roles role-index :configuration-files] [])
-         updated-config-files (mapv (fn [file]
-                                      (update file :value assoc :prefix new-prefix))
-                                    config-files)
          current-role (get-in db [:resource-setup :roles role-index])
          updated-role (merge current-role
                              {:secrets-manager-provider provider
-                              :metadata-credentials updated-metadata-credentials
-                              :credentials updated-credentials
-                              :configuration-files updated-config-files})]
+                              :metadata-credentials updated-metadata-credentials})]
      (assoc-in db [:resource-setup :roles role-index] updated-role))))
 
 (rf/reg-event-db
@@ -292,21 +273,16 @@
 
 (rf/reg-event-db
  :resource-setup->update-role-config-file-by-key
- (fn [db [_ role-index file-key value prefix]]
+ (fn [db [_ role-index file-key value]]
    (let [config-files (get-in db [:resource-setup :roles role-index :configuration-files] [])
          existing-index (first (keep-indexed (fn [idx {:keys [key]}]
                                                (when (= key file-key) idx))
-                                             config-files))
-         existing-file (when existing-index (get config-files existing-index))
-         existing-prefix (if existing-file
-                           (get-in existing-file [:value :prefix] "")
-                           (or prefix ""))
-         new-file-value {:value value :prefix existing-prefix}]
+                                             config-files))]
      (if existing-index
-       (assoc-in db [:resource-setup :roles role-index :configuration-files existing-index :value] new-file-value)
+       (assoc-in db [:resource-setup :roles role-index :configuration-files existing-index :value] value)
        (update-in db [:resource-setup :roles role-index :configuration-files]
                   (fnil conj [])
-                  {:key file-key :value new-file-value})))))
+                  {:key file-key :value value})))))
 
 (rf/reg-event-db
  :resource-setup->set-role-command-args

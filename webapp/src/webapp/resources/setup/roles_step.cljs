@@ -106,13 +106,11 @@
               show-source-selector? (= connection-method "secrets-manager")
               display-value field-value
               handle-change (fn [e]
-                              (let [new-value (-> e .-target .-value)
-                                    actual-prefix (get-field-prefix role-index field-key)]
+                              (let [new-value (-> e .-target .-value)]
                                 (rf/dispatch [:resource-setup->update-role-credentials
                                               role-index
                                               field-key
-                                              new-value
-                                              actual-prefix])))
+                                              new-value])))
               base-props {:label (:label field)
                           :placeholder (or (:placeholder field) (str "e.g. " field-key))
                           :value display-value
@@ -138,13 +136,11 @@
              show-source-selector? (= connection-method "secrets-manager")
              display-value field-value
              handle-change (fn [e]
-                             (let [new-value (-> e .-target .-value)
-                                   actual-prefix (get-field-prefix role-index field-key)]
+                             (let [new-value (-> e .-target .-value)]
                                (rf/dispatch [:resource-setup->update-role-credentials
                                              role-index
                                              field-key
-                                             new-value
-                                             actual-prefix])))]
+                                             new-value])))]
          (if show-source-selector?
            [forms/input-with-adornment {:label (:label field)
                                         :placeholder (or (:placeholder field) (str "e.g. " field-key))
@@ -185,13 +181,11 @@
                                     :required true
                                     :type "text"
                                     :on-change (fn [e]
-                                                 (let [new-value (-> e .-target .-value)
-                                                       actual-prefix (get-field-prefix role-index "remote_url")]
+                                                 (let [new-value (-> e .-target .-value)]
                                                    (rf/dispatch [:resource-setup->update-role-credentials
                                                                  role-index
                                                                  "remote_url"
-                                                                 new-value
-                                                                  actual-prefix])))
+                                                                 new-value])))
                                     :start-adornment [source-selector role-index "remote_url"]}]
        [forms/input {:label "Cluster URL"
                      :placeholder "e.g. https://example.com:51434"
@@ -199,13 +193,11 @@
                      :required true
                      :type "text"
                      :on-change (fn [e]
-                                  (let [new-value (-> e .-target .-value)
-                                        actual-prefix (get-field-prefix role-index "remote_url")]
+                                  (let [new-value (-> e .-target .-value)]
                                     (rf/dispatch [:resource-setup->update-role-credentials
                                                   role-index
                                                   "remote_url"
-                                                  new-value
-                                                  actual-prefix])))}])
+                                                  new-value])))}])
 
      (if show-selector?
        [forms/input-with-adornment {:label "Authorization token"
@@ -215,13 +207,11 @@
                                     :type "text"
                                     :on-change (fn [e]
                                                  (let [new-value (-> e .-target .-value)
-                                                       actual-prefix (get-field-prefix role-index "header_Authorization")
                                                        transformed-val (str "Bearer " new-value)]
                                                    (rf/dispatch [:resource-setup->update-role-credentials
                                                                  role-index
                                                                  "header_Authorization"
-                                                                 transformed-val
-                                                                 actual-prefix])))
+                                                                 transformed-val])))
                                     :start-adornment [source-selector role-index "header_Authorization"]}]
        [forms/input {:label "Authorization token"
                      :placeholder "e.g. jwt.token.example"
@@ -230,13 +220,11 @@
                      :type "text"
                      :on-change (fn [e]
                                   (let [new-value (-> e .-target .-value)
-                                        actual-prefix (get-field-prefix role-index "header_Authorization")
                                         transformed-val (str "Bearer " new-value)]
                                     (rf/dispatch [:resource-setup->update-role-credentials
                                                   role-index
                                                   "header_Authorization"
-                                                  transformed-val
-                                                  actual-prefix])))}])
+                                                  transformed-val])))}])
 
      [:> Flex {:align "center" :gap "3"}
       [:> Switch {:checked (get credentials "insecure" false)
@@ -257,13 +245,11 @@
         remote-url-value (get credentials "remote_url" "")
         show-selector? (= connection-method "secrets-manager")
         handle-remote-url-change (fn [e]
-                                   (let [new-value (-> e .-target .-value)
-                                         actual-prefix (get-field-prefix role-index "remote_url")]
+                                   (let [new-value (-> e .-target .-value)]
                                      (rf/dispatch [:resource-setup->update-role-credentials
                                                    role-index
                                                    "remote_url"
-                                                   new-value
-                                                   actual-prefix])))]
+                                                   new-value])))]
     (when (nil? (get credentials "insecure"))
       (rf/dispatch [:resource-setup->update-role-credentials
                     role-index
@@ -347,8 +333,7 @@
                                         (rf/dispatch [:resource-setup->update-role-config-file-by-key
                                                       role-index
                                                       env-var-name
-                                                      new-value
-                                                      actual-prefix])
+                                                      new-value])
                                         (rf/dispatch [:resource-setup->update-role-metadata-credentials
                                                       role-index
                                                       env-var-name

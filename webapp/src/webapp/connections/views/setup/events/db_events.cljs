@@ -59,10 +59,12 @@
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
  (fn [db [_ field value prefix]]
-   ;; Store as {:value :prefix} format
-   (assoc-in db [:connection-setup :metadata-credentials field]
-             {:value (str value)
-              :prefix (or prefix "")})))
+   (let [current-value (get-in db [:connection-setup :metadata-credentials field])
+         existing-prefix (if (map? current-value)
+                           (:prefix current-value)
+                           (or prefix ""))
+         new-value {:value (str value) :prefix existing-prefix}]
+     (assoc-in db [:connection-setup :metadata-credentials field] new-value))))
 
 (rf/reg-event-db
  :connection-setup/update-connection-method
@@ -229,14 +231,12 @@
    (let [config-files (get-in db [:connection-setup :credentials :configuration-files] [])
          existing-index (first (keep-indexed (fn [idx {:keys [key]}]
                                                (when (= key file-key) idx))
-                                             config-files))
-         ;; Store as {:value :prefix} format (config files don't use prefixes, so prefix is "")
-         normalized-value {:value (str value) :prefix ""}]
+                                             config-files))]
      (if existing-index
-       (assoc-in db [:connection-setup :credentials :configuration-files existing-index :value] normalized-value)
+       (assoc-in db [:connection-setup :credentials :configuration-files existing-index :value] value)
        (update-in db [:connection-setup :credentials :configuration-files]
                   (fnil conj [])
-                  {:key file-key :value normalized-value})))))
+                  {:key file-key :value (str value)})))))
 
 ;; Navigation events
 (rf/reg-event-db

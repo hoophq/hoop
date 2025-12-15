@@ -67,10 +67,7 @@
 (rf/reg-sub
  :resource-setup/role-config-files
  (fn [db [_ role-index]]
-   (let [config-files (get-in db [:resource-setup :roles role-index :configuration-files] [])]
-     (mapv (fn [file]
-             (assoc file :value (:value (:value file) "")))
-           config-files))))
+   (get-in db [:resource-setup :roles role-index :configuration-files] [])))
 
 (rf/reg-sub
  :resource-setup/role-command-args
