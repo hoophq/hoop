@@ -57,6 +57,10 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 	if connParams.GuardRailRules != nil {
 		guardRailRules = string(connParams.GuardRailRules)
 	}
+	var analyzerMetricsRules string
+	if connParams.AnalyzerMetricsRules != nil {
+		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
+	}
 
 	opts := map[string]string{
 		"sid":                       sessionID,
@@ -74,6 +78,7 @@ func (a *Agent) processPGProtocol(pkt *pb.Packet) {
 		"dlp_masking_character":     "#",
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
 		"guard_rail_rules":          guardRailRules,
+		"analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).Postgres()
 	if err != nil {

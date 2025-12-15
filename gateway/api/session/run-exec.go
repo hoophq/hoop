@@ -76,24 +76,9 @@ func RunReviewedExec(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching sessions"})
 		return
 	}
-	session.BlobInput, err = session.GetBlobInput()
-	if err != nil {
-		log.Errorf("failed fetching session blob input, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session input"})
-		return
-	}
 
-	isAllowed := session.UserEmail == ctx.UserEmail || ctx.IsAuditorOrAdminUser()
-	if !isAllowed {
-		c.JSON(http.StatusForbidden, gin.H{"message": "unable to execute session"})
-		return
-	}
-
-	if review.Status != models.ReviewStatusApproved {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "review not approved or already executed"})
-		return
-	}
-
+	// The plugin must be active to be able to change the state of the review
+	// after the execution, this will ensure that a review is executed only once.
 	p, err := models.GetPluginByName(ctx.OrgID, plugintypes.PluginReviewName)
 	if err != nil && err != models.ErrNotFound {
 		log.Errorf("failed obtaining review plugin, err=%v", err)
@@ -109,13 +94,24 @@ func RunReviewedExec(c *gin.Context) {
 			}
 		}
 	}
-
-	// The plugin must be active to be able to change the state of the review
-	// after the execution, this will ensure that a review is executed only once.
 	if !hasReviewPlugin {
 		errMsg := fmt.Sprintf("review plugin is not enabled for the connection %s", review.ConnectionName)
 		log.Infof(errMsg)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": errMsg})
+		return
+	}
+
+	session.BlobInput, err = session.GetBlobInput()
+	if err != nil {
+		log.Errorf("failed fetching session blob input, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session input"})
+		return
+	}
+
+	err = canExecReviewedSession(ctx, session, review)
+	if err != nil {
+		log.Infof("cannot execute reviewed session, reason=%v", err)
+		c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -173,6 +169,53 @@ func RunReviewedExec(c *gin.Context) {
 		reviewStatus = models.ReviewStatusUnknown
 		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(session.ID))
 	}
+}
+
+func canExecReviewedSession(ctx *storagev2.Context, session *models.Session, review *models.Review) error {
+	isAllowed := session.UserEmail == ctx.UserEmail || ctx.IsAuditorOrAdminUser()
+	if !isAllowed {
+		return fmt.Errorf("unable to execute session")
+	}
+
+	if review.Status != models.ReviewStatusApproved {
+		return fmt.Errorf("review not approved or already executed")
+	}
+
+	if review.TimeWindow != nil {
+		switch review.TimeWindow.Type {
+		case "time_range":
+			startStr, okStart := review.TimeWindow.Configuration["start_time"]
+			endStr, okEnd := review.TimeWindow.Configuration["end_time"]
+			if !okStart || !okEnd {
+				return fmt.Errorf("invalid execution window configuration")
+			}
+
+			startTime, err := time.Parse("15:04", startStr)
+			if err != nil {
+				return fmt.Errorf("invalid execution window start time")
+			}
+			endTime, err := time.Parse("15:04", endStr)
+			if err != nil {
+				return fmt.Errorf("invalid execution window end time")
+			}
+
+			// Overnight window
+			if endTime.Before(startTime) {
+				endTime = endTime.Add(24 * time.Hour)
+			}
+
+			now := time.Now().UTC()
+			nowOnlyTime := time.Date(0, 1, 1, now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
+
+			if nowOnlyTime.Before(startTime) || nowOnlyTime.After(endTime) {
+				return fmt.Errorf("execution not allowed outside the time window %s to %s UTC", startStr, endStr)
+			}
+		default:
+			return fmt.Errorf("unknown execution window type %s", review.TimeWindow.Type)
+		}
+	}
+
+	return nil
 }
 
 var syncMutexExecMap = sync.RWMutex{}

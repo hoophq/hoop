@@ -299,7 +299,7 @@ func parseDatabaseCommandOutput(output string) ([]string, error) {
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		// Skip first line (header)
-		if i == 0 || line == "" {
+		if i == 0 || line == "" || line == "----" {
 			continue
 		}
 		// Stop at the first line that starts with a parenthesis

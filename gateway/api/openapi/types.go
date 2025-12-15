@@ -645,6 +645,7 @@ type (
 	ReviewStatusType        string
 	ReviewRequestStatusType string
 	ReviewType              string
+	ReviewTimeWindowType    string
 )
 
 const (
@@ -662,6 +663,8 @@ const (
 
 	ReviewTypeJit     ReviewType = "jit"
 	ReviewTypeOneTime ReviewType = "onetime"
+
+	ReviewTimeWindowTypeTimeRange ReviewTimeWindowType = "time_range"
 )
 
 type ReviewRequest struct {
@@ -669,7 +672,8 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status ReviewRequestStatusType `json:"status" binding:"required" example:"APPROVED"`
+	Status     ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window"`
 }
 
 type SessionReview struct {
@@ -696,6 +700,13 @@ type SessionReview struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// Contains the groups that requires to approve this review
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
+	// The time window configuration that can execute the session
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
+}
+
+type ReviewSessionTimeWindow struct {
+	Type          ReviewTimeWindowType `json:"type" binding:"required" enums:"time_range"`
+	Configuration map[string]string    `json:"configuration" binding:"required" example:"start_time:09:00,end_time:18:00"`
 }
 
 type Review struct {
@@ -724,6 +735,8 @@ type Review struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// Contains the groups that requires to approve this review
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
+	// The time window configuration that can execute the session
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
 }
 
 type ReviewOwner struct {

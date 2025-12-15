@@ -50,6 +50,12 @@ type Review struct {
 	ReviewGroups      []ReviewGroups    `gorm:"column:review_groups;serializer:json;->"`
 	CreatedAt         time.Time         `gorm:"column:created_at"`
 	RevokedAt         *time.Time        `gorm:"column:revoked_at"`
+	TimeWindow        *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
+}
+
+type ReviewTimeWindow struct {
+	Type          string            `json:"type"`
+	Configuration map[string]string `json:"configuration"`
 }
 
 type ReviewGroups struct {
@@ -110,7 +116,7 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	err := DB.Raw(`
 	SELECT
 		id, org_id, session_id, connection_name, type, access_duration_sec, status,
-		blob_input_id, input_env_vars, input_client_args,
+		blob_input_id, input_env_vars, input_client_args, time_window,
 		owner_id, owner_email, owner_name, owner_slack_id,
 		( SELECT jsonb_agg(
 				jsonb_build_object(

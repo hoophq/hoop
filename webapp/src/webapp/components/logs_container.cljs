@@ -1,10 +1,12 @@
 (ns webapp.components.logs-container
-  (:require ["lucide-react" :refer [Clipboard]]
-            ["clipboard" :as clipboardjs]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.headings :as h]
-            [webapp.config :as config]))
+  (:require
+   ["@radix-ui/themes" :refer [ScrollArea]]
+   ["lucide-react" :refer [Clipboard]]
+   ["clipboard" :as clipboardjs]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.headings :as h]
+   [webapp.config :as config]))
 
 
 (defmulti logs-area identity)
@@ -46,18 +48,20 @@
                              "opacity-0 group-hover:opacity-100 transition z-20")
                  :data-clipboard-target (str "#" container-id)}
            [:> Clipboard {:size 16}]])
-        [:div
-         {:id container-id
-          :class (str (when (:classes config) (:classes config))
-                      " overflow-auto h-full"
-                      (when-not (:fixed-height? config) " max-h-80")
-                      (when (:not-clipboard? config) " select-none"))
-          :style (when (:not-clipboard? config)
-                   #js {:WebkitUserSelect "none"
-                        :MozUserSelect "none"
-                        :msUserSelect "none"
-                        :userSelect "none"})}
-         (logs-area (:status config) (:logs config))]]]
+        [:> ScrollArea {:size "2"
+                        :class "dark"}
+         [:div
+          {:id container-id
+           :class (str (when (:classes config) (:classes config))
+                       " h-full"
+                       (when-not (:fixed-height? config) " max-h-80")
+                       (when (:not-clipboard? config) " select-none"))
+           :style (when (:not-clipboard? config)
+                    #js {:WebkitUserSelect "none"
+                         :MozUserSelect "none"
+                         :msUserSelect "none"
+                         :userSelect "none"})}
+          (logs-area (:status config) (:logs config))]]]]
 
       ;; Cleanup on unmount
       (finally

@@ -32,8 +32,8 @@ import (
 //	@Tags			Runbooks
 //	@Produce		json
 //	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
-//	@Success		200			{object}	openapi.RunbookListV2
-//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Success		200				{object}	openapi.RunbookListV2
+//	@Failure		404,500			{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
 func ListRunbooksV2(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -102,7 +102,7 @@ func ListRunbooksV2(c *gin.Context) {
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Success		200			{object}	openapi.RunbookConfigurationResponse
+//	@Success		200		{object}	openapi.RunbookConfigurationResponse
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [get]
 func GetRunbookConfiguration(c *gin.Context) {
@@ -130,8 +130,8 @@ func GetRunbookConfiguration(c *gin.Context) {
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
-//	@Success		200			{object}	openapi.RunbookConfigurationResponse
+//	@Param			request			body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
+//	@Success		200				{object}	openapi.RunbookConfigurationResponse
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [put]
 func UpdateRunbookConfiguration(c *gin.Context) {
@@ -229,9 +229,9 @@ func buildRunbookConfigurationResponse(r *models.Runbooks) *openapi.RunbookConfi
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.RunbookExec	true	"The request body resource"
-//	@Success		200				{object}	openapi.ExecResponse	"The execution has finished"
-//	@Success		202				{object}	openapi.ExecResponse	"The execution is still in progress"
+//	@Param			request				body		openapi.RunbookExec		true	"The request body resource"
+//	@Success		200					{object}	openapi.ExecResponse	"The execution has finished"
+//	@Success		202					{object}	openapi.ExecResponse	"The execution is still in progress"
 //	@Failure		400,403,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/exec [post]
 func RunbookExec(c *gin.Context) {

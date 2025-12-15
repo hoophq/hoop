@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"libhoop"
 	"net"
 	"net/url"
 	"os"
@@ -57,7 +58,30 @@ type (
 		awsSecretAccessKey string
 		awsAccessKeyID     string
 	}
+	ioMetricFlush struct {
+		client pb.ClientTransport
+		sid    string
+	}
 )
+
+func newIoMetricFlush(client pb.ClientTransport, sessionID string) io.Writer {
+	return &ioMetricFlush{client: client, sid: sessionID}
+}
+
+func (i *ioMetricFlush) Write(data []byte) (int, error) {
+	err := i.client.Send(&pb.Packet{
+		Type:    pbclient.SessionAnalyzerMetrics,
+		Payload: data,
+		Spec: map[string][]byte{
+			pb.SpecGatewaySessionID: []byte(i.sid),
+		},
+	})
+	if err != nil {
+		log.With("sid", string(i.sid)).Warnf("failed sending analyzer metrics to gateway, err=%v", err)
+		return 0, err
+	}
+	return len(data), nil
+}
 
 func (e *connEnv) Get(key string) string {
 	values, _ := url.ParseQuery(e.options)
@@ -258,7 +282,13 @@ func (a *Agent) processTCPCloseConnection(pkt *pb.Packet) {
 	log.With("sid", sessionID).Infof("closing tcp session, connid=%s, filter-by=%s", clientConnID, filterKey)
 	filterFn := func(k string) bool { return strings.HasPrefix(k, filterKey) }
 	for key, obj := range a.connStore.Filter(filterFn) {
-		if client, _ := obj.(io.Closer); client != nil {
+		client, _ := obj.(libhoop.Proxy)
+		if client != nil {
+			go func() {
+				if err := client.FlushMetrics(newIoMetricFlush(a.client, string(sessionID))); err != nil {
+					log.With("sid", string(sessionID)).Warnf("failed flushing io metrics, err=%v", err)
+				}
+			}()
 			defer func() {
 				if err := client.Close(); err != nil {
 					log.Warnf("failed closing connection, err=%v", err)
@@ -282,6 +312,13 @@ func (a *Agent) sessionCleanup(sessionID string) {
 	log.With("sid", sessionID).Infof("cleaning up session")
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
+		if p, ok := obj.(libhoop.Proxy); ok {
+			go func() {
+				if err := p.FlushMetrics(newIoMetricFlush(a.client, sessionID)); err != nil {
+					log.With("sid", sessionID).Warnf("failed flushing io metrics, err=%v", err)
+				}
+			}()
+		}
 		if v, ok := obj.(io.Closer); ok {
 			go func() {
 				if err := v.Close(); err != nil {

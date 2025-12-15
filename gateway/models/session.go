@@ -121,14 +121,15 @@ type Blob struct {
 	BlobFormat *string         `gorm:"column:format"`
 }
 type SessionReview struct {
-	ID                string         `json:"id"`
-	SessionID         string         `json:"session_id"`
-	Type              string         `json:"type"`
-	Status            string         `json:"status"`
-	CreatedAt         time.Time      `json:"created_at"`
-	RevokedAt         *time.Time     `json:"revoked_at"`
-	AccessDurationSec int64          `json:"access_duration_sec"`
-	ReviewGroups      []ReviewGroups `json:"review_groups" gorm:"review_groups;serializer:json"`
+	ID                string            `json:"id"`
+	SessionID         string            `json:"session_id"`
+	Type              string            `json:"type"`
+	Status            string            `json:"status"`
+	CreatedAt         time.Time         `json:"created_at"`
+	RevokedAt         *time.Time        `json:"revoked_at"`
+	AccessDurationSec int64             `json:"access_duration_sec"`
+	ReviewGroups      []ReviewGroups    `json:"review_groups" gorm:"review_groups;serializer:json"`
+	TimeWindow        *ReviewTimeWindow `json:"time_window" gorm:"time_window;serializer:json;"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -207,6 +208,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'type', rv.type,
 				'access_duration_sec', rv.access_duration_sec,
 				'status', rv.status,
+				'time_window', rv.time_window,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (
@@ -486,6 +488,34 @@ func UpdateSessionIntegrationMetadata(orgID, sid string, metadata map[string]any
 	res := DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sid).
 		Updates(Session{IntegrationsMetadata: metadata})
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
+func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int) error {
+	res := DB.Table("private.sessions AS s").
+		Where("s.id = ? AND s.org_id = ?", sid, orgID).
+		Update("metrics", gorm.Expr(`
+        jsonb_set(
+            COALESCE(s.metrics, '{}'::jsonb),
+            '{data_analyzer}',
+            COALESCE(s.metrics->'data_analyzer', '{}'::jsonb)
+            ||
+            (
+                SELECT jsonb_object_agg(
+                    k,
+                    to_jsonb(
+                        COALESCE((s.metrics->'data_analyzer'->>k)::int, 0) + v::int
+                    )
+                )
+                FROM jsonb_each_text(?::jsonb) AS t(k, v)
+            ),
+            true
+        )
+    `, metrics))
+
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound
 	}

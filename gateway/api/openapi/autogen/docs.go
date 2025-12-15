@@ -502,7 +502,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update a connection resource.",
+                "description": "Update a connection resource",
                 "consumes": [
                     "application/json"
                 ],
@@ -682,6 +682,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -906,6 +912,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -8397,6 +8409,15 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "time_window": {
+                    "description": "The time window configuration that can execute the session",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewSessionTimeWindow"
+                        }
+                    ],
+                    "readOnly": true
+                },
                 "type": {
                     "description": "The type of the review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",
                     "enum": [
@@ -8498,6 +8519,9 @@ const docTemplate = `{
                         }
                     ],
                     "example": "APPROVED"
+                },
+                "time_window": {
+                    "$ref": "#/definitions/openapi.ReviewSessionTimeWindow"
                 }
             }
         },
@@ -8513,6 +8537,35 @@ const docTemplate = `{
                 "ReviewStatusRequestRejectedType",
                 "ReviewStatusRequestRevokedType"
             ]
+        },
+        "openapi.ReviewSessionTimeWindow": {
+            "type": "object",
+            "required": [
+                "configuration",
+                "type"
+            ],
+            "properties": {
+                "configuration": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "end_time": "18:00",
+                        "start_time": "09:00"
+                    }
+                },
+                "type": {
+                    "enum": [
+                        "time_range"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewTimeWindowType"
+                        }
+                    ]
+                }
+            }
         },
         "openapi.ReviewStatusType": {
             "type": "string",
@@ -8533,6 +8586,15 @@ const docTemplate = `{
                 "ReviewStatusProcessing",
                 "ReviewStatusExecuted",
                 "ReviewStatusUnknown"
+            ]
+        },
+        "openapi.ReviewTimeWindowType": {
+            "type": "string",
+            "enum": [
+                "time_range"
+            ],
+            "x-enum-varnames": [
+                "ReviewTimeWindowTypeTimeRange"
             ]
         },
         "openapi.ReviewType": {
@@ -9838,6 +9900,15 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.ReviewStatusType"
                         }
                     ]
+                },
+                "time_window": {
+                    "description": "The time window configuration that can execute the session",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewSessionTimeWindow"
+                        }
+                    ],
+                    "readOnly": true
                 },
                 "type": {
                     "description": "The type of the review\n* onetime - Represents a one time execution\n* jit - Represents a time based review",

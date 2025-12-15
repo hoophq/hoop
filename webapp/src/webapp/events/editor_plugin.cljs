@@ -163,6 +163,11 @@
                                                                "\\set QUIET off\n"
                                                                script)
                         (and selected-db
+                             (= connection-type "mssql")
+                             (not multiple-connections?)) (str "SET NOCOUNT ON;\n"
+                                                               "USE " selected-db ";\n"
+                                                               script)
+                        (and selected-db
                              (= connection-type "mysql")
                              (not multiple-connections?)) (str "use " selected-db ";\n" script)
                         (and selected-db

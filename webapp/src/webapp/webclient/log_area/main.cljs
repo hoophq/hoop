@@ -22,23 +22,43 @@
       (cs/join "\n" (drop 3 lines))  ;; Pula as 3 primeiras linhas
       script)))
 
+(defn- clean-mssql-script [script]
+  (let [lines (cs/split script #"\n")]
+    (if (and (> (count lines) 2)
+             (= (first lines) "SET NOCOUNT ON;"))
+      (cs/join "\n" (drop 2 lines))
+      script)))
+
+;; TODO: Change it for send DB in the payload and not the response
+(defn- sanitize-response [response connection-type]
+  (cond
+    (= connection-type "mssql")
+    (when response
+      (if-let [idx (cs/index-of response "\n")]
+        (subs response (inc idx))
+        response))
+    :else response))
+
 (defn main [_]
   (let [script-response (rf/subscribe [:editor-plugin->script])]
     (fn [connection-type is-one-connection-selected? dark-mode?]
-      (let [logs-content {:status (:status @script-response)
-                          :response (:output (:data @script-response))
+      (let [response (sanitize-response (:output (:data @script-response)) connection-type)
+            logs-content {:status (:status @script-response)
+                          :response response
                           :response-status (:output_status (:data @script-response))
-                          :script (if (= connection-type "postgres")
+                          :script (cond
+                                    (= connection-type "postgres")
                                     (clean-postgres-script (:script (:data @script-response)))
-                                    (:script (:data @script-response)))
+                                    (= connection-type "mssql")
+                                    (clean-mssql-script (:script (:data @script-response)))
+                                    :else (:script (:data @script-response)))
                           :response-id (:session_id (:data @script-response))
                           :has-review (:has_review (:data @script-response))
                           :execution-time (:execution_time (:data @script-response))
                           :classes "h-full"}
-            tabular-data (:data @script-response)
             tabular-status (:status @script-response)
             tabular-loading? (= tabular-status :loading)
-            results-transformed (transform-results->matrix (:output tabular-data) connection-type)
+            results-transformed (transform-results->matrix response connection-type)
             results-heads (first results-transformed)
             results-body (next results-transformed)
             connection-type-database? (some (partial = connection-type)
