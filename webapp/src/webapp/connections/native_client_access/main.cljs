@@ -12,7 +12,7 @@
 (defn disconnect-session
   "Handle disconnect with confirmation"
   [connection-name]
-  (let [dialog-text "Are you sure you want to disconnect this native client session?"
+  (let [dialog-text (str "Are you sure you want to disconnect the native client session for \"" connection-name "\"?")
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
                                                   :action-button? true
@@ -293,7 +293,7 @@
       :id "command"
       :logs command-text}]]])
 
-(defn- aws-ssm-command-view 
+(defn- aws-ssm-command-view
   [native-client-access-data]
   (let [connection-credentials (:connection_credentials native-client-access-data)
         command (build-aws-ssm-command connection-credentials)]
@@ -433,10 +433,10 @@
        :text-component (fn [timer-text]
                          [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
                           timer-text])
-                       :on-complete (fn []
-                                      (rf/dispatch [:native-client-access->clear-session connection-name])
-                                      (rf/dispatch [:show-snackbar {:level :info
-                                                                    :text "Native client access session has expired."}]))}]]]
+       :on-complete (fn []
+                      (rf/dispatch [:native-client-access->clear-session connection-name])
+                      (rf/dispatch [:show-snackbar {:level :info
+                                                    :text "Native client access session has expired."}]))}]]]
 
    [:> Box {:class "mt-4"}
     [:> Button
@@ -476,8 +476,8 @@
       (cond
         ;; Step 2: Connected - show connection details
         (and @session-valid? @native-client-access-data)
-        [connection-established-view connection-name @native-client-access-data 
-         #(minimize-modal connection-name) 
+        [connection-established-view connection-name @native-client-access-data
+         #(minimize-modal connection-name)
          #(disconnect-session connection-name)]
 
         ;; Step 1: Configure session duration (no session)
