@@ -1,12 +1,18 @@
 package libhoop
 
-import "github.com/creack/pty"
+import (
+	"io"
+
+	"github.com/creack/pty"
+)
 
 type Proxy interface {
 	Run(func(exitCode int, errMsg string))
 	Write(data []byte) (int, error)
 	Done() <-chan struct{}
 	Close() error
+
+	FlushMetrics(client io.Writer) error
 }
 
 type Terminal interface {
