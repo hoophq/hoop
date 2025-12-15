@@ -1,6 +1,6 @@
 (ns webapp.components.forms
   (:require
-   ["@radix-ui/themes" :refer [Select Tooltip Text]]
+   ["@radix-ui/themes" :refer [Select Tooltip Text TextField Box Flex]]
    ["lucide-react" :refer [Eye EyeOff HelpCircle]]
    [clojure.string :as cs]
    [reagent.core :as r]))
@@ -103,6 +103,58 @@
                                    "3" "rt-r-size-2"
                                    "2" "rt-r-size-1"
                                    "rt-r-size-2"))
+                     :on-click #(swap! eye-open? not)}
+            (if @eye-open?
+              [:> Eye {:size 16}]
+              [:> EyeOff {:size 16}])]])]])))
+
+(defn input-with-adornment
+  "Input component with support for start-adornment (e.g., select dropdown inside input).
+  Uses Radix UI TextField.Root for proper slot support.
+  Props signature:
+  :label -> html label text;
+  :placeholder -> html prop placeholder for input;
+  :value -> input value;
+  :type -> input type (default: 'text');
+  :required -> HTML required attribute;
+  :on-change -> function to be executed on change;
+  :helper-text -> optional helper text shown as tooltip;
+  :start-adornment -> component to render as left adornment (e.g., select dropdown);"
+  [_]
+  (let [eye-open? (r/atom true)]
+    (fn [{:keys [label
+                 placeholder
+                 helper-text
+                 value
+                 on-change
+                 required
+                 type
+                 start-adornment]}]
+      [:> Box {:class "text-sm mb-regular"}
+       (when (or label helper-text)
+         [:> Flex {:align "center" :gap "2" :class "mb-1"}
+          (when label
+            [form-label label])
+          (when (not (cs/blank? helper-text))
+            [form-helper-text helper-text])])
+
+       [:> TextField.Root {:variant "surface"
+                           :size "3"
+                           :type (if (= type "password")
+                                   (if @eye-open? "password" "text")
+                                   (or type "text"))
+                           :placeholder (or placeholder label)
+                           :value value
+                           :onChange on-change
+                           :required (or required false)}
+        (when start-adornment
+          [:> TextField.Slot {:side "left"}
+           start-adornment])
+        (when (= type "password")
+          [:> TextField.Slot {:side "right"}
+           [:button {:data-accent-color ""
+                     :type "button"
+                     :class "rt-reset rt-BaseButton rt-r-size-2 rt-variant-ghost rt-IconButton rt-r-size-2"
                      :on-click #(swap! eye-open? not)}
             (if @eye-open?
               [:> Eye {:size 16}]

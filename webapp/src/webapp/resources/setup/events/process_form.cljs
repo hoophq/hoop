@@ -11,25 +11,40 @@
            :value value})
         headers))
 
+(defn extract-value-with-prefix
+  "Extract value from ({:value, :prefix}) and apply prefix."
+  [v connection-method field-key]
+  (let [value (:value v "")
+        prefix (:prefix v "")
+        is-aws-iam-role? (= connection-method "aws-iam-role")
+        field-key-lower (str/lower-case (name field-key))
+        is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))]
+    (cond
+      (and is-aws-iam-role? is-user-or-pass?)
+      (str "_aws_iam_rds:" value)
+      (str/blank? prefix)
+      value
+      :else
+      (str prefix value))))
+
 (defn process-role-secret
   "Process role credentials into secret format with base64 encoding"
   [role]
   (let [subtype (:subtype role)
+        connection-method (:connection-method role)
         credentials (:credentials role)
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])
         config-files (or (:configuration-files role) [])
 
-        ;; Convert credentials to env-var format
         credential-env-vars (mapv (fn [[k v]]
                                     {:key (name k)
-                                     :value v})
+                                     :value (extract-value-with-prefix v connection-method k)})
                                   (seq credentials))
 
-        ;; Convert metadata-credentials to env-var format (for custom resources)
         metadata-credential-env-vars (mapv (fn [[k v]]
                                              {:key (name k)
-                                              :value v})
+                                              :value (extract-value-with-prefix v connection-method k)})
                                            (seq metadata-credentials))
 
         ;; Combine all credentials
@@ -42,9 +57,14 @@
                          (concat all-credential-env-vars processed-headers))
                        (concat all-credential-env-vars env-vars))
 
+        processed-config-files (mapv (fn [file]
+                                       {:key (:key file)
+                                        :value (extract-value-with-prefix (:value file) connection-method (:key file))})
+                                     config-files)
+
         envvar-result (helpers/config->json all-env-vars "envvar:")
-        filesystem-result (when (seq config-files)
-                            (helpers/config->json config-files "filesystem:"))]
+        filesystem-result (when (seq processed-config-files)
+                            (helpers/config->json processed-config-files "filesystem:"))]
 
     (clj->js
      (merge envvar-result filesystem-result))))

@@ -47,3 +47,13 @@
   [role]
   (and (= "enabled" (:access_mode_connect role))
        (#{"postgres" "ssh" "rdp" "aws-ssm"} (:subtype role))))
+
+(defn get-secret-prefix
+  "Returns the prefix string for a given secret source or provider."
+  [source-or-provider]
+  (cond
+    (= source-or-provider "vault-kv1") "_vaultkv1:"
+    (= source-or-provider "vault-kv2") "_vaultkv2:"
+    (= source-or-provider "aws-secrets-manager") "_aws:"
+    (= source-or-provider "aws-iam-role") "_aws_iam_rds:"
+    :else ""))
