@@ -1,0 +1,5 @@
+#!/bin/bash
+INSECURE=${INSECURE:=false}
+[[ "$CONNECTION_DEBUG" == "1" ]] && set -x
+
+/usr/local/bin/kubectl --token=$HEADER_AUTHORIZATION --insecure-skip-tls-verify=$INSECURE --server=$REMOTE_URL $@
