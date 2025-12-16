@@ -84,7 +84,7 @@ func Run() {
 
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
 		if err != nil {
-			log.Fatal(err)
+			log.Errorf("failed creating default runbook configuration, reason=%v", err)
 		}
 
 		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)

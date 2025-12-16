@@ -75,13 +75,6 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
-	if err != nil {
-		log.Errorf("failed creating default runbook configuration, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating default runbook configuration"})
-		return
-	}
-
 	if org.TotalUsers > 0 {
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
 		return
