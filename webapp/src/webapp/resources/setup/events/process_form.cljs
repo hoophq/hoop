@@ -19,13 +19,19 @@
         is-aws-iam-role? (= connection-method "aws-iam-role")
         field-key-lower (str/lower-case (name field-key))
         is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))
+        ;; For AWS IAM Role pass field, use "authtoken" if value is empty
+        effective-value (if (and is-aws-iam-role? (= field-key-lower "pass") (str/blank? value))
+                         "authtoken"
+                         value)
         final-value (cond
+                      ;; AWS IAM Role: apply _aws_iam_rds: prefix to user/pass, ignore other prefixes
                       (and is-aws-iam-role? is-user-or-pass?)
-                      (str "_aws_iam_rds:" value)
-                      (not (str/blank? prefix))
-                      (str prefix value)
+                      (str "_aws_iam_rds:" effective-value)
+                      ;; For non-AWS IAM Role, apply prefix if present
+                      (and (not is-aws-iam-role?) (not (str/blank? prefix)))
+                      (str prefix effective-value)
                       :else
-                      value)]
+                      effective-value)]
     final-value))
 
 (defn process-role-secret
@@ -37,6 +43,17 @@
         metadata-credentials (:metadata-credentials role)
         env-vars (or (:environment-variables role) [])
         config-files (or (:configuration-files role) [])
+        is-aws-iam-role? (= connection-method "aws-iam-role")
+
+        ;; For AWS IAM Role, ensure pass field exists (will be set to "authtoken" if empty in extract-value)
+        metadata-credentials-with-pass (if is-aws-iam-role?
+                                         (let [pass-key (or (first (filter #(= (str/lower-case (name %)) "pass") (keys metadata-credentials)))
+                                                            "PASS")
+                                               pass-value (get metadata-credentials pass-key)]
+                                           (if (nil? pass-value)
+                                             (assoc metadata-credentials pass-key {:value "" :prefix ""})
+                                             metadata-credentials))
+                                         metadata-credentials)
 
         credential-env-vars (mapv (fn [[k v]]
                                     {:key (name k)
@@ -46,7 +63,7 @@
         metadata-credential-env-vars (mapv (fn [[k v]]
                                              {:key (name k)
                                               :value (extract-value v connection-method k)})
-                                           (seq metadata-credentials))
+                                           (seq metadata-credentials-with-pass))
 
         ;; Combine all credentials
         all-credential-env-vars (concat credential-env-vars metadata-credential-env-vars)
