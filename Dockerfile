@@ -35,6 +35,6 @@ EXPOSE 8010
 EXPOSE 15432
 
 ENV PATH="/app:${PATH}"
-ENV PATH="${PATH}:/opt/hoop/bin"
+ENV PATH="/opt/hoop/bin:${PATH}"
 
 ENTRYPOINT ["tini", "--"]

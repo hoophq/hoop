@@ -460,7 +460,7 @@ func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
 	if clientVerb == pb.ClientVerbExec {
 		connType := pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType)
 		switch connType {
-		case pb.ConnectionTypeTCP, pb.ConnectionTypeHttpProxy, pb.ConnectionTypeSSH:
+		case pb.ConnectionTypeTCP, pb.ConnectionTypeSSH:
 			return status.Errorf(codes.InvalidArgument,
 				fmt.Sprintf("exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName))
 		}

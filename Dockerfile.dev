@@ -9,7 +9,7 @@ RUN tar -xf /tmp/hoop_*_$(uname -s)_$(uname -m).tar.gz -C /app/ && \
     rm -rf /tmp/* && \
     rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
-ENV PATH="${PATH}:/opt/hoop/bin"
+ENV PATH="/opt/hoop/bin:${PATH}"
 
 ENTRYPOINT ["tini", "--"]
 CMD ["hoop", "start", "agent"]
