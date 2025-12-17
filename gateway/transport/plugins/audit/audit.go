@@ -185,6 +185,7 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 				Warnf("failed closing session, reason=%v", err)
 		}
+		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
 	}()
 }
 

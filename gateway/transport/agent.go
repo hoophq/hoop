@@ -137,7 +137,7 @@ func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packe
 	handled = true
 	log.With("sid", pctx.SID).Debugf("received analyzer metrics packet, length=%v", len(pkt.Payload))
 
-	var data map[string]int
+	var data map[string]int64
 	if err := json.Unmarshal(pkt.Payload, &data); err != nil {
 		log.With("sid", pctx.SID).Errorf("unable to unmarshal analyzer metrics packet, reason=%v", err)
 		return
@@ -145,6 +145,10 @@ func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packe
 
 	if err := models.UpdateSessionAnalyzerMetrics(pctx.OrgID, pctx.SID, data); err != nil {
 		log.With("sid", pctx.SID).Errorf("unable to save analyzer metrics packet, reason=%v", err)
+	}
+
+	if err := models.IncrementSessionAnalyzedMetrics(models.DB, pctx.SID, data); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to increment analyzed metrics, reason=%v", err)
 	}
 
 	return
