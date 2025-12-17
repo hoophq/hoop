@@ -1,5 +1,11 @@
 #!/bin/bash
-INSECURE=${INSECURE:=false}
 [[ "$CONNECTION_DEBUG" == "1" ]] && set -x
+INSECURE=${INSECURE:=false}
 
-/usr/local/bin/kubectl --token=$HEADER_AUTHORIZATION --insecure-skip-tls-verify=$INSECURE --server=$REMOTE_URL $@
+if [[ -z "$HEADER_AUTHORIZATION" ]]; then
+    /usr/local/bin/kubectl $@
+    exit $?
+fi
+
+HEADER_AUTHORIZATION=$(sed 's|Bearer ||g' <<< $HEADER_AUTHORIZATION)
+/usr/local/bin/kubectl --server="$REMOTE_URL" --insecure-skip-tls-verify=$INSECURE --token="$HEADER_AUTHORIZATION" $@
