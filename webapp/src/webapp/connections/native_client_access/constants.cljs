@@ -23,19 +23,26 @@
           now (new js/Date)]
       (> (.getTime expire-at) (.getTime now)))))
 
+;; Normalize sessions to a map of connection names to session data
+(defn normalize-sessions [parsed]
+  (cond
+    (and (map? parsed) (:connection_name parsed))
+    {(:connection_name parsed) parsed}
+
+    (map? parsed)
+    parsed
+
+    :else
+    {}))
+
 ;; Get all sessions from localStorage
 (defn get-all-sessions []
   (try
-    (let [stored-data (.getItem js/localStorage native-client-access-storage-key)]
-      (if stored-data
-        (let [parsed (reader/read-string stored-data)]
-          ;; Migration: support old format (single session) and new format (multiple sessions)
-          (if (and (map? parsed) (:connection_name parsed))
-            ;; Old format: single session object
-            {(:connection_name parsed) parsed}
-            ;; New format: map of sessions or empty
-            (if (map? parsed) parsed {})))
-        {}))
+    (if-let [stored-data (.getItem js/localStorage native-client-access-storage-key)]
+      (-> stored-data
+          reader/read-string
+          normalize-sessions)
+      {})
     (catch js/Error _
       {})))
 
