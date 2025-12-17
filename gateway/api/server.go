@@ -140,7 +140,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 	ssmInstance := ssmproxy.GetServerInstance()
 	ssmInstance.AttachHandlers(ssmGroup)
 
-	ironRdpGroup := route.Group(baseURL + "/iron")
+	ironRdpGroup := route.Group(baseURL + "/rdpproxy")
 	ironRdpInstance := rdp.GetIronServerInstance()
 	ironRdpInstance.AttachHandlers(ironRdpGroup)
 

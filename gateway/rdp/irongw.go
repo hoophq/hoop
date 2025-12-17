@@ -12,8 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
+	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/broker"
+	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport"
 )
@@ -39,6 +42,54 @@ type IronRDPGateway struct {
 
 func (r *IronRDPGateway) AttachHandlers(router gin.IRouter) {
 	router.Handle(http.MethodGet, "/", r.handle)
+	router.Handle(http.MethodGet, "/client", r.handleClient)
+}
+
+func (r *IronRDPGateway) handleClient(c *gin.Context) {
+	rdpCredential := c.PostForm("credential")
+	if rdpCredential == "" {
+		log.Errorf("failed to get credential, reason=empty")
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+	secretKeyHash, err := keys.Hash256Key(rdpCredential)
+	if err != nil {
+		log.Errorf("failed hashing rdp secret key, reason=%v", err)
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	dba, err := models.GetValidConnectionCredentialsBySecretKey(pb.ConnectionTypeRDP.String(), secretKeyHash)
+	if err != nil {
+		log.Errorf("failed to get connection by id, reason=%v", err)
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
+	if ctxDuration <= 0 {
+		log.Errorf("invalid secret access key credentials")
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		log.Errorf("failed to load IDP provider: %v", err)
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	if err = transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	// We don't need to do extended checks now because websocket will do it.
+
+	data := renderWebClientTemplate("RDP Connection", rdpCredential)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
 }
 
 func (r *IronRDPGateway) handle(c *gin.Context) {
