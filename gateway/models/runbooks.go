@@ -194,7 +194,7 @@ func BuildCommonConfig(config *RunbookRepositoryConfig) (*commonRunbooks.Config,
 
 func CreateDefaultRunbookConfiguration(db *gorm.DB, orgID string) (*Runbooks, error) {
 	const defaultRepoURI = "https://github.com/hoophq/demo-runbooks"
-	const defaultRepoName = "demo-runbooks"
+	const defaultRepoName = "github.com/hoophq/demo-runbooks"
 
 	// Check if runbook configuration already exists for this org
 	existing, _ := GetRunbookConfigurationByOrgID(db, orgID)
