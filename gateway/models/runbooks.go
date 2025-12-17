@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
 	commonRunbooks "github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/lib/pq"
@@ -189,4 +190,34 @@ func BuildCommonConfig(config *RunbookRepositoryConfig) (*commonRunbooks.Config,
 	}
 
 	return commonRunbooks.NewConfigV2(configInput)
+}
+
+func CreateDefaultRunbookConfiguration(db *gorm.DB, orgID string) (*Runbooks, error) {
+	const defaultRepoURI = "https://github.com/hoophq/demo-runbooks"
+	const defaultRepoName = "github.com/hoophq/demo-runbooks"
+
+	// Check if runbook configuration already exists for this org
+	existing, _ := GetRunbookConfigurationByOrgID(db, orgID)
+	if existing != nil {
+		return existing, nil
+	}
+
+	runbooks := &Runbooks{
+		ID:    uuid.NewString(),
+		OrgID: orgID,
+		RepositoryConfigs: map[string]RunbookRepositoryConfig{
+			defaultRepoName: {
+				GitUrl:    defaultRepoURI,
+				GitBranch: "main",
+			},
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	if err := UpsertRunbookConfiguration(db, runbooks); err != nil {
+		return nil, fmt.Errorf("failed to create default runbook configuration: %w", err)
+	}
+
+	return runbooks, nil
 }

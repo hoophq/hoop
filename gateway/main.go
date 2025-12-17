@@ -82,6 +82,11 @@ func Run() {
 			log.Fatal(err)
 		}
 
+		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
+		if err != nil {
+			log.Errorf("failed creating default runbook configuration, reason=%v", err)
+		}
+
 		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
@@ -99,6 +104,11 @@ func Run() {
 
 		log.Infof("self hosted setup completed, dlp-provider=%v", appconfig.Get().DlpProvider())
 	}
+
+	if err := modelsbootstrap.AddDefaultRunbooks(); err != nil {
+		log.Infof("failed adding default runbooks, reason=%v", err)
+	}
+
 
 	g := &transport.Server{
 		TLSConfig:   tlsConfig,

@@ -291,6 +291,11 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 			return false, fmt.Errorf("failed creating organization, reason=%v", err)
 		}
 
+		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
+		if err != nil {
+			return false, fmt.Errorf("failed creating default runbook configuration, err=%v", err)
+		}
+
 		emailVerified := false
 		if uinfo.EmailVerified != nil {
 			emailVerified = *uinfo.EmailVerified

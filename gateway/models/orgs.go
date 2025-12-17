@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"gorm.io/gorm"
 )
 
@@ -57,7 +58,7 @@ func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, err
 		TotalUsers:  0,
 	}
 
-	return &org, DB.Transaction(func(tx *gorm.DB) error {
+	err := DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Table("private.orgs").Create(&org).Error
 		if err != nil {
 			return err
@@ -76,6 +77,17 @@ func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, err
 		}
 		return nil
 	})
+
+	if err != nil {
+		return &org, err
+	}
+
+	_, err = CreateDefaultRunbookConfiguration(DB, org.ID)
+	if err != nil {
+		log.Errorf("failed creating default runbook configuration, err=%v", err)
+	}
+
+	return &org, nil
 }
 
 func UpdateOrgLicense(orgID string, licenseDataJSON []byte) error {

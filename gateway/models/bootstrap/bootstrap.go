@@ -8,6 +8,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/models/bootstrap/migrations"
 	_ "github.com/lib/pq"
 )
@@ -52,6 +53,26 @@ func RunGolangMigrations() error {
 	err := migrations.RunRunbooksV2()
 	if err != nil {
 		return fmt.Errorf("failed running RunbooksV2 migration, err=%v", err)
+	}
+
+	return nil
+}
+
+// AddDefaultRunbooks creates default runbook configurations for all organizations
+// that don't have one yet.
+func AddDefaultRunbooks() error {
+	orgs, err := models.ListAllOrganizations()
+	if err != nil {
+		log.Infof("failed listing organizations: %v", err)
+		// continue even if we fail to list organizations
+		return nil
+	}
+
+	for _, org := range orgs {
+		_, err := models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
+		if err != nil {
+			log.Infof("failed creating default runbook for org %s: %v", org.ID, err)
+		}
 	}
 
 	return nil
