@@ -197,13 +197,9 @@ func CreateDefaultRunbookConfiguration(db *gorm.DB, orgID string) (*Runbooks, er
 	const defaultRepoName = "demo-runbooks"
 
 	// Check if runbook configuration already exists for this org
-	existing, err := GetRunbookConfigurationByOrgID(db, orgID)
-	if err == nil && existing != nil {
+	existing, _ := GetRunbookConfigurationByOrgID(db, orgID)
+	if existing != nil {
 		return existing, nil
-	}
-	// Only proceed if error is "record not found", otherwise return the error
-	if err != nil && err != gorm.ErrRecordNotFound {
-		return nil, fmt.Errorf("failed to check existing runbook configuration: %w", err)
 	}
 
 	runbooks := &Runbooks{

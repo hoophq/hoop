@@ -105,6 +105,11 @@ func Run() {
 		log.Infof("self hosted setup completed, dlp-provider=%v", appconfig.Get().DlpProvider())
 	}
 
+	if err := modelsbootstrap.AddDefaultRunbooks(); err != nil {
+		log.Infof("failed adding default runbooks, reason=%v", err)
+	}
+
+
 	g := &transport.Server{
 		TLSConfig:   tlsConfig,
 		ApiHostname: appconfig.Get().ApiHostname(),
