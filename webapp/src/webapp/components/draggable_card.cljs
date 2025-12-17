@@ -49,9 +49,6 @@
         cards-vec (vec cards)
         total (count cards-vec)]
     [:div
-     (doall
-      (map-indexed
-       (fn [idx [connection-name card-data]]
-         ^{:key connection-name}
-         [markup-single-draggable-card connection-name card-data idx total])
-       cards-vec))]))
+     (for [[idx [connection-name card-data]] (map-indexed vector cards-vec)]
+       ^{:key connection-name}
+       [markup-single-draggable-card connection-name card-data idx total])]))
