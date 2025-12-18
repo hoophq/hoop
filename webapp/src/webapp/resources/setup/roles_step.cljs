@@ -175,16 +175,14 @@
                                                                  new-value])))
                                     :start-adornment [source-selector role-index "remote_url"]}]
        [forms/input {:label "Cluster URL"
-                     :placeholder "e.g. https://example.com:51434"
+                     :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
                      :value remote-url-value
                      :required true
                      :type "text"
-                     :on-change (fn [e]
-                                  (let [new-value (-> e .-target .-value)]
-                                    (rf/dispatch [:resource-setup->update-role-credentials
-                                                  role-index
-                                                  "remote_url"
-                                                  new-value])))}])
+                     :on-change #(rf/dispatch [:resource-setup->update-role-credentials
+                                               role-index
+                                               "remote_url"
+                                               (-> % .-target .-value)])}])
 
      (if show-selector?
        [forms/input-with-adornment {:label "Authorization token"

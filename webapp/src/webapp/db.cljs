@@ -19,7 +19,8 @@
                              :total 0}
    :connections->connection-connected {:status :loading, :data nil}
    :connections->updating-connection {:loading true, :data []}
-   :native-client-access {:requesting? false, :current nil}
+   :native-client-access {:requesting-connections #{}
+                          :sessions {}}
    :aws-connect {:status :not-started
                  :current-step :credentials
                  :credentials {:type nil
@@ -52,7 +53,7 @@
    :dialog-status :closed
    :dialog-text ""
    :dialog-title ""
-   :draggable-card {:status :closed, :component nil, :on-click-close nil, :on-click-expand nil}
+   :draggable-cards {}
    :editor {}
    :editor-plugin->connections-exec-list {:status :ready :data nil}
    :editor-plugin->connections-runbook-list {:status :ready :data nil}
