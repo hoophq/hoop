@@ -69,12 +69,15 @@
  (fn [db [_  field-key]]
    (let [metadata-source (get-in db [:connection-setup :metadata-credentials field-key :source])
          credential-source (get-in db [:connection-setup :credentials field-key :source])
+         ssh-source (get-in db [:connection-setup :ssh-credentials field-key :source])
+         kubernetes-source (get-in db [:connection-setup :kubernetes-token (keyword field-key) :source])
+         network-source (get-in db [:connection-setup :network-credentials (keyword field-key) :source])
          connection-method (get-in db [:connection-setup :connection-method] "manual-input")
          secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
          default-source (if (= connection-method "secrets-manager")
                           secrets-provider
                           "manual-input")]
-     (or metadata-source credential-source default-source))))
+     (or metadata-source credential-source ssh-source kubernetes-source network-source default-source))))
 
 (rf/reg-sub
  :connection-setup/command-args
@@ -138,7 +141,11 @@
 (rf/reg-sub
  :connection-setup/network-credentials
  (fn [db]
-   (get-in db [:connection-setup :network-credentials] {})))
+   (let [credentials (get-in db [:connection-setup :network-credentials] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") v)))
+                {}
+                credentials))))
 
 ;; Agent
 (rf/reg-sub
@@ -252,7 +259,11 @@
 (rf/reg-sub
  :connection-setup/ssh-credentials
  (fn [db]
-   (get-in db [:connection-setup :ssh-credentials] {})))
+   (let [credentials (get-in db [:connection-setup :ssh-credentials] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") v)))
+                {}
+                credentials))))
 
 ;; Resource Subtype Override subscription
 (rf/reg-sub
@@ -264,4 +275,8 @@
 (rf/reg-sub
  :connection-setup/kubernetes-token
  (fn [db]
-   (get-in db [:connection-setup :kubernetes-token] {})))
+   (let [token (get-in db [:connection-setup :kubernetes-token] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") v)))
+                {}
+                token))))

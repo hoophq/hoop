@@ -29,24 +29,23 @@
 
 ;; Network specific events
 (rf/reg-event-db
- :connection-setup/update-network-host
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :host] value)))
-
-(rf/reg-event-db
- :connection-setup/update-network-port
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :port] value)))
-
-(rf/reg-event-db
- :connection-setup/update-network-remote-url
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :remote_url] value)))
+ :connection-setup/update-network-credentials
+ (fn [db [_ field value]]
+   (let [field-key (keyword field)
+         current-value (get-in db [:connection-setup :network-credentials field-key])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :network-credentials field-key] new-value))))
 
 (rf/reg-event-db
  :connection-setup/toggle-network-insecure
  (fn [db [_ enabled?]]
-   (assoc-in db [:connection-setup :network-credentials :insecure] enabled?)))
+   (assoc-in db [:connection-setup :network-credentials :insecure] (boolean enabled?))))
 
 ;; Database specific events
 (rf/reg-event-db
@@ -55,22 +54,44 @@
    (assoc-in db [:connection-setup :database-credentials field] value)))
 
 ;; Metadata-driven specific events
+(defn update-credentials-source
+  "Helper function to update all credentials in a map to use the given source, preserving values."
+  [credentials-map source]
+  (update-vals (or credentials-map {})
+               (fn [v]
+                 (let [raw (if (map? v) (:value v) v)]
+                   {:value (str raw)
+                    :source source}))))
+
 (defn update-connection-metadata-credentials-source
   "Updates all metadata-credentials to use the given source, preserving values."
   [conn source]
-  (update conn :metadata-credentials
-          #(update-vals (or % {})
-                       (fn [v]
-                         (let [raw (if (map? v) (:value v) v)]
-                           {:value (str raw)
-                            :source source})))))
+  (update conn :metadata-credentials #(update-credentials-source % source)))
+
+(defn update-connection-ssh-credentials-source
+  "Updates all ssh-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :ssh-credentials #(update-credentials-source % source)))
+
+(defn update-connection-kubernetes-token-source
+  "Updates all kubernetes-token to use the given source, preserving values."
+  [conn source]
+  (update conn :kubernetes-token #(update-credentials-source % source)))
+
+(defn update-connection-network-credentials-source
+  "Updates all network-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :network-credentials #(update-credentials-source % source)))
 
 (defn update-connection-secrets-manager-provider
-  "Updates the secrets manager provider and all metadata-credentials sources."
+  "Updates the secrets manager provider and all credentials sources."
   [conn provider]
   (-> conn
       (assoc :secrets-manager-provider provider)
-      (update-connection-metadata-credentials-source provider)))
+      (update-connection-metadata-credentials-source provider)
+      (update-connection-ssh-credentials-source provider)
+      (update-connection-kubernetes-token-source provider)
+      (update-connection-network-credentials-source provider)))
 
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
@@ -98,7 +119,10 @@
                         (update-connection-secrets-manager-provider provider))
                     (-> conn
                         (assoc :connection-method method)
-                        (update-connection-metadata-credentials-source method))))))))
+                        (update-connection-metadata-credentials-source method)
+                        (update-connection-ssh-credentials-source method)
+                        (update-connection-kubernetes-token-source method)
+                        (update-connection-network-credentials-source method))))))))
 
 (rf/reg-event-db
  :connection-setup/update-secrets-manager-provider
@@ -113,14 +137,56 @@
  (fn [db [_ field-key source]]
    (if (str/blank? source)
      db
-     (let [metadata-credentials (get-in db [:connection-setup :metadata-credentials] {})
+     (let [field-key-str (name field-key)
+           field-key-kw (keyword field-key-str)
+           ;; Try metadata-credentials first
+           metadata-credentials (get-in db [:connection-setup :metadata-credentials] {})
            metadata-value (get metadata-credentials field-key)
-           updated-metadata-credentials (assoc metadata-credentials field-key
-                                               {:value (if (map? metadata-value)
-                                                         (:value metadata-value)
-                                                         (or metadata-value ""))
-                                                :source source})]
-       (assoc-in db [:connection-setup :metadata-credentials] updated-metadata-credentials)))))
+           ;; Try SSH credentials
+           ssh-credentials (get-in db [:connection-setup :ssh-credentials] {})
+           ssh-value (get ssh-credentials field-key-str)
+           ;; Try Kubernetes token
+           kubernetes-token (get-in db [:connection-setup :kubernetes-token] {})
+           kubernetes-value (get kubernetes-token field-key-kw)]
+       (cond
+         ;; Update metadata-credentials if field exists there
+         (contains? metadata-credentials field-key)
+         (assoc-in db [:connection-setup :metadata-credentials field-key]
+                   {:value (if (map? metadata-value)
+                             (:value metadata-value)
+                             (or metadata-value ""))
+                    :source source})
+         
+         ;; Update SSH credentials if field exists there
+         (contains? ssh-credentials field-key-str)
+         (assoc-in db [:connection-setup :ssh-credentials field-key-str]
+                   {:value (if (map? ssh-value)
+                             (:value ssh-value)
+                             (or ssh-value ""))
+                    :source source})
+         
+         ;; Update Kubernetes token if field exists there
+         (contains? kubernetes-token field-key-kw)
+         (assoc-in db [:connection-setup :kubernetes-token field-key-kw]
+                   {:value (if (map? kubernetes-value)
+                             (:value kubernetes-value)
+                             (or kubernetes-value ""))
+                    :source source})
+         
+         ;; Try network credentials
+         :else
+         (let [network-credentials (get-in db [:connection-setup :network-credentials] {})
+               network-value (get network-credentials field-key-kw)]
+           (if (contains? network-credentials field-key-kw)
+             (assoc-in db [:connection-setup :network-credentials field-key-kw]
+                       {:value (if (map? network-value)
+                                 (:value network-value)
+                                 (or network-value ""))
+                        :source source})
+             ;; Default to metadata-credentials
+             (assoc-in db [:connection-setup :metadata-credentials field-key]
+                       {:value ""
+                        :source source}))))))))
 
 
 
@@ -374,7 +440,15 @@
 (rf/reg-event-db
  :connection-setup/update-ssh-credentials
  (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :ssh-credentials field] value)))
+   (let [current-value (get-in db [:connection-setup :ssh-credentials field])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :ssh-credentials field] new-value))))
 
 (rf/reg-event-db
  :connection-setup/clear-ssh-credentials
@@ -385,4 +459,13 @@
 (rf/reg-event-db
  :connection-setup/set-kubernetes-token
  (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :kubernetes-token (keyword field)] value)))
+   (let [field-key (keyword field)
+         current-value (get-in db [:connection-setup :kubernetes-token field-key])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :kubernetes-token field-key] new-value))))

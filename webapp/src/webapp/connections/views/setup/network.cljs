@@ -7,6 +7,7 @@
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
+   [webapp.connections.views.setup.connection-method :as connection-method]
    [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
 
@@ -15,7 +16,21 @@
    {:id "httpproxy" :title "HTTP Proxy"}])
 
 (defn http-credentials-form []
-  (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
+  (let [credentials @(rf/subscribe [:connection-setup/network-credentials])
+        connection-method @(rf/subscribe [:connection-setup/connection-method])
+        show-selector? (= connection-method "secrets-manager")
+        remote-url-value (if (map? (:remote_url credentials))
+                           (:value (:remote_url credentials))
+                           (or (:remote_url credentials) ""))
+        insecure-value (let [raw-insecure (:insecure credentials)]
+                         (cond
+                           (boolean? raw-insecure) raw-insecure
+                           (map? raw-insecure) (let [value-str (:value raw-insecure)]
+                                                 (if (string? value-str)
+                                                   (= value-str "true")
+                                                   (boolean value-str)))
+                           (string? raw-insecure) (= raw-insecure "true")
+                           :else false))]
     [:form
      {:id "credentials-form"
       :on-submit (fn [e]
@@ -23,17 +38,29 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "max-w-[600px]"}
       [:> Box {:class "space-y-7"}
+       [connection-method/connection-method-section "httpproxy"]
+
        [:> Box {:class "space-y-4"}
         [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
         ;; Remote URL input
-        [forms/input
-         {:label "Remote URL"
-          :placeholder "e.g. https://example.com"
-          :required true
-          :value (get credentials :remote_url "")
-          :on-change #(rf/dispatch [:connection-setup/update-network-remote-url
-                                    (-> % .-target .-value)])}]]
+        (if show-selector?
+          [forms/input-with-adornment
+           {:label "Remote URL"
+            :placeholder "e.g. https://example.com"
+            :required true
+            :value remote-url-value
+            :on-change #(rf/dispatch [:connection-setup/update-network-remote-url
+                                      (-> % .-target .-value)])
+            :start-adornment [connection-method/source-selector "remote_url"]}]
+          [forms/input
+           {:label "Remote URL"
+            :placeholder "e.g. https://example.com"
+            :required true
+            :value remote-url-value
+            :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                      "remote_url"
+                                      (-> % .-target .-value)])}])]
 
        ;; HTTP Headers Section
        [configuration-inputs/environment-variables-section
@@ -43,9 +70,9 @@
 
        ;; Allow insecure SSL switch
        [:> Flex {:align "center" :gap "3"}
-        [:> Switch {:checked (get credentials :insecure false)
+        [:> Switch {:checked insecure-value
                     :size "3"
-                    :onCheckedChange #(rf/dispatch [:connection-setup/toggle-network-insecure %])}]
+                    :onCheckedChange #(rf/dispatch [:connection-setup/toggle-network-insecure (boolean %)])}]
         [:> Box
          [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
           "Allow insecure SSL"]
@@ -55,7 +82,15 @@
        [agent-selector/main]]]]))
 
 (defn tcp-credentials-form []
-  (let [credentials @(rf/subscribe [:connection-setup/network-credentials])]
+  (let [credentials @(rf/subscribe [:connection-setup/network-credentials])
+        connection-method @(rf/subscribe [:connection-setup/connection-method])
+        show-selector? (= connection-method "secrets-manager")
+        host-value (if (map? (:host credentials))
+                     (:value (:host credentials))
+                     (or (:host credentials) ""))
+        port-value (if (map? (:port credentials))
+                     (:value (:port credentials))
+                     (or (:port credentials) ""))]
     [:form
      {:id "credentials-form"
       :on-submit (fn [e]
@@ -63,27 +98,53 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "max-w-[600px]"}
       [:> Box {:class "space-y-5"}
+       [connection-method/connection-method-section "tcp"]
+
        [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
        ;; Host input
-       [forms/input
-        {:label "Host"
-         :placeholder "e.g. localhost"
-         :required true
-         :type "password"
-         :value (get credentials :host "")
-         :on-change #(rf/dispatch [:connection-setup/update-network-host
-                                   (-> % .-target .-value)])}]
+       (if show-selector?
+         [forms/input-with-adornment
+          {:label "Host"
+           :placeholder "e.g. localhost"
+           :required true
+           :type "text"
+           :value host-value
+           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                     "host"
+                                     (-> % .-target .-value)])
+           :start-adornment [connection-method/source-selector "host"]}]
+         [forms/input
+          {:label "Host"
+           :placeholder "e.g. localhost"
+           :required true
+           :type "text"
+           :value host-value
+           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                     "host"
+                                     (-> % .-target .-value)])}])
 
        ;; Port input
-       [forms/input
-        {:label "Port"
-         :placeholder "e.g. 4040"
-         :required true
-         :type "password"
-         :value (get credentials :port "")
-         :on-change #(rf/dispatch [:connection-setup/update-network-port
-                                   (-> % .-target .-value)])}]
+       (if show-selector?
+         [forms/input-with-adornment
+          {:label "Port"
+           :placeholder "e.g. 4040"
+           :required true
+           :type "text"
+           :value port-value
+           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                     "port"
+                                     (-> % .-target .-value)])
+           :start-adornment [connection-method/source-selector "port"]}]
+         [forms/input
+          {:label "Port"
+           :placeholder "e.g. 4040"
+           :required true
+           :type "text"
+           :value port-value
+           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                     "port"
+                                     (-> % .-target .-value)])}])
 
        [agent-selector/main]]]]))
 
@@ -141,11 +202,17 @@
                                        :resource (or
                                                   (not network-type)
                                                   (and (= network-type "tcp")
-                                                       (or
-                                                        (empty? (get credentials :host))
-                                                        (empty? (get credentials :port))))
+                                                       (let [host-value (get credentials :host)
+                                                             port-value (get credentials :port)
+                                                             host (if (map? host-value) (:value host-value) host-value)
+                                                             port (if (map? port-value) (:value port-value) port-value)]
+                                                         (or
+                                                          (empty? (str host))
+                                                          (empty? (str port)))))
                                                   (and (= network-type "httpproxy")
-                                                       (empty? (get credentials :remote_url))))
+                                                       (let [remote-url-value (get credentials :remote_url)
+                                                             remote-url (if (map? remote-url-value) (:value remote-url-value) remote-url-value)]
+                                                         (empty? (str remote-url)))))
                                        false)
                      :on-next (fn []
                                 (let [form (.getElementById js/document
