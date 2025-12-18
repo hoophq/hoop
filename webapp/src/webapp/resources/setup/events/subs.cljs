@@ -175,14 +175,11 @@
 (rf/reg-sub
 :resource-setup/field-source
 (fn [db [_ role-index field-key]]
-  (let [explicit-source (get-in db [:resource-setup :roles role-index :field-sources field-key])
+  (let [metadata-source (get-in db [:resource-setup :roles role-index :metadata-credentials field-key :source])
+        credential-source (get-in db [:resource-setup :roles role-index :credentials field-key :source])
         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
-        default-source (cond
-                         (not= connection-method "secrets-manager")
-                         "manual-input"
-                         (= secrets-provider "aws-secrets-manager")
-                         "aws-secrets-manager"
-                         :else
-                         "vault-kv1")]
-    (or explicit-source default-source))))
+        default-source (if (= connection-method "secrets-manager")
+                         secrets-provider
+                         "manual-input")]
+    (or metadata-source credential-source default-source))))

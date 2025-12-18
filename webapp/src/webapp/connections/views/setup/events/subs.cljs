@@ -62,12 +62,19 @@
 (rf/reg-sub
  :connection-setup/secrets-manager-provider
  (fn [db _]
-   (get-in db [:connection-setup :secrets-manager-provider])))
+   (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")))
 
 (rf/reg-sub
  :connection-setup/field-source
- (fn [db [_ field-key]]
-   (get-in db [:connection-setup :field-sources field-key])))
+ (fn [db [_  field-key]]
+   (let [metadata-source (get-in db [:connection-setup :metadata-credentials field-key :source])
+         credential-source (get-in db [:connection-setup :credentials field-key :source])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or metadata-source credential-source default-source))))
 
 (rf/reg-sub
  :connection-setup/command-args

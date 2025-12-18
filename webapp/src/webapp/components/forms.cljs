@@ -27,7 +27,8 @@
   :placeholder -> html prop placeholder for input;
   :value -> a reagent atom piece of state."
   [_]
-  (let [eye-open? (r/atom true)]
+  (let [eye-open? (r/atom true)
+        toggle-eye #(swap! eye-open? not)]
     (fn [{:keys [label
                  placeholder
                  name
@@ -103,7 +104,7 @@
                                    "3" "rt-r-size-2"
                                    "2" "rt-r-size-1"
                                    "rt-r-size-2"))
-                     :on-click #(swap! eye-open? not)}
+                     :on-click toggle-eye}
             (if @eye-open?
               [:> Eye {:size 16}]
               [:> EyeOff {:size 16}])]])]])))
@@ -119,9 +120,11 @@
   :required -> HTML required attribute;
   :on-change -> function to be executed on change;
   :helper-text -> optional helper text shown as tooltip;
-  :start-adornment -> component to render as left adornment (e.g., select dropdown);"
-  [_]
-  (let [eye-open? (r/atom true)]
+  :start-adornment -> component to render as left adornment (e.g., select dropdown);
+  :show-password? -> if true, password is visible initially (default: false, password hidden)."
+  [{:keys [show-password?]}]
+  (let [password-visible? (r/atom (boolean show-password?))
+        toggle-password #(swap! password-visible? not)]
     (fn [{:keys [label
                  placeholder
                  helper-text
@@ -141,7 +144,7 @@
        [:> TextField.Root {:variant "surface"
                            :size "3"
                            :type (if (= type "password")
-                                   (if @eye-open? "password" "text")
+                                   (if @password-visible? "text" "password")
                                    (or type "text"))
                            :placeholder (or placeholder label)
                            :value value
@@ -155,10 +158,10 @@
            [:button {:data-accent-color ""
                      :type "button"
                      :class "rt-reset rt-BaseButton rt-r-size-2 rt-variant-ghost rt-IconButton rt-r-size-2"
-                     :on-click #(swap! eye-open? not)}
-            (if @eye-open?
-              [:> Eye {:size 16}]
-              [:> EyeOff {:size 16}])]])]])))
+                     :on-click toggle-password}
+            (if @password-visible?
+              [:> EyeOff {:size 16}]
+              [:> Eye {:size 16}])]])]])))
 
 (defn textarea
   [{:keys [label

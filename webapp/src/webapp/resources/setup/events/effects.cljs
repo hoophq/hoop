@@ -131,85 +131,107 @@
  (fn [db [_ role-index name]]
    (assoc-in db [:resource-setup :roles role-index :name] name)))
 
+;; Role helper functions
+(defn update-role-credentials-source
+  "Updates all credentials to use the given source, preserving values."
+  [role source]
+  (-> role
+      (update :metadata-credentials
+              #(update-vals (or % {})
+                            (fn [v]
+                              (let [raw (if (map? v) (:value v) v)]
+                                {:value raw
+                                 :source source}))))
+      (update :credentials
+              #(update-vals (or % {})
+                            (fn [v]
+                              (let [raw (if (map? v) (:value v) v)]
+                                {:value raw
+                                 :source source}))))))
+
+(defn update-role-secrets-manager-provider
+  "Updates the secrets manager provider and all credentials sources."
+  [role provider]
+  (-> role
+      (assoc :secrets-manager-provider provider)
+      (update-role-credentials-source provider)))
+
 (rf/reg-event-db
  :resource-setup->update-role-connection-method
  (fn [db [_ role-index method]]
-   (let [resource-subtype (get-in db [:resource-setup :subtype])
-         supports-aws-iam? (contains? #{"mysql" "postgres"} resource-subtype)
-         updated-db (assoc-in db [:resource-setup :roles role-index :connection-method] method)]
-     ;; When switching to AWS IAM Role for MySQL/PostgreSQL, auto-set pass field to "authtoken" (hidden, without prefix)
-     (if (and (= method "aws-iam-role") supports-aws-iam?)
-       (let [metadata-credentials (get-in updated-db [:resource-setup :roles role-index :metadata-credentials] {})
-             ;; Find pass field (case-insensitive - could be "pass" or "PASS")
-             pass-key (or (first (filter #(= (str/lower-case %) "pass") (keys metadata-credentials)))
-                          "PASS")
-             pass-value (get metadata-credentials pass-key)
-             ;; Auto-set pass field to "authtoken" (field is hidden)
-             updated-metadata-credentials (if (or (nil? pass-value)
-                                                  (str/blank? (if (map? pass-value) (:value pass-value) (str pass-value))))
-                                            (assoc metadata-credentials pass-key {:value "authtoken" :prefix ""})
-                                            metadata-credentials)]
-         ;; Don't prefill user field - leave it empty for user to fill
-         (assoc-in updated-db [:resource-setup :roles role-index :metadata-credentials] updated-metadata-credentials))
-       updated-db))))
+   (let [current-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider])
+         provider (if (str/blank? current-provider) "vault-kv1" current-provider)]
+     (update-in db [:resource-setup :roles role-index]
+                (fn [role]
+                  (if (= method "secrets-manager")
+                    (-> role
+                        (assoc :connection-method method)
+                        (update-role-secrets-manager-provider provider))
+                    (-> role
+                        (assoc :connection-method method)
+                        (update-role-credentials-source method))))))))
 
 (rf/reg-event-db
  :resource-setup->update-role-credentials
  (fn [db [_ role-index key value]]
-   (assoc-in db [:resource-setup :roles role-index :credentials key] value)))
+   (let [current-value (get-in db [:resource-setup :roles role-index :credentials key])
+         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")
+         new-source (or existing-source default-source)
+         new-value (if (or (map? current-value) (= connection-method "secrets-manager"))
+                     {:value value :source new-source}
+                     value)]
+     (assoc-in db [:resource-setup :roles role-index :credentials key] new-value))))
 
 (rf/reg-event-db
  :resource-setup->update-role-metadata-credentials
- (fn [db [_ role-index key value prefix]]
+ (fn [db [_ role-index key value source]]
    (let [current-value (get-in db [:resource-setup :roles role-index :metadata-credentials key])
-         existing-prefix (if (map? current-value)
-                           (:prefix current-value)
-                           (or prefix ""))
-         new-value {:value value :prefix existing-prefix}]
+         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or source
+                             existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value value :source inferred-source}]
      (assoc-in db [:resource-setup :roles role-index :metadata-credentials key] new-value))))
 
 (rf/reg-event-db
  :resource-setup->update-secrets-manager-provider
  (fn [db [_ role-index provider]]
-   (let [new-prefix (helpers/get-secret-prefix provider)
-         ;; Update all metadata-credentials prefixes
-         metadata-credentials (get-in db [:resource-setup :roles role-index :metadata-credentials] {})
-         updated-metadata-credentials (reduce-kv (fn [acc k v]
-                                                   (assoc acc k (assoc v :prefix new-prefix)))
-                                                 {}
-                                                 metadata-credentials)
-         current-role (get-in db [:resource-setup :roles role-index])
-         updated-role (merge current-role
-                             {:secrets-manager-provider provider
-                              :metadata-credentials updated-metadata-credentials})]
-     (assoc-in db [:resource-setup :roles role-index] updated-role))))
+   (update-in db [:resource-setup :roles role-index]
+              update-role-secrets-manager-provider
+              provider)))
 
 (rf/reg-event-db
  :resource-setup->update-field-source
  (fn [db [_ role-index field-key source]]
-   (let [new-prefix (helpers/get-secret-prefix source)
-         ;; Update metadata-credentials if exists
-         metadata-credentials (get-in db [:resource-setup :roles role-index :metadata-credentials] {})
-         metadata-value (get metadata-credentials field-key)
-         updated-metadata-credentials (if metadata-value
-                                        (assoc metadata-credentials field-key
-                                               (assoc metadata-value :prefix new-prefix))
-                                        metadata-credentials)
-         ;; Update credentials if exists
-         credentials (get-in db [:resource-setup :roles role-index :credentials] {})
-         credential-value (get credentials field-key)
-         updated-credentials (if credential-value
-                               (assoc credentials field-key
-                                      (assoc credential-value :prefix new-prefix))
-                               credentials)
-         current-role (get-in db [:resource-setup :roles role-index])
-         current-field-sources (get current-role :field-sources {})
-         updated-field-sources (assoc current-field-sources field-key source)
-         updated-role (merge current-role
-                             {:field-sources updated-field-sources
-                              :metadata-credentials updated-metadata-credentials
-                              :credentials updated-credentials})]
-     (assoc-in db [:resource-setup :roles role-index] updated-role))))
+   (if (str/blank? source)
+     db
+     (let [metadata-credentials (get-in db [:resource-setup :roles role-index :metadata-credentials] {})
+           metadata-value (get metadata-credentials field-key)
+           updated-metadata-credentials (assoc metadata-credentials field-key
+                                               {:value (if (map? metadata-value)
+                                                         (:value metadata-value)
+                                                         (or metadata-value ""))
+                                                :source source})
+           credentials (get-in db [:resource-setup :roles role-index :credentials] {})
+           credential-value (get credentials field-key)
+           updated-credentials (assoc credentials field-key
+                                      {:value (if (map? credential-value)
+                                                (:value credential-value)
+                                                (or credential-value ""))
+                                       :source source})
+           current-role (get-in db [:resource-setup :roles role-index])
+           updated-role (merge current-role
+                               {:metadata-credentials updated-metadata-credentials
+                                :credentials updated-credentials})]
+       (assoc-in db [:resource-setup :roles role-index] updated-role)))))
 
 ;; Environment variables for roles - New pattern with current-key/current-value
 (rf/reg-event-db

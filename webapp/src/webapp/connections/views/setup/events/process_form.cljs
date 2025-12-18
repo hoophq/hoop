@@ -1,8 +1,9 @@
 (ns webapp.connections.views.setup.events.process-form
   (:require
-   [clojure.string :as str] 
+   [clojure.string :as str]
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]
+   [webapp.resources.helpers :refer [get-secret-prefix]]
    [webapp.connections.views.setup.tags-utils :as tags-utils]
    [webapp.connections.views.setup.metadata-driven :as metadata-driven]))
 
@@ -80,17 +81,32 @@
                        (and (or (= ui-type "custom") (= ui-type "database"))
                             connection-subtype
                             (seq metadata-credentials))
-                       (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
-                                                             {:key (name field-key)
-                                                              :value (if (map? field-value)
-                                                                       (let [prefix (:prefix field-value "")
-                                                                             value (:value field-value "")]
-                                                                         (if (seq prefix)
-                                                                           (str prefix value)
-                                                                           value))
-                                                                       (str field-value))})
-                                                           (seq metadata-credentials))]
-                         credentials-as-env-vars)
+                         (let [connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+                               is-aws-iam-role? (= connection-method "aws-iam-role")
+                               ;; For AWS IAM Role, always ensure PASS field is set to "authtoken"
+                               metadata-credentials-with-pass (if is-aws-iam-role?
+                                                                (let [pass-key (or (first (filter #(= (str/lower-case (name %)) "pass") (keys metadata-credentials)))
+                                                                                   "PASS")]
+                                                                  (assoc (or metadata-credentials {}) pass-key {:value "authtoken" :source "aws-iam-role"}))
+                                                                metadata-credentials)
+                               credentials-as-env-vars (mapv (fn [[field-key field-value]]
+                                                               (let [{:keys [value source]} (metadata-driven/normalize-credential-value field-value)
+                                                                     field-key-lower (str/lower-case (name field-key))
+                                                                     is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))
+                                                                     prefix (when source (get-secret-prefix source))
+                                                                     final-value (cond
+                                                                                   ;; AWS IAM Role: apply _aws_iam_rds: prefix to user/pass
+                                                                                   (and is-aws-iam-role? is-user-or-pass?)
+                                                                                   (str "_aws_iam_rds:" value)
+                                                                                   ;; For non-AWS IAM Role, apply prefix if present
+                                                                                   (and (not is-aws-iam-role?) (seq prefix))
+                                                                                   (str prefix value)
+                                                                                   :else
+                                                                                   value)]
+                                                                 {:key (name field-key)
+                                                                  :value final-value}))
+                                                             (seq metadata-credentials-with-pass))]
+                           credentials-as-env-vars)
 
                        (= connection-subtype "tcp")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])

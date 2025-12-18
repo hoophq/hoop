@@ -2,8 +2,7 @@
   (:require
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.tags-utils :as tags-utils]
-   [webapp.resources.helpers :as helpers]))
+   [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
 ;; Basic db updates
 (rf/reg-event-fx
@@ -56,39 +55,74 @@
    (assoc-in db [:connection-setup :database-credentials field] value)))
 
 ;; Metadata-driven specific events
+(defn update-connection-metadata-credentials-source
+  "Updates all metadata-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :metadata-credentials
+          #(update-vals (or % {})
+                       (fn [v]
+                         (let [raw (if (map? v) (:value v) v)]
+                           {:value (str raw)
+                            :source source})))))
+
+(defn update-connection-secrets-manager-provider
+  "Updates the secrets manager provider and all metadata-credentials sources."
+  [conn provider]
+  (-> conn
+      (assoc :secrets-manager-provider provider)
+      (update-connection-metadata-credentials-source provider)))
+
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
- (fn [db [_ field value prefix]]
+ (fn [db [_ field value]]
    (let [current-value (get-in db [:connection-setup :metadata-credentials field])
-         existing-prefix (if (map? current-value)
-                           (:prefix current-value)
-                           (or prefix ""))
-         new-value {:value (str value) :prefix existing-prefix}]
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
      (assoc-in db [:connection-setup :metadata-credentials field] new-value))))
 
 (rf/reg-event-db
  :connection-setup/update-connection-method
  (fn [db [_ method]]
-   (assoc-in db [:connection-setup :connection-method] method)))
+   (let [current-provider (get-in db [:connection-setup :secrets-manager-provider])
+         provider (if (str/blank? current-provider) "vault-kv1" current-provider)]
+     (update-in db [:connection-setup]
+                (fn [conn]
+                  (if (= method "secrets-manager")
+                    (-> conn
+                        (assoc :connection-method method)
+                        (update-connection-secrets-manager-provider provider))
+                    (-> conn
+                        (assoc :connection-method method)
+                        (update-connection-metadata-credentials-source method))))))))
 
 (rf/reg-event-db
  :connection-setup/update-secrets-manager-provider
  (fn [db [_ provider]]
-   (assoc-in db [:connection-setup :secrets-manager-provider] provider)))
+   (let [clean-provider (if (str/blank? provider) "vault-kv1" provider)]
+     (update-in db [:connection-setup]
+                update-connection-secrets-manager-provider
+                clean-provider))))
 
 (rf/reg-event-db
  :connection-setup/update-field-source
  (fn [db [_ field-key source]]
-   (let [new-prefix (helpers/get-secret-prefix source)
-         current-credential (get-in db [:connection-setup :metadata-credentials field-key])
-         current-value (if (map? current-credential)
-                         (:value current-credential)
-                         (str current-credential))]
-     (-> db
-         (assoc-in [:connection-setup :field-sources field-key] source)
-         (assoc-in [:connection-setup :metadata-credentials field-key]
-                   {:value current-value
-                    :prefix new-prefix})))))
+   (if (str/blank? source)
+     db
+     (let [metadata-credentials (get-in db [:connection-setup :metadata-credentials] {})
+           metadata-value (get metadata-credentials field-key)
+           updated-metadata-credentials (assoc metadata-credentials field-key
+                                               {:value (if (map? metadata-value)
+                                                         (:value metadata-value)
+                                                         (or metadata-value ""))
+                                                :source source})]
+       (assoc-in db [:connection-setup :metadata-credentials] updated-metadata-credentials)))))
+
+
 
 ;; Configuration toggles
 (rf/reg-event-db

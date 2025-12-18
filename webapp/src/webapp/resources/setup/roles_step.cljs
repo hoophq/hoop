@@ -10,39 +10,23 @@
    [webapp.components.multiselect :as multi-select]
    [webapp.config :as config]
    [webapp.resources.constants :as constants]
-   [webapp.resources.helpers :as helpers]
    [webapp.resources.setup.configuration-inputs :as configuration-inputs]))
 
-(defn get-field-prefix
-  "Get the prefix for a field based on its source or provider default"
-  [role-index field-key]
-  (let [current-source @(rf/subscribe [:resource-setup/field-source role-index field-key])
-        current-provider @(rf/subscribe [:resource-setup/secrets-manager-provider role-index])
-        actual-source (or current-source
-                         (if (= current-provider "aws-secrets-manager")
-                           "aws-secrets-manager"
-                           "vault-kv1"))]
-    (helpers/get-secret-prefix actual-source)))
-
 (defn source-selector [role-index field-key]
-  (let [open? (r/atom false)]
+  (let [open? (r/atom false)
+        source-text (fn [source]
+                      (case source
+                        "vault-kv1" "Vault KV v1"
+                        "vault-kv2" "Vault KV v2"
+                        "aws-secrets-manager" "AWS Secrets Manager"
+                        "manual-input" "Manual"
+                        "Vault KV 1"))]
     (fn []
       (let [field-source @(rf/subscribe [:resource-setup/field-source role-index field-key])
-            secrets-provider @(rf/subscribe [:resource-setup/secrets-manager-provider role-index])
-            actual-source (or field-source
-                             (if (= secrets-provider "aws-secrets-manager")
-                               "aws-secrets-manager"
-                               "vault-kv1"))
-            all-sources [{:value "vault-kv1" :text "Vault V1"}
-                         {:value "vault-kv2" :text "Vault V2"}
-                         {:value "aws-secrets-manager" :text "AWS Secrets Manager"}
-                         {:value "manual-input" :text "Manual"}]
-            available-sources (if (= secrets-provider "aws-secrets-manager")
-                                (let [aws-source (first (filter #(= (:value %) "aws-secrets-manager") all-sources))
-                                      other-sources (remove #(= (:value %) "aws-secrets-manager") all-sources)]
-                                  (cons aws-source other-sources))
-                                all-sources)
-            selected-text (some #(when (= (:value %) actual-source) (:text %)) available-sources)]
+            secrets-provider (or @(rf/subscribe [:resource-setup/secrets-manager-provider role-index]) "vault-kv1")
+            actual-source (or field-source secrets-provider "vault-kv1")
+            available-sources [{:value secrets-provider :text (source-text secrets-provider)}
+                               {:value "manual-input" :text "Manual"}]]
         [:> Select.Root {:value actual-source
                          :open @open?
                          :onOpenChange #(reset! open? %)
@@ -55,7 +39,7 @@
          [:> Select.Trigger {:variant "ghost"
                              :size "1"
                              :class "border-none shadow-none text-xsm font-medium text-[--gray-11]"
-                             :placeholder (or selected-text "Vault V1")}]
+                             :placeholder (or (source-text actual-source) "Vault KV 1")}]
          [:> Select.Content
           (for [source available-sources]
             ^{:key (:value source)}
@@ -120,6 +104,7 @@
             [forms/textarea base-props]
             (if show-source-selector?
               [forms/input-with-adornment (assoc base-props :type "password"
+                                                 :show-password? true
                                                  :start-adornment [source-selector role-index field-key])]
               [forms/input (assoc base-props :type "password")]))))]]))
 
@@ -147,6 +132,7 @@
                                         :value display-value
                                         :required (:required field)
                                         :type "password"
+                                        :show-password? true
                                         :on-change handle-change
                                         :start-adornment [source-selector role-index field-key]}]
            [forms/input {:label (:label field)
@@ -180,6 +166,7 @@
                                     :value remote-url-value
                                     :required true
                                     :type "text"
+                                    :show-password? true
                                     :on-change (fn [e]
                                                  (let [new-value (-> e .-target .-value)]
                                                    (rf/dispatch [:resource-setup->update-role-credentials
@@ -205,6 +192,7 @@
                                     :value auth-token-display-value
                                     :required true
                                     :type "text"
+                                    :show-password? true
                                     :on-change (fn [e]
                                                  (let [new-value (-> e .-target .-value)
                                                        transformed-val (str "Bearer " new-value)]
@@ -263,6 +251,7 @@
                                       :value remote-url-value
                                       :required true
                                       :type "text"
+                                      :show-password? true
                                       :on-change handle-remote-url-change
                                       :start-adornment [source-selector role-index "remote_url"]}]
          [forms/input {:label "Remote URL"
@@ -326,9 +315,7 @@
                     display-value field-value
                     handle-change (fn [e]
                                     (let [new-value (-> e .-target .-value)
-                                          actual-prefix (if is-secrets-manager?
-                                                          (get-field-prefix role-index env-var-name)
-                                                          "")]
+                                          field-source @(rf/subscribe [:resource-setup/field-source role-index env-var-name])]
                                       (if is-filesystem?
                                         (rf/dispatch [:resource-setup->update-role-config-file-by-key
                                                       role-index
@@ -338,7 +325,7 @@
                                                       role-index
                                                       env-var-name
                                                       new-value
-                                                      actual-prefix]))))]
+                                                      field-source]))))]
                 ^{:key env-var-name}
                 (if (= display-type "textarea")
                   [forms/textarea {:label sanitized-name
@@ -355,6 +342,7 @@
                                                  :type display-type
                                                  :helper-text (:description field)
                                                  :on-change handle-change
+                                                 :show-password? true
                                                  :start-adornment [source-selector role-index env-var-name]}]
                     [forms/input {:label sanitized-name
                                   :placeholder (or (:placeholder field) (:description field))
@@ -463,7 +451,8 @@
   (let [provider @(rf/subscribe [:resource-setup/secrets-manager-provider role-index])]
     [:> Box
      [forms/select {:label "Secrets manager provider"
-                    :options [{:value "vault-kv1" :text "HashiCorp Vault"}
+                    :options [{:value "vault-kv1" :text "HashiCorp Vault KV version 1"}
+                              {:value "vault-kv2" :text "HashiCorp Vault KV version 2"}
                               {:value "aws-secrets-manager" :text "AWS Secrets Manager"}]
                     :selected provider
                     :full-width? true

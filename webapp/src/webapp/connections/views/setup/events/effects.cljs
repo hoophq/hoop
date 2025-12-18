@@ -16,13 +16,11 @@
                                           :command-args (get initial-data :command-args [{"value" "bash" "label" "bash"}])
                                           :command "bash"
                                           :connection-method connection-method
-                                          :secrets-manager-provider secrets-manager-provider
-                                          :field-sources {})))
+                                          :secrets-manager-provider secrets-manager-provider)))
      (assoc db :connection-setup {:ssh-auth-method "password"
                                   :command-args [{"value" "bash" "label" "bash"}]
                                   :command "bash"
-                                  :connection-method "manual-input"
-                                  :field-sources {}}))))
+                                  :connection-method "manual-input"}))))
 
 (defn filter-valid-tags
   [tags]
