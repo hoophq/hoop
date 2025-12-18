@@ -182,7 +182,7 @@
         [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
          "Provide SSH information to setup your connection."]]
 
-       [connection-method/connection-method-section "ssh"]
+       [connection-method/main "ssh"]
 
        [:> Box {:class "space-y-4 mb-6"}
         [:> Heading {:as "h4" :size "3" :weight "medium"}
@@ -231,7 +231,7 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "space-y-8 max-w-[600px]"}
       [:> Box {:class "space-y-4"}
-       [connection-method/connection-method-section "kubernetes-token"]
+       [connection-method/main "kubernetes-token"]
 
        ;; Cluster URL
        (if show-selector?

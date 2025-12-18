@@ -38,7 +38,7 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "max-w-[600px]"}
       [:> Box {:class "space-y-7"}
-       [connection-method/connection-method-section "httpproxy"]
+       [connection-method/main "httpproxy"]
 
        [:> Box {:class "space-y-4"}
         [:> Text {:size "4" :weight "bold"} "Environment credentials"]
@@ -98,7 +98,7 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "max-w-[600px]"}
       [:> Box {:class "space-y-5"}
-       [connection-method/connection-method-section "tcp"]
+       [connection-method/main "tcp"]
 
        [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 

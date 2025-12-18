@@ -151,7 +151,7 @@
    [:> Box {:class "space-y-7"}
     (when connection-subtype
       [:<>
-       [connection-method/connection-method-section connection-subtype]
+       [connection-method/main connection-subtype]
 
        [metadata-credentials connection-subtype form-type]
        [agent-selector/main]])]])

@@ -209,7 +209,7 @@
             ^{:key (:value source)}
             [:> Select.Item {:value (:value source)} (:text source)])]]))))
 
-(defn connection-method-section
+(defn main
   [connection-subtype]
   (let [connection-method @(rf/subscribe [:connection-setup/connection-method])]
     [:> Box {:class "space-y-6"}
