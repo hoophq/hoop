@@ -67,7 +67,7 @@
 
         credential-env-vars (mapv (fn [[k v]]
                                     {:key (name k)
-                                     :value (extract-value v connection-method k secrets-provider)})
+                                     :value v})
                                   (seq credentials))
 
         metadata-credential-env-vars (mapv (fn [[k v]]
@@ -85,17 +85,9 @@
                          (concat all-credential-env-vars processed-headers))
                        (concat all-credential-env-vars env-vars))
 
-        processed-config-files (mapv (fn [file]
-                                       {:key (:key file)
-                                        :value (extract-value (:value file)
-                                                              connection-method
-                                                              (:key file)
-                                                              secrets-provider)})
-                                     config-files)
-
         envvar-result (helpers/config->json all-env-vars "envvar:")
-        filesystem-result (when (seq processed-config-files)
-                            (helpers/config->json processed-config-files "filesystem:"))]
+        filesystem-result (when (seq config-files)
+                            (helpers/config->json config-files "filesystem:"))]
 
     (clj->js
      (merge envvar-result filesystem-result))))
