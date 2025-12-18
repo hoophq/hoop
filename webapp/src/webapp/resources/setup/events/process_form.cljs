@@ -14,26 +14,38 @@
 (defn extract-value
   "Extract value from map or string, applying prefix based on the chosen source."
   [v connection-method field-key secrets-provider]
-  (let [value (if (map? v) (:value v "") (str v))
-        explicit-source (when (map? v) (:source v))
+  (let [{:keys [value source]}
+        (if (map? v)
+          {:value (:value v "")
+           :source (:source v)}
+          {:value (str v)
+           :source nil})
+
         default-source (if (= connection-method "secrets-manager")
                          secrets-provider
                          "manual-input")
-        source (or explicit-source default-source)
+        source (or source default-source)
         prefix (helpers/get-secret-prefix source)
-        is-aws-iam-role? (= connection-method "aws-iam-role")
-        field-key-lower (str/lower-case (name field-key))
-        is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))
-        final-value (cond
-                      ;; AWS IAM Role: apply _aws_iam_rds: prefix to user/pass, ignore other prefixes
-                      (and is-aws-iam-role? is-user-or-pass?)
-                      (str "_aws_iam_rds:" value)
-                      ;; For non-AWS IAM Role, apply prefix if present
-                      (and (not is-aws-iam-role?) (not (str/blank? prefix)))
-                      (str prefix value)
-                      :else
+
+        field (-> field-key name str/lower-case)
+        aws-iam? (= connection-method "aws-iam-role")
+        user-or-pass? (#{"user" "pass"} field)
+
+        ;; AWS IAM Role pass should always be "authtoken"
+        final-value (if (and aws-iam? (= field "pass") (str/blank? value))
+                      "authtoken"
                       value)]
-    final-value))
+    (cond
+      ;; AWS IAM Role: apply _aws_iam_rds: prefix to user/pass
+      (and aws-iam? user-or-pass?)
+      (str "_aws_iam_rds:" final-value)
+
+      ;; For non-AWS IAM Role, apply prefix if present
+      (and (not aws-iam?) (not (str/blank? prefix)))
+      (str prefix final-value)
+
+      :else
+      final-value)))
 
 (defn process-role-secret
   "Process role credentials into secret format with base64 encoding"
