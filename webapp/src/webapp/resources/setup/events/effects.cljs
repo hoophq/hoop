@@ -156,6 +156,25 @@
       (assoc :secrets-manager-provider provider)
       (update-role-credentials-source provider)))
 
+(defn update-field-source-if-present
+  "Updates the source for a field in a credentials map, preserving the value."
+  [m field-key source]
+  (update m field-key
+          (fn [v]
+            {:value (if (map? v)
+                      (:value v)
+                      (or v ""))
+             :source source})))
+
+(defn update-role-field-source
+  "Updates the source for a field in both metadata-credentials and credentials."
+  [role field-key source]
+  (-> role
+      (update :metadata-credentials
+              #(update-field-source-if-present (or % {}) field-key source))
+      (update :credentials
+              #(update-field-source-if-present (or % {}) field-key source))))
+
 (rf/reg-event-db
  :resource-setup->update-role-connection-method
  (fn [db [_ role-index method]]
@@ -213,25 +232,11 @@
  (fn [db [_ role-index field-key source]]
    (if (str/blank? source)
      db
-     (let [metadata-credentials (get-in db [:resource-setup :roles role-index :metadata-credentials] {})
-           metadata-value (get metadata-credentials field-key)
-           updated-metadata-credentials (assoc metadata-credentials field-key
-                                               {:value (if (map? metadata-value)
-                                                         (:value metadata-value)
-                                                         (or metadata-value ""))
-                                                :source source})
-           credentials (get-in db [:resource-setup :roles role-index :credentials] {})
-           credential-value (get credentials field-key)
-           updated-credentials (assoc credentials field-key
-                                      {:value (if (map? credential-value)
-                                                (:value credential-value)
-                                                (or credential-value ""))
-                                       :source source})
-           current-role (get-in db [:resource-setup :roles role-index])
-           updated-role (merge current-role
-                               {:metadata-credentials updated-metadata-credentials
-                                :credentials updated-credentials})]
-       (assoc-in db [:resource-setup :roles role-index] updated-role)))))
+     (update-in db
+                [:resource-setup :roles role-index]
+                update-role-field-source
+                field-key
+                source))))
 
 ;; Environment variables for roles - New pattern with current-key/current-value
 (rf/reg-event-db
