@@ -134,12 +134,11 @@
                  type
                  start-adornment]}]
       [:> Box {:class "text-sm mb-regular"}
-       (when (or label helper-text)
-         [:> Flex {:align "center" :gap "2" :class "mb-1"}
-          (when label
-            [form-label label])
-          (when (not (cs/blank? helper-text))
-            [form-helper-text helper-text])])
+       [:> Flex {:align "center" :gap "2" :class "mb-1"}
+        (when label
+          [form-label label])
+        (when (not (cs/blank? helper-text))
+          [form-helper-text helper-text])]
 
        [:> TextField.Root {:variant "surface"
                            :size "3"
