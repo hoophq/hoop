@@ -95,23 +95,9 @@
         full-credentials (get-in @(rf/subscribe [:connection-setup/form-data]) [:metadata-credentials] {})
         connection-method @(rf/subscribe [:connection-setup/connection-method])
         config-files @(rf/subscribe [:connection-setup/configuration-files])
-        full-config-files (get-in @(rf/subscribe [:connection-setup/form-data]) [:credentials :configuration-files] [])
         config-files-map (into {} (map (fn [{:keys [key value]}]
                                          [key (if (map? value) (:value value) (str value))])
-                                       config-files))
-        full-config-files-map (into {} (map (fn [{:keys [key value]}]
-                                              ;; Extract value from {:value :prefix} format, handling double-wrapped case
-                                              [key (if (map? value)
-                                                     (let [inner-value (:value value)]
-                                                       (if (map? inner-value)
-                                                         ;; Double-wrapped: extract the inner value
-                                                         {:value (if (map? inner-value) (:value inner-value) (str inner-value))
-                                                          :prefix ""}
-                                                         ;; Single wrapped: use as-is
-                                                         value))
-                                                     ;; Plain value: wrap it
-                                                     {:value (str value) :prefix ""})])
-                                            full-config-files))]
+                                       config-files))]
     (if configs
       [:> Box {:class "space-y-5"}
        [:> Heading {:as "h3" :size "4" :weight "bold"}
@@ -129,7 +115,7 @@
           (if is-filesystem?
             [metadata-credential-field (assoc field
                                               :key field-key
-                                              :value (get full-config-files-map field-key (get config-files-map field-key ""))
+                                              :value (get config-files-map field-key "")
                                               :connection-method connection-method
                                               :is-filesystem? true)]
             (let [full-value (get full-credentials field-key)
