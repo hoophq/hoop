@@ -62,7 +62,24 @@
 (rf/reg-sub
  :resource-setup/role-env-vars
  (fn [db [_ role-index]]
-   (get-in db [:resource-setup :roles role-index :environment-variables] [])))
+   (let [env-vars (get-in db [:resource-setup :roles role-index :environment-variables] [])]
+     (mapv (fn [{:keys [value] :as env-var}]
+             (assoc env-var :value (if (map? value) (:value value) value)))
+           env-vars))))
+
+(rf/reg-sub
+ :resource-setup/role-env-var-source
+ (fn [db [_ role-index var-index]]
+   (let [env-vars (get-in db [:resource-setup :roles role-index :environment-variables] [])
+         value (when (< var-index (count env-vars))
+                 (get-in env-vars [var-index :value]))
+         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+         explicit-source (when (and value (map? value)) (:source value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or explicit-source default-source))))
 
 (rf/reg-sub
  :resource-setup/role-config-files
@@ -143,7 +160,20 @@
 (rf/reg-sub
  :resource-setup/role-env-current-value
  (fn [db [_ role-index]]
-   (get-in db [:resource-setup :roles role-index :env-current-value] "")))
+   (let [value (get-in db [:resource-setup :roles role-index :env-current-value] {:value "" :source "manual-input"})]
+     (if (map? value) (:value value) value))))
+
+(rf/reg-sub
+ :resource-setup/role-env-current-value-source
+ (fn [db [_ role-index]]
+   (let [value (get-in db [:resource-setup :roles role-index :env-current-value])
+         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+         explicit-source (when (and value (map? value)) (:source value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or explicit-source default-source))))
 
 ;; Configuration files - current fields (temporary)
 (rf/reg-sub

@@ -59,7 +59,9 @@
                  (.preventDefault e)
                  (rf/dispatch [:connection-setup/next-step :additional-config]))}
    [:> Box {:class "space-y-8 max-w-[600px]"}
-    ;; Environment Variables Section
+    [connection-method/main "custom"]
+
+    ;; Environment Variables Section 
     [configuration-inputs/environment-variables-section]
 
     ;; Configuration Files Section

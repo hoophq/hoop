@@ -3,7 +3,8 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.resources.setup.events.process-form :as process-form]
-   [webapp.resources.helpers :as helpers]))
+   [webapp.resources.helpers :as helpers]
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 (rf/reg-event-db
  :resource-setup->initialize-state
@@ -138,23 +139,62 @@
   (-> role
       (update :metadata-credentials
               #(update-vals (or % {})
-                            (fn [v]
-                              (let [raw (if (map? v) (:value v) v)]
-                                {:value raw
-                                 :source source}))))
+                           (fn [v]
+                             (let [raw-value (if (map? v) (:value v) v)
+                                   ;; Normalize to strip any existing prefix
+                                   normalized (connection-method/normalize-credential-value raw-value)]
+                               {:value (:value normalized)
+                                :source source}))))
       (update :credentials
               #(update-vals (or % {})
                             (fn [v]
-                              (let [raw (if (map? v) (:value v) v)]
-                                {:value raw
+                              (let [raw-value (if (map? v) (:value v) v)
+                                    ;; Normalize to strip any existing prefix
+                                    normalized (connection-method/normalize-credential-value raw-value)]
+                                {:value (:value normalized)
                                  :source source}))))))
 
 (defn update-role-secrets-manager-provider
   "Updates the secrets manager provider and all credentials sources."
   [role provider]
-  (-> role
-      (assoc :secrets-manager-provider provider)
-      (update-role-credentials-source provider)))
+  (let [secrets-providers #{"vault-kv1" "vault-kv2" "aws-secrets-manager"}
+        connection-method (:connection-method role "manual-input")
+        is-secrets-manager? (= connection-method "secrets-manager")
+        update-env-var-source (fn [env-var]
+                                 (let [value-map (:value env-var)
+                                       current-source (when (map? value-map) (:source value-map))
+                                       should-update? (or (contains? secrets-providers current-source)
+                                                          (and is-secrets-manager?
+                                                               (not= current-source "manual-input")))]
+                                   (if should-update?
+                                     (let [value-str (if (map? value-map)
+                                                      (:value value-map)
+                                                      (str value-map))
+                                           ;; Normalize to strip any existing prefix from the value string
+                                           normalized (connection-method/normalize-credential-value value-str)]
+                                       (assoc env-var :value
+                                              {:value (:value normalized) :source provider}))
+                                     env-var)))
+        update-env-current-value (fn [v]
+                                    (let [current-source (when (map? v) (:source v))
+                                          should-update? (or (contains? secrets-providers current-source)
+                                                             (and is-secrets-manager?
+                                                                  (not= current-source "manual-input")))]
+                                      (if should-update?
+                                        (let [raw-value (if (map? v)
+                                                          (:value v)
+                                                          (str v))
+                                              ;; Normalize to strip any existing prefix
+                                              normalized (connection-method/normalize-credential-value raw-value)]
+                                          {:value (:value normalized) :source provider})
+                                        v)))]
+    (-> role
+        (assoc :secrets-manager-provider provider)
+        (update-role-credentials-source provider)
+        (update :environment-variables
+                (fn [env-vars]
+                  (mapv update-env-var-source (or env-vars []))))
+        (update :env-current-value update-env-current-value))))
 
 (defn update-field-source-if-present
   "Updates the source for a field in a credentials map, preserving the value."
@@ -232,11 +272,18 @@
  (fn [db [_ role-index field-key source]]
    (if (str/blank? source)
      db
-     (update-in db
-                [:resource-setup :roles role-index]
-                update-role-field-source
-                field-key
-                source))))
+     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+           updated-db (update-in db
+                                [:resource-setup :roles role-index]
+                                update-role-field-source
+                                field-key
+                                source)]
+       (if (and is-secrets-provider?
+                (not= (get-in updated-db [:resource-setup :roles role-index :secrets-manager-provider]) source))
+         (update-in updated-db
+                    [:resource-setup :roles role-index]
+                    #(update-role-secrets-manager-provider % source))
+         updated-db)))))
 
 ;; Environment variables for roles - New pattern with current-key/current-value
 (rf/reg-event-db
@@ -247,26 +294,90 @@
 (rf/reg-event-db
  :resource-setup->update-role-env-current-value
  (fn [db [_ role-index value]]
-   (assoc-in db [:resource-setup :roles role-index :env-current-value] value)))
+   (let [existing-value (get-in db [:resource-setup :roles role-index :env-current-value])
+         existing-source (when (map? existing-value) (:source existing-value))
+         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1") 
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:resource-setup :roles role-index :env-current-value] new-value))))
 
 (rf/reg-event-db
  :resource-setup->add-role-env-row
  (fn [db [_ role-index]]
    (let [current-key (get-in db [:resource-setup :roles role-index :env-current-key])
-         current-value (get-in db [:resource-setup :roles role-index :env-current-value])]
+         current-value-map (get-in db [:resource-setup :roles role-index :env-current-value])
+         current-value (if (map? current-value-map) (:value current-value-map) current-value-map)
+         connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+         secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+         default-source (if (= connection-method "secrets-manager")
+                         secrets-provider
+                         "manual-input")]
      (if (and (not (str/blank? current-key)) (not (str/blank? current-value)))
        (update-in db [:resource-setup :roles role-index]
                   #(-> %
                        (update :environment-variables (fnil conj [])
                                {:key current-key
-                                :value current-value})
-                       (merge {:env-current-key "" :env-current-value ""})))
+                                :value current-value-map})
+                       (merge {:env-current-key "" :env-current-value {:value "" :source default-source}})))
        db))))
 
 (rf/reg-event-db
  :resource-setup->update-role-env-var
  (fn [db [_ role-index var-index field value]]
-   (assoc-in db [:resource-setup :roles role-index :environment-variables var-index field] value)))
+   (if (= field :value)
+     (let [connection-method (get-in db [:resource-setup :roles role-index :connection-method] "manual-input")
+           secrets-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+           existing-value (get-in db [:resource-setup :roles role-index :environment-variables var-index :value])
+           existing-source (when (map? existing-value) (:source existing-value))
+           inferred-source (or existing-source
+                               (when (= connection-method "secrets-manager") secrets-provider)
+                               "manual-input")
+           new-value {:value (str value) :source inferred-source}]
+       (assoc-in db [:resource-setup :roles role-index :environment-variables var-index field] new-value))
+     (assoc-in db [:resource-setup :roles role-index :environment-variables var-index field] value))))
+
+(rf/reg-event-db
+ :resource-setup->update-role-env-var-source
+ (fn [db [_ role-index var-index source]]
+   (if (or (str/blank? source) (empty? source))
+     db
+     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+           updated-db (update-in db [:resource-setup :roles role-index :environment-variables var-index :value]
+                                 (fn [v]
+                                   (let [value-str (if (map? v) (:value v) (str v))]
+                                     {:value value-str :source source})))]
+       (if (and is-secrets-provider?
+                (not= (get-in updated-db [:resource-setup :roles role-index :secrets-manager-provider]) source))
+         (update-in updated-db
+                    [:resource-setup :roles role-index]
+                    #(update-role-secrets-manager-provider % source))
+         updated-db)))))
+
+(rf/reg-event-db
+ :resource-setup->update-role-env-current-value-source
+ (fn [db [_ role-index source]]
+   (if (or (str/blank? source) (empty? source))
+     db
+     (let [current-provider (get-in db [:resource-setup :roles role-index :secrets-manager-provider] "vault-kv1")
+           current-value (get-in db [:resource-setup :roles role-index :env-current-value])
+           current-source (when (map? current-value) (:source current-value))
+           should-update? (not= current-source source)]
+       (if should-update?
+         (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+               updated-db (update-in db [:resource-setup :roles role-index :env-current-value]
+                                     (fn [v]
+                                       (let [value-str (if (map? v) (:value v) (str v))]
+                                         {:value value-str :source source})))]
+           (if (and is-secrets-provider?
+                    (not= current-provider source))
+             (update-in updated-db
+                        [:resource-setup :roles role-index]
+                        #(update-role-secrets-manager-provider % source))
+             updated-db))
+         db)))))
 
 ;; Configuration files for roles - New pattern with current-name/current-content
 (rf/reg-event-db

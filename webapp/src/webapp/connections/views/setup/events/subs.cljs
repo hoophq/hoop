@@ -174,12 +174,42 @@
 (rf/reg-sub
  :connection-setup/env-current-value
  (fn [db]
-   (get-in db [:connection-setup :credentials :current-value])))
+   (let [value (get-in db [:connection-setup :credentials :current-value] {:value "" :source "manual-input"})]
+     (if (map? value) (:value value) value))))
+
+(rf/reg-sub
+ :connection-setup/env-current-value-source
+ (fn [db]
+   (let [value (get-in db [:connection-setup :credentials :current-value])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         explicit-source (when (and value (map? value)) (:source value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or explicit-source default-source))))
+
+(rf/reg-sub
+ :connection-setup/env-var-source
+ (fn [db [_ var-index]]
+   (let [env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
+         value (when (< var-index (count env-vars))
+                 (get-in env-vars [var-index :value]))
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         explicit-source (when (and value (map? value)) (:source value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or explicit-source default-source))))
 
 (rf/reg-sub
  :connection-setup/environment-variables
  (fn [db]
-   (get-in db [:connection-setup :credentials :environment-variables])))
+   (let [env-vars (get-in db [:connection-setup :credentials :environment-variables] [])]
+     (mapv (fn [{:keys [value] :as env-var}]
+             (assoc env-var :value (if (map? value) (:value value) value)))
+           env-vars))))
 
 ;; Configuration Files subscriptions
 (rf/reg-sub

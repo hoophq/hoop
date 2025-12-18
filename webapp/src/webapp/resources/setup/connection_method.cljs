@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Card Flex Heading Link Select Text]]
    ["lucide-react" :refer [FileSpreadsheet GlobeLock]]
+   [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -17,9 +18,21 @@
                         "manual-input" "Manual"
                         "Vault KV 1"))]
     (fn []
-      (let [field-source @(rf/subscribe [:resource-setup/field-source role-index field-key])
+      (let [is-env-var? (or (str/starts-with? field-key "env-var-")
+                            (= field-key "env-current-value"))
+            connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
             secrets-provider (or @(rf/subscribe [:resource-setup/secrets-manager-provider role-index]) "vault-kv1")
-            actual-source (or field-source secrets-provider "vault-kv1")
+            field-source (if is-env-var?
+                           (if (= field-key "env-current-value")
+                             @(rf/subscribe [:resource-setup/role-env-current-value-source role-index])
+                             (let [var-index (js/parseInt (subs field-key 8))]
+                               @(rf/subscribe [:resource-setup/role-env-var-source role-index var-index])))
+                           @(rf/subscribe [:resource-setup/field-source role-index field-key]))
+            actual-source (if (and is-env-var? (= connection-method "secrets-manager"))
+                            (or field-source secrets-provider)
+                            (or field-source
+                                (when (= connection-method "secrets-manager") secrets-provider)
+                                "manual-input"))
             available-sources [{:value secrets-provider :text (source-text secrets-provider)}
                                {:value "manual-input" :text "Manual"}]]
         [:> Select.Root {:value actual-source
@@ -27,10 +40,19 @@
                          :onOpenChange #(reset! open? %)
                          :onValueChange (fn [new-source]
                                           (reset! open? false)
-                                          (rf/dispatch [:resource-setup->update-field-source
-                                                        role-index
-                                                        field-key
-                                                        new-source]))}
+                                          (when (and new-source
+                                                     (not (str/blank? new-source))
+                                                     (not (empty? new-source))
+                                                     (not= new-source actual-source))
+                                            (if is-env-var?
+                                              (if (= field-key "env-current-value")
+                                                (rf/dispatch [:resource-setup->update-role-env-current-value-source role-index new-source])
+                                                (let [var-index (js/parseInt (subs field-key 8))]
+                                                  (rf/dispatch [:resource-setup->update-role-env-var-source role-index var-index new-source])))
+                                              (rf/dispatch [:resource-setup->update-field-source
+                                                            role-index
+                                                            field-key
+                                                            new-source]))))}
          [:> Select.Trigger {:variant "ghost"
                              :size "1"
                              :class "border-none shadow-none text-xsm font-medium text-[--gray-11]"

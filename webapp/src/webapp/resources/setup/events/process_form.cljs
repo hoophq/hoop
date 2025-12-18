@@ -78,12 +78,21 @@
         ;; Combine all credentials
         all-credential-env-vars (concat credential-env-vars metadata-credential-env-vars)
 
+        ;; Process environment variables with prefixes
+        processed-env-vars (mapv (fn [{:keys [key value]}]
+                                   {:key key
+                                    :value (extract-value value connection-method (keyword key) secrets-provider)})
+                                 env-vars)
+
         ;; Special handling for httpproxy headers
         all-env-vars (if (= subtype "httpproxy")
                        (let [headers (:environment-variables role [])
-                             processed-headers (process-http-headers headers)]
+                             processed-headers (mapv (fn [{:keys [key value]}]
+                                                       {:key (str "HEADER_" key)
+                                                        :value (extract-value value connection-method (keyword key) secrets-provider)})
+                                                     headers)]
                          (concat all-credential-env-vars processed-headers))
-                       (concat all-credential-env-vars env-vars))
+                       (concat all-credential-env-vars processed-env-vars))
 
         envvar-result (helpers/config->json all-env-vars "envvar:")
         filesystem-result (when (seq config-files)
@@ -131,7 +140,10 @@
   [role]
   (let [;; Get current env var values
         env-current-key (:env-current-key role)
-        env-current-value (:env-current-value role)
+        env-current-value-map (:env-current-value role)
+        env-current-value (if (map? env-current-value-map)
+                            (:value env-current-value-map)
+                            env-current-value-map)
         has-pending-env? (and (not (str/blank? env-current-key))
                               (not (str/blank? env-current-value)))
 
@@ -143,8 +155,11 @@
 
         ;; Add pending env var if exists
         updated-env-vars (if has-pending-env?
-                           (conj (or (:environment-variables role) [])
-                                 {:key env-current-key :value env-current-value})
+                           (let [env-current-value-final (if (map? env-current-value-map)
+                                                           env-current-value-map
+                                                           {:value env-current-value :source "manual-input"})]
+                             (conj (or (:environment-variables role) [])
+                                   {:key env-current-key :value env-current-value-final}))
                            (:environment-variables role))
 
         ;; Add pending config file if exists

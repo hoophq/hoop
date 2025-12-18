@@ -2,7 +2,8 @@
   (:require
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.tags-utils :as tags-utils]))
+   [webapp.connections.views.setup.tags-utils :as tags-utils]
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 ;; Basic db updates
 (rf/reg-event-fx
@@ -59,8 +60,9 @@
   [credentials-map source]
   (update-vals (or credentials-map {})
                (fn [v]
-                 (let [raw (if (map? v) (:value v) v)]
-                   {:value (str raw)
+                 (let [raw-value (if (map? v) (:value v) v)
+                       normalized (connection-method/normalize-credential-value raw-value)]
+                   {:value (:value normalized)
                     :source source}))))
 
 (defn update-connection-metadata-credentials-source
@@ -86,12 +88,45 @@
 (defn update-connection-secrets-manager-provider
   "Updates the secrets manager provider and all credentials sources."
   [conn provider]
-  (-> conn
-      (assoc :secrets-manager-provider provider)
-      (update-connection-metadata-credentials-source provider)
-      (update-connection-ssh-credentials-source provider)
-      (update-connection-kubernetes-token-source provider)
-      (update-connection-network-credentials-source provider)))
+  (let [secrets-providers #{"vault-kv1" "vault-kv2" "aws-secrets-manager"}
+        connection-method (:connection-method conn "manual-input")
+        is-secrets-manager? (= connection-method "secrets-manager")
+        update-env-var-source (fn [env-var]
+                                (let [value-map (:value env-var)
+                                      current-source (when (map? value-map) (:source value-map))
+                                      should-update? (or (contains? secrets-providers current-source)
+                                                         (and is-secrets-manager?
+                                                              (not= current-source "manual-input")))]
+                                  (if should-update?
+                                    (let [raw-value (if (map? value-map)
+                                                      (let [value-str (:value value-map)]
+                                                        (connection-method/normalize-credential-value value-str))
+                                                      (connection-method/normalize-credential-value (str value-map)))]
+                                      (assoc env-var :value
+                                             {:value (:value raw-value) :source provider}))
+                                    env-var)))
+        update-env-current-value (fn [v]
+                                   (let [current-source (when (map? v) (:source v))
+                                         should-update? (or (contains? secrets-providers current-source)
+                                                            (and is-secrets-manager?
+                                                                 (not= current-source "manual-input")))]
+                                     (if should-update?
+                                       (let [raw-value (if (map? v)
+                                                         (let [value-str (:value v)]
+                                                           (connection-method/normalize-credential-value value-str))
+                                                         (connection-method/normalize-credential-value (str v)))]
+                                         {:value (:value raw-value) :source provider})
+                                       v)))]
+    (-> conn
+        (assoc :secrets-manager-provider provider)
+        (update-connection-metadata-credentials-source provider)
+        (update-connection-ssh-credentials-source provider)
+        (update-connection-kubernetes-token-source provider)
+        (update-connection-network-credentials-source provider)
+        (update-in [:credentials :environment-variables]
+                   (fn [env-vars]
+                     (mapv update-env-var-source (or env-vars []))))
+        (update-in [:credentials :current-value] update-env-current-value))))
 
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
@@ -137,7 +172,8 @@
  (fn [db [_ field-key source]]
    (if (str/blank? source)
      db
-     (let [field-key-str (name field-key)
+     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+           field-key-str (name field-key)
            field-key-kw (keyword field-key-str)
            ;; Try metadata-credentials first
            metadata-credentials (get-in db [:connection-setup :metadata-credentials] {})
@@ -147,46 +183,51 @@
            ssh-value (get ssh-credentials field-key-str)
            ;; Try Kubernetes token
            kubernetes-token (get-in db [:connection-setup :kubernetes-token] {})
-           kubernetes-value (get kubernetes-token field-key-kw)]
-       (cond
-         ;; Update metadata-credentials if field exists there
-         (contains? metadata-credentials field-key)
-         (assoc-in db [:connection-setup :metadata-credentials field-key]
-                   {:value (if (map? metadata-value)
-                             (:value metadata-value)
-                             (or metadata-value ""))
-                    :source source})
-         
-         ;; Update SSH credentials if field exists there
-         (contains? ssh-credentials field-key-str)
-         (assoc-in db [:connection-setup :ssh-credentials field-key-str]
-                   {:value (if (map? ssh-value)
-                             (:value ssh-value)
-                             (or ssh-value ""))
-                    :source source})
-         
-         ;; Update Kubernetes token if field exists there
-         (contains? kubernetes-token field-key-kw)
-         (assoc-in db [:connection-setup :kubernetes-token field-key-kw]
-                   {:value (if (map? kubernetes-value)
-                             (:value kubernetes-value)
-                             (or kubernetes-value ""))
-                    :source source})
-         
-         ;; Try network credentials
-         :else
-         (let [network-credentials (get-in db [:connection-setup :network-credentials] {})
-               network-value (get network-credentials field-key-kw)]
-           (if (contains? network-credentials field-key-kw)
-             (assoc-in db [:connection-setup :network-credentials field-key-kw]
-                       {:value (if (map? network-value)
-                                 (:value network-value)
-                                 (or network-value ""))
-                        :source source})
-             ;; Default to metadata-credentials
-             (assoc-in db [:connection-setup :metadata-credentials field-key]
-                       {:value ""
-                        :source source}))))))))
+           kubernetes-value (get kubernetes-token field-key-kw)
+           updated-db (cond
+                        ;; Update metadata-credentials if field exists there
+                        (contains? metadata-credentials field-key)
+                        (assoc-in db [:connection-setup :metadata-credentials field-key]
+                                  {:value (if (map? metadata-value)
+                                            (:value metadata-value)
+                                            (or metadata-value ""))
+                                   :source source})
+                        
+                        ;; Update SSH credentials if field exists there
+                        (contains? ssh-credentials field-key-str)
+                        (assoc-in db [:connection-setup :ssh-credentials field-key-str]
+                                  {:value (if (map? ssh-value)
+                                            (:value ssh-value)
+                                            (or ssh-value ""))
+                                   :source source})
+                        
+                        ;; Update Kubernetes token if field exists there
+                        (contains? kubernetes-token field-key-kw)
+                        (assoc-in db [:connection-setup :kubernetes-token field-key-kw]
+                                  {:value (if (map? kubernetes-value)
+                                            (:value kubernetes-value)
+                                            (or kubernetes-value ""))
+                                   :source source})
+                        
+                        ;; Try network credentials
+                        :else
+                        (let [network-credentials (get-in db [:connection-setup :network-credentials] {})
+                              network-value (get network-credentials field-key-kw)]
+                          (if (contains? network-credentials field-key-kw)
+                            (assoc-in db [:connection-setup :network-credentials field-key-kw]
+                                      {:value (if (map? network-value)
+                                                (:value network-value)
+                                                (or network-value ""))
+                                       :source source})
+                            ;; Default to metadata-credentials
+                            (assoc-in db [:connection-setup :metadata-credentials field-key]
+                                      {:value ""
+                                       :source source}))))]
+       (if (and is-secrets-provider?
+                (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
+         (update-in updated-db [:connection-setup]
+                    #(update-connection-secrets-manager-provider % source))
+         updated-db)))))
 
 
 
@@ -261,17 +302,23 @@
  :connection-setup/add-env-row
  (fn [db [_]]
    (let [current-key (get-in db [:connection-setup :credentials :current-key])
-         current-value (get-in db [:connection-setup :credentials :current-value])]
+         current-value-map (get-in db [:connection-setup :credentials :current-value])
+         current-value (if (map? current-value-map) (:value current-value-map) current-value-map)
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
      (if (and (not (empty? current-key))
               (not (empty? current-value)))
        (-> db
            (update-in [:connection-setup :credentials :environment-variables]
                       (fn [value]
                         (if (seq value)
-                          (conj value {:key current-key :value current-value})
-                          [{:key current-key :value current-value}])))
+                          (conj value {:key current-key :value current-value-map})
+                          [{:key current-key :value current-value-map}])))
            (assoc-in [:connection-setup :credentials :current-key] "")
-           (assoc-in [:connection-setup :credentials :current-value] ""))
+           (assoc-in [:connection-setup :credentials :current-value] {:value "" :source default-source}))
        db))))
 
 (rf/reg-event-db
@@ -282,12 +329,63 @@
 (rf/reg-event-db
  :connection-setup/update-env-current-value
  (fn [db [_ value]]
-   (assoc-in db [:connection-setup :credentials :current-value] value)))
+   (let [existing-value (get-in db [:connection-setup :credentials :current-value])
+         existing-source (when (map? existing-value) (:source existing-value))
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         ;; Preserve existing source if it's a secrets provider, otherwise infer
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :credentials :current-value] new-value))))
 
 (rf/reg-event-db
  :connection-setup/update-env-var
  (fn [db [_ index field value]]
-   (assoc-in db [:connection-setup :credentials :environment-variables index field] value)))
+   (if (= field :value)
+     (let [connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+           secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+           existing-value (get-in db [:connection-setup :credentials :environment-variables index :value])
+           existing-source (when (map? existing-value) (:source existing-value))
+           inferred-source (or existing-source
+                               (when (= connection-method "secrets-manager") secrets-provider)
+                               "manual-input")
+           new-value {:value (str value) :source inferred-source}]
+       (assoc-in db [:connection-setup :credentials :environment-variables index field] new-value))
+     (assoc-in db [:connection-setup :credentials :environment-variables index field] value))))
+
+(rf/reg-event-db
+ :connection-setup/update-env-var-source
+ (fn [db [_ var-index source]]
+   (if (or (str/blank? source) (empty? source))
+     db
+     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+           updated-db (update-in db [:connection-setup :credentials :environment-variables var-index :value]
+                                 (fn [v]
+                                   (let [value-str (if (map? v) (:value v) (str v))]
+                                     {:value value-str :source source})))]
+       (if (and is-secrets-provider?
+                (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
+         (update-in updated-db [:connection-setup]
+                    #(update-connection-secrets-manager-provider % source))
+         updated-db)))))
+
+(rf/reg-event-db
+ :connection-setup/update-env-current-value-source
+ (fn [db [_ source]]
+   (if (or (str/blank? source) (empty? source))
+     db
+     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+           updated-db (update-in db [:connection-setup :credentials :current-value]
+                                 (fn [v]
+                                   (let [value-str (if (map? v) (:value v) (str v))]
+                                     {:value value-str :source source})))]
+       (if (and is-secrets-provider?
+                (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
+         (update-in updated-db [:connection-setup]
+                    #(update-connection-secrets-manager-provider % source))
+         updated-db)))))
 
 ;; Resource Subtype Override events
 (rf/reg-event-db

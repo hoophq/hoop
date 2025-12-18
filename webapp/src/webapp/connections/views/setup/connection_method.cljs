@@ -38,8 +38,8 @@
                                    prefix))
                                prefixes)
           stripped-value (if matched-prefix
-                           (subs value (count matched-prefix))
-                           value)
+                          (subs value (count matched-prefix))
+                          value)
           source (or (prefix-to-source matched-prefix)
                      "manual-input")]
       {:value stripped-value
@@ -186,9 +186,19 @@
                         "manual-input" "Manual"
                         "Vault KV 1"))]
     (fn []
-      (let [field-source @(rf/subscribe [:connection-setup/field-source field-key])
+      (let [is-env-var? (or (cs/starts-with? field-key "env-var-")
+                            (= field-key "env-current-value"))
+            field-source (if is-env-var?
+                           (if (= field-key "env-current-value")
+                             @(rf/subscribe [:connection-setup/env-current-value-source])
+                             (let [var-index (js/parseInt (subs field-key 8))]
+                               @(rf/subscribe [:connection-setup/env-var-source var-index])))
+                           @(rf/subscribe [:connection-setup/field-source field-key]))
+            connection-method @(rf/subscribe [:connection-setup/connection-method])
             secrets-provider (or @(rf/subscribe [:connection-setup/secrets-manager-provider]) "vault-kv1")
-            actual-source (or field-source secrets-provider "vault-kv1")
+            actual-source (or field-source
+                              (when (= connection-method "secrets-manager") secrets-provider)
+                              "manual-input")
             available-sources [{:value secrets-provider :text (source-text secrets-provider)}
                                {:value "manual-input" :text "Manual"}]]
         [:> Select.Root {:value actual-source
@@ -196,10 +206,18 @@
                          :onOpenChange #(reset! open? %)
                          :onValueChange (fn [new-source]
                                           (reset! open? false)
-                                          (when (and new-source (not (cs/blank? new-source)))
-                                            (rf/dispatch [:connection-setup/update-field-source
-                                                          field-key
-                                                          new-source])))}
+                                          (when (and new-source 
+                                                     (not (cs/blank? new-source))
+                                                     (not (empty? new-source))
+                                                     (not= new-source actual-source))
+                                            (if is-env-var?
+                                              (if (= field-key "env-current-value")
+                                                (rf/dispatch [:connection-setup/update-env-current-value-source new-source])
+                                                (let [var-index (js/parseInt (subs field-key 8))]
+                                                  (rf/dispatch [:connection-setup/update-env-var-source var-index new-source])))
+                                              (rf/dispatch [:connection-setup/update-field-source
+                                                            field-key
+                                                            new-source]))))}
          [:> Select.Trigger {:variant "ghost"
                              :size "1"
                              :class "border-none shadow-none text-xsm font-medium text-[--gray-11]"
