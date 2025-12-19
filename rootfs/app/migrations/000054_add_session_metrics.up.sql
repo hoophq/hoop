@@ -20,6 +20,7 @@ CREATE TABLE session_metrics (
     UNIQUE(session_id, info_type)
 );
 
+CREATE INDEX IF NOT EXISTS index_session_metrics_org_id ON session_metrics(org_id);
 CREATE INDEX IF NOT EXISTS index_session_metrics_session_id ON session_metrics(session_id);
 
 COMMIT;
