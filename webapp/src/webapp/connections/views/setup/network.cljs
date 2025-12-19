@@ -50,7 +50,8 @@
             :placeholder "e.g. https://example.com"
             :required true
             :value remote-url-value
-            :on-change #(rf/dispatch [:connection-setup/update-network-remote-url
+            :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                      "remote_url"
                                       (-> % .-target .-value)])
             :start-adornment [connection-method/source-selector "remote_url"]}]
           [forms/input
