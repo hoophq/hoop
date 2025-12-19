@@ -98,7 +98,7 @@
                                                                                            (str insecure-value))}])]
                          kubernetes-token-env-vars)
 
-                       (and (= ui-type "database")
+                       (and (or (= ui-type "custom") (= ui-type "database"))
                             connection-subtype
                             (seq metadata-credentials))
                        (let [connection-method (get-in db [:connection-setup :connection-method] "manual-input")
@@ -404,11 +404,11 @@
 
         ;; Infer connection method from network credentials (TCP)
         network-connection-info (when (seq network-credentials)
-                                 (connection-method/infer-connection-method network-credentials))
+                                  (connection-method/infer-connection-method network-credentials))
 
         ;; Infer connection method from HTTP credentials (HTTP Proxy)
         http-connection-info (when (seq http-credentials)
-                              (connection-method/infer-connection-method http-credentials))
+                               (connection-method/infer-connection-method http-credentials))
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
                             (map? tags)
