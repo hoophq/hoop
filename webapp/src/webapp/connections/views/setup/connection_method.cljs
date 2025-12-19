@@ -184,18 +184,31 @@
                         "vault-kv2" "Vault KV v2"
                         "aws-secrets-manager" "AWS Secrets Manager"
                         "manual-input" "Manual"
-                        "Vault KV 1"))]
+                        "Vault KV 1"))
+        connection-method-sub (rf/subscribe [:connection-setup/connection-method])
+        secrets-provider-sub (rf/subscribe [:connection-setup/secrets-manager-provider])
+        env-current-value-source-sub (rf/subscribe [:connection-setup/env-current-value-source])
+        field-source-sub (rf/subscribe [:connection-setup/field-source field-key])]
     (fn []
       (let [is-env-var? (or (cs/starts-with? field-key "env-var-")
                             (= field-key "env-current-value"))
-            field-source (if is-env-var?
-                           (if (= field-key "env-current-value")
-                             @(rf/subscribe [:connection-setup/env-current-value-source])
-                             (let [var-index (js/parseInt (subs field-key 8))]
-                               @(rf/subscribe [:connection-setup/env-var-source var-index])))
-                           @(rf/subscribe [:connection-setup/field-source field-key]))
-            connection-method @(rf/subscribe [:connection-setup/connection-method])
-            secrets-provider (or @(rf/subscribe [:connection-setup/secrets-manager-provider]) "vault-kv1")
+            var-index (when (and is-env-var? (not= field-key "env-current-value"))
+                        (js/parseInt (subs field-key 8)))
+            env-var-source-sub (when var-index
+                                 (rf/subscribe [:connection-setup/env-var-source var-index]))
+            connection-method @connection-method-sub
+            secrets-provider (or @secrets-provider-sub "vault-kv1")
+            env-current-value-source @env-current-value-source-sub
+            field-source-value @field-source-sub
+            field-source (cond
+                           (and is-env-var? (= field-key "env-current-value"))
+                           env-current-value-source
+
+                           is-env-var?
+                           @env-var-source-sub
+
+                           :else
+                           field-source-value)
             actual-source (or field-source
                               (when (= connection-method "secrets-manager") secrets-provider)
                               "manual-input")
@@ -206,15 +219,18 @@
                          :onOpenChange #(reset! open? %)
                          :onValueChange (fn [new-source]
                                           (reset! open? false)
-                                          (when (and new-source 
+                                          (when (and new-source
                                                      (not (cs/blank? new-source))
                                                      (not (empty? new-source))
                                                      (not= new-source actual-source))
-                                            (if is-env-var?
-                                              (if (= field-key "env-current-value")
-                                                (rf/dispatch [:connection-setup/update-env-current-value-source new-source])
-                                                (let [var-index (js/parseInt (subs field-key 8))]
-                                                  (rf/dispatch [:connection-setup/update-env-var-source var-index new-source])))
+                                            (cond
+                                              (and is-env-var? (= field-key "env-current-value"))
+                                              (rf/dispatch [:connection-setup/update-env-current-value-source new-source])
+
+                                              is-env-var?
+                                              (rf/dispatch [:connection-setup/update-env-var-source var-index new-source])
+
+                                              :else
                                               (rf/dispatch [:connection-setup/update-field-source
                                                             field-key
                                                             new-source]))))}
@@ -229,16 +245,18 @@
 
 (defn main
   [connection-subtype]
-  (let [connection-method @(rf/subscribe [:connection-setup/connection-method])]
-    [:> Box {:class "space-y-6"}
-     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
-      "Connection method"]
-     [connection-method-selector connection-subtype]
+  (let [connection-method-sub (rf/subscribe [:connection-setup/connection-method])]
+    (fn []
+      (let [connection-method @connection-method-sub]
+        [:> Box {:class "space-y-6"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
+          "Connection method"]
+         [connection-method-selector connection-subtype]
 
-     (cond
-       (= connection-method "secrets-manager")
-       [secrets-manager-provider-selector]
+         (cond
+           (= connection-method "secrets-manager")
+           [secrets-manager-provider-selector]
 
-       (= connection-method "aws-iam-role")
-       [aws-iam-role-section])]))
+           (= connection-method "aws-iam-role")
+           [aws-iam-role-section])]))))
 

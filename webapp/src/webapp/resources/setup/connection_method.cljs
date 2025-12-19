@@ -16,23 +16,37 @@
                         "vault-kv2" "Vault KV v2"
                         "aws-secrets-manager" "AWS Secrets Manager"
                         "manual-input" "Manual"
-                        "Vault KV 1"))]
+                        "Vault KV 1"))
+        connection-method-sub (rf/subscribe [:resource-setup/role-connection-method role-index])
+        secrets-provider-sub (rf/subscribe [:resource-setup/secrets-manager-provider role-index])
+        env-current-value-source-sub (rf/subscribe [:resource-setup/role-env-current-value-source role-index])
+        field-source-sub (rf/subscribe [:resource-setup/field-source role-index field-key])]
     (fn []
       (let [is-env-var? (or (str/starts-with? field-key "env-var-")
                             (= field-key "env-current-value"))
-            connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
-            secrets-provider (or @(rf/subscribe [:resource-setup/secrets-manager-provider role-index]) "vault-kv1")
-            field-source (if is-env-var?
-                           (if (= field-key "env-current-value")
-                             @(rf/subscribe [:resource-setup/role-env-current-value-source role-index])
-                             (let [var-index (js/parseInt (subs field-key 8))]
-                               @(rf/subscribe [:resource-setup/role-env-var-source role-index var-index])))
-                           @(rf/subscribe [:resource-setup/field-source role-index field-key]))
-            actual-source (if (and is-env-var? (= connection-method "secrets-manager"))
+            var-index (when (and is-env-var? (not= field-key "env-current-value"))
+                        (js/parseInt (subs field-key 8)))
+            env-var-source-sub (when var-index
+                                 (rf/subscribe [:resource-setup/role-env-var-source role-index var-index]))
+            connection-method @connection-method-sub
+            secrets-provider (or @secrets-provider-sub "vault-kv1")
+            env-current-value-source @env-current-value-source-sub
+            field-source-value @field-source-sub
+            field-source (cond
+                           (and is-env-var? (= field-key "env-current-value"))
+                           env-current-value-source
+
+                           is-env-var?
+                           @env-var-source-sub
+
+                           :else
+                           field-source-value)
+            actual-source (cond
+                            (= connection-method "secrets-manager")
                             (or field-source secrets-provider)
-                            (or field-source
-                                (when (= connection-method "secrets-manager") secrets-provider)
-                                "manual-input"))
+
+                            :else
+                            (or field-source "manual-input"))
             available-sources [{:value secrets-provider :text (source-text secrets-provider)}
                                {:value "manual-input" :text "Manual"}]]
         [:> Select.Root {:value actual-source
@@ -44,11 +58,14 @@
                                                      (not (str/blank? new-source))
                                                      (not (empty? new-source))
                                                      (not= new-source actual-source))
-                                            (if is-env-var?
-                                              (if (= field-key "env-current-value")
-                                                (rf/dispatch [:resource-setup->update-role-env-current-value-source role-index new-source])
-                                                (let [var-index (js/parseInt (subs field-key 8))]
-                                                  (rf/dispatch [:resource-setup->update-role-env-var-source role-index var-index new-source])))
+                                            (cond
+                                              (and is-env-var? (= field-key "env-current-value"))
+                                              (rf/dispatch [:resource-setup->update-role-env-current-value-source role-index new-source])
+
+                                              is-env-var?
+                                              (rf/dispatch [:resource-setup->update-role-env-var-source role-index var-index new-source])
+
+                                              :else
                                               (rf/dispatch [:resource-setup->update-field-source
                                                             role-index
                                                             field-key
@@ -165,16 +182,18 @@
 
 (defn main
   [role-index]
-  (let [connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])]
-    [:> Box {:class "space-y-6"}
-     [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
-      "Role connection method"]
-     [role-connection-method-selector role-index]
+  (let [connection-method-sub (rf/subscribe [:resource-setup/role-connection-method role-index])]
+    (fn []
+      (let [connection-method @connection-method-sub]
+        [:> Box {:class "space-y-6"}
+         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12] mb-3"}
+          "Role connection method"]
+         [role-connection-method-selector role-index]
 
-     (cond
-       (= connection-method "secrets-manager")
-       [secrets-manager-provider-selector role-index]
+         (cond
+           (= connection-method "secrets-manager")
+           [secrets-manager-provider-selector role-index]
 
-       (= connection-method "aws-iam-role")
-       [aws-iam-role-section role-index])]))
+           (= connection-method "aws-iam-role")
+           [aws-iam-role-section role-index])]))))
 
