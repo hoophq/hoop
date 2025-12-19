@@ -133,7 +133,10 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 			return runbook.Repository == runbookRepository && strings.HasPrefix(runbookName, runbook.Name)
 		}))
 
-		if hasMatchingUserGroup && hasMatchingRunbook {
+		// Check if connections intersect with rule connections
+		hasMatchingConnection := hasMatchingRunbook && (len(rule.Connections) == 0 || utils.SlicesHasIntersection(rule.Connections, connectionList))
+
+		if hasMatchingUserGroup && hasMatchingRunbook && hasMatchingConnection {
 			if len(rule.Connections) == 0 {
 				return connectionList
 			}
@@ -159,7 +162,7 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 	return connections
 }
 
-func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionsNames, userGroups []string, listConnections bool) (*openapi.RunbookRepositoryList, error) {
+func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionsNames, userGroups []string, listConnections, removeEmptyConnections bool) (*openapi.RunbookRepositoryList, error) {
 	commit, err := GetRunbooks(orgId, config)
 	if err != nil {
 		return nil, err
@@ -182,15 +185,19 @@ func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.Ru
 			return nil
 		}
 
-		var connectionList []string
-		if listConnections {
-			connectionList = getRunbookConnections(rules, connectionsNames, config.GetNormalizedGitURL(), f.Name, userGroups)
+		connectionListAllowed := getRunbookConnections(rules, connectionsNames, config.GetNormalizedGitURL(), f.Name, userGroups)
+		if removeEmptyConnections && len(connectionListAllowed) == 0 {
+			return nil
+		}
+
+		if !listConnections {
+			connectionListAllowed = nil
 		}
 
 		runbook := &openapi.Runbook{
 			Name:           f.Name,
 			Metadata:       map[string]any{},
-			ConnectionList: connectionList,
+			ConnectionList: connectionListAllowed,
 			Error:          nil,
 		}
 		blobData, err := runbooks.ReadBlob(f)
