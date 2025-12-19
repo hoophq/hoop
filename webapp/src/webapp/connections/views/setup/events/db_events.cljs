@@ -355,37 +355,34 @@
        (assoc-in db [:connection-setup :credentials :environment-variables index field] new-value))
      (assoc-in db [:connection-setup :credentials :environment-variables index field] value))))
 
+(defn update-env-value-source
+  [db value-path source]
+  (if (str/blank? source)
+    db
+    (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+          updated-db (update-in db value-path
+                                (fn [v]
+                                  (let [value-str (if (map? v) (:value v) (str v))]
+                                    {:value value-str :source source})))]
+      (if (and is-secrets-provider?
+               (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
+        (update-in updated-db [:connection-setup]
+                   #(update-connection-secrets-manager-provider % source))
+        updated-db))))
+
 (rf/reg-event-db
  :connection-setup/update-env-var-source
  (fn [db [_ var-index source]]
-   (if (or (str/blank? source) (empty? source))
-     db
-     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
-           updated-db (update-in db [:connection-setup :credentials :environment-variables var-index :value]
-                                 (fn [v]
-                                   (let [value-str (if (map? v) (:value v) (str v))]
-                                     {:value value-str :source source})))]
-       (if (and is-secrets-provider?
-                (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
-         (update-in updated-db [:connection-setup]
-                    #(update-connection-secrets-manager-provider % source))
-         updated-db)))))
+   (update-env-value-source db
+                            [:connection-setup :credentials :environment-variables var-index :value]
+                            source)))
 
 (rf/reg-event-db
  :connection-setup/update-env-current-value-source
  (fn [db [_ source]]
-   (if (or (str/blank? source) (empty? source))
-     db
-     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
-           updated-db (update-in db [:connection-setup :credentials :current-value]
-                                 (fn [v]
-                                   (let [value-str (if (map? v) (:value v) (str v))]
-                                     {:value value-str :source source})))]
-       (if (and is-secrets-provider?
-                (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
-         (update-in updated-db [:connection-setup]
-                    #(update-connection-secrets-manager-provider % source))
-         updated-db)))))
+   (update-env-value-source db
+                            [:connection-setup :credentials :current-value]
+                            source)))
 
 ;; Resource Subtype Override events
 (rf/reg-event-db
