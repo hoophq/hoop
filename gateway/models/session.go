@@ -494,7 +494,7 @@ func UpdateSessionIntegrationMetadata(orgID, sid string, metadata map[string]any
 	return res.Error
 }
 
-func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int) error {
+func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int64) error {
 	res := DB.Table("private.sessions AS s").
 		Where("s.id = ? AND s.org_id = ?", sid, orgID).
 		Update("metrics", gorm.Expr(`

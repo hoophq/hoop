@@ -252,6 +252,11 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 		Infof("finished persisting session to store, update-session-err=%v, context-err=%v", err, errMsg)
 
+	err = models.IncrementSessionMaskedMetrics(models.DB, wh.SessionID, metrics.DataMasking.InfoTypes)
+	if err != nil {
+		log.With("sid", pctx.SID).Warnf("failed incrementing session masked metrics, reason=%v", err)
+	}
+
 	if err != nil {
 		_ = walogm.log.Write(eventlogv1.NewCommitError(endDate, err.Error()))
 	} else {

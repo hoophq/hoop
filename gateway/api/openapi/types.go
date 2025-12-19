@@ -1590,6 +1590,30 @@ type ColumnsResponse struct {
 	Columns []ConnectionColumn `json:"columns"` // The columns of a table
 }
 
+type SessionMetricResponse struct {
+	SessionID          string     `json:"session_id" format:"uuid" example:"1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	OrgID              string     `json:"org_id" format:"uuid" example:"0CD7F941-2BB8-4F9F-93B0-11620D4652AB"`
+	ConnectionType     string     `json:"connection_type" example:"postgres"`
+	ConnectionSubtype  *string    `json:"connection_subtype" example:"amazon-rds"`
+	ConnectionName     string     `json:"connection_name" example:"production-db"`
+	InfoType           string     `json:"info_type" example:"EMAIL_ADDRESS"`
+	CountMasked        int64      `json:"count_masked" example:"15"`
+	CountAnalyzed      int64      `json:"count_analyzed" example:"20"`
+	IsMasked           bool       `json:"is_masked" example:"true"`
+	SessionCreatedAt   time.Time  `json:"session_created_at" example:"2023-08-15T14:30:45Z"`
+	SessionEndedAt     *time.Time `json:"session_ended_at" example:"2023-08-15T14:35:10Z"`
+	SessionDurationSec *int       `json:"session_duration_sec" example:"325"`
+}
+
+type SessionMetricsAggregatedResponse struct {
+	TotalSessions         int64  `json:"total_sessions" example:"150"`
+	UniqueInfoTypes       int64  `json:"unique_info_types" example:"12"`
+	TotalMasked           int64  `json:"total_masked" example:"5420"`
+	TotalAnalyzed         int64  `json:"total_analyzed" example:"7850"`
+	SessionsWithMasking   int64  `json:"sessions_with_masking" example:"98"`
+	AvgSessionDurationSec *int64 `json:"avg_session_duration_sec" example:"285"`
+}
+
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
 	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
