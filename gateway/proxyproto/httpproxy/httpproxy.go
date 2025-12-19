@@ -1,6 +1,8 @@
 package httpproxy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -8,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +33,7 @@ import (
 const (
 	instanceKey      = "http_proxy_server"
 	proxyTokenHeader = "Proxy-Token"
+	proxyTokenCookie = "hoop_proxy_token"
 )
 
 var instanceStore sync.Map
@@ -47,6 +51,7 @@ type httpProxySession struct {
 	sid           string
 	ctx           context.Context
 	cancelFn      func(msg string, a ...any)
+	proxyBaseURL  string
 	streamClient  pb.ClientTransport
 	responseStore sync.Map // stores response channels per connectionID
 	connCounter   atomic.Int64
@@ -137,7 +142,44 @@ func (s *HttpProxyServer) ListenAddr() string { return s.listenAddr }
 
 // ServeHTTP implements http.Handler
 func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	proxyToken := r.Header.Get(proxyTokenHeader)
+
+	var proxyToken string
+
+	// Check if token is in URL path: /<proxy-token> or /<proxy-token>/...
+	// This is the initial browser request to set the cookie
+	pathParts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
+	if len(pathParts) > 0 && strings.HasPrefix(pathParts[0], "http") {
+		// Token found in path (tokens start with "http" prefix from generateSecretKey)
+		proxyToken = pathParts[0]
+
+		// Set cookie for future requests
+		http.SetCookie(w, &http.Cookie{
+			Name:     proxyTokenCookie,
+			Value:    proxyToken,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			// Secure: true, // Enable if using HTTPS
+		})
+
+		// Redirect to root (or remaining path) so browser uses the cookie
+		redirectPath := "/"
+		if len(pathParts) > 1 && pathParts[1] != "" {
+			redirectPath = "/" + pathParts[1]
+		}
+		http.Redirect(w, r, redirectPath, http.StatusFound)
+		return
+	}
+
+	// Check cookie (for subsequent browser requests)
+	if cookie, err := r.Cookie(proxyTokenCookie); err == nil && cookie.Value != "" {
+		proxyToken = cookie.Value
+	}
+
+	//Check header (for curl/API usage)
+	if proxyToken == "" {
+		proxyToken = r.Header.Get(proxyTokenHeader)
+	}
 	if proxyToken == "" {
 		http.Error(w, "missing Proxy-Token header", http.StatusUnauthorized)
 		return
@@ -153,7 +195,14 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	session, err := s.getOrCreateSession(secretKeyHash)
 	if err != nil {
 		log.Errorf("failed to get/create session: %v", err)
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		// Clear invalid cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:   proxyTokenCookie,
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+		http.Error(w, "Invalid Cookie/Proxy-Token", http.StatusUnauthorized)
 		return
 	}
 
@@ -206,9 +255,14 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
 		fmt.Errorf("connection access expired"))
 
+	scheme := "http"
+	if s.tlsConfig != nil {
+		scheme = "https"
+	}
 	session := &httpProxySession{
-		sid: sid,
-		ctx: ctx,
+		sid:          sid,
+		ctx:          ctx,
+		proxyBaseURL: fmt.Sprintf("%s://%s", scheme, s.listenAddr),
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
@@ -304,10 +358,12 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// Build raw HTTP request to forward
 	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
 	for key, values := range r.Header {
-		if key != proxyTokenHeader {
-			for _, value := range values {
-				rawRequest += fmt.Sprintf("%s: %s\r\n", key, value)
-			}
+		if key == proxyTokenHeader || key == "Host" {
+			continue
+		}
+
+		for _, value := range values {
+			rawRequest += fmt.Sprintf("%s: %s\r\n", key, value)
 		}
 	}
 	rawRequest += "\r\n"
@@ -320,6 +376,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		Spec: map[string][]byte{
 			pb.SpecGatewaySessionID:   []byte(sess.sid),
 			pb.SpecClientConnectionID: []byte(connectionID),
+			pb.SpecHttpProxyBaseUrl:   []byte(sess.proxyBaseURL),
 		},
 	})
 	if err != nil {
@@ -327,7 +384,6 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "failed to forward request", http.StatusBadGateway)
 		return
 	}
-
 	// Wait for response
 	select {
 	case <-sess.ctx.Done():
@@ -335,7 +391,28 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	case <-time.After(5 * time.Minute):
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 	case response := <-responseChan:
-		w.Write(response)
+		// parse the  raw HTTP response
+		resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(response)), nil)
+		if err != nil {
+			// If parsing fails, just write the raw response (fallback)
+			log.Warnf("failed to parse response, writing raw: %v", err)
+			w.Write(response)
+			return
+		}
+		defer resp.Body.Close()
+
+		// Copy headers from the proxied response
+		for key, values := range resp.Header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+
+		// Set status code
+		w.WriteHeader(resp.StatusCode)
+
+		// Copy body
+		io.Copy(w, resp.Body)
 	}
 }
 
