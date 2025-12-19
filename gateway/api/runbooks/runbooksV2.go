@@ -32,6 +32,7 @@ import (
 //	@Tags			Runbooks
 //	@Produce		json
 //	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
+//	@Param			list_connections	query		bool	false	"Show connections allowed for each runbook."
 //	@Success		200				{object}	openapi.RunbookListV2
 //	@Failure		404,500			{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
@@ -59,17 +60,20 @@ func ListRunbooksV2(c *gin.Context) {
 
 	urlQuery := c.Request.URL.Query()
 	connectionName := urlQuery.Get("connection_name")
+	listConnections := urlQuery.Get("list_connections") == "true"
 
-	removeEmptyConnectionsList := true
-	connectionNames := []string{connectionName}
+	connectionNames := make([]string, 0)
+	if listConnections {
+		connectionNames = []string{connectionName}
 
-	if connectionName == "" {
-		removeEmptyConnectionsList = false
-		connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
-		if err != nil {
-			log.Errorf("failed fetching connection names, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching connection names, reason=%v", err)})
-			return
+		if connectionName == "" {
+			var err error
+			connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
+			if err != nil {
+				log.Errorf("failed fetching connection names, err=%v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching connection names, reason=%v", err)})
+				return
+			}
 		}
 	}
 
@@ -84,7 +88,7 @@ func ListRunbooksV2(c *gin.Context) {
 			continue
 		}
 
-		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, removeEmptyConnectionsList)
+		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, listConnections)
 		if err != nil {
 			runbookList.Errors = append(runbookList.Errors, fmt.Sprintf("failed listing runbooks for repo %s, err=%v", repoConfig.GitUrl, err))
 			continue

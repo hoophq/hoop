@@ -159,7 +159,7 @@ func getRunbookConnections(runbookRules []models.RunbookRules, connectionList []
 	return connections
 }
 
-func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionList, userGroups []string, removeEmptyConnections bool) (*openapi.RunbookRepositoryList, error) {
+func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.RunbookRules, connectionsNames, userGroups []string, listConnections bool) (*openapi.RunbookRepositoryList, error) {
 	commit, err := GetRunbooks(orgId, config)
 	if err != nil {
 		return nil, err
@@ -182,9 +182,9 @@ func listRunbookFilesV2(orgId string, config *runbooks.Config, rules []models.Ru
 			return nil
 		}
 
-		connectionList := getRunbookConnections(rules, connectionList, config.GetNormalizedGitURL(), f.Name, userGroups)
-		if removeEmptyConnections && len(connectionList) == 0 {
-			return nil
+		var connectionList []string
+		if listConnections {
+			connectionList = getRunbookConnections(rules, connectionsNames, config.GetNormalizedGitURL(), f.Name, userGroups)
 		}
 
 		runbook := &openapi.Runbook{
