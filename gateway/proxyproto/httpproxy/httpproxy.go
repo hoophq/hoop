@@ -31,8 +31,12 @@ import (
 )
 
 const (
-	instanceKey      = "http_proxy_server"
-	proxyTokenHeader = "Proxy-Token"
+	instanceKey = "http_proxy_server"
+	//TODO: chico the kubectl adds the token with Bearer prefix
+	// and it uses Authorization header so using the same for consistency
+	// we will be able to get kubernetes connections in our database
+	// NOTE in the future we might want to support custom headers as well
+	proxyTokenHeader = "Authorization"
 	proxyTokenCookie = "hoop_proxy_token"
 )
 
@@ -96,11 +100,11 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	go func() {
 		var err error
 		if tlsConfig != nil {
-			fmt.Printf("Starting HTTP Proxy Server with TLS\n")
+			log.Infof("http proxy server using TLS")
 			server.httpServer.TLSConfig = tlsConfig
 			err = server.httpServer.ServeTLS(lis, "", "")
 		} else {
-			fmt.Printf("Starting HTTP Proxy Server without TLS\n")
+			log.Infof("http proxy server using plain HTTP")
 			err = server.httpServer.Serve(lis)
 		}
 		if err != nil && err != http.ErrServerClosed {
@@ -180,14 +184,20 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if proxyToken == "" {
 		proxyToken = r.Header.Get(proxyTokenHeader)
 	}
+
 	if proxyToken == "" {
-		http.Error(w, "missing Proxy-Token header", http.StatusUnauthorized)
+		http.Error(w, "missing Authorization header", http.StatusUnauthorized)
 		return
+	}
+	// token contains Bearer prefix
+	// kubectl adds the tokeng with Bearer prefix
+	if strings.HasPrefix(proxyToken, "Bearer ") {
+		proxyToken = strings.TrimPrefix(proxyToken, "Bearer ")
 	}
 
 	secretKeyHash, err := keys.Hash256Key(proxyToken)
 	if err != nil {
-		log.Errorf("failed hashing proxy token: %v", err)
+		log.Errorf("failed hashing Authorization token proxy: %v", err)
 		http.Error(w, "invalid proxy token", http.StatusUnauthorized)
 		return
 	}
@@ -202,7 +212,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Path:   "/",
 			MaxAge: -1,
 		})
-		http.Error(w, "Invalid Cookie/Proxy-Token", http.StatusUnauthorized)
+		http.Error(w, "Invalid Cookie/Authorization", http.StatusUnauthorized)
 		return
 	}
 

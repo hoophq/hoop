@@ -195,7 +195,7 @@ func buildConnectionCredentialsResponse(
 				accessKeyId, accessSecret, endpoint),
 		}
 	case proto.ConnectionTypeHttpProxy:
-		curlCommand := fmt.Sprintf("curl -H 'Proxy-Token: %s' http://%s:%s/your-endpoint", secretKey, serverHost, serverPort)
+		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' http://%s:%s/", secretKey, serverHost, serverPort)
 		browserCommand := fmt.Sprintf("http://%s:%s/%s", serverHost, serverPort, secretKey)
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
 			Hostname:   serverHost,
