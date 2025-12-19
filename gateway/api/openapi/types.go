@@ -1685,7 +1685,7 @@ type PostgresServerConfig struct {
 
 type HttpProxyServerConfig struct {
 	// The HTTP proxy server URL
-	ListenAddress string `json:"proxy_url" example:"http://0.0.0.0:18888"`
+	ListenAddress string `json:"listen_address" example:"http://0.0.0.0:18888"`
 }
 
 

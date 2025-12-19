@@ -253,13 +253,19 @@ func UpdateServerMisc(c *gin.Context) {
 			ListenAddress: updatedConfig.RDPServerConfig.ListenAddress,
 		}
 	}
-
+	var httpProxyServerConfig *openapi.HttpProxyServerConfig
+	if updatedConfig.HttpProxyServerConfig != nil {
+		httpProxyServerConfig = &openapi.HttpProxyServerConfig{
+			ListenAddress: updatedConfig.HttpProxyServerConfig.ListenAddress,
+		}
+	}
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics:     ptr.ToString(updatedConfig.ProductAnalytics),
-		GrpcServerURL:        ptr.ToString(updatedConfig.GrpcServerURL),
-		PostgresServerConfig: pgServerConfig,
-		SSHServerConfig:      sshServerConfig,
-		RDPServerConfig:      rdpServerConfig,
+		ProductAnalytics:      ptr.ToString(updatedConfig.ProductAnalytics),
+		GrpcServerURL:         ptr.ToString(updatedConfig.GrpcServerURL),
+		PostgresServerConfig:  pgServerConfig,
+		SSHServerConfig:       sshServerConfig,
+		RDPServerConfig:       rdpServerConfig,
+		HttpProxyServerConfig: httpProxyServerConfig,
 	})
 }
 
