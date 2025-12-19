@@ -107,10 +107,10 @@
         show-selector? (= connection-method "secrets-manager")]
     [:> Box {:class "space-y-4"}
      (when-not hide-default-title
-       [:> Heading {:size "3"} (if title title "Environment variables")])
-     (when-not hide-default-title
-       [:> Text {:size "2" :color "gray"}
-        (if subtitle subtitle "Add variable values to use in your resource role.")])
+       [:<>
+        [:> Heading {:size "3"} (if title title "Environment variables")]
+        [:> Text {:size "2" :color "gray"}
+         (if subtitle subtitle "Add variable values to use in your resource role.")]])
 
      (when (seq env-vars)
        [:> Grid {:columns "2" :gap "2"}
