@@ -343,7 +343,8 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
 
 	// Create response channel for this request
-	responseChan := make(chan []byte, 1)
+	// TODO: chico increase buffer size to prevent blocking.
+	responseChan := make(chan []byte, 10) // changed for buffering
 	sess.responseStore.Store(connectionID, responseChan)
 	defer sess.responseStore.Delete(connectionID)
 
@@ -369,49 +370,61 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	rawRequest += "\r\n"
 	rawRequest += string(body)
 
+	// Send through gRPC with timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Send through gRPC
-	err = sess.streamClient.Send(&pb.Packet{
-		Type:    pbagent.HttpProxyConnectionWrite,
-		Payload: []byte(rawRequest),
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:   []byte(sess.sid),
-			pb.SpecClientConnectionID: []byte(connectionID),
-			pb.SpecHttpProxyBaseUrl:   []byte(sess.proxyBaseURL),
-		},
-	})
-	if err != nil {
-		log.Errorf("failed sending request: %v", err)
-		http.Error(w, "failed to forward request", http.StatusBadGateway)
+	// Use a channel to detect send completion
+	sendErr := make(chan error, 1)
+	go func() {
+		err := sess.streamClient.Send(&pb.Packet{
+			Type:    pbagent.HttpProxyConnectionWrite,
+			Payload: []byte(rawRequest),
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID:   []byte(sess.sid),
+				pb.SpecClientConnectionID: []byte(connectionID),
+				pb.SpecHttpProxyBaseUrl:   []byte(sess.proxyBaseURL),
+			},
+		})
+		sendErr <- err
+	}()
+
+	// Wait for send with timeout
+	select {
+	case err := <-sendErr:
+		if err != nil {
+			log.Errorf("failed sending request: %v", err)
+			http.Error(w, "failed to forward request", http.StatusBadGateway)
+			return
+		}
+	case <-ctx.Done():
+		http.Error(w, "request send timeout", http.StatusGatewayTimeout)
 		return
 	}
-	// Wait for response
+
+	// Wait for response with shorter timeout
 	select {
 	case <-sess.ctx.Done():
 		http.Error(w, "session expired", http.StatusGatewayTimeout)
-	case <-time.After(5 * time.Minute):
+	case <-time.After(2 * time.Minute):
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 	case response := <-responseChan:
-		// parse the  raw HTTP response
+		// Parse and write response
 		resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(response)), nil)
 		if err != nil {
-			// If parsing fails, just write the raw response (fallback)
 			log.Warnf("failed to parse response, writing raw: %v", err)
 			w.Write(response)
 			return
 		}
 		defer resp.Body.Close()
 
-		// Copy headers from the proxied response
 		for key, values := range resp.Header {
 			for _, value := range values {
 				w.Header().Add(key, value)
 			}
 		}
-
-		// Set status code
 		w.WriteHeader(resp.StatusCode)
-
-		// Copy body
 		io.Copy(w, resp.Body)
 	}
 }
@@ -441,7 +454,7 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 					select {
 					case responseChan <- pkt.Payload:
 					default:
-						log.Warnf("response channel full for conn %s", connectionID)
+						log.Infof("response channel full for conn %s", connectionID)
 					}
 				}
 			}
