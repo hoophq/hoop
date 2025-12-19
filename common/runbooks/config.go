@@ -216,7 +216,8 @@ func (c *Config) loadKnownHosts() (err error) {
 	// fallback loading from the plugin configuration
 	knownHostsContent, err := base64.StdEncoding.DecodeString(c.sshKnownHostsEnc)
 	if err != nil {
-		return fmt.Errorf("failed decoding SSH_KNOWN_HOSTS")
+		// failed decoding, probably is not encoded in base64, use as is
+		knownHostsContent = []byte(c.sshKnownHostsEnc)
 	}
 	knownHosts := parseKnownHostsFileContent(string(knownHostsContent))
 	auth.HostKeyCallback = trustedHostKeyCallback(knownHosts)
