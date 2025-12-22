@@ -67,7 +67,7 @@ func ListRunbooksV2(c *gin.Context) {
 	connectionNames := []string{connectionName}
 
 	if connectionName == "" {
-		connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
+		connectionNames, err = models.ListConnectionsNameForRunbooks(models.DB, ctx.GetOrgID())
 		if err != nil {
 			log.Errorf("failed fetching connection names, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching connection names, reason=%v", err)})
