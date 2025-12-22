@@ -112,59 +112,63 @@
 (defn connection-method-selector
   "Connection method selector for connection setup (not role-based)"
   [connection-subtype]
-  (let [connection-method @(rf/subscribe [:connection-setup/connection-method])
-        supports-aws-iam? (contains? #{"mysql" "postgres"} connection-subtype)]
-    [:> Box {:class "space-y-3"}
-     [connection-method-card
-      {:icon FileSpreadsheet
-       :title "Manual Input"
-       :description "Enter credentials directly, including host, user, password, and other connection details."
-       :selected? (= connection-method "manual-input")
-       :on-click #(rf/dispatch [:connection-setup/update-connection-method "manual-input"])}]
-     [connection-method-card
-      {:icon GlobeLock
-       :title "Secrets Manager"
-       :description "Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials."
-       :selected? (= connection-method "secrets-manager")
-       :on-click #(rf/dispatch [:connection-setup/update-connection-method "secrets-manager"])}]
-     (when supports-aws-iam?
-       (let [aws-icon (fn [] (r/as-element
-                              [:> Box {:class "w-5 h-5 flex items-center justify-center"}
-                               [:img {:role "aws-icon"
-                                      :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
-                                      :class "w-full h-full"
-                                      :alt "AWS"}]]))
-             icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
+  (let [connection-method-sub (rf/subscribe [:connection-setup/connection-method])]
+    (fn []
+      (let [connection-method @connection-method-sub
+            supports-aws-iam? (contains? #{"mysql" "postgres"} connection-subtype)]
+        [:> Box {:class "space-y-3"}
          [connection-method-card
-          {:icon aws-icon
-           :icon-class icon-class
-           :title "AWS IAM Role"
-           :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
-           :selected? (= connection-method "aws-iam-role")
-           :on-click #(rf/dispatch [:connection-setup/update-connection-method "aws-iam-role"])}]))]))
+          {:icon FileSpreadsheet
+           :title "Manual Input"
+           :description "Enter credentials directly, including host, user, password, and other connection details."
+           :selected? (= connection-method "manual-input")
+           :on-click #(rf/dispatch [:connection-setup/update-connection-method "manual-input"])}]
+         [connection-method-card
+          {:icon GlobeLock
+           :title "Secrets Manager"
+           :description "Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials."
+           :selected? (= connection-method "secrets-manager")
+           :on-click #(rf/dispatch [:connection-setup/update-connection-method "secrets-manager"])}]
+         (when supports-aws-iam?
+           (let [aws-icon (fn [] (r/as-element
+                                  [:> Box {:class "w-5 h-5 flex items-center justify-center"}
+                                   [:img {:role "aws-icon"
+                                          :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
+                                          :class "w-full h-full"
+                                          :alt "AWS"}]]))
+                 icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
+             [connection-method-card
+              {:icon aws-icon
+               :icon-class icon-class
+               :title "AWS IAM Role"
+               :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
+               :selected? (= connection-method "aws-iam-role")
+               :on-click #(rf/dispatch [:connection-setup/update-connection-method "aws-iam-role"])}]))]))))
 
 (defn secrets-manager-provider-selector []
-  (let [provider @(rf/subscribe [:connection-setup/secrets-manager-provider])]
-    [:> Box
-     [forms/select {:label "Secrets manager provider"
-                    :options [{:value "vault-kv1" :text "HashiCorp Vault KV version 1"}
-                              {:value "vault-kv2" :text "HashiCorp Vault KV version 2"}
-                              {:value "aws-secrets-manager" :text "AWS Secrets Manager"}]
-                    :selected provider
-                    :full-width? true
-                    :not-margin-bottom? true
-                    :on-change #(rf/dispatch [:connection-setup/update-secrets-manager-provider %])}]
+  (let [provider-sub (rf/subscribe [:connection-setup/secrets-manager-provider])]
+    (fn []
+      (let [provider @provider-sub]
+        [:> Box
+         [forms/select {:label "Secrets manager provider"
+                        :options [{:value "vault-kv1" :text "HashiCorp Vault KV version 1"}
+                                  {:value "vault-kv2" :text "HashiCorp Vault KV version 2"}
+                                  {:value "aws-secrets-manager" :text "AWS Secrets Manager"}]
+                        :selected provider
+                        :full-width? true
+                        :not-margin-bottom? true
+                        :on-change #(rf/dispatch [:connection-setup/update-secrets-manager-provider %])}]
 
-     [:> Flex {:align "center" :gap "1" :mt "1"}
-      [:> Text {:size "2" :class "text-[--gray-11]"}
-       (str "Learn more about " (if (= provider "aws-secrets-manager")
-                                  "AWS Secrets Manager"
-                                  "HashiCorp Vault") " setup in")]
-      [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
-                :target "_blank"
-                :class "inline-flex items-center"}
-       [:> Text {:size "2"}
-        "our Docs ↗"]]]]))
+         [:> Flex {:align "center" :gap "1" :mt "1"}
+          [:> Text {:size "2" :class "text-[--gray-11]"}
+           (str "Learn more about " (if (= provider "aws-secrets-manager")
+                                      "AWS Secrets Manager"
+                                      "HashiCorp Vault") " setup in")]
+          [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
+                    :target "_blank"
+                    :class "inline-flex items-center"}
+           [:> Text {:size "2"}
+            "our Docs ↗"]]]]))))
 
 (defn aws-iam-role-section []
   [:> Flex {:align "center" :gap "1" :mt "1"}

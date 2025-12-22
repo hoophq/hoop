@@ -106,69 +106,73 @@
       description]]]])
 
 (defn role-connection-method-selector [role-index]
-  (let [connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
-        resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
-        supports-aws-iam? (contains? #{"mysql" "postgres"} resource-subtype)]
-
-    [:> Box {:class "space-y-3"}
-     [connection-method-card
-      {:icon FileSpreadsheet
-       :title "Manual Input"
-       :description "Enter credentials directly, including host, user, password, and other connection details."
-       :selected? (= connection-method "manual-input")
-       :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
-                                role-index
-                                "manual-input"])}]
-     [connection-method-card
-      {:icon GlobeLock
-       :title "Secrets Manager"
-       :description "Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials."
-       :selected? (= connection-method "secrets-manager")
-       :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
-                                role-index
-                                "secrets-manager"])}]
-     (when supports-aws-iam?
-       (let [aws-icon (fn [] (r/as-element
-                              [:> Box {:class "w-5 h-5 flex items-center justify-center"}
-                               [:img {:role "aws-icon"
-                                      :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
-                                      :class "w-full h-full"
-                                      :alt "AWS"}]]))
-             icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
+  (let [connection-method-sub (rf/subscribe [:resource-setup/role-connection-method role-index])
+        resource-subtype-sub (rf/subscribe [:resource-setup/resource-subtype])]
+    (fn []
+      (let [connection-method @connection-method-sub
+            resource-subtype @resource-subtype-sub
+            supports-aws-iam? (contains? #{"mysql" "postgres"} resource-subtype)]
+        [:> Box {:class "space-y-3"}
          [connection-method-card
-          {:icon aws-icon
-           :icon-class icon-class
-           :title "AWS IAM Role"
-           :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
-           :selected? (= connection-method "aws-iam-role")
+          {:icon FileSpreadsheet
+           :title "Manual Input"
+           :description "Enter credentials directly, including host, user, password, and other connection details."
+           :selected? (= connection-method "manual-input")
            :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
                                     role-index
-                                    "aws-iam-role"])}]))]))
+                                    "manual-input"])}]
+         [connection-method-card
+          {:icon GlobeLock
+           :title "Secrets Manager"
+           :description "Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials."
+           :selected? (= connection-method "secrets-manager")
+           :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
+                                    role-index
+                                    "secrets-manager"])}]
+         (when supports-aws-iam?
+           (let [aws-icon (fn [] (r/as-element
+                                  [:> Box {:class "w-5 h-5 flex items-center justify-center"}
+                                   [:img {:role "aws-icon"
+                                          :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
+                                          :class "w-full h-full"
+                                          :alt "AWS"}]]))
+                 icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
+             [connection-method-card
+              {:icon aws-icon
+               :icon-class icon-class
+               :title "AWS IAM Role"
+               :description "Use an IAM Role that can be assumed to authenticate and access AWS resources."
+               :selected? (= connection-method "aws-iam-role")
+               :on-click #(rf/dispatch [:resource-setup->update-role-connection-method
+                                        role-index
+                                        "aws-iam-role"])}]))]))))
 
 (defn secrets-manager-provider-selector [role-index]
-  (let [provider @(rf/subscribe [:resource-setup/secrets-manager-provider role-index])]
-    [:> Box
-     [forms/select {:label "Secrets manager provider"
-                    :options [{:value "vault-kv1" :text "HashiCorp Vault KV version 1"}
-                              {:value "vault-kv2" :text "HashiCorp Vault KV version 2"}
-                              {:value "aws-secrets-manager" :text "AWS Secrets Manager"}]
-                    :selected provider
-                    :full-width? true
-                    :not-margin-bottom? true
-                    :on-change #(rf/dispatch [:resource-setup->update-secrets-manager-provider
-                                              role-index
-                                              %])}]
+  (let [provider-sub (rf/subscribe [:resource-setup/secrets-manager-provider role-index])]
+    (fn []
+      (let [provider @provider-sub]
+        [:> Box
+         [forms/select {:label "Secrets manager provider"
+                        :options [{:value "vault-kv1" :text "HashiCorp Vault KV version 1"}
+                                  {:value "vault-kv2" :text "HashiCorp Vault KV version 2"}
+                                  {:value "aws-secrets-manager" :text "AWS Secrets Manager"}]
+                        :selected provider
+                        :full-width? true
+                        :not-margin-bottom? true
+                        :on-change #(rf/dispatch [:resource-setup->update-secrets-manager-provider
+                                                  role-index
+                                                  %])}]
 
-     [:> Flex {:align "center" :gap "1" :mt "1"}
-      [:> Text {:size "2" :class "text-[--gray-11]"}
-       (str "Learn more about " (if (= provider "aws-secrets-manager")
-                                  "AWS Secrets Manager"
-                                  "HashiCorp Vault") " setup in")]
-      [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
-                :target "_blank"
-                :class "inline-flex items-center"}
-       [:> Text {:size "2"}
-        "our Docs ↗"]]]]))
+         [:> Flex {:align "center" :gap "1" :mt "1"}
+          [:> Text {:size "2" :class "text-[--gray-11]"}
+           (str "Learn more about " (if (= provider "aws-secrets-manager")
+                                      "AWS Secrets Manager"
+                                      "HashiCorp Vault") " setup in")]
+          [:> Link {:href (get-in config/docs-url [:setup :configuration :secrets-manager])
+                    :target "_blank"
+                    :class "inline-flex items-center"}
+           [:> Text {:size "2"}
+            "our Docs ↗"]]]]))))
 
 (defn aws-iam-role-section [_role-index]
   [:> Flex {:align "center" :gap "1" :mt "1"}
