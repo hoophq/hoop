@@ -104,8 +104,15 @@ func migrateOrganizationRunbooks(db *gorm.DB, orgID string) error {
 	commonConfig, err := models.BuildCommonConfig(&modelConfig)
 	if err != nil {
 		log.Warnf("Failed to build common config for org %s, err=%v", orgID, err)
-		log.Warnf("Skipping runbook migration for org %s, only removing plugin", orgID)
-		return models.DeletePlugin(db, obj)
+		log.Warnf("Using a simplified runbook configuration")
+
+		commonConfig, err = models.BuildCommonConfig(&models.RunbookRepositoryConfig{
+			GitUrl: string(gitUrl),
+		})
+		if err != nil {
+			log.Warnf("Skipping runbook migration for org %s, only removing plugin", orgID)
+			return models.DeletePlugin(db, obj)
+		}
 	}
 
 	repositoryName := commonConfig.GetNormalizedGitURL()
