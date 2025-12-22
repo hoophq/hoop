@@ -10,7 +10,7 @@
     (fn []
       (let [rules-data (or (:data @runbooks-rules-list) [])]
         [:> Box {:class "w-full h-full"}
-         [:> Box {:class "bg-gray-1 min-h-full h-max"}
+         [:> Box {:class "min-h-full h-max"}
           (doall
            (for [rule rules-data]
              ^{:key (:id rule)}
