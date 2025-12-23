@@ -59,6 +59,7 @@ type httpProxySession struct {
 	streamClient  pb.ClientTransport
 	responseStore sync.Map // stores response channels per connectionID
 	connCounter   atomic.Int64
+	cleanUpOnce   sync.Once
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -95,6 +96,16 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 
 	server.httpServer = &http.Server{
 		Handler: server,
+		// when using freelens or kubernetes clients, when token expires
+		// the client starts send a bunch of request this can exaust the server resources
+		// With many concurrent requests holding connections open for up to 60 seconds,
+		// this can exhaust file descriptors, goroutines, and memory, making the process unresponsive and affecting the REST API.
+		ReadTimeout:       90 * time.Second,  // Maximum time to read the entire request
+		WriteTimeout:      90 * time.Second,  // Maximum time to write the response
+		IdleTimeout:       120 * time.Second, // Maximum time to wait for the next request when keep-alive is enabled
+		ReadHeaderTimeout: 10 * time.Second,  // Maximum time to read request headers
+		MaxHeaderBytes:    1 << 20,           // 1MB max header size
+		ErrorLog:          log.NewStdHttpLogger(),
 	}
 
 	go func() {
@@ -108,7 +119,7 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 			err = server.httpServer.Serve(lis)
 		}
 		if err != nil && err != http.ErrServerClosed {
-			log.Errorf("http proxy server error: %v", err)
+			log.Infof("http proxy server error: %v", err)
 		}
 	}()
 
@@ -128,7 +139,7 @@ func (s *HttpProxyServer) Stop() error {
 
 	server.sessionStore.Range(func(key, value any) bool {
 		if session, ok := value.(*httpProxySession); ok {
-			session.cancelFn("proxy server is shutting down")
+			session.cancelFn("http proxy server is shutting down")
 		}
 		return true
 	})
@@ -219,34 +230,64 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	session.handleRequest(w, r)
 }
 
-func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySession, error) {
-	if session, ok := s.sessionStore.Load(secretKeyHash); ok {
-		return session.(*httpProxySession), nil
-	}
-
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	// Double-check after lock
-	if session, ok := s.sessionStore.Load(secretKeyHash); ok {
-		return session.(*httpProxySession), nil
-	}
-
+func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCredentials, error) {
+	// Check cache first
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
 		pb.ConnectionTypeHttpProxy.String(),
 		secretKeyHash)
 
 	if err != nil {
 		if err == models.ErrNotFound {
-			return nil, fmt.Errorf("invalid proxy token credentials")
+			return nil, fmt.Errorf("http proxy invalid proxy token credentials")
 		}
-		return nil, fmt.Errorf("failed obtaining credentials: %v", err)
+		return nil, fmt.Errorf("http proxy failed obtaining credentials: %v", err)
 	}
 
-	ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
 	if dba.ExpireAt.Before(time.Now().UTC()) {
-		return nil, fmt.Errorf("proxy token credentials expired")
+		return nil, fmt.Errorf("http proxy token credentials expired")
 	}
+
+	return dba, nil
+}
+
+func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxySession, error) {
+
+	if session, ok := s.sessionStore.Load(secretKeyHash); ok {
+		sess := session.(*httpProxySession)
+		// Check if session context is still valid
+		if sess.ctx.Err() != nil {
+			log.Infof("http proxy session context error: %v, removing session for connection %s", sess.ctx.Err(), secretKeyHash)
+			// Session context has error, remove it and will create a new one below
+
+			sess.cleanUpOnce.Do(func() {
+				s.sessionStore.Delete(secretKeyHash)
+			})
+			return nil, fmt.Errorf("http proxy credentials invalid/expired, for credentials")
+		}
+		log.Infof("http proxy session found for connection %s", secretKeyHash)
+		return sess, nil
+	}
+	// there is no session
+	return nil, nil
+}
+
+func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySession, error) {
+	// First try to get existing session without lock
+	sess, err := s.getSessionOrRelease(secretKeyHash)
+	if err != nil {
+		return nil, err
+	}
+	if sess != nil {
+		return sess, nil
+	}
+
+	// Credentials were already validated above, but validate again after lock
+	// to ensure they're still valid (in case they expired between checks)
+	dba, err := getValidConnectionCredentials(secretKeyHash)
+	if err != nil {
+		return nil, err
+	}
+	ctxDuration := time.Until(dba.ExpireAt)
 
 	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
 	if err != nil {
@@ -263,7 +304,7 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	sid := uuid.NewString()
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
-		fmt.Errorf("connection access expired"))
+		fmt.Errorf("http proxy connection access expired"))
 
 	scheme := "http"
 	if s.tlsConfig != nil {
@@ -277,11 +318,19 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
 		},
+		cleanUpOnce: sync.Once{},
 	}
+
+	go func() {
+		<-ctx.Done()
+		log.Infof("http proxy session context done, sid=%s, cause=%v", sid, ctx.Err())
+		session.cleanUpOnce.Do(func() {
+			s.sessionStore.Delete(secretKeyHash)
+		})
+	}()
 
 	transport.PollingUserToken(session.ctx, func(cause error) {
 		session.cancelFn(cause.Error())
-		s.sessionStore.Delete(secretKeyHash)
 	}, tokenVerifier, dba.UserSubject)
 
 	client, err := grpc.Connect(grpc.ClientConfig{
@@ -339,15 +388,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 
 	s.sessionStore.Store(secretKeyHash, session)
 
-	go func() {
-		<-ctx.Done()
-		s.sessionStore.Delete(secretKeyHash)
-	}()
-
 	return session, nil
 }
 
 func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Request) {
+
 	connectionID := strconv.FormatInt(sess.connCounter.Add(1), 10)
 	log := log.With("sid", sess.sid, "conn", connectionID)
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
@@ -400,6 +445,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		sendErr <- err
 	}()
 
+	w.Header().Set("server", "httpproxy-hoopgateway")
 	// Wait for send with timeout
 	select {
 	case err := <-sendErr:
@@ -408,18 +454,26 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "failed to forward request", http.StatusBadGateway)
 			return
 		}
+		if sess.ctx.Err() != nil {
+			http.Error(w, "session expired", http.StatusUnauthorized)
+			return
+		}
+
 	case <-ctx.Done():
 		http.Error(w, "request send timeout", http.StatusGatewayTimeout)
 		return
 	}
 
 	// Wait for response with shorter timeout
+	httpTimeout := 60 * time.Second
 	select {
-	case <-sess.ctx.Done():
-		http.Error(w, "session expired", http.StatusGatewayTimeout)
-	case <-time.After(2 * time.Minute):
+	case <-time.After(httpTimeout):
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
 	case response := <-responseChan:
+		if sess.ctx.Err() != nil {
+			http.Error(w, "session expired", http.StatusUnauthorized)
+			return
+		}
 		// Parse and write response
 		resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(response)), nil)
 		if err != nil {
@@ -442,17 +496,33 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secretKeyHash string) {
 	defer func() {
 		_, _ = sess.streamClient.Close()
-		server.sessionStore.Delete(secretKeyHash)
+		sess.cleanUpOnce.Do(func() {
+			server.sessionStore.Delete(secretKeyHash)
+		})
 	}()
 
+	recvCh := grpc.NewStreamRecv(sess.ctx, sess.streamClient)
 	for {
-		pkt, err := sess.streamClient.Recv()
+		var dstream *grpc.DataStream
+		select {
+		case <-sess.ctx.Done():
+
+			// cleanUp will happen in defer
+			return
+		case dstream = <-recvCh:
+			if dstream == nil {
+				// Channel closed
+				return
+			}
+		}
+
+		pkt, err := dstream.Recv()
 		if err != nil {
-			sess.cancelFn("received error from stream: %v", err)
+			sess.cancelFn("http-proxy received error from stream: %v", err)
 			return
 		}
 		if pkt == nil {
-			sess.cancelFn("received nil packet")
+			sess.cancelFn("http-proxy received nil packet")
 			return
 		}
 
@@ -472,6 +542,10 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 		case pbclient.TCPConnectionClose, pbclient.SessionClose:
 			sess.cancelFn("session closed by server")
 			return
+
+		default:
+			// Unknown packet type, log and ignore
+			log.Infof("unknown packet type received: %v", pkt.Type)
 		}
 	}
 }
