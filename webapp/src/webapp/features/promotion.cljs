@@ -183,7 +183,7 @@
 
 (defn runbooks-promotion
   "Componente específico para Runbooks"
-  [{:keys [mode installed?]}]
+  [{:keys [mode on-promotion-seen]}]
   [feature-promotion
    {:feature-name "Runbooks"
     :mode mode
@@ -201,8 +201,9 @@
     :on-primary-click (if (= mode :empty-state)
                         (fn []
                           (.setItem (.-localStorage js/window) "runbooks-promotion-seen" "true")
-                          (rf/dispatch [:navigate :runbooks-setup {:tab "configuration"}])
-                          (rf/dispatch [:plugins->get-plugin-by-name "runbooks"]))
+                          (when on-promotion-seen
+                            (on-promotion-seen))
+                          (rf/dispatch [:navigate :runbooks-setup]))
                         #(js/window.Intercom
                           "showNewMessage"
                           "I want to upgrade my current plan"))

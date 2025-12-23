@@ -55,6 +55,12 @@
      {})))
 
 (rf/reg-event-fx
+ :runbooks/clear-persisted-connection
+ (fn [_ _]
+   (.removeItem js/localStorage "runbooks-selected-connection")
+   {}))
+
+(rf/reg-event-fx
  :runbooks/load-persisted-connection
  (fn [_ _]
    (let [saved (.getItem js/localStorage "runbooks-selected-connection")]
@@ -73,13 +79,14 @@
 (rf/reg-event-fx
  :runbooks/connection-loaded
  (fn [{:keys [db]} [_ connection-name]]
-   (let [connection (get-in db [:connections :details connection-name])]
-     (if connection
+   (let [connection (get-in db [:connections :details connection-name])
+         enabled? (and connection
+                       (not= "disabled" (:access_mode_runbooks connection)))]
+     (if enabled?
        {:db (assoc-in db [:runbooks :selected-connection] connection)
         :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
-       ;; Connection not found - clear selection
        {:db (assoc-in db [:runbooks :selected-connection] nil)
-        :fx [[:dispatch [:runbooks/persist-selected-connection]]
+        :fx [[:dispatch [:runbooks/clear-persisted-connection]]
              [:dispatch [:runbooks/list nil]]]}))))
 
 (rf/reg-event-fx

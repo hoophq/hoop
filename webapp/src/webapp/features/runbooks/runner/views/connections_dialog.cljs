@@ -55,8 +55,7 @@
             connections-loading? (= :loading (:loading @connections))
             valid-connections (filter #(and
                                         (not (#{"tcp" "httpproxy" "ssh"} (:subtype %)))
-                                        (or (= "enabled" (:access_mode_exec %))
-                                            (= "enabled" (:access_mode_runbooks %))))
+                                        (= "enabled" (:access_mode_runbooks %)))
                                       all-connections)]
         [command-dialog/command-dialog
          {:open? @open?
