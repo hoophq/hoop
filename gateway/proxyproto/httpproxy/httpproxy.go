@@ -489,7 +489,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		_, _ = io.Copy(w, resp.Body)
 	}
 }
 
