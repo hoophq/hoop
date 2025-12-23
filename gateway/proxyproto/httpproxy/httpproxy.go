@@ -215,7 +215,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	session, err := s.getOrCreateSession(secretKeyHash)
 	if err != nil {
-		log.Errorf("failed to get/create session: %v", err)
+		log.Warn("failed to get/create session: %v", err)
 		// Clear invalid cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:   proxyTokenCookie,
