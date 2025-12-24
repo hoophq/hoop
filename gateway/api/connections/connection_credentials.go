@@ -19,7 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy"}
 
 // CreateConnectionCredentials
 //
@@ -194,6 +194,15 @@ func buildConnectionCredentialsResponse(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
+	case proto.ConnectionTypeHttpProxy:
+		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' http://%s:%s/", secretKey, serverHost, serverPort)
+		browserCommand := fmt.Sprintf("http://%s:%s/%s", serverHost, serverPort, secretKey)
+		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
+			Hostname:   serverHost,
+			Port:       serverPort,
+			ProxyToken: secretKey,
+			Command:    fmt.Sprintf("cURL: %s\nBrowser: %s", curlCommand, browserCommand),
+		}
 	default:
 		return nil
 	}
@@ -218,6 +227,8 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
+	case proto.ConnectionTypeHttpProxy:
+		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
 	}
@@ -237,6 +248,10 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 	case proto.ConnectionTypeRDP:
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
+		}
+	case proto.ConnectionTypeHttpProxy:
+		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
+			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}
 	}
 
@@ -260,6 +275,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("rdp", keySize)
 	case proto.ConnectionTypeSSM:
 		return keys.GenerateSecureRandomKey("aws-ssm", keySize)
+	case proto.ConnectionTypeHttpProxy:
+		return keys.GenerateSecureRandomKey("httpproxy", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

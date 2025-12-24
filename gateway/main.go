@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
+	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
@@ -109,7 +110,6 @@ func Run() {
 		log.Infof("failed adding default runbooks, reason=%v", err)
 	}
 
-
 	g := &transport.Server{
 		TLSConfig:   tlsConfig,
 		ApiHostname: appconfig.Get().ApiHostname(),
@@ -185,6 +185,14 @@ func Run() {
 			)
 			if err != nil {
 				log.Fatalf("failed to start rdp server, reason=%v", err)
+			}
+		}
+
+		httpc := serverConfig.HttpProxyServerConfig
+		if httpc != nil && httpc.ListenAddress != "" {
+			err = httpproxy.GetServerInstance().Start(httpc.ListenAddress, tlsConfig)
+			if err != nil {
+				log.Fatalf("failed to start http proxy server, reason=%v", err)
 			}
 		}
 	}

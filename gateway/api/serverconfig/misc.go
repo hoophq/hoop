@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
@@ -83,12 +84,19 @@ func GetServerMisc(c *gin.Context) {
 		}
 	}
 
+	var httpProxyServerConfig *openapi.HttpProxyServerConfig
+	if config.HttpProxyServerConfig != nil {
+		httpProxyServerConfig = &openapi.HttpProxyServerConfig{
+			ListenAddress: config.HttpProxyServerConfig.ListenAddress,
+		}
+	}
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics:     productAnalytics,
-		GrpcServerURL:        grpcURL,
-		PostgresServerConfig: pgServerConfig,
-		SSHServerConfig:      sshServerConfig,
-		RDPServerConfig:      rdpServerConfig,
+		ProductAnalytics:      productAnalytics,
+		GrpcServerURL:         grpcURL,
+		PostgresServerConfig:  pgServerConfig,
+		SSHServerConfig:       sshServerConfig,
+		RDPServerConfig:       rdpServerConfig,
+		HttpProxyServerConfig: httpProxyServerConfig,
 	})
 }
 
@@ -193,12 +201,30 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	httpProxyInstance := httpproxy.GetServerInstance()
+	httpProxyConf, state := parseHttpProxyConfigState(currentSrvConf, newState)
+	switch state {
+	case instanceStateStart:
+		_ = httpProxyInstance.Stop()
+		err = httpProxyInstance.Start(httpProxyConf.ListenAddress, tlsConfig)
+	case instanceStateStop:
+		err = httpProxyInstance.Stop()
+	}
+
+	if err != nil {
+		errMsg := fmt.Sprintf("failed handling http proxy server startup, reason=%v", err)
+		log.Errorf(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		return
+	}
+
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
-		ProductAnalytics:     newState.ProductAnalytics,
-		GrpcServerURL:        newState.GrpcServerURL,
-		PostgresServerConfig: newState.PostgresServerConfig,
-		SSHServerConfig:      newState.SSHServerConfig,
-		RDPServerConfig:      newState.RDPServerConfig,
+		ProductAnalytics:      newState.ProductAnalytics,
+		GrpcServerURL:         newState.GrpcServerURL,
+		PostgresServerConfig:  newState.PostgresServerConfig,
+		SSHServerConfig:       newState.SSHServerConfig,
+		RDPServerConfig:       newState.RDPServerConfig,
+		HttpProxyServerConfig: newState.HttpProxyServerConfig,
 	})
 	if err != nil {
 		log.Errorf("failed to update server config, reason=%v", err)
@@ -227,13 +253,19 @@ func UpdateServerMisc(c *gin.Context) {
 			ListenAddress: updatedConfig.RDPServerConfig.ListenAddress,
 		}
 	}
-
+	var httpProxyServerConfig *openapi.HttpProxyServerConfig
+	if updatedConfig.HttpProxyServerConfig != nil {
+		httpProxyServerConfig = &openapi.HttpProxyServerConfig{
+			ListenAddress: updatedConfig.HttpProxyServerConfig.ListenAddress,
+		}
+	}
 	c.JSON(http.StatusOK, openapi.ServerMiscConfig{
-		ProductAnalytics:     ptr.ToString(updatedConfig.ProductAnalytics),
-		GrpcServerURL:        ptr.ToString(updatedConfig.GrpcServerURL),
-		PostgresServerConfig: pgServerConfig,
-		SSHServerConfig:      sshServerConfig,
-		RDPServerConfig:      rdpServerConfig,
+		ProductAnalytics:      ptr.ToString(updatedConfig.ProductAnalytics),
+		GrpcServerURL:         ptr.ToString(updatedConfig.GrpcServerURL),
+		PostgresServerConfig:  pgServerConfig,
+		SSHServerConfig:       sshServerConfig,
+		RDPServerConfig:       rdpServerConfig,
+		HttpProxyServerConfig: httpProxyServerConfig,
 	})
 }
 
@@ -299,12 +331,24 @@ func parseMiscPayload(c *gin.Context) (*models.ServerMiscConfig, error) {
 		}
 	}
 
+	// http proxy server configuration attribute
+	var httpProxyServerConfig *models.HttpProxyServerConfig
+	if req.HttpProxyServerConfig != nil {
+		if _, _, found := strings.Cut(req.HttpProxyServerConfig.ListenAddress, ":"); req.HttpProxyServerConfig.ListenAddress != "" && !found {
+			return nil, errListenAddrFormat
+		}
+		httpProxyServerConfig = &models.HttpProxyServerConfig{
+			ListenAddress: req.HttpProxyServerConfig.ListenAddress,
+		}
+	}
+
 	return &models.ServerMiscConfig{
-		ProductAnalytics:     &req.ProductAnalytics,
-		GrpcServerURL:        &req.GrpcServerURL,
-		PostgresServerConfig: pgServerConfig,
-		SSHServerConfig:      sshServerConfig,
-		RDPServerConfig:      rdpServerConfig,
+		ProductAnalytics:      &req.ProductAnalytics,
+		GrpcServerURL:         &req.GrpcServerURL,
+		PostgresServerConfig:  pgServerConfig,
+		SSHServerConfig:       sshServerConfig,
+		RDPServerConfig:       rdpServerConfig,
+		HttpProxyServerConfig: httpProxyServerConfig,
 	}, nil
 }
 
@@ -384,6 +428,28 @@ func parseSSHConfigState(currentState, newState *models.ServerMiscConfig) (newCo
 	// restart on configuration drift
 	case currentConf.ListenAddress != newConf.ListenAddress,
 		currentConf.HostsKey != newConf.HostsKey:
+		return newConf, "start"
+	// noop, no configuration drift
+	default:
+		return
+	}
+}
+
+func parseHttpProxyConfigState(currentState, newState *models.ServerMiscConfig) (newConf models.HttpProxyServerConfig, state instanceState) {
+	var currentConf models.HttpProxyServerConfig
+	if currentState != nil && currentState.HttpProxyServerConfig != nil {
+		currentConf = *currentState.HttpProxyServerConfig
+	}
+	if newState != nil && newState.HttpProxyServerConfig != nil {
+		newConf = *newState.HttpProxyServerConfig
+	}
+
+	switch {
+	// stop instance when new configuration is empty
+	case newConf.ListenAddress == "":
+		return newConf, "stop"
+	// restart on configuration drift
+	case currentConf.ListenAddress != newConf.ListenAddress:
 		return newConf, "start"
 	// noop, no configuration drift
 	default:

@@ -1686,6 +1686,8 @@ type ServerMiscConfig struct {
 	SSHServerConfig *SSHServerConfig `json:"ssh_server_config"`
 	// The RDP server proxy configuration
 	RDPServerConfig *RDPServerConfig `json:"rdp_server_config"`
+	// The HTTP proxy server configuration
+	HttpProxyServerConfig *HttpProxyServerConfig `json:"http_proxy_server_config"`
 }
 
 type SSHServerConfig struct {
@@ -1704,6 +1706,12 @@ type PostgresServerConfig struct {
 	// The listen address to run the PostgreSQL server proxy
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:15432"`
 }
+
+type HttpProxyServerConfig struct {
+	// The HTTP proxy server URL
+	ListenAddress string `json:"listen_address" example:"http://0.0.0.0:18888"`
+}
+
 
 type ServerAuthOidcConfig struct {
 	// Identity Provider Issuer URL (Oauth2)
@@ -1811,6 +1819,18 @@ type SSMConnectionInfo struct {
 	AwsSecretAccessKey string `json:"aws_secret_access_key" example:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
 	// Command line arguments to access the ssm server instance
 	ConnectionString string `json:"connection_string" example:"aws ssm start-session --target ... --endpoint-url ..."`
+}
+
+// HttpProxyConnectionInfo represents the connection information required to establish
+type HttpProxyConnectionInfo struct {
+	// Hostname to access the HTTP proxy instance
+	Hostname string `json:"hostname"`
+	// Port of the HTTP proxy instance
+	Port string `json:"port"`
+	// Token to access the HTTP proxy resource
+	ProxyToken string `json:"proxy_token"`
+	// The command to access the HTTP proxy instance
+	Command string `json:"command"`
 }
 
 type PostgresConnectionInfo struct {

@@ -17,6 +17,7 @@ type HttpProxy struct {
 	connectionStore memory.Store
 	listener        net.Listener
 	packetType      pb.PacketType
+	proxyBaseURL    string
 }
 
 func NewHttpProxy(listenPort string, client pb.ClientTransport, packetType pb.PacketType) *HttpProxy {
@@ -29,6 +30,7 @@ func NewHttpProxy(listenPort string, client pb.ClientTransport, packetType pb.Pa
 		client:          client,
 		connectionStore: memory.New(),
 		packetType:      packetType,
+		proxyBaseURL:    fmt.Sprintf("http://%s", listenAddr),
 	}
 }
 
@@ -71,6 +73,7 @@ func (p *HttpProxy) serveConn(sessionID, connectionID string, tcpClient net.Conn
 	spec := map[string][]byte{
 		string(pb.SpecGatewaySessionID):   []byte(sessionID),
 		string(pb.SpecClientConnectionID): []byte(connectionID),
+		string(pb.SpecHttpProxyBaseUrl):   []byte(p.proxyBaseURL),
 	}
 	httpProxyWriter := pb.NewStreamWriter(p.client, p.packetType, spec)
 	if _, err := io.Copy(httpProxyWriter, tcpClient); err != nil {
