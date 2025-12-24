@@ -314,30 +314,39 @@
 (defn extract-network-credentials
   "Retrieves and normalizes HOST and PORT from secrets for network credentials"
   [credentials]
-  (let [raw-credentials {:host (get credentials "HOST")
-                        :port (get credentials "PORT")}]
-    (connection-method/normalize-credentials raw-credentials)))
+  (let [host-value (get credentials "HOST")
+        port-value (get credentials "PORT")
+        normalized-host (connection-method/normalize-credential-value host-value)
+        normalized-port (connection-method/normalize-credential-value port-value)]
+    {:host normalized-host
+     :port normalized-port}))
 
 (defn extract-ssh-credentials
   "Retrieves and normalizes HOST, PORT, USER, PASS and AUTHORIZED_SERVER_KEYS from secrets for ssh credentials"
   [credentials]
-  (let [raw-credentials {"host" (get credentials "HOST")
-                         "port" (get credentials "PORT")
-                         "user" (get credentials "USER")
-                         "pass" (get credentials "PASS")
-                         "authorized_server_keys" (get credentials "AUTHORIZED_SERVER_KEYS")
-                         "auth-method" (get credentials "AUTH-METHOD")}]
-    (connection-method/normalize-credentials raw-credentials)))
+  (let [host-value (get credentials "HOST")
+        port-value (get credentials "PORT")
+        user-value (get credentials "USER")
+        pass-value (get credentials "PASS")
+        keys-value (get credentials "AUTHORIZED_SERVER_KEYS")
+        auth-method-value (get credentials "AUTH-METHOD")]
+    {"host" (connection-method/normalize-credential-value host-value)
+     "port" (connection-method/normalize-credential-value port-value)
+     "user" (connection-method/normalize-credential-value user-value)
+     "pass" (connection-method/normalize-credential-value pass-value)
+     "authorized_server_keys" (connection-method/normalize-credential-value keys-value)
+     "auth-method" (connection-method/normalize-credential-value auth-method-value)}))
 
 (defn extract-http-credentials
   "Retrieves and normalizes remote_url and insecure flag from secrets for http credentials"
   [credentials]
-  (let [raw-credentials {:remote_url (get credentials "REMOTE_URL")}
-        normalized (connection-method/normalize-credentials raw-credentials)
+  (let [remote-url-value (get credentials "REMOTE_URL")
+        normalized-remote-url (connection-method/normalize-credential-value remote-url-value)
         insecure-value (get credentials "INSECURE")]
-    (assoc normalized :insecure (if (string? insecure-value)
-                                  (= insecure-value "true")
-                                  (boolean insecure-value)))))
+    {:remote_url normalized-remote-url
+     :insecure (if (string? insecure-value)
+                 (= insecure-value "true")
+                 (boolean insecure-value))}))
 
 (defn extract-kubernetes-token-credentials
   "Retrieves and normalizes remote_url, authorization and insecure flag from secrets for kubernetes credentials"
@@ -346,13 +355,15 @@
         auth-value (if (str/starts-with? auth-header "Bearer ")
                      (subs auth-header 7)
                      auth-header)
-        raw-credentials {:cluster_url (get credentials "REMOTE_URL")
-                         :authorization auth-value}
-        normalized (connection-method/normalize-credentials raw-credentials)
+        cluster-url-value (get credentials "REMOTE_URL")
+        normalized-cluster-url (connection-method/normalize-credential-value cluster-url-value)
+        normalized-authorization (connection-method/normalize-credential-value auth-value)
         insecure-value (get credentials "INSECURE")]
-    (assoc normalized :insecure (if (string? insecure-value)
-                                  (= insecure-value "true")
-                                  (boolean insecure-value)))))
+    {:cluster_url normalized-cluster-url
+     :authorization normalized-authorization
+     :insecure (if (string? insecure-value)
+                 (= insecure-value "true")
+                 (boolean insecure-value))}))
 
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
@@ -496,6 +507,9 @@
                                    (seq normalized-credentials)
                                    (connection-method/infer-connection-method normalized-credentials)
 
+                                   env-vars-connection-info
+                                   env-vars-connection-info
+
                                    ssh-connection-info
                                    ssh-connection-info
 
@@ -507,9 +521,6 @@
 
                                    http-connection-info
                                    http-connection-info
-
-                                   env-vars-connection-info
-                                   env-vars-connection-info
 
                                    :else
                                    {:connection-method "manual-input"
