@@ -36,11 +36,21 @@ const (
 	// and it uses Authorization header so using the same for consistency
 	// we will be able to get kubernetes connections in our database
 	// NOTE in the future we might want to support custom headers as well
-	proxyTokenHeader = "Authorization"
-	proxyTokenCookie = "hoop_proxy_token"
+	proxyTokenHeader     = "Authorization"
+	proxyTokenCookie     = "hoop_proxy_token"
+	negativeAuthCacheTTL = 24 * time.Hour // Invalid auth keys will never be valid, so we will clean this up after hours
 )
 
 var instanceStore sync.Map
+
+// negativeAuthEntry stores a cached authentication failure with timestamp
+type negativeAuthEntry struct {
+	err       error
+	timestamp time.Time
+}
+
+// negativeAuthCache caches failed authentication attempts to avoid repeated database queries
+var negativeAuthCache sync.Map // map[string]*negativeAuthEntry
 
 type HttpProxyServer struct {
 	sessionStore sync.Map // map[string]*httpProxySession
@@ -59,7 +69,7 @@ type httpProxySession struct {
 	streamClient  pb.ClientTransport
 	responseStore sync.Map // stores response channels per connectionID
 	connCounter   atomic.Int64
-	cleanUpOnce   sync.Once
+	closed        atomic.Bool // fast-fail flag to avoid mutex contention on session close
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -157,13 +167,12 @@ func (s *HttpProxyServer) ListenAddr() string { return s.listenAddr }
 
 // ServeHTTP implements http.Handler
 func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
 	var proxyToken string
 
 	// Check if token is in URL path: /<proxy-token> or /<proxy-token>/...
 	// This is the initial browser request to set the cookie
 	pathParts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
-	if len(pathParts) > 0 && strings.HasPrefix(pathParts[0], "http") {
+	if len(pathParts) > 0 && strings.HasPrefix(pathParts[0], "httpproxy") {
 		// Token found in path (tokens start with "http" prefix from generateSecretKey)
 		proxyToken = pathParts[0]
 
@@ -174,7 +183,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
-			// Secure: true, // Enable if using HTTPS
+			Secure:   r.TLS != nil,
 		})
 
 		// Redirect to root (or remaining path) so browser uses the cookie
@@ -208,14 +217,34 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	secretKeyHash, err := keys.Hash256Key(proxyToken)
 	if err != nil {
-		log.Errorf("failed hashing Authorization token proxy: %v", err)
+		log.Infof("failed hashing Authorization token proxy: %v", err)
 		http.Error(w, "invalid proxy token", http.StatusUnauthorized)
 		return
+	}
+	// check if the key is in the negative auth cache
+	// avoid hammering the database with invalid requests
+	// avoid goroutine for each request
+	if cached, ok := negativeAuthCache.Load(secretKeyHash); ok {
+		log.Warnf("negative auth cache hit for secret key hash: %s", secretKeyHash)
+		entry := cached.(*negativeAuthEntry)
+		// Check if cache entry is still valid (not expired)
+		// we will clean this after 1 day just to clean the memory
+		if time.Since(entry.timestamp) < negativeAuthCacheTTL {
+			http.Error(w, entry.err.Error(), http.StatusUnauthorized)
+			return
+		}
+		// Cache expired, remove it
+		negativeAuthCache.Delete(secretKeyHash)
 	}
 
 	session, err := s.getOrCreateSession(secretKeyHash)
 	if err != nil {
-		log.Warn("failed to get/create session: %v", err)
+		negativeAuthCache.Store(secretKeyHash, &negativeAuthEntry{
+			err:       err,
+			timestamp: time.Now(),
+		})
+		// this log might happen a lot if there are many invalid requests
+		log.Warnf("failed to get/create session: %v", err)
 		// Clear invalid cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:   proxyTokenCookie,
@@ -231,40 +260,43 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCredentials, error) {
-	// Check cache first
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
 		pb.ConnectionTypeHttpProxy.String(),
 		secretKeyHash)
 
 	if err != nil {
 		if err == models.ErrNotFound {
-			return nil, fmt.Errorf("http proxy invalid proxy token credentials")
+			cErr := fmt.Errorf("http proxy invalid proxy token credentials")
+			return nil, cErr
 		}
-		return nil, fmt.Errorf("http proxy failed obtaining credentials: %v", err)
+		cErr := fmt.Errorf("http proxy failed obtaining credentials: %v", err)
+		return nil, cErr
 	}
 
 	if dba.ExpireAt.Before(time.Now().UTC()) {
-		return nil, fmt.Errorf("http proxy token credentials expired")
+		cErr := fmt.Errorf("http proxy token credentials expired")
+		return nil, cErr
 	}
 
 	return dba, nil
 }
 
 func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxySession, error) {
-
 	if session, ok := s.sessionStore.Load(secretKeyHash); ok {
-		sess := session.(*httpProxySession)
+		sess, ok := session.(*httpProxySession)
+		if !ok {
+			// Invalid session type, remove it
+			s.sessionStore.Delete(secretKeyHash)
+			return nil, fmt.Errorf("invalid session type for connection %s", secretKeyHash)
+		}
+
 		// Check if session context is still valid
 		if sess.ctx.Err() != nil {
 			log.Infof("http proxy session context error: %v, removing session for connection %s", sess.ctx.Err(), secretKeyHash)
-			// Session context has error, remove it and will create a new one below
-
-			sess.cleanUpOnce.Do(func() {
-				s.sessionStore.Delete(secretKeyHash)
-			})
-			return nil, fmt.Errorf("http proxy credentials invalid/expired, for credentials")
+			s.sessionStore.Delete(secretKeyHash)
+			return nil, fmt.Errorf("http proxy session context error: %v", sess.ctx.Err())
 		}
-		log.Infof("http proxy session found for connection %s", secretKeyHash)
+		log.Debugf("http proxy session found for connection %s", secretKeyHash)
 		return sess, nil
 	}
 	// there is no session
@@ -272,7 +304,7 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 }
 
 func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySession, error) {
-	// First try to get existing session without lock
+	// First try to get existing valid session
 	sess, err := s.getSessionOrRelease(secretKeyHash)
 	if err != nil {
 		return nil, err
@@ -281,8 +313,7 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		return sess, nil
 	}
 
-	// Credentials were already validated above, but validate again after lock
-	// to ensure they're still valid (in case they expired between checks)
+	// Validate credentials first
 	dba, err := getValidConnectionCredentials(secretKeyHash)
 	if err != nil {
 		return nil, err
@@ -318,21 +349,13 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
 		},
-		cleanUpOnce: sync.Once{},
 	}
-
-	go func() {
-		<-ctx.Done()
-		log.Infof("http proxy session context done, sid=%s, cause=%v", sid, ctx.Err())
-		session.cleanUpOnce.Do(func() {
-			s.sessionStore.Delete(secretKeyHash)
-		})
-	}()
 
 	transport.PollingUserToken(session.ctx, func(cause error) {
 		session.cancelFn(cause.Error())
 	}, tokenVerifier, dba.UserSubject)
 
+	// Do gRPC connection setup outside lock (this can take time)
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "",
@@ -386,12 +409,44 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	// Now start handling responses in background
 	go session.handleAgentResponses(s, secretKeyHash)
 
+	// close the gRPC stream to unblock any pending Send() calls
+	// This prevents goroutine/resource leaks when many requests are in-flight during cancellation
+	go func() {
+		<-ctx.Done()
+		log.Infof("http proxy session context done, sid=%s, cause=%v", sid, ctx.Err())
+		// Set closed flag so pending Send goroutines can fast-fail without waiting for mutex
+		session.closed.Store(true)
+		log.Infof("http proxy session cleanup: closed flag set, sid=%s", sid)
+
+		if session.streamClient != nil {
+			_, _ = session.streamClient.Close()
+			log.Infof("http proxy session cleanup: stream closed, sid=%s", sid)
+		}
+		// Cleanup will be done by handleAgentResponses defer, but we also try here as backup
+		s.sessionStore.Delete(secretKeyHash)
+		log.Infof("http proxy session cleanup: session removed from store, sid=%s", sid)
+	}()
+
+	// Store session; in case of reace condition, the first one wins and we close the new one
+	s.mutex.Lock()
+	if existingSession, ok := s.sessionStore.Load(secretKeyHash); ok {
+		s.mutex.Unlock()
+		// Another goroutine created the session first, close this one
+		session.cancelFn("duplicate session, another session already exists")
+		return existingSession.(*httpProxySession), nil
+	}
 	s.sessionStore.Store(secretKeyHash, session)
+	s.mutex.Unlock()
 
 	return session, nil
 }
 
 func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Early exit if session is already cancelled/closed to avoid spawning goroutines
+	if sess.closed.Load() || sess.ctx.Err() != nil {
+		http.Error(w, "session expired", http.StatusUnauthorized)
+		return
+	}
 
 	connectionID := strconv.FormatInt(sess.connCounter.Add(1), 10)
 	log := log.With("sid", sess.sid, "conn", connectionID)
@@ -425,14 +480,19 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	rawRequest += "\r\n"
 	rawRequest += string(body)
 
-	// Send through gRPC with timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Send through gRPC with timeout context tied to the session
+	ctx, cancel := context.WithTimeout(sess.ctx, 30*time.Second)
 	defer cancel()
 
 	// Send through gRPC
 	// Use a channel to detect send completion
 	sendErr := make(chan error, 1)
 	go func() {
+		// if session is closed, don't wait for mutex fail fast
+		if sess.closed.Load() {
+			sendErr <- fmt.Errorf("session closed")
+			return
+		}
 		err := sess.streamClient.Send(&pb.Packet{
 			Type:    pbagent.HttpProxyConnectionWrite,
 			Payload: []byte(rawRequest),
@@ -445,6 +505,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		sendErr <- err
 	}()
 
+	// Set server header for identification purposes
 	w.Header().Set("server", "httpproxy-hoopgateway")
 	// Wait for send with timeout
 	select {
@@ -454,11 +515,14 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "failed to forward request", http.StatusBadGateway)
 			return
 		}
+		// when session is cancelled, fail fast
 		if sess.ctx.Err() != nil {
 			http.Error(w, "session expired", http.StatusUnauthorized)
 			return
 		}
-
+	case <-sess.ctx.Done():
+		http.Error(w, "session expired", http.StatusUnauthorized)
+		return
 	case <-ctx.Done():
 		http.Error(w, "request send timeout", http.StatusGatewayTimeout)
 		return
@@ -467,9 +531,19 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// Wait for response with shorter timeout
 	httpTimeout := 60 * time.Second
 	select {
+	case <-sess.ctx.Done():
+		http.Error(w, "session expired", http.StatusUnauthorized)
+		return
 	case <-time.After(httpTimeout):
 		http.Error(w, "request timeout", http.StatusGatewayTimeout)
-	case response := <-responseChan:
+		return
+	case response, ok := <-responseChan:
+		if !ok {
+			// Channel was closed (session canceled)
+			http.Error(w, "session expired", http.StatusServiceUnavailable)
+			return
+		}
+		// when session is cancelled, fail fast
 		if sess.ctx.Err() != nil {
 			http.Error(w, "session expired", http.StatusUnauthorized)
 			return
@@ -495,35 +569,66 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 
 func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secretKeyHash string) {
 	defer func() {
-		_, _ = sess.streamClient.Close()
-		sess.cleanUpOnce.Do(func() {
-			server.sessionStore.Delete(secretKeyHash)
+		log.Infof("handleAgentResponses defer starting cleanup, sid=%s", sess.sid)
+
+		// It will do proper stream cleanup (CloseSend)
+		if sess.streamClient != nil {
+			_, _ = sess.streamClient.Close()
+		}
+
+		//Close all pending response channels to unblock waiting goroutines
+		// This prevents goroutine leaks when the session is canceled
+		sess.responseStore.Range(func(key, value any) bool {
+			if ch, ok := value.(chan []byte); ok {
+				// Use select to avoid blocking if channel is already closed
+				select {
+				case <-ch:
+					// Channel already closed or has data, don't close again
+				default:
+					close(ch) // Close channel to unblock waiting handleRequest goroutines
+				}
+			}
+			return true
 		})
+
+		server.sessionStore.Delete(secretKeyHash)
+		log.Warnf("handleAgentResponses: session removed from store, sid=%s", sess.sid)
 	}()
 
 	recvCh := grpc.NewStreamRecv(sess.ctx, sess.streamClient)
 	for {
 		var dstream *grpc.DataStream
+		var ok bool // Declare ok here
 		select {
 		case <-sess.ctx.Done():
-
 			// cleanUp will happen in defer
 			return
-		case dstream = <-recvCh:
-			if dstream == nil {
-				// Channel closed
+		case dstream, ok = <-recvCh:
+			if !ok {
+				// Channel closed (EOF or stream closed)
+				// This is normal when the agent disconnects
+				log.Debugf("http proxy stream recv channel closed, sid=%s", sess.sid)
 				return
+			}
+			if dstream == nil {
+				// Should not happen, but handle gracefully
+				continue
 			}
 		}
 
 		pkt, err := dstream.Recv()
 		if err != nil {
+			// Handle EOF as a normal close, not an error
+			if err == io.EOF {
+				log.Debugf("http proxy stream EOF, sid=%s", sess.sid)
+				return
+			}
 			sess.cancelFn("http-proxy received error from stream: %v", err)
 			return
 		}
 		if pkt == nil {
-			sess.cancelFn("http-proxy received nil packet")
-			return
+			// Skip nil packets
+			continue
 		}
 
 		switch pb.PacketType(pkt.Type) {
@@ -533,19 +638,26 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 				if responseChan, ok := ch.(chan []byte); ok {
 					select {
 					case responseChan <- pkt.Payload:
+						// Successfully sent response
+					case <-sess.ctx.Done():
+						// Session canceled while trying to send
+						return
 					default:
-						log.Infof("response channel full for conn %s", connectionID)
+						log.Warnf("response channel full for conn %s, sid=%s", connectionID, sess.sid)
+						// Channel is full, remove it to prevent memory leak
+						sess.responseStore.Delete(connectionID)
 					}
 				}
 			}
 
 		case pbclient.TCPConnectionClose, pbclient.SessionClose:
+			log.Infof("session closed by server, sid=%s", sess.sid)
 			sess.cancelFn("session closed by server")
 			return
 
 		default:
 			// Unknown packet type, log and ignore
-			log.Infof("unknown packet type received: %v", pkt.Type)
+			log.Debugf("unknown packet type received: %v, sid=%s", pkt.Type, sess.sid)
 		}
 	}
 }
