@@ -92,6 +92,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -176,6 +180,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -219,6 +227,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -310,6 +322,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -386,6 +402,102 @@
       }
     },
     {
+      "id": "aws-ssm-script",
+      "name": "AWS SSM",
+      "description": "AWS SSM script permits managing EC2 instances using AWS SSM via Hoop",
+      "category": "cloud-services",
+      "icon-name": "aws",
+      "tags": [
+        "aws"
+      ],
+      "overview": {
+        "description": "AWS SSM script permits executing ad-hoc commands or creating interactive sessions with any EC2 instance in your AWS account."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "credentials": [
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_ACCESS_KEY_ID",
+            "description": "The AWS access key id value",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "description": "The AWS secret access key value"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_REGION",
+            "description": "The AWS region to issue commands",
+            "placeholder": "us-east-1"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "PIPE_EXEC",
+            "description": "The runtime command to be executed when running ad-hoc commands via Web Console. It defaults to /bin/bash",
+            "placeholder": "/bin/bash"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "INSTANCE_ID",
+            "description": "The EC2 instance id to use when starting an interactive shell session. Add this value if you want to prevent users from specifying which instance to connect to.",
+            "placeholder": "i-0d1a333276d48ec0d"
+          }
+        ],
+        "type": "custom",
+        "subtype": "aws-ssm",
+        "command": [
+          "aws-ssm.sh"
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/aws/aws-ssm"
+      }
+    },
+    {
       "id": "bigquery",
       "name": "BigQuery",
       "description": "A fully managed, serverless data warehouse that enables super-fast SQL queries using Google's infrastructure.",
@@ -411,6 +523,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -498,6 +614,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -553,6 +673,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -613,6 +737,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -704,6 +832,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -762,6 +894,10 @@
         "dataMaskingMSPresidio": {
           "native": true,
           "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
         },
         "credentialsOffload": {
           "native": true,
@@ -824,6 +960,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -891,6 +1031,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -973,6 +1117,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -1025,6 +1173,91 @@
       }
     },
     {
+      "id": "kubernetes-token",
+      "name": "Kubernetes with Bearer Token",
+      "description": "Administer your Kubernetes cluster through kubectl commands using a Bearer Token from a service account with comprehensive audit trails and session recording.",
+      "category": "cloud-services",
+      "icon-name": "kubernetes",
+      "tags": [
+        "containers",
+        "cli",
+        "automation"
+      ],
+      "overview": {
+        "description": "Manage your Kubernetes clusters securely through kubectl, leveraging Hoop.dev's robust auditing, data masking, and security guardrails. Execute administrative tasks with full visibility and control, ensuring compliance and operational integrity."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "kubernetes-token",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target Kubernetes cluster API server URL",
+            "placeholder": "https://kubernetes.default.svc.cluster.local"
+          },
+          {
+            "name": "HEADER_AUTHORIZATION",
+            "type": "env-var",
+            "required": true,
+            "description": "Authorization Bearer Token of the service account, etc",
+            "placeholder": "jwt.token.example"
+          },
+          {
+            "name": "INSECURE",
+            "type": "env-var",
+            "required": false,
+            "description": "Set to \"true\" to skip TLS verification (not recommended for production)",
+            "placeholder": "false"
+          }
+        ],
+        "command": [
+          "bash"
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/kubernetes/token"
+      }
+    },
+    {
       "id": "mssql",
       "name": "Microsoft SQL Server",
       "description": "A relational database management system developed by Microsoft, offering comprehensive data management and business intelligence capabilities.",
@@ -1048,6 +1281,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -1160,6 +1397,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -1212,6 +1453,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -1312,6 +1557,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -1343,7 +1592,7 @@
       }
     },
     {
-      "id": "oracle",
+      "id": "oracledb",
       "name": "Oracle",
       "description": "A multi-model database management system designed for enterprise grid computing and high-performance applications.",
       "category": "databases",
@@ -1369,6 +1618,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -1390,7 +1643,7 @@
       },
       "resourceConfiguration": {
         "type": "database",
-        "subtype": "oracle",
+        "subtype": "oracledb",
         "credentials": [
           {
             "name": "HOST",
@@ -1404,7 +1657,7 @@
             "type": "env-var",
             "required": true,
             "description": "The user to connect in the Oracle server",
-            "placeholder": "hr"
+            "placeholder": "user"
           },
           {
             "name": "PASS",
@@ -1419,14 +1672,6 @@
             "required": true,
             "description": "The port of the Oracle server",
             "placeholder": "1521"
-          },
-          {
-            "name": "LD_LIBRARY_PATH",
-            "type": "env-var",
-            "required": true,
-            "description": "Oracle client library path",
-            "hidden": true,
-            "placeholder": "/opt/oracle/instantclient"
           },
           {
             "name": "SID",
@@ -1465,6 +1710,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -1525,6 +1774,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": true,
           "oneOff": true
         },
@@ -1627,6 +1880,10 @@
           "native": false,
           "oneOff": true
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": false,
           "oneOff": true
@@ -1683,6 +1940,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -1746,6 +2007,92 @@
       }
     },
     {
+      "id": "remote-desktop",
+      "name": "Remote Desktop (RDP)",
+      "description": "Remote Desktop Protocol (RDP) allows accessing securely remote Windows instances via RDP protocol.",
+      "category": "infrastructure-access",
+      "icon-name": "tcp",
+      "tags": [
+        "remote",
+        "desktop",
+        "security"
+      ],
+      "overview": {
+        "description": "Remote Desktop Protocol (RDP) allows accessing securely remote Windows instances via RDP protocol."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "rdp",
+        "command": [],
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The host of the remote desktop server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username of the remote desktop server",
+            "placeholder": "ubuntu"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password of the remote desktop server",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the remote desktop server",
+            "placeholder": "3389"
+          }
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/applications/remote-desktop"
+      }
+    },
+    {
       "id": "ruby-on-rails",
       "name": "Ruby on Rails",
       "description": "A web application framework written in Ruby that follows the MVC pattern, providing tools for rapid web development.",
@@ -1769,6 +2116,10 @@
           "oneOff": true
         },
         "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
           "native": false,
           "oneOff": true
         },
@@ -1886,6 +2237,10 @@
           "native": false,
           "oneOff": false
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": true,
           "oneOff": false
@@ -1932,6 +2287,10 @@
           "native": false,
           "oneOff": false
         },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
         "credentialsOffload": {
           "native": true,
           "oneOff": false
@@ -1942,8 +2301,8 @@
         }
       },
       "resourceConfiguration": {
-        "type": "web-application",
-        "subtype": "webapp-api",
+        "type": "custom",
+        "subtype": "web-application",
         "credentials": [
           {
             "name": "HOST",

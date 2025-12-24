@@ -42,7 +42,7 @@ type IronRDPGateway struct {
 
 func (r *IronRDPGateway) AttachHandlers(router gin.IRouter) {
 	router.Handle(http.MethodGet, "/", r.handle)
-	router.Handle(http.MethodGet, "/client", r.handleClient)
+	router.Handle(http.MethodPost, "/client", r.handleClient)
 }
 
 func (r *IronRDPGateway) handleClient(c *gin.Context) {

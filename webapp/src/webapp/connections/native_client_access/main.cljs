@@ -60,6 +60,22 @@
          "aws ssm start-session --target {TARGET_INSTANCE} "
          "--endpoint-url \"" endpoint-url "\"")))
 
+(defn- open-rdp-web-client
+  "Opens RDP web client in a new window via POST form submission"
+  [username]
+  (let [form (.createElement js/document "form")
+        input (.createElement js/document "input")]
+    (set! (.-method form) "POST")
+    (set! (.-action form) "/rdpproxy/client")
+    (set! (.-target form) "_blank")
+    (set! (.-type input) "hidden")
+    (set! (.-name input) "credential")
+    (set! (.-value input) username)
+    (.appendChild form input)
+    (.appendChild (.-body js/document) form)
+    (.submit form)
+    (.remove form)))
+
 (defn not-available-dialog
   "Dialog shown when native client access method is not available"
   [{:keys [error-message]}]
@@ -294,7 +310,7 @@
       :id "command"
       :logs command-text}]]])
 
-(defn- aws-ssm-command-view 
+(defn- aws-ssm-command-view
   [native-client-access-data]
   (let [connection-credentials (:connection_credentials native-client-access-data)
         command (build-aws-ssm-command connection-credentials)]
@@ -386,6 +402,15 @@
           :color "gray"
           :on-click minimize-fn}
          "Minimize"]
+
+        (when (= connection-type "rdp")
+          [:> Button
+           {:variant "solid"
+            :size "3"
+            :on-click #(open-rdp-web-client
+                        (get-in native-client-access-data [:connection_credentials :username]))}
+           "Open Web Client"])
+
         [:> Button
          {:variant "solid"
           :size "3"

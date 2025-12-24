@@ -26,8 +26,8 @@ const webclientTemplateHTML = `
         height="800"
         ></canvas>
     </div>
-    <script type="module" src="/rdpclient/index.js"></script>
 	<script type="module">
+		import "/rdpclient/index.js";
 		initializeApp("{{.Credential}}");
 	</script>
 </body>

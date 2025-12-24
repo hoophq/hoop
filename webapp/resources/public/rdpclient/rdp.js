@@ -1,6 +1,6 @@
 import { Observable } from './observable.js';
 import {scanCode} from './scancode.js';
-import * as wasmModule from "./pkg/ironrdp_web_bg";
+import * as wasmModule from "./pkg/ironrdp_web_bg.js";
 
 // Based on https://github.com/Devolutions/IronRDP/tree/master/web-client/iron-remote-desktop
 
