@@ -126,6 +126,11 @@ func (a *Api) StartAPI(sentryInit bool) {
 	route.Use(CORSMiddleware())
 	baseURL := appconfig.Get().ApiURLPath()
 
+	// Register SSM routes BEFORE static middleware to prevent 307 redirects
+	ssmGroup := route.Group(baseURL + "/ssm")
+	ssmInstance := ssmproxy.GetServerInstance()
+	ssmInstance.AttachHandlers(ssmGroup)
+
 	// UI
 	webappStaticUiPath := appconfig.Get().WebappStaticUiPath()
 	route.Use(static.Serve(baseURL+"/", static.LocalFile(webappStaticUiPath, false)))
@@ -135,10 +140,6 @@ func (a *Api) StartAPI(sentryInit bool) {
 			return
 		}
 	})
-
-	ssmGroup := route.Group(baseURL + "/ssm")
-	ssmInstance := ssmproxy.GetServerInstance()
-	ssmInstance.AttachHandlers(ssmGroup)
 
 	rg := route.Group(baseURL + "/api")
 	if sentryInit {
