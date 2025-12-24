@@ -65,14 +65,13 @@
                           :placeholder (or (:placeholder field) (str "e.g. " field-key))
                           :value display-value
                           :required (:required field)
-                          :on-change handle-change}]
+                          :type "password"
+                          :on-change handle-change
+                          :start-adornment (when show-source-selector?
+                                             [connection-method/source-selector role-index field-key])}]
           (if (= (:type field) "textarea")
-            [forms/textarea base-props]
-            (if show-source-selector?
-              [forms/input-with-adornment (assoc base-props :type "password"
-                                                 :show-password? true
-                                                 :start-adornment [connection-method/source-selector role-index field-key])]
-              [forms/input (assoc base-props :type "password")]))))]]))
+            [forms/textarea (dissoc base-props :type :start-adornment)]
+            [forms/input base-props])))]]))
 
 ;; TCP role form - Based on network.cljs
 (defn tcp-role-form [role-index]
@@ -92,21 +91,14 @@
                                              role-index
                                              field-key
                                              new-value])))]
-         (if show-source-selector?
-           [forms/input-with-adornment {:label (:label field)
-                                        :placeholder (or (:placeholder field) (str "e.g. " field-key))
-                                        :value display-value
-                                        :required (:required field)
-                                        :type "password"
-                                        :show-password? true
-                                        :on-change handle-change
-                                        :start-adornment [connection-method/source-selector role-index field-key]}]
-           [forms/input {:label (:label field)
-                         :placeholder (or (:placeholder field) (str "e.g. " field-key))
-                         :value display-value
-                         :required (:required field)
-                         :type "password"
-                         :on-change handle-change}])))]))
+         [forms/input {:label (:label field)
+                       :placeholder (or (:placeholder field) (str "e.g. " field-key))
+                       :value display-value
+                       :required (:required field)
+                       :type "password"
+                       :on-change handle-change
+                       :start-adornment (when show-source-selector?
+                                          [connection-method/source-selector role-index field-key])}]))]))
 
 ;; Kubernetes Token role form - Based on network.cljs
 (defn kubernetes-token-role-form [role-index]
@@ -126,57 +118,34 @@
 
     [:> Box {:class "space-y-4"}
      ;; Cluster URL
-     (if show-selector?
-       [forms/input-with-adornment {:label "Cluster URL"
-                                    :placeholder "e.g. https://example.com:51434"
-                                    :value remote-url-value
-                                    :required true
-                                    :type "text"
-                                    :show-password? true
-                                    :on-change (fn [e]
-                                                 (let [new-value (-> e .-target .-value)]
-                                                   (rf/dispatch [:resource-setup->update-role-credentials
-                                                                 role-index
-                                                                 "remote_url"
-                                                                 new-value])))
-                                    :start-adornment [connection-method/source-selector role-index "remote_url"]}]
-       [forms/input {:label "Cluster URL"
-                     :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
-                     :value remote-url-value
-                     :required true
-                     :type "text"
-                     :on-change #(rf/dispatch [:resource-setup->update-role-credentials
-                                               role-index
-                                               "remote_url"
-                                               (-> % .-target .-value)])}])
+     [forms/input {:label "Cluster URL"
+                   :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
+                   :value remote-url-value
+                   :required true
+                   :type "text"
+                   :on-change (fn [e]
+                                (let [new-value (-> e .-target .-value)]
+                                  (rf/dispatch [:resource-setup->update-role-credentials
+                                                role-index
+                                                "remote_url"
+                                                new-value])))
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "remote_url"])}]
 
-     (if show-selector?
-       [forms/input-with-adornment {:label "Authorization token"
-                                    :placeholder "e.g. jwt.token.example"
-                                    :value auth-token-display-value
-                                    :required true
-                                    :type "text"
-                                    :show-password? true
-                                    :on-change (fn [e]
-                                                 (let [new-value (-> e .-target .-value)
-                                                       transformed-val (str "Bearer " new-value)]
-                                                   (rf/dispatch [:resource-setup->update-role-credentials
-                                                                 role-index
-                                                                 "header_Authorization"
-                                                                 transformed-val])))
-                                    :start-adornment [connection-method/source-selector role-index "header_Authorization"]}]
-       [forms/input {:label "Authorization token"
-                     :placeholder "e.g. jwt.token.example"
-                     :value auth-token-display-value
-                     :required true
-                     :type "text"
-                     :on-change (fn [e]
-                                  (let [new-value (-> e .-target .-value)
-                                        transformed-val (str "Bearer " new-value)]
-                                    (rf/dispatch [:resource-setup->update-role-credentials
-                                                  role-index
-                                                  "header_Authorization"
-                                                  transformed-val])))}])
+     [forms/input {:label "Authorization token"
+                   :placeholder "e.g. jwt.token.example"
+                   :value auth-token-display-value
+                   :required true
+                   :type "text"
+                   :on-change (fn [e]
+                                (let [new-value (-> e .-target .-value)
+                                      transformed-val (str "Bearer " new-value)]
+                                  (rf/dispatch [:resource-setup->update-role-credentials
+                                                role-index
+                                                "header_Authorization"
+                                                transformed-val])))
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "header_Authorization"])}]
 
      [:> Flex {:align "center" :gap "3"}
       [:> Switch {:checked (get credentials "insecure" false)
@@ -209,21 +178,14 @@
                     false]))
       [:> Box {:class "space-y-4"}
        ;; Remote URL
-       (if show-selector?
-         [forms/input-with-adornment {:label "Remote URL"
-                                      :placeholder "e.g. http://example.com"
-                                      :value remote-url-value
-                                      :required true
-                                      :type "text"
-                                      :show-password? true
-                                      :on-change handle-remote-url-change
-                                      :start-adornment [connection-method/source-selector role-index "remote_url"]}]
-         [forms/input {:label "Remote URL"
-                       :placeholder "e.g. http://example.com"
-                       :value remote-url-value
-                       :required true
-                       :type "text"
-                       :on-change handle-remote-url-change}])
+       [forms/input {:label "Remote URL"
+                     :placeholder "e.g. http://example.com"
+                     :value remote-url-value
+                     :required true
+                     :type "text"
+                     :on-change handle-remote-url-change
+                     :start-adornment (when show-selector?
+                                        [connection-method/source-selector role-index "remote_url"])}]
 
        ;; HTTP headers section (usando configuration-inputs)
        [configuration-inputs/environment-variables-section role-index
@@ -298,23 +260,15 @@
                                    :required (:required field)
                                    :helper-text (:description field)
                                    :on-change handle-change}]
-                  (if show-source-selector?
-                    [forms/input-with-adornment {:label sanitized-name
-                                                 :placeholder (or (:placeholder field) (:description field))
-                                                 :value display-value
-                                                 :required (:required field)
-                                                 :type display-type
-                                                 :helper-text (:description field)
-                                                 :on-change handle-change
-                                                 :show-password? true
-                                                 :start-adornment [connection-method/source-selector role-index env-var-name]}]
-                    [forms/input {:label sanitized-name
-                                  :placeholder (or (:placeholder field) (:description field))
-                                  :value display-value
-                                  :required (:required field)
-                                  :type display-type
-                                  :helper-text (:description field)
-                                  :on-change handle-change}]))))))]])))
+                  [forms/input {:label sanitized-name
+                                :placeholder (or (:placeholder field) (:description field))
+                                :value display-value
+                                :required (:required field)
+                                :type display-type
+                                :helper-text (:description field)
+                                :on-change handle-change
+                                :start-adornment (when show-source-selector?
+                                                   [connection-method/source-selector role-index env-var-name])}])))))]])))
 
 ;; Linux/Container role form - Based on server.cljs
 (defn linux-container-role-form [role-index]

@@ -122,21 +122,14 @@
              :value key
              :placeholder "API_KEY"
              :on-change #(parse-existing-env-key % idx)}]
-           (if show-selector?
-             [forms/input-with-adornment
-              {:label "Value"
-               :value value
-               :type "password"
-               :show-password? true
-               :placeholder "* * * *"
-               :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])
-               :start-adornment [connection-method/source-selector (str "env-var-" idx)]}]
-             [forms/input
-              {:label "Value"
-               :value value
-               :type "password"
-               :placeholder "* * * *"
-               :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])}])])])
+           [forms/input
+            {:label "Value"
+             :value value
+             :type "password"
+             :placeholder "* * * *"
+             :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])
+             :start-adornment (when show-selector?
+                                [connection-method/source-selector (str "env-var-" idx)])}]])])
 
      [:> Grid {:columns "2" :gap "2"}
       [forms/input
@@ -144,21 +137,14 @@
         :placeholder "API_KEY"
         :value current-key
         :on-change #(parse-env-key %)}]
-      (if show-selector?
-        [forms/input-with-adornment
-         {:label "Value"
-          :placeholder "* * * *"
-          :type "password"
-          :show-password? true
-          :value current-value
-          :on-change #(rf/dispatch [:connection-setup/update-env-current-value (-> % .-target .-value)])
-          :start-adornment [connection-method/source-selector "env-current-value"]}]
-        [forms/input
-         {:label "Value"
-          :placeholder "* * * *"
-          :type "password"
-          :value current-value
-          :on-change #(rf/dispatch [:connection-setup/update-env-current-value (-> % .-target .-value)])}])]
+      [forms/input
+       {:label "Value"
+        :placeholder "* * * *"
+        :type "password"
+        :value current-value
+        :on-change #(rf/dispatch [:connection-setup/update-env-current-value (-> % .-target .-value)])
+        :start-adornment (when show-selector?
+                           [connection-method/source-selector "env-current-value"])}]]
 
      [:> Button
       {:size "2"

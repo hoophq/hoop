@@ -33,16 +33,6 @@
                        :helper-text description
                        :on-change handle-change}]
 
-      show-source-selector?
-      [forms/input-with-adornment {:label label
-                                   :placeholder (or placeholder (str "e.g. " key))
-                                   :value field-value
-                                   :required required
-                                   :type (or type "password")
-                                   :helper-text description
-                                   :on-change handle-change
-                                   :show-password? true
-                                   :start-adornment [connection-method/source-selector key]}]
       :else
       [forms/input {:label label
                     :placeholder (or placeholder (str "e.g. " key))
@@ -50,7 +40,9 @@
                     :required required
                     :type (or type "password")
                     :helper-text description
-                    :on-change handle-change}])))
+                    :on-change handle-change
+                    :start-adornment (when show-source-selector?
+                                       [connection-method/source-selector key])}])))
 
 (defn metadata-credential->form-field
   "Converte credential do metadata (agora array) para formato de formulário"

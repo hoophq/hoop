@@ -116,21 +116,14 @@
              :value key
              :placeholder "API_KEY"
              :on-change #(parse-existing-env-key % role-index idx)}]
-           (if show-selector?
-             [forms/input-with-adornment
-              {:label "Value"
-               :value value
-               :type "password"
-               :show-password? true
-               :placeholder "* * * *"
-               :on-change #(rf/dispatch [:resource-setup->update-role-env-var role-index idx :value (-> % .-target .-value)])
-               :start-adornment [connection-method/source-selector role-index (str "env-var-" idx)]}]
-             [forms/input
-              {:label "Value"
-               :value value
-               :type "password"
-               :placeholder "* * * *"
-               :on-change #(rf/dispatch [:resource-setup->update-role-env-var role-index idx :value (-> % .-target .-value)])}])])])
+           [forms/input
+            {:label "Value"
+             :value value
+             :type "password"
+             :placeholder "* * * *"
+             :on-change #(rf/dispatch [:resource-setup->update-role-env-var role-index idx :value (-> % .-target .-value)])
+             :start-adornment (when show-selector?
+                                [connection-method/source-selector role-index (str "env-var-" idx)])}]])])
 
      [:> Grid {:columns "2" :gap "2"}
       [forms/input
@@ -138,21 +131,14 @@
         :placeholder "API_KEY"
         :value current-key
         :on-change #(parse-env-key % role-index)}]
-      (if show-selector?
-        [forms/input-with-adornment
-         {:label "Value"
-          :placeholder "* * * *"
-          :type "password"
-          :show-password? true
-          :value current-value
-          :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value role-index (-> % .-target .-value)])
-          :start-adornment [connection-method/source-selector role-index "env-current-value"]}]
-        [forms/input
-         {:label "Value"
-          :placeholder "* * * *"
-          :type "password"
-          :value current-value
-          :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value role-index (-> % .-target .-value)])}])]
+      [forms/input
+       {:label "Value"
+        :placeholder "* * * *"
+        :type "password"
+        :value current-value
+        :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value role-index (-> % .-target .-value)])
+        :start-adornment (when show-selector?
+                           [connection-method/source-selector role-index "env-current-value"])}]]
 
      [:> Button
       {:size "2"

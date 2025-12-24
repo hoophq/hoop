@@ -141,13 +141,10 @@
       (= type "textarea")
       [forms/textarea base-props]
       
-      show-source-selector?
-      [forms/input-with-adornment (assoc base-props
-                                          :show-password? true
-                                          :start-adornment [connection-method/source-selector key])]
-      
       :else
-      [forms/input base-props])))
+      [forms/input (assoc base-props
+                          :start-adornment (when show-source-selector?
+                                             [connection-method/source-selector key]))])))
 
 ;; Registrar um evento para controlar o método de autenticação
 (rf/reg-event-db
@@ -236,51 +233,31 @@
        [connection-method/main "kubernetes-token"]
 
        ;; Cluster URL
-       (if show-selector?
-         [forms/input-with-adornment {:label "Cluster URL"
-                                      :placeholder "e.g. https://example.com:51434"
-                                      :value cluster-url-value
-                                      :required true
-                                      :type "text"
-                                      :show-password? true
-                                      :on-change (fn [e]
-                                                   (let [new-value (-> e .-target .-value)]
-                                                     (rf/dispatch [:connection-setup/set-kubernetes-token
-                                                                   "cluster_url"
-                                                                   new-value])))
-                                      :start-adornment [connection-method/source-selector "cluster_url"]}]
-         [forms/input {:label "Cluster URL"
-                       :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
-                       :value cluster-url-value
-                       :required true
-                       :type "text"
-                       :on-change #(rf/dispatch [:connection-setup/set-kubernetes-token
-                                                 "cluster_url"
-                                                 (-> % .-target .-value)])}])
+       [forms/input {:label "Cluster URL"
+                     :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
+                     :value cluster-url-value
+                     :required true
+                     :type "text"
+                     :on-change (fn [e]
+                                  (let [new-value (-> e .-target .-value)]
+                                    (rf/dispatch [:connection-setup/set-kubernetes-token
+                                                  "cluster_url"
+                                                  new-value])))
+                     :start-adornment (when show-selector?
+                                        [connection-method/source-selector "cluster_url"])}]
 
-       (if show-selector?
-         [forms/input-with-adornment {:label "Authorization token"
-                                      :placeholder "e.g. jwt.token.example"
-                                      :value auth-token-display-value
-                                      :required true
-                                      :type "text"
-                                      :show-password? true
-                                      :on-change (fn [e]
-                                                   (let [new-value (-> e .-target .-value)]
-                                                     (rf/dispatch [:connection-setup/set-kubernetes-token
-                                                                   "authorization"
-                                                                   new-value])))
-                                      :start-adornment [connection-method/source-selector "authorization"]}]
-         [forms/input {:label "Authorization token"
-                       :placeholder "e.g. jwt.token.example"
-                       :value auth-token-display-value
-                       :required true
-                       :type "text"
-                       :on-change (fn [e]
-                                    (let [new-value (-> e .-target .-value)]
-                                      (rf/dispatch [:connection-setup/set-kubernetes-token
-                                                    "authorization"
-                                                    new-value])))}])
+       [forms/input {:label "Authorization token"
+                     :placeholder "e.g. jwt.token.example"
+                     :value auth-token-display-value
+                     :required true
+                     :type "text"
+                     :on-change (fn [e]
+                                  (let [new-value (-> e .-target .-value)]
+                                    (rf/dispatch [:connection-setup/set-kubernetes-token
+                                                  "authorization"
+                                                  new-value])))
+                     :start-adornment (when show-selector?
+                                        [connection-method/source-selector "authorization"])}]
 
        [:> Flex {:align "center" :gap "3"}
         [:> Switch {:checked insecure-value

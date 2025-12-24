@@ -44,24 +44,16 @@
         [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
         ;; Remote URL input
-        (if show-selector?
-          [forms/input-with-adornment
-           {:label "Remote URL"
-            :placeholder "e.g. https://example.com"
-            :required true
-            :value remote-url-value
-            :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                      "remote_url"
-                                      (-> % .-target .-value)])
-            :start-adornment [connection-method/source-selector "remote_url"]}]
-          [forms/input
-           {:label "Remote URL"
-            :placeholder "e.g. https://example.com"
-            :required true
-            :value remote-url-value
-            :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                      "remote_url"
-                                      (-> % .-target .-value)])}])]
+        [forms/input
+         {:label "Remote URL"
+          :placeholder "e.g. https://example.com"
+          :required true
+          :value remote-url-value
+          :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                    "remote_url"
+                                    (-> % .-target .-value)])
+          :start-adornment (when show-selector?
+                             [connection-method/source-selector "remote_url"])}]]
 
        ;; HTTP Headers Section
        [configuration-inputs/environment-variables-section
@@ -104,48 +96,30 @@
        [:> Text {:size "4" :weight "bold"} "Environment credentials"]
 
        ;; Host input
-       (if show-selector?
-         [forms/input-with-adornment
-          {:label "Host"
-           :placeholder "e.g. localhost"
-           :required true
-           :type "text"
-           :value host-value
-           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                     "host"
-                                     (-> % .-target .-value)])
-           :start-adornment [connection-method/source-selector "host"]}]
-         [forms/input
-          {:label "Host"
-           :placeholder "e.g. localhost"
-           :required true
-           :type "text"
-           :value host-value
-           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                     "host"
-                                     (-> % .-target .-value)])}])
+       [forms/input
+        {:label "Host"
+         :placeholder "e.g. localhost"
+         :required true
+         :type "text"
+         :value host-value
+         :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                   "host"
+                                   (-> % .-target .-value)])
+         :start-adornment (when show-selector?
+                            [connection-method/source-selector "host"])}]
 
        ;; Port input
-       (if show-selector?
-         [forms/input-with-adornment
-          {:label "Port"
-           :placeholder "e.g. 4040"
-           :required true
-           :type "text"
-           :value port-value
-           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                     "port"
-                                     (-> % .-target .-value)])
-           :start-adornment [connection-method/source-selector "port"]}]
-         [forms/input
-          {:label "Port"
-           :placeholder "e.g. 4040"
-           :required true
-           :type "text"
-           :value port-value
-           :on-change #(rf/dispatch [:connection-setup/update-network-credentials
-                                     "port"
-                                     (-> % .-target .-value)])}])
+       [forms/input
+        {:label "Port"
+         :placeholder "e.g. 4040"
+         :required true
+         :type "text"
+         :value port-value
+         :on-change #(rf/dispatch [:connection-setup/update-network-credentials
+                                   "port"
+                                   (-> % .-target .-value)])
+         :start-adornment (when show-selector?
+                            [connection-method/source-selector "port"])}]
 
        [agent-selector/main]]]]))
 
