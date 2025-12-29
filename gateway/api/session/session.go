@@ -21,15 +21,16 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
-	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"github.com/hoophq/hoop/gateway/utils"
@@ -135,7 +136,7 @@ func Post(c *gin.Context) {
 		ConnectionSubtype:    conn.SubType.String,
 		Connection:           conn.Name,
 		ConnectionTags:       conn.ConnectionTags,
-		Verb:                 pb.ClientVerbExec,
+		Verb:                 proto.ClientVerbExec,
 		Status:               string(openapi.SessionStatusOpen),
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
@@ -782,4 +783,279 @@ func Kill(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusNoContent, nil)
+}
+
+func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn *models.Connection, user *models.User, sessionInfo *openapi.SessionApproved) error {
+	var accessDuration time.Duration
+	if sessionInfo.Duration != nil {
+		accessDuration = time.Duration(*sessionInfo.Duration) * time.Second
+
+		if accessDuration.Hours() > 48 {
+			return fmt.Errorf("jit access input must not be greater than 48 hours")
+		}
+	}
+
+	ownerId := ctx.UserID
+	apiKeyEmail := ctx.UserEmail
+	apiKeyName := ctx.UserName
+	now := time.Now().UTC()
+
+	reviewGroups := []models.ReviewGroups{{
+		ID:         uuid.NewString(),
+		OrgID:      ctx.OrgID,
+		GroupName:  types.GroupAdmin,
+		Status:     models.ReviewStatusApproved,
+		OwnerID:    &ownerId,
+		OwnerEmail: &apiKeyEmail,
+		OwnerName:  &apiKeyName,
+		ReviewedAt: &now,
+	}}
+
+	isJitReview := accessDuration > 0
+	reviewType := models.ReviewTypeOneTime
+	if isJitReview {
+		reviewType = models.ReviewTypeJit
+	}
+
+	// these values are only used for ad-hoc executions
+	var sessionInput string
+	var inputEnvVars map[string]string
+	var inputClientArgs []string
+	if !isJitReview {
+		sessionInput = sessionInfo.Script
+		inputEnvVars = sessionInfo.EnvVars
+		inputClientArgs = sessionInfo.ClientArgs
+	}
+
+	newRev := &models.Review{
+		ID:                uuid.NewString(),
+		OrgID:             ctx.OrgID,
+		Type:              reviewType,
+		SessionID:         session.ID,
+		ConnectionName:    conn.Name,
+		ConnectionID:      sql.NullString{String: conn.ID, Valid: true},
+		AccessDurationSec: int64(accessDuration.Seconds()),
+		InputEnvVars:      inputEnvVars,
+		InputClientArgs:   inputClientArgs,
+		OwnerID:           user.Subject,
+		OwnerEmail:        user.Email,
+		OwnerName:         &user.Name,
+		OwnerSlackID:      &user.SlackID,
+		Status:            models.ReviewStatusApproved,
+		ReviewGroups:      reviewGroups,
+		CreatedAt:         now,
+		RevokedAt:         nil,
+		TimeWindow:        nil,
+	}
+
+	if isJitReview {
+		revokedAt := now.Add(accessDuration)
+		newRev.RevokedAt = &revokedAt
+	} else {
+		timeWindow, err := reviewapi.ParseTimeWindow(sessionInfo.TimeWindow)
+		if err != nil {
+			return err
+		}
+		newRev.TimeWindow = timeWindow
+	}
+
+	log.
+		With("sid", session.ID, "id", newRev.ID, "user", ctx.UserID, "org", ctx.OrgID,
+			"type", reviewType, "duration", fmt.Sprintf("%vm", accessDuration.Minutes())).
+		Infof("creating review")
+
+	if err := models.CreateReview(newRev, sessionInput); err != nil {
+		return fmt.Errorf("failed saving review: %w", err)
+	}
+
+	return nil
+}
+
+// SessionApproved
+//
+//	@Summary				Create an approved session using API Key
+//	@Tags						Sessions
+//	@Accept					json
+//	@Produce				json
+//	@Param					request		body		openapi.SessionApproved		true	"The request body resource"
+//	@Success				200			{object}	openapi.SessionApprovedResponse	"The session has been created"
+//	@Failure				400,422,500	{object}	openapi.HTTPError
+//	@Router					/sessions/approved [post]
+func SessionApproved(c *gin.Context) {
+	sid := uuid.NewString()
+	apiroutes.SetSidSpanAttr(c, sid)
+
+	ctx := storagev2.ParseContext(c)
+	var req openapi.SessionApproved
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	if err := CoerceMetadataFields(req.Metadata); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	// Get user information
+	user, err := models.GetUserByEmail(req.UserEmail)
+	if err != nil {
+		log.Errorf("failed fetching user %v for exec, err=%v", ctx.UserEmail, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching user for exec"})
+		return
+	}
+	if user == nil {
+		log.Errorf("user %v not found for exec", ctx.UserEmail)
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("user %v not found for exec", ctx.UserEmail)})
+		return
+	}
+
+	if user.OrgID != ctx.OrgID {
+		log.Errorf("user %v does not belong to org %v for exec", ctx.UserEmail, ctx.OrgID)
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("user %v does not belong to org %v for exec", ctx.UserEmail, ctx.OrgID)})
+		return
+	}
+
+	// Get connection information
+	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
+	if err != nil {
+		log.Errorf("failed fetch connection %v for exec, err=%v", req.Connection, err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	if conn == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("connection %v not found", req.Connection)})
+		return
+	}
+
+	for key := range req.EnvVars {
+		if _, ok := conn.Envs[key]; ok {
+			delete(req.EnvVars, key)
+		}
+	}
+
+	verb := proto.ClientVerbExec
+	if req.Duration != nil && *req.Duration > 0 {
+		verb = proto.ClientVerbConnect
+	}
+
+	log := log.With("sid", sid, "user", ctx.UserEmail)
+	newSession := models.Session{
+		ID:                   sid,
+		OrgID:                ctx.OrgID,
+		Labels:               req.Labels,
+		Metadata:             req.Metadata,
+		IntegrationsMetadata: nil,
+		Metrics:              nil,
+		BlobInput:            models.BlobInputType(req.Script),
+		UserID:               user.Subject,
+		UserName:             user.Name,
+		UserEmail:            user.Email,
+		ConnectionType:       conn.Type,
+		ConnectionSubtype:    conn.SubType.String,
+		Connection:           conn.Name,
+		ConnectionTags:       conn.ConnectionTags,
+		Verb:                 verb,
+		Status:               string(openapi.SessionStatusReady),
+		ExitCode:             nil,
+		CreatedAt:            time.Now().UTC(),
+		EndSession:           nil,
+	}
+
+	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
+	if err != nil {
+		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
+		return
+	}
+
+	if connRules != nil {
+		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
+		switch err.(type) {
+		case *guardrails.ErrRuleMatch:
+			// persist session to audit this attempt
+			_ = models.UpsertSession(newSession)
+			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
+			if err := models.UpdateSessionEventStream(models.SessionDone{
+				ID:         sid,
+				OrgID:      ctx.OrgID,
+				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
+				BlobStream: fmt.Appendf(nil, `[[0, "e", %q]]`, encErr),
+				ExitCode:   func() *int { v := internalExitCode; return &v }(),
+				Status:     string(openapi.SessionStatusDone),
+			}); err != nil {
+				log.Errorf("unable to update session, err=%v", err)
+			}
+			c.JSON(http.StatusOK, clientexec.Response{
+				SessionID:         sid,
+				Output:            err.Error(),
+				OutputStatus:      "failed",
+				ExitCode:          internalExitCode,
+				ExecutionTimeMili: 0,
+			})
+			return
+		case nil:
+		default:
+			errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
+			log.Error(errMsg)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+			return
+		}
+	}
+
+	if conn.JiraIssueTemplateID.String != "" {
+		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
+		if err != nil {
+			log.Errorf("failed obtaining jira issue template for %v, reason=%v", conn.Name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
+			return
+		}
+		if jiraConfig != nil && jiraConfig.IsActive() {
+			if req.JiraFields == nil {
+				req.JiraFields = map[string]string{}
+			}
+			jiraFields, err := jira.ParseIssueFields(issueTemplate, req.JiraFields, newSession)
+			switch err.(type) {
+			case *jira.ErrInvalidIssueFields:
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			case nil:
+			default:
+				log.Error(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				return
+			}
+			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
+			if err != nil {
+				log.Error(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				return
+			}
+			newSession.IntegrationsMetadata = map[string]any{
+				"jira_issue_key": resp.IssueKey,
+				"jira_issue_url": resp.Links.Agent,
+			}
+		}
+	}
+
+	if err := models.UpsertSession(newSession); err != nil {
+		log.Errorf("failed creating session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+		return
+	}
+
+	err = createApprovedReview(ctx, &newSession, conn, user, &req)
+	if err != nil {
+		log.Errorf("failed creating review, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review"})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, openapi.SessionApprovedResponse{
+		SessionID:       sid,
+		UserEmail:       user.Email,
+		WouldHaveReview: len(conn.Reviewers) > 0,
+	})
 }
