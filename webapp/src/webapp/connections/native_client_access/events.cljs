@@ -6,6 +6,23 @@
    [webapp.connections.native-client-access.constants :as constants]
    [webapp.connections.native-client-access.main :as native-client-access-main]))
 
+
+(rf/reg-fx
+ :open-rdp-web-client
+ (fn [{:keys [username]}]
+   (let [form (.createElement js/document "form")
+         input (.createElement js/document "input")]
+     (set! (.-method form) "POST")
+     (set! (.-action form) "/rdpproxy/client")
+     (set! (.-target form) "_blank")
+     (set! (.-type input) "hidden")
+     (set! (.-name input) "credential")
+     (set! (.-value input) username)
+     (.appendChild form input)
+     (.appendChild (.-body js/document) form)
+     (.submit form)
+     (.remove form))))
+
 ;; Get native client access for a connection
 (rf/reg-event-fx
  :native-client-access->request-access
@@ -184,3 +201,9 @@
  (fn [db _]
    (let [current-session (get-in db [:native-client-access :current])]
      (constants/native-client-access-valid? current-session))))
+
+;; Event to open RDP web client
+(rf/reg-event-fx
+ :native-client-access->open-rdp-web-client
+ (fn [_ [_ username]]
+   {:open-rdp-web-client {:username username}}))
