@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -63,12 +64,12 @@ type HttpProxyServer struct {
 
 type httpProxySession struct {
 	sid           string
+	conn          string
 	ctx           context.Context
 	cancelFn      func(msg string, a ...any)
 	proxyBaseURL  string
 	streamClient  pb.ClientTransport
-	responseStore sync.Map // stores response channels per connectionID
-	connCounter   atomic.Int64
+	responseStore sync.Map    // stores response channels per connectionID
 	closed        atomic.Bool // fast-fail flag to avoid mutex contention on session close
 }
 
@@ -341,8 +342,10 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	if s.tlsConfig != nil {
 		scheme = "https"
 	}
+	connectionID := strconv.FormatInt(rand.Int64(), 10)
 	session := &httpProxySession{
 		sid:          sid,
+		conn:         connectionID,
 		ctx:          ctx,
 		proxyBaseURL: fmt.Sprintf("%s://%s", scheme, s.listenAddr),
 		cancelFn: func(msg string, a ...any) {
@@ -448,15 +451,15 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	connectionID := strconv.FormatInt(sess.connCounter.Add(1), 10)
-	log := log.With("sid", sess.sid, "conn", connectionID)
+	log := log.With("sid", sess.sid, "conn", sess.conn)
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
 
 	// Create response channel for this request
 	// TODO: chico increase buffer size to prevent blocking.
 	responseChan := make(chan []byte, 10) // changed for buffering
-	sess.responseStore.Store(connectionID, responseChan)
-	defer sess.responseStore.Delete(connectionID)
+	clientConnectionIDKey := fmt.Sprintf("%s:%s", sess.sid, sess.conn)
+	sess.responseStore.Store(clientConnectionIDKey, responseChan)
+	defer sess.responseStore.Delete(sess.conn)
 
 	// Read request body
 	body, err := io.ReadAll(r.Body)
@@ -498,7 +501,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			Payload: []byte(rawRequest),
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID:   []byte(sess.sid),
-				pb.SpecClientConnectionID: []byte(connectionID),
+				pb.SpecClientConnectionID: []byte(sess.conn),
 				pb.SpecHttpProxyBaseUrl:   []byte(sess.proxyBaseURL),
 			},
 		})
@@ -634,7 +637,8 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.HttpProxyConnectionWrite:
 			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-			if ch, ok := sess.responseStore.Load(connectionID); ok {
+			clientConnectionIDKey := fmt.Sprintf("%s:%s", sess.sid, sess.conn)
+			if ch, ok := sess.responseStore.Load(clientConnectionIDKey); ok {
 				if responseChan, ok := ch.(chan []byte); ok {
 					select {
 					case responseChan <- pkt.Payload:
@@ -645,7 +649,7 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 					default:
 						log.Warnf("response channel full for conn %s, sid=%s", connectionID, sess.sid)
 						// Channel is full, remove it to prevent memory leak
-						sess.responseStore.Delete(connectionID)
+						sess.responseStore.Delete(clientConnectionIDKey)
 					}
 				}
 			}
