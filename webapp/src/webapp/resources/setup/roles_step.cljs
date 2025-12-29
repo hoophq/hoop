@@ -303,6 +303,12 @@
   (let [roles @(rf/subscribe [:resource-setup/roles])
         role (get roles role-index)
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
+        connection @(rf/subscribe [:resource-setup/current-connection-metadata])
+        credentials-config (get-in connection [:resourceConfiguration :credentials])
+        has-env-vars? (contains? #{"linux-vm" "httpproxy"} resource-subtype)
+        has-credentials? (seq credentials-config)
+        should-show-connection-method? (or has-credentials?
+                                           has-env-vars?)
         can-remove? (> (count roles) 1)]
 
     [:> Grid {:columns "7" :gap "7"}
@@ -326,7 +332,8 @@
                      :on-change #(rf/dispatch [:resource-setup->update-role-name
                                                role-index
                                                (-> % .-target .-value)])}]]
-      [connection-method/main role-index]
+      (when should-show-connection-method?
+        [connection-method/main role-index])
 
 
       (cond

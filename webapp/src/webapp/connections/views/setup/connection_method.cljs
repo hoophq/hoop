@@ -38,8 +38,8 @@
                                    prefix))
                                prefixes)
           stripped-value (if matched-prefix
-                          (subs value (count matched-prefix))
-                          value)
+                           (subs value (count matched-prefix))
+                           value)
           source (or (prefix-to-source matched-prefix)
                      "manual-input")]
       {:value stripped-value
