@@ -18,7 +18,9 @@
         (if (map? v)
           {:value (:value v "")
            :source (:source v)}
-          {:value (str v)
+          {:value (if (boolean? v)
+                    (str v)
+                    (str v))
            :source nil})
 
         default-source (if (= connection-method "secrets-manager")
@@ -67,7 +69,9 @@
 
         credential-env-vars (mapv (fn [[k v]]
                                     {:key (name k)
-                                     :value v})
+                                     :value (if (boolean? v)
+                                              (str v)
+                                              v)})
                                   (seq credentials))
 
         metadata-credential-env-vars (mapv (fn [[k v]]
