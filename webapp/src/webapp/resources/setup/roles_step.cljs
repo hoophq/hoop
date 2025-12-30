@@ -307,8 +307,7 @@
         credentials-config (get-in connection [:resourceConfiguration :credentials])
         has-env-vars? (contains? #{"linux-vm" "httpproxy"} resource-subtype)
         has-credentials? (seq credentials-config)
-        should-show-connection-method? (or has-credentials?
-                                           has-env-vars?)
+        should-show-connection-method? (or has-credentials? has-env-vars?)
         can-remove? (> (count roles) 1)]
 
     [:> Grid {:columns "7" :gap "7"}

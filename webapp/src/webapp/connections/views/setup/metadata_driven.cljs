@@ -121,18 +121,23 @@
       nil)))
 
 (defn credentials-step [connection-subtype form-type]
-  [:form {:class "max-w-[600px]"
-          :id "metadata-credentials-form"
-          :on-submit (fn [e]
-                       (.preventDefault e)
-                       (rf/dispatch [:connection-setup/next-step :additional-config]))}
-   [:> Box {:class "space-y-7"}
-    (when connection-subtype
-      [:<>
-       [connection-method/main connection-subtype]
+  (let [credentials-config (get-metadata-credentials-config connection-subtype)
+        has-env-vars? (contains? #{"linux-vm" "httpproxy"} connection-subtype)
+        has-credentials? (seq credentials-config)
+        should-show-connection-method? (or has-credentials? has-env-vars?)]
+    [:form {:class "max-w-[600px]"
+            :id "metadata-credentials-form"
+            :on-submit (fn [e]
+                         (.preventDefault e)
+                         (rf/dispatch [:connection-setup/next-step :additional-config]))}
+     [:> Box {:class "space-y-7"}
+      (when connection-subtype
+        [:<>
+         (when should-show-connection-method?
+           [connection-method/main connection-subtype])
 
-       [metadata-credentials connection-subtype form-type]
-       [agent-selector/main]])]])
+         [metadata-credentials connection-subtype form-type]
+         [agent-selector/main]])]]))
 
 (defn main [form-type]
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
