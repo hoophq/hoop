@@ -1,4 +1,5 @@
-(ns webapp.db)
+(ns webapp.db
+  (:require [webapp.parallel-mode.db :as parallel-mode-db]))
 
 (def default-db
   {:agents {:status :loading, :data []}
@@ -90,6 +91,7 @@
    :users []
    :users->current-user {:loading true, :data nil}
    :webclient->active-panel nil
+   :parallel-mode parallel-mode-db/default-state
    :command-palette {:open? false
                      :query ""
                      :current-page :main

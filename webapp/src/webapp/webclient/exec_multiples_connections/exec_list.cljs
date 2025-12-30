@@ -48,10 +48,10 @@
    [:> Button {:variant "soft"
                :color "gray"
                :size "3"
-               :on-click #(rf/dispatch [:multiple-connection-execution/clear])}
+               :on-click #(rf/dispatch [:parallel-mode/clear-execution])}
     "Close"]
    [:> Button {:size "3"
-               :on-click #(rf/dispatch [:multiple-connection-execution/execute-script exec-list])}
+               :on-click #(rf/dispatch [:parallel-mode/execute-script exec-list])}
     [:> Flex {:align "center" :gap "2"}
      [:> Play {:size 16}]
      [:> Text "Run"]]]])
@@ -62,7 +62,7 @@
    [:> Button {:variant "soft"
                :color "gray"
                :size "3"
-               :on-click #(rf/dispatch [:multiple-connection-execution/clear])}
+               :on-click #(rf/dispatch [:parallel-mode/clear-execution])}
     "Close"]
    [:a {:href (str (. (. js/window -location) -origin)
                    "/sessions/filtered?id="

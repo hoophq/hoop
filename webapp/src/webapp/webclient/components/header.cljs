@@ -1,11 +1,12 @@
 (ns webapp.webclient.components.header
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [CircleHelp FastForward PackagePlus
+   ["lucide-react" :refer [CircleHelp PackagePlus
                            Play Sun Moon ChevronDown Search]]
    [re-frame.core :as rf]
    [webapp.components.notification-badge :refer [notification-badge]]
-   [webapp.components.keyboard-shortcuts :refer [detect-os]]))
+   [webapp.components.keyboard-shortcuts :refer [detect-os]]
+   [webapp.parallel-mode.components.header-button :as parallel-mode-button]))
 
 
 (defn main []
@@ -22,7 +23,6 @@
                               (seq @metadata-value))
             no-connection-selected? (and (empty? @selected-connections)
                                          (not @primary-connection))
-            has-multirun? (seq @selected-connections)
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
             disable-run-button? (or (not exec-enabled?)
                                     no-connection-selected?)
@@ -92,19 +92,8 @@
                :has-notification? has-metadata?
                :disabled? false}]]]
 
-           [:> Tooltip {:content "MultiRun"}
-            [:div
-             [notification-badge
-              {:icon [:> FastForward {:size 16}]
-               :on-click (fn []
-                           (rf/dispatch [:connections->get-connections])
-                           (if @primary-connection
-                             (rf/dispatch [:webclient/set-active-panel :multiple-connections])
-
-                             (rf/dispatch [:primary-connection/toggle-dialog true])))
-               :active? (= @active-panel :multiple-connections)
-               :has-notification? has-multirun?
-               :disabled? false}]]]
+           ;; New Parallel Mode Button
+           [parallel-mode-button/parallel-mode-button]
 
            [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button
