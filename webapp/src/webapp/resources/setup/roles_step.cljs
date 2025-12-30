@@ -373,6 +373,16 @@
     [:form {:id "roles-form"
             :on-submit (fn [e]
                          (.preventDefault e)
+                         ;; Add pending env vars for all roles before submitting
+                         (doseq [[role-index role] (map-indexed vector roles)]
+                           (let [current-key (:env-current-key role)
+                                 current-value-map (:env-current-value role)
+                                 current-value (if (map? current-value-map)
+                                                 (:value current-value-map)
+                                                 current-value-map)]
+                             (when (and (not (cs/blank? current-key))
+                                        (not (cs/blank? current-value)))
+                               (rf/dispatch [:resource-setup->add-role-env-row role-index]))))
                          ;; Use different submit event based on context
                          (if (= context :add-role)
                            (rf/dispatch [:add-role->submit])
