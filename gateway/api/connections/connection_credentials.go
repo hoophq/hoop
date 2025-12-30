@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -196,15 +197,22 @@ func buildConnectionCredentialsResponse(
 		}
 	case proto.ConnectionTypeHttpProxy:
 		scheme := "http"
+		host := serverHost
 		if appconfig.Get().GatewayTLSKey() != "" {
 			scheme = "https"
+			// When TLS is enabled, use the API URL's hostname instead of the listen address.
+			// The TLS certificate's SAN must match the hostname used by clients.
+			// Example: server listens on 0.0.0.0:18888 but certificate is valid for dev.hoop.dev:PORT
+			if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
+				host = apiURL.Hostname()
+			}
 		}
-		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, serverHost, serverPort)
+		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, host, serverPort)
 		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
 		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
 
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
-			Hostname:   serverHost,
+			Hostname:   host,
 			Port:       serverPort,
 			ProxyToken: secretKey,
 			Command:    fmt.Sprintf("cURL: %s\n Browser: %s", curlCommand, browserCommand),
