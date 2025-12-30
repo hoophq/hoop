@@ -100,6 +100,7 @@
 
                        (and (or (= ui-type "custom") (= ui-type "database"))
                             connection-subtype
+                            (not= connection-subtype "linux-vm")
                             (seq metadata-credentials))
                        (let [connection-method (get-in db [:connection-setup :connection-method] "manual-input")
                              is-aws-iam-role? (= connection-method "aws-iam-role")
