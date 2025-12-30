@@ -26,6 +26,7 @@ const (
 	SpecAwsSSMWebsocketMsgType   string = "aws.websocket.message_type"
 	SpecAwsSSMEc2InstanceId      string = "aws.ssm.ec2.instance_id"
 	SpecHttpProxyBaseUrl         string = "httpproxy.base_url"
+	SpecHttpProxyRequestIDs      string = "httpproxy.request_id"
 
 	// DEPRECATED: spec items deprecated
 	SpecAgentDlpProvider             string = "agent.dlp_provider"

@@ -64,13 +64,15 @@ type HttpProxyServer struct {
 
 type httpProxySession struct {
 	sid           string
-	conn          string
 	ctx           context.Context
 	cancelFn      func(msg string, a ...any)
 	proxyBaseURL  string
 	streamClient  pb.ClientTransport
 	responseStore sync.Map    // stores response channels per connectionID
 	closed        atomic.Bool // fast-fail flag to avoid mutex contention on session close
+
+	// use a fied connId  for agent-side proxy reuse
+	agentConnectionID string // fixed id for agent-side proxy reuse the connection
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -342,12 +344,12 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	if s.tlsConfig != nil {
 		scheme = "https"
 	}
-	connectionID := strconv.FormatInt(rand.Int64(), 10)
+	agentConnID := "0"
 	session := &httpProxySession{
-		sid:          sid,
-		conn:         connectionID,
-		ctx:          ctx,
-		proxyBaseURL: fmt.Sprintf("%s://%s", scheme, s.listenAddr),
+		sid:               sid,
+		ctx:               ctx,
+		proxyBaseURL:      fmt.Sprintf("%s://%s", scheme, s.listenAddr),
+		agentConnectionID: agentConnID,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
@@ -422,6 +424,18 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		log.Infof("http proxy session cleanup: closed flag set, sid=%s", sid)
 
 		if session.streamClient != nil {
+			// send session close to agent before closing the stream
+			//  this gives agent time to cancel in-flight requests
+			err := session.streamClient.Send(&pb.Packet{
+				Type:    pbclient.SessionClose,
+				Payload: []byte("session expired"),
+				Spec: map[string][]byte{
+					pb.SpecGatewaySessionID: []byte(sid),
+				},
+			})
+			if err != nil {
+				log.Infof("http proxy session cleanup: failed sending session close, sid=%s, err=%v", sid, err)
+			}
 			_, _ = session.streamClient.Close()
 			log.Infof("http proxy session cleanup: stream closed, sid=%s", sid)
 		}
@@ -451,15 +465,17 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	log := log.With("sid", sess.sid, "conn", sess.conn)
+	// Generate unique request ID for response routing
+	requestID := strconv.FormatInt(rand.Int64(), 10)
+	log := log.With("sid", sess.sid, "req", requestID)
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
 
 	// Create response channel for this request
 	// TODO: chico increase buffer size to prevent blocking.
 	responseChan := make(chan []byte, 10) // changed for buffering
-	clientConnectionIDKey := fmt.Sprintf("%s:%s", sess.sid, sess.conn)
-	sess.responseStore.Store(clientConnectionIDKey, responseChan)
-	defer sess.responseStore.Delete(sess.conn)
+	sess.responseStore.Store(requestID, responseChan)
+	// Create response channel for this request
+	defer sess.responseStore.Delete(requestID)
 
 	// Read request body
 	body, err := io.ReadAll(r.Body)
@@ -469,8 +485,10 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 	defer r.Body.Close()
 
-	// Build raw HTTP request to forward
+	// Add request ID as a custom header that will be preserved in the response
+	// We'll extract it on the agent side and include it in the response spec
 	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
+	rawRequest += fmt.Sprintf("X-Hoop-Request-ID: %s\r\n", requestID) // Add request ID header
 	for key, values := range r.Header {
 		if key == proxyTokenHeader || key == "Host" {
 			continue
@@ -501,7 +519,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			Payload: []byte(rawRequest),
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID:   []byte(sess.sid),
-				pb.SpecClientConnectionID: []byte(sess.conn),
+				pb.SpecClientConnectionID: []byte(sess.agentConnectionID), //used fixedID for session:agentID be able to reuse connection
 				pb.SpecHttpProxyBaseUrl:   []byte(sess.proxyBaseURL),
 			},
 		})
@@ -636,22 +654,27 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.HttpProxyConnectionWrite:
-			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-			clientConnectionIDKey := fmt.Sprintf("%s:%s", sess.sid, sess.conn)
-			if ch, ok := sess.responseStore.Load(clientConnectionIDKey); ok {
+			requestID := string(pkt.Spec[pb.SpecHttpProxyRequestIDs])
+			log.Debugf("received response packet, requestID=%s, payload size=%d, sid=%s", requestID, len(pkt.Payload), sess.sid)
+
+			if ch, ok := sess.responseStore.Load(requestID); ok {
 				if responseChan, ok := ch.(chan []byte); ok {
 					select {
 					case responseChan <- pkt.Payload:
-						// Successfully sent response
+						log.Debugf("successfully routed response to request %s, sid=%s", requestID, sess.sid)
 					case <-sess.ctx.Done():
 						// Session canceled while trying to send
 						return
 					default:
-						log.Warnf("response channel full for conn %s, sid=%s", connectionID, sess.sid)
+						log.Warnf("response channel full for conn %s, sid=%s", requestID, sess.sid)
 						// Channel is full, remove it to prevent memory leak
-						sess.responseStore.Delete(clientConnectionIDKey)
+						sess.responseStore.Delete(requestID)
 					}
+				} else {
+					log.Infof("invalid response channel type for conn %s, sid=%s", requestID, sess.sid)
 				}
+			} else {
+				log.Warnf("no response channel found for requestID=%s, sid=%s (response dropped)", requestID, sess.sid)
 			}
 
 		case pbclient.TCPConnectionClose, pbclient.SessionClose:
