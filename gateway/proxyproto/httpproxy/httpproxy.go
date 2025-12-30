@@ -7,15 +7,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
-
-	"sync"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
@@ -66,13 +64,10 @@ type httpProxySession struct {
 	sid           string
 	ctx           context.Context
 	cancelFn      func(msg string, a ...any)
-	proxyBaseURL  string
 	streamClient  pb.ClientTransport
 	responseStore sync.Map    // stores response channels per connectionID
 	closed        atomic.Bool // fast-fail flag to avoid mutex contention on session close
-
-	// use a fied connId  for agent-side proxy reuse
-	agentConnectionID string // fixed id for agent-side proxy reuse the connection
+	connCounter   atomic.Int64
 }
 
 func GetServerInstance() *HttpProxyServer {
@@ -176,8 +171,11 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// This is the initial browser request to set the cookie
 	pathParts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
 	if len(pathParts) > 0 && strings.HasPrefix(pathParts[0], "httpproxy") {
-		// Token found in path (tokens start with "http" prefix from generateSecretKey)
+		// Token found in path (tokens start with "httpproxy")
 		proxyToken = pathParts[0]
+
+		// Detect if request is over HTTPS (directly or via reverse proxy)
+		isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 
 		// Set cookie for future requests
 		http.SetCookie(w, &http.Cookie{
@@ -186,23 +184,39 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
-			Secure:   r.TLS != nil,
+			Secure:   isSecure,
 		})
 
 		// Redirect to root (or remaining path) so browser uses the cookie
+		// Use absolute URL for redirect to ensure it works correctly
+		scheme := "http"
+		if isSecure {
+			scheme = "https"
+		}
 		redirectPath := "/"
 		if len(pathParts) > 1 && pathParts[1] != "" {
 			redirectPath = "/" + pathParts[1]
 		}
-		http.Redirect(w, r, redirectPath, http.StatusFound)
+		// Preserve query string if present
+		if r.URL.RawQuery != "" {
+			redirectPath += "?" + r.URL.RawQuery
+		}
+		// Use X-Forwarded-Host if behind reverse proxy, otherwise use Host
+		host := r.Host
+		if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+			host = forwardedHost
+		}
+		// Use absolute URL for redirect
+		redirectURL := fmt.Sprintf("%s://%s%s", scheme, host, redirectPath)
+		http.Redirect(w, r, redirectURL, http.StatusFound)
 		return
 	}
-
 	// Check cookie (for subsequent browser requests)
-	if cookie, err := r.Cookie(proxyTokenCookie); err == nil && cookie.Value != "" {
-		proxyToken = cookie.Value
+	if proxyToken == "" {
+		if cookie, err := r.Cookie(proxyTokenCookie); err == nil && cookie.Value != "" {
+			proxyToken = cookie.Value
+		}
 	}
-
 	//Check header (for curl/API usage)
 	if proxyToken == "" {
 		proxyToken = r.Header.Get(proxyTokenHeader)
@@ -340,16 +354,9 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
 		fmt.Errorf("http proxy connection access expired"))
 
-	scheme := "http"
-	if s.tlsConfig != nil {
-		scheme = "https"
-	}
-	agentConnID := "0"
 	session := &httpProxySession{
-		sid:               sid,
-		ctx:               ctx,
-		proxyBaseURL:      fmt.Sprintf("%s://%s", scheme, s.listenAddr),
-		agentConnectionID: agentConnID,
+		sid: sid,
+		ctx: ctx,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
@@ -465,17 +472,16 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Generate unique request ID for response routing
-	requestID := strconv.FormatInt(rand.Int64(), 10)
-	log := log.With("sid", sess.sid, "req", requestID)
+	// Generate sequential connection ID for response routing
+	connectionID := strconv.FormatInt(sess.connCounter.Add(1), 10)
+	log := log.With("sid", sess.sid, "conn", connectionID)
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
 
 	// Create response channel for this request
 	// TODO: chico increase buffer size to prevent blocking.
 	responseChan := make(chan []byte, 10) // changed for buffering
-	sess.responseStore.Store(requestID, responseChan)
-	// Create response channel for this request
-	defer sess.responseStore.Delete(requestID)
+	sess.responseStore.Store(connectionID, responseChan)
+	defer sess.responseStore.Delete(connectionID)
 
 	// Read request body
 	body, err := io.ReadAll(r.Body)
@@ -485,10 +491,22 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 	defer r.Body.Close()
 
-	// Add request ID as a custom header that will be preserved in the response
-	// We'll extract it on the agent side and include it in the response spec
+	// Determine proxy base URL from request (use Host header, not listenAddr)
+	// This ensures redirects go to the correct host (e.g., dev.hoop.dev instead of 0.0.0.0)
+	// Check X-Forwarded-Proto for requests behind reverse proxy
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	// Use X-Forwarded-Host if behind reverse proxy, otherwise use Host
+	host := r.Host
+	if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+		host = forwardedHost
+	}
+	proxyBaseURL := fmt.Sprintf("%s://%s", scheme, host)
+
+	// Build raw HTTP request to forward
 	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
-	rawRequest += fmt.Sprintf("X-Hoop-Request-ID: %s\r\n", requestID) // Add request ID header
 	for key, values := range r.Header {
 		if key == proxyTokenHeader || key == "Host" {
 			continue
@@ -519,8 +537,8 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			Payload: []byte(rawRequest),
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID:   []byte(sess.sid),
-				pb.SpecClientConnectionID: []byte(sess.agentConnectionID), //used fixedID for session:agentID be able to reuse connection
-				pb.SpecHttpProxyBaseUrl:   []byte(sess.proxyBaseURL),
+				pb.SpecClientConnectionID: []byte(connectionID),
+				pb.SpecHttpProxyBaseUrl:   []byte(proxyBaseURL),
 			},
 		})
 		sendErr <- err
@@ -654,27 +672,27 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.HttpProxyConnectionWrite:
-			requestID := string(pkt.Spec[pb.SpecHttpProxyRequestIDs])
-			log.Debugf("received response packet, requestID=%s, payload size=%d, sid=%s", requestID, len(pkt.Payload), sess.sid)
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			log.Debugf("received response packet, connectionID=%s, payload size=%d, sid=%s", connectionID, len(pkt.Payload), sess.sid)
 
-			if ch, ok := sess.responseStore.Load(requestID); ok {
+			if ch, ok := sess.responseStore.Load(connectionID); ok {
 				if responseChan, ok := ch.(chan []byte); ok {
 					select {
 					case responseChan <- pkt.Payload:
-						log.Debugf("successfully routed response to request %s, sid=%s", requestID, sess.sid)
+						log.Debugf("successfully routed response to connection %s, sid=%s", connectionID, sess.sid)
 					case <-sess.ctx.Done():
 						// Session canceled while trying to send
 						return
 					default:
-						log.Warnf("response channel full for conn %s, sid=%s", requestID, sess.sid)
+						log.Warnf("response channel full for conn %s, sid=%s", connectionID, sess.sid)
 						// Channel is full, remove it to prevent memory leak
-						sess.responseStore.Delete(requestID)
+						sess.responseStore.Delete(connectionID)
 					}
 				} else {
-					log.Infof("invalid response channel type for conn %s, sid=%s", requestID, sess.sid)
+					log.Infof("invalid response channel type for conn %s, sid=%s", connectionID, sess.sid)
 				}
 			} else {
-				log.Warnf("no response channel found for requestID=%s, sid=%s (response dropped)", requestID, sess.sid)
+				log.Warnf("no response channel found for connectionID=%s, sid=%s (response dropped)", connectionID, sess.sid)
 			}
 
 		case pbclient.TCPConnectionClose, pbclient.SessionClose:
