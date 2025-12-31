@@ -77,6 +77,13 @@ func RunReviewedExec(c *gin.Context) {
 		return
 	}
 
+	session.BlobInput, err = session.GetBlobInput()
+	if err != nil {
+		log.Errorf("failed fetching session blob input, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session input"})
+		return
+	}
+
 	// The plugin must be active to be able to change the state of the review
 	// after the execution, this will ensure that a review is executed only once.
 	p, err := models.GetPluginByName(ctx.OrgID, plugintypes.PluginReviewName)
@@ -94,25 +101,14 @@ func RunReviewedExec(c *gin.Context) {
 			}
 		}
 	}
-	if !hasReviewPlugin {
-		errMsg := fmt.Sprintf("review plugin is not enabled for the connection %s", review.ConnectionName)
-		log.Infof(errMsg)
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": errMsg})
-		return
-	}
 
-	session.BlobInput, err = session.GetBlobInput()
-	if err != nil {
-		log.Errorf("failed fetching session blob input, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session input"})
-		return
-	}
-
-	err = canExecReviewedSession(ctx, session, review)
-	if err != nil {
-		log.Infof("cannot execute reviewed session, reason=%v", err)
-		c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
-		return
+	if hasReviewPlugin {
+		err = canExecReviewedSession(ctx, session, review)
+		if err != nil {
+			log.Infof("cannot execute reviewed session, reason=%v", err)
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)

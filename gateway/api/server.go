@@ -474,6 +474,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventApiExecReview),
 		sessionapi.RunReviewedExec)
 
+	r.POST("/sessions/provision",
+		r.AuthMiddleware,
+		r.OnlyApiKeyAccess,
+		sessionapi.Provision)
+
 	r.GET("/reports/sessions",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
