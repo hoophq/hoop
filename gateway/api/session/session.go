@@ -30,7 +30,6 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"github.com/hoophq/hoop/gateway/utils"
@@ -785,14 +784,19 @@ func Kill(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
-func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn *models.Connection, user *models.User, sessionInfo *openapi.SessionApproved) error {
+func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn *models.Connection, user *models.User, sessionInfo *openapi.ProvisionSession) (bool, error) {
 	var accessDuration time.Duration
 	if sessionInfo.Duration != nil {
 		accessDuration = time.Duration(*sessionInfo.Duration) * time.Second
 
 		if accessDuration.Hours() > 48 {
-			return fmt.Errorf("jit access input must not be greater than 48 hours")
+			return false, fmt.Errorf("jit access input must not be greater than 48 hours")
 		}
+	}
+
+	timeWindow, err := reviewapi.ParseTimeWindow(sessionInfo.TimeWindow)
+	if err != nil {
+		return false, err
 	}
 
 	ownerId := ctx.UserID
@@ -800,17 +804,53 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 	apiKeyName := ctx.UserName
 	now := time.Now().UTC()
 
-	reviewGroups := []models.ReviewGroups{{
-		ID:         uuid.NewString(),
-		OrgID:      ctx.OrgID,
-		GroupName:  types.GroupAdmin,
-		Status:     models.ReviewStatusApproved,
-		OwnerID:    &ownerId,
-		OwnerEmail: &apiKeyEmail,
-		OwnerName:  &apiKeyName,
-		ReviewedAt: &now,
-	}}
+	connectionReviewers := conn.Reviewers
+	approvedReviewers := sessionInfo.ApprovedReviewers
 
+	// if no reviewers specified in the connection, default to "admin" group
+	// to be able to run the connection after approvals
+	if len(connectionReviewers) == 0 {
+		connectionReviewers = []string{"admin"}
+		approvedReviewers = []string{"admin"}
+	}
+
+	// if no approved reviewers specified, auto-approve all reviewers from the connection
+	if approvedReviewers == nil {
+		approvedReviewers = connectionReviewers
+	}
+
+	// populate approved reviewers map for quick lookup
+	approvedGroupsMap := make(map[string]struct{})
+	for _, rg := range approvedReviewers {
+		approvedGroupsMap[rg] = struct{}{}
+	}
+
+	areAllGroupsApproved := true
+	// prepare review groups
+	reviewGroups := []models.ReviewGroups{}
+	for _, reviewer := range connectionReviewers {
+		group := models.ReviewGroups{
+			ID:        uuid.NewString(),
+			OrgID:     ctx.OrgID,
+			GroupName: reviewer,
+			Status:    models.ReviewStatusPending,
+		}
+
+		// auto-approve if in the approved reviewers list
+		if _, ok := approvedGroupsMap[reviewer]; ok {
+			group.Status = models.ReviewStatusApproved
+			group.OwnerID = &ownerId
+			group.OwnerEmail = &apiKeyEmail
+			group.OwnerName = &apiKeyName
+			group.ReviewedAt = &now
+		} else {
+			areAllGroupsApproved = false
+		}
+
+		reviewGroups = append(reviewGroups, group)
+	}
+
+	// determine review type
 	isJitReview := accessDuration > 0
 	reviewType := models.ReviewTypeOneTime
 	if isJitReview {
@@ -827,6 +867,12 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 		inputClientArgs = sessionInfo.ClientArgs
 	}
 
+	// determine review status
+	reviewStatus := models.ReviewStatusPending
+	if areAllGroupsApproved {
+		reviewStatus = models.ReviewStatusApproved
+	}
+
 	newRev := &models.Review{
 		ID:                uuid.NewString(),
 		OrgID:             ctx.OrgID,
@@ -841,22 +887,17 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 		OwnerEmail:        user.Email,
 		OwnerName:         &user.Name,
 		OwnerSlackID:      &user.SlackID,
-		Status:            models.ReviewStatusApproved,
+		TimeWindow:        timeWindow,
+		Status:            reviewStatus,
 		ReviewGroups:      reviewGroups,
 		CreatedAt:         now,
 		RevokedAt:         nil,
-		TimeWindow:        nil,
 	}
 
+	// set revoked at or time window based on review type
 	if isJitReview {
 		revokedAt := now.Add(accessDuration)
 		newRev.RevokedAt = &revokedAt
-	} else {
-		timeWindow, err := reviewapi.ParseTimeWindow(sessionInfo.TimeWindow)
-		if err != nil {
-			return err
-		}
-		newRev.TimeWindow = timeWindow
 	}
 
 	log.
@@ -865,28 +906,28 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 		Infof("creating review")
 
 	if err := models.CreateReview(newRev, sessionInput); err != nil {
-		return fmt.Errorf("failed saving review: %w", err)
+		return false, fmt.Errorf("failed saving review: %w", err)
 	}
 
-	return nil
+	return areAllGroupsApproved, nil
 }
 
-// SessionApproved
+// Provision
 //
-//	@Summary				Create an approved session using API Key
+//	@Summary				Create a provisioned session using API Key
 //	@Tags						Sessions
 //	@Accept					json
 //	@Produce				json
-//	@Param					request		body		openapi.SessionApproved		true	"The request body resource"
-//	@Success				200			{object}	openapi.SessionApprovedResponse	"The session has been created"
+//	@Param					request		body		openapi.ProvisionSession		true	"The request body resource"
+//	@Success				200			{object}	openapi.ProvisionSessionResponse	"The session has been created"
 //	@Failure				400,422,500	{object}	openapi.HTTPError
 //	@Router					/sessions/approved [post]
-func SessionApproved(c *gin.Context) {
+func Provision(c *gin.Context) {
 	sid := uuid.NewString()
 	apiroutes.SetSidSpanAttr(c, sid)
 
 	ctx := storagev2.ParseContext(c)
-	var req openapi.SessionApproved
+	var req openapi.ProvisionSession
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -958,7 +999,7 @@ func SessionApproved(c *gin.Context) {
 		Connection:           conn.Name,
 		ConnectionTags:       conn.ConnectionTags,
 		Verb:                 verb,
-		Status:               string(openapi.SessionStatusReady),
+		Status:               string(openapi.SessionStatusOpen),
 		ExitCode:             nil,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
@@ -1046,16 +1087,27 @@ func SessionApproved(c *gin.Context) {
 		return
 	}
 
-	err = createApprovedReview(ctx, &newSession, conn, user, &req)
+	allGroupsApproved, err := createApprovedReview(ctx, &newSession, conn, user, &req)
 	if err != nil {
 		log.Errorf("failed creating review, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review"})
 		return
 	}
 
-	c.JSON(http.StatusAccepted, openapi.SessionApprovedResponse{
-		SessionID:       sid,
-		UserEmail:       user.Email,
-		WouldHaveReview: len(conn.Reviewers) > 0,
+	// if all review groups are approved, set session status to ready
+	if allGroupsApproved {
+		newSession.Status = string(openapi.SessionStatusReady)
+
+		if err := models.UpsertSession(newSession); err != nil {
+			log.Errorf("failed updating session, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating session"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusAccepted, openapi.ProvisionSessionResponse{
+		SessionID: sid,
+		UserEmail: user.Email,
+		HasReview: !allGroupsApproved,
 	})
 }
