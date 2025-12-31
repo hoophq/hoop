@@ -1,6 +1,6 @@
 (ns webapp.resources.setup.page-wrapper
   (:require
-   ["@radix-ui/themes" :refer [Avatar Button Box Badge Flex Text]]
+   ["@radix-ui/themes" :refer [Avatar Button Box Badge Flex Text ScrollArea]]
    ["lucide-react" :refer [PackagePlus Check BrainCog UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]))
@@ -101,10 +101,9 @@
         (when show-stepper?
           [stepper])
 
-        ;; Children content on the right
-        [:> Box {:class (if show-stepper?
-                          "flex-1 overflow-y-auto bg-gray-1"
-                          "w-full overflow-y-auto bg-gray-1")}
+        [:> ScrollArea {:class (if show-stepper?
+                                 "flex-1 bg-gray-1"
+                                 "w-full bg-gray-1")}
          children]]
 
        ;; Footer with navigation buttons - fixed at bottom
@@ -129,8 +128,7 @@
 
       ;; Normal layout: full-width without stepper
       [:> Box {:class "h-screen bg-gray-1 flex flex-col"}
-       ;; Content fills full width
-       [:> Box {:class "flex-1 overflow-y-auto bg-gray-1"}
+       [:> ScrollArea {:class "flex-1 bg-gray-1"}
         children]
 
        ;; Footer with navigation buttons - fixed at bottom

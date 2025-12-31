@@ -3,6 +3,7 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Box Badge Card Flex Grid Heading RadioGroup Text Switch]]
    ["lucide-react" :refer [Blocks SquareTerminal]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -13,6 +14,7 @@
    [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
    [webapp.connections.views.setup.headers :as headers]
    [webapp.connections.views.setup.installation :as installation]
+   [webapp.connections.views.setup.connection-method :as connection-method]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.setup.state :refer [application-types
                                                  operation-systems]]))
@@ -57,7 +59,9 @@
                  (.preventDefault e)
                  (rf/dispatch [:connection-setup/next-step :additional-config]))}
    [:> Box {:class "space-y-8 max-w-[600px]"}
-    ;; Environment Variables Section
+    [connection-method/main "custom"]
+
+    ;; Environment Variables Section 
     [configuration-inputs/environment-variables-section]
 
     ;; Configuration Files Section
@@ -118,18 +122,29 @@
        [:> RadioGroup.Item {:value id} title])]]])
 
 (defn render-ssh-field [{:keys [key label value required hidden placeholder type]}]
-  (let [base-props {:label label
+  (let [connection-method @(rf/subscribe [:connection-setup/connection-method])
+        show-source-selector? (= connection-method "secrets-manager")
+        field-value (if (map? value) (:value value) (str value))
+        handle-change (fn [e]
+                        (let [new-value (-> e .-target .-value)]
+                          (rf/dispatch [:connection-setup/update-ssh-credentials
+                                        key
+                                        new-value])))
+        base-props {:label label
                     :placeholder (or placeholder (str "e.g. " key))
-                    :value value
+                    :value field-value
                     :required required
                     :type (if (= key "pass") "password" "text")
                     :hidden hidden
-                    :on-change #(rf/dispatch [:connection-setup/update-ssh-credentials
-                                              key
-                                              (-> % .-target .-value)])}]
-    (if (= type "textarea")
+                    :on-change handle-change}]
+    (cond
+      (= type "textarea")
       [forms/textarea base-props]
-      [forms/input base-props])))
+      
+      :else
+      [forms/input (assoc base-props
+                          :start-adornment (when show-source-selector?
+                                             [connection-method/source-selector key]))])))
 
 ;; Registrar um evento para controlar o método de autenticação
 (rf/reg-event-db
@@ -166,6 +181,8 @@
         [:> Text {:as "p" :size "3" :class "text-[--gray-11]" :mb "5"}
          "Provide SSH information to setup your connection."]]
 
+       [connection-method/main "ssh"]
+
        [:> Box {:class "space-y-4 mb-6"}
         [:> Heading {:as "h4" :size "3" :weight "medium"}
          "Authentication Method"]
@@ -185,7 +202,27 @@
         [agent-selector/main]]]]]))
 
 (defn kubernetes-token []
-  (let [credentials @(rf/subscribe [:connection-setup/kubernetes-token])]
+  (let [credentials @(rf/subscribe [:connection-setup/kubernetes-token])
+        connection-method @(rf/subscribe [:connection-setup/connection-method])
+        show-selector? (= connection-method "secrets-manager")
+        cluster-url-value (if (map? (:cluster_url credentials))
+                            (:value (:cluster_url credentials))
+                            (or (:cluster_url credentials) ""))
+        auth-token-value (if (map? (:authorization credentials))
+                           (:value (:authorization credentials))
+                           (or (:authorization credentials) ""))
+        auth-token-display-value (if (cs/starts-with? auth-token-value "Bearer ")
+                                   (subs auth-token-value 7)
+                                   auth-token-value)
+        insecure-value (let [raw-insecure (:insecure credentials)]
+                         (cond
+                           (boolean? raw-insecure) raw-insecure
+                           (map? raw-insecure) (let [value-str (:value raw-insecure)]
+                                                 (if (string? value-str)
+                                                   (= value-str "true")
+                                                   (boolean value-str)))
+                           (string? raw-insecure) (= raw-insecure "true")
+                           :else false))]
     [:form
      {:id "kubernetes-token-form"
       :on-submit (fn [e]
@@ -193,36 +230,47 @@
                    (rf/dispatch [:connection-setup/next-step :additional-config]))}
      [:> Box {:class "space-y-8 max-w-[600px]"}
       [:> Box {:class "space-y-4"}
+       [connection-method/main "kubernetes-token"]
+
        ;; Cluster URL
        [forms/input {:label "Cluster URL"
-                     :placeholder "e.g. https://example.com:51434"
-                     :value (:cluster_url credentials "")
+                     :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
+                     :value cluster-url-value
                      :required true
                      :type "text"
-                     :on-change #(rf/dispatch [:connection-setup/set-kubernetes-token
-                                               "cluster_url"
-                                               (-> % .-target .-value)])}]
+                     :on-change (fn [e]
+                                  (let [new-value (-> e .-target .-value)]
+                                    (rf/dispatch [:connection-setup/set-kubernetes-token
+                                                  "cluster_url"
+                                                  new-value])))
+                     :start-adornment (when show-selector?
+                                        [connection-method/source-selector "cluster_url"])}]
 
        [forms/input {:label "Authorization token"
                      :placeholder "e.g. jwt.token.example"
-                     :value (:authorization credentials "")
+                     :value auth-token-display-value
                      :required true
                      :type "text"
-                     :on-change #(rf/dispatch [:connection-setup/set-kubernetes-token
-                                               "authorization"
-                                               (-> % .-target .-value)])}]
+                     :on-change (fn [e]
+                                  (let [new-value (-> e .-target .-value)]
+                                    (rf/dispatch [:connection-setup/set-kubernetes-token
+                                                  "authorization"
+                                                  new-value])))
+                     :start-adornment (when show-selector?
+                                        [connection-method/source-selector "authorization"])}]
 
        [:> Flex {:align "center" :gap "3"}
-        [:> Switch {:checked (:insecure credentials false)
+        [:> Switch {:checked insecure-value
                     :size "3"
                     :onCheckedChange #(rf/dispatch [:connection-setup/set-kubernetes-token
                                                     "insecure"
-                                                    %])}]
+                                                    (boolean %)])}]
         [:> Box
          [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
           "Allow insecure SSL"]
          [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-          "Skip SSL certificate verification for HTTPS connections."]]] [agent-selector/main]]]]))
+          "Skip SSL certificate verification for HTTPS connections."]]]
+       [agent-selector/main]]]]))
 
 (defn resource-step []
   (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
