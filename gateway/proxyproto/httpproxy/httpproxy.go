@@ -595,7 +595,11 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		defer resp.Body.Close()
-
+		// Check if this is a WebSocket upgrade response
+		if resp.StatusCode == http.StatusSwitchingProtocols {
+			sess.handleWebSocketUpgraded(w, r, response, responseChan, connectionID)
+			return
+		}
 		for key, values := range resp.Header {
 			for _, value := range values {
 				w.Header().Add(key, value)
@@ -606,6 +610,134 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+func (sess *httpProxySession) handleWebSocketUpgraded(
+	w http.ResponseWriter,
+	r *http.Request,
+	upgradeResponse []byte,
+	responseChan chan []byte,
+	connectionID string,
+) {
+	log := log.With("sid", sess.sid, "conn", connectionID, "type", "websocket")
+
+	// Hijack the connection to get raw TCP access
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		log.Errorf("ResponseWriter does not support hijacking")
+		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
+		return
+	}
+
+	conn, bufrw, err := hijacker.Hijack()
+	if err != nil {
+		log.Errorf("hijack failed: %v", err)
+		http.Error(w, "WebSocket upgrade failed", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	// Write the upgrade response to client
+	if _, err := conn.Write(upgradeResponse); err != nil {
+		log.Errorf("failed to write upgrade response: %v", err)
+		return
+	}
+
+	log.Infof("WebSocket connection upgraded, starting bidirectional pump")
+
+	ctx, cancel := context.WithCancel(sess.ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Client → Agent (read from client, send via gRPC)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+
+		buf := make([]byte, 32*1024)
+
+		// First, flush any buffered data from hijack
+		for bufrw.Reader.Buffered() > 0 {
+			n, err := bufrw.Read(buf)
+			if err != nil {
+				break
+			}
+			if n > 0 {
+				if err := sess.streamClient.Send(&pb.Packet{
+					Type:    pbagent.HttpProxyConnectionWrite,
+					Payload: buf[:n],
+					Spec: map[string][]byte{
+						pb.SpecGatewaySessionID:   []byte(sess.sid),
+						pb.SpecClientConnectionID: []byte(connectionID),
+					},
+				}); err != nil {
+					log.Errorf("failed to send buffered data: %v", err)
+					return
+				}
+			}
+		}
+
+		// Read loop
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			n, err := conn.Read(buf)
+			if err != nil {
+				if err != io.EOF && ctx.Err() == nil {
+					log.Debugf("client read error: %v", err)
+				}
+				return
+			}
+			if n > 0 {
+				if sess.closed.Load() {
+					return
+				}
+				if err := sess.streamClient.Send(&pb.Packet{
+					Type:    pbagent.HttpProxyConnectionWrite,
+					Payload: buf[:n],
+					Spec: map[string][]byte{
+						pb.SpecGatewaySessionID:   []byte(sess.sid),
+						pb.SpecClientConnectionID: []byte(connectionID),
+					},
+				}); err != nil {
+					log.Errorf("failed to send to agent: %v", err)
+					return
+				}
+			}
+		}
+	}()
+
+	// Agent → Client (read from responseChan, write to client)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case data, ok := <-responseChan:
+				if !ok {
+					log.Debugf("response channel closed")
+					return
+				}
+				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				if _, err := conn.Write(data); err != nil {
+					log.Errorf("failed to write to client: %v", err)
+					return
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	log.Infof("WebSocket connection closed")
+}
 func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secretKeyHash string) {
 	defer func() {
 		log.Infof("handleAgentResponses defer starting cleanup, sid=%s", sess.sid)
