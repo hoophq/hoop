@@ -71,7 +71,7 @@
                                     {:key (name k)
                                      :value (if (boolean? v)
                                               (str v)
-                                              v)})
+                                              (extract-value v connection-method k secrets-provider))})
                                   (seq credentials))
 
         metadata-credential-env-vars (mapv (fn [[k v]]
