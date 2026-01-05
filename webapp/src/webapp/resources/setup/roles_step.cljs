@@ -105,11 +105,14 @@
   (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])
         connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
         show-selector? (= connection-method "secrets-manager")
+        auth-token-source @(rf/subscribe [:resource-setup/field-source role-index "header_Authorization"])
         remote-url-value (get credentials "remote_url" "")
         auth-token-value (get credentials "header_Authorization" "")
+        insecure-value (get credentials "insecure" false)
         auth-token-display-value (if (cs/starts-with? auth-token-value "Bearer ")
                                    (subs auth-token-value 7)
-                                   auth-token-value)]
+                                   auth-token-value)
+        is-auth-manual-input? (= auth-token-source "manual-input")]
     (when (nil? (get credentials "insecure"))
       (rf/dispatch [:resource-setup->update-role-credentials
                     role-index
@@ -139,7 +142,11 @@
                    :type "text"
                    :on-change (fn [e]
                                 (let [new-value (-> e .-target .-value)
-                                      transformed-val (str "Bearer " new-value)]
+                                      transformed-val (if is-auth-manual-input?
+                                                        (if (cs/starts-with? new-value "Bearer ")
+                                                          new-value
+                                                          (str "Bearer " new-value))
+                                                        new-value)]
                                   (rf/dispatch [:resource-setup->update-role-credentials
                                                 role-index
                                                 "header_Authorization"
@@ -148,7 +155,7 @@
                                       [connection-method/source-selector role-index "header_Authorization"])}]
 
      [:> Flex {:align "center" :gap "3"}
-      [:> Switch {:checked (get credentials "insecure" false)
+      [:> Switch {:checked insecure-value
                   :size "3"
                   :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
                                                   role-index
