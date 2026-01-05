@@ -2545,6 +2545,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_SessionMetricResponse"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -3956,6 +3962,18 @@ const docTemplate = `{
                         "description": "Filter runbooks by connection name",
                         "name": "connection_name",
                         "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Show connections allowed for each runbook.",
+                        "name": "list_connections",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Remove runbooks with no connections.",
+                        "name": "remove_empty_connections",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5141,6 +5159,57 @@ const docTemplate = `{
                         "description": "The execution is still in progress",
                         "schema": {
                             "$ref": "#/definitions/openapi.ExecResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/approved": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Create a provisioned session using API Key",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ProvisionSession"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The session has been created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ProvisionSessionResponse"
                         }
                     },
                     "400": {
@@ -7700,6 +7769,16 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.HttpProxyServerConfig": {
+            "type": "object",
+            "properties": {
+                "listen_address": {
+                    "description": "The HTTP proxy server URL",
+                    "type": "string",
+                    "example": "http://0.0.0.0:18888"
+                }
+            }
+        },
         "openapi.IAMAccessKeyRequest": {
             "type": "object",
             "required": [
@@ -8160,6 +8239,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_SessionMetricResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionMetricResponse"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.Pagination": {
             "type": "object",
             "properties": {
@@ -8357,6 +8450,74 @@ const docTemplate = `{
                 "ProviderTypeSAML",
                 "ProviderTypeLocal"
             ]
+        },
+        "openapi.ProvisionSession": {
+            "type": "object",
+            "properties": {
+                "access_duration_sec": {
+                    "type": "integer"
+                },
+                "approved_reviewers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "client_args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "connection": {
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "env_vars": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "jira_fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "script": {
+                    "type": "string"
+                },
+                "time_window": {
+                    "$ref": "#/definitions/openapi.ReviewSessionTimeWindow"
+                },
+                "user_email": {
+                    "type": "string",
+                    "example": "johnwick@bad.org"
+                }
+            }
+        },
+        "openapi.ProvisionSessionResponse": {
+            "type": "object",
+            "properties": {
+                "has_review": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "session_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5701046A-7B7A-4A78-ABB0-A24C95E6FE54"
+                },
+                "user_email": {
+                    "type": "string",
+                    "example": "johnwick@bad.org"
+                }
+            }
         },
         "openapi.ProxyManagerRequest": {
             "type": "object",
@@ -9851,6 +10012,14 @@ const docTemplate = `{
                     "type": "string",
                     "default": "grpc://127.0.0.1:8010"
                 },
+                "http_proxy_server_config": {
+                    "description": "The HTTP proxy server configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.HttpProxyServerConfig"
+                        }
+                    ]
+                },
                 "postgres_server_config": {
                     "description": "The PostgreSQL server proxy configuration",
                     "allOf": [
@@ -10125,6 +10294,90 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 100
+                }
+            }
+        },
+        "openapi.SessionMetricResponse": {
+            "type": "object",
+            "properties": {
+                "connection_name": {
+                    "type": "string",
+                    "example": "production-db"
+                },
+                "connection_subtype": {
+                    "type": "string",
+                    "example": "amazon-rds"
+                },
+                "connection_type": {
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "count_analyzed": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "count_masked": {
+                    "type": "integer",
+                    "example": 15
+                },
+                "info_type": {
+                    "type": "string",
+                    "example": "EMAIL_ADDRESS"
+                },
+                "is_masked": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "org_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
+                },
+                "session_created_at": {
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "session_duration_sec": {
+                    "type": "integer",
+                    "example": 325
+                },
+                "session_ended_at": {
+                    "type": "string",
+                    "example": "2023-08-15T14:35:10Z"
+                },
+                "session_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
+                }
+            }
+        },
+        "openapi.SessionMetricsAggregatedResponse": {
+            "type": "object",
+            "properties": {
+                "avg_session_duration_sec": {
+                    "type": "integer",
+                    "example": 285
+                },
+                "sessions_with_masking": {
+                    "type": "integer",
+                    "example": 98
+                },
+                "total_analyzed": {
+                    "type": "integer",
+                    "example": 7850
+                },
+                "total_masked": {
+                    "type": "integer",
+                    "example": 5420
+                },
+                "total_sessions": {
+                    "type": "integer",
+                    "example": 150
+                },
+                "unique_info_types": {
+                    "type": "integer",
+                    "example": 12
                 }
             }
         },
