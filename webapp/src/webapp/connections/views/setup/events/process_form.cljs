@@ -507,6 +507,9 @@
         inferred-connection-info (cond
                                    (seq normalized-credentials)
                                    (connection-method/infer-connection-method normalized-credentials)
+                                   
+                                   http-connection-info
+                                   http-connection-info
 
                                    env-vars-connection-info
                                    env-vars-connection-info
@@ -519,9 +522,6 @@
 
                                    network-connection-info
                                    network-connection-info
-
-                                   http-connection-info
-                                   http-connection-info
 
                                    :else
                                    {:connection-method "manual-input"
