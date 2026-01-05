@@ -91,42 +91,36 @@
   (let [secrets-providers #{"vault-kv1" "vault-kv2" "aws-secrets-manager"}
         connection-method (:connection-method conn "manual-input")
         is-secrets-manager? (= connection-method "secrets-manager")
+        target-source (if is-secrets-manager? provider "manual-input")
+        should-update-source? (fn [current-source]
+                                (if is-secrets-manager?
+                                  (or (nil? current-source)
+                                      (= current-source "manual-input")
+                                      (and (contains? secrets-providers current-source)
+                                           (not= current-source provider)))
+                                  (contains? secrets-providers current-source)))
+        update-value-source (fn [value]
+                             (let [current-source (when (map? value) (:source value))
+                                   raw-value (if (map? value)
+                                               (:value value)
+                                               (str value))]
+                               (if (should-update-source? current-source)
+                                 (let [normalized (connection-method/normalize-credential-value raw-value)]
+                                   {:value (:value normalized) :source target-source})
+                                 value)))
         update-env-var-source (fn [env-var]
-                                (let [value-map (:value env-var)
-                                      current-source (when (map? value-map) (:source value-map))
-                                      should-update? (or (contains? secrets-providers current-source)
-                                                         (and is-secrets-manager?
-                                                              (not= current-source "manual-input")))]
-                                  (if should-update?
-                                    (let [raw-value (if (map? value-map)
-                                                      (let [value-str (:value value-map)]
-                                                        (connection-method/normalize-credential-value value-str))
-                                                      (connection-method/normalize-credential-value (str value-map)))]
-                                      (assoc env-var :value
-                                             {:value (:value raw-value) :source provider}))
-                                    env-var)))
-        update-env-current-value (fn [v]
-                                   (let [current-source (when (map? v) (:source v))
-                                         should-update? (or (contains? secrets-providers current-source)
-                                                            (and is-secrets-manager?
-                                                                 (not= current-source "manual-input")))]
-                                     (if should-update?
-                                       (let [raw-value (if (map? v)
-                                                         (let [value-str (:value v)]
-                                                           (connection-method/normalize-credential-value value-str))
-                                                         (connection-method/normalize-credential-value (str v)))]
-                                         {:value (:value raw-value) :source provider})
-                                       v)))]
+                                (let [value-map (:value env-var)]
+                                  (assoc env-var :value (update-value-source value-map))))]
     (-> conn
-        (assoc :secrets-manager-provider provider)
-        (update-connection-metadata-credentials-source provider)
-        (update-connection-ssh-credentials-source provider)
-        (update-connection-kubernetes-token-source provider)
-        (update-connection-network-credentials-source provider)
+        (assoc :secrets-manager-provider (if is-secrets-manager? provider (:secrets-manager-provider conn)))
+        (update-connection-metadata-credentials-source target-source)
+        (update-connection-ssh-credentials-source target-source)
+        (update-connection-kubernetes-token-source target-source)
+        (update-connection-network-credentials-source target-source)
         (update-in [:credentials :environment-variables]
                    (fn [env-vars]
                      (mapv update-env-var-source (or env-vars []))))
-        (update-in [:credentials :current-value] update-env-current-value))))
+        (update-in [:credentials :current-value] update-value-source))))
 
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
@@ -148,16 +142,9 @@
          provider (if (str/blank? current-provider) "vault-kv1" current-provider)]
      (update-in db [:connection-setup]
                 (fn [conn]
-                  (if (= method "secrets-manager")
-                    (-> conn
-                        (assoc :connection-method method)
-                        (update-connection-secrets-manager-provider provider))
-                    (-> conn
-                        (assoc :connection-method method)
-                        (update-connection-metadata-credentials-source method)
-                        (update-connection-ssh-credentials-source method)
-                        (update-connection-kubernetes-token-source method)
-                        (update-connection-network-credentials-source method))))))))
+                  (-> conn
+                      (assoc :connection-method method)
+                      (update-connection-secrets-manager-provider provider)))))))
 
 (rf/reg-event-db
  :connection-setup/update-secrets-manager-provider

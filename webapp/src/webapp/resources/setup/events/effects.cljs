@@ -163,41 +163,33 @@
   (let [secrets-providers #{"vault-kv1" "vault-kv2" "aws-secrets-manager"}
         connection-method (:connection-method role "manual-input")
         is-secrets-manager? (= connection-method "secrets-manager")
+        target-source (if is-secrets-manager? provider "manual-input")
+        should-update-source? (fn [current-source]
+                                (if is-secrets-manager?
+                                  (or (nil? current-source)
+                                      (= current-source "manual-input")
+                                      (and (contains? secrets-providers current-source)
+                                           (not= current-source provider)))
+                                  (contains? secrets-providers current-source)))
+        update-value-source (fn [value]
+                              (let [current-source (when (map? value) (:source value))
+                                    raw-value (if (map? value)
+                                                (:value value)
+                                                (str value))]
+                                (if (should-update-source? current-source)
+                                  (let [normalized (connection-method/normalize-credential-value raw-value)]
+                                    {:value (:value normalized) :source target-source})
+                                  value)))
         update-env-var-source (fn [env-var]
-                                (let [value-map (:value env-var)
-                                      current-source (when (map? value-map) (:source value-map))
-                                      should-update? (or (contains? secrets-providers current-source)
-                                                         (and is-secrets-manager?
-                                                              (not= current-source "manual-input")))]
-                                  (if should-update?
-                                    (let [value-str (if (map? value-map)
-                                                      (:value value-map)
-                                                      (str value-map))
-                                          ;; Normalize to strip any existing prefix from the value string
-                                          normalized (connection-method/normalize-credential-value value-str)]
-                                      (assoc env-var :value
-                                             {:value (:value normalized) :source provider}))
-                                    env-var)))
-        update-env-current-value (fn [v]
-                                   (let [current-source (when (map? v) (:source v))
-                                         should-update? (or (contains? secrets-providers current-source)
-                                                            (and is-secrets-manager?
-                                                                 (not= current-source "manual-input")))]
-                                     (if should-update?
-                                       (let [raw-value (if (map? v)
-                                                         (:value v)
-                                                         (str v))
-                                             ;; Normalize to strip any existing prefix
-                                             normalized (connection-method/normalize-credential-value raw-value)]
-                                         {:value (:value normalized) :source provider})
-                                       v)))]
+                                (let [value-map (:value env-var)]
+                                  (assoc env-var :value (update-value-source value-map))))]
     (-> role
-        (assoc :secrets-manager-provider provider)
-        (update-role-credentials-source provider)
+        (assoc :secrets-manager-provider (if is-secrets-manager? provider (:secrets-manager-provider role)))
+        (update-role-credentials-source target-source)
         (update :environment-variables
                 (fn [env-vars]
                   (mapv update-env-var-source (or env-vars []))))
-        (update :env-current-value update-env-current-value))))
+        (update :env-current-value update-value-source))))
 
 (defn update-field-source-if-present
   "Updates the source for a field in a credentials map, preserving the value."
@@ -231,9 +223,12 @@
                     (-> role
                         (assoc :connection-method method)
                         (update-role-secrets-manager-provider provider))
-                    (-> role
-                        (assoc :connection-method method)
-                        (update-role-credentials-source method))))))))
+                    ;; When switching to non-secrets-manager, update credentials and env vars
+                    (let [updated-role (-> role
+                                           (assoc :connection-method method)
+                                           (update-role-credentials-source method))]
+                      ;; Update env vars: change any with secrets provider sources to manual-input
+                      (update-role-secrets-manager-provider updated-role provider))))))))
 
 (rf/reg-event-db
  :resource-setup->update-role-credentials
