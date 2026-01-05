@@ -601,13 +601,12 @@ type Session struct {
 }
 
 type ProvisionSession struct {
-	UserEmail         string                   `json:"user_email"`
+	UserEmail         string                   `json:"user_email" required:"true" example:"johnwick@bad.org"`
 	Script            string                   `json:"script"`
-	Connection        string                   `json:"connection"`
+	Connection        string                   `json:"connection" required:"true" example:"pgdemo"`
 	ApprovedReviewers []string                 `json:"approved_reviewers"`
 	EnvVars           map[string]string        `json:"env_vars"`
-	Labels            SessionLabelsType        `json:"labels"`
-	Duration          *int64                   `json:"duration"`
+	AccessDurationSec *int64                   `json:"access_duration_sec"`
 	Metadata          map[string]any           `json:"metadata"`
 	ClientArgs        []string                 `json:"client_args"`
 	JiraFields        map[string]string        `json:"jira_fields"`

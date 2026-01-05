@@ -37,19 +37,14 @@ func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, i
 }
 
 func (r *Router) OnlyApiKeyAccess(c *gin.Context) {
-	ctx, exists := c.Get(storagev2.ContextKey)
-	if !exists {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-		return
-	}
-	pctx, ok := ctx.(*storagev2.Context)
-	if !ok {
+	ctx := storagev2.ParseContext(c)
+	if ctx == nil {
 		log.Errorf("invalid context type")
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
 
-	if pctx.UserID != "API_KEY" {
+	if ctx.UserID != "API_KEY" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}

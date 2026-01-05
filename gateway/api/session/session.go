@@ -30,6 +30,7 @@ import (
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"github.com/hoophq/hoop/gateway/utils"
@@ -786,8 +787,8 @@ func Kill(c *gin.Context) {
 
 func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn *models.Connection, user *models.User, sessionInfo *openapi.ProvisionSession) (bool, error) {
 	var accessDuration time.Duration
-	if sessionInfo.Duration != nil {
-		accessDuration = time.Duration(*sessionInfo.Duration) * time.Second
+	if sessionInfo.AccessDurationSec != nil {
+		accessDuration = time.Duration(*sessionInfo.AccessDurationSec) * time.Second
 
 		if accessDuration.Hours() > 48 {
 			return false, fmt.Errorf("jit access input must not be greater than 48 hours")
@@ -810,8 +811,8 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 	// if no reviewers specified in the connection, default to "admin" group
 	// to be able to run the connection after approvals
 	if len(connectionReviewers) == 0 {
-		connectionReviewers = []string{"admin"}
-		approvedReviewers = []string{"admin"}
+		connectionReviewers = []string{types.GroupAdmin}
+		approvedReviewers = []string{types.GroupAdmin}
 	}
 
 	// if no approved reviewers specified, auto-approve all reviewers from the connection
@@ -978,7 +979,7 @@ func Provision(c *gin.Context) {
 	}
 
 	verb := proto.ClientVerbExec
-	if req.Duration != nil && *req.Duration > 0 {
+	if req.AccessDurationSec != nil && *req.AccessDurationSec > 0 {
 		verb = proto.ClientVerbConnect
 	}
 
@@ -986,7 +987,6 @@ func Provision(c *gin.Context) {
 	newSession := models.Session{
 		ID:                   sid,
 		OrgID:                ctx.OrgID,
-		Labels:               req.Labels,
 		Metadata:             req.Metadata,
 		IntegrationsMetadata: nil,
 		Metrics:              nil,
