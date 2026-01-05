@@ -32,6 +32,21 @@ async function initializeApp(rdpCredential) {
     const mod = await initWasm();
     console.log('App initialized.');
     const rdpCanvas = document.getElementById('rdp-canvas');
+    // Set rdpCanvas to fill screen
+    rdpCanvas.style.width = '100%';
+    rdpCanvas.style.height = '100%';
+    rdpCanvas.style.margin = '0px';
+    rdpCanvas.style.position = 'absolute';
+    rdpCanvas.style.top = '0px';
+    rdpCanvas.style.left = '0px';
+    document.body.style.margin = '0px';
+    document.body.overflow = 'hidden';
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    console.log(`Window Size: ${viewportWidth} x ${viewportHeight}`);
+    rdpCanvas.width = viewportWidth;
+    rdpCanvas.height = viewportHeight;
+    
     const RDP = new RemoteDesktopService(rdpCanvas, mod);
     window.RDP = RDP;
     const proxyAddr = (window.location.protocol === 'https:') ?

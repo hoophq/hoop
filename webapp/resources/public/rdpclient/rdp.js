@@ -1,6 +1,7 @@
 import { Observable } from './observable.js';
 import {scanCode} from './scancode.js';
 import * as wasmModule from "./pkg/ironrdp_web_bg.js";
+import {IronError} from "./pkg/ironrdp_web_bg.js";
 
 // Based on https://github.com/Devolutions/IronRDP/tree/master/web-client/iron-remote-desktop
 
@@ -44,8 +45,6 @@ export class Config {
 
 export class RemoteDesktopService {
 
-    sessionStartedObservable = new Observable();
-
     resizeObservable = new Observable();
 
     session = null;
@@ -55,12 +54,11 @@ export class RemoteDesktopService {
     changeVisibilityObservable = new Observable();
 
     dynamicResizeObservable = new Observable();
-    focused = false;
+    focused = true;
     
     constructor(rdpCanvas, mod) {
         this.module = mod;
         this.canvas = rdpCanvas;
-        this.canvas.style.border = '1px solid black';
         // Paint canvas black
         this.clearScreenAndWriteText('Loading...');
         
@@ -112,9 +110,8 @@ export class RemoteDesktopService {
         this.ctx.fillText(text, this.canvas.width / 2, this.canvas.height / 2);
     }
 
-    focusEventHandler(ev) {
-        console.log(ev)
-        this.focused = true;
+    focusEventHandler() {
+        this.focused = document.hasFocus();
     }
 
     initListeners() {
@@ -130,13 +127,21 @@ export class RemoteDesktopService {
 
         const captureKeys = (evt) => {
             if (this.focused) {
-                this.keyboardEvent(evt);
+                this.sendKeyboard(evt);
             }
         }
 
-        window.addEventListener('keydown', captureKeys, false);
-        window.addEventListener('keyup', captureKeys, false);
-        window.addEventListener('focus', this.focusEventHandler);
+        window.addEventListener('keydown', captureKeys);
+        window.addEventListener('keyup', captureKeys);
+        window.addEventListener('focus', (evt) => this.focusEventHandler(evt));
+        window.addEventListener('blur', (evt) => this.focusEventHandler(evt));
+        // Hook size change
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            console.log(`Canvas size changed to ${width}x${height}`);
+            this.resizeDynamic(width, height, 1);
+        });
     }
 
     getMousePos(evt) {
@@ -186,13 +191,6 @@ export class RemoteDesktopService {
 
     setMouseOut(evt) {
         this.mouseOut(evt);
-    }
-
-    keyboardEvent(evt) {
-        this.sendKeyboardEvent(evt);
-
-        // Propagate further
-        return true;
     }
 
     getWindowSize() {
@@ -252,10 +250,6 @@ export class RemoteDesktopService {
         this.releaseAllInputs();
     }
 
-    sendKeyboardEvent(evt) {
-        this.sendKeyboard(evt);
-    }
-
     shutdown() {
         this.session?.shutdown();
     }
@@ -295,11 +289,9 @@ export class RemoteDesktopService {
             sessionBuilder.forceClipboardUpdateCallback(this.onForceClipboardUpdate);
         }
 
-        if (config.desktopSize != null) {
-            sessionBuilder.desktopSize(
-                new this.module.DesktopSize(config.desktopSize.width, config.desktopSize.height),
-            );
-        }
+        sessionBuilder.desktopSize(
+            new this.module.DesktopSize(this.canvas.width, this.canvas.height),
+        );
 
         const session = await sessionBuilder.connect();
         this.initListeners();
@@ -309,8 +301,6 @@ export class RemoteDesktopService {
             desktopSize: session.desktopSize(),
             sessionId: 0,
         });
-
-        this.sessionStartedObservable.publish(null);
 
         const run = async () => {
             try {
@@ -332,12 +322,17 @@ export class RemoteDesktopService {
     }
 
     resizeDynamic(width, height, scale) {
-        this.dynamicResizeObservable.publish({ width, height });
+        /*
+        // UI supports dynamic resizing, but not our RDP Backend.
+        // This will trigger: `Display Control Virtual Channel is not available`
         try {
             this.session?.resize(width, height, scale);
+            this.canvas.width = width;
+            this.canvas.height = height;
+            this.dynamicResizeObservable.publish({ width, height });
         } catch (e) {
             this.reportError(e)
-        }
+        }*/
     }
 
     /// Triggered by the browser when local clipboard is updated. Clipboard backend should
@@ -418,7 +413,7 @@ export class RemoteDesktopService {
 
         let keyEvent;
         let unicodeEvent;
-
+        
         if (evt.type === 'keydown') {
             keyEvent = this.module.DeviceEvent.keyPressed;
             unicodeEvent = this.module.DeviceEvent.unicodePressed;
