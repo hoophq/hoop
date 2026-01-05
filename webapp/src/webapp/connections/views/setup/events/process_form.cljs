@@ -418,9 +418,6 @@
         network-connection-info (when (seq network-credentials)
                                   (connection-method/infer-connection-method network-credentials))
 
-        ;; Infer connection method from HTTP credentials (HTTP Proxy)
-        http-connection-info (when (seq http-credentials)
-                               (connection-method/infer-connection-method http-credentials))
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
                             (map? tags)
@@ -483,18 +480,8 @@
                                                     (str value))})
                                         config-files-raw))
 
-        env-vars-connection-info (when (or (= connection-type "custom")
-                                           (and (= connection-type "application")
-                                                (= connection-subtype "httpproxy")))
-                                   (let [env-vars-to-check (cond
-                                                             (= connection-type "custom")
-                                                             (process-connection-envvars (:secret connection) "envvar")
-
-                                                             (and (= connection-type "application")
-                                                                  (= connection-subtype "httpproxy"))
-                                                             http-env-vars
-
-                                                             :else [])
+        env-vars-connection-info (when (= connection-type "custom")
+                                   (let [env-vars-to-check (process-connection-envvars (:secret connection) "envvar")
                                          env-vars-map (reduce (fn [acc {:keys [key value]}]
                                                                 (if (map? value)
                                                                   (assoc acc (keyword key) value)
@@ -504,10 +491,24 @@
                                      (when (seq env-vars-map)
                                        (connection-method/infer-connection-method env-vars-map))))
 
+        http-connection-info (when (and (= connection-type "application")
+                                        (= connection-subtype "httpproxy")
+                                        (or (seq http-credentials) (seq http-env-vars)))
+                               (let [env-vars-map (when (seq http-env-vars)
+                                                    (reduce (fn [acc {:keys [key value]}]
+                                                              (if (map? value)
+                                                                (assoc acc (keyword key) value)
+                                                                (assoc acc (keyword key) {:value (str value) :source "manual-input"})))
+                                                            {}
+                                                            http-env-vars))
+                                     combined-credentials (merge http-credentials env-vars-map)]
+                                 (when (seq combined-credentials)
+                                   (connection-method/infer-connection-method combined-credentials))))
+
         inferred-connection-info (cond
                                    (seq normalized-credentials)
                                    (connection-method/infer-connection-method normalized-credentials)
-                                   
+
                                    http-connection-info
                                    http-connection-info
 
@@ -536,10 +537,10 @@
      :database-credentials (when (= connection-type "database")
                              (or normalized-credentials credentials))
      :metadata-credentials (when (or (= connection-type "database")
-                                    (and (or (= connection-type "custom") (= connection-type "database"))
-                                         connection-subtype
-                                         (seq (or normalized-credentials credentials))))
-                            (or normalized-credentials credentials))
+                                     (and (or (= connection-type "custom") (= connection-type "database"))
+                                          connection-subtype
+                                          (seq (or normalized-credentials credentials))))
+                             (or normalized-credentials credentials))
      :connection-method (if inferred-connection-info
                           (:connection-method inferred-connection-info)
                           "manual-input")
