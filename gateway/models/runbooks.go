@@ -131,6 +131,96 @@ func DeleteRunbookConfigurationByOrgID(db *gorm.DB, orgID string) error {
 	return db.Table("private.runbooks").Where("org_id = ?", orgID).Delete(&Runbooks{}).Error
 }
 
+// CreateRunbookConfigurationEntry creates a single runbook repository configuration entry
+// In case the resource doesn't exists, it creates a new one with the new entry
+func CreateRunbookConfigurationEntry(db *gorm.DB, orgID, repositoryKey string, newConfig *RunbookRepositoryConfig) error {
+	configJson, _ := json.Marshal(newConfig)
+	res := db.Exec(`
+	INSERT INTO private.runbooks as r (org_id, repository_configs)
+	VALUES ((@org_id)::UUID, JSONB_BUILD_OBJECT((@repository_key)::TEXT, (@config_json)::JSONB))
+	ON CONFLICT (org_id) DO UPDATE
+	SET
+		repository_configs = JSONB_SET(
+			COALESCE(r.repository_configs, '{}'::jsonb),
+			ARRAY[(@repository_key)::TEXT],
+			(@config_json)::jsonb
+		),
+		updated_at = NOW()
+		WHERE NOT JSONB_EXISTS(r.repository_configs, @repository_key)`,
+		map[string]any{
+			"org_id":         orgID,
+			"repository_key": repositoryKey,
+			"config_json":    string(configJson),
+		},
+	)
+	// it should only insert a new entry or add non existent config entries
+	if res.RowsAffected == 0 {
+		return ErrAlreadyExists
+	}
+	return res.Error
+}
+
+// UpdateRunbookConfigurationEntry updates an existing runbook repository configuration entry
+func UpdateRunbookConfigurationEntry(db *gorm.DB, orgID, repositoryKey string, newConfig *RunbookRepositoryConfig) error {
+	configJson, _ := json.Marshal(newConfig)
+	res := db.Exec(`
+		UPDATE private.runbooks
+		SET
+			repository_configs = JSONB_SET(
+				COALESCE(repository_configs, '{}'::JSONB),
+				ARRAY[(@repository_key)::TEXT],
+				(@config_json)::jsonb
+			),
+			updated_at = NOW()
+		WHERE org_id = @org_id
+		AND JSONB_EXISTS(repository_configs, @repository_key)`,
+		map[string]any{
+			"org_id":         orgID,
+			"repository_key": repositoryKey,
+			"config_json":    string(configJson),
+		})
+	// it should only update existing config
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
+// DeleteRunbookConfigurationEntry deletes an existing runbook repository configuration entry
+func DeleteRunbookConfigurationEntry(db *gorm.DB, orgID, id string) error {
+	res := db.Exec(`
+	UPDATE private.runbooks
+	SET
+		-- removes keys from JSONB object where the key matches the generated UUID from the git_url
+		repository_configs = repository_configs - (
+			SELECT key
+			FROM JSONB_EACH(repository_configs) AS entry(key, value)
+			WHERE private.uuid_generate_v5(
+				private.uuid_ns_url(),
+				value->>'git_url'
+			) = @git_url_id
+			LIMIT 1
+		),
+		updated_at = NOW()
+	WHERE org_id = @org_id
+	-- checks if a matching repository exists before attempting the update
+	AND EXISTS (
+		SELECT 1
+		FROM JSONB_EACH(repository_configs) AS entry(key, value)
+		WHERE private.uuid_generate_v5(
+			private.uuid_ns_url(),
+			value->>'git_url'
+		) = @git_url_id
+	)`, map[string]any{
+		"org_id":     orgID,
+		"git_url_id": id,
+	})
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
 func UpsertRunbookConfiguration(db *gorm.DB, runbooks *Runbooks) error {
 	tx := db.Table("private.runbooks").Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "org_id"}},

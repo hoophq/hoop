@@ -35,7 +35,6 @@ import (
 //	@Param			page					query		int			false	"Pagination page (default: 1)"
 //	@Param			limit					query		int			false	"Pagination limit (default: 100, max: 1000)"
 //	@Param			aggregated				query		bool		false	"Return aggregated metrics instead of detailed list"
-//	@Success		200						{object}	openapi.SessionMetricsListResponse
 //	@Failure		400,500					{object}	openapi.HTTPError
 //	@Router			/metrics/sessions [get]
 func Get(c *gin.Context) {

@@ -2044,14 +2044,15 @@ type RunbookRepository struct {
 	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
 	// Git SSH known hosts for host key verification
 	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
-	GitHookTTL    int    `json:"git_hook_ttl" example:"1000"`
+	// Enables runbook hooks when this value is greater than zero
+	GitHookTTL int `json:"git_hook_ttl" example:"1000"`
 }
 
 type RunbookRepositoryResponse struct {
 	// Git repository identifier in the format `host/owner/repo`
-	Repository string `json:"repository" binding:"required" example:"github.com/myorg/myrepo"`
+	Repository string `json:"repository" readonly:"true" example:"github.com/myorg/myrepo"`
 	// Git repository URL where the runbook is located
-	GitUrl string `json:"git_url" binding:"required" example:"https://github.com/myorg/myrepo"`
+	GitUrl string `json:"git_url" example:"https://github.com/myorg/myrepo"`
 	// Git username for repository authentication
 	GitUser string `json:"git_user" example:"myusername"`
 	// Git password or token for repository authentication
@@ -2064,7 +2065,8 @@ type RunbookRepositoryResponse struct {
 	SSHKeyPass string `json:"ssh_keypass" example:"mykeypassphrase"`
 	// Git SSH known hosts for host key verification
 	SSHKnownHosts string `json:"ssh_known_hosts" example:"github.com ssh-rsa AAAA..."`
-	GitHookTTL    int    `json:"git_hook_ttl" example:"1000"`
+	// Enables runbook hooks when this value is greater than zero
+	GitHookTTL int `json:"git_hook_ttl" example:"1000"`
 }
 
 type RunbookV2 struct {
@@ -2119,28 +2121,44 @@ type RunbookListV2 struct {
 }
 
 type RunbookRuleFile struct {
+	// The normalized name of the repository
 	Repository string `json:"repository" example:"github.com/myorg/myrepo"`
-	Name       string `json:"name" example:"ops/update-user.runbook.sh"`
+	// The relative git path of the runbook file
+	Name string `json:"name" example:"ops/update-user.runbook.sh"`
 }
 
 type RunbookRuleRequest struct {
-	Name        string            `json:"name" binding:"required" example:"Default Runbook Rules"`
-	Description string            `json:"description" example:"Runbook rules for production databases"`
-	Runbooks    []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
-	Connections []string          `json:"connections" binding:"required" example:"pgdemo,bash"`
-	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
+	// The name of the runbook rule
+	Name string `json:"name" binding:"required" example:"Default Runbook Rules"`
+	// The description of the runbook rule
+	Description string `json:"description" example:"Runbook rules for production databases"`
+	// The runbook files associated with this rule
+	Runbooks []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
+	// The connection names that this rule applies to
+	Connections []string `json:"connections" binding:"required" example:"pgdemo,bash"`
+	// The user groups names that can access this runbook rule
+	UserGroups []string `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
 }
 
 type RunbookRule struct {
-	ID          string            `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
-	OrgID       string            `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
-	Name        string            `json:"name" binding:"required" example:"Default Runbook Rules"`
-	Description string            `json:"description" example:"Runbook rules for production databases"`
-	Runbooks    []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
-	Connections []string          `json:"connections" binding:"required" example:"pgdemo,bash"`
-	UserGroups  []string          `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
-	CreatedAt   time.Time         `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
-	UpdatedAt   time.Time         `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The unique identifier of the runbook rule
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this runbook rule
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// The name of the runbook rule
+	Name string `json:"name" binding:"required" example:"Default Runbook Rules"`
+	// The description of the runbook rule
+	Description string `json:"description" example:"Runbook rules for production databases"`
+	// The runbook files associated with this rule
+	Runbooks []RunbookRuleFile `json:"runbooks" binding:"required,dive"`
+	// The connection names that this rule applies to
+	Connections []string `json:"connections" binding:"required" example:"pgdemo,bash"`
+	// The user groups names that can access this runbook rule
+	UserGroups []string `json:"user_groups" binding:"required" example:"dba-team,devops-team"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 type RunbookExec struct {
