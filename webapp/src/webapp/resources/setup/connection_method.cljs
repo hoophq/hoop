@@ -178,7 +178,7 @@
   [:> Flex {:align "center" :gap "1" :mt "1"}
    [:> Text {:size "2" :class "text-[--gray-11]"}
     "Learn more about AWS IAM Role setup in"]
-   [:> Link {:href (get-in config/docs-url [:setup :configuration :aws-iam-role])
+   [:> Link {:href (get-in config/docs-url [:setup :configuration :rds-iam-auth])
              :target "_blank"
              :class "inline-flex items-center"}
     [:> Text {:size "2"}
