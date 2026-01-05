@@ -1,6 +1,6 @@
 (ns webapp.components.forms
   (:require
-   ["@radix-ui/themes" :refer [Select Tooltip Text TextField Box Flex]]
+   ["@radix-ui/themes" :refer [Select Tooltip Text]]
    ["lucide-react" :refer [Eye EyeOff HelpCircle]]
    [clojure.string :as cs]
    [reagent.core :as r]))

@@ -167,6 +167,9 @@
                 update-connection-secrets-manager-provider
                 clean-provider))))
 
+(defn extract-credential-value [v]
+  (if (map? v) (:value v) (or v "")))
+
 (rf/reg-event-db
  :connection-setup/update-field-source
  (fn [db [_ field-key source]]
@@ -175,58 +178,33 @@
      (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
            field-key-str (name field-key)
            field-key-kw (keyword field-key-str)
-           ;; Try metadata-credentials first
-           metadata-credentials (get-in db [:connection-setup :metadata-credentials] {})
-           metadata-value (get metadata-credentials field-key)
-           ;; Try SSH credentials
-           ssh-credentials (get-in db [:connection-setup :ssh-credentials] {})
-           ssh-value (get ssh-credentials field-key-str)
-           ;; Try Kubernetes token
-           kubernetes-token (get-in db [:connection-setup :kubernetes-token] {})
-           kubernetes-value (get kubernetes-token field-key-kw)
-           updated-db (cond
-                        ;; Update metadata-credentials if field exists there
-                        (contains? metadata-credentials field-key)
+
+           credential-locations [{:path [:connection-setup :metadata-credentials]
+                                  :key field-key}
+                                 {:path [:connection-setup :ssh-credentials]
+                                  :key field-key-str}
+                                 {:path [:connection-setup :kubernetes-token]
+                                  :key field-key-kw}
+                                 {:path [:connection-setup :network-credentials]
+                                  :key field-key-kw}]
+
+           target-location (some (fn [{:keys [path key]}]
+                                   (when (contains? (get-in db path {}) key)
+                                     {:path path :key key}))
+                                 credential-locations)
+
+           updated-db (if target-location
+                        (let [{:keys [path key]} target-location
+                              existing-value (get-in db (conj path key))]
+                          (assoc-in db (conj path key)
+                                    {:value (extract-credential-value existing-value)
+                                     :source source}))
                         (assoc-in db [:connection-setup :metadata-credentials field-key]
-                                  {:value (if (map? metadata-value)
-                                            (:value metadata-value)
-                                            (or metadata-value ""))
-                                   :source source})
+                                  {:value "" :source source}))]
 
-                        ;; Update SSH credentials if field exists there
-                        (contains? ssh-credentials field-key-str)
-                        (assoc-in db [:connection-setup :ssh-credentials field-key-str]
-                                  {:value (if (map? ssh-value)
-                                            (:value ssh-value)
-                                            (or ssh-value ""))
-                                   :source source})
-
-                        ;; Update Kubernetes token if field exists there
-                        (contains? kubernetes-token field-key-kw)
-                        (assoc-in db [:connection-setup :kubernetes-token field-key-kw]
-                                  {:value (if (map? kubernetes-value)
-                                            (:value kubernetes-value)
-                                            (or kubernetes-value ""))
-                                   :source source})
-
-                        ;; Try network credentials
-                        :else
-                        (let [network-credentials (get-in db [:connection-setup :network-credentials] {})
-                              network-value (get network-credentials field-key-kw)]
-                          (if (contains? network-credentials field-key-kw)
-                            (assoc-in db [:connection-setup :network-credentials field-key-kw]
-                                      {:value (if (map? network-value)
-                                                (:value network-value)
-                                                (or network-value ""))
-                                       :source source})
-                            ;; Default to metadata-credentials
-                            (assoc-in db [:connection-setup :metadata-credentials field-key]
-                                      {:value ""
-                                       :source source}))))]
        (if (and is-secrets-provider?
                 (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
-         (update-in updated-db [:connection-setup]
-                    #(update-connection-secrets-manager-provider % source))
+         (update-in updated-db [:connection-setup] #(update-connection-secrets-manager-provider % source))
          updated-db)))))
 
 
