@@ -34,19 +34,21 @@
         connections-pagination (rf/subscribe [:connections->pagination])]
     (fn []
       (let [connections-loading? (= :loading (:loading @connections-pagination))]
-        [infinite-scroll
-         {:on-load-more (fn []
-                          (when (not connections-loading?)
-                            (let [current-page (:current-page @connections-pagination 1)
-                                  next-page (inc current-page)
-                                  next-request {:page next-page
-                                                :force-refresh? false}]
-                              (rf/dispatch [:connections/get-connections-paginated next-request]))))
-          :has-more? (:has-more? @connections-pagination)
-          :loading? connections-loading?}
-         [:> CommandGroup {:class "space-y-2"}
-          (for [connection @valid-connections]
-            ^{:key (:id connection)}
-            [connection-item
-             connection
-             (some #(= (:name %) (:name connection)) @selected-connections)])]]))))
+        [:> CommandGroup {:class "space-y-2"}
+         [infinite-scroll
+          {:on-load-more (fn []
+                           (when (not connections-loading?)
+                             (let [current-page (:current-page @connections-pagination 1)
+                                   next-page (inc current-page)
+                                   next-request {:page next-page
+                                                 :force-refresh? false}]
+                               (rf/dispatch [:connections/get-connections-paginated next-request]))))
+           :has-more? (:has-more? @connections-pagination)
+           :loading? connections-loading?}
+
+          (doall
+           (for [connection @valid-connections]
+             ^{:key (:name connection)}
+             [connection-item
+              connection
+              (some #(= (:name %) (:name connection)) @selected-connections)]))]]))))
