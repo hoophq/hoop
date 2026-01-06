@@ -602,7 +602,7 @@ func (o ConnectionFilterOption) ParseTagSelectorQuery() (selectorJsonData string
 func ListConnectionsNameForRunbooks(db *gorm.DB, orgID string) ([]string, error) {
 	var names []string
 	err := db.Table(tableConnections).
-		Where("org_id = ? AND access_mode_runbooks = enabled", orgID).
+		Where("org_id = ? AND access_mode_runbooks = 'enabled'", orgID).
 		Pluck("name", &names).Error
 	if err != nil {
 		return nil, err
