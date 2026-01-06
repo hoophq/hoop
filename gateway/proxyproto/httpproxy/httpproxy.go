@@ -597,7 +597,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		defer resp.Body.Close()
 		// Check if this is a WebSocket upgrade response
 		if resp.StatusCode == http.StatusSwitchingProtocols {
-			sess.handleWebSocketUpgraded(w, r, response, responseChan, connectionID)
+			sess.handleWebSocketUpgraded(w, response, responseChan, connectionID)
 			return
 		}
 		for key, values := range resp.Header {
@@ -612,7 +612,6 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 
 func (sess *httpProxySession) handleWebSocketUpgraded(
 	w http.ResponseWriter,
-	r *http.Request,
 	upgradeResponse []byte,
 	responseChan chan []byte,
 	connectionID string,
@@ -622,14 +621,17 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 	// Hijack the connection to get raw TCP access
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		log.Errorf("ResponseWriter does not support hijacking")
-		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
+		log.Infof("ResponseWriter does not support hijacking")
+		// adding internal server error because this could be some error from the upgrade on
+		// the agent side
+		http.Error(w, "WebSocket upgrade error", http.StatusInternalServerError)
 		return
 	}
 
 	conn, bufrw, err := hijacker.Hijack()
 	if err != nil {
-		log.Errorf("hijack failed: %v", err)
+		log.Infof("hijack failed: %v", err)
+		// error reading the tcp raw data
 		http.Error(w, "WebSocket upgrade failed", http.StatusInternalServerError)
 		return
 	}
@@ -646,14 +648,23 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 	ctx, cancel := context.WithCancel(sess.ctx)
 	defer cancel()
 
+	// doing this because i am starting 2 goroutines
+	// we need to be sure when both are done before returning and closing resources
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Client → Agent (read from client, send via gRPC)
+	// Client → Agent (read from client, send via gRPC to the agent)
 	go func() {
 		defer wg.Done()
 		defer cancel()
 
+		// this number was more a guess based on typical websocket frame sizes
+		// websocket frame size small < 16Kb, so 32Kb should be enough to cover most cases
+		// network tcp typically uses 1.5KB packets, 32KB = 21 packets, good size batch
+		// keep the memory small and efficient per connection
+		//System page size	32KB is a multiple of common page sizes (4KB, 8KB), better memory alignment.
+		//Kernel buffers	Default TCP socket buffers are often 64KB-128KB. 32KB reads don't oversaturate.
+		// 16Kb might be to small -> 64Kb might be to large and wasteful for many connections
 		buf := make([]byte, 32*1024)
 
 		// First, flush any buffered data from hijack
@@ -683,18 +694,22 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 			case <-ctx.Done():
 				return
 			default:
+				log.Infof("waiting for client data...")
 			}
 
+			// WebSocket spec recommends ping/pong every 30-60 seconds to detect dead connections
 			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 			n, err := conn.Read(buf)
 			if err != nil {
+				// Handle read errors (graceful exit on EOF)
 				if err != io.EOF && ctx.Err() == nil {
-					log.Debugf("client read error: %v", err)
+					log.Infof("client read error: %v exiting quietly", err)
 				}
 				return
 			}
 			if n > 0 {
 				if sess.closed.Load() {
+					log.Infof("session closed, stopping client read pump")
 					return
 				}
 				if err := sess.streamClient.Send(&pb.Packet{
@@ -705,14 +720,14 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 						pb.SpecClientConnectionID: []byte(connectionID),
 					},
 				}); err != nil {
-					log.Errorf("failed to send to agent: %v", err)
+					log.Infof("websocket failed to send data to agent: %v", err)
 					return
 				}
 			}
 		}
 	}()
 
-	// Agent → Client (read from responseChan, write to client)
+	// ReponseChan Agent → Client (read from responseChan, write to client)
 	go func() {
 		defer wg.Done()
 		defer cancel()
@@ -723,9 +738,10 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 				return
 			case data, ok := <-responseChan:
 				if !ok {
-					log.Debugf("response channel closed")
+					log.Warnf("agent websocket response channel closed")
 					return
 				}
+				//Pushing data to client (network should accept quickly)
 				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				if _, err := conn.Write(data); err != nil {
 					log.Errorf("failed to write to client: %v", err)
@@ -842,8 +858,6 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 				}
 			}
 			// Don't return - keep processing other connections!
-
-		
 
 		default:
 			// Unknown packet type, log and ignore
