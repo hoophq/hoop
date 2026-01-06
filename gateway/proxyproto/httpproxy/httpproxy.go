@@ -827,10 +827,23 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 				log.Warnf("no response channel found for connectionID=%s, sid=%s (response dropped)", connectionID, sess.sid)
 			}
 
-		case pbclient.TCPConnectionClose, pbclient.SessionClose:
+		case pbclient.SessionClose:
 			log.Infof("session closed by server, sid=%s", sess.sid)
 			sess.cancelFn("session closed by server")
 			return
+		// this is the case when the agent closes the connection
+		case pbclient.TCPConnectionClose:
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			log.Infof("connection closed by agent, connectionID=%s, sid=%s", connectionID, sess.sid)
+			// Close only this connection's response channel
+			if ch, ok := sess.responseStore.LoadAndDelete(connectionID); ok {
+				if responseChan, ok := ch.(chan []byte); ok {
+					close(responseChan)
+				}
+			}
+			// Don't return - keep processing other connections!
+
+		
 
 		default:
 			// Unknown packet type, log and ignore
