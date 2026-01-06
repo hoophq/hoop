@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
    ["lucide-react" :refer [Info]]
+   [clojure.edn :as edn]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -214,6 +215,55 @@
       :id "port"
       :logs (:port connection-credentials)}]]])
 
+(defn- http-proxy-credentials-fields
+  "Http proxy specific credentials fields"
+  [{:keys [command port proxy-token]}]
+
+  (let [{:keys [curl browser]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
+    [:> Box {:class "space-y-4"}
+
+   ;; Host
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Host"]
+      [logs/new-container
+       {:status :success
+        :id "hostname"
+        :logs (get-hostname)}]]
+     ;;Authorization token
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Authorization Header"]
+      [logs/new-container
+       {:status :success
+        :id "authtoken"
+        :logs proxy-token}]]
+     ;; Commands
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Command cURL"]
+      [logs/new-container
+       {:status :success
+        :id "command"
+        :logs curl}]]
+
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Command Browser"]
+      [logs/new-container
+       {:status :success
+        :id "command"
+        :logs browser}]]
+
+   ;; Port
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Port"]
+      [logs/new-container
+       {:status :success
+        :id "port"
+        :logs port}]]]))
+
 (defn- ssh-credentials-fields
   "SSH specific credentials fields"
   [connection-credentials]
@@ -263,6 +313,7 @@
      "postgres" [postgres-credentials-fields connection_credentials]
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
+     "httpproxy" [http-proxy-credentials-fields connection_credentials]
      [postgres-credentials-fields connection_credentials])])
 
 (defn- connect-uri-tab
@@ -373,6 +424,15 @@
 
           (= connection-type "aws-ssm")
           [aws-ssm-command-view native-client-access-data]
+
+          (= connection-type "httpproxy")
+          [:> Tabs.Root {:value @active-tab
+                         :onValueChange #(reset! active-tab %)}
+           [:> Tabs.List {:aria-label "Connection methods"}
+            [:> Tabs.Trigger {:value "credentials"} "Credentials"]]
+
+           [:> Tabs.Content {:value "credentials" :class "mt-4"}
+            [connect-credentials-tab native-client-access-data]]]
 
           :else
           [connect-credentials-tab native-client-access-data])]

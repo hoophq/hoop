@@ -126,4 +126,20 @@
                 {:placeholder "e.g. 13389"
                  :value (:rdp-proxy-port data)
                  :on-change #(rf/dispatch [:infrastructure->update-field
-                                           :rdp-proxy-port (-> % .-target .-value)])}]]]]]])))))
+                                           :rdp-proxy-port (-> % .-target .-value)])}]]]
+
+             [:> Grid {:columns "7" :gap "7"}
+              [:> Box {:grid-column "span 2 / span 2"}
+               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+                "Http Proxy Port"]
+               [:> Text {:size "3" :class "text-[--gray-11]"}
+                "Organization-wide default for local Http proxy port forwarding."]]
+
+              [:> Box {:grid-column "span 5 / span 5"}
+               [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}
+                "Http Proxy Port"]
+               [forms/input
+                {:placeholder "e.g. 13389"
+                 :value (:http-proxy-port data)
+                 :on-change #(rf/dispatch [:infrastructure->update-field
+                                           :http-proxy-port (-> % .-target .-value)])}]]]]]])))))
