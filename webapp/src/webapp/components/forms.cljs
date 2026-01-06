@@ -25,9 +25,11 @@
   Props signature:
   :label -> html label text;
   :placeholder -> html prop placeholder for input;
-  :value -> a reagent atom piece of state."
+  :value -> a reagent atom piece of state;
+  :start-adornment -> component to render as left adornment (e.g., select dropdown)."
   [_]
-  (let [eye-open? (r/atom true)]
+  (let [eye-open? (r/atom true)
+        toggle-eye #(swap! eye-open? not)]
     (fn [{:keys [label
                  placeholder
                  name
@@ -51,7 +53,8 @@
                  step
                  size
                  not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
-                 hidden]}]
+                 hidden
+                 start-adornment]}]
       [:div {:class (str "text-sm"
                          (when-not not-margin-bottom? " mb-regular")
                          (when full-width? " w-full")
@@ -72,6 +75,9 @@
                             "rt-r-size-3 ")
                           (when (= type "datetime-local") "*:block")
                           (when dark "dark"))}
+        (when start-adornment
+          [:div {:data-side "left" :class "rt-TextFieldSlot"}
+           start-adornment])
         [:input
          {:type (if (= type "password")
                   (if @eye-open? "password" "text")
@@ -103,7 +109,7 @@
                                    "3" "rt-r-size-2"
                                    "2" "rt-r-size-1"
                                    "rt-r-size-2"))
-                     :on-click #(swap! eye-open? not)}
+                     :on-click toggle-eye}
             (if @eye-open?
               [:> Eye {:size 16}]
               [:> EyeOff {:size 16}])]])]])))

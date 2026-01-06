@@ -94,20 +94,20 @@
              :size "6"
              :weight "bold"
              :class (str "cursor-pointer transition-colors "
-                         (if (= active-tab "roles")
-                           "text-gray-12"
-                           "text-gray-8 hover:text-gray-11"))
-             :onClick #(on-change "roles")}
-    "My Roles"]
-   [:> Text {:as "h2"
-             :size "6"
-             :weight "bold"
-             :class (str "cursor-pointer transition-colors "
                          (if (= active-tab "resources")
                            "text-gray-12"
                            "text-gray-8 hover:text-gray-11"))
              :onClick #(on-change "resources")}
-    "My Resources"]])
+    "My Resources"]
+   [:> Text {:as "h2"
+             :size "6"
+             :weight "bold"
+             :class (str "cursor-pointer transition-colors "
+                         (if (= active-tab "roles")
+                           "text-gray-12"
+                           "text-gray-8 hover:text-gray-11"))
+             :onClick #(on-change "roles")}
+    "My Roles"]])
 
 ;; Resources List Content (pure rendering, no infinite-scroll)
 (defn resources-list-content [resources-data user]

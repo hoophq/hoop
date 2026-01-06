@@ -4,7 +4,8 @@
    ["lucide-react" :refer [Plus]]
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.resources.setup.connection-method :as connection-method]))
 
 (defn valid-first-char? [value]
   (boolean (re-matches #"[A-Za-z]" value)))
@@ -97,7 +98,9 @@
 (defn environment-variables-section [role-index {:keys [title subtitle]}]
   (let [current-key @(rf/subscribe [:resource-setup/role-env-current-key role-index])
         current-value @(rf/subscribe [:resource-setup/role-env-current-value role-index])
-        env-vars @(rf/subscribe [:resource-setup/role-env-vars role-index])]
+        env-vars @(rf/subscribe [:resource-setup/role-env-vars role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        show-selector? (= connection-method "secrets-manager")]
     [:> Box {:class "space-y-4"}
      [:> Heading {:size "3"} (if title title "Environment variables")]
      [:> Text {:size "2" :color "gray"}
@@ -118,7 +121,9 @@
              :value value
              :type "password"
              :placeholder "* * * *"
-             :on-change #(rf/dispatch [:resource-setup->update-role-env-var role-index idx :value (-> % .-target .-value)])}]])])
+             :on-change #(rf/dispatch [:resource-setup->update-role-env-var role-index idx :value (-> % .-target .-value)])
+             :start-adornment (when show-selector?
+                                [connection-method/source-selector role-index (str "env-var-" idx)])}]])])
 
      [:> Grid {:columns "2" :gap "2"}
       [forms/input
@@ -131,7 +136,9 @@
         :placeholder "* * * *"
         :type "password"
         :value current-value
-        :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value role-index (-> % .-target .-value)])}]]
+        :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value role-index (-> % .-target .-value)])
+        :start-adornment (when show-selector?
+                           [connection-method/source-selector role-index "env-current-value"])}]]
 
      [:> Button
       {:size "2"

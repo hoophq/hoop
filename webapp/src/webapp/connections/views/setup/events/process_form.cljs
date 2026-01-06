@@ -1,17 +1,19 @@
 (ns webapp.connections.views.setup.events.process-form
   (:require
    [clojure.string :as str]
-   [re-frame.core :as rf]
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]
-   [webapp.connections.views.setup.tags-utils :as tags-utils]))
+   [webapp.resources.helpers :refer [get-secret-prefix]]
+   [webapp.resources.setup.events.process-form :as resource-process-form]
+   [webapp.connections.views.setup.tags-utils :as tags-utils]
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 (defn process-http-headers
   "Process HTTP headers by adding HEADER_ prefix to each key"
-  [headers]
+  [headers connection-method secrets-provider]
   (mapv (fn [{:keys [key value]}]
           {:key (str "HEADER_" key)
-           :value value})
+           :value (resource-process-form/extract-value value connection-method (keyword key) secrets-provider)})
         headers))
 
 ;; Create a new connection
@@ -42,7 +44,7 @@
 (defn filter-valid-tags
   "Remove tags que possuem key ou value vazios"
   [tags]
-  (filterv (fn [{:keys [key value label]}]
+  (filterv (fn [{:keys [key value]}]
              (and key
                   (not (str/blank? (if (string? key) key (str key))))
                   value
@@ -68,50 +70,116 @@
         guardrails (get-in db [:connection-setup :config :guardrails])
         jira-template-id (get-in db [:connection-setup :config :jira-template-id])
         metadata-credentials (get-in db [:connection-setup :metadata-credentials])
+        connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+        secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
         all-env-vars (cond
                        (= connection-subtype "kubernetes-token")
                        (let [kubernetes-token (get-in db [:connection-setup :kubernetes-token])
+                             cluster-url-value (get kubernetes-token :cluster_url)
+                             auth-value (get kubernetes-token :authorization)
+                             insecure-value (get kubernetes-token :insecure)
+                             cluster-url (resource-process-form/extract-value cluster-url-value connection-method :cluster_url secrets-provider)
+                             auth (resource-process-form/extract-value auth-value connection-method :authorization secrets-provider)
+                             auth-source (if (map? auth-value)
+                                           (:source auth-value)
+                                           (when (= connection-method "secrets-manager")
+                                             secrets-provider))
+                             is-manual-input? (= auth-source "manual-input")
+                             auth-with-bearer (if is-manual-input?
+                                                (if (str/starts-with? auth "Bearer ")
+                                                  auth
+                                                  (str "Bearer " auth))
+                                                auth)
                              kubernetes-token-env-vars (filterv #(not (str/blank? (:value %)))
-                                                                [{:key "REMOTE_URL" :value (:cluster_url kubernetes-token)}
-                                                                 {:key "HEADER_AUTHORIZATION" :value (str "Bearer " (:authorization kubernetes-token ""))}
-                                                                 {:key "INSECURE" :value (:insecure kubernetes-token)}])]
+                                                                [{:key "REMOTE_URL" :value cluster-url}
+                                                                 {:key "HEADER_AUTHORIZATION" :value auth-with-bearer}
+                                                                 {:key "INSECURE" :value (if (map? insecure-value)
+                                                                                           (:value insecure-value)
+                                                                                           (str insecure-value))}])]
                          kubernetes-token-env-vars)
 
                        (and (or (= ui-type "custom") (= ui-type "database"))
                             connection-subtype
+                            (not= connection-subtype "linux-vm")
                             (seq metadata-credentials))
-                       (let [credentials-as-env-vars (mapv (fn [[field-key field-value]]
-                                                             {:key (name field-key)
-                                                              :value field-value})
-                                                           (seq metadata-credentials))]
+                       (let [connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+                             is-aws-iam-role? (= connection-method "aws-iam-role")
+                             ;; For AWS IAM Role, always ensure PASS field is set to "authtoken"
+                             metadata-credentials-with-pass (if is-aws-iam-role?
+                                                              (let [pass-key (or (first (filter #(= (str/lower-case (name %)) "pass") (keys metadata-credentials)))
+                                                                                 "PASS")]
+                                                                (assoc (or metadata-credentials {}) pass-key {:value "authtoken" :source "aws-iam-role"}))
+                                                              metadata-credentials)
+                             credentials-as-env-vars (mapv (fn [[field-key field-value]]
+                                                             (let [{:keys [value source]} (connection-method/normalize-credential-value field-value)
+                                                                   field-key-lower (str/lower-case (name field-key))
+                                                                   is-user-or-pass? (or (= field-key-lower "user") (= field-key-lower "pass"))
+                                                                   prefix (when source (get-secret-prefix source))
+                                                                   final-value (cond
+                                                                                 ;; AWS IAM Role: apply _aws_iam_rds: prefix to user/pass
+                                                                                 (and is-aws-iam-role? is-user-or-pass?)
+                                                                                 (str "_aws_iam_rds:" value)
+                                                                                 ;; For non-AWS IAM Role, apply prefix if present
+                                                                                 (and (not is-aws-iam-role?) (seq prefix))
+                                                                                 (str prefix value)
+                                                                                 :else
+                                                                                 value)]
+                                                               {:key (name field-key)
+                                                                :value final-value}))
+                                                           (seq metadata-credentials-with-pass))]
                          credentials-as-env-vars)
 
                        (= connection-subtype "tcp")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
-                             tcp-env-vars [{:key "HOST" :value (:host network-credentials)}
-                                           {:key "PORT" :value (:port network-credentials)}]]
-                         (concat tcp-env-vars env-vars))
+                             host-value (get network-credentials :host)
+                             port-value (get network-credentials :port)
+                             host (resource-process-form/extract-value host-value connection-method :host secrets-provider)
+                             port (resource-process-form/extract-value port-value connection-method :port secrets-provider)
+                             tcp-env-vars (filterv #(not (str/blank? (:value %)))
+                                                   [{:key "HOST" :value host}
+                                                    {:key "PORT" :value port}])
+                             processed-env-vars (mapv (fn [{:keys [key value]}]
+                                                        {:key key
+                                                         :value (resource-process-form/extract-value value connection-method (keyword key) secrets-provider)})
+                                                      env-vars)]
+                         (concat tcp-env-vars processed-env-vars))
 
                        (= connection-subtype "httpproxy")
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
-                             insecure-value (if (:insecure network-credentials) "true" "false")
-                             http-env-vars [{:key "REMOTE_URL" :value (:remote_url network-credentials)}
-                                            {:key "INSECURE" :value insecure-value}]
+                             remote-url-value (get network-credentials :remote_url)
+                             insecure-value (get network-credentials :insecure)
+                             remote-url (resource-process-form/extract-value remote-url-value connection-method :remote_url secrets-provider)
+                             insecure-str (if (map? insecure-value)
+                                            (:value insecure-value)
+                                            (if (boolean? insecure-value)
+                                              (str insecure-value)
+                                              (if insecure-value "true" "false")))
+                             http-env-vars (filterv #(not (str/blank? (:value %)))
+                                                    [{:key "REMOTE_URL" :value remote-url}
+                                                     {:key "INSECURE" :value insecure-str}])
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])
-                             processed-headers (process-http-headers headers)]
+                             processed-headers (process-http-headers headers connection-method secrets-provider)]
                          (concat http-env-vars processed-headers))
 
                        (= connection-subtype "ssh")
                        (let [ssh-credentials (get-in db [:connection-setup :ssh-credentials])
+                             host-value (get ssh-credentials "host")
+                             port-value (get ssh-credentials "port")
+                             user-value (get ssh-credentials "user")
+                             pass-value (get ssh-credentials "pass")
+                             keys-value (get ssh-credentials "authorized_server_keys")
                              ssh-env-vars (filterv #(not (str/blank? (:value %)))
-                                                   [{:key "HOST" :value (get ssh-credentials "host")}
-                                                    {:key "PORT" :value (get ssh-credentials "port")}
-                                                    {:key "USER" :value (get ssh-credentials "user")}
-                                                    {:key "PASS" :value (get ssh-credentials "pass")}
-                                                    {:key "AUTHORIZED_SERVER_KEYS" :value (get ssh-credentials "authorized_server_keys")}])]
+                                                   [{:key "HOST" :value (resource-process-form/extract-value host-value connection-method "host" secrets-provider)}
+                                                    {:key "PORT" :value (resource-process-form/extract-value port-value connection-method "port" secrets-provider)}
+                                                    {:key "USER" :value (resource-process-form/extract-value user-value connection-method "user" secrets-provider)}
+                                                    {:key "PASS" :value (resource-process-form/extract-value pass-value connection-method "pass" secrets-provider)}
+                                                    {:key "AUTHORIZED_SERVER_KEYS" :value (resource-process-form/extract-value keys-value connection-method "authorized_server_keys" secrets-provider)}])]
                          (concat ssh-env-vars env-vars))
 
-                       :else env-vars)
+                       :else (mapv (fn [{:keys [key value]}]
+                                     {:key key
+                                      :value (resource-process-form/extract-value value connection-method (keyword key) secrets-provider)})
+                                   env-vars))
 
         secret (clj->js
                 (merge
@@ -221,8 +289,10 @@
     (reduce-kv (fn [acc k v]
                  (if (str/starts-with? (name k) secret-start-name)
                    (let [clean-key (-> (name k)
-                                       (str/replace secret-start-name ""))]
-                     (conj acc {:key clean-key :value (decode-base64 v)}))
+                                       (str/replace secret-start-name ""))
+                         decoded-value (decode-base64 v)
+                         normalized (connection-method/normalize-credential-value decoded-value)]
+                     (conj acc {:key clean-key :value normalized}))
                    acc))
                []
                secret)))
@@ -243,32 +313,58 @@
                  "label" name})))))
 
 (defn extract-network-credentials
-  "Retrieves HOST and PORT from secrets for network credentials"
+  "Retrieves and normalizes HOST and PORT from secrets for network credentials"
   [credentials]
-  {:host (get credentials "HOST")
-   :port (get credentials "PORT")})
+  (let [host-value (get credentials "HOST")
+        port-value (get credentials "PORT")
+        normalized-host (connection-method/normalize-credential-value host-value)
+        normalized-port (connection-method/normalize-credential-value port-value)]
+    {:host normalized-host
+     :port normalized-port}))
 
 (defn extract-ssh-credentials
-  "Retrieves HOST, PORT, USER, PASS and AUTHORIZED_SERVER_KEYS from secrets for ssh credentials"
+  "Retrieves and normalizes HOST, PORT, USER, PASS and AUTHORIZED_SERVER_KEYS from secrets for ssh credentials"
   [credentials]
-  {"host" (get credentials "HOST")
-   "port" (get credentials "PORT")
-   "user" (get credentials "USER")
-   "pass" (get credentials "PASS")
-   "authorized_server_keys" (get credentials "AUTHORIZED_SERVER_KEYS")})
+  (let [host-value (get credentials "HOST")
+        port-value (get credentials "PORT")
+        user-value (get credentials "USER")
+        pass-value (get credentials "PASS")
+        keys-value (get credentials "AUTHORIZED_SERVER_KEYS")
+        auth-method-value (get credentials "AUTH-METHOD")]
+    {"host" (connection-method/normalize-credential-value host-value)
+     "port" (connection-method/normalize-credential-value port-value)
+     "user" (connection-method/normalize-credential-value user-value)
+     "pass" (connection-method/normalize-credential-value pass-value)
+     "authorized_server_keys" (connection-method/normalize-credential-value keys-value)
+     "auth-method" (connection-method/normalize-credential-value auth-method-value)}))
 
 (defn extract-http-credentials
-  "Retrieves remote_url and insecure flag from secrets for http credentials"
+  "Retrieves and normalizes remote_url and insecure flag from secrets for http credentials"
   [credentials]
-  {:remote_url (get credentials "REMOTE_URL")
-   :insecure (= (get credentials "INSECURE") "true")})
+  (let [remote-url-value (get credentials "REMOTE_URL")
+        normalized-remote-url (connection-method/normalize-credential-value remote-url-value)
+        insecure-value (get credentials "INSECURE")]
+    {:remote_url normalized-remote-url
+     :insecure (if (string? insecure-value)
+                 (= insecure-value "true")
+                 (boolean insecure-value))}))
 
 (defn extract-kubernetes-token-credentials
-  "Retrieves remote_url, authorization and insecure flag from secrets for http credentials"
+  "Retrieves and normalizes remote_url, authorization and insecure flag from secrets for kubernetes credentials"
   [credentials]
-  {:cluster_url (get credentials "REMOTE_URL")
-   :authorization (subs (get credentials "HEADER_AUTHORIZATION") 7)
-   :insecure (= (get credentials "INSECURE") "true")})
+  (let [auth-header (get credentials "HEADER_AUTHORIZATION" "")
+        auth-value (if (str/starts-with? auth-header "Bearer ")
+                     (subs auth-header 7)
+                     auth-header)
+        cluster-url-value (get credentials "REMOTE_URL")
+        normalized-cluster-url (connection-method/normalize-credential-value cluster-url-value)
+        normalized-authorization (connection-method/normalize-credential-value auth-value)
+        insecure-value (get credentials "INSECURE")]
+    {:cluster_url normalized-cluster-url
+     :authorization normalized-authorization
+     :insecure (if (string? insecure-value)
+                 (= insecure-value "true")
+                 (boolean insecure-value))}))
 
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
@@ -294,13 +390,34 @@
                                     (= connection-subtype "kubernetes-token"))
                            (extract-kubernetes-token-credentials credentials))
         ssh-auth-method (when ssh-credentials
-                          (cond
-                            (and (not (empty? (get ssh-credentials "authorized_server_keys")))
-                                 (empty? (get ssh-credentials "pass"))) "key"
-                            (and (not (empty? (get ssh-credentials "pass")))
-                                 (empty? (get ssh-credentials "authorized_server_keys"))) "password"
-                            (not (empty? (get ssh-credentials "authorized_server_keys"))) "key"
-                            :else "password"))
+                          (let [keys-cred (get ssh-credentials "authorized_server_keys")
+                                pass-cred (get ssh-credentials "pass")
+                                keys-value (if (map? keys-cred)
+                                             (:value keys-cred)
+                                             keys-cred)
+                                pass-value (if (map? pass-cred)
+                                             (:value pass-cred)
+                                             pass-cred)
+                                has-keys? (and keys-value (not (str/blank? (str keys-value))))
+                                has-pass? (and pass-value (not (str/blank? (str pass-value))))]
+                            (cond
+                              (and has-keys? (not has-pass?)) "key"
+                              (and has-pass? (not has-keys?)) "password"
+                              has-keys? "key"
+                              :else "password")))
+
+        ;; Infer connection method from SSH credentials
+        ssh-connection-info (when (seq ssh-credentials)
+                              (connection-method/infer-connection-method ssh-credentials))
+
+        ;; Infer connection method from Kubernetes token
+        kubernetes-connection-info (when (seq kubernetes-token)
+                                     (connection-method/infer-connection-method kubernetes-token))
+
+        ;; Infer connection method from network credentials (TCP)
+        network-connection-info (when (seq network-credentials)
+                                  (connection-method/infer-connection-method network-credentials))
+
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
                             (map? tags)
@@ -343,7 +460,73 @@
         connection-subtype (:subtype connection)
         is-custom-with-override? (and (= connection-type "custom")
                                       (contains? #{"dynamodb" "cloudwatch"} connection-subtype))
-        resource-subtype-override (when is-custom-with-override? connection-subtype)]
+        resource-subtype-override (when is-custom-with-override? connection-subtype)
+
+        needs-normalization? (or (= connection-type "database")
+                                 is-metadata-driven?)
+        normalized-credentials (when needs-normalization?
+                                 (connection-method/normalize-credentials credentials))
+        config-files-raw (when (or (= connection-type "custom")
+                                   (= connection-type "database"))
+                           (process-connection-envvars (:secret connection) "filesystem"))
+        normalized-config-files (when config-files-raw
+                                  (mapv (fn [{:keys [key value]}]
+                                          {:key key
+                                           :value (if (map? value)
+                                                    (let [inner-value (:value value)]
+                                                      (if (map? inner-value)
+                                                        (str (:value inner-value))
+                                                        (str inner-value)))
+                                                    (str value))})
+                                        config-files-raw))
+
+        env-vars-connection-info (when (= connection-type "custom")
+                                   (let [env-vars-to-check (process-connection-envvars (:secret connection) "envvar")
+                                         env-vars-map (reduce (fn [acc {:keys [key value]}]
+                                                                (if (map? value)
+                                                                  (assoc acc (keyword key) value)
+                                                                  (assoc acc (keyword key) {:value (str value) :source "manual-input"})))
+                                                              {}
+                                                              env-vars-to-check)]
+                                     (when (seq env-vars-map)
+                                       (connection-method/infer-connection-method env-vars-map))))
+
+        http-connection-info (when (and (= connection-type "application")
+                                        (= connection-subtype "httpproxy")
+                                        (or (seq http-credentials) (seq http-env-vars)))
+                               (let [env-vars-map (when (seq http-env-vars)
+                                                    (reduce (fn [acc {:keys [key value]}]
+                                                              (if (map? value)
+                                                                (assoc acc (keyword key) value)
+                                                                (assoc acc (keyword key) {:value (str value) :source "manual-input"})))
+                                                            {}
+                                                            http-env-vars))
+                                     combined-credentials (merge http-credentials env-vars-map)]
+                                 (when (seq combined-credentials)
+                                   (connection-method/infer-connection-method combined-credentials))))
+
+        inferred-connection-info (cond
+                                   (seq normalized-credentials)
+                                   (connection-method/infer-connection-method normalized-credentials)
+
+                                   http-connection-info
+                                   http-connection-info
+
+                                   env-vars-connection-info
+                                   env-vars-connection-info
+
+                                   ssh-connection-info
+                                   ssh-connection-info
+
+                                   kubernetes-connection-info
+                                   kubernetes-connection-info
+
+                                   network-connection-info
+                                   network-connection-info
+
+                                   :else
+                                   {:connection-method "manual-input"
+                                    :secrets-manager-provider nil})]
 
     {:type connection-type
      :subtype (if is-custom-with-override? "custom" connection-subtype)
@@ -351,8 +534,18 @@
      :resource-name (:resource_name connection)
      :agent-id (:agent_id connection)
      :resource-subtype-override resource-subtype-override
-     :database-credentials (when (= connection-type "database") credentials)
-     :metadata-credentials credentials
+     :database-credentials (when (= connection-type "database")
+                             (or normalized-credentials credentials))
+     :metadata-credentials (when (or (= connection-type "database")
+                                     (and (or (= connection-type "custom") (= connection-type "database"))
+                                          connection-subtype
+                                          (seq (or normalized-credentials credentials))))
+                             (or normalized-credentials credentials))
+     :connection-method (if inferred-connection-info
+                          (:connection-method inferred-connection-info)
+                          "manual-input")
+     :secrets-manager-provider (when inferred-connection-info
+                                 (:secrets-manager-provider inferred-connection-info))
      :network-credentials (or network-credentials http-credentials)
      :ssh-credentials ssh-credentials
      :kubernetes-token kubernetes-token
@@ -363,18 +556,10 @@
      :command-args (if (empty? (:command connection))
                      []
                      (mapv #(hash-map "value" % "label" %) (:command connection)))
-     :environment-variables (cond
-                              (= connection-type "custom")
-                              (process-connection-envvars (:secret connection) "envvar")
-
-                              (and (= connection-type "application")
-                                   (= connection-subtype "httpproxy"))
-                              http-env-vars
-
-                              :else [])
-     :configuration-files (when (or (= connection-type "custom")
-                                    (= connection-type "database"))
-                            (process-connection-envvars (:secret connection) "filesystem"))
+     :configuration-files (or normalized-config-files
+                              (when (or (= connection-type "custom")
+                                        (= connection-type "database"))
+                                (process-connection-envvars (:secret connection) "filesystem")))
      :credentials {:environment-variables (cond
                                             (= connection-type "custom")
                                             (process-connection-envvars (:secret connection) "envvar")
@@ -384,9 +569,10 @@
                                             http-env-vars
 
                                             :else [])
-                   :configuration-files (when (or (= connection-type "custom")
-                                                  (= connection-type "database"))
-                                          (process-connection-envvars (:secret connection) "filesystem"))}
+                   :configuration-files (or normalized-config-files
+                                            (when (or (= connection-type "custom")
+                                                      (= connection-type "database"))
+                                              (process-connection-envvars (:secret connection) "filesystem")))}
      :tags {:data valid-tags}
      :old-tags (:tags connection)
 

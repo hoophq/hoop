@@ -2,7 +2,8 @@
   (:require
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.connections.views.setup.tags-utils :as tags-utils]))
+   [webapp.connections.views.setup.tags-utils :as tags-utils]
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 ;; Basic db updates
 (rf/reg-event-fx
@@ -29,24 +30,23 @@
 
 ;; Network specific events
 (rf/reg-event-db
- :connection-setup/update-network-host
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :host] value)))
-
-(rf/reg-event-db
- :connection-setup/update-network-port
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :port] value)))
-
-(rf/reg-event-db
- :connection-setup/update-network-remote-url
- (fn [db [_ value]]
-   (assoc-in db [:connection-setup :network-credentials :remote_url] value)))
+ :connection-setup/update-network-credentials
+ (fn [db [_ field value]]
+   (let [field-key (keyword field)
+         current-value (get-in db [:connection-setup :network-credentials field-key])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :network-credentials field-key] new-value))))
 
 (rf/reg-event-db
  :connection-setup/toggle-network-insecure
  (fn [db [_ enabled?]]
-   (assoc-in db [:connection-setup :network-credentials :insecure] enabled?)))
+   (assoc-in db [:connection-setup :network-credentials :insecure] (boolean enabled?))))
 
 ;; Database specific events
 (rf/reg-event-db
@@ -55,10 +55,146 @@
    (assoc-in db [:connection-setup :database-credentials field] value)))
 
 ;; Metadata-driven specific events
+(defn update-credentials-source
+  "Helper function to update all credentials in a map to use the given source, preserving values."
+  [credentials-map source]
+  (update-vals (or credentials-map {})
+               (fn [v]
+                 (let [raw-value (if (map? v) (:value v) v)
+                       normalized (connection-method/normalize-credential-value raw-value)]
+                   {:value (:value normalized)
+                    :source source}))))
+
+(defn update-connection-metadata-credentials-source
+  "Updates all metadata-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :metadata-credentials #(update-credentials-source % source)))
+
+(defn update-connection-ssh-credentials-source
+  "Updates all ssh-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :ssh-credentials #(update-credentials-source % source)))
+
+(defn update-connection-kubernetes-token-source
+  "Updates all kubernetes-token to use the given source, preserving values."
+  [conn source]
+  (update conn :kubernetes-token #(update-credentials-source % source)))
+
+(defn update-connection-network-credentials-source
+  "Updates all network-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :network-credentials #(update-credentials-source % source)))
+
+(defn update-connection-secrets-manager-provider
+  "Updates the secrets manager provider and all credentials sources."
+  [conn provider]
+  (let [secrets-providers #{"vault-kv1" "vault-kv2" "aws-secrets-manager"}
+        connection-method (:connection-method conn "manual-input")
+        is-secrets-manager? (= connection-method "secrets-manager")
+        target-source (if is-secrets-manager? provider "manual-input")
+        should-update-source? (fn [current-source]
+                                (if is-secrets-manager?
+                                  (or (nil? current-source)
+                                      (= current-source "manual-input")
+                                      (and (contains? secrets-providers current-source)
+                                           (not= current-source provider)))
+                                  (contains? secrets-providers current-source)))
+        update-value-source (fn [value]
+                             (let [current-source (when (map? value) (:source value))
+                                   raw-value (if (map? value)
+                                               (:value value)
+                                               (str value))]
+                               (if (should-update-source? current-source)
+                                 (let [normalized (connection-method/normalize-credential-value raw-value)]
+                                   {:value (:value normalized) :source target-source})
+                                 value)))
+        update-env-var-source (fn [env-var]
+                                (let [value-map (:value env-var)]
+                                  (assoc env-var :value (update-value-source value-map))))]
+    (-> conn
+        (assoc :secrets-manager-provider (if is-secrets-manager? provider (:secrets-manager-provider conn)))
+        (update-connection-metadata-credentials-source target-source)
+        (update-connection-ssh-credentials-source target-source)
+        (update-connection-kubernetes-token-source target-source)
+        (update-connection-network-credentials-source target-source)
+        (update-in [:credentials :environment-variables]
+                   (fn [env-vars]
+                     (mapv update-env-var-source (or env-vars []))))
+        (update-in [:credentials :current-value] update-value-source))))
+
 (rf/reg-event-db
  :connection-setup/update-metadata-credentials
  (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :metadata-credentials field] value)))
+   (let [current-value (get-in db [:connection-setup :metadata-credentials field])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :metadata-credentials field] new-value))))
+
+(rf/reg-event-db
+ :connection-setup/update-connection-method
+ (fn [db [_ method]]
+   (let [current-provider (get-in db [:connection-setup :secrets-manager-provider])
+         provider (if (str/blank? current-provider) "vault-kv1" current-provider)]
+     (update-in db [:connection-setup]
+                (fn [conn]
+                  (-> conn
+                      (assoc :connection-method method)
+                      (update-connection-secrets-manager-provider provider)))))))
+
+(rf/reg-event-db
+ :connection-setup/update-secrets-manager-provider
+ (fn [db [_ provider]]
+   (let [clean-provider (if (str/blank? provider) "vault-kv1" provider)]
+     (update-in db [:connection-setup]
+                update-connection-secrets-manager-provider
+                clean-provider))))
+
+(defn extract-credential-value [v]
+  (if (map? v) (:value v) (or v "")))
+
+(rf/reg-event-db
+ :connection-setup/update-field-source
+ (fn [db [_ field-key source]]
+   (if (str/blank? source)
+     db
+     (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+           field-key-str (name field-key)
+           field-key-kw (keyword field-key-str)
+
+           credential-locations [{:path [:connection-setup :metadata-credentials]
+                                  :key field-key}
+                                 {:path [:connection-setup :ssh-credentials]
+                                  :key field-key-str}
+                                 {:path [:connection-setup :kubernetes-token]
+                                  :key field-key-kw}
+                                 {:path [:connection-setup :network-credentials]
+                                  :key field-key-kw}]
+
+           target-location (some (fn [{:keys [path key]}]
+                                   (when (contains? (get-in db path {}) key)
+                                     {:path path :key key}))
+                                 credential-locations)
+
+           updated-db (if target-location
+                        (let [{:keys [path key]} target-location
+                              existing-value (get-in db (conj path key))]
+                          (assoc-in db (conj path key)
+                                    {:value (extract-credential-value existing-value)
+                                     :source source}))
+                        (assoc-in db [:connection-setup :metadata-credentials field-key]
+                                  {:value "" :source source}))]
+
+       (if (and is-secrets-provider?
+                (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
+         (update-in updated-db [:connection-setup] #(update-connection-secrets-manager-provider % source))
+         updated-db)))))
+
+
 
 ;; Configuration toggles
 (rf/reg-event-db
@@ -131,17 +267,23 @@
  :connection-setup/add-env-row
  (fn [db [_]]
    (let [current-key (get-in db [:connection-setup :credentials :current-key])
-         current-value (get-in db [:connection-setup :credentials :current-value])]
+         current-value-map (get-in db [:connection-setup :credentials :current-value])
+         current-value (if (map? current-value-map) (:value current-value-map) current-value-map)
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
      (if (and (not (empty? current-key))
               (not (empty? current-value)))
        (-> db
            (update-in [:connection-setup :credentials :environment-variables]
                       (fn [value]
                         (if (seq value)
-                          (conj value {:key current-key :value current-value})
-                          [{:key current-key :value current-value}])))
+                          (conj value {:key current-key :value current-value-map})
+                          [{:key current-key :value current-value-map}])))
            (assoc-in [:connection-setup :credentials :current-key] "")
-           (assoc-in [:connection-setup :credentials :current-value] ""))
+           (assoc-in [:connection-setup :credentials :current-value] {:value "" :source default-source}))
        db))))
 
 (rf/reg-event-db
@@ -152,12 +294,60 @@
 (rf/reg-event-db
  :connection-setup/update-env-current-value
  (fn [db [_ value]]
-   (assoc-in db [:connection-setup :credentials :current-value] value)))
+   (let [existing-value (get-in db [:connection-setup :credentials :current-value])
+         existing-source (when (map? existing-value) (:source existing-value))
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         ;; Preserve existing source if it's a secrets provider, otherwise infer
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :credentials :current-value] new-value))))
 
 (rf/reg-event-db
  :connection-setup/update-env-var
  (fn [db [_ index field value]]
-   (assoc-in db [:connection-setup :credentials :environment-variables index field] value)))
+   (if (= field :value)
+     (let [connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+           secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+           existing-value (get-in db [:connection-setup :credentials :environment-variables index :value])
+           existing-source (when (map? existing-value) (:source existing-value))
+           inferred-source (or existing-source
+                               (when (= connection-method "secrets-manager") secrets-provider)
+                               "manual-input")
+           new-value {:value (str value) :source inferred-source}]
+       (assoc-in db [:connection-setup :credentials :environment-variables index field] new-value))
+     (assoc-in db [:connection-setup :credentials :environment-variables index field] value))))
+
+(defn update-env-value-source
+  [db value-path source]
+  (if (str/blank? source)
+    db
+    (let [is-secrets-provider? (contains? #{"vault-kv1" "vault-kv2" "aws-secrets-manager"} source)
+          updated-db (update-in db value-path
+                                (fn [v]
+                                  (let [value-str (if (map? v) (:value v) (str v))]
+                                    {:value value-str :source source})))]
+      (if (and is-secrets-provider?
+               (not= (get-in updated-db [:connection-setup :secrets-manager-provider]) source))
+        (update-in updated-db [:connection-setup]
+                   #(update-connection-secrets-manager-provider % source))
+        updated-db))))
+
+(rf/reg-event-db
+ :connection-setup/update-env-var-source
+ (fn [db [_ var-index source]]
+   (update-env-value-source db
+                            [:connection-setup :credentials :environment-variables var-index :value]
+                            source)))
+
+(rf/reg-event-db
+ :connection-setup/update-env-current-value-source
+ (fn [db [_ source]]
+   (update-env-value-source db
+                            [:connection-setup :credentials :current-value]
+                            source)))
 
 ;; Resource Subtype Override events
 (rf/reg-event-db
@@ -206,7 +396,7 @@
        (assoc-in db [:connection-setup :credentials :configuration-files existing-index :value] value)
        (update-in db [:connection-setup :credentials :configuration-files]
                   (fnil conj [])
-                  {:key file-key :value value})))))
+                  {:key file-key :value (str value)})))))
 
 ;; Navigation events
 (rf/reg-event-db
@@ -310,7 +500,15 @@
 (rf/reg-event-db
  :connection-setup/update-ssh-credentials
  (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :ssh-credentials field] value)))
+   (let [current-value (get-in db [:connection-setup :ssh-credentials field])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :ssh-credentials field] new-value))))
 
 (rf/reg-event-db
  :connection-setup/clear-ssh-credentials
@@ -321,4 +519,13 @@
 (rf/reg-event-db
  :connection-setup/set-kubernetes-token
  (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :kubernetes-token (keyword field)] value)))
+   (let [field-key (keyword field)
+         current-value (get-in db [:connection-setup :kubernetes-token field-key])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :kubernetes-token field-key] new-value))))

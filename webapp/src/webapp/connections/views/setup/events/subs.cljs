@@ -48,7 +48,36 @@
 (rf/reg-sub
  :connection-setup/metadata-credentials
  (fn [db _]
-   (get-in db [:connection-setup :metadata-credentials])))
+   (let [credentials (get-in db [:connection-setup :metadata-credentials] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") (str v))))
+                {}
+                credentials))))
+
+(rf/reg-sub
+ :connection-setup/connection-method
+ (fn [db _]
+   (get-in db [:connection-setup :connection-method] "manual-input")))
+
+(rf/reg-sub
+ :connection-setup/secrets-manager-provider
+ (fn [db _]
+   (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")))
+
+(rf/reg-sub
+ :connection-setup/field-source
+ (fn [db [_  field-key]]
+   (let [metadata-source (get-in db [:connection-setup :metadata-credentials field-key :source])
+         credential-source (get-in db [:connection-setup :credentials field-key :source])
+         ssh-source (get-in db [:connection-setup :ssh-credentials field-key :source])
+         kubernetes-source (get-in db [:connection-setup :kubernetes-token (keyword field-key) :source])
+         network-source (get-in db [:connection-setup :network-credentials (keyword field-key) :source])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or metadata-source credential-source ssh-source kubernetes-source network-source default-source))))
 
 (rf/reg-sub
  :connection-setup/command-args
@@ -112,7 +141,11 @@
 (rf/reg-sub
  :connection-setup/network-credentials
  (fn [db]
-   (get-in db [:connection-setup :network-credentials] {})))
+   (let [credentials (get-in db [:connection-setup :network-credentials] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") v)))
+                {}
+                credentials))))
 
 ;; Agent
 (rf/reg-sub
@@ -141,12 +174,42 @@
 (rf/reg-sub
  :connection-setup/env-current-value
  (fn [db]
-   (get-in db [:connection-setup :credentials :current-value])))
+   (let [value (get-in db [:connection-setup :credentials :current-value] {:value "" :source "manual-input"})]
+     (if (map? value) (:value value) value))))
+
+(rf/reg-sub
+ :connection-setup/env-current-value-source
+ (fn [db]
+   (let [value (get-in db [:connection-setup :credentials :current-value])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         explicit-source (when (and value (map? value)) (:source value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or explicit-source default-source))))
+
+(rf/reg-sub
+ :connection-setup/env-var-source
+ (fn [db [_ var-index]]
+   (let [env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
+         value (when (< var-index (count env-vars))
+                 (get-in env-vars [var-index :value]))
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         explicit-source (when (and value (map? value)) (:source value))
+         default-source (if (= connection-method "secrets-manager")
+                          secrets-provider
+                          "manual-input")]
+     (or explicit-source default-source))))
 
 (rf/reg-sub
  :connection-setup/environment-variables
  (fn [db]
-   (get-in db [:connection-setup :credentials :environment-variables])))
+   (let [env-vars (get-in db [:connection-setup :credentials :environment-variables] [])]
+     (mapv (fn [{:keys [value] :as env-var}]
+             (assoc env-var :value (if (map? value) (:value value) value)))
+           env-vars))))
 
 ;; Configuration Files subscriptions
 (rf/reg-sub
@@ -162,7 +225,7 @@
 (rf/reg-sub
  :connection-setup/configuration-files
  (fn [db]
-   (get-in db [:connection-setup :credentials :configuration-files])))
+   (get-in db [:connection-setup :credentials :configuration-files] [])))
 
 ;; Tags subs
 (rf/reg-sub
@@ -226,7 +289,11 @@
 (rf/reg-sub
  :connection-setup/ssh-credentials
  (fn [db]
-   (get-in db [:connection-setup :ssh-credentials] {})))
+   (let [credentials (get-in db [:connection-setup :ssh-credentials] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") v)))
+                {}
+                credentials))))
 
 ;; Resource Subtype Override subscription
 (rf/reg-sub
@@ -238,4 +305,8 @@
 (rf/reg-sub
  :connection-setup/kubernetes-token
  (fn [db]
-   (get-in db [:connection-setup :kubernetes-token] {})))
+   (let [token (get-in db [:connection-setup :kubernetes-token] {})]
+     (reduce-kv (fn [acc k v]
+                  (assoc acc k (if (map? v) (:value v "") v)))
+                {}
+                token))))

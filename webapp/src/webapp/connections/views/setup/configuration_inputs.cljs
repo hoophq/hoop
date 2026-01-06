@@ -4,7 +4,8 @@
    ["lucide-react" :refer [Plus]]
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [webapp.components.forms :as forms]))
+   [webapp.components.forms :as forms]
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 (defn valid-first-char? [value]
   (boolean (re-matches #"[A-Za-z]" value)))
@@ -98,14 +99,18 @@
       (valid-posix? new-value)
       (rf/dispatch [:connection-setup/update-config-file index :key upper-value]))))
 
-(defn environment-variables-section [{:keys [title subtitle]}]
+(defn environment-variables-section [{:keys [title subtitle hide-default-title]}]
   (let [current-key @(rf/subscribe [:connection-setup/env-current-key])
         current-value @(rf/subscribe [:connection-setup/env-current-value])
-        env-vars @(rf/subscribe [:connection-setup/environment-variables])]
+        env-vars @(rf/subscribe [:connection-setup/environment-variables])
+        connection-method @(rf/subscribe [:connection-setup/connection-method])
+        show-selector? (= connection-method "secrets-manager")]
     [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} (if title title "Environment variables")]
-     [:> Text {:size "2" :color "gray"}
-      (if subtitle subtitle "Add variable values to use in your resource role.")]
+     (when-not hide-default-title
+       [:<>
+        [:> Heading {:size "3"} (if title title "Environment variables")]
+        [:> Text {:size "2" :color "gray"}
+         (if subtitle subtitle "Add variable values to use in your resource role.")]])
 
      (when (seq env-vars)
        [:> Grid {:columns "2" :gap "2"}
@@ -122,7 +127,9 @@
              :value value
              :type "password"
              :placeholder "* * * *"
-             :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])}]])])
+             :on-change #(rf/dispatch [:connection-setup/update-env-var idx :value (-> % .-target .-value)])
+             :start-adornment (when show-selector?
+                                [connection-method/source-selector (str "env-var-" idx)])}]])])
 
      [:> Grid {:columns "2" :gap "2"}
       [forms/input
@@ -135,7 +142,9 @@
         :placeholder "* * * *"
         :type "password"
         :value current-value
-        :on-change #(rf/dispatch [:connection-setup/update-env-current-value (-> % .-target .-value)])}]]
+        :on-change #(rf/dispatch [:connection-setup/update-env-current-value (-> % .-target .-value)])
+        :start-adornment (when show-selector?
+                           [connection-method/source-selector "env-current-value"])}]]
 
      [:> Button
       {:size "2"
