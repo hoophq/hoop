@@ -21,10 +21,10 @@
                           (rf/dispatch [:parallel-mode/open-modal])
                           (rf/dispatch [:parallel-mode/close-modal])))
       :title "Parallel Mode"
-      :max-width "w-[640px]"
+      :max-width "max-w-[640px]"
       :height "auto"
       :class-name "h-[480px]"
-      :should-filter? false
+      :should-filter? true
       :loading? loading?
 
       :search-config {:show-search-icon true

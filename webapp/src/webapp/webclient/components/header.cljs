@@ -16,7 +16,8 @@
         primary-connection (rf/subscribe [:primary-connection/selected])
         selected-connections (rf/subscribe [:multiple-connections/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
-        script-response (rf/subscribe [:editor-plugin->script])]
+        script-response (rf/subscribe [:editor-plugin->script])
+        parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])]
     (fn [dark-mode? submit]
       (let [has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
@@ -32,28 +33,37 @@
          [:> Flex {:align "center"
                    :justify "between"
                    :class "h-full px-4"}
-          [:> Flex {:align "center" :gap "2"}
+          [:> Flex {:align "center" :gap "4"}
            [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
             "Terminal"]
 
            [:> Badge
             {:radius "full"
-             :color (if @primary-connection "indigo" "gray")
-             :class "cursor-pointer"
-             :onClick (fn []
-                        (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
-                        (rf/dispatch [:primary-connection/toggle-dialog true]))}
-            (if @primary-connection
-              (:name @primary-connection)
-              "Resource Role")
+             :color (if (and @primary-connection
+                             (not @parallel-mode-active?))
+                      "indigo"
+                      "gray")
+             :class (if @parallel-mode-active?
+                      "cursor-not-allowed opacity-50"
+                      "cursor-pointer")
+             :onClick (when-not @parallel-mode-active?
+                        (fn []
+                          (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
+                          (rf/dispatch [:primary-connection/toggle-dialog true])))}
+            (cond
+              (and @primary-connection
+                   (not @parallel-mode-active?)) (:name @primary-connection)
+              @parallel-mode-active? "Resource Roles"
+              :else "Resource Role")
             [:> ChevronDown {:size 12}]]]
-          [:> Flex {:align "center" :gap "2"}
+          [:> Flex {:align "center" :gap "4"}
 
            [:> Tooltip {:content "Search"}
             [:> IconButton
              {:size "2"
               :variant "soft"
               :color "gray"
+              :highContrast true
               :onClick (fn []
                          (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
                          (rf/dispatch [:primary-connection/toggle-dialog true]))}
@@ -64,6 +74,7 @@
              {:size "2"
               :color "gray"
               :variant "soft"
+              :highContrast true
               :onClick (fn []
                          (js/window.open "https://help.hoop.dev" "_blank"))}
              [:> CircleHelp {:size 16}]]]
@@ -76,6 +87,7 @@
               :size "2"
               :color "gray"
               :variant "soft"
+              :highContrast true
               :onClick (fn []
                          (swap! dark-mode? not)
                          (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}

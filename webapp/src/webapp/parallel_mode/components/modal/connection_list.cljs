@@ -12,14 +12,15 @@
   [:> CommandItem
    {:value (:name connection)
     :keywords [(:type connection) (:subtype connection) (:name connection) "connection"]
-    :onSelect #(rf/dispatch [:parallel-mode/toggle-connection connection])}
+    :onSelect #(rf/dispatch [:parallel-mode/toggle-connection connection])
+    :class (str "mb-2 last:mb-0 " (when selected? "bg-gray-2"))}
    [:> Flex {:align "center" :gap "3" :class "w-full"}
     [:img {:src (connection-constants/get-connection-icon connection)
            :class "w-4"
            :loading "lazy"}]
 
     [:> Flex {:direction "column" :class "flex-1"}
-     [:> Text {:size "2" :weight "medium" :class (if selected? "text-green-11" "text-gray-12")}
+     [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
       (:name connection)]]
 
     [:> Checkbox
@@ -42,7 +43,7 @@
                           (rf/dispatch [:connections/get-connections-paginated next-request]))))
       :has-more? (:has-more? connections-pagination)
       :loading? connections-loading?}
-     [:> CommandGroup
+     [:> CommandGroup {:class "space-y-2"}
       (for [connection valid-connections]
         ^{:key (:id connection)}
         [connection-item
