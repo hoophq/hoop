@@ -178,13 +178,13 @@
 
 (rf/reg-sub
  :native-client-access->session-valid?
-
- (fn [db _]
-   (let [current-session (get-in db [:native-client-access :current])]
-     (constants/native-client-access-valid? current-session))))
+ (fn [db [_ connection-name]]
+   (let [session (get-in db [:native-client-access :sessions connection-name])]
+     (constants/native-client-access-valid? session))))
 
 ;; Event to open RDP web client
 (rf/reg-event-fx
  :native-client-access->open-rdp-web-client
  (fn [_ [_ username]]
    {:open-rdp-web-client {:username username}}))
+
