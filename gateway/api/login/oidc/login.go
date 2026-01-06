@@ -207,15 +207,17 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
 		redirectSuccessURL = login.Redirect
-		c.SetCookie(
-			"hoop_access_token",
-			token.AccessToken,
-			0,
-			"/",
-			"",
-			true,
-			false,
-		)
+		
+		isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "hoop_access_token",
+			Value:    token.AccessToken,
+			Path:     "/",
+			MaxAge:   0,
+			HttpOnly: false,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
 	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
