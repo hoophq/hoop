@@ -29,23 +29,24 @@
       :size "2"}]]])
 
 (defn main []
-  (let [valid-connections @(rf/subscribe [:parallel-mode/valid-connections])
-        selected-connections @(rf/subscribe [:parallel-mode/selected-connections])
-        connections-pagination @(rf/subscribe [:connections->pagination])
-        connections-loading? (= :loading (:loading connections-pagination))]
-    [infinite-scroll
-     {:on-load-more (fn []
-                      (when (not connections-loading?)
-                        (let [current-page (:current-page connections-pagination 1)
-                              next-page (inc current-page)
-                              next-request {:page next-page
-                                            :force-refresh? false}]
-                          (rf/dispatch [:connections/get-connections-paginated next-request]))))
-      :has-more? (:has-more? connections-pagination)
-      :loading? connections-loading?}
-     [:> CommandGroup {:class "space-y-2"}
-      (for [connection valid-connections]
-        ^{:key (:id connection)}
-        [connection-item
-         connection
-         (some #(= (:name %) (:name connection)) selected-connections)])]]))
+  (let [valid-connections (rf/subscribe [:parallel-mode/valid-connections])
+        selected-connections (rf/subscribe [:parallel-mode/selected-connections])
+        connections-pagination (rf/subscribe [:connections->pagination])]
+    (fn []
+      (let [connections-loading? (= :loading (:loading @connections-pagination))]
+        [infinite-scroll
+         {:on-load-more (fn []
+                          (when (not connections-loading?)
+                            (let [current-page (:current-page @connections-pagination 1)
+                                  next-page (inc current-page)
+                                  next-request {:page next-page
+                                                :force-refresh? false}]
+                              (rf/dispatch [:connections/get-connections-paginated next-request]))))
+          :has-more? (:has-more? @connections-pagination)
+          :loading? connections-loading?}
+         [:> CommandGroup {:class "space-y-2"}
+          (for [connection @valid-connections]
+            ^{:key (:id connection)}
+            [connection-item
+             connection
+             (some #(= (:name %) (:name connection)) @selected-connections)])]]))))
