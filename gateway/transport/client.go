@@ -132,12 +132,17 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 	recvCh := grpc.NewStreamRecv(stream.Context(), stream)
 	for {
 		var dstream *grpc.DataStream
+		var ok bool
 		select {
 		case <-stream.Context().Done():
 			return stream.ContextCauseError()
 		case <-pctx.Context.Done():
 			return status.Error(codes.Aborted, "session ended, reached connection duration")
-		case dstream = <-recvCh:
+		case dstream, ok = <-recvCh:
+			if !ok {
+				// Channel was closed, stream ended
+				return io.EOF
+			}
 		}
 
 		// receive data from stream channel

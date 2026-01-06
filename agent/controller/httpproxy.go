@@ -14,6 +14,7 @@ import (
 func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+	proxyBaseURL := string(pkt.Spec[pb.SpecHttpProxyBaseUrl])
 	log := log.With("sid", sessionID, "conn", clientConnectionID)
 	if clientConnectionID == "" {
 		log.Info("connection not found in packet specfication")
@@ -49,6 +50,8 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	connenv.httpProxyHeaders["connection_id"] = clientConnectionID
 	connenv.httpProxyHeaders["sid"] = sessionID
 	connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.insecure)
+	connenv.httpProxyHeaders["proxy_base_url"] = proxyBaseURL
+
 	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
 	if err != nil {
 		log.Infof("failed connecting to %v, err=%v", connenv.host, err)
