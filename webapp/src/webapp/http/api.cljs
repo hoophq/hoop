@@ -1,7 +1,8 @@
 (ns webapp.http.api
   (:require
    [webapp.http.request :as request]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.utilities :as utilities]))
 
 (defn request
   "request abstraction for calling Hoop API
@@ -16,7 +17,9 @@
 
   it returns a promise with the response in a clojure map and executes a on-sucess callback"
   [{:keys [method uri query-params body on-success on-failure headers]}]
-  (let [token (.getItem js/localStorage "jwt-token")
+  (let [local-storage-token (.getItem js/localStorage "jwt-token")
+        cookie-token (utilities/get-cookie-value "hoop_access_token")
+        token (or cookie-token local-storage-token)
         common-headers {:headers {:accept "application/json"
                                   "Content-Type" "application/json"
                                   "Authorization" (str "Bearer " token)

@@ -32,3 +32,14 @@
         (string/replace (js/decodeURIComponent (js/escape decoded)) #"∞" "\t")
         (catch js/Error _ decoded)))
     (catch js/Error _ "")))
+
+
+(defn get-cookie-value
+  "Helper function to extract cookie value by name"
+  [cookie-name]
+  (when-let [cookie-string (.-cookie js/document)]
+    (let [cookies (string/split cookie-string #"; ")
+          target-cookie (some #(when (string/starts-with? % (str cookie-name "="))
+                                 %) cookies)]
+      (when target-cookie
+        (subs target-cookie (+ (count cookie-name) 1))))))

@@ -130,20 +130,11 @@
    [webapp.webclient.events.multiple-connection-execution]
    [webapp.webclient.events.search]
    [webapp.webclient.events.metadata]
-   [webapp.webclient.panel :as webclient]))
+   [webapp.webclient.panel :as webclient]
+   [webapp.utilities :as utilities]))
 
 ;; Tracking initialization is now handled by :tracking->initialize-if-allowed
 ;; which is dispatched after gateway info is loaded and checks do_not_track
-(defn- get-cookie-value
-  "Helper function to extract cookie value by name"
-  [cookie-name]
-  (when-let [cookie-string (.-cookie js/document)]
-    (let [cookies (cs/split cookie-string #"; ")
-          target-cookie (some #(when (cs/starts-with? % (str cookie-name "="))
-                                 %) cookies)]
-      (when target-cookie
-        (subs target-cookie (+ (count cookie-name) 1))))))
-
 (defn- clear-cookie
   "Helper function to clear a cookie by setting it to empty with past expiration"
   [cookie-name]
@@ -154,7 +145,7 @@
   []
   (let [search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
-        token (get-cookie-value "hoop_access_token")
+        token (utilities/get-cookie-value "hoop_access_token")
         error (.get url-params "error")
         redirect-after-auth (.getItem js/localStorage "redirect-after-auth")]
 
@@ -162,8 +153,7 @@
     (when error (.setItem js/localStorage "login_error" error))
 
     (when token
-      (.setItem js/localStorage "jwt-token" token)
-      (clear-cookie "hoop_access_token"))
+      (.setItem js/localStorage "jwt-token" token))
 
     (if error
       (rf/dispatch [:navigate :login-hoop])
@@ -190,7 +180,7 @@
   []
   (let [search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
-        token (get-cookie-value "hoop_access_token")
+        token (utilities/get-cookie-value "hoop_access_token")
         error (.get url-params "error")
         destiny (if error :login-hoop :signup-hoop)]
     (.removeItem js/localStorage "login_error")
