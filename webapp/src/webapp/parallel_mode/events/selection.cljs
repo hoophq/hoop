@@ -27,12 +27,25 @@
  (fn [{:keys [db]} _]
    (let [selected-connections (get-in db [:parallel-mode :selection :connections] [])]
      (if (helpers/has-minimum-connections? selected-connections)
-       {:db (assoc-in db [:parallel-mode :modal :open?] false)
+       {:db (-> db
+                (assoc-in [:parallel-mode :modal :open?] false)
+                ;; Clear draft state on confirm
+                (assoc-in [:parallel-mode :selection :draft-connections] nil))
         :fx [[:dispatch [:parallel-mode/persist]]]}
        {:fx [[:dispatch [:show-snackbar {:level :warning
                                          :text (str "Please select at least "
                                                     db/min-connections
                                                     " connections")}]]]}))))
+
+(rf/reg-event-fx
+ :parallel-mode/cancel-selection
+ (fn [{:keys [db]} _]
+   (let [draft-connections (get-in db [:parallel-mode :selection :draft-connections])]
+     {:db
+      (-> db
+          (assoc-in [:parallel-mode :modal :open?] false)
+          (update-in [:parallel-mode :selection] merge {:connections (or draft-connections [])
+                                                        :draft-connections nil}))})))
 
 ;; ---- Seed from Primary Connection ----
 

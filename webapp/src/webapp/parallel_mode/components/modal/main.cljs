@@ -21,7 +21,7 @@
           :on-open-change (fn [should-open?]
                             (if should-open?
                               (rf/dispatch [:parallel-mode/open-modal])
-                              (rf/dispatch [:parallel-mode/close-modal])))
+                              (rf/dispatch [:parallel-mode/cancel-selection])))
           :title "Parallel Mode"
           :max-width "max-w-[640px]"
           :height "auto"
@@ -37,7 +37,7 @@
                           :on-key-down (fn [e]
                                          (when (= (.-key e) "Escape")
                                            (.preventDefault e)
-                                           (rf/dispatch [:parallel-mode/close-modal])))}
+                                           (rf/dispatch [:parallel-mode/cancel-selection])))}
 
           :breadcrumb-component (fn []
                                   [:> Flex

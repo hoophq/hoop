@@ -33,7 +33,7 @@
            :highContrast true
            :color "gray"
            :size "2"
-           :onClick #(rf/dispatch [:parallel-mode/close-modal])}
+           :onClick #(rf/dispatch [:parallel-mode/cancel-selection])}
           "Cancel"]
 
          [:> Button

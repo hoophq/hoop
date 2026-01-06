@@ -4,7 +4,8 @@
 (def default-state
   {:modal {:open? false
            :search-term ""}
-   :selection {:connections []}          ; Vector of selected connections
+   :selection {:connections []           ; Vector of selected connections
+               :draft-connections nil}   ; Draft state (saved when opening modal)
    :execution {:status :idle             ; :idle | :running | :completed | :error
                :results []}})            ; Execution results (fase 2)
 

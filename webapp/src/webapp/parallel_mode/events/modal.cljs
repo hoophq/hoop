@@ -7,14 +7,15 @@
 (rf/reg-event-db
  :parallel-mode/open-modal
  (fn [db _]
-   (-> db
-       (assoc-in [:parallel-mode :modal :open?] true)
-       (assoc-in [:parallel-mode :modal :search-term] ""))))
+   (let [current-connections (get-in db [:parallel-mode :selection :connections])]
+     (-> db
+         (update-in [:parallel-mode :modal] merge {:open? true :search-term ""})
+         (assoc-in [:parallel-mode :selection :draft-connections] current-connections)))))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :parallel-mode/close-modal
- (fn [db _]
-   (assoc-in db [:parallel-mode :modal :open?] false)))
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:parallel-mode :modal :open?] false)}))
 
 (rf/reg-event-fx
  :parallel-mode/toggle-modal
