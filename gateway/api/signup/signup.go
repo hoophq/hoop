@@ -74,6 +74,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating organization"})
 		return
 	}
+
 	if org.TotalUsers > 0 {
 		c.JSON(http.StatusConflict, gin.H{"message": "organization name is already claimed"})
 		return

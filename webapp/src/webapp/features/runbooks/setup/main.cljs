@@ -27,7 +27,8 @@
         loading-config? (rf/subscribe [:runbooks-configurations/data-loading])
         active-tab (r/atom "rules")
         params (.-search (.-location js/window))
-        url-tab (r/atom (parse-params params))]
+        url-tab (r/atom (parse-params params))
+        promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))]
 
     (rf/dispatch [:runbooks/list])
     (rf/dispatch [:runbooks-rules/get-all])
@@ -40,10 +41,10 @@
           (reset! active-tab @url-tab)
           (reset! url-tab nil))
 
-        (if (not (boolean (.getItem (.-localStorage js/window) "runbooks-promotion-seen")))
+        (if (not @promotion-seen?)
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/runbooks-promotion {:mode :empty-state
-                                          :installed? false}]]
+                                          :on-promotion-seen #(reset! promotion-seen? true)}]]
 
           [:> Box {:class "flex flex-col bg-white px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
            [:> Flex {:direction "column" :gap "5" :class "h-full"}

@@ -24,6 +24,6 @@ RUN curl -Lo ec2-metadata-mock "https://github.com/aws/amazon-ec2-metadata-mock/
 COPY rootfs/usr/local/bin /usr/local/bin/
 COPY rootfs/opt/hoop/bin /opt/hoop/bin/
 
-ENV PATH="${PATH}:/opt/hoop/bin"
+ENV PATH="/opt/hoop/bin:${PATH}"
 
 ENTRYPOINT ["tini", "--"]

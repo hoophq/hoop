@@ -28,15 +28,20 @@
        (filter some?)))
 
 
-(defn- extract-folder
-  "Extract folder from runbook name (e.g., 'ops/update-user.runbook.sh' -> 'ops/')"
+(defn- extract-all-folders
+  "Extract all folder paths from runbook name (e.g., 'postgres-demo/queries/file.runbook.sql' -> ['postgres-demo/', 'postgres-demo/queries/'])"
   [name]
   (if (string? name)
     (let [parts (cs/split name #"/")]
       (if (> (count parts) 1)
-        (str (first parts) "/")
-        ""))
-    ""))
+        (let [folder-parts (butlast parts)]
+          (mapv (fn [idx]
+                  (let [folder-path-parts (take (inc idx) folder-parts)
+                        folder-path (str (cs/join "/" folder-path-parts) "/")]
+                    folder-path))
+                (range (count folder-parts))))
+        []))
+    []))
 
 (defn- generate-runbook-options
   "Generate select options from runbooks list in format @repo-name/path for both folders and files"
@@ -49,15 +54,18 @@
                       items (or (:items repo-data) [])]
                   (reduce (fn [acc2 item]
                             (let [item-name (:name item)
-                                  folder (extract-folder item-name)
-                                  ;; Create folder option (if folder exists and not already added)
-                                  folder-option (when (seq folder)
-                                                  (let [folder-label (str "@" repo-name "/" folder)
-                                                        folder-value {:repository repository
-                                                                      :name folder
-                                                                      :label folder-label}]
-                                                    (when (not (some #(= (:label %) folder-label) acc2))
-                                                      {:value folder-value :label folder-label})))
+                                  all-folders (extract-all-folders item-name)
+                                  folder-options (reduce (fn [acc3 folder]
+                                                           (let [folder-label (str "@" repo-name "/" folder)
+                                                                 folder-value {:repository repository
+                                                                               :name folder
+                                                                               :label folder-label}]
+                                                             (if (or (some #(= (:label %) folder-label) acc2)
+                                                                     (some #(= (:label %) folder-label) acc3))
+                                                               acc3
+                                                               (conj acc3 {:value folder-value :label folder-label}))))
+                                                         []
+                                                         all-folders)
                                   ;; Create file option
                                   file-label (str "@" repo-name "/" item-name)
                                   file-value {:repository repository
@@ -65,7 +73,7 @@
                                               :label file-label}
                                   file-option {:value file-value :label file-label}]
                               (cond-> acc2
-                                folder-option (conj folder-option)
+                                (seq folder-options) (into folder-options)
                                 true (conj file-option))))
                           acc
                           items)))

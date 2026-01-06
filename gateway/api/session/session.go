@@ -501,12 +501,12 @@ func Get(c *gin.Context) {
 //	@Description	Download session by id
 //	@Tags			Sessions
 //	@Produce		octet-stream,json
-//	@Param			session_id	path		string	true	"The id of the resource"
-//	@Success		200			{string}	string
-//	@Header			200			{string}	Content-Type		"application/octet-stream"
-//	@Header			200			{string}	Content-Disposition	"application/octet-stream"
-//	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
-//	@Failure		401,404,410,500		{object}	openapi.HTTPError
+//	@Param			session_id		path		string	true	"The id of the resource"
+//	@Success		200				{string}	string
+//	@Header			200				{string}	Content-Type		"application/octet-stream"
+//	@Header			200				{string}	Content-Disposition	"application/octet-stream"
+//	@Header			200				{integer}	Accept-Length		"size in bytes of the content"
+//	@Failure		401,404,410,500	{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download [get]
 func DownloadSession(c *gin.Context) {
 	sid := c.Param("session_id")
@@ -621,12 +621,12 @@ func DownloadSession(c *gin.Context) {
 //	@Description	Download session input session by id
 //	@Tags			Sessions
 //	@Produce		octet-stream,json
-//	@Param			session_id	path		string	true	"The id of the resource"
-//	@Success		200			{string}	string
-//	@Header			200			{string}	Content-Type		"application/octet-stream"
-//	@Header			200			{string}	Content-Disposition	"application/octet-stream"
-//	@Header			200			{integer}	Accept-Length		"size in bytes of the content"
-//	@Failure		401,404,410,500		{object}	openapi.HTTPError
+//	@Param			session_id		path		string	true	"The id of the resource"
+//	@Success		200				{string}	string
+//	@Header			200				{string}	Content-Type		"application/octet-stream"
+//	@Header			200				{string}	Content-Disposition	"application/octet-stream"
+//	@Header			200				{integer}	Accept-Length		"size in bytes of the content"
+//	@Failure		401,404,410,500	{object}	openapi.HTTPError
 //	@Router			/sessions/{session_id}/download/input [get]
 func DownloadSessionInput(c *gin.Context) {
 	sid := c.Param("session_id")

@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -19,7 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy"}
 
 // CreateConnectionCredentials
 //
@@ -194,6 +195,28 @@ func buildConnectionCredentialsResponse(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
+	case proto.ConnectionTypeHttpProxy:
+		scheme := "http"
+		host := serverHost
+		if appconfig.Get().GatewayTLSKey() != "" {
+			scheme = "https"
+			// When TLS is enabled, use the API URL's hostname instead of the listen address.
+			// The TLS certificate's SAN must match the hostname used by clients.
+			// Example: server listens on 0.0.0.0:18888 but certificate is valid for dev.hoop.dev:PORT
+			if apiURL, err := url.Parse(appconfig.Get().ApiURL()); err == nil && apiURL.Hostname() != "" {
+				host = apiURL.Hostname()
+			}
+		}
+		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, host, serverPort)
+		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
+		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
+
+		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
+			Hostname:   host,
+			Port:       serverPort,
+			ProxyToken: secretKey,
+			Command:    fmt.Sprintf("cURL: %s\n Browser: %s", curlCommand, browserCommand),
+		}
 	default:
 		return nil
 	}
@@ -218,6 +241,8 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
+	case proto.ConnectionTypeHttpProxy:
+		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
 	}
@@ -237,6 +262,10 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 	case proto.ConnectionTypeRDP:
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
+		}
+	case proto.ConnectionTypeHttpProxy:
+		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
+			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}
 	}
 
@@ -260,6 +289,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("rdp", keySize)
 	case proto.ConnectionTypeSSM:
 		return keys.GenerateSecureRandomKey("aws-ssm", keySize)
+	case proto.ConnectionTypeHttpProxy:
+		return keys.GenerateSecureRandomKey("httpproxy", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

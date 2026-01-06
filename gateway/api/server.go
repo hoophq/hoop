@@ -30,6 +30,7 @@ import (
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
+	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apipluginconnections "github.com/hoophq/hoop/gateway/api/pluginconnections"
@@ -743,6 +744,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.GET("/search",
 		r.AuthMiddleware,
 		searchapi.Get,
+	)
+
+	r.GET("/metrics/sessions",
+		r.AuthMiddleware,
+		metricsapi.Get,
 	)
 
 	r.GET("/runbooks",

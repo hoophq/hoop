@@ -43,7 +43,7 @@
 
 (rf/reg-event-fx
  :primary-connection/load-persisted
- (fn [{:keys [db]} _]
+ (fn [_ _]
    (let [saved (.getItem js/localStorage "selected-connection")
          parsed (when (and saved (not= saved "null"))
                   (read-string saved))
@@ -66,11 +66,13 @@
 (rf/reg-event-fx
  :primary-connection/set-from-details
  (fn [{:keys [db]} [_ connection-name]]
-   (let [connection (get-in db [:connections :details connection-name])]
-     (if connection
+   (let [connection (get-in db [:connections :details connection-name])
+         enabled? (and connection
+                       (not= "disabled" (:access_mode_exec connection)))]
+     (if enabled?
        {:db (assoc-in db [:editor :connections :selected] connection)}
-
-       {:db (assoc-in db [:editor :connections :selected] nil)}))))
+       {:db (assoc-in db [:editor :connections :selected] nil)
+        :fx [[:dispatch [:primary-connection/clear-selected]]]}))))
 
 ;; Dialog Events (for compact UI)
 (rf/reg-event-db

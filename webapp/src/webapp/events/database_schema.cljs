@@ -28,15 +28,9 @@
    {:db (-> db
             (assoc-in [:database-schema :data] nil))}))
 
-(rf/reg-event-db
- :database-schema->clear-connection-schema
- (fn [db [_ connection-name]]
-   (-> db
-       (update-in [:database-schema :data] dissoc connection-name))))
-
 (rf/reg-event-fx
  :database-schema->handle-multi-database-schema
- (fn [{:keys [db]} [_ connection]]
+ (fn [_ [_ connection]]
    {:fx [[:dispatch [:database-schema->get-multi-databases connection]]]}))
 
 (rf/reg-event-fx
@@ -69,9 +63,10 @@
  :database-schema->set-multi-databases
  (fn [db [_ connection databases]]
    (-> db
-       (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
-       (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
-       (assoc-in [:database-schema :data (:connection-name connection) :empty?] (empty? databases)))))
+       (update-in [:database-schema :data (:connection-name connection)] merge
+                  {:status :success
+                   :databases databases
+                   :empty? (empty? databases)}))))
 
 ;; Common events for all connection types
 (rf/reg-event-fx
@@ -129,15 +124,15 @@
          ;; We treat tables as databases for DynamoDB
          databases tables]
      (-> db
-         (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :type] "dynamodb")
-         ;; Instead of populating schema-tree, we populate the list of databases
-         (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
-         (assoc-in [:database-schema :data (:connection-name connection) :empty?] (empty? databases))
-         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] {})
-         (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
-         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
+         (update-in [:database-schema :data (:connection-name connection)] merge
+                    {:status :success
+                     :database-schema-status :success
+                     :type "dynamodb"
+                     :databases databases
+                     :empty? (empty? databases)
+                     :schema-tree {}
+                     :columns-cache {}
+                     :loading-columns #{}})))))
 
 ;; Events for loading log groups directly for CloudWatch
 (rf/reg-event-db
@@ -174,15 +169,30 @@
          ;; We treat log groups as databases for CloudWatch
          databases tables]
      (-> db
-         (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :type] "cloudwatch")
-         ;; Instead of populating schema-tree, we populate the list of databases
-         (assoc-in [:database-schema :data (:connection-name connection) :databases] databases)
-         (assoc-in [:database-schema :data (:connection-name connection) :empty?] (empty? databases))
-         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] {})
-         (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
-         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})))))
+         (update-in [:database-schema :data (:connection-name connection)] merge
+                    {:status :success
+                     :database-schema-status :success
+                     :type "cloudwatch"
+                     :databases databases
+                     :empty? (empty? databases)
+                     :schema-tree {}
+                     :columns-cache {}
+                     :loading-columns #{}})))))
+
+;; Event for database-specific errors (not global)
+(rf/reg-event-fx
+ :database-schema->set-database-error
+ (fn [{:keys [db]} [_ connection database error]]
+   {:db (-> db
+            ;; Store error specific to this database
+            (assoc-in [:database-schema :data (:connection-name connection) :database-errors database]
+                      (or error "Failed to load database"))
+            ;; Remove from loading set
+            (update-in [:database-schema :data (:connection-name connection) :loading-databases]
+                       (fn [databases] (disj (or databases #{}) database))))
+    :fx [[:dispatch [:show-snackbar {:level :error
+                                     :text (str "Failed to load database: " database)
+                                     :details (or error "Failed to load database")}]]]}))
 
 ;; Events for loading tables (for multi-database banks)
 (rf/reg-event-fx
@@ -190,15 +200,20 @@
  (fn [{:keys [db]} [_ connection database]]
    {:db (-> db
             (assoc-in [:database-schema :current-connection] (:connection-name connection))
-            (assoc-in [:database-schema :data (:connection-name connection) :status] :loading)
-            (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :loading)
-            (assoc-in [:database-schema :data (:connection-name connection) :current-database] database))
+            (update-in [:database-schema :data (:connection-name connection)] merge
+                       {:status :loading
+                        :database-schema-status :loading
+                        :current-database database})
+
+            ;; Clear any previous error for this database
+            (update-in [:database-schema :data (:connection-name connection) :database-errors]
+                       (fn [errors] (dissoc (or errors {}) database))))
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri (str "/connections/" (:connection-name connection) "/tables?database=" database)
                              :on-success (fn [response]
                                            (rf/dispatch [:database-schema->tables-loaded connection database response]))
                              :on-failure (fn [error]
-                                           (rf/dispatch [:database-schema->set-schema-error-size-exceeded connection error]))}]]]}))
+                                           (rf/dispatch [:database-schema->set-database-error connection database error]))}]]]}))
 
 (rf/reg-event-db
  :database-schema->tables-loaded
@@ -206,18 +221,27 @@
    (let [open-db (or database
                      (get-in db [:database-schema :data (:connection-name connection) :current-database]))
          schema-tree (process-tables response)
+         connection-type (get-in db [:database-schema :data (:connection-name connection) :type])
+         is-multi-db-type? (contains? #{"mssql" "mysql" "postgres" "mongodb"} connection-type)
          is-empty? (empty? schema-tree)]
      (-> db
-         (assoc-in [:database-schema :data (:connection-name connection) :status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :database-schema-status] :success)
-         (assoc-in [:database-schema :data (:connection-name connection) :type] (:subtype connection))
-         (assoc-in [:database-schema :data (:connection-name connection) :current-database] open-db)
-         (assoc-in [:database-schema :data (:connection-name connection) :open-database] open-db)
-         (assoc-in [:database-schema :data (:connection-name connection) :schema-tree] schema-tree)
-         (assoc-in [:database-schema :data (:connection-name connection) :empty?] is-empty?)
-         (assoc-in [:database-schema :data (:connection-name connection) :columns-cache] {})
-         (assoc-in [:database-schema :data (:connection-name connection) :loading-columns] #{})
+         (update-in [:database-schema :data (:connection-name connection)] merge
+                    {:status :success
+                     :database-schema-status :success
+                     :type (:subtype connection)
+                     :current-database open-db
+                     :open-database open-db
+                     :schema-tree schema-tree
+                     :columns-cache {}
+                     :loading-columns #{}})
 
+         ;; Only set empty? for single-database types (oracledb)
+         ;; For multi-database types, empty? should only be set when loading the initial database list
+         (cond-> (not is-multi-db-type?)
+           (assoc-in [:database-schema :data (:connection-name connection) :empty?] is-empty?))
+         ;; Clear any error for this database on success
+         (update-in [:database-schema :data (:connection-name connection) :database-errors]
+                    (fn [errors] (dissoc (or errors {}) database)))
          (update-in [:database-schema :data (:connection-name connection) :loading-databases]
                     (fn [databases] (disj (or databases #{}) database)))))))
 
@@ -252,7 +276,7 @@
 
 (rf/reg-event-db
  :database-schema->columns-loaded
- (fn [db [_ connection-name database schema-name table-name response]]
+ (fn [db [_ connection-name _database schema-name table-name response]]
    (let [cache-key (str schema-name "." table-name)
          columns-map (process-columns response)]
      (-> db
@@ -351,7 +375,7 @@
        {:db (assoc-in db [:database-schema :current-connection] connection-name)
         :fx [(case connection-type
                "oracledb" [:dispatch [:database-schema->handle-database-schema connection]]
-               "mssql" [:dispatch [:database-schema->handle-database-schema connection]]
+               "mssql" [:dispatch [:database-schema->handle-multi-database-schema connection]]
                "postgres" [:dispatch [:database-schema->handle-multi-database-schema connection]]
                "mysql" [:dispatch [:database-schema->handle-multi-database-schema connection]]
                "mongodb" [:dispatch [:database-schema->handle-multi-database-schema connection]]

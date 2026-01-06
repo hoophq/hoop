@@ -645,6 +645,7 @@ type (
 	ReviewStatusType        string
 	ReviewRequestStatusType string
 	ReviewType              string
+	ReviewTimeWindowType    string
 )
 
 const (
@@ -662,6 +663,8 @@ const (
 
 	ReviewTypeJit     ReviewType = "jit"
 	ReviewTypeOneTime ReviewType = "onetime"
+
+	ReviewTimeWindowTypeTimeRange ReviewTimeWindowType = "time_range"
 )
 
 type ReviewRequest struct {
@@ -669,7 +672,8 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status ReviewRequestStatusType `json:"status" binding:"required" example:"APPROVED"`
+	Status     ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window"`
 }
 
 type SessionReview struct {
@@ -696,6 +700,13 @@ type SessionReview struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// Contains the groups that requires to approve this review
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
+	// The time window configuration that can execute the session
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
+}
+
+type ReviewSessionTimeWindow struct {
+	Type          ReviewTimeWindowType `json:"type" binding:"required" enums:"time_range"`
+	Configuration map[string]string    `json:"configuration" binding:"required" example:"start_time:09:00,end_time:18:00"`
 }
 
 type Review struct {
@@ -724,6 +735,8 @@ type Review struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// Contains the groups that requires to approve this review
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
+	// The time window configuration that can execute the session
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
 }
 
 type ReviewOwner struct {
@@ -1577,6 +1590,30 @@ type ColumnsResponse struct {
 	Columns []ConnectionColumn `json:"columns"` // The columns of a table
 }
 
+type SessionMetricResponse struct {
+	SessionID          string     `json:"session_id" format:"uuid" example:"1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	OrgID              string     `json:"org_id" format:"uuid" example:"0CD7F941-2BB8-4F9F-93B0-11620D4652AB"`
+	ConnectionType     string     `json:"connection_type" example:"postgres"`
+	ConnectionSubtype  *string    `json:"connection_subtype" example:"amazon-rds"`
+	ConnectionName     string     `json:"connection_name" example:"production-db"`
+	InfoType           string     `json:"info_type" example:"EMAIL_ADDRESS"`
+	CountMasked        int64      `json:"count_masked" example:"15"`
+	CountAnalyzed      int64      `json:"count_analyzed" example:"20"`
+	IsMasked           bool       `json:"is_masked" example:"true"`
+	SessionCreatedAt   time.Time  `json:"session_created_at" example:"2023-08-15T14:30:45Z"`
+	SessionEndedAt     *time.Time `json:"session_ended_at" example:"2023-08-15T14:35:10Z"`
+	SessionDurationSec *int       `json:"session_duration_sec" example:"325"`
+}
+
+type SessionMetricsAggregatedResponse struct {
+	TotalSessions         int64  `json:"total_sessions" example:"150"`
+	UniqueInfoTypes       int64  `json:"unique_info_types" example:"12"`
+	TotalMasked           int64  `json:"total_masked" example:"5420"`
+	TotalAnalyzed         int64  `json:"total_analyzed" example:"7850"`
+	SessionsWithMasking   int64  `json:"sessions_with_masking" example:"98"`
+	AvgSessionDurationSec *int64 `json:"avg_session_duration_sec" example:"285"`
+}
+
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
 	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
@@ -1649,6 +1686,8 @@ type ServerMiscConfig struct {
 	SSHServerConfig *SSHServerConfig `json:"ssh_server_config"`
 	// The RDP server proxy configuration
 	RDPServerConfig *RDPServerConfig `json:"rdp_server_config"`
+	// The HTTP proxy server configuration
+	HttpProxyServerConfig *HttpProxyServerConfig `json:"http_proxy_server_config"`
 }
 
 type SSHServerConfig struct {
@@ -1667,6 +1706,12 @@ type PostgresServerConfig struct {
 	// The listen address to run the PostgreSQL server proxy
 	ListenAddress string `json:"listen_address" example:"0.0.0.0:15432"`
 }
+
+type HttpProxyServerConfig struct {
+	// The HTTP proxy server URL
+	ListenAddress string `json:"listen_address" example:"http://0.0.0.0:18888"`
+}
+
 
 type ServerAuthOidcConfig struct {
 	// Identity Provider Issuer URL (Oauth2)
@@ -1774,6 +1819,18 @@ type SSMConnectionInfo struct {
 	AwsSecretAccessKey string `json:"aws_secret_access_key" example:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"`
 	// Command line arguments to access the ssm server instance
 	ConnectionString string `json:"connection_string" example:"aws ssm start-session --target ... --endpoint-url ..."`
+}
+
+// HttpProxyConnectionInfo represents the connection information required to establish
+type HttpProxyConnectionInfo struct {
+	// Hostname to access the HTTP proxy instance
+	Hostname string `json:"hostname"`
+	// Port of the HTTP proxy instance
+	Port string `json:"port"`
+	// Token to access the HTTP proxy resource
+	ProxyToken string `json:"proxy_token"`
+	// The command to access the HTTP proxy instance
+	Command string `json:"command"`
 }
 
 type PostgresConnectionInfo struct {

@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -80,6 +82,10 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			continue
 		}
 
+		if handled := handleSessionAnalyzerMetricsPacket(pctx, pkt); handled {
+			continue
+		}
+
 		proxyStream := streamclient.GetProxyStream(pctx.SID)
 		if proxyStream == nil {
 			continue
@@ -121,6 +127,31 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, type=%v, err=%v", pkt.Type, err)
 		}
 	}
+}
+
+func handleSessionAnalyzerMetricsPacket(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {
+	if pb.PacketType(pkt.Type) != pbclient.SessionAnalyzerMetrics {
+		return false
+	}
+
+	handled = true
+	log.With("sid", pctx.SID).Debugf("received analyzer metrics packet, length=%v", len(pkt.Payload))
+
+	var data map[string]int64
+	if err := json.Unmarshal(pkt.Payload, &data); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to unmarshal analyzer metrics packet, reason=%v", err)
+		return
+	}
+
+	if err := models.UpdateSessionAnalyzerMetrics(pctx.OrgID, pctx.SID, data); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to save analyzer metrics packet, reason=%v", err)
+	}
+
+	if err := models.IncrementSessionAnalyzedMetrics(models.DB, pctx.SID, data); err != nil {
+		log.With("sid", pctx.SID).Errorf("unable to increment analyzed metrics, reason=%v", err)
+	}
+
+	return
 }
 
 func handleSystemPacketResponses(pctx *plugintypes.Context, pkt *pb.Packet) (handled bool) {

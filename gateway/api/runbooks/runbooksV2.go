@@ -32,8 +32,10 @@ import (
 //	@Tags			Runbooks
 //	@Produce		json
 //	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
-//	@Success		200			{object}	openapi.RunbookListV2
-//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Param			list_connections	query		bool	false	"Show connections allowed for each runbook."
+//	@Param			remove_empty_connections	query		bool	false	"Remove runbooks with no connections."
+//	@Success		200				{object}	openapi.RunbookListV2
+//	@Failure		404,500			{object}	openapi.HTTPError
 //	@Router			/runbooks [get]
 func ListRunbooksV2(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -59,13 +61,13 @@ func ListRunbooksV2(c *gin.Context) {
 
 	urlQuery := c.Request.URL.Query()
 	connectionName := urlQuery.Get("connection_name")
+	listConnections := urlQuery.Get("list_connections") == "true"
+	removeEmptyConnections := urlQuery.Get("remove_empty_connections") != "false"
 
-	removeEmptyConnectionsList := true
 	connectionNames := []string{connectionName}
 
 	if connectionName == "" {
-		removeEmptyConnectionsList = false
-		connectionNames, err = models.ListConnectionsName(models.DB, ctx.GetOrgID())
+		connectionNames, err = models.ListConnectionsNameForRunbooks(models.DB, ctx.GetOrgID())
 		if err != nil {
 			log.Errorf("failed fetching connection names, err=%v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching connection names, reason=%v", err)})
@@ -84,7 +86,7 @@ func ListRunbooksV2(c *gin.Context) {
 			continue
 		}
 
-		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, removeEmptyConnectionsList)
+		repositoryList, err := listRunbookFilesV2(ctx.OrgID, config, runbookRules, connectionNames, ctx.UserGroups, listConnections, removeEmptyConnections)
 		if err != nil {
 			runbookList.Errors = append(runbookList.Errors, fmt.Sprintf("failed listing runbooks for repo %s, err=%v", repoConfig.GitUrl, err))
 			continue
@@ -102,7 +104,7 @@ func ListRunbooksV2(c *gin.Context) {
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Success		200			{object}	openapi.RunbookConfigurationResponse
+//	@Success		200		{object}	openapi.RunbookConfigurationResponse
 //	@Failure		404,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [get]
 func GetRunbookConfiguration(c *gin.Context) {
@@ -130,8 +132,8 @@ func GetRunbookConfiguration(c *gin.Context) {
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Param			request	body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
-//	@Success		200			{object}	openapi.RunbookConfigurationResponse
+//	@Param			request			body		openapi.RunbookConfigurationRequest	true	"Runbook Configuration"
+//	@Success		200				{object}	openapi.RunbookConfigurationResponse
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/configurations [put]
 func UpdateRunbookConfiguration(c *gin.Context) {
@@ -229,9 +231,9 @@ func buildRunbookConfigurationResponse(r *models.Runbooks) *openapi.RunbookConfi
 //	@Tags			Runbooks
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.RunbookExec	true	"The request body resource"
-//	@Success		200				{object}	openapi.ExecResponse	"The execution has finished"
-//	@Success		202				{object}	openapi.ExecResponse	"The execution is still in progress"
+//	@Param			request				body		openapi.RunbookExec		true	"The request body resource"
+//	@Success		200					{object}	openapi.ExecResponse	"The execution has finished"
+//	@Success		202					{object}	openapi.ExecResponse	"The execution is still in progress"
 //	@Failure		400,403,404,422,500	{object}	openapi.HTTPError
 //	@Router			/runbooks/exec [post]
 func RunbookExec(c *gin.Context) {

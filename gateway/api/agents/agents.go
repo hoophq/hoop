@@ -108,7 +108,7 @@ func Delete(c *gin.Context) {
 //	@Description	Get an agent key by name or ID
 //	@Tags			Agents
 //	@Produce		json
-//	@Param			nameOrID	path	string	true	"The name or ID of the resource"
+//	@Param			nameOrID	path		string	true	"The name or ID of the resource"
 //	@Success		200			{object}	openapi.AgentResponse
 //	@Failure		404,500		{object}	openapi.HTTPError
 //	@Router			/agents/{nameOrID} [get]

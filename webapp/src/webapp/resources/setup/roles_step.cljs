@@ -91,7 +91,7 @@
     [:> Box {:class "space-y-4"}
      ;; Cluster URL
      [forms/input {:label "Cluster URL"
-                   :placeholder "e.g. https://example.com:51434"
+                   :placeholder "e.g. https://kubernetes.default.svc.cluster.local:443"
                    :value (get credentials "remote_url" "")
                    :required true
                    :type "text"
