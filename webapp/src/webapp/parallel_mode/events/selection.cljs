@@ -1,6 +1,5 @@
 (ns webapp.parallel-mode.events.selection
   (:require
-   [cljs.reader :as reader]
    [re-frame.core :as rf]
    [webapp.parallel-mode.db :as db]
    [webapp.parallel-mode.helpers :as helpers]))
@@ -31,8 +30,8 @@
        {:db (assoc-in db [:parallel-mode :modal :open?] false)
         :fx [[:dispatch [:parallel-mode/persist]]]}
        {:fx [[:dispatch [:show-snackbar {:level :warning
-                                         :text (str "Please select at least " 
-                                                    db/min-connections 
+                                         :text (str "Please select at least "
+                                                    db/min-connections
                                                     " connections")}]]]}))))
 
 ;; ---- Seed from Primary Connection ----
@@ -57,22 +56,4 @@
                "parallel-mode-connections"
                (pr-str (helpers/connections->storage-format connections)))
      {})))
-
-(rf/reg-event-fx
- :parallel-mode/load-persisted
- (fn [{:keys [db]} _]
-   (let [saved-connections (.getItem js/localStorage "parallel-mode-connections")]
-     (if saved-connections
-       (let [parsed-connections (reader/read-string saved-connections)
-             all-connections (get-in db [:connections :results])
-             ;; Restore only connections that still exist and are valid
-             valid-connections (when (and parsed-connections all-connections)
-                                 (vec (keep (fn [saved-conn]
-                                              (let [conn (first (filter #(= (:name %) (:name saved-conn))
-                                                                        all-connections))]
-                                                (when (and conn (helpers/valid-for-parallel? conn))
-                                                  conn)))
-                                            parsed-connections)))]
-         {:db (assoc-in db [:parallel-mode :selection :connections] (or valid-connections []))})
-       {}))))
 

@@ -28,7 +28,7 @@
 
 (defn command-dialog
   "Reusable command dialog component"
-  [{:keys [open? on-open-change title max-width height class-name
+  [{:keys [open? on-open-change title max-width height class-name breadcrumb-component
            search-config breadcrumb-config content children loading? should-filter?]
     :or {title "Command Dialog"
          max-width "max-w-2xl"
@@ -76,6 +76,9 @@
               :value (or (:value search-config) "")
               :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
               :onValueChange (:on-value-change search-config)}])
+
+          (when breadcrumb-component
+            [breadcrumb-component])
 
           (when breadcrumb-config
             [breadcrumb-tag {:current-page (:current-page breadcrumb-config)

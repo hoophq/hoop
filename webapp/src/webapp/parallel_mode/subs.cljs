@@ -49,11 +49,3 @@
    (let [all-connections (or (:data connections) [])]
      (helpers/filter-valid-connections all-connections))))
 
-;; ---- UI State Helpers ----
-
-(rf/reg-sub
- :parallel-mode/connection-selected?
- :<- [:parallel-mode/selected-connections]
- (fn [selected-connections [_ connection]]
-   (helpers/connection-selected? connection selected-connections)))
-

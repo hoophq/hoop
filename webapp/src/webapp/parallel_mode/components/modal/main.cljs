@@ -1,7 +1,8 @@
 (ns webapp.parallel-mode.components.modal.main
   (:require
    ["cmdk" :refer [CommandEmpty]]
-   ["@radix-ui/themes" :refer [Box Flex Text]]
+   ["@radix-ui/themes" :refer [Box Badge Flex Text]]
+   ["lucide-react" :refer [FastForward]]
    [re-frame.core :as rf]
    [webapp.components.command-dialog :as command-dialog]
    [webapp.parallel-mode.components.modal.connection-list :as connection-list]
@@ -37,8 +38,19 @@
                                        (.preventDefault e)
                                        (rf/dispatch [:parallel-mode/close-modal])))}
 
-      :breadcrumb-config {:current-page "Parallel Mode"
-                          :context (str selected-count " selected")}
+      :breadcrumb-component (fn []
+                              [:> Flex
+                               {:align "center"
+                                :gap "2"
+                                :class "bg-success-3 px-2 py-1 rounded-full"}
+                               [:> FastForward {:size 16 :class "text-success-11"}]
+                               [:> Text {:size "2" :weight "medium" :class "text-success-11"}
+                                "Parallel Mode"]
+                               [:> Badge {:variant "solid"
+                                          :color "green"
+                                          :radius "full"
+                                          :size "1"}
+                                selected-count]])
 
       :content
       [:<>

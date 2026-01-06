@@ -32,8 +32,3 @@
  (fn [db [_ term]]
    (assoc-in db [:parallel-mode :modal :search-term] term)))
 
-(rf/reg-event-db
- :parallel-mode/clear-search
- (fn [db _]
-   (assoc-in db [:parallel-mode :modal :search-term] "")))
-

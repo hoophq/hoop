@@ -83,22 +83,8 @@
 (rf/reg-event-fx
  :parallel-mode/show-execution-preview
  (fn [{:keys [db]} [_ executions]]
-   (js/console.log "👀 show-execution-preview called" "executions:" (clj->js executions))
    ;; Use the same state as legacy multi-exec so the modal appears
    {:db (assoc db :multi-exec {:data executions
                                :status :ready
                                :type :script})}))
-
-;; ---- Subscriptions ----
-
-(rf/reg-sub
- :parallel-mode/execution-state
- (fn [db]
-   (get-in db [:parallel-mode :execution])))
-
-(rf/reg-sub
- :parallel-mode/is-executing?
- :<- [:parallel-mode/execution-state]
- (fn [execution-state]
-   (= (:status execution-state) :running)))
 

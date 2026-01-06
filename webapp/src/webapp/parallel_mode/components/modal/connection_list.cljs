@@ -25,8 +25,8 @@
 
     [:> Checkbox
      {:checked selected?
-      :size "2"
-      :onCheckedChange #(rf/dispatch [:parallel-mode/toggle-connection connection])}]]])
+      :class "cursor-pointer"
+      :size "2"}]]])
 
 (defn main []
   (let [valid-connections @(rf/subscribe [:parallel-mode/valid-connections])

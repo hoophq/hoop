@@ -12,7 +12,3 @@
 (def min-connections 2)
 (def excluded-subtypes #{"tcp" "httpproxy" "ssh"})
 
-;; Initial state for db
-(def initial-db
-  {:parallel-mode default-state})
-
