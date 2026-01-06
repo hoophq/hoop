@@ -8453,6 +8453,10 @@ const docTemplate = `{
         },
         "openapi.ProvisionSession": {
             "type": "object",
+            "required": [
+                "connection",
+                "user_email"
+            ],
             "properties": {
                 "access_duration_sec": {
                     "type": "integer"
