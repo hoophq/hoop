@@ -228,8 +228,9 @@ func (s *sessionConnWrapper) Read(b []byte) (n int, err error) {
 	if s.deadline != nil {
 		ctx, cancel = context.WithDeadline(ctx, *s.deadline)
 	}
-	defer cancel()
+
 	defer func() {
+		cancel()
 		s.deadline = nil
 	}()
 

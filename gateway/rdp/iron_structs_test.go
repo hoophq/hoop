@@ -23,14 +23,14 @@ func TestEncodeDecodeIronStructs(t *testing.T) {
 		},
 		ServerAddr: ptrString("192.168.0.1"),
 	}
-	der, err := MarshalContextExplicit(testStruct)
+	der, err := marshalContextExplicit(testStruct)
 	if err != nil {
 		t.Fatalf("marshal failed: %v", err)
 	}
 	t.Logf("Encoded: %v", der)
 
 	decoded := RDCleanPathPdu{}
-	if err := UnmarshalContextExplicit(der, &decoded); err != nil {
+	if err := unmarshalContextExplicit(der, &decoded); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
 

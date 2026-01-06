@@ -126,7 +126,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	}
 
 	var p RDCleanPathPdu
-	if err := UnmarshalContextExplicit(msg, &p); err != nil {
+	if err := unmarshalContextExplicit(msg, &p); err != nil {
 		log.With("sid", sessionID, "conn", cID).
 			Errorf("failed to read first message from websocket, reason=%v", err)
 		return
@@ -142,8 +142,15 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 			Error:             NewRDCleanPathError(403),
 			X224ConnectionPDU: buildGenericRdpErrorPacket(),
 		}
-
-		_ = ws.WriteMessage(websocket.BinaryMessage, response.Encode())
+		pkt, err := response.Encode()
+		if err != nil {
+			log.Errorf("failed to encode RDP error packet: %v", err)
+			return
+		}
+		err = ws.WriteMessage(websocket.BinaryMessage, pkt)
+		if err != nil {
+			log.Errorf("failed to write RDP error packet to client: %v", err)
+		}
 		return
 	}
 
@@ -235,7 +242,13 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	}
 
 	log.Debugf("Sending RDCleanPathPdu")
-	err = ws.WriteMessage(websocket.BinaryMessage, packet.Encode())
+	pkt, err := packet.Encode()
+	if err != nil {
+		log.Errorf("Failed to encode packet: %v", err)
+		return
+	}
+
+	err = ws.WriteMessage(websocket.BinaryMessage, pkt)
 	if err != nil {
 		log.Errorf("Failed to write message: %v", err)
 		return

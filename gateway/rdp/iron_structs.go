@@ -36,26 +36,10 @@ type RDCleanPathPdu struct {
 	ServerAddr        *string           `asn1:"tag:9,optional"`
 }
 
-func (r *RDCleanPathPdu) Encode() []byte {
-	data, _ := MarshalContextExplicit(r)
-	return data
+func (r *RDCleanPathPdu) Encode() ([]byte, error) {
+	return marshalContextExplicit(r)
 }
 
 func (r *RDCleanPathPdu) Decode(data []byte) error {
-	return UnmarshalContextExplicit(data, r)
-}
-
-type NegotiatePdu struct {
-	Data struct {
-		NTLM []byte `asn1:"tag:16"`
-	} `asn1:"tag:1"`
-}
-
-func (r *NegotiatePdu) Encode() []byte {
-	data, _ := MarshalContextExplicit(r)
-	return data
-}
-
-func (r *NegotiatePdu) Decode(data []byte) error {
-	return UnmarshalContextExplicit(data, r)
+	return unmarshalContextExplicit(data, r)
 }

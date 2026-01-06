@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -55,7 +56,11 @@ func (r *RDPProxy) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainTe
 
 func (r *RDPProxy) Stop() error {
 	if serverAny, ok := store.LoadAndDelete(instanceKey); ok {
-		server := serverAny.(*RDPProxy)
+		server, ok := serverAny.(*RDPProxy)
+		if !ok {
+			log.Errorf("invalid server type %v", reflect.TypeOf(serverAny))
+			return errors.New("invalid server type")
+		}
 		for _, session := range broker.GetSessions() {
 			if session != nil {
 				session.Close()
