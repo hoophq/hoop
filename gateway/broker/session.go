@@ -3,7 +3,9 @@ package broker
 import (
 	"context"
 	"io"
+	"net"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -74,19 +76,19 @@ func (s *Session) Close() {
 
 	// Close consumer connection
 	if s.ClientCommunicator != nil {
-		s.ClientCommunicator.Close()
+		_ = s.ClientCommunicator.Close()
 	}
 
 	// Close agent connection
 	if s.AgentCommunicator != nil {
-		s.AgentCommunicator.Close()
+		_ = s.AgentCommunicator.Close()
 	}
 
-	// Remove from sessions map
+	// Remove from the sessions map
 	BrokerInstance.sessions.Delete(s.ID)
 }
 
-// forward data from agent to tcp
+// ForwardToTCP forward data from agent to tcp
 func (s *Session) ForwardToTCP(data []byte) {
 	s.mu.Lock()
 	if s.closed || s.dataChannel == nil {
@@ -96,7 +98,7 @@ func (s *Session) ForwardToTCP(data []byte) {
 	s.mu.Unlock()
 
 	select {
-	// the data is create with a buffer size buffer size of 1024
+	// the data is created with a buffer size of 1024
 	// Up to 1024 messages can be queued without blocking
 	//If the buffer is full, new data is dropped rather than blocking
 	case s.dataChannel <- data:
@@ -107,9 +109,7 @@ func (s *Session) ForwardToTCP(data []byte) {
 	}
 }
 
-// this will spam data from tcp to agent wsconn
-func (s *Session) ForwardToAgent(data []byte) error {
-	// Send first RDP packet using simple header format (not WebSocketMessage)
+func (s *Session) SendRawDataToAgent(data []byte) error {
 	header := &Header{
 		SID: s.ID,
 		Len: uint32(len(data)),
@@ -117,9 +117,17 @@ func (s *Session) ForwardToAgent(data []byte) error {
 
 	framedData := append(header.Encode(), data...)
 
-	if err := s.SendToAgent(framedData); err != nil {
-		log.Infof("Failed to send first RDP packet: %v", err)
-		return err
+	return s.SendToAgent(framedData)
+}
+
+// ForwardToAgent this will spam data from tcp to agent wsconn
+func (s *Session) ForwardToAgent(data []byte) error {
+	if data != nil {
+		// Send first RDP packet using simple header format (not WebSocketMessage)
+		if err := s.SendRawDataToAgent(data); err != nil {
+			log.Infof("Failed to send first RDP packet: %v", err)
+			return err
+		}
 	}
 
 	// sending first packet done
@@ -134,14 +142,7 @@ func (s *Session) ForwardToAgent(data []byte) error {
 		}
 
 		if n > 0 {
-
-			header := &Header{
-				SID: s.ID,
-				Len: uint32(n),
-			}
-			framedData := append(header.Encode(), buffer[:n]...)
-
-			if err := s.SendToAgent(framedData); err != nil {
+			if err = s.SendRawDataToAgent(buffer[:n]); err != nil {
 				log.Infof("Failed to send RDP data to agent: %v", err)
 				break
 			}
@@ -150,7 +151,7 @@ func (s *Session) ForwardToAgent(data []byte) error {
 	return nil
 }
 
-// this will forward data from agent to tcp
+// ForwardToClient this will forward data from agent to tcp
 func (s *Session) ForwardToClient() {
 	for data := range s.dataChannel {
 
@@ -160,6 +161,18 @@ func (s *Session) ForwardToClient() {
 			break
 		}
 	}
+}
+
+// GetTCPDataChannel returns the channel that will be used to send data to the TCP connection
+// Warn: do not use this when calling ForwardToClient()
+func (s *Session) GetTCPDataChannel() chan []byte {
+	return s.dataChannel
+}
+
+// ToConn returns a net.Conn that can be used to read and write as a normal go connection
+// Warn: do not use this when calling ForwardToClient()
+func (s *Session) ToConn() net.Conn {
+	return &sessionConnWrapper{session: s}
 }
 
 func CreateAgent(agentID string, ws *websocket.Conn) error {
@@ -196,4 +209,100 @@ func GetSessions() map[uuid.UUID]*Session {
 		return true
 	})
 	return sessions
+}
+
+var _ net.Conn = (*sessionConnWrapper)(nil)
+
+// sessionConnWrapper makes Session look like a normal net.Conn
+type sessionConnWrapper struct {
+	session   *Session
+	deadline  *time.Time
+	buffer    [16384]byte
+	bufferPos int // current position in buffer
+	bufferLen int // amount of valid data in a buffer
+}
+
+func (s *sessionConnWrapper) Read(b []byte) (n int, err error) {
+	ctx := context.Background()
+	cancel := func() {}
+	if s.deadline != nil {
+		ctx, cancel = context.WithDeadline(ctx, *s.deadline)
+	}
+
+	defer func() {
+		cancel()
+		s.deadline = nil
+	}()
+
+	c := s.session.GetTCPDataChannel()
+
+	// First, serve any buffered data
+	if s.bufferLen > 0 {
+		n := copy(b, s.buffer[s.bufferPos:s.bufferPos+s.bufferLen])
+		s.bufferPos += n
+		s.bufferLen -= n
+		if s.bufferLen == 0 {
+			s.bufferPos = 0
+		}
+		return n, nil
+	}
+
+	// Wait for data from a channel or context done
+	select {
+	case data := <-c:
+		if data == nil {
+			// Channel closed
+			return 0, io.EOF
+		}
+
+		// Copy as much as we can into the provided buffer
+		remaining := len(b)
+		if len(data) > remaining {
+			// Buffer the excess data in the internal buffer
+			n := copy(b, data[:remaining])
+
+			// Store the rest in the internal buffer
+			s.bufferLen = copy(s.buffer[:], data[remaining:])
+			s.bufferPos = 0
+			return n, nil
+		}
+
+		// Data fits entirely in the provided buffer
+		n := copy(b, data)
+		return n, nil
+
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
+func (s *sessionConnWrapper) Write(b []byte) (n int, err error) {
+	err = s.session.SendRawDataToAgent(b)
+	return len(b), err
+}
+
+func (s *sessionConnWrapper) Close() error {
+	s.session.Close()
+	return nil
+}
+
+func (s *sessionConnWrapper) LocalAddr() net.Addr {
+	return nil
+}
+
+func (s *sessionConnWrapper) RemoteAddr() net.Addr {
+	return nil
+}
+
+func (s *sessionConnWrapper) SetDeadline(t time.Time) error {
+	s.deadline = &t
+	return nil
+}
+
+func (s *sessionConnWrapper) SetReadDeadline(t time.Time) error {
+	return s.SetDeadline(t)
+}
+
+func (s *sessionConnWrapper) SetWriteDeadline(t time.Time) error {
+	return s.SetDeadline(t)
 }

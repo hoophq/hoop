@@ -322,6 +322,8 @@ jobs:
   build-webapp:
     runs-on: ubuntu-latest
     name: Build Webapp
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3

@@ -176,43 +176,7 @@
     [:> Callout.Icon
      [:> Info {:size 16}]]
     [:> Callout.Text
-     "Works only with FreeRDP client"]]
-
-   ;; Host
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Host"]
-    [logs/new-container
-     {:status :success
-      :id "hostname"
-      :logs (get-hostname)}]]
-
-   ;; Username
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Username"]
-    [logs/new-container
-     {:status :success
-      :id "username"
-      :logs (:username connection-credentials)}]]
-
-   ;; Password
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Password"]
-    [logs/new-container
-     {:status :success
-      :id "password"
-      :logs (:password connection-credentials)}]]
-
-   ;; Port
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Port"]
-    [logs/new-container
-     {:status :success
-      :id "port"
-      :logs (:port connection-credentials)}]]])
+     "Works only with Web Client"]]])
 
 (defn- ssh-credentials-fields
   "SSH specific credentials fields"
@@ -385,6 +349,15 @@
           :color "gray"
           :on-click minimize-fn}
          "Minimize"]
+
+        (when (= connection-type "rdp")
+          [:> Button
+           {:variant "solid"
+            :size "3"
+            :on-click #(rf/dispatch [:native-client-access->open-rdp-web-client
+                                     (get-in native-client-access-data [:connection_credentials :username])])}
+           "Open Web Client"])
+
         [:> Button
          {:variant "solid"
           :size "3"
