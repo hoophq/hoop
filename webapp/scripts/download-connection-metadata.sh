@@ -13,12 +13,25 @@ echo "  Source: $ORG/$REPO/$FILE"
 # Create directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
-HTTP_CODE=$(curl -L \
-     -o "$OUTPUT_DIR/$OUTPUT_FILE" \
-     -w "%{http_code}" \
-     -H "Accept: application/vnd.github.v3.raw" \
-     --silent \
-     --show-error \
+# Build curl command with optional authentication
+CURL_ARGS=(
+    -L
+    -o "$OUTPUT_DIR/$OUTPUT_FILE"
+    -w "%{http_code}"
+    -H "Accept: application/vnd.github.v3.raw"
+    --silent
+    --show-error
+)
+
+# Add authentication header if GitHub token is available
+if [ -n "$GITHUB_TOKEN" ]; then
+    echo "  Using authenticated request (token found)"
+    CURL_ARGS+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+else
+    echo "  Using unauthenticated request (no token)"
+fi
+
+HTTP_CODE=$(curl "${CURL_ARGS[@]}" \
      "https://api.github.com/repos/$ORG/$REPO/contents/$FILE")
 
 echo "HTTP Status: $HTTP_CODE"
