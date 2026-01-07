@@ -383,11 +383,7 @@
 
 (def main
   (r/create-class
-   {:component-will-unmount
-    (fn [_this]
-      (js/window.Intercom "update" #js{:hide_default_launcher false}))
-
-    :reagent-render
+   {:reagent-render
     (fn []
       (let [script-response (rf/subscribe [:editor-plugin->script])]
         (rf/dispatch [:editor-plugin->clear-script])
@@ -398,7 +394,6 @@
         (rf/dispatch [:jira-integration->get])
         (rf/dispatch [:search/clear-term])
 
-        (js/window.Intercom "update" #js{:hide_default_launcher true})
         (fn []
           (clearLocalCache)
           [editor {:script-output script-response}])))}))
