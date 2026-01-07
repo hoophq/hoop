@@ -621,7 +621,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 	// Hijack the connection to get raw TCP access
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		log.Infof("ResponseWriter does not support hijacking")
+		log.Errorf("ResponseWriter does not support hijacking")
 		// adding internal server error because this could be some error from the upgrade on
 		// the agent side
 		http.Error(w, "WebSocket upgrade error", http.StatusInternalServerError)
@@ -630,7 +630,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 
 	conn, bufrw, err := hijacker.Hijack()
 	if err != nil {
-		log.Infof("hijack failed: %v", err)
+		log.Errorf("hijack failed: %v", err)
 		// error reading the tcp raw data
 		http.Error(w, "WebSocket upgrade failed", http.StatusInternalServerError)
 		return
@@ -694,7 +694,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 			case <-ctx.Done():
 				return
 			default:
-				log.Infof("waiting for client data...")
+				log.Debugf("waiting for client data...")
 			}
 
 			// WebSocket spec recommends ping/pong every 30-60 seconds to detect dead connections
@@ -703,7 +703,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 			if err != nil {
 				// Handle read errors (graceful exit on EOF)
 				if err != io.EOF && ctx.Err() == nil {
-					log.Infof("client read error: %v exiting quietly", err)
+					log.Infof("exiting quietly, client read error: %v", err)
 				}
 				return
 			}
@@ -720,7 +720,7 @@ func (sess *httpProxySession) handleWebSocketUpgraded(
 						pb.SpecClientConnectionID: []byte(connectionID),
 					},
 				}); err != nil {
-					log.Infof("websocket failed to send data to agent: %v", err)
+					log.Warnf("websocket failed to send data to agent: %v", err)
 					return
 				}
 			}
