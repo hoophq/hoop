@@ -172,41 +172,11 @@
   [connection-credentials]
   [:> Box {:class "space-y-4"}
 
-   ;; Host
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Host"]
-    [logs/new-container
-     {:status :success
-      :id "hostname"
-      :logs (get-hostname)}]]
-
-   ;; Username
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Username"]
-    [logs/new-container
-     {:status :success
-      :id "username"
-      :logs (:username connection-credentials)}]]
-
-   ;; Password
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Password"]
-    [logs/new-container
-     {:status :success
-      :id "password"
-      :logs (:password connection-credentials)}]]
-
-   ;; Port
-   [:> Box {:class "space-y-2"}
-    [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-     "Port"]
-    [logs/new-container
-     {:status :success
-      :id "port"
-      :logs (:port connection-credentials)}]]])
+   [:> Callout.Root {:size "1" :color "blue" :class "w-full"}
+    [:> Callout.Icon
+     [:> Info {:size 16}]]
+    [:> Callout.Text
+     "Works only with Web Client"]]])
 
 (defn- ssh-credentials-fields
   "SSH specific credentials fields"
