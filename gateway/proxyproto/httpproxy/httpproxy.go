@@ -242,7 +242,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// avoid hammering the database with invalid requests
 	// avoid goroutine for each request
 	if cached, ok := negativeAuthCache.Load(secretKeyHash); ok {
-		log.Warnf("negative auth cache hit for secret key hash: %s", secretKeyHash)
+		log.Debugf("negative auth cache hit for secret key hash: %s", secretKeyHash)
 		entry := cached.(*negativeAuthEntry)
 		// Check if cache entry is still valid (not expired)
 		// we will clean this after 1 day just to clean the memory
