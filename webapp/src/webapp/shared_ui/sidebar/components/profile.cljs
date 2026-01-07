@@ -36,8 +36,9 @@
                                  :aria-hidden "true"}]
           "Feature request"]]
         [:li
-         [:a {:target "_blank"
-              :href "https://help.hoop.dev"
+         [:a {:id "intercom-support-trigger"
+              :href "#"
+              :onClick #(.preventDefault %)
               :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
           [:> MessageCircleQuestion {:size 24
                                      :aria-hidden "true"}]

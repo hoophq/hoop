@@ -112,7 +112,9 @@
            (js/window.Intercom
             "boot"
             (clj->js {:api_base "https://api-iam.intercom.io"
-                      :app_id "ryuapdmp"}))
+                      :app_id "ryuapdmp"
+                      :hide_default_launcher true
+                      :custom_launcher_selector "#intercom-support-trigger"}))
 
            (js/window.Intercom
             "boot"
@@ -121,5 +123,7 @@
                       :name (:name user)
                       :email (:email user)
                       :user_id (:email user)
-                      :user_hash (:intercom_hmac_digest user)})))
+                      :user_hash (:intercom_hmac_digest user)
+                      :hide_default_launcher true
+                      :custom_launcher_selector "#intercom-support-trigger"})))
          {})))))
