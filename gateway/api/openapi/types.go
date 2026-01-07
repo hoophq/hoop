@@ -1828,7 +1828,7 @@ type HttpProxyConnectionInfo struct {
 	// Port of the HTTP proxy instance
 	Port string `json:"port"`
 	// Token to access the HTTP proxy resource
-	ProxyToken string `json:"proxy-token"`
+	ProxyToken string `json:"proxy_token"`
 	// The command to access the HTTP proxy instance
 	Command string `json:"command"`
 }

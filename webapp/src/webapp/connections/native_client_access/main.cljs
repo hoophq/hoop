@@ -217,7 +217,7 @@
 
 (defn- http-proxy-credentials-fields
   "Http proxy specific credentials fields"
-  [{:keys [command port proxy-token]}]
+  [{:keys [command port proxy_token]}]
 
   (let [{:keys [curl browser]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
     [:> Box {:class "space-y-4"}
@@ -237,7 +237,7 @@
       [logs/new-container
        {:status :success
         :id "authtoken"
-        :logs proxy-token}]]
+        :logs proxy_token}]]
      ;; Commands
      [:> Box {:class "space-y-2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
