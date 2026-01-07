@@ -58,3 +58,4 @@ deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 
 # rust build
 target/
+webapp/resources/public/data/connections-metadata.json

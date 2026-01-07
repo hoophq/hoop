@@ -172,12 +172,6 @@
   [connection-credentials]
   [:> Box {:class "space-y-4"}
 
-   [:> Callout.Root {:size "1" :color "blue" :class "w-full"}
-    [:> Callout.Icon
-     [:> Info {:size 16}]]
-    [:> Callout.Text
-     "Works only with FreeRDP client"]]
-
    ;; Host
    [:> Box {:class "space-y-2"}
     [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
