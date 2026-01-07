@@ -2401,6 +2401,165 @@ const docTemplate = `{
                 }
             }
         },
+        "/metrics/sessions": {
+            "get": {
+                "description": "Query session metrics data with advanced filtering. Supports AND/OR logic for combining filters. Filter by resource types (connection_type), resource subtypes (connection_subtype), resources (connection_name), Presidio data types (info_type), masked/unmasked status, date ranges, session dates, and session duration.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Session Metrics"
+                ],
+                "summary": "Get Session Metrics",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by connection types (e.g., postgres, mysql)",
+                        "name": "connection_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by connection subtypes (e.g., amazon-rds, azure-db)",
+                        "name": "connection_subtype",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by specific connection names",
+                        "name": "connection_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by Presidio data types (e.g., EMAIL_ADDRESS, CREDIT_CARD, PHONE_NUMBER)",
+                        "name": "info_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only return masked data (count_masked \u003e 0)",
+                        "name": "only_masked",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only return unmasked data (count_masked = 0, but count_analyzed \u003e 0)",
+                        "name": "only_unmasked",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date for filtering (format: YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date for filtering (format: YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Filter by specific session IDs",
+                        "name": "session_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter sessions that started on or after this date (format: YYYY-MM-DD)",
+                        "name": "session_start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter sessions that ended on or before this date (format: YYYY-MM-DD)",
+                        "name": "session_end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minimum session duration in seconds",
+                        "name": "min_duration_sec",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum session duration in seconds",
+                        "name": "max_duration_sec",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include sessions that are still open (not ended)",
+                        "name": "include_open_sessions",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Logic operator for combining filters: 'and' or 'or' (default: 'and')",
+                        "name": "logic_operator",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination page (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Pagination limit (default: 100, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Return aggregated metrics instead of detailed list",
+                        "name": "aggregated",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/orgs/features": {
             "put": {
                 "description": "Updates a feature configuration. It will report if this feature is available in the user info endpoint.",
@@ -3899,6 +4058,150 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create Runbook Configuration Entry",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Create Runbook Configuration Entry",
+                "parameters": [
+                    {
+                        "description": "Runbook Repository Configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRepository"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookConfigurationResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/runbooks/configurations/{id}": {
+            "put": {
+                "description": "Update Runbook Configuration Entry",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Update Runbook Configuration Entry",
+                "parameters": [
+                    {
+                        "description": "Runbook Repository Configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookRepository"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookConfigurationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a runbook configuration entry.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Delete Runbook Configuration Entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -8817,6 +9120,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "git_hook_ttl": {
+                    "description": "Enables runbook hooks when this value is greater than zero",
                     "type": "integer",
                     "example": 1000
                 },
@@ -8890,12 +9194,9 @@ const docTemplate = `{
         },
         "openapi.RunbookRepositoryResponse": {
             "type": "object",
-            "required": [
-                "git_url",
-                "repository"
-            ],
             "properties": {
                 "git_hook_ttl": {
+                    "description": "Enables runbook hooks when this value is greater than zero",
                     "type": "integer",
                     "example": 1000
                 },
@@ -8917,6 +9218,7 @@ const docTemplate = `{
                 "repository": {
                     "description": "Git repository identifier in the format ` + "`" + `host/owner/repo` + "`" + `",
                     "type": "string",
+                    "readOnly": true,
                     "example": "github.com/myorg/myrepo"
                 },
                 "ssh_key": {
@@ -9013,6 +9315,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "connections": {
+                    "description": "The connection names that this rule applies to",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -9023,42 +9326,50 @@ const docTemplate = `{
                     ]
                 },
                 "created_at": {
+                    "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
                 },
                 "description": {
+                    "description": "The description of the runbook rule",
                     "type": "string",
                     "example": "Runbook rules for production databases"
                 },
                 "id": {
+                    "description": "The unique identifier of the runbook rule",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 },
                 "name": {
+                    "description": "The name of the runbook rule",
                     "type": "string",
                     "example": "Default Runbook Rules"
                 },
                 "org_id": {
+                    "description": "Organization ID that owns this runbook rule",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
                     "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
                 },
                 "runbooks": {
+                    "description": "The runbook files associated with this rule",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.RunbookRuleFile"
                     }
                 },
                 "updated_at": {
+                    "description": "The time the resource was updated",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
                 },
                 "user_groups": {
+                    "description": "The user groups names that can access this runbook rule",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -9074,10 +9385,12 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "name": {
+                    "description": "The relative git path of the runbook file",
                     "type": "string",
                     "example": "ops/update-user.runbook.sh"
                 },
                 "repository": {
+                    "description": "The normalized name of the repository",
                     "type": "string",
                     "example": "github.com/myorg/myrepo"
                 }
@@ -9093,6 +9406,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "connections": {
+                    "description": "The connection names that this rule applies to",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -9103,20 +9417,24 @@ const docTemplate = `{
                     ]
                 },
                 "description": {
+                    "description": "The description of the runbook rule",
                     "type": "string",
                     "example": "Runbook rules for production databases"
                 },
                 "name": {
+                    "description": "The name of the runbook rule",
                     "type": "string",
                     "example": "Default Runbook Rules"
                 },
                 "runbooks": {
+                    "description": "The runbook files associated with this rule",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.RunbookRuleFile"
                     }
                 },
                 "user_groups": {
+                    "description": "The user groups names that can access this runbook rule",
                     "type": "array",
                     "items": {
                         "type": "string"

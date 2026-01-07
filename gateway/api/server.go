@@ -746,6 +746,21 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		metricsapi.Get,
 	)
 
+	r.POST("/runbooks/configurations",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.CreateRunbookConfigurationEntry,
+	)
+	r.PUT("/runbooks/configurations/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.UpdateRunbookConfigurationEntry,
+	)
+	r.DELETE("/runbooks/configurations/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.DeleteRunbookConfiguration,
+	)
 	r.GET("/runbooks",
 		r.AuthMiddleware,
 		apirunbooks.ListRunbooksV2,

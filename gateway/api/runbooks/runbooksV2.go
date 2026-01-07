@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -179,6 +181,120 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 	deleteRunbookCache(ctx.GetOrgID(), "") // clear all cache for this org
 
 	c.JSON(200, buildRunbookConfigurationResponse(&runbooks))
+}
+
+// CreateRunbookConfigurationEntry
+//
+//	@Summary		Create Runbook Configuration Entry
+//	@Description	Create Runbook Configuration Entry
+//	@Tags			Runbooks
+//	@Accept			json
+//	@Produce		json
+//	@Param			request		body		openapi.RunbookRepository	true	"Runbook Repository Configuration"
+//	@Success		200			{object}	openapi.RunbookConfigurationResponse
+//	@Failure		409,422,500	{object}	openapi.HTTPError
+//	@Router			/runbooks/configurations [post]
+func CreateRunbookConfigurationEntry(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	req, err := parseRunbookRepoRequest(c)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	dbConfig := buildConfigMapRepository(req)
+	config, err := models.BuildCommonConfig(&dbConfig)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed creating runbook config, reason=%v", err)})
+		return
+	}
+
+	err = models.CreateRunbookConfigurationEntry(models.DB, ctx.OrgID, config.GetNormalizedGitURL(), &dbConfig)
+	switch err {
+	case models.ErrAlreadyExists:
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+	case nil:
+		c.JSON(http.StatusCreated, buildRunbookRepositoryResponse(config.GetNormalizedGitURL(), &dbConfig))
+	default:
+		errMsg := fmt.Sprintf("failed creating runbook configuration, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+	}
+}
+
+// UpdateRunbookConfigurationEntry
+//
+//	@Summary		Update Runbook Configuration Entry
+//	@Description	Update Runbook Configuration Entry
+//	@Tags			Runbooks
+//	@Accept			json
+//	@Produce		json
+//	@Param			request			body		openapi.RunbookRepository	true	"Runbook Repository Configuration"
+//	@Success		200				{object}	openapi.RunbookConfigurationResponse
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Router			/runbooks/configurations/{id} [put]
+func UpdateRunbookConfigurationEntry(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	req, err := parseRunbookRepoRequest(c)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	// a check to ensure the git url in the path and body match
+	gitUrlID := c.Param("id")
+	if gitUrlID != uuid.NewSHA1(uuid.NameSpaceURL, []byte(req.GitUrl)).String() {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "git url in the path and body do not match"})
+		return
+	}
+
+	dbConfig := buildConfigMapRepository(req)
+	config, err := models.BuildCommonConfig(&dbConfig)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed creating runbook config, reason=%v", err)})
+		return
+	}
+
+	err = models.UpdateRunbookConfigurationEntry(models.DB, ctx.OrgID, config.GetNormalizedGitURL(), &dbConfig)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	case nil:
+		deleteRunbookCache(ctx.GetOrgID(), "") // clear all cache for this org
+		c.JSON(http.StatusOK, buildRunbookRepositoryResponse(config.GetNormalizedGitURL(), &dbConfig))
+	default:
+		errMsg := fmt.Sprintf("failed updating runbook configuration, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+	}
+}
+
+// DeleteRunbookConfigurationEntry
+//
+//	@Summary		Delete Runbook Configuration Entry
+//	@Description	Delete a runbook configuration entry.
+//	@Tags			Runbooks
+//	@Produce		json
+//	@Param			id	path	string	true	"The id of the resource"
+//	@Success		204
+//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Router			/runbooks/configurations/{id} [delete]
+func DeleteRunbookConfiguration(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	id := c.Param("id")
+
+	err := models.DeleteRunbookConfigurationEntry(models.DB, ctx.OrgID, id)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	case nil:
+		deleteRunbookCache(ctx.GetOrgID(), "") // clear all cache for this org
+		c.Status(http.StatusNoContent)
+	default:
+		errMsg := fmt.Sprintf("failed deleting runbook configuration, reason=%v", err)
+		log.Error(errMsg)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+	}
 }
 
 func buildConfigMapRepository(config *openapi.RunbookRepository) models.RunbookRepositoryConfig {
@@ -442,4 +558,53 @@ func RunbookExec(c *gin.Context) {
 		log.Infof("runbook exec timeout (50s), it will return async")
 		c.JSON(http.StatusAccepted, clientexec.NewTimeoutResponse(sessionID))
 	}
+}
+
+func parseRunbookRepoRequest(c *gin.Context) (*openapi.RunbookRepository, error) {
+	var req openapi.RunbookRepository
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return nil, fmt.Errorf("invalid request body, reason=%v", err)
+	}
+
+	if err := validateGitURL(req.GitUrl); err != nil {
+		return nil, fmt.Errorf("invalid git url, reason=%v", err)
+	}
+	return &req, nil
+}
+
+var sshGitRegex = regexp.MustCompile(`^[\w\-\.]+@[\w\.\-]+:[\w\.\-/~_]+(\.git)?$`)
+
+func validateGitURL(urlStr string) error {
+	if urlStr == "" {
+		return fmt.Errorf("URL is empty")
+	}
+
+	// Check if it's SSH format (git@github.com:user/repo.git)
+	if sshGitRegex.MatchString(urlStr) {
+		return nil
+	}
+
+	// Check if it's a standard URL format
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	validSchemes := map[string]bool{
+		"http":  true,
+		"https": true,
+		"git":   true,
+		"ssh":   true,
+	}
+
+	if !validSchemes[scheme] {
+		return fmt.Errorf("invalid scheme: %s (must be http, https, git, or ssh)", scheme)
+	}
+
+	if u.Host == "" {
+		return fmt.Errorf("URL must have a host")
+	}
+
+	return nil
 }
