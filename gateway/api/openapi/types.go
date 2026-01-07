@@ -600,6 +600,25 @@ type Session struct {
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
 }
 
+type ProvisionSession struct {
+	UserEmail         string                   `json:"user_email" binding:"required" example:"johnwick@bad.org"`
+	Script            string                   `json:"script"`
+	Connection        string                   `json:"connection" binding:"required" example:"pgdemo"`
+	ApprovedReviewers []string                 `json:"approved_reviewers"`
+	EnvVars           map[string]string        `json:"env_vars"`
+	AccessDurationSec *int64                   `json:"access_duration_sec"`
+	Metadata          map[string]any           `json:"metadata"`
+	ClientArgs        []string                 `json:"client_args"`
+	JiraFields        map[string]string        `json:"jira_fields"`
+	TimeWindow        *ReviewSessionTimeWindow `json:"time_window"`
+}
+
+type ProvisionSessionResponse struct {
+	SessionID string `json:"session_id" format:"uuid" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54"`
+	UserEmail string `json:"user_email" example:"johnwick@bad.org"`
+	HasReview bool   `json:"has_review" example:"false"`
+}
+
 type SessionUpdateMetadataRequest struct {
 	// The metadata field
 	Metadata map[string]any `json:"metadata" swaggertype:"object,string" example:"reason:fix-issue"`

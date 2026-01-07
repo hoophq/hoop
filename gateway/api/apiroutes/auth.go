@@ -36,6 +36,20 @@ func (r *Router) loadTokenVerifier(c *gin.Context) (idp.UserInfoTokenVerifier, i
 	return tokenVerifier, serverConfig, err == nil
 }
 
+func (r *Router) OnlyApiKeyAccess(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	if ctx == nil {
+		log.Errorf("invalid context type")
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+		return
+	}
+
+	if ctx.UserID != "API_KEY" {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+		return
+	}
+}
+
 func (r *Router) AuthMiddleware(c *gin.Context) {
 	tokenVerifier, serverConfig, ok := r.loadTokenVerifier(c)
 	if !ok {

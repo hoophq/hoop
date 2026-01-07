@@ -95,13 +95,13 @@ func (h *handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, openapiReviews)
 }
 
-func parseTimeWindow(req openapi.ReviewRequest) (*models.ReviewTimeWindow, error) {
-	if req.TimeWindow == nil {
+func ParseTimeWindow(timeWindow *openapi.ReviewSessionTimeWindow) (*models.ReviewTimeWindow, error) {
+	if timeWindow == nil {
 		return nil, nil
 	}
 
-	startTime := req.TimeWindow.Configuration["start_time"]
-	endTime := req.TimeWindow.Configuration["end_time"]
+	startTime := timeWindow.Configuration["start_time"]
+	endTime := timeWindow.Configuration["end_time"]
 
 	if startTime == "" || endTime == "" {
 		return nil, fmt.Errorf("both from and to time must be provided")
@@ -118,8 +118,8 @@ func parseTimeWindow(req openapi.ReviewRequest) (*models.ReviewTimeWindow, error
 	}
 
 	return &models.ReviewTimeWindow{
-		Type:          string(req.TimeWindow.Type),
-		Configuration: req.TimeWindow.Configuration,
+		Type:          string(timeWindow.Type),
+		Configuration: timeWindow.Configuration,
 	}, nil
 }
 
@@ -151,7 +151,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	}
 
 	// Validate time window if provided
-	reviewTimeWindow, err := parseTimeWindow(req)
+	reviewTimeWindow, err := ParseTimeWindow(req.TimeWindow)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
