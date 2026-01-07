@@ -13,7 +13,7 @@
                       (rf/dispatch [:parallel-mode/script-success res exec]))
          dispatches (mapv (fn [exec]
                             [:dispatch-later
-                             {:ms 100  ; Reduzido de 1000ms
+                             {:ms 100
                               :dispatch [:fetch
                                          {:method "POST"
                                           :uri "/sessions"

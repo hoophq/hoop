@@ -106,28 +106,19 @@
    ;; Check if parallel mode is active
    (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
          parallel-mode? (>= (count parallel-connections) 2)]
-     
-     (js/console.log "🚀 submit-task called" 
-                     "parallel-connections:" (clj->js parallel-connections)
-                     "parallel-mode?" parallel-mode?
-                     "context:" (clj->js context))
-     
+
      (if parallel-mode?
        ;; Use parallel mode execution
-       (do
-         (js/console.log "✅ Using PARALLEL MODE execution")
-         {:fx [[:dispatch [:connections->get-multiple-by-names
-                           (map :name parallel-connections)
-                           [:parallel-mode/submit-task-with-fresh-data context]
-                           [:editor-plugin/submit-task-connection-error]]]]})
-       
+       {:fx [[:dispatch [:connections->get-multiple-by-names
+                         (map :name parallel-connections)
+                         [:parallel-mode/submit-task-with-fresh-data context]
+                         [:editor-plugin/submit-task-connection-error]]]]}
+
        ;; Use legacy single/multi connection logic
        (let [primary-name (get-in db [:editor :connections :selected :name])
              multi-names (map :name (get-in db [:editor :multi-connections :selected]))
              all-names (remove nil? (cons primary-name multi-names))]
-         
-         (js/console.log "📝 Using LEGACY execution" "all-names:" (clj->js all-names))
-         
+
          (if (empty? all-names)
            {:fx [[:dispatch [:show-snackbar {:level :error :text "You must choose a connection"}]]]}
            {:fx [[:dispatch [:connections->get-multiple-by-names
