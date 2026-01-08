@@ -139,7 +139,7 @@
                [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12] mb-1"}
                 "Http Proxy Port"]
                [forms/input
-                {:placeholder "e.g. 13389"
+                {:placeholder "e.g. 18888"
                  :value (:http-proxy-port data)
                  :on-change #(rf/dispatch [:infrastructure->update-field
                                            :http-proxy-port (-> % .-target .-value)])}]]]]]])))))

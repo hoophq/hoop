@@ -26,6 +26,9 @@ spec:
       name: ssh
       protocol: TCP
       targetPort: 12222
+    - port: 18888
+      name: httpproxy
+      protocol: TCP
 {{- with .Values.mainService.httpBackendConfig }}
 ---
 apiVersion: cloud.google.com/v1
