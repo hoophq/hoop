@@ -211,11 +211,15 @@ func buildConnectionCredentialsResponse(
 		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
 		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
 
+		jsonCommandsString := `{
+				"curl": "` + curlCommand + `",
+				"browser": "` + browserCommand + `"
+			}`
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
 			Hostname:   host,
 			Port:       serverPort,
 			ProxyToken: secretKey,
-			Command:    fmt.Sprintf("cURL: %s\n Browser: %s", curlCommand, browserCommand),
+			Command:    jsonCommandsString,
 		}
 	default:
 		return nil
