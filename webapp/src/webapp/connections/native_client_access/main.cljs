@@ -216,7 +216,7 @@
        "Command Browser"]
       [logs/new-container
        {:status :success
-        :id "command"
+        :id "command-browser"
         :logs browser}]]
 
    ;; Port
