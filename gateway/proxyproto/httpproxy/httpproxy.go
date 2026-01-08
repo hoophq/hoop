@@ -242,7 +242,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// avoid hammering the database with invalid requests
 	// avoid goroutine for each request
 	if cached, ok := negativeAuthCache.Load(secretKeyHash); ok {
-		log.Warnf("negative auth cache hit for secret key hash: %s", secretKeyHash)
+		log.Debugf("negative auth cache hit for secret key hash: %s", secretKeyHash)
 		entry := cached.(*negativeAuthEntry)
 		// Check if cache entry is still valid (not expired)
 		// we will clean this after 1 day just to clean the memory
@@ -595,7 +595,11 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		defer resp.Body.Close()
-
+		// Check if this is a WebSocket upgrade response
+		if resp.StatusCode == http.StatusSwitchingProtocols {
+			sess.handleWebSocketUpgraded(w, response, responseChan, connectionID)
+			return
+		}
 		for key, values := range resp.Header {
 			for _, value := range values {
 				w.Header().Add(key, value)
@@ -606,6 +610,150 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+func (sess *httpProxySession) handleWebSocketUpgraded(
+	w http.ResponseWriter,
+	upgradeResponse []byte,
+	responseChan chan []byte,
+	connectionID string,
+) {
+	log := log.With("sid", sess.sid, "conn", connectionID, "type", "websocket")
+
+	// Hijack the connection to get raw TCP access
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		log.Errorf("ResponseWriter does not support hijacking")
+		// adding internal server error because this could be some error from the upgrade on
+		// the agent side
+		http.Error(w, "WebSocket upgrade error", http.StatusInternalServerError)
+		return
+	}
+
+	conn, bufrw, err := hijacker.Hijack()
+	if err != nil {
+		log.Errorf("hijack failed: %v", err)
+		// error reading the tcp raw data
+		http.Error(w, "WebSocket upgrade failed", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	// Write the upgrade response to client
+	if _, err := conn.Write(upgradeResponse); err != nil {
+		log.Errorf("failed to write upgrade response: %v", err)
+		return
+	}
+
+	log.Infof("WebSocket connection upgraded, starting bidirectional pump")
+
+	ctx, cancel := context.WithCancel(sess.ctx)
+	defer cancel()
+
+	// doing this because i am starting 2 goroutines
+	// we need to be sure when both are done before returning and closing resources
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Client → Agent (read from client, send via gRPC to the agent)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+
+		// this number was more a guess based on typical websocket frame sizes
+		// websocket frame size small < 16Kb, so 32Kb should be enough to cover most cases
+		// network tcp typically uses 1.5KB packets, 32KB = 21 packets, good size batch
+		// keep the memory small and efficient per connection
+		//System page size	32KB is a multiple of common page sizes (4KB, 8KB), better memory alignment.
+		//Kernel buffers	Default TCP socket buffers are often 64KB-128KB. 32KB reads don't oversaturate.
+		// 16Kb might be to small -> 64Kb might be to large and wasteful for many connections
+		buf := make([]byte, 32*1024)
+
+		// First, flush any buffered data from hijack
+		for bufrw.Reader.Buffered() > 0 {
+			n, err := bufrw.Read(buf)
+			if err != nil {
+				break
+			}
+			if n > 0 {
+				if err := sess.streamClient.Send(&pb.Packet{
+					Type:    pbagent.HttpProxyConnectionWrite,
+					Payload: buf[:n],
+					Spec: map[string][]byte{
+						pb.SpecGatewaySessionID:   []byte(sess.sid),
+						pb.SpecClientConnectionID: []byte(connectionID),
+					},
+				}); err != nil {
+					log.Errorf("failed to send buffered data: %v", err)
+					return
+				}
+			}
+		}
+
+		// Read loop
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				log.Debugf("waiting for client data...")
+			}
+
+			// WebSocket spec recommends ping/pong every 30-60 seconds to detect dead connections
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			n, err := conn.Read(buf)
+			if err != nil {
+				// Handle read errors (graceful exit on EOF)
+				if err != io.EOF && ctx.Err() == nil {
+					log.Infof("exiting quietly, client read error: %v", err)
+				}
+				return
+			}
+			if n > 0 {
+				if sess.closed.Load() {
+					log.Infof("session closed, stopping client read pump")
+					return
+				}
+				if err := sess.streamClient.Send(&pb.Packet{
+					Type:    pbagent.HttpProxyConnectionWrite,
+					Payload: buf[:n],
+					Spec: map[string][]byte{
+						pb.SpecGatewaySessionID:   []byte(sess.sid),
+						pb.SpecClientConnectionID: []byte(connectionID),
+					},
+				}); err != nil {
+					log.Warnf("websocket failed to send data to agent: %v", err)
+					return
+				}
+			}
+		}
+	}()
+
+	// ReponseChan Agent → Client (read from responseChan, write to client)
+	go func() {
+		defer wg.Done()
+		defer cancel()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case data, ok := <-responseChan:
+				if !ok {
+					log.Warnf("agent websocket response channel closed")
+					return
+				}
+				//Pushing data to client (network should accept quickly)
+				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				if _, err := conn.Write(data); err != nil {
+					log.Errorf("failed to write to client: %v", err)
+					return
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	log.Infof("WebSocket connection closed")
+}
 func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secretKeyHash string) {
 	defer func() {
 		log.Infof("handleAgentResponses defer starting cleanup, sid=%s", sess.sid)
@@ -695,10 +843,21 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 				log.Warnf("no response channel found for connectionID=%s, sid=%s (response dropped)", connectionID, sess.sid)
 			}
 
-		case pbclient.TCPConnectionClose, pbclient.SessionClose:
+		case pbclient.SessionClose:
 			log.Infof("session closed by server, sid=%s", sess.sid)
 			sess.cancelFn("session closed by server")
 			return
+		// this is the case when the agent closes the connection
+		case pbclient.TCPConnectionClose:
+			connectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+			log.Infof("connection closed by agent, connectionID=%s, sid=%s", connectionID, sess.sid)
+			// Close only this connection's response channel
+			if ch, ok := sess.responseStore.LoadAndDelete(connectionID); ok {
+				if responseChan, ok := ch.(chan []byte); ok {
+					close(responseChan)
+				}
+			}
+			// Don't return - keep processing other connections!
 
 		default:
 			// Unknown packet type, log and ignore

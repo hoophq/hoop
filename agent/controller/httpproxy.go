@@ -32,7 +32,10 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		if _, err := httpServer.Write(pkt.Payload); err != nil {
 			log.Infof("failed writing packet, err=%v", err)
 			_ = httpServer.Close()
-			a.sendClientSessionClose(sessionID, fmt.Sprintf("failed writing to http proxy connection, reason=%v", err))
+			// If we have and multiple websocket connection open and we kill one of them
+			// then we should not close the entire session, just this connection only.
+			// the proxy session will be closed when the hoop connect <role> is closed.
+			a.sendClientTCPConnectionClose(sessionID, clientConnectionID)		
 		}
 		return
 	}
