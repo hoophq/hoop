@@ -126,21 +126,22 @@ func (a *Agent) Close(cause error) {
 	_, _ = a.client.Close()
 }
 
-func (a *Agent) getOrAddConnMutex(connId string) *sync.Mutex {
+func (a *Agent) getOrAddConnMutex(connId string, connType string) *sync.Mutex {
 	a.connMtxStoreMtx.Lock()
 	defer a.connMtxStoreMtx.Unlock()
 
-	if _, ok := a.connMtx[connId]; !ok {
-		a.connMtx[connId] = &sync.Mutex{}
+	if _, ok := a.connMtx[connId+connType]; !ok {
+		a.connMtx[connId+connType] = &sync.Mutex{}
 	}
-	return a.connMtx[connId]
+	return a.connMtx[connId+connType]
 }
 
 func (a *Agent) processPacket(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
 
 	// Make it pipelined for each connection but parallel between connections
-	mtx := a.getOrAddConnMutex(sid)
+	mtx := a.getOrAddConnMutex(clientConnectionID, pkt.Type)
 	mtx.Lock()
 	defer mtx.Unlock()
 
@@ -223,7 +224,7 @@ func (a *Agent) Run() error {
 		}
 
 		// We don't need to wait here for the result, so we just spawn a goroutine to process it.
-		a.processPacket(pkt)
+		go a.processPacket(pkt)
 	}
 }
 
