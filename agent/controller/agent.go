@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/getsentry/sentry-go"
@@ -38,6 +39,9 @@ type (
 		runtimeEnvs      map[string]string
 		shutdownCtx      context.Context
 		shutdownCancelFn context.CancelCauseFunc
+		// Using sync.Map is more complex here due untyped nature, so we use a mutex + typed map
+		connMtx         map[string]*sync.Mutex
+		connMtxStoreMtx sync.Mutex
 	}
 	connEnv struct {
 		scheme             string
@@ -91,7 +95,6 @@ func (e *connEnv) Get(key string) string {
 	return values.Get(key)
 }
 
-// func (e *connEnv) Has(key string) bool { return e.Get(key) != "" }
 func (e *connEnv) Address() string {
 	if e.address != "" {
 		return e.address
@@ -108,6 +111,7 @@ func New(client pb.ClientTransport, cfg *config.Config, runtimeEnvs map[string]s
 		runtimeEnvs:      runtimeEnvs,
 		shutdownCtx:      shutdownCtx,
 		shutdownCancelFn: cancelFn,
+		connMtx:          make(map[string]*sync.Mutex),
 	}
 }
 
@@ -122,8 +126,24 @@ func (a *Agent) Close(cause error) {
 	_, _ = a.client.Close()
 }
 
+func (a *Agent) getOrAddConnMutex(connId string) *sync.Mutex {
+	a.connMtxStoreMtx.Lock()
+	defer a.connMtxStoreMtx.Unlock()
+
+	if _, ok := a.connMtx[connId]; !ok {
+		a.connMtx[connId] = &sync.Mutex{}
+	}
+	return a.connMtx[connId]
+}
+
 func (a *Agent) processPacket(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+
+	// Make it pipelined for each connection but parallel between connections
+	mtx := a.getOrAddConnMutex(sid)
+	mtx.Lock()
+	defer mtx.Unlock()
+
 	log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
 	switch pkt.Type {
 	case pbagent.GatewayConnectOK:
@@ -203,7 +223,7 @@ func (a *Agent) Run() error {
 		}
 
 		// We don't need to wait here for the result, so we just spawn a goroutine to process it.
-		go a.processPacket(pkt)
+		a.processPacket(pkt)
 	}
 }
 
