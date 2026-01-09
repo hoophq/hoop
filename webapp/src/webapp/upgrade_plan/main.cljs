@@ -48,7 +48,7 @@
      [:> Button {:size "4"
                  :on-click (fn []
                              (rf/dispatch [:modal->close])
-                             request-demo)}
+                             (request-demo))}
       "Request a demo"]]
 
     [:> Box {:class (str "absolute top-[--space-9] right-0 w-1/2 h-auto "
