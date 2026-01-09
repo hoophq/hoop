@@ -259,7 +259,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 						SELECT 1 FROM private.users u
 						INNER JOIN private.user_groups ug ON ug.user_id = u.id
 						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @user_id
+						WHERE rg.review_id = rv.id AND u.subject = @user_id
 					)
 				ELSE true
 		END AND
@@ -298,7 +298,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			return fmt.Errorf("unable to obtain total count of sessions, reason=%v", err)
 		}
 
-		err = tx.Raw(`
+		err = tx.Debug().Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
@@ -342,7 +342,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 						SELECT 1 FROM private.users u
 						INNER JOIN private.user_groups ug ON ug.user_id = u.id
 						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @user_id
+						WHERE rg.review_id = rv.id AND u.subject = @user_id
 					)
 				ELSE true
 		END AND
