@@ -7,13 +7,15 @@
 (rf/reg-event-fx
  :tracking->initialize-if-allowed
  (fn [{:keys [db]} _]
-   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))]
-     (if (not analytics-tracking)
-       ;; Tracking is disabled, ensure all tracking is stopped
-       {:fx [[:dispatch [:tracking->disable-all-tracking]]]}
+   (let [analytics-tracking (= "enabled" (get-in db [:gateway->info :data :analytics_tracking] "disabled"))
+         tracking-initialized? (get-in db [:tracking->initialized?] false)]
+     (if (and analytics-tracking (not tracking-initialized?))
        ;; Tracking is allowed, initialize all tracking components
        {:fx [[:dispatch [:tracking->load-scripts]]
-             [:dispatch [:segment->load]]]}))))
+             [:dispatch [:segment->load]]]
+        :db (assoc-in db [:tracking->initialized?] true)}
+       ;; Tracking is disabled, ensure all tracking is stopped
+       {:fx [[:dispatch [:tracking->disable-all-tracking]]]}))))
 
 (rf/reg-event-fx
  :tracking->disable-all-tracking
