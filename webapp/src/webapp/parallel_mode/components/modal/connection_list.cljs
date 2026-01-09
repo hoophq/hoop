@@ -34,7 +34,7 @@
         connections-pagination (rf/subscribe [:connections->pagination])]
     (fn []
       (let [connections-loading? (= :loading (:loading @connections-pagination))]
-        [:> CommandGroup {:class "space-y-2"}
+        [:> CommandGroup {:class "space-y-2 mb-12"}
          [infinite-scroll
           {:on-load-more (fn []
                            (when (not connections-loading?)

@@ -9,7 +9,7 @@
         has-minimum? (rf/subscribe [:parallel-mode/has-minimum?])]
     (fn []
       [:> Box {:class (str "border-t border-gray-6 px-4 py-3 bg-gray-1 "
-                           "absolute bottom-0 left-0 w-full")}
+                           "absolute bottom-0 left-0 w-full z-10")}
        [:> Flex {:justify "between" :align "center" :gap "3"}
         (cond
           (<= @selected-count 1)

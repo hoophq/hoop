@@ -1,7 +1,7 @@
 (ns webapp.components.command-dialog
   (:require
    ["cmdk" :refer [CommandDialog CommandInput CommandList CommandLoading]]
-   ["@radix-ui/themes" :refer [Box Flex Text Spinner]]
+   ["@radix-ui/themes" :refer [Box Flex Text Spinner ScrollArea]]
    ["lucide-react" :refer [Search X]]
    [webapp.components.theme-provider :refer [theme-provider]]))
 
@@ -91,6 +91,8 @@
           [:> Text {:size "2" :class "text-gray-12"}
            "Loading..."]]]
 
-        [:> CommandList
-         {:className "flex-1 overflow-y-auto p-4"}
-         (or content children)])]]]])
+        [:> ScrollArea {:scrollbars "vertical"
+                        :size "2"}
+         [:> CommandList
+          {:className "flex-1 overflow-y-auto p-4"}
+          (or content children)]])]]]])
