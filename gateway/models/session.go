@@ -259,7 +259,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 						SELECT 1 FROM private.users u
 						INNER JOIN private.user_groups ug ON ug.user_id = u.id
 						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @user_id
+						WHERE rg.review_id = rv.id AND u.subject = @user_id
 					)
 				ELSE true
 		END AND
@@ -342,7 +342,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 						SELECT 1 FROM private.users u
 						INNER JOIN private.user_groups ug ON ug.user_id = u.id
 						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @user_id
+						WHERE rg.review_id = rv.id AND u.subject = @user_id
 					)
 				ELSE true
 		END AND
