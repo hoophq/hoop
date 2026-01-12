@@ -2,20 +2,31 @@
   (:require
    [re-frame.core :as rf]))
 
+(defn generate-batch-id
+  "Generate a unique batch ID for grouping parallel executions"
+  []
+  (str (random-uuid)))
+
 ;; ---- Parallel Execution Events ----
 
 (rf/reg-event-fx
  :parallel-mode/execute-immediately
  (fn [{:keys [db]} [_ all-exec-list to-execute-list]]
-   (js/console.log "🚀 execute-immediately called" 
-                   "total:" (count all-exec-list)
-                   "to-execute:" (count to-execute-list))
-   ;; Show modal with all items (including pre-failed)
-   ;; Then execute only valid ones
-   {:db (assoc db :multi-exec {:data all-exec-list
-                               :status :running
-                               :type :script})
-    :fx [[:dispatch [:parallel-mode/execute-script to-execute-list]]]}))
+   (let [batch-id (generate-batch-id)]
+     (js/console.log "🚀 execute-immediately called"
+                     "batch-id:" batch-id
+                     "total:" (count all-exec-list)
+                     "to-execute:" (count to-execute-list))
+     ;; Add batch-id to all items
+     (let [all-with-batch (mapv #(assoc % :session-batch-id batch-id) all-exec-list)
+           to-execute-with-batch (mapv #(assoc % :session-batch-id batch-id) to-execute-list)]
+       ;; Show modal with all items (including pre-failed)
+       ;; Then execute only valid ones
+       {:db (assoc db :multi-exec {:data all-with-batch
+                                   :status :running
+                                   :type :script
+                                   :batch-id batch-id})
+        :fx [[:dispatch [:parallel-mode/execute-script to-execute-with-batch]]]}))))
 
 (rf/reg-event-fx
  :parallel-mode/execute-script
@@ -37,7 +48,8 @@
                                           :body {:script (:script exec)
                                                  :connection (:connection-name exec)
                                                  :metadata (:metadata exec)
-                                                 :env_vars (:env_vars exec)}}]}])
+                                                 :env_vars (:env_vars exec)
+                                                 :session_batch_id (:session-batch-id exec)}}]}])
                           exec-list)]
      ;; Update status to running for items being executed
      {:db (update-in db [:multi-exec :data]
@@ -66,7 +78,7 @@
                                       (merge exec current-exec-parsed)
                                       exec))
                                   executions)
-         all-finished? (every? #(contains? #{:completed :waiting-review :error :error-jira-template 
+         all-finished? (every? #(contains? #{:completed :waiting-review :error :error-jira-template
                                              :error-metadata-required :cancelled}
                                            (:status %))
                                updated-executions)]
@@ -91,7 +103,7 @@
                                       (merge exec current-exec-parsed)
                                       exec))
                                   executions)
-         all-finished? (every? #(contains? #{:completed :waiting-review :error :error-jira-template 
+         all-finished? (every? #(contains? #{:completed :waiting-review :error :error-jira-template
                                              :error-metadata-required :cancelled}
                                            (:status %))
                                updated-executions)]
