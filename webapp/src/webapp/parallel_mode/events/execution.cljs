@@ -36,21 +36,37 @@
                       (rf/dispatch [:parallel-mode/script-failure error exec]))
          on-success (fn [res exec]
                       (rf/dispatch [:parallel-mode/script-success res exec]))
+         ;; Detect execution type
+         exec-type (:execution-type (first exec-list))
+         is-runbook? (= exec-type :runbook)
          ;; Mark items as running and dispatch requests
          updated-list (map #(assoc % :status :running) exec-list)
          dispatches (mapv (fn [exec]
-                            [:dispatch-later
-                             {:ms 100
-                              :dispatch [:fetch
-                                         {:method "POST"
-                                          :uri "/sessions"
-                                          :on-success #(on-success % exec)
-                                          :on-failure #(on-failure % exec)
-                                          :body {:script (:script exec)
-                                                 :connection (:connection-name exec)
-                                                 :metadata (:metadata exec)
-                                                 :env_vars (:env_vars exec)
-                                                 :session_batch_id (:session-batch-id exec)}}]}])
+                            (let [endpoint (if is-runbook? "/runbooks/exec" "/sessions")
+                                  body (if is-runbook?
+                                         ;; Runbook payload
+                                         {:file_name (:file-name exec)
+                                          :repository (:repository exec)
+                                          :parameters (:parameters exec)
+                                          :ref_hash (:ref-hash exec)
+                                          :connection_name (:connection-name exec)
+                                          :metadata (:metadata exec)
+                                          :env_vars (:env-vars exec)
+                                          :session_batch_id (:session-batch-id exec)}
+                                         ;; Script payload
+                                         {:script (:script exec)
+                                          :connection (:connection-name exec)
+                                          :metadata (:metadata exec)
+                                          :env_vars (:env-vars exec)
+                                          :session_batch_id (:session-batch-id exec)})]
+                              [:dispatch-later
+                               {:ms 100
+                                :dispatch [:fetch
+                                           {:method "POST"
+                                            :uri endpoint
+                                            :on-success #(on-success % exec)
+                                            :on-failure #(on-failure % exec)
+                                            :body body}]}]))
                           exec-list)]
      ;; Update status to running for items being executed
      {:db (update-in db [:multi-exec :data]

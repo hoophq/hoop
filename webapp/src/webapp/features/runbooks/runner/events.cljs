@@ -114,8 +114,22 @@
 (rf/reg-event-fx
  :runbooks/exec
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields on-success on-failure]}]]
-   (let [selected-connection (get-in db [:runbooks :selected-connection])
+   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields on-success on-failure] :as context}]]
+   ;; Check if parallel mode is active
+   (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
+         parallel-mode? (>= (count parallel-connections) 2)]
+     
+     (if parallel-mode?
+       ;; Use parallel mode execution
+       (do
+         (js/console.log "✅ Using PARALLEL MODE execution for runbooks")
+         {:fx [[:dispatch [:connections->get-multiple-by-names
+                           (map :name parallel-connections)
+                           [:parallel-mode/submit-runbook-with-fresh-data context]
+                           [:runbooks/submit-task-connection-error]]]]})
+       
+       ;; Use single runbook execution (existing flow)
+       (let [selected-connection (get-in db [:runbooks :selected-connection])
          selected-db (.getItem js/localStorage "selected-database")
          is-dynamodb? (= (:subtype selected-connection) "dynamodb")
          is-cloudwatch? (= (:subtype selected-connection) "cloudwatch")
@@ -171,7 +185,14 @@
               {:db (-> base-db
                        (assoc-in [:runbooks :metadata] [])
                        (assoc-in [:runbooks :metadata-key] "")
-                       (assoc-in [:runbooks :metadata-value] ""))})))))
+                       (assoc-in [:runbooks :metadata-value] ""))})))))))
+
+(rf/reg-event-fx
+ :runbooks/submit-task-connection-error
+ (fn [_ [_ _error]]
+   {:fx [[:dispatch [:show-snackbar
+                     {:level :error
+                      :text "Failed to verify connections. Please try again."}]]]}))
 
 (rf/reg-event-fx
  :runbooks/exec-success

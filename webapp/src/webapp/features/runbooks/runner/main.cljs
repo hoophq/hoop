@@ -15,7 +15,10 @@
    [webapp.webclient.panel :refer [discover-connection-type]]
    [webapp.features.runbooks.runner.views.connections-dialog :as connections-dialog]
    [webapp.features.runbooks.runner.views.list :as runbooks-list]
-   [webapp.features.runbooks.runner.views.form :as runbook-form]))
+   [webapp.features.runbooks.runner.views.form :as runbook-form]
+   [webapp.parallel-mode.components.header-button :as parallel-mode-button]
+   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
+   [webapp.parallel-mode.components.execution-summary.main :as execution-summary]))
 
 (defn header []
   (let [selected-template (rf/subscribe [:runbooks->selected-runbooks])
@@ -88,6 +91,9 @@
                 :has-notification? has-metadata?
                 :disabled? false}]]
 
+             ;; Parallel Mode Button
+             [parallel-mode-button/parallel-mode-button]
+
              [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
               [:> Button
                {:form "runbook-form"
@@ -146,6 +152,9 @@
         (rf/dispatch [:search/filter-runbooks @search-term]))
 
       [:> Box {:class (str "h-full bg-gray-2 overflow-hidden " (when @dark-mode? "dark"))}
+       [parallel-mode-modal/parallel-mode-modal]
+       [execution-summary/execution-summary-modal]
+       
        [header {:dark-mode? dark-mode?
                 :metadata-open? @metadata-open?
                 :toggle-metadata-open #(swap! metadata-open? not)}]
