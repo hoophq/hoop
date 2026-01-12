@@ -412,6 +412,8 @@ type RunbookRequest struct {
 	Metadata map[string]any `json:"metadata"`
 	// Jira fields to create a Jira issue
 	JiraFields map[string]string `json:"jira_fields"`
+	// Batch identifier to group sessions that were executed simultaneously
+	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 }
 
 type RunbookList struct {
@@ -1735,7 +1737,6 @@ type HttpProxyServerConfig struct {
 	ListenAddress string `json:"listen_address" example:"http://0.0.0.0:18888"`
 }
 
-
 type ServerAuthOidcConfig struct {
 	// Identity Provider Issuer URL (Oauth2)
 	IssuerURL string `json:"issuer_url" example:"https://auth.domain.tld/oidc" binding:"required"`
@@ -2225,4 +2226,6 @@ type RunbookExec struct {
 	Metadata map[string]any `json:"metadata"`
 	// Jira fields to create a Jira issue
 	JiraFields map[string]string `json:"jira_fields"`
+	// Batch identifier to group sessions that were executed simultaneously
+	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 }
