@@ -4,6 +4,7 @@
    [webapp.parallel-mode.events.modal]
    [webapp.parallel-mode.events.selection]
    [webapp.parallel-mode.events.execution]
+   [webapp.parallel-mode.events.execution-ui]
    [webapp.parallel-mode.events.submit]
    [webapp.parallel-mode.subs]))
 

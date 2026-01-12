@@ -1,5 +1,6 @@
 (ns webapp.parallel-mode.helpers
-  (:require [webapp.parallel-mode.db :as db]))
+  (:require [clojure.string :as cs]
+            [webapp.parallel-mode.db :as db]))
 
 ;; ---- Connection Filtering ----
 
@@ -39,6 +40,43 @@
   "Check if we have at least the minimum required connections"
   [selected-connections]
   (>= (count selected-connections) db/min-connections))
+
+;; ---- Pre-validation Helpers ----
+
+(defn has-jira-template?
+  "Check if connection has Jira template configured"
+  [connection]
+  (not (cs/blank? (:jira_issue_template_id connection))))
+
+(defn has-required-metadata?
+  "Check if connection requires metadata"
+  [connection]
+  (boolean (seq (:required_metadata connection))))
+
+(defn pre-validate-connection
+  "Pre-validate a connection and return error status if invalid for parallel mode"
+  [connection jira-enabled?]
+  (cond
+    (and (has-jira-template? connection) jira-enabled?)
+    :error-jira-template
+    
+    (has-required-metadata? connection)
+    :error-metadata-required
+    
+    :else
+    nil))
+
+(defn split-by-validation
+  "Split connections into valid (to execute) and invalid (pre-failed)"
+  [connections jira-enabled?]
+  (let [with-validation (map (fn [conn]
+                               (assoc conn :pre-validation-error
+                                      (pre-validate-connection conn jira-enabled?)))
+                             connections)
+        to-execute (filterv #(nil? (:pre-validation-error %)) with-validation)
+        pre-failed (filterv #(some? (:pre-validation-error %)) with-validation)]
+    {:to-execute to-execute
+     :pre-failed pre-failed}))
 
 ;; ---- Persistence Helpers ----
 

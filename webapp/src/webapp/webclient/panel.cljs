@@ -31,10 +31,10 @@
    [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.components.panels.database-schema :as database-schema-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
-   [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
    [webapp.webclient.log-area.main :as log-area]
    [webapp.webclient.quickstart :as quickstart]
-   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]))
+   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
+   [webapp.parallel-mode.components.execution-summary.main :as execution-summary]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -194,8 +194,6 @@
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
-        multi-selected-connections (rf/subscribe [:multiple-connections/selected])
-        multi-exec (rf/subscribe [:multiple-connection-execution/modal])
         primary-connection (rf/subscribe [:primary-connection/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
 
@@ -217,13 +215,8 @@
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
-            no-connection-selected? (and (empty? @multi-selected-connections)
-                                         (not @primary-connection))
+            no-connection-selected? (not @primary-connection)
             run-disabled? (or (not exec-enabled?) no-connection-selected?)
-            reset-metadata (fn []
-                             (reset! metadata [])
-                             (reset! metadata-key "")
-                             (reset! metadata-value ""))
             keymap [{:key "Mod-Enter"
                      :run (fn [^cm-state/StateCommand config]
                             (when-not run-disabled?
@@ -308,6 +301,7 @@
                                   "dark"))}
             [connection-dialog/connection-dialog]
             [parallel-mode-modal/parallel-mode-modal]
+            [execution-summary/execution-summary-modal]
 
             [header/main
              dark-mode?
@@ -335,8 +329,7 @@
                                :vertical true}
                  [:div {:class "relative w-full h-full"}
                   [:div {:class "h-full flex flex-col"}
-                   (when (and (empty? @multi-selected-connections)
-                              (= "custom" (:type current-connection)))
+                   (when (= "custom" (:type current-connection))
                      [connection-state-indicator @dark-mode? (:command current-connection)])
                    [codemirror-editor
                     {:value @script
@@ -368,20 +361,7 @@
                       [keyboard-shortcuts/keyboard-shortcuts-button]]
                      [language-select/main current-connection]]]]]]]]]
 
-             (panel-content @active-panel)]]
-
-           (when (seq (:data @multi-exec))
-             [multiple-connections-exec-list-component/main
-              (map #(into {} {:connection-name (:name %)
-                              :script @script
-                              :metadata (metadata->json-stringify
-                                         (conj @metadata {:key @metadata-key :value @metadata-value}))
-                              :type (:type %)
-                              :subtype (:subtype %)
-                              :session-id nil
-                              :status :ready})
-                   @multi-selected-connections)
-              reset-metadata])])))))
+             (panel-content @active-panel)]]])))))
 
 (def main
   (r/create-class
