@@ -35,7 +35,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 			// If we have and multiple websocket connection open and we kill one of them
 			// then we should not close the entire session, just this connection only.
 			// the proxy session will be closed when the hoop connect <role> is closed.
-			a.sendClientTCPConnectionClose(sessionID, clientConnectionID)		
+			a.sendClientTCPConnectionClose(sessionID, clientConnectionID)
 		}
 		return
 	}
@@ -49,11 +49,22 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 
 	log.Infof("starting http proxy connection at %v", connenv.httpProxyRemoteURL)
 
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
 	connenv.httpProxyHeaders["remote_url"] = connenv.httpProxyRemoteURL
 	connenv.httpProxyHeaders["connection_id"] = clientConnectionID
 	connenv.httpProxyHeaders["sid"] = sessionID
 	connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.insecure)
 	connenv.httpProxyHeaders["proxy_base_url"] = proxyBaseURL
+
+	connenv.httpProxyHeaders["dlp_provider"] = connParams.DlpProvider
+	connenv.httpProxyHeaders["dlp_mode"] = connParams.DlpMode
+
+	connenv.httpProxyHeaders["mspresidio_anonymizer_url"] = connParams.DlpPresidioAnonymizerURL
+	connenv.httpProxyHeaders["mspresidio_analyzer_url"] = connParams.DlpPresidioAnalyzerURL
+	connenv.httpProxyHeaders["guard_rail_rules"] = guardRailRules
 
 	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
 	if err != nil {

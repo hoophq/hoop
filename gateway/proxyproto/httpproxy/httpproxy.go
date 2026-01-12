@@ -591,7 +591,9 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(response)), nil)
 		if err != nil {
 			log.Warnf("failed to parse response, writing raw: %v", err)
-			w.Write(response)
+			if _, writeErr := w.Write(response); writeErr != nil {
+				log.Errorf("failed writing raw response: %v", writeErr)
+			}
 			return
 		}
 		defer resp.Body.Close()
