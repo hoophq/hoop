@@ -25,7 +25,8 @@
        {:db (assoc db :multi-exec {:data all-with-batch
                                    :status :running
                                    :type :script
-                                   :batch-id batch-id})
+                                   :batch-id batch-id
+                                   :fade-out? false})
         :fx [[:dispatch [:parallel-mode/execute-script to-execute-with-batch]]]}))))
 
 (rf/reg-event-fx
@@ -82,11 +83,12 @@
                                              :error-metadata-required :cancelled}
                                            (:status %))
                                updated-executions)]
-     {:db (assoc db :multi-exec {:data updated-executions
-                                 :status (if all-finished? :completed :running)
-                                 :type :script})
-      :fx (when all-finished?
-            [[:dispatch [:parallel-mode/schedule-auto-close]]])})))
+     {:db (update db :multi-exec
+                  #(assoc % :data updated-executions
+                          :status (if all-finished? :completed :running)))
+      :fx (if all-finished?
+            [[:dispatch [:parallel-mode/schedule-auto-close]]]
+            [])})))
 
 (rf/reg-event-fx
  :parallel-mode/script-failure
@@ -107,11 +109,12 @@
                                              :error-metadata-required :cancelled}
                                            (:status %))
                                updated-executions)]
-     {:db (assoc db :multi-exec {:data updated-executions
-                                 :status (if all-finished? :completed :running)
-                                 :type :script})
-      :fx (when all-finished?
-            [[:dispatch [:parallel-mode/schedule-auto-close]]])})))
+     {:db (update db :multi-exec
+                  #(assoc % :data updated-executions
+                          :status (if all-finished? :completed :running)))
+      :fx (if all-finished?
+            [[:dispatch [:parallel-mode/schedule-auto-close]]]
+            [])})))
 
 (rf/reg-event-fx
  :parallel-mode/cancel-pending-executions
@@ -124,7 +127,8 @@
                                   executions)
          has-running? (some #(= (:status %) :running) updated-executions)]
      {:db (assoc-in db [:multi-exec :data] updated-executions)
-      :fx (when-not has-running?
+      :fx (if has-running?
+            []
             [[:dispatch [:parallel-mode/clear-execution]]])})))
 
 (rf/reg-event-fx
@@ -141,7 +145,7 @@
 (rf/reg-event-fx
  :parallel-mode/clear-execution
  (fn [{:keys [db]} _]
-   {:db (assoc db :multi-exec {:data [] :status :ready :type nil :fade-out? false})}))
+   {:db (assoc db :multi-exec {:data [] :status :ready :type nil :batch-id nil :fade-out? false})}))
 
 (rf/reg-event-fx
  :parallel-mode/show-execution-preview
@@ -151,6 +155,7 @@
    {:db (assoc db :multi-exec {:data executions
                                :status :ready
                                :type :script
+                               :batch-id nil
                                :fade-out? false})}))
 
 ;; ---- Subscriptions ----

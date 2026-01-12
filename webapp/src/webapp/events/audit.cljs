@@ -78,6 +78,31 @@
    (assoc db :audit->filtered-session-by-id {:data [] :status :idle :errors []})))
 
 (rf/reg-event-fx
+ :audit->get-sessions-by-batch-id
+ (fn
+   [{:keys [db]} [_ batch-id]]
+   (let [on-failure (fn [error]
+                      (rf/dispatch [::audit->set-sessions-by-batch-id nil error]))
+         on-success (fn [res]
+                      (rf/dispatch [::audit->set-sessions-by-batch-id res nil]))]
+     {:db (assoc db :audit->filtered-session-by-id {:data [] :status :loading :errors []})
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/sessions?batch_id=" batch-id)
+                               :on-success on-success
+                               :on-failure on-failure}]]]})))
+
+(rf/reg-event-db
+ ::audit->set-sessions-by-batch-id
+ (fn
+   [db [_ response error]]
+   (js/console.log "🔍 set-sessions-by-batch-id" "response:" (clj->js response) "error:" error)
+   (let [session-data (or (:data response) [])]
+     (js/console.log "📊 Saving to state - count:" (count session-data))
+     (assoc db :audit->filtered-session-by-id {:data session-data
+                                               :errors (if error [error] [])
+                                               :status (if error :error :ready)}))))
+
+(rf/reg-event-fx
  :audit->set-audit-status
  (fn
    [{:keys [db]} [_ status]]

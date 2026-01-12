@@ -140,3 +140,8 @@
  (fn [selected-connections [_ connection]]
    (helpers/connection-selected? connection selected-connections)))
 
+(rf/reg-sub
+ :parallel-mode/batch-id
+ (fn [db _]
+   (get-in db [:multi-exec :batch-id])))
+

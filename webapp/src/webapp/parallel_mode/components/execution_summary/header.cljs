@@ -6,8 +6,10 @@
 
 (defn main []
   (let [search-term (rf/subscribe [:parallel-mode/execution-search-term])
-        is-running? (rf/subscribe [:parallel-mode/is-executing?])]
+        is-running? (rf/subscribe [:parallel-mode/is-executing?])
+        batch-id (rf/subscribe [:parallel-mode/batch-id])]
     (fn []
+      (js/console.log "📊 Header render - batch-id:" @batch-id "disabled?" (nil? @batch-id))
       [:> Box {:class "border-b border-gray-6 px-6 py-4 bg-gray-1"}
        [:> Flex {:justify "between" :align "center" :gap "4"}
         ;; Left side - Title
@@ -26,12 +28,25 @@
           [:> TextField.Slot
            [:> Search {:size 16}]]]
          
-         ;; Share button (disabled for now)
+         ;; Share button - enabled when batch-id exists
          [:> Button
           {:size "2"
            :variant "soft"
            :color "gray"
-           :disabled true}
+           :disabled (nil? @batch-id)
+           :onClick (when @batch-id
+                      #(let [url (str (.. js/window -location -origin) "/sessions/filtered?batch_id=" @batch-id)]
+                         (js/console.log "📋 Copying batch URL to clipboard:" url)
+                         (-> js/navigator
+                             .-clipboard
+                             (.writeText url)
+                             (.then (fn []
+                                      (rf/dispatch [:show-snackbar {:level :success
+                                                                    :text "Link copied to clipboard!"}])))
+                             (.catch (fn [err]
+                                       (js/console.error "Failed to copy:" err)
+                                       (rf/dispatch [:show-snackbar {:level :error
+                                                                     :text "Failed to copy link"}]))))))}
           [:> Share2 {:size 16}]
           "Share"]
          
@@ -44,4 +59,3 @@
                        (rf/dispatch [:parallel-mode/request-cancel])
                        (rf/dispatch [:parallel-mode/clear-execution]))}
           [:> X {:size 18}]]]]])))
-
