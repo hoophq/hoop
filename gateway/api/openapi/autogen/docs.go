@@ -6561,6 +6561,16 @@ const docTemplate = `{
                     "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
                     "type": "string"
                 },
+                "force_approve_groups": {
+                    "description": "Groups that can force approve reviews for this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre-team"
+                    ]
+                },
                 "guardrail_rules": {
                     "description": "The guard rail association id rules",
                     "type": "array",
@@ -8904,6 +8914,12 @@ const docTemplate = `{
         "openapi.ReviewGroup": {
             "type": "object",
             "properties": {
+                "forced_review": {
+                    "description": "Indicates if this group is forcing the review",
+                    "type": "boolean",
+                    "readOnly": true,
+                    "example": false
+                },
                 "group": {
                     "description": "The group to approve this review",
                     "type": "string",
@@ -8979,6 +8995,10 @@ const docTemplate = `{
                 "status"
             ],
             "properties": {
+                "force_review": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "status": {
                     "description": "The reviewed status\n* APPROVED - Approve the review resource\n* REJECTED - Reject the review resource\n* REVOKED - Revoke an approved review",
                     "allOf": [
