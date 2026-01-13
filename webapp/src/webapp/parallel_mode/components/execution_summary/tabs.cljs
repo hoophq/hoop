@@ -1,6 +1,6 @@
 (ns webapp.parallel-mode.components.execution-summary.tabs
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Flex Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Flex Tabs Text]]
    [re-frame.core :as rf]
    [webapp.parallel-mode.components.execution-summary.success-list :as success-list]
    [webapp.parallel-mode.components.execution-summary.error-list :as error-list]))

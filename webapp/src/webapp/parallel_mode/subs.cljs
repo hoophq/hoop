@@ -98,8 +98,8 @@
  :parallel-mode/error-executions
  :<- [:parallel-mode/filtered-executions]
  (fn [executions _]
-   (filterv #(contains? #{:error :error-jira-template :error-metadata-required :cancelled} 
-                        (:status %)) 
+   (filterv #(contains? #{:error :error-jira-template :error-metadata-required :cancelled}
+                        (:status %))
             executions)))
 
 (rf/reg-sub
@@ -119,9 +119,9 @@
  :<- [:parallel-mode/all-executions]
  (fn [executions _]
    (let [total (count executions)
-         completed (count (filter #(contains? #{:completed :waiting-review :error :error-jira-template 
-                                                :error-metadata-required :cancelled} 
-                                              (:status %)) 
+         completed (count (filter #(contains? #{:completed :waiting-review :error :error-jira-template
+                                                :error-metadata-required :cancelled}
+                                              (:status %))
                                   executions))
          running (count (filter #(= (:status %) :running) executions))
          percentage (if (> total 0)
@@ -134,14 +134,8 @@
 
 ;; ---- UI State ----
 
-(rf/reg-sub
- :parallel-mode/connection-selected?
- :<- [:parallel-mode/selected-connections]
- (fn [selected-connections [_ connection]]
-   (helpers/connection-selected? connection selected-connections)))
 
 (rf/reg-sub
  :parallel-mode/batch-id
  (fn [db _]
    (get-in db [:multi-exec :batch-id])))
-

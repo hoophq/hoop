@@ -17,8 +17,8 @@
        (:connection-name exec)]
       [:> Text {:size "1" :color "gray"}
        (:subtype exec)]]]
-    
-    [:> Badge {:variant "soft" :color "blue"}
+
+    [:> Badge {:variant "soft"}
      [:> Flex {:align "center" :gap "1"}
       [:> Loader2 {:size 14 :class "animate-spin"}]
       [:> Text {:size "1"} "Loading"]]]]])

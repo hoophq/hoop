@@ -163,17 +163,6 @@
  (fn [{:keys [db]} _]
    {:db (assoc db :multi-exec {:data [] :status :ready :type nil :batch-id nil :fade-out? false})}))
 
-(rf/reg-event-fx
- :parallel-mode/show-execution-preview
- (fn [{:keys [db]} [_ executions]]
-   (js/console.log "👀 show-execution-preview called" "executions:" (clj->js executions))
-   ;; Use the same state as legacy multi-exec so the modal appears
-   {:db (assoc db :multi-exec {:data executions
-                               :status :ready
-                               :type :script
-                               :batch-id nil
-                               :fade-out? false})}))
-
 ;; ---- Subscriptions ----
 
 (rf/reg-sub

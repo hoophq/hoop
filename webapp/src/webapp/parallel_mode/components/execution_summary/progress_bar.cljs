@@ -19,11 +19,10 @@
             [:> Info {:size 14 :class "text-gray-11"}]
             [:> Text {:size "1" :color "gray"}
              "Keep this screen open while running"]]]
-          
+
           [:> Progress
            {:value percentage
             :max 100
             :size "3"
-            :color "green"
             :class "w-full"}]]]))))
 

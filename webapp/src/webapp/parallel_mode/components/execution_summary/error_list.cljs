@@ -5,14 +5,6 @@
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]))
 
-(defn get-error-message [exec]
-  (case (:status exec)
-    :error-jira-template "Jira Template not allowed in Parallel Mode"
-    :error-metadata-required "Required Metadata not allowed in Parallel Mode"
-    :error (or (:error-message exec) "Request failed")
-    :cancelled "Execution cancelled"
-    "Unknown error"))
-
 (defn get-error-badge [exec]
   (case (:status exec)
     :error-jira-template
