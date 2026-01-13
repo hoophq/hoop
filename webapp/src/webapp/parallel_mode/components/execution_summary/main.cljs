@@ -1,6 +1,6 @@
 (ns webapp.parallel-mode.components.execution-summary.main
   (:require
-   ["@radix-ui/themes" :refer [Flex Dialog]]
+   ["@radix-ui/themes" :refer [Flex Dialog ScrollArea]]
    [re-frame.core :as rf]
    [webapp.parallel-mode.components.execution-summary.header :as header]
    [webapp.parallel-mode.components.execution-summary.progress-bar :as progress-bar]
@@ -17,18 +17,22 @@
           {:maxWidth "90vw"
            :minHeight "90vh"
            :maxHeight "90vh"
-           :class "p-0 overflow-y-auto"
+           :class "p-0"
            :onEscapeKeyDown (fn [e] (.preventDefault e))
            :onPointerDownOutside (fn [e] (.preventDefault e))}
-          [:> Flex {:direction "column" :class "min-h-full"}
-           ;; Header - sticky at top
-           [header/main]
+          [:> ScrollArea
+           {:type "auto"
+            :scrollbars "vertical"
+            :class "h-[90vh]"}
+           [:> Flex {:direction "column" :class "min-h-full"}
+            ;; Header - sticky at top
+            [header/main]
 
-           ;; Progress bar - sticky below header, collapses on fade
-           [progress-bar/main]
+            ;; Progress bar - sticky below header, collapses on fade
+            [progress-bar/main]
 
-           ;; Running list - scrolls normally, collapses on fade
-           [running-list/main]
+            ;; Running list - scrolls normally, collapses on fade
+            [running-list/main]
 
-           ;; Success/Error tabs - becomes sticky after fade out
-           [tabs/main]]]]))))
+            ;; Success/Error tabs - becomes sticky after fade out
+            [tabs/main]]]]]))))
