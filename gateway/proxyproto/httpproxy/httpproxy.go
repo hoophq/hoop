@@ -598,18 +598,6 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		}
 		defer resp.Body.Close()
 
-		// using forbidden send back from the agent so we can check if is guardrails
-		if resp.StatusCode == http.StatusForbidden {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err == nil {
-				// if it is a forbidden with the error guardrails we need to close the session
-				sess.guardrailsValidation(bodyBytes, resp, w)
-				// Restore body for normal 403 responses (not guardrails)
-				resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-			}
-
-		}
-
 		// Check if this is a WebSocket upgrade response
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			sess.handleWebSocketUpgraded(w, response, responseChan, connectionID)
@@ -623,28 +611,6 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}
-}
-
-func (sess *httpProxySession) guardrailsValidation(b []byte, resp *http.Response, w http.ResponseWriter) {
-	bodyStr := string(b)
-	// Check if this is a guardrails validation error
-	if strings.Contains(bodyStr, "Guardrails validation failed") {
-		log.With("sid", sess.sid, "conn", sess.sid).Warnf("guardrails validation failed, closing session: %s", bodyStr)
-		// Write the error response to client first
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		if _, err := w.Write(b); err != nil {
-			log.Errorf("failed to write guardrails error response: %v", err)
-		}
-		// Close the session
-		sess.cancelFn("guardrails validation failed")
-		return
-	}
-
 }
 
 func (sess *httpProxySession) handleWebSocketUpgraded(
