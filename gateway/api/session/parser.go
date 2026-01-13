@@ -93,11 +93,12 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 			}
 		}
 		itemGroups = append(itemGroups, openapi.ReviewGroup{
-			ID:         rg.ID,
-			Group:      rg.GroupName,
-			Status:     openapi.ReviewRequestStatusType(rg.Status),
-			ReviewedBy: reviewOwner,
-			ReviewDate: rg.ReviewedAt,
+			ID:           rg.ID,
+			Group:        rg.GroupName,
+			Status:       openapi.ReviewRequestStatusType(rg.Status),
+			ReviewedBy:   reviewOwner,
+			ReviewDate:   rg.ReviewedAt,
+			ForcedReview: rg.ForcedReview,
 		})
 	}
 	var timeWindow *openapi.ReviewSessionTimeWindow
