@@ -18,7 +18,7 @@
       [:> Text {:size "1" :color "gray"}
        (:subtype exec)]]]
 
-    [:> Badge {:variant "soft"}
+    [:> Badge {:variant "soft" :color "blue"}
      [:> Flex {:align "center" :gap "1"}
       [:> Loader2 {:size 14 :class "animate-spin"}]
       [:> Text {:size "1"} "Loading"]]]]])
@@ -27,10 +27,9 @@
   (let [running-items (rf/subscribe [:parallel-mode/running-executions])
         fade-out? (rf/subscribe [:parallel-mode/should-fade-out?])]
     (fn []
-      (when (seq @running-items)
-        [:> Box {:class (str "transition-all duration-500 "
-                             (when @fade-out? "opacity-0 h-0 overflow-hidden"))}
+      [:> Box {:class (str "transition-all duration-500 "
+                           (when @fade-out? "h-0 opacity-0 overflow-hidden hidden"))}
+       (when (seq @running-items)
          (for [exec @running-items]
            ^{:key (:connection-name exec)}
-           [running-item exec])]))))
-
+           [running-item exec]))])))

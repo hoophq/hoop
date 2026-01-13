@@ -9,8 +9,8 @@
         fade-out? (rf/subscribe [:parallel-mode/should-fade-out?])]
     (fn []
       (let [{:keys [total running percentage]} @progress-data]
-        [:> Box {:class (str "px-6 py-4 border-b border-gray-6 bg-gray-2 transition-all duration-500 "
-                             (when @fade-out? "opacity-0 h-0 overflow-hidden"))}
+        [:> Box {:class (str "sticky top-16 z-40 px-6 py-4 border-b bg-gray-1 border-gray-6 transition-all duration-500 "
+                             (when @fade-out? "h-0 opacity-0 overflow-hidden hidden"))}
          [:> Flex {:direction "column" :gap "3"}
           [:> Flex {:justify "between" :align "center"}
            [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
@@ -25,4 +25,3 @@
             :max 100
             :size "3"
             :class "w-full"}]]]))))
-

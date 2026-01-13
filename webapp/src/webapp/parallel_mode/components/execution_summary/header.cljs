@@ -10,7 +10,7 @@
         is-running? (rf/subscribe [:parallel-mode/is-executing?])
         batch-id (rf/subscribe [:parallel-mode/batch-id])]
     (fn []
-      [:> Box {:class "border-b border-gray-6 px-6 py-4 bg-gray-1"}
+      [:> Box {:class "sticky top-0 z-50 bg-white px-6 py-4"}
        [:> Flex {:justify "between" :align "center" :gap "4"}
         [:> Flex {:align "center" :gap "5"}
          [:> Heading {:size "5" :weight "bold" :class "text-gray-12"}

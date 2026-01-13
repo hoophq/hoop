@@ -12,22 +12,15 @@
 (rf/reg-event-fx
  :parallel-mode/execute-immediately
  (fn [{:keys [db]} [_ all-exec-list to-execute-list]]
-   (let [batch-id (generate-batch-id)]
-     (js/console.log "🚀 execute-immediately called"
-                     "batch-id:" batch-id
-                     "total:" (count all-exec-list)
-                     "to-execute:" (count to-execute-list))
-     ;; Add batch-id to all items
-     (let [all-with-batch (mapv #(assoc % :session-batch-id batch-id) all-exec-list)
-           to-execute-with-batch (mapv #(assoc % :session-batch-id batch-id) to-execute-list)]
-       ;; Show modal with all items (including pre-failed)
-       ;; Then execute only valid ones
-       {:db (assoc db :multi-exec {:data all-with-batch
-                                   :status :running
-                                   :type :script
-                                   :batch-id batch-id
-                                   :fade-out? false})
-        :fx [[:dispatch [:parallel-mode/execute-script to-execute-with-batch]]]}))))
+   (let [batch-id (generate-batch-id)
+         all-with-batch (mapv #(assoc % :session-batch-id batch-id) all-exec-list)
+         to-execute-with-batch (mapv #(assoc % :session-batch-id batch-id) to-execute-list)]
+     {:db (assoc db :multi-exec {:data all-with-batch
+                                 :status :running
+                                 :type :script
+                                 :batch-id batch-id
+                                 :fade-out? false})
+      :fx [[:dispatch [:parallel-mode/execute-script to-execute-with-batch]]]})))
 
 (rf/reg-event-fx
  :parallel-mode/execute-script
@@ -36,15 +29,12 @@
                       (rf/dispatch [:parallel-mode/script-failure error exec]))
          on-success (fn [res exec]
                       (rf/dispatch [:parallel-mode/script-success res exec]))
-         ;; Detect execution type
          exec-type (:execution-type (first exec-list))
          is-runbook? (= exec-type :runbook)
-         ;; Mark items as running and dispatch requests
          updated-list (map #(assoc % :status :running) exec-list)
          dispatches (mapv (fn [exec]
                             (let [endpoint (if is-runbook? "/runbooks/exec" "/sessions")
                                   body (if is-runbook?
-                                         ;; Runbook payload
                                          {:file_name (:file-name exec)
                                           :repository (:repository exec)
                                           :parameters (:parameters exec)
@@ -53,7 +43,7 @@
                                           :metadata (:metadata exec)
                                           :env_vars (:env-vars exec)
                                           :session_batch_id (:session-batch-id exec)}
-                                         ;; Script payload
+
                                          {:script (:script exec)
                                           :connection (:connection-name exec)
                                           :metadata (:metadata exec)
@@ -68,7 +58,7 @@
                                             :on-failure #(on-failure % exec)
                                             :body body}]}]))
                           exec-list)]
-     ;; Update status to running for items being executed
+
      {:db (update-in db [:multi-exec :data]
                      (fn [all-data]
                        (mapv (fn [item]
@@ -150,7 +140,7 @@
 (rf/reg-event-fx
  :parallel-mode/schedule-auto-close
  (fn [_ _]
-   {:fx [[:dispatch-later {:ms 3000
+   {:fx [[:dispatch-later {:ms 2000
                            :dispatch [:parallel-mode/trigger-fade-out]}]]}))
 
 (rf/reg-event-db

@@ -1,6 +1,6 @@
 (ns webapp.parallel-mode.components.execution-summary.main
   (:require
-   ["@radix-ui/themes" :refer [Box Dialog]]
+   ["@radix-ui/themes" :refer [Flex Dialog]]
    [re-frame.core :as rf]
    [webapp.parallel-mode.components.execution-summary.header :as header]
    [webapp.parallel-mode.components.execution-summary.progress-bar :as progress-bar]
@@ -15,20 +15,20 @@
          {:open has-data?}
          [:> Dialog.Content
           {:maxWidth "90vw"
+           :minHeight "90vh"
            :maxHeight "90vh"
-           :class "p-0"
+           :class "p-0 overflow-y-auto"
            :onEscapeKeyDown (fn [e] (.preventDefault e))
            :onPointerDownOutside (fn [e] (.preventDefault e))}
-          [:> Box {:class "h-[85vh] flex flex-col"}
-           ;; Header
+          [:> Flex {:direction "column" :class "min-h-full"}
+           ;; Header - sticky at top
            [header/main]
-           
-           ;; Progress bar (fades out when complete)
-           [progress-bar/main]
-           
-           ;; Running list (fades out when complete)
-           [running-list/main]
-           
-           ;; Success/Error tabs
-           [tabs/main]]]]))))
 
+           ;; Progress bar - sticky below header, collapses on fade
+           [progress-bar/main]
+
+           ;; Running list - scrolls normally, collapses on fade
+           [running-list/main]
+
+           ;; Success/Error tabs - becomes sticky after fade out
+           [tabs/main]]]]))))
