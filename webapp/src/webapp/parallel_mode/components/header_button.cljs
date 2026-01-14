@@ -14,6 +14,7 @@
         [:> Button
          {:size "2"
           :variant "soft"
+          :highContrast (when-not @is-active? true)
           :color (if @is-active? "green" "gray")
           :class (str "min-w-[140px] "
                       (when @modal-open? "ring-2 ring-green-500 ring-offset-2"))
@@ -37,8 +38,7 @@
                :color "green"
                :onClick (fn [e]
                           (.stopPropagation e)
-                          (rf/dispatch [:parallel-mode/clear-all])
-                          (rf/dispatch [:parallel-mode/close-modal]))}
+                          (rf/dispatch [:parallel-mode/request-clear-all]))}
               [:> X {:size 14}]]]
 
             "Parallel Mode")]]]])))
