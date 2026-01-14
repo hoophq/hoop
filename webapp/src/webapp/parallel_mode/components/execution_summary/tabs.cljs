@@ -9,9 +9,12 @@
   (let [success-count (rf/subscribe [:parallel-mode/success-count])
         error-count (rf/subscribe [:parallel-mode/error-count])
         active-tab (rf/subscribe [:parallel-mode/active-tab])
-        fade-out? (rf/subscribe [:parallel-mode/should-fade-out?])]
+        fade-out? (rf/subscribe [:parallel-mode/should-fade-out?])
+        is-running? (rf/subscribe [:parallel-mode/is-executing?])]
     (fn []
-      [:> Box {:class "flex-1"}
+      [:> Box {:class (str "flex-1 transition-opacity duration-500 "
+                           (when @is-running? "opacity-0 h-0 overflow-hidden")
+                           (when (and @fade-out? (not @is-running?)) "opacity-100"))}
        [:> Tabs.Root
         {:value (or @active-tab "success")
          :onValueChange #(rf/dispatch [:parallel-mode/set-active-tab %])
@@ -20,7 +23,7 @@
         ;; Tab headers - sticky after fade out
         [:> Tabs.List
          {:class (str "transition-all duration-300 bg-white "
-                      (when @fade-out? "sticky top-16 z-30"))}
+                      (when @fade-out? "sticky top-20 z-30"))}
          [:> Tabs.Trigger
           {:value "success"
            :class "px-4 py-3"}

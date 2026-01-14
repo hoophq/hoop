@@ -140,8 +140,7 @@
 (rf/reg-event-fx
  :parallel-mode/schedule-auto-close
  (fn [_ _]
-   {:fx [[:dispatch-later {:ms 2000
-                           :dispatch [:parallel-mode/trigger-fade-out]}]]}))
+   {:fx [[:dispatch [:parallel-mode/trigger-fade-out]]]}))
 
 (rf/reg-event-db
  :parallel-mode/trigger-fade-out
