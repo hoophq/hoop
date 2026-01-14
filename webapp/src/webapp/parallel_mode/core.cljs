@@ -7,6 +7,7 @@
    [webapp.parallel-mode.events.execution-ui]
    [webapp.parallel-mode.events.submit]
    [webapp.parallel-mode.events.submit-runbook]
+   [webapp.parallel-mode.events.promotion]
    [webapp.parallel-mode.subs]))
 
 ;; This namespace just requires all the event and subscription namespaces

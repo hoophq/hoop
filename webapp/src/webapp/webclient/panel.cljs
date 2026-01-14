@@ -8,33 +8,34 @@
    ["@codemirror/legacy-modes/mode/python" :as cm-python]
    ["@codemirror/legacy-modes/mode/ruby" :as cm-ruby]
    ["@codemirror/legacy-modes/mode/shell" :as cm-shell]
-   ["codemirror-lang-elixir" :as cm-elixir]
    ["@codemirror/state" :as cm-state]
    ["@codemirror/view" :as cm-view]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
-   ["@radix-ui/themes" :refer [Box Flex Spinner Tooltip Text]]
+   ["@radix-ui/themes" :refer [Box Flex Spinner Text Tooltip]]
    ["@uiw/codemirror-theme-material" :refer [materialDark materialLight]]
    ["@uiw/react-codemirror" :as CodeMirror]
    ["allotment" :refer [Allotment]]
    ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
+   ["codemirror-lang-elixir" :as cm-elixir]
    ["lucide-react" :refer [Info]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.formatters :as formatters]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
+   [webapp.features.promotion :as promotion]
+   [webapp.formatters :as formatters]
+   [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
+   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
    [webapp.webclient.codemirror.extensions :as extensions]
    [webapp.webclient.components.connection-dialog :as connection-dialog]
    [webapp.webclient.components.header :as header]
    [webapp.webclient.components.language-select :as language-select]
-   [webapp.webclient.components.panels.multiple-connections :as multiple-connections-panel]
-   [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.components.panels.database-schema :as database-schema-panel]
+   [webapp.webclient.components.panels.metadata :as metadata-panel]
+   [webapp.webclient.components.panels.multiple-connections :as multiple-connections-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
    [webapp.webclient.log-area.main :as log-area]
-   [webapp.webclient.quickstart :as quickstart]
-   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
-   [webapp.parallel-mode.components.execution-summary.main :as execution-summary]))
+   [webapp.webclient.quickstart :as quickstart]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -196,6 +197,7 @@
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
+        parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
@@ -291,10 +293,16 @@
                               :multiple-connections {:content [multiple-connections-panel/main dark-mode?]}
                               nil))]
 
-        (if (and (empty? (:results @db-connections))
-                 (not (:loading @db-connections)))
+        (cond
+          (and (empty? (:results @db-connections))
+               (not (:loading @db-connections)))
           [quickstart/main]
 
+          (not @parallel-mode-promotion-seen)
+          [:> Box {:class "bg-gray-1 h-full"}
+           [promotion/parallel-mode-promotion {:mode :empty-state}]]
+
+          :else
           [:<>
            [:> Box {:class (str "h-full bg-gray-2 overflow-hidden "
                                 (when @dark-mode?
