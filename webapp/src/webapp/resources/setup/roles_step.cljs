@@ -349,7 +349,7 @@
         (= resource-subtype "tcp")
         [tcp-role-form role-index]
 
-        (= resource-subtype "httpproxy")
+        (contains? #{"httpproxy" "grafana" "kibana"} resource-subtype)
         [http-proxy-role-form role-index]
 
         (= resource-subtype "linux-vm")

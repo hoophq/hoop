@@ -173,6 +173,10 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeTCP)
 		case "httpproxy":
 			return ConnectionType(ConnectionTypeHttpProxy)
+		case "grafana":
+			return ConnectionType(ConnectionTypeHttpProxy)
+		case "kibana":
+			return ConnectionType(ConnectionTypeHttpProxy)
 		case "ssh":
 			return ConnectionType(ConnectionTypeSSH)
 		default:

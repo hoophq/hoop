@@ -128,6 +128,8 @@
     (case selected-subtype
       "tcp" [tcp-credentials-form]
       "httpproxy" [http-credentials-form]
+      "grafana" [http-credentials-form]
+      "kibana" [http-credentials-form]
       nil)))
 
 (defn resource-step []
