@@ -20,10 +20,11 @@ import (
 const maxTemplateSize = 1_000_000 // 1MB
 
 type File struct {
-	Name      string
-	EnvVars   map[string]string
-	InputFile []byte
-	CommitSHA string
+	Name               string
+	EnvVars            map[string]string
+	TemplateAttributes map[string]any
+	InputFile          []byte
+	CommitSHA          string
 }
 
 type Repository struct {
@@ -91,10 +92,11 @@ func (r *Repository) ReadFile(fileName string, parameters map[string]string) (*F
 		return nil, err
 	}
 	return &File{
-		Name:      f.Name,
-		InputFile: parsedTemplate.Bytes(),
-		EnvVars:   t.EnvVars(),
-		CommitSHA: f.Hash.String(),
+		Name:               f.Name,
+		InputFile:          parsedTemplate.Bytes(),
+		TemplateAttributes: t.Attributes(),
+		EnvVars:            t.EnvVars(),
+		CommitSHA:          f.Hash.String(),
 	}, nil
 }
 

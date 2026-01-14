@@ -440,7 +440,7 @@ func RunbookExec(c *gin.Context) {
 		runbook.EnvVars[key] = val
 	}
 
-	runbookParamsJson, _ := json.Marshal(req.Parameters)
+	runbookParamsJson := encodeRequestParams(req.Parameters, runbook)
 	sessionLabels := openapi.SessionLabelsType{
 		"runbookRepository": config.GetNormalizedGitURL(),
 		"runbookFile":       req.FileName,
@@ -607,4 +607,26 @@ func validateGitURL(urlStr string) error {
 	}
 
 	return nil
+}
+
+func encodeRequestParams(params map[string]string, runbook *runbooks.File) []byte {
+	newParams := map[string]string{}
+	for key, val := range params {
+		newParams[key] = val
+		if runbook.TemplateAttributes != nil {
+			attrObj, ok := runbook.TemplateAttributes[key]
+			if !ok {
+				continue
+			}
+			attr, ok := attrObj.(map[string]any)
+			if !ok {
+				continue
+			}
+			if attrType, _ := attr["type"].(string); attrType == "file" {
+				newParams[key] = fmt.Sprintf("[param redacted. type = file, size = %v byte(s)]", len(val))
+			}
+		}
+	}
+	encoded, _ := json.Marshal(newParams)
+	return encoded
 }
