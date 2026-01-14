@@ -1,6 +1,6 @@
 (ns webapp.components.forms
   (:require
-   ["@radix-ui/themes" :refer [Select Tooltip Text Tooltip Box Button IconButton Flex]]
+   ["@radix-ui/themes" :refer [Box Button Flex IconButton Select Text Tooltip]]
    ["lucide-react" :refer [Eye EyeOff HelpCircle Upload X]]
    [clojure.string :as cs]
    [reagent.core :as r]))
@@ -223,16 +223,15 @@
   (let [file-input-ref (r/atom nil)
         file-name (r/atom nil)]
     (fn [{:keys [label on-change value helper-text required]}]
-      (let [handle-file-change
-            (fn [event]
-              (when-let [file (-> event .-target .-files (aget 0))]
-                (reset! file-name (.-name file))
-                (let [reader (js/FileReader.)]
-                  (set! (.-onload reader)
-                        (fn [e]
-                          (when-let [base64 (second (cs/split (-> e .-target .-result) #"," 2))]
-                            (on-change base64))))
-                  (.readAsDataURL reader file))))
+      (let [handle-file-change (fn [event]
+                                 (when-let [file (-> event .-target .-files (aget 0))]
+                                   (reset! file-name (.-name file))
+                                   (let [reader (js/FileReader.)]
+                                     (set! (.-onload reader)
+                                           (fn [e]
+                                             (when-let [base64 (second (cs/split (-> e .-target .-result) #"," 2))]
+                                               (on-change base64))))
+                                     (.readAsDataURL reader file))))
             handle-button-click (fn []
                                   (when @file-input-ref
                                     (.click @file-input-ref)))
