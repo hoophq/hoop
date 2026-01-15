@@ -82,25 +82,59 @@
  (fn
    [{:keys [db]} [_ batch-id]]
    (let [on-failure (fn [error]
-                      (rf/dispatch [::audit->set-sessions-by-batch-id nil error]))
+                      (rf/dispatch [::audit->set-sessions-by-batch-id nil error true]))
          on-success (fn [res]
-                      (rf/dispatch [::audit->set-sessions-by-batch-id res nil]))]
-     {:db (assoc db :audit->filtered-session-by-id {:data [] :status :loading :errors []})
+                      (rf/dispatch [::audit->set-sessions-by-batch-id res nil true]))]
+     {:db (assoc db :audit->filtered-session-by-id {:data [] :status :loading :errors [] :offset 0 :has-more? false :loading true :search-term ""})
       :fx [[:dispatch [:fetch {:method "GET"
-                               :uri (str "/sessions?batch_id=" batch-id)
+                               :uri (str "/sessions?batch_id=" batch-id "&limit=20&offset=0")
+                               :on-success on-success
+                               :on-failure on-failure}]]]})))
+
+(rf/reg-event-fx
+ :audit->get-sessions-by-batch-id-next-page
+ (fn
+   [{:keys [db]} [_ batch-id]]
+   (let [current-state (:audit->filtered-session-by-id db)
+         data-count (count (:data current-state []))
+         next-offset data-count
+         on-failure (fn [error]
+                      (rf/dispatch [::audit->set-sessions-by-batch-id nil error false]))
+         on-success (fn [res]
+                      (rf/dispatch [::audit->set-sessions-by-batch-id res nil false]))]
+     {:db (assoc-in db [:audit->filtered-session-by-id :loading] true)
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/sessions?batch_id=" batch-id "&limit=20&offset=" next-offset)
                                :on-success on-success
                                :on-failure on-failure}]]]})))
 
 (rf/reg-event-db
  ::audit->set-sessions-by-batch-id
  (fn
-   [db [_ response error]]
-   (js/console.log "🔍 set-sessions-by-batch-id" "response:" (clj->js response) "error:" error)
-   (let [session-data (or (:data response) [])]
-     (js/console.log "📊 Saving to state - count:" (count session-data))
-     (assoc db :audit->filtered-session-by-id {:data session-data
+   [db [_ response error force-refresh?]]
+   (let [session-data (or (:data response) [])
+         has-next-page (or (:has_next_page response) false)
+         current-state (:audit->filtered-session-by-id db)
+         current-search-term (:search-term current-state "")
+         existing-data (:data current-state [])
+         final-data (if force-refresh?
+                      session-data
+                      (vec (concat existing-data session-data)))
+         new-offset (if force-refresh?
+                      (count session-data)
+                      (+ (:offset current-state 0) (count session-data)))]
+     (assoc db :audit->filtered-session-by-id {:data final-data
                                                :errors (if error [error] [])
-                                               :status (if error :error :ready)}))))
+                                               :status (if error :error :ready)
+                                               :search-term current-search-term
+                                               :offset new-offset
+                                               :has-more? has-next-page
+                                               :loading false}))))
+
+(rf/reg-event-db
+ :audit->set-filtered-session-search
+ (fn [db [_ term]]
+   (assoc-in db [:audit->filtered-session-by-id :search-term] term)))
 
 (rf/reg-event-fx
  :audit->set-audit-status
