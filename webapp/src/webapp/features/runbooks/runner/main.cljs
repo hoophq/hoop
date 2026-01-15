@@ -29,12 +29,14 @@
         metadata-key (rf/subscribe [:runbooks/metadata-key])
         metadata-value (rf/subscribe [:runbooks/metadata-value])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         script-response (rf/subscribe [:runbooks->exec])]
     (fn [{:keys [dark-mode? metadata-open? toggle-metadata-open]}]
       (let [template @selected-template
-            connection @runbooks-connection
-            run-disabled? (or (nil? connection)
-                              (empty? (:data template)))
+            has-connection-selected? (or @parallel-mode-active?
+                                         (boolean @runbooks-connection))
+            disabled-run-button? (or (not has-connection-selected?)
+                                     (empty? (:data template)))
             has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
                               (seq @metadata-value))
@@ -101,9 +103,9 @@
               [:> Button
                {:form "runbook-form"
                 :type "submit"
-                :disabled run-disabled?
+                :disabled disabled-run-button?
                 :loading runbook-loading?
-                :class (when run-disabled? "cursor-not-allowed")}
+                :class (when disabled-run-button? "cursor-not-allowed")}
                [:> Play {:size 16}]
                "Run"]]]]]
           (finally
