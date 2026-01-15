@@ -110,7 +110,10 @@
             [:> Button
              {:disabled disable-run-button?
               :loading script-loading?
-              :class (when disable-run-button? "cursor-not-allowed")
-              :onClick #(submit)}
+              :class (when (or disable-run-button?
+                               script-loading?) "cursor-not-allowed")
+              :onClick (fn []
+                         (when-not script-loading?
+                           (submit)))}
              [:> Play {:size 16}]
              "Run"]]]]]))))

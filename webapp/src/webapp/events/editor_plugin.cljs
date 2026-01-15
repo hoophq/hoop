@@ -24,7 +24,7 @@
 (rf/reg-event-fx
  :editor-plugin->exec-script
  (fn
-   [{:keys [_db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
+   [{:keys [db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
    (let [payload {:script script
                   :env_vars env_vars
                   :connection connection-name
@@ -40,7 +40,8 @@
                        [:show-snackbar {:level :success
                                         :text "Script was executed!"}])
                       (rf/dispatch [::editor-plugin->set-script-success res script]))]
-     {:fx [[:dispatch [:fetch {:method "POST"
+     {:db (assoc-in db [:editor-plugin->script] {:status :loading})
+      :fx [[:dispatch [:fetch {:method "POST"
                                :uri "/sessions"
                                :on-success on-success
                                :on-failure on-failure
