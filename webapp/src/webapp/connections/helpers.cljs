@@ -87,7 +87,7 @@
             (= "disabled" (:access_mode_connect connection)))))
 
 (defn can-open-web-terminal? [connection]
-  (if-not (or (#{"tcp" "ssh"} (:subtype connection))
+  (if-not (or (#{"tcp" "ssh" "rdp"} (:subtype connection))
               (http-proxy-subtypes (:subtype connection)))
 
     (if (or (= "enabled" (:access_mode_runbooks connection))

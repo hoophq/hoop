@@ -48,7 +48,10 @@
   "Check if a role/connection can access native client based on subtype and access mode"
   [role]
   (and (= "enabled" (:access_mode_connect role))
-       (#{"postgres" "ssh" "rdp" "aws-ssm"} (:subtype role))))
+       (or (#{"postgres" "ssh"} (:subtype role))
+           (http-proxy-subtypes (:subtype role))
+           (and (= (:type role) "custom")
+                (contains? #{"rdp" "aws-ssm"} (:subtype role))))))
 
 (defn get-secret-prefix
   "Returns the prefix string for a given secret source or provider."
