@@ -200,7 +200,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	err := DB.Raw(`
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
+		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		CASE
