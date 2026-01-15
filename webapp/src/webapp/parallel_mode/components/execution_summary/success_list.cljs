@@ -1,7 +1,7 @@
 (ns webapp.parallel-mode.components.execution-summary.success-list
   (:require
    ["@radix-ui/themes" :refer [Badge Box Button Flex Text]]
-   ["lucide-react" :refer [Check ExternalLink]]
+   ["lucide-react" :refer [Info ExternalLink]]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]))
 
@@ -21,9 +21,9 @@
     [:> Flex {:align "center" :gap "4"}
      ;; Status badge
      (when (= (:status exec) :waiting-review)
-       [:> Badge {:variant "soft" :color "yellow"}
+       [:> Badge {:variant "soft" :color "blue"}
         [:> Flex {:align "center" :gap "1"}
-         [:> Check {:size 14}]
+         [:> Info {:size 14}]
          [:> Text {:size "1"} "Approval Required"]]])
 
 

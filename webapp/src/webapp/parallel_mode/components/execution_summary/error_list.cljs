@@ -1,7 +1,7 @@
 (ns webapp.parallel-mode.components.execution-summary.error-list
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex Text]]
-   ["lucide-react" :refer [AlertTriangle Clock X]]
+   ["lucide-react" :refer [AlertTriangle X]]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]))
 
@@ -10,20 +10,8 @@
     :error-jira-template
     [:> Badge {:variant "soft" :color "yellow"}
      [:> Flex {:align "center" :gap "1"}
-      [:> Clock {:size 14}]
-      [:> Text {:size "1"} "Jira Template not allowed in Parallel Mode"]]]
-
-    :error-review-required
-    [:> Badge {:variant "soft" :color "blue"}
-     [:> Flex {:align "center" :gap "1"}
-      [:> Clock {:size 14}]
-      [:> Text {:size "1"} "Approval Required"]]]
-
-    :error-metadata-required
-    [:> Badge {:variant "soft" :color "yellow"}
-     [:> Flex {:align "center" :gap "1"}
       [:> AlertTriangle {:size 14}]
-      [:> Text {:size "1"} "Required Metadata not allowed in Parallel Mode"]]]
+      [:> Text {:size "1"} "Jira Template not allowed in Parallel Mode"]]]
 
     :cancelled
     [:> Badge {:variant "soft" :color "gray"}

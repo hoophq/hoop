@@ -1,7 +1,7 @@
 (ns webapp.parallel-mode.components.execution-summary.header
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton]]
-   ["lucide-react" :refer [Search Share2 X]]
+   ["lucide-react" :refer [Search Link X]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]))
 
@@ -34,7 +34,7 @@
                                        (js/console.error "Failed to copy:" err)
                                        (rf/dispatch [:show-snackbar {:level :error
                                                                      :text "Failed to copy link"}]))))))}
-          [:> Share2 {:size 16}]
+          [:> Link {:size 16}]
           "Share"]]
 
         [:> Flex {:align "center" :gap "3"}
