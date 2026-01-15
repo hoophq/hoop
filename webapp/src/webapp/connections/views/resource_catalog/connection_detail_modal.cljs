@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Card Dialog Flex
                                Heading Link ScrollArea Tabs Text]]
-   ["lucide-react" :refer [BookMarked Monitor SquareTerminal]]
+   ["lucide-react" :refer [BookMarked Monitor SquareTerminal Cable]]
    [reagent.core :as r]
    [webapp.components.text-with-markdown-link :as text-with-markdown-link]
    [webapp.connections.views.resource-catalog.helpers :as helpers]))
@@ -36,6 +36,19 @@
       [:> Text {:size "3" :weight "bold" :class "block mb-4 text-gray-900"}
        "Connection Methods"]
       [:div {:class "grid grid-cols-2 gap-4"}
+       (when (:native access-methods)
+         [:> Card {:size "1"}
+          [:> Flex {:direction "column" :gap "3"}
+           [:> Flex {:align "center" :gap "2"}
+            [:> Avatar {:size "4"
+                        :variant "soft"
+                        :color "gray"
+                        :fallback (r/as-element [:> Cable {:size 18}])}]
+            [:> Box
+             [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-gray-12"} "Native Access"]
+             [:> Text {:as "p" :size "2" :class "text-gray-11"}
+              "Access resources through Hoop using their native protocols"]]]]])
+
        (when (:webapp access-methods)
          [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "3"}
@@ -62,7 +75,12 @@
              [:> Text {:as "p" :size "2" :class "text-gray-11"}
               "Execute securely git-based predefined scripts in your resources."]]]]])
 
-       (when (:cli access-methods)
+       (when
+         ;; Show CLI only if native access is not available
+         ;; for that Resource because of the decomissioning
+         ;; of our CLI for native access.
+         (and (not (:native access-methods))
+              (:cli access-methods))
          [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :gap "2"}

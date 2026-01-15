@@ -1,7 +1,7 @@
 (ns webapp.components.command-dialog
   (:require
    ["cmdk" :refer [CommandDialog CommandInput CommandList CommandLoading]]
-   ["@radix-ui/themes" :refer [Box Flex Text Spinner]]
+   ["@radix-ui/themes" :refer [Box Flex Text Spinner ScrollArea]]
    ["lucide-react" :refer [Search X]]
    [webapp.components.theme-provider :refer [theme-provider]]))
 
@@ -28,7 +28,7 @@
 
 (defn command-dialog
   "Reusable command dialog component"
-  [{:keys [open? on-open-change title max-width height class-name
+  [{:keys [open? on-open-change title max-width height class-name breadcrumb-component
            search-config breadcrumb-config content children loading? should-filter?]
     :or {title "Command Dialog"
          max-width "max-w-2xl"
@@ -77,6 +77,9 @@
               :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
               :onValueChange (:on-value-change search-config)}])
 
+          (when breadcrumb-component
+            [breadcrumb-component])
+
           (when breadcrumb-config
             [breadcrumb-tag {:current-page (:current-page breadcrumb-config)
                              :context (:context breadcrumb-config)
@@ -88,6 +91,8 @@
           [:> Text {:size "2" :class "text-gray-12"}
            "Loading..."]]]
 
-        [:> CommandList
-         {:className "flex-1 overflow-y-auto p-4"}
-         (or content children)])]]]])
+        [:> ScrollArea {:scrollbars "vertical"
+                        :size "2"}
+         [:> CommandList
+          {:className "flex-1 overflow-y-auto p-4"}
+          (or content children)]])]]]])

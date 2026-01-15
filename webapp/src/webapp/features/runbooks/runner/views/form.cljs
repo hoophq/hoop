@@ -51,6 +51,11 @@
                                           (not= required "false")
                                           (or required (nil? required)))
                                      {:required true}))]
+       "file" [forms/file {:label label
+                           :on-change on-change
+                           :value value
+                           :helper-text helper-text
+                           :required required}]
        [forms/input (merge
                      {:label label
                       :placeholder (or placeholder (str "Define a value for " label))
@@ -183,7 +188,7 @@
                                             :value (get @state param "")
                                             :type (:type metadata)
                                             :required (:required metadata)
-                                            :on-change (if (= "select" (:type metadata))
+                                            :on-change (if (contains? #{"select" "file"} (:type metadata))
                                                          #(update-state param %)
                                                          #(update-state param (-> % .-target .-value)))
                                             :helper-text (:description metadata)

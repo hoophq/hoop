@@ -1,7 +1,7 @@
 (ns webapp.components.forms
   (:require
-   ["@radix-ui/themes" :refer [Select Tooltip Text]]
-   ["lucide-react" :refer [Eye EyeOff HelpCircle]]
+   ["@radix-ui/themes" :refer [Box Button Flex IconButton Select Text Tooltip]]
+   ["lucide-react" :refer [Eye EyeOff HelpCircle Upload X]]
    [clojure.string :as cs]
    [reagent.core :as r]))
 
@@ -215,3 +215,64 @@
     [:> Select.Content {:position "popper"
                         :color "indigo"}
      (map #(option % selected) options)]]])
+
+
+(defn file
+  "File input component with base64 encoding support"
+  [_]
+  (let [file-input-ref (r/atom nil)
+        file-name (r/atom nil)]
+    (fn [{:keys [label on-change value helper-text required]}]
+      (let [handle-file-change (fn [event]
+                                 (when-let [file (-> event .-target .-files (aget 0))]
+                                   (reset! file-name (.-name file))
+                                   (let [reader (js/FileReader.)]
+                                     (set! (.-onload reader)
+                                           (fn [e]
+                                             (when-let [base64 (second (cs/split (-> e .-target .-result) #"," 2))]
+                                               (on-change base64))))
+                                     (.readAsDataURL reader file))))
+            handle-button-click (fn []
+                                  (when @file-input-ref
+                                    (.click @file-input-ref)))
+            handle-clear (fn []
+                           (reset! file-name nil)
+                           (when @file-input-ref
+                             (set! (.-value @file-input-ref) ""))
+                           (on-change ""))]
+        [:> Box {:class "text-sm mb-regular"}
+         [:> Flex {:class "items-center gap-2 mb-1"}
+          (when label
+            [:> Text {:size "1" :as "label" :weight "bold" :class "text-gray-12"}
+             label])
+          (when (not (cs/blank? helper-text))
+            [:> Tooltip {:content helper-text}
+             [:> HelpCircle {:size 14}]])]
+         [:> Flex {:class "items-center gap-2"}
+          [:input
+           {:type "file"
+            :ref (fn [el] (reset! file-input-ref el))
+            :on-change handle-file-change
+            :required (and
+                       (not= required "false")
+                       (or required (nil? required)))
+            :style {:display "none"}}]
+          [:> Button
+           {:variant "soft"
+            :size "2"
+            :type "button"
+            :on-click handle-button-click}
+           [:> Flex {:align "center" :gap "2"}
+            [:> Upload {:size 16}]
+            "Upload File"]]
+          (when (not (cs/blank? value))
+            [:> Flex {:align "center" :gap "2"}
+             [:> Text {:size "1" :class "text-gray-11"}
+              (or @file-name "File uploaded")]
+             [:> IconButton
+              {:variant "ghost"
+               :color "gray"
+               :size "1"
+               :type "button"
+               :on-click handle-clear}
+              [:> X {:size 14}]]])]]))))

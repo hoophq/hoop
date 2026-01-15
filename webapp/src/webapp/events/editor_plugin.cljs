@@ -24,7 +24,7 @@
 (rf/reg-event-fx
  :editor-plugin->exec-script
  (fn
-   [{:keys [db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
+   [{:keys [_db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
    (let [payload {:script script
                   :env_vars env_vars
                   :connection connection-name
@@ -40,8 +40,7 @@
                        [:show-snackbar {:level :success
                                         :text "Script was executed!"}])
                       (rf/dispatch [::editor-plugin->set-script-success res script]))]
-     {:db (assoc db :editor-plugin->script {:status :loading :data nil})
-      :fx [[:dispatch [:fetch {:method "POST"
+     {:fx [[:dispatch [:fetch {:method "POST"
                                :uri "/sessions"
                                :on-success on-success
                                :on-failure on-failure
@@ -50,7 +49,7 @@
 (rf/reg-event-fx
  :editor-plugin->multiple-connections-update-metadata
  (fn
-   [{:keys [db]} [_ exec-list]]
+   [{:keys [_db]} [_ exec-list]]
    (let [dispatchs (mapv (fn [exec]
                            [:dispatch-later {:ms 1000
                                              :dispatch [:fetch
@@ -103,17 +102,29 @@
 
 (rf/reg-event-fx
  :editor-plugin/submit-task
- (fn [{:keys [db]} [_ {:keys [script] :as context}]]
-   (let [primary-name (get-in db [:editor :connections :selected :name])
-         multi-names (map :name (get-in db [:editor :multi-connections :selected]))
-         all-names (remove nil? (cons primary-name multi-names))]
+ (fn [{:keys [db]} [_ context]]
+   ;; Check if parallel mode is active
+   (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
+         parallel-mode? (>= (count parallel-connections) 2)]
 
-     (if (empty? all-names)
-       {:fx [[:dispatch [:show-snackbar {:level :error :text "You must choose a connection"}]]]}
+     (if parallel-mode?
+       ;; Use parallel mode execution
        {:fx [[:dispatch [:connections->get-multiple-by-names
-                         all-names
-                         [:editor-plugin/submit-task-with-fresh-data context]
-                         [:editor-plugin/submit-task-connection-error]]]]}))))
+                         (map :name parallel-connections)
+                         [:parallel-mode/submit-task-with-fresh-data context]
+                         [:editor-plugin/submit-task-connection-error]]]]}
+
+       ;; Use legacy single/multi connection logic
+       (let [primary-name (get-in db [:editor :connections :selected :name])
+             multi-names (map :name (get-in db [:editor :multi-connections :selected]))
+             all-names (remove nil? (cons primary-name multi-names))]
+
+         (if (empty? all-names)
+           {:fx [[:dispatch [:show-snackbar {:level :error :text "You must choose a connection"}]]]}
+           {:fx [[:dispatch [:connections->get-multiple-by-names
+                             all-names
+                             [:editor-plugin/submit-task-with-fresh-data context]
+                             [:editor-plugin/submit-task-connection-error]]]]}))))))
 
 (rf/reg-event-fx
  :editor-plugin/submit-task-with-fresh-data
@@ -325,4 +336,3 @@
    (update db :editor-plugin merge {:metadata []
                                     :metadata-key ""
                                     :metadata-value ""})))
-

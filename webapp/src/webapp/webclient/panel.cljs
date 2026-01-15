@@ -33,7 +33,8 @@
    [webapp.webclient.components.side-panel :refer [with-panel]]
    [webapp.webclient.exec-multiples-connections.exec-list :as multiple-connections-exec-list-component]
    [webapp.webclient.log-area.main :as log-area]
-   [webapp.webclient.quickstart :as quickstart]))
+   [webapp.webclient.quickstart :as quickstart]
+   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -306,6 +307,7 @@
                                 (when @dark-mode?
                                   "dark"))}
             [connection-dialog/connection-dialog]
+            [parallel-mode-modal/parallel-mode-modal]
 
             [header/main
              dark-mode?
@@ -383,11 +385,7 @@
 
 (def main
   (r/create-class
-   {:component-will-unmount
-    (fn [_this]
-      (js/window.Intercom "update" #js{:hide_default_launcher false}))
-
-    :reagent-render
+   {:reagent-render
     (fn []
       (let [script-response (rf/subscribe [:editor-plugin->script])]
         (rf/dispatch [:editor-plugin->clear-script])
@@ -398,7 +396,6 @@
         (rf/dispatch [:jira-integration->get])
         (rf/dispatch [:search/clear-term])
 
-        (js/window.Intercom "update" #js{:hide_default_launcher true})
         (fn []
           (clearLocalCache)
           [editor {:script-output script-response}])))}))

@@ -9,6 +9,14 @@
    [reagent.core :as r]
    [webapp.config :as config]))
 
+(defn request-demo
+  []
+  (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+    (if analytics-tracking
+      (when js/window.Intercom
+        (js/window.Intercom "showNewMessage" "I want to upgrade my current plan"))
+      (.open js/window "https://hoop.dev/meet" "_blank"))))
+
 (defn feature-item
   "Componente para exibir um item da feature com ícone"
   [{:keys [icon title description]}]
@@ -122,9 +130,7 @@
                                             (js/setTimeout
                                              (fn [] (rf/dispatch [:plugins->get-plugin-by-name "access_control"]))
                                              1000))}]))
-                        #(js/window.Intercom
-                          "showNewMessage"
-                          "I want to upgrade my current plan"))
+                        request-demo)
     :primary-text (if (= mode :empty-state)
                     "Activate Access Control"
                     "Request demo")}])
@@ -148,9 +154,7 @@
                      :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]
     :on-primary-click (if (= mode :empty-state)
                         #(rf/dispatch [:navigate :create-guardrail])
-                        #(js/window.Intercom
-                          "showNewMessage"
-                          "I want to upgrade my current plan"))
+                        request-demo)
     :primary-text (if (= mode :empty-state)
                     "Create new Guardrails"
                     "Request demo")}])
@@ -174,9 +178,7 @@
                      :description "Request additional information from users during access workflows. Map manual or automated data to Jira fields."}]
     :on-primary-click (if (= mode :empty-state)
                         #(rf/dispatch [:navigate :settings-jira])
-                        #(js/window.Intercom
-                          "showNewMessage"
-                          "I want to upgrade my current plan"))
+                        request-demo)
     :primary-text (if (= mode :empty-state)
                     "Configure Jira Integration"
                     "Request demo")}])
@@ -204,9 +206,7 @@
                           (when on-promotion-seen
                             (on-promotion-seen))
                           (rf/dispatch [:navigate :runbooks-setup]))
-                        #(js/window.Intercom
-                          "showNewMessage"
-                          "I want to upgrade my current plan"))
+                        request-demo)
     :primary-text (if (= mode :empty-state)
                     "Configure Runbooks"
                     "Request demo")}])
@@ -253,9 +253,7 @@
       "mspresidio"
       {:on-primary-click (if (= mode :empty-state)
                            #(rf/dispatch [:navigate :create-ai-data-masking])
-                           #(js/window.Intercom
-                             "showNewMessage"
-                             "I want to upgrade my current plan"))
+                           request-demo)
        :primary-text (if (= mode :empty-state)
                        "Configure AI Data Masking"
                        "Request demo")}

@@ -296,15 +296,17 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	url, _ := url.Parse(login.Redirect)
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
 		redirectSuccessURL = login.Redirect
-		c.SetCookie(
-			"hoop_access_token",
-			sessionToken,
-			0,
-			"/",
-			"",
-			true,
-			false,
-		)
+
+		isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "hoop_access_token",
+			Value:    sessionToken,
+			Path:     "/",
+			MaxAge:   0,
+			HttpOnly: false,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
 }

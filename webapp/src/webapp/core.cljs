@@ -6,7 +6,8 @@
    [webapp.routes :as routes]
    [webapp.app :as views]
    [webapp.config :as config]
-   [webapp.events.jobs]))
+   [webapp.events.jobs]
+   [webapp.parallel-mode.core]))
 
 (defn dev-setup []
   (when config/debug?

@@ -5,7 +5,8 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.button :as button]
-   [webapp.config :as config]))
+   [webapp.config :as config]
+   [webapp.features.promotion :refer [request-demo]]))
 
 (defn- feature [{:keys [icon title description]}]
   [:> Flex {:align "center" :gap "4"}
@@ -47,9 +48,7 @@
      [:> Button {:size "4"
                  :on-click (fn []
                              (rf/dispatch [:modal->close])
-                             (js/window.Intercom
-                              "showNewMessage"
-                              "I want to upgrade my current plan"))}
+                             (request-demo))}
       "Request a demo"]]
 
     [:> Box {:class (str "absolute top-[--space-9] right-0 w-1/2 h-auto "

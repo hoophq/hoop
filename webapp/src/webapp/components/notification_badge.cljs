@@ -12,6 +12,7 @@
      :size "2"
      :color "gray"
      :variant "soft"
+     :highContrast true
      :disabled disabled?
      :on-click on-click}
     icon]
