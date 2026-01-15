@@ -13,9 +13,10 @@
   :on-sucess -> callback that receives as argument the response payload
   :on-failure -> callback that has one argument that is the error message to treat 4xx and 5xx status codes. If not provided, a default callback will be called
   :on-unauthenticated -> a function to be called when the auth fails
+  :abort-controller -> AbortController instance for cancelling the request
 
   it returns a promise with the response in a clojure map and executes a on-sucess callback"
-  [{:keys [method uri query-params body on-success on-failure headers]}]
+  [{:keys [method uri query-params body on-success on-failure headers abort-controller]}]
   (let [token (.getItem js/localStorage "jwt-token")
         common-headers {:headers {:accept "application/json"
                                   "Content-Type" "application/json"
@@ -31,6 +32,7 @@
                       :query-params (or query-params {})
                       :on-success on-success
                       :on-failure on-failure
+                      :abort-controller abort-controller
                       :url (str config/api uri)
                       :options {:headers headers}})))
 
