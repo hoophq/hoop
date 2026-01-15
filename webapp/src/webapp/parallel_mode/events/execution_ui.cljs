@@ -22,5 +22,6 @@
                       :text "If you leave now, resource roles on the queue might not be executed."
                       :action-button? true
                       :text-action-button "Leave"
-                      :on-success [:parallel-mode/cancel-pending-executions]}]]]}))
+                      :on-success #(rf/dispatch
+                                    [:parallel-mode/cancel-pending-executions])}]]]}))
 
