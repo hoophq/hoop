@@ -4,13 +4,10 @@
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]
    [webapp.resources.helpers :refer [get-secret-prefix]]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.resources.setup.events.process-form :as resource-process-form]
    [webapp.connections.views.setup.tags-utils :as tags-utils]
    [webapp.connections.views.setup.connection-method :as connection-method]))
-
-(def http-proxy-subtypes
-  "Set of connection subtypes that use HTTP proxy logic"
-  #{"httpproxy" "kibana" "grafana"})
 
 (defn process-http-headers
   "Process HTTP headers by adding HEADER_ prefix to each key"

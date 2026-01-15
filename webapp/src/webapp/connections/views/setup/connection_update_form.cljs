@@ -6,6 +6,7 @@
    [webapp.components.loaders :as loaders]
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.database :as database]
    [webapp.connections.views.setup.events.process-form :as helpers]
@@ -80,7 +81,8 @@
                                 connection-subtype (:subtype (:data @connection))
                                 form-id (cond
                                           (and (= connection-type "custom")
-                                               (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} connection-subtype)))
+                                               (not (or (contains? #{"tcp" "ssh" "linux-vm"} connection-subtype)
+                                                        (contains? http-proxy-subtypes connection-subtype))))
                                           "metadata-credentials-form"
                                           (and (= connection-type "application")
                                                (= connection-subtype "ssh")) "ssh-credentials-form"
@@ -203,7 +205,8 @@
                                    :update]
                        "custom" (let [subtype (:subtype (:data @connection))]
                                   (if (and subtype
-                                           (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} subtype)))
+                                           (not (or (contains? #{"tcp" "ssh" "linux-vm"} subtype)
+                                                    (contains? http-proxy-subtypes subtype))))
                                     [metadata-driven/credentials-step subtype :update]
                                     [server/credentials-step :update]))
                        "application" (if (= (:subtype (:data @connection)) "ssh")

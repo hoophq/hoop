@@ -7,6 +7,7 @@
    [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.components.command-dialog :as command-dialog]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
@@ -54,7 +55,8 @@
       (let [all-connections (or (:data @connections) [])
             connections-loading? (= :loading (:loading @connections))
             valid-connections (filter #(and
-                                        (not (#{"tcp" "httpproxy" "ssh"} (:subtype %)))
+                                        (not (or (#{"tcp" "ssh"} (:subtype %))
+                                                 (http-proxy-subtypes (:subtype %))))
                                         (= "enabled" (:access_mode_runbooks %)))
                                       all-connections)]
         [command-dialog/command-dialog

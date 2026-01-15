@@ -20,3 +20,7 @@
 ;; Get role config based on type and subtype
 (defn get-role-config [type subtype]
   (get role-configs-required (keyword (str type "/" subtype))))
+
+(def http-proxy-subtypes
+  "Set of connection subtypes that use HTTP proxy logic"
+  #{"httpproxy" "kibana" "grafana"})

@@ -6,6 +6,7 @@
    [webapp.components.loaders :as loaders]
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.views.setup.events.process-form :as helpers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]
    [webapp.connections.views.test-connection-modal :as test-connection-modal]
@@ -25,7 +26,8 @@
 
     ;; Metadata-driven connections
     (and (or (= connection-type "custom") (= connection-type "database"))
-         (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"} connection-subtype)))
+         (not (or (contains? #{"tcp" "ssh" "linux-vm"} connection-subtype)
+                  (contains? http-proxy-subtypes connection-subtype))))
     "metadata-credentials-form"
 
     ;; SSH connections

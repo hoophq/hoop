@@ -90,7 +90,9 @@
    :kubernetes-token (str config/webapp-url "/icons/connections/kubernetes-rounded.svg")
    :aws-cli (str config/webapp-url "/icons/connections/aws-rounded.svg")
    :aws-ecs (str config/webapp-url "/icons/connections/aws-rounded.svg")
-   :aws-ssm (str config/webapp-url "/icons/connections/aws-rounded.svg")})
+   :aws-ssm (str config/webapp-url "/icons/connections/aws-rounded.svg")
+   :grafana (str config/webapp-url "/icons/connections/grafana-rounded.svg")
+   :kibana (str config/webapp-url "/icons/connections/kibana-rounded.svg")})
 
 (def connection-icons-default-dictionary
   {:postgres (str config/webapp-url "/icons/connections/postgres-default.svg")
@@ -136,7 +138,9 @@
    :kubernetes-token (str config/webapp-url "/icons/connections/kubernetes-default.svg")
    :aws-cli (str config/webapp-url "/icons/connections/aws-default.svg")
    :aws-ecs (str config/webapp-url "/icons/connections/aws-default.svg")
-   :aws-ssm (str config/webapp-url "/icons/connections/aws-default.svg")})
+   :aws-ssm (str config/webapp-url "/icons/connections/aws-default.svg")
+   :grafana (str config/webapp-url "/icons/connections/grafana-default.svg")
+   :kibana (str config/webapp-url "/icons/connections/kibana-default.svg")})
 
 (def command-to-icon-key
   {"aws" :aws

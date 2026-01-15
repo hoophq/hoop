@@ -11,5 +11,5 @@
 
 ;; Constants
 (def min-connections 2)
-(def excluded-subtypes #{"tcp" "httpproxy" "ssh"})
+(def excluded-subtypes #{"tcp" "httpproxy" "grafana" "kibana" "ssh"})
 

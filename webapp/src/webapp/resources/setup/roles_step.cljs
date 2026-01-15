@@ -312,7 +312,8 @@
         resource-subtype @(rf/subscribe [:resource-setup/resource-subtype])
         connection @(rf/subscribe [:resource-setup/current-connection-metadata])
         credentials-config (get-in connection [:resourceConfiguration :credentials])
-        has-env-vars? (contains? #{"linux-vm" "httpproxy"} resource-subtype)
+        has-env-vars? (or (contains? #{"linux-vm"} resource-subtype)
+                          (contains? constants/http-proxy-subtypes resource-subtype))
         has-credentials? (seq credentials-config)
         should-show-connection-method? (or has-credentials? has-env-vars?)
         can-remove? (> (count roles) 1)]

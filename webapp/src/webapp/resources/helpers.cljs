@@ -2,7 +2,8 @@
   "Helper functions for working with resources in the webapp."
   (:require
    ["unique-names-generator" :as ung]
-   [clojure.string :as s]))
+   [clojure.string :as s]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn is-onboarding-context?
   "Check if we're currently in onboarding context by URL"
@@ -35,7 +36,8 @@
 (defn can-open-web-terminal?
   "Check if a role/connection can open web terminal based on subtype and access modes"
   [role]
-  (if-not (#{"tcp" "httpproxy" "ssh" "rdp"} (:subtype role))
+  (if-not (or (#{"tcp" "ssh" "rdp"} (:subtype role))
+              (http-proxy-subtypes (:subtype role)))
     (if (or (= "enabled" (:access_mode_runbooks role))
             (= "enabled" (:access_mode_exec role)))
       true

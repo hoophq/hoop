@@ -2,12 +2,12 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
    ["lucide-react" :refer [Info]]
-   [clojure.edn :as edn]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.components.logs-container :as logs]
    [webapp.components.timer :as timer]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.native-client-access.constants :as constants]))
 
 (defn disconnect-session
@@ -278,6 +278,8 @@
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
      "httpproxy" [http-proxy-credentials-fields connection_credentials]
+     "grafana" [http-proxy-credentials-fields connection_credentials]
+     "kibana" [http-proxy-credentials-fields connection_credentials]
      [postgres-credentials-fields connection_credentials])])
 
 (defn- connect-uri-tab
@@ -389,7 +391,7 @@
           (= connection-type "aws-ssm")
           [aws-ssm-command-view native-client-access-data]
 
-          (= connection-type "httpproxy")
+          (http-proxy-subtypes connection-type)
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
