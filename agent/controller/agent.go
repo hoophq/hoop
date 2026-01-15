@@ -139,9 +139,10 @@ func (a *Agent) getOrAddConnMutex(connId string, connType string) *sync.Mutex {
 func (a *Agent) processPacket(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
 	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
+	clientStreamID := sid + clientConnectionID
 
 	// Make it pipelined for each connection but parallel between connections
-	mtx := a.getOrAddConnMutex(clientConnectionID, pkt.Type)
+	mtx := a.getOrAddConnMutex(clientStreamID, pkt.Type)
 	mtx.Lock()
 	defer mtx.Unlock()
 
