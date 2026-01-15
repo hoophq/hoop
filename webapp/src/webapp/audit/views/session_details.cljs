@@ -3,10 +3,11 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu Flex Text Tooltip ScrollArea]]
+   ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu Link
+                               Flex Text Tooltip ScrollArea]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info ChevronDown
+   ["lucide-react" :refer [Download FileDown Info ChevronDown ExternalLink
                            CalendarClock Check CircleCheckBig Clock2 OctagonX]]
    ["react" :as react]
    [clojure.string :as cs]
@@ -252,6 +253,7 @@
               connection-subtype (:connection_subtype session)
               start-date (:start_date session)
               end-date (:end_date session)
+              session-batch-id (:session_batch_id session)
               verb (:verb session)
               session-status (:status session)
               has-large-payload? (:has-large-payload? @session-details)
@@ -314,10 +316,10 @@
              [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
               [:div {:class "flex flex-col"}
                [h/h2 connection-name]
-               [:div {:class "text-sm flex flex-grow gap-regular"}
+               [:div {:class "text-xs flex flex-grow gap-1"}
                 [:span {:class "text-gray-500"}
                  "type:"]
-                [:span {:class "font-bold"}
+                [:span {:class "text-xs font-bold"}
                  (:type session)]]]
 
               (when (and in-progress? (not ready?))
@@ -387,6 +389,17 @@
                                                   (:id session)
                                                   (get export-dictionary (keyword (:type session)) "txt")])}
                    [:> hero-outline-icon/ArrowDownTrayIcon {:class "h-5 w-5 text-gray-600"}]]]])]]
+
+            (when session-batch-id
+              [:> Text {:size "1" :class "flex items-center gap-1 text-gray-11"}
+               "Parallel mode batch: "
+               [:> Link {:href (str (-> js/document .-location .-origin)
+                                    (routes/url-for :sessions-list-filtered-by-ids)
+                                    "?batch_id=" session-batch-id)
+                         :target "_blank"
+                         :class "flex items-center gap-1"}
+                "link"
+                [:> ExternalLink {:size 10 :class "inline-block"}]]])
 
             (when (-> session :labels :runbookFile)
               [:div {:class "text-xs text-gray-500"}
