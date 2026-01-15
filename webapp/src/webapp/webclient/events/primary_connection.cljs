@@ -8,8 +8,7 @@
  :primary-connection/initialize-with-persistence
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :status] :loading)
-    :fx [[:dispatch-later {:ms 500 :dispatch [:primary-connection/load-persisted]}]
-         [:dispatch-later {:ms 600 :dispatch [:multiple-connections/load-persisted]}]]}))
+    :fx [[:dispatch-later {:ms 500 :dispatch [:primary-connection/load-persisted]}]]}))
 
 (rf/reg-event-db
  :primary-connection/set-filter
@@ -29,7 +28,6 @@
               (assoc-in [:editor :multi-connections :selected] compatible-multiples))
       :fx [[:dispatch [:editor-plugin/clear-language]]
            [:dispatch [:primary-connection/persist-selected]]
-           [:dispatch [:multiple-connections/persist]]
            [:dispatch [:database-schema->clear-schema]]]})))
 
 (rf/reg-event-fx

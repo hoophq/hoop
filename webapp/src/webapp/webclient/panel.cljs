@@ -15,7 +15,7 @@
    ["@uiw/codemirror-theme-material" :refer [materialDark materialLight]]
    ["@uiw/react-codemirror" :as CodeMirror]
    ["allotment" :refer [Allotment]]
-   ["codemirror-copilot" :refer [clearLocalCache inlineCopilot]]
+   ["codemirror-copilot" :refer [clearLocalCache]]
    ["codemirror-lang-elixir" :as cm-elixir]
    ["lucide-react" :refer [Info]]
    [clojure.string :as cs]
@@ -26,13 +26,11 @@
    [webapp.formatters :as formatters]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
    [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
-   [webapp.webclient.codemirror.extensions :as extensions]
    [webapp.webclient.components.connection-dialog :as connection-dialog]
    [webapp.webclient.components.header :as header]
    [webapp.webclient.components.language-select :as language-select]
    [webapp.webclient.components.panels.database-schema :as database-schema-panel]
    [webapp.webclient.components.panels.metadata :as metadata-panel]
-   [webapp.webclient.components.panels.multiple-connections :as multiple-connections-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
    [webapp.webclient.log-area.main :as log-area]
    [webapp.webclient.quickstart :as quickstart]))
@@ -42,15 +40,6 @@
     (not (cs/blank? (:subtype connection))) (:subtype connection)
     (not (cs/blank? (:icon_name connection))) (:icon_name connection)
     :else (:type connection)))
-
-(defn metadata->json-stringify
-  [metadata]
-  (->> metadata
-       (filter (fn [{:keys [key value]}]
-                 (not (or (cs/blank? key) (cs/blank? value)))))
-       (map (fn [{:keys [key value]}] {key value}))
-       (reduce into {})
-       (clj->js)))
 
 (defn- get-code-from-localstorage []
   (let [item (.getItem js/localStorage :code-tmp-db)
@@ -130,25 +119,11 @@
 
 (defn create-codemirror-extensions [parser
                                     keymap
-                                    feature-ai-ask
-                                    is-one-connection-selected?
-                                    connection-subtype
                                     is-template-ready?]
 
   (let [extensions
         (concat
          [(.of cm-view/keymap (clj->js keymap))]
-         (when (and (= feature-ai-ask "enabled")
-                    is-one-connection-selected?)
-           [(inlineCopilot
-             #js{:getSuggestions (fn [prefix suffix]
-                                   (extensions/fetch-autocomplete
-                                    connection-subtype
-                                    prefix
-                                    suffix))
-                 :debounceMs 1200
-                 :maxPrefixLength 500
-                 :maxSuffixLength 500})])
          parser
          (when is-template-ready?
            [(.of (.-editable cm-view/EditorView) false)
@@ -192,11 +167,11 @@
 
 
 (defn editor []
-  (let [user (rf/subscribe [:users->current-user])
-        gateway-info (rf/subscribe [:gateway->info])
+  (let [gateway-info (rf/subscribe [:gateway->info])
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
+        parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
@@ -211,9 +186,7 @@
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
-      (let [is-one-connection-selected? @(rf/subscribe [:execution/is-single-mode])
-            feature-ai-ask (or (get-in @user [:data :feature_ask_ai]) "disabled")
-            current-connection @primary-connection
+      (let [current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
             disabled-download (-> @gateway-info :data :disable_sessions_download)
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
@@ -267,9 +240,6 @@
             codemirror-exts (create-codemirror-extensions
                              language-parser-case
                              keymap
-                             feature-ai-ask
-                             is-one-connection-selected?
-                             (:subtype current-connection)
                              false)
 
             optimized-change-handler (fn [value _]
@@ -290,7 +260,6 @@
                                          :content [metadata-panel/main {:metadata metadata
                                                                         :metadata-key metadata-key
                                                                         :metadata-value metadata-value}]}
-                              :multiple-connections {:content [multiple-connections-panel/main dark-mode?]}
                               nil))]
 
         (cond
@@ -350,7 +319,7 @@
                  [:> Flex {:direction "column" :justify "between" :class "h-full"}
                   [log-area/main
                    connection-type
-                   is-one-connection-selected?
+                   @parallel-mode-active?
                    @dark-mode?
                    (not disabled-download)]
 

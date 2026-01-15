@@ -14,7 +14,6 @@
         metadata-key (rf/subscribe [:editor-plugin/metadata-key])
         metadata-value (rf/subscribe [:editor-plugin/metadata-value])
         primary-connection (rf/subscribe [:primary-connection/selected])
-        selected-connections (rf/subscribe [:multiple-connections/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
         script-response (rf/subscribe [:editor-plugin->script])
         parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])]
@@ -22,11 +21,11 @@
       (let [has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
                               (seq @metadata-value))
-            no-connection-selected? (and (empty? @selected-connections)
-                                         (not @primary-connection))
+            connection-selected? (or @parallel-mode-active?
+                                     (boolean @primary-connection))
             exec-enabled? (= "enabled" (:access_mode_exec @primary-connection))
-            disable-run-button? (or (not exec-enabled?)
-                                    no-connection-selected?)
+            disable-run-button? (not (or exec-enabled?
+                                         connection-selected?))
             script-loading? (= (:status @script-response) :loading)
             os (detect-os)]
         [:> Box {:class "h-16 border-b-2 border-gray-3 bg-gray-1"}
