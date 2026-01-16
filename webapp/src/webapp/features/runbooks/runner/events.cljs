@@ -8,7 +8,7 @@
 (rf/reg-event-db
  :runbooks/set-active-runbook
  (fn
-   [db [_ template repository]] 
+   [db [_ template repository]]
    (let [repository-str (if (string? repository) repository (:repository repository))
          list-data (get-in db [:runbooks :list])
          repositories (or (:data list-data) [])
@@ -118,74 +118,71 @@
    ;; Check if parallel mode is active
    (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
          parallel-mode? (>= (count parallel-connections) 2)]
-     
+
      (if parallel-mode?
-       ;; Use parallel mode execution
-       (do
-         (js/console.log "✅ Using PARALLEL MODE execution for runbooks")
-         {:fx [[:dispatch [:connections->get-multiple-by-names
-                           (map :name parallel-connections)
-                           [:parallel-mode/submit-runbook-with-fresh-data context]
-                           [:runbooks/submit-task-connection-error]]]]})
-       
+       {:fx [[:dispatch [:connections->get-multiple-by-names
+                         (map :name parallel-connections)
+                         [:parallel-mode/submit-runbook-with-fresh-data context]
+                         [:runbooks/submit-task-connection-error]]]]}
+
        ;; Use single runbook execution (existing flow)
        (let [selected-connection (get-in db [:runbooks :selected-connection])
-         selected-db (.getItem js/localStorage "selected-database")
-         is-dynamodb? (= (:subtype selected-connection) "dynamodb")
-         is-cloudwatch? (= (:subtype selected-connection) "cloudwatch")
-         keep-metadata? (get-in db [:runbooks :keep-metadata?])
-         current-metadatas (get-in db [:runbooks :metadata])
-         current-metadata-key (get-in db [:runbooks :metadata-key])
-         current-metadata-value (get-in db [:runbooks :metadata-value])
-         metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
-         repository (or repository
-                        (let [list-data (get-in db [:runbooks :list])
-                              repositories (or (:data list-data) [])
-                              repo (first (filter #(some (fn [item] (= (:name item) file-name)) (:items %)) repositories))]
-                          (when repo (:repository repo))))
-         env-vars (cond
-                    (and is-dynamodb? selected-db)
-                    {"envvar:TABLE_NAME" (js/btoa selected-db)} 
-                    (and is-cloudwatch? selected-db)
-                    {"envvar:LOG_GROUP_NAME" (js/btoa selected-db)}
+             selected-db (.getItem js/localStorage "selected-database")
+             is-dynamodb? (= (:subtype selected-connection) "dynamodb")
+             is-cloudwatch? (= (:subtype selected-connection) "cloudwatch")
+             keep-metadata? (get-in db [:runbooks :keep-metadata?])
+             current-metadatas (get-in db [:runbooks :metadata])
+             current-metadata-key (get-in db [:runbooks :metadata-key])
+             current-metadata-value (get-in db [:runbooks :metadata-value])
+             metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
+             repository (or repository
+                            (let [list-data (get-in db [:runbooks :list])
+                                  repositories (or (:data list-data) [])
+                                  repo (first (filter #(some (fn [item] (= (:name item) file-name)) (:items %)) repositories))]
+                              (when repo (:repository repo))))
+             env-vars (cond
+                        (and is-dynamodb? selected-db)
+                        {"envvar:TABLE_NAME" (js/btoa selected-db)}
+                        (and is-cloudwatch? selected-db)
+                        {"envvar:LOG_GROUP_NAME" (js/btoa selected-db)}
 
-                    :else nil)
-         payload (cond-> {:file_name file-name
-                          :connection_name connection-name
-                          :repository repository
-                          :parameters params
-                          :env_vars env-vars
-                          :metadata (metadata->json-stringify metadata)}
-                   ref-hash (assoc :ref_hash ref-hash)
-                   jira_fields (assoc :jira_fields jira_fields)
-                   cmdb_fields (assoc :cmdb_fields cmdb_fields))
-         default-on-failure (fn [_error-message error]
-                              (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
-                                                            :level :error
-                                                            :details _error-message}])
-                              (rf/dispatch [:runbooks/exec-failure error])
-                              (when on-failure
-                                (on-failure _error-message error)))
-         default-on-success (fn [res]
-                              (rf/dispatch
-                               [:show-snackbar {:level :success
-                                                :text "Runbook was executed!"}])
-                              (rf/dispatch [:runbooks/exec-success res file-name])
-                              (rf/dispatch [:webapp.events.editor-plugin/editor-plugin->set-script-success res file-name])
-                              (when on-success
-                                (on-success res)))
-         base-db (assoc db :runbooks->exec {:status :loading :data nil})]
-     (merge {:db base-db
-             :fx [[:dispatch [:fetch {:method "POST"
-                                      :uri "/runbooks/exec"
-                                      :on-success default-on-success
-                                      :on-failure default-on-failure
-                                      :body payload}]]]}
-            (when-not keep-metadata?
-              {:db (-> base-db
-                       (assoc-in [:runbooks :metadata] [])
-                       (assoc-in [:runbooks :metadata-key] "")
-                       (assoc-in [:runbooks :metadata-value] ""))})))))))
+                        :else nil)
+             payload (cond-> {:file_name file-name
+                              :connection_name connection-name
+                              :repository repository
+                              :parameters params
+                              :env_vars env-vars
+                              :metadata (metadata->json-stringify metadata)}
+                       ref-hash (assoc :ref_hash ref-hash)
+                       jira_fields (assoc :jira_fields jira_fields)
+                       cmdb_fields (assoc :cmdb_fields cmdb_fields))
+             default-on-failure (fn [_error-message error]
+                                  (rf/dispatch [:show-snackbar {:text "Failed to execute runbook"
+                                                                :level :error
+                                                                :details _error-message}])
+                                  (rf/dispatch [:runbooks/exec-failure error])
+                                  (when on-failure
+                                    (on-failure _error-message error)))
+             default-on-success (fn [res]
+                                  (rf/dispatch
+                                   [:show-snackbar {:level :success
+                                                    :text "Runbook was executed!"}])
+                                  (rf/dispatch [:runbooks/exec-success res file-name])
+                                  (rf/dispatch [:webapp.events.editor-plugin/editor-plugin->set-script-success res file-name])
+                                  (when on-success
+                                    (on-success res)))
+             base-db (assoc db :runbooks->exec {:status :loading :data nil})]
+         (merge {:db base-db
+                 :fx [[:dispatch [:fetch {:method "POST"
+                                          :uri "/runbooks/exec"
+                                          :on-success default-on-success
+                                          :on-failure default-on-failure
+                                          :body payload}]]]}
+                (when-not keep-metadata?
+                  {:db (-> base-db
+                           (assoc-in [:runbooks :metadata] [])
+                           (assoc-in [:runbooks :metadata-key] "")
+                           (assoc-in [:runbooks :metadata-value] ""))})))))))
 
 (rf/reg-event-fx
  :runbooks/submit-task-connection-error
