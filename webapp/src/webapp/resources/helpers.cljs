@@ -44,14 +44,23 @@
       false)
     false))
 
+(def ^:private direct-native-subtypes
+  #{"postgres" "ssh"})
+
+(def ^:private custom-native-subtypes
+  #{"rdp" "aws-ssm"})
+
+(defn- native-subtype? [{:keys [subtype type]}]
+  (or (direct-native-subtypes subtype)
+      (http-proxy-subtypes subtype)
+      (and (= type "custom")
+           (custom-native-subtypes subtype))))
+
 (defn can-access-native-client?
   "Check if a role/connection can access native client based on subtype and access mode"
-  [role]
-  (and (= "enabled" (:access_mode_connect role))
-       (or (#{"postgres" "ssh"} (:subtype role))
-           (http-proxy-subtypes (:subtype role))
-           (and (= (:type role) "custom")
-                (contains? #{"rdp" "aws-ssm"} (:subtype role))))))
+  [{:keys [access_mode_connect] :as role}]
+  (and (= "enabled" access_mode_connect)
+       (native-subtype? role)))
 
 (defn get-secret-prefix
   "Returns the prefix string for a given secret source or provider."

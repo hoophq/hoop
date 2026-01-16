@@ -102,9 +102,19 @@
        (not (and (= (:type connection) "custom")
                  (= (:subtype connection) "rdp")))))
 
-(defn can-access-native-client? [connection]
-  (and (= "enabled" (:access_mode_connect connection))
-       (or (#{"postgres" "ssh"} (:subtype connection))
-           (http-proxy-subtypes (:subtype connection))
-           (and (= (:type connection) "custom")
-                (contains? #{"rdp" "aws-ssm"} (:subtype connection))))))
+(def ^:private direct-native-subtypes
+  #{"postgres" "ssh"})
+
+(def ^:private custom-native-subtypes
+  #{"rdp" "aws-ssm"})
+
+(defn- native-subtype? [{:keys [subtype type]}]
+  (or (direct-native-subtypes subtype)
+      (http-proxy-subtypes subtype)
+      (and (= type "custom")
+           (custom-native-subtypes subtype))))
+
+(defn can-access-native-client?
+  [{:keys [access_mode_connect] :as connection}]
+  (and (= "enabled" access_mode_connect)
+       (native-subtype? connection)))
