@@ -3,7 +3,8 @@
   Provides utilities for handling connection names, configurations, and data transformations."
   (:require
    ["unique-names-generator" :as ung] ; Library for generating unique names
-   [clojure.string :as s]))
+   [clojure.string :as s]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn array->select-options
   "Converts an array of values into a format suitable for select options.
@@ -86,7 +87,8 @@
             (= "disabled" (:access_mode_connect connection)))))
 
 (defn can-open-web-terminal? [connection]
-  (if-not (#{"tcp" "httpproxy" "ssh"} (:subtype connection))
+  (if-not (or (#{"tcp" "ssh" "rdp"} (:subtype connection))
+              (http-proxy-subtypes (:subtype connection)))
 
     (if (or (= "enabled" (:access_mode_runbooks connection))
             (= "enabled" (:access_mode_exec connection)))
@@ -100,8 +102,19 @@
        (not (and (= (:type connection) "custom")
                  (= (:subtype connection) "rdp")))))
 
-(defn can-access-native-client? [connection]
-  (and (= "enabled" (:access_mode_connect connection))
-       (or (#{"postgres" "ssh" "httpproxy"} (:subtype connection))
-           (and (= (:type connection) "custom")
-                (contains? #{"rdp" "aws-ssm"} (:subtype connection))))))
+(def ^:private direct-native-subtypes
+  #{"postgres" "ssh"})
+
+(def ^:private custom-native-subtypes
+  #{"rdp" "aws-ssm"})
+
+(defn- native-subtype? [{:keys [subtype type]}]
+  (or (direct-native-subtypes subtype)
+      (http-proxy-subtypes subtype)
+      (and (= type "custom")
+           (custom-native-subtypes subtype))))
+
+(defn can-access-native-client?
+  [{:keys [access_mode_connect] :as connection}]
+  (and (= "enabled" access_mode_connect)
+       (native-subtype? connection)))

@@ -4,6 +4,7 @@
    [webapp.connections.constants :as constants]
    [webapp.connections.helpers :as helpers]
    [webapp.resources.helpers :refer [get-secret-prefix]]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.resources.setup.events.process-form :as resource-process-form]
    [webapp.connections.views.setup.tags-utils :as tags-utils]
    [webapp.connections.views.setup.connection-method :as connection-method]))
@@ -54,6 +55,7 @@
 (defn process-payload [db & [resource-name]]
   (let [ui-type (get-in db [:connection-setup :type])
         connection-subtype (get-in db [:connection-setup :subtype])
+        is-http-proxy-subtype? (contains? http-proxy-subtypes connection-subtype)
         api-type (get-api-connection-type ui-type connection-subtype)
         connection-name (get-in db [:connection-setup :name])
         agent-id (get-in db [:connection-setup :agent-id])
@@ -144,7 +146,7 @@
                                                       env-vars)]
                          (concat tcp-env-vars processed-env-vars))
 
-                       (= connection-subtype "httpproxy")
+                       is-http-proxy-subtype?
                        (let [network-credentials (get-in db [:connection-setup :network-credentials])
                              remote-url-value (get network-credentials :remote_url)
                              insecure-value (get network-credentials :insecure)
@@ -371,17 +373,19 @@
   [connection guardrails-list jira-templates-list]
   (let [connection-type (:type connection)
         connection-subtype (:subtype connection)
+        is-http-proxy-subtype? (contains? http-proxy-subtypes connection-subtype)
         credentials (process-connection-secret (:secret connection) "envvar")
 
         is-metadata-driven? (and (= connection-type "custom")
-                                 (not (contains? #{"tcp" "httpproxy" "ssh" "linux-vm"}
-                                                 connection-subtype)))
+                                 (not (contains? #{"tcp" "ssh" "linux-vm"}
+                                                 connection-subtype))
+                                 (not is-http-proxy-subtype?))
 
         network-credentials (when (and (= connection-type "application")
                                        (= connection-subtype "tcp"))
                               (extract-network-credentials credentials))
         http-credentials (when (and (= connection-type "application")
-                                    (= connection-subtype "httpproxy"))
+                                    is-http-proxy-subtype?)
                            (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (= connection-subtype "ssh"))
@@ -441,7 +445,7 @@
         valid-tags (filter-valid-tags connection-tags)
 
         http-env-vars (when (and (= (:type connection) "application")
-                                 (= (:subtype connection) "httpproxy"))
+                                 is-http-proxy-subtype?)
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
                               insecure? #(= (:key %) "INSECURE")
@@ -492,7 +496,7 @@
                                        (connection-method/infer-connection-method env-vars-map))))
 
         http-connection-info (when (and (= connection-type "application")
-                                        (= connection-subtype "httpproxy")
+                                        is-http-proxy-subtype?
                                         (or (seq http-credentials) (seq http-env-vars)))
                                (let [env-vars-map (when (seq http-env-vars)
                                                     (reduce (fn [acc {:keys [key value]}]
@@ -565,7 +569,7 @@
                                             (process-connection-envvars (:secret connection) "envvar")
 
                                             (and (= connection-type "application")
-                                                 (= connection-subtype "httpproxy"))
+                                                 is-http-proxy-subtype?)
                                             http-env-vars
 
                                             :else [])

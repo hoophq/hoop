@@ -1,15 +1,8 @@
 (ns webapp.resources.setup.events.process-form
   (:require
    [clojure.string :as str]
-   [webapp.resources.helpers :as helpers]))
-
-(defn process-http-headers
-  "Process HTTP headers by adding HEADER_ prefix to each key"
-  [headers]
-  (mapv (fn [{:keys [key value]}]
-          {:key (str "HEADER_" key)
-           :value value})
-        headers))
+   [webapp.resources.helpers :as helpers]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn extract-value
   "Extract value from map or string, applying prefix based on the chosen source."
@@ -89,7 +82,7 @@
                                  env-vars)
 
         ;; Special handling for httpproxy headers
-        all-env-vars (if (= subtype "httpproxy")
+        all-env-vars (if (http-proxy-subtypes subtype)
                        (let [headers (:environment-variables role [])
                              processed-headers (mapv (fn [{:keys [key value]}]
                                                        {:key (str "HEADER_" key)

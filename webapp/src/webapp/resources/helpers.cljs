@@ -2,7 +2,8 @@
   "Helper functions for working with resources in the webapp."
   (:require
    ["unique-names-generator" :as ung]
-   [clojure.string :as s]))
+   [clojure.string :as s]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn is-onboarding-context?
   "Check if we're currently in onboarding context by URL"
@@ -35,18 +36,31 @@
 (defn can-open-web-terminal?
   "Check if a role/connection can open web terminal based on subtype and access modes"
   [role]
-  (if-not (#{"tcp" "httpproxy" "ssh" "rdp"} (:subtype role))
+  (if-not (or (#{"tcp" "ssh" "rdp"} (:subtype role))
+              (http-proxy-subtypes (:subtype role)))
     (if (or (= "enabled" (:access_mode_runbooks role))
             (= "enabled" (:access_mode_exec role)))
       true
       false)
     false))
 
+(def ^:private direct-native-subtypes
+  #{"postgres" "ssh"})
+
+(def ^:private custom-native-subtypes
+  #{"rdp" "aws-ssm"})
+
+(defn- native-subtype? [{:keys [subtype type]}]
+  (or (direct-native-subtypes subtype)
+      (http-proxy-subtypes subtype)
+      (and (= type "custom")
+           (custom-native-subtypes subtype))))
+
 (defn can-access-native-client?
   "Check if a role/connection can access native client based on subtype and access mode"
-  [role]
-  (and (= "enabled" (:access_mode_connect role))
-       (#{"postgres" "ssh" "rdp" "aws-ssm"} (:subtype role))))
+  [{:keys [access_mode_connect] :as role}]
+  (and (= "enabled" access_mode_connect)
+       (native-subtype? role)))
 
 (defn get-secret-prefix
   "Returns the prefix string for a given secret source or provider."

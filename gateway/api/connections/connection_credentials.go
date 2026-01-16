@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -50,6 +51,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 
 	connNameOrID := c.Param("nameOrID")
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+
+	// this is for map the (grafana, kibana and kubernetes-token) subtype to http-proxy
+	subtype := mapValidSubtypeToHttpProxy(conn)
+	conn.SubType = sql.NullString{String: subtype.String(), Valid: true}
 
 	if err != nil {
 		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
@@ -110,6 +115,15 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey))
+}
+
+func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
+	switch conn.SubType.String {
+	case "grafana", "kibana", "kubernetes-token":
+		return proto.ConnectionTypeHttpProxy
+	default:
+		return proto.ConnectionType(conn.SubType.String)
+	}
 }
 
 func buildConnectionCredentialsResponse(

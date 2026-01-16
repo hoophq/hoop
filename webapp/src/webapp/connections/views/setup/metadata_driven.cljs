@@ -4,6 +4,7 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.connection-method :as connection-method]
@@ -122,7 +123,8 @@
 
 (defn credentials-step [connection-subtype form-type]
   (let [credentials-config (get-metadata-credentials-config connection-subtype)
-        has-env-vars? (contains? #{"linux-vm" "httpproxy"} connection-subtype)
+        has-env-vars? (or (contains? #{"linux-vm"} connection-subtype)
+                          (contains? http-proxy-subtypes connection-subtype))
         has-credentials? (seq credentials-config)
         should-show-connection-method? (or has-credentials? has-env-vars?)]
     [:form {:class "max-w-[600px]"
