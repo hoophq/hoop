@@ -41,7 +41,7 @@
 
 (defn main [_]
   (let [script-response (rf/subscribe [:editor-plugin->script])]
-    (fn [connection-type is-one-connection-selected? dark-mode?]
+    (fn [connection-type parallel-mode-active? dark-mode?]
       (let [response (sanitize-response (:output (:data @script-response)) connection-type)
             logs-content {:status (:status @script-response)
                           :response response
@@ -66,7 +66,7 @@
             available-tabs (merge
                             {:logs "Logs"}
                             (when (and connection-type-database?
-                                       is-one-connection-selected?)
+                                       (not parallel-mode-active?))
                               {:tabular "Tabular"}))]
 
         (when-not (some #(= @selected-tab %) (vals available-tabs))

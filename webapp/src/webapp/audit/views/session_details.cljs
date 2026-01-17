@@ -3,10 +3,11 @@
    ["@headlessui/react" :as ui]
    ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu Flex Text Tooltip ScrollArea]]
+   ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu
+                               Flex Text Tooltip ScrollArea]]
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info ChevronDown
+   ["lucide-react" :refer [Download FileDown Info ChevronDown ArrowUpRight
                            CalendarClock Check CircleCheckBig Clock2 OctagonX]]
    ["react" :as react]
    [clojure.string :as cs]
@@ -252,6 +253,7 @@
               connection-subtype (:connection_subtype session)
               start-date (:start_date session)
               end-date (:end_date session)
+              session-batch-id (:session_batch_id session)
               verb (:verb session)
               session-status (:status session)
               has-large-payload? (:has-large-payload? @session-details)
@@ -314,10 +316,10 @@
              [:div {:class "flex flex-col lg:flex-row flex-grow gap-small lg:items-baseline"}
               [:div {:class "flex flex-col"}
                [h/h2 connection-name]
-               [:div {:class "text-sm flex flex-grow gap-regular"}
+               [:div {:class "text-xs flex flex-grow gap-1"}
                 [:span {:class "text-gray-500"}
                  "type:"]
-                [:span {:class "font-bold"}
+                [:span {:class "text-xs font-bold"}
                  (:type session)]]]
 
               (when (and in-progress? (not ready?))
@@ -450,6 +452,21 @@
                    (for [group review-groups]
                      ^{:key (:id group)}
                      [review-status-text (:status group) (:group group)]))]]])]
+
+           ;; parallel mode batch
+           (when session-batch-id
+             [:> Flex {:align "center" :gap "2"}
+              [:> Text {:size "2" :weight "bold" :class "text-gray-12"}
+               "Parallel mode batch:"]
+              [:> Button {:size "1"
+                          :variant "soft"
+                          :on-click #(js/open
+                                      (str (-> js/document .-location .-origin)
+                                           (routes/url-for :sessions-list-filtered-by-ids)
+                                           "?batch_id=" session-batch-id)
+                                      "_blank")}
+               "Open"
+               [:> ArrowUpRight {:size 16}]]])
 
            ;; runbook params
            (when (and runbook-params

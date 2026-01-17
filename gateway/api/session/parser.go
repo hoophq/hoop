@@ -59,6 +59,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		ExitCode:             s.ExitCode,
 		EventStream:          blobStream,
 		EventSize:            s.BlobStreamSize,
+		SessionBatchID:       s.SessionBatchID,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
 	}

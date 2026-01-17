@@ -59,7 +59,7 @@
                          (when-not not-margin-bottom? " mb-regular")
                          (when full-width? " w-full")
                          (when hidden " hidden"))}
-       [:div {:class "flex items-center gap-2 mb-1"}
+       [:div {:class "flex items-center gap-2"}
         (when label
           (if dark
             [form-label-dark label]

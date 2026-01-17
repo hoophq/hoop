@@ -44,13 +44,14 @@ var (
 )
 
 type SessionPostBody struct {
-	Script     string                    `json:"script"`
-	Connection string                    `json:"connection"`
-	EnvVars    map[string]string         `json:"env_vars"`
-	Labels     openapi.SessionLabelsType `json:"labels"`
-	Metadata   map[string]any            `json:"metadata"`
-	ClientArgs []string                  `json:"client_args"`
-	JiraFields map[string]string         `json:"jira_fields"`
+	Script         string                    `json:"script"`
+	Connection     string                    `json:"connection"`
+	EnvVars        map[string]string         `json:"env_vars"`
+	Labels         openapi.SessionLabelsType `json:"labels"`
+	Metadata       map[string]any            `json:"metadata"`
+	ClientArgs     []string                  `json:"client_args"`
+	JiraFields     map[string]string         `json:"jira_fields"`
+	SessionBatchID *string                   `json:"session_batch_id"`
 }
 
 func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
@@ -138,6 +139,7 @@ func Post(c *gin.Context) {
 		ConnectionTags:       conn.ConnectionTags,
 		Verb:                 proto.ClientVerbExec,
 		Status:               string(openapi.SessionStatusOpen),
+		SessionBatchID:       req.SessionBatchID,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
@@ -309,6 +311,8 @@ func List(c *gin.Context) {
 				option.ReviewStatus = queryOptVal
 			case openapi.SessionOptionReviewApproverEmail:
 				option.ReviewApproverEmail = &queryOptVal
+			case openapi.SessionOptionBatchID:
+				option.BatchID = &queryOptVal
 			case openapi.SessionOptionStartDate:
 				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
 				if err != nil {

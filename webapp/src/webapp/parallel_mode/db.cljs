@@ -6,8 +6,8 @@
            :search-term ""}
    :selection {:connections []           ; Vector of selected connections
                :draft-connections nil}   ; Draft state (saved when opening modal)
-   :execution {:status :idle             ; :idle | :running | :completed | :error
-               :results []}})            ; Execution results (fase 2)
+   :execution {:search-term ""           ; Search in execution summary
+               :active-tab "success"}})  ; Active tab: success | error
 
 ;; Constants
 (def min-connections 2)

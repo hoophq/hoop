@@ -229,6 +229,7 @@ func RunExec(c *gin.Context) {
 		UserName:             ctx.UserName,
 		UserEmail:            ctx.UserEmail,
 		Status:               string(openapi.SessionStatusOpen),
+		SessionBatchID:       req.SessionBatchID,
 		ExitCode:             nil,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
