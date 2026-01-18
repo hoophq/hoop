@@ -57,6 +57,8 @@ type Connection struct {
 	AccessSchema        string         `gorm:"column:access_schema"`
 	JiraIssueTemplateID sql.NullString `gorm:"column:jira_issue_template_id"`
 
+	AccessMaxDuration sql.NullInt64 `gorm:"column:access_max_duration"`
+
 	// Read Only fields
 	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`
 	Reviewers                 pq.StringArray    `gorm:"column:reviewers;type:text[];->"`
@@ -408,7 +410,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	err := tx.Raw(`
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
-		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
+		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
@@ -475,7 +477,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode,
+		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
