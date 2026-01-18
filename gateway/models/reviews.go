@@ -69,6 +69,7 @@ type ReviewGroups struct {
 	OwnerName    *string          `json:"owner_name"`
 	OwnerSlackID *string          `json:"owner_slack_id"`
 	ReviewedAt   *time.Time       `json:"reviewed_at"`
+	ForcedReview bool             `json:"forced_review"`
 }
 
 type ReviewJit struct {

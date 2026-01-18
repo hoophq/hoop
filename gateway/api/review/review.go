@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 var (
@@ -158,7 +159,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	}
 
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
-	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow)
+	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview)
 	switch err {
 	case ErrNotEligible, ErrSelfApproval, ErrWrongState:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -194,72 +195,122 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 //	@Router					/sessions/{session_id}/review [put]
 func (h *handler) ReviewBySid(c *gin.Context) { h.ReviewByIdOrSid(c) }
 
-func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow) (*models.Review, error) {
+// DoReview updates the status of a review identified by reviewIdOrSid. The hasForced parameter
+// indicates whether the review status change was forced by an administrator or privileged user,
+// bypassing normal review validation rules or approval workflows.
+func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow, hasForced bool) (*models.Review, error) {
 	rev, err := models.GetReviewByIdOrSid(ctx.OrgID, reviewIdOrSid)
 	switch err {
 	case models.ErrNotFound:
 		return nil, ErrNotFound
 	case nil:
-		log.Infof("updating review state, review-id=%v, sid=%v, type=%v, from=%v, to=%v, ctx-user=%v, owner=%v, groups=%v, created-at=%v",
-			rev.ID, rev.SessionID, rev.Type, rev.Status, status, ctx.UserEmail,
+		log.Infof("updating review state, review-id=%v, sid=%v, type=%v, from=%v, to=%v, forced=%v, ctx-user=%v, owner=%v, groups=%v, created-at=%v",
+			rev.ID, rev.SessionID, rev.Type, rev.Status, status, hasForced, ctx.UserEmail,
 			rev.OwnerEmail, len(rev.ReviewGroups), rev.CreatedAt.Format(time.RFC3339))
 	default:
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
-	rev, err = doReview(ctx, rev, status)
+
+	var connection *models.Connection
+	if hasForced {
+		connection, err = models.GetConnectionByNameOrID(ctx, rev.ConnectionName)
+		if connection == nil || err != nil {
+			return nil, fmt.Errorf("failed fetching connection for forced review, err=%v", err)
+		}
+	}
+
+	rev, err = doReview(ctx, rev, connection, status, hasForced)
 	if err != nil {
 		return nil, err
 	}
+
 	if rev.Status == models.ReviewStatusApproved {
 		rev.TimeWindow = timeWindow
 	}
+
 	if err := models.UpdateReview(rev); err != nil {
 		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
 	}
 	return rev, nil
 }
 
-func doReview(ctx *storagev2.Context, rev *models.Review, status models.ReviewStatusType) (*models.Review, error) {
-	switch status {
-	case models.ReviewStatusApproved, models.ReviewStatusRejected, models.ReviewStatusRevoked:
-	default:
-		return nil, ErrUnknownStatus
+func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
+	err := validateReviewStatusTransition(ctx, rev, status)
+	if err != nil {
+		return nil, err
 	}
 
-	// check if the review is in a state that allows to proceed
-	isEligibleState := rev.Status == models.ReviewStatusPending || rev.Status == models.ReviewStatusApproved
-	if !isEligibleState {
-		return nil, ErrWrongState
+	if force {
+		rev, err = doForcedReview(ctx, rev, connection, status)
+	} else {
+		rev, err = doIndividualReview(ctx, rev, status)
 	}
 
-	// resource owner is the creator of the review based on the request context
-	isResourceOwner := rev.OwnerID == ctx.UserID
-
-	// user can't self approve their own review
-	if status == models.ReviewStatusApproved && isResourceOwner && !ctx.IsAdmin() {
-		return nil, ErrSelfApproval
+	if err != nil {
+		return nil, err
 	}
 
-	// it can only revoke in the approved status
-	if status == models.ReviewStatusRevoked && rev.Status != models.ReviewStatusApproved {
-		return nil, ErrWrongState
+	if rev.Status == models.ReviewStatusApproved {
+		// TODO(san): should it be set only for jit reviews?
+		expiration := time.Now().UTC().Add(time.Duration(rev.AccessDurationSec) * time.Second)
+		rev.RevokedAt = &expiration
 	}
 
-	// it can only revoke jit types
-	if status == models.ReviewStatusRevoked && rev.Type != models.ReviewTypeJit {
-		return nil, ErrNotFound
+	return rev, nil
+}
+
+func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
+	// check if the user has permissions to force the review
+	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, connection.ForceApproveGroups)
+	if forceGroupFound == nil {
+		return nil, ErrNotEligible
 	}
 
-	reviewsCount := len(rev.ReviewGroups)
-	approvedCount := 0
-	isDeniedStatus := status == models.ReviewStatusRejected || status == models.ReviewStatusRevoked
+	// update review group to
+	forceGroupIndex := slices.IndexFunc(rev.ReviewGroups, func(rg models.ReviewGroups) bool {
+		return rg.GroupName == *forceGroupFound
+	})
+
 	reviewedAt := time.Now().UTC()
+	// mutate or append the review group for the forced approver
+	if forceGroupIndex != -1 {
+		rev.ReviewGroups[forceGroupIndex].Status = status
+		rev.ReviewGroups[forceGroupIndex].OwnerID = &ctx.UserID
+		rev.ReviewGroups[forceGroupIndex].OwnerEmail = &ctx.UserEmail
+		rev.ReviewGroups[forceGroupIndex].OwnerName = &ctx.UserName
+		rev.ReviewGroups[forceGroupIndex].OwnerSlackID = &ctx.SlackID
+		rev.ReviewGroups[forceGroupIndex].ReviewedAt = &reviewedAt
+		rev.ReviewGroups[forceGroupIndex].ForcedReview = true
+	} else {
+		rev.ReviewGroups = append(rev.ReviewGroups, models.ReviewGroups{
+			OrgID:        ctx.OrgID,
+			ID:           uuid.NewString(),
+			ReviewID:     rev.ID,
+			GroupName:    *forceGroupFound,
+			Status:       status,
+			OwnerID:      &ctx.UserID,
+			OwnerEmail:   &ctx.UserEmail,
+			OwnerName:    &ctx.UserName,
+			OwnerSlackID: &ctx.SlackID,
+			ReviewedAt:   &reviewedAt,
+			ForcedReview: true,
+		})
+	}
 
-	// mutate groups and apply the review based on the user context
+	rev.Status = status
+
+	return rev, nil
+}
+
+func doIndividualReview(ctx *storagev2.Context, rev *models.Review, status models.ReviewStatusType) (*models.Review, error) {
+	reviewedAt := time.Now().UTC()
+	reviewsCountNeeded := len(rev.ReviewGroups)
+	approvedCount := 0
+
 	var isEligibleReviewer bool
 	for i, r := range rev.ReviewGroups {
+		// if it contains any group name, it's eligible
 		if slices.Contains(ctx.UserGroups, r.GroupName) {
-			// if it contains any group name, it's eligible
 			isEligibleReviewer = true
 
 			rev.ReviewGroups[i].Status = status
@@ -269,28 +320,30 @@ func doReview(ctx *storagev2.Context, rev *models.Review, status models.ReviewSt
 			rev.ReviewGroups[i].OwnerSlackID = ptr.String(ctx.SlackID)
 			rev.ReviewGroups[i].ReviewedAt = &reviewedAt
 		}
+
+		// count approved reviews
 		if rev.ReviewGroups[i].Status == models.ReviewStatusApproved {
 			approvedCount++
 		}
 	}
 
-	// an eligible reviewer must be contained in the review groups or
-	// must be the resource owner or an administrator
+	// allow review owner and admins to deny the review
+	// even if they're not eligible to perform the review
 	if !isEligibleReviewer {
-		if !isResourceOwner && !ctx.IsAdmin() {
+		isOwnerOrAdmin := rev.OwnerID == ctx.UserID || ctx.IsAdmin()
+		if !isOwnerOrAdmin {
 			return nil, ErrNotEligible
 		}
 
-		// allow resource owners and admins to deny the review
-		// even if they're not eligible to perform the review
+		isDeniedStatus := status == models.ReviewStatusRejected || status == models.ReviewStatusRevoked
 		if isDeniedStatus {
 			var groupName string
-			if len(ctx.UserGroups) > 0 {
-				groupName = ctx.UserGroups[0]
-			}
 			if ctx.IsAdmin() {
 				groupName = types.GroupAdmin
+			} else if len(ctx.UserGroups) > 0 {
+				groupName = ctx.UserGroups[0]
 			}
+
 			rev.ReviewGroups = append(rev.ReviewGroups,
 				models.ReviewGroups{
 					OrgID:        ctx.OrgID,
@@ -306,24 +359,57 @@ func doReview(ctx *storagev2.Context, rev *models.Review, status models.ReviewSt
 				},
 			)
 		}
-
 	}
 
-	// when all reviews are approved, set the status of the review to approved
-	if reviewsCount == approvedCount {
-		// TODO(san): should it be set only for jit reviews?
-		rev.RevokedAt = func() *time.Time {
-			t := time.Now().UTC().Add(time.Duration(rev.AccessDurationSec) * time.Second)
-			return &t
-		}()
-		rev.Status = models.ReviewStatusApproved
-	}
-
-	// a deny status will move the whole status to this state
-	if isDeniedStatus {
+	// if all reviews are approved, set the review status to approved as well
+	// check if status is approved to avoid approving a rejected review
+	// Update the overall review status based on individual review group statuses
+	if status == models.ReviewStatusApproved {
+		// Only approve the review if all required review groups have approved
+		if approvedCount == reviewsCountNeeded {
+			rev.Status = models.ReviewStatusApproved
+		}
+		// Otherwise, keep status as pending (no explicit assignment needed)
+	} else {
+		// For rejected or revoked status, update immediately
 		rev.Status = status
 	}
+
 	return rev, nil
+}
+
+func validateReviewStatusTransition(ctx *storagev2.Context, rev *models.Review, status models.ReviewStatusType) error {
+	// user can only approve, reject or revoke a review
+	switch status {
+	case models.ReviewStatusApproved, models.ReviewStatusRejected, models.ReviewStatusRevoked:
+	default:
+		return ErrUnknownStatus
+	}
+
+	// check if the review is in a state that allows to proceed
+	// it may be pending or already approved (so it can be revoked)
+	if rev.Status != models.ReviewStatusPending && rev.Status != models.ReviewStatusApproved {
+		return ErrWrongState
+	}
+
+	// user can't self approve their own review, only deny
+	isResourceOwner := rev.OwnerID == ctx.UserID
+	if status == models.ReviewStatusApproved && isResourceOwner && !ctx.IsAdmin() {
+		return ErrSelfApproval
+	}
+
+	// it can only revoke in the approved status and jit types
+	if status == models.ReviewStatusRevoked {
+		if rev.Status != models.ReviewStatusApproved {
+			return ErrWrongState
+		}
+
+		if rev.Type != models.ReviewTypeJit {
+			return ErrNotFound
+		}
+	}
+
+	return nil
 }
 
 func toOpenApiReview(r *models.Review) *openapi.Review {
@@ -342,11 +428,12 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 			}
 		}
 		itemGroups = append(itemGroups, openapi.ReviewGroup{
-			ID:         rg.ID,
-			Group:      rg.GroupName,
-			Status:     openapi.ReviewRequestStatusType(rg.Status),
-			ReviewedBy: reviewOwner,
-			ReviewDate: rg.ReviewedAt,
+			ID:           rg.ID,
+			Group:        rg.GroupName,
+			Status:       openapi.ReviewRequestStatusType(rg.Status),
+			ReviewedBy:   reviewOwner,
+			ReviewDate:   rg.ReviewedAt,
+			ForcedReview: rg.ForcedReview,
 		})
 	}
 	var timeWindow *openapi.ReviewSessionTimeWindow

@@ -73,12 +73,14 @@
               connection-name (:connection current-session)
               review (:review current-session)
               review-groups-data (:review_groups_data review)
+              review-status (:status review)
               session-type (:type current-session)
               start-date (:start_date current-session)
               end-date (:end_date current-session)
               verb (:verb current-session)
 
               can-review? (and
+                           (= "PENDING" review-status)
                            (some #(= "PENDING" (:status %))
                                  review-groups-data)
                            (some (fn [review-group]

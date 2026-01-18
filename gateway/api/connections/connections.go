@@ -91,6 +91,7 @@ func Post(c *gin.Context) {
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
+		ForceApproveGroups:  req.ForceApproveGroups,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -485,6 +486,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		AccessSchema:        conn.AccessSchema,
 		GuardRailRules:      conn.GuardRailRules,
 		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
+		ForceApproveGroups:  conn.ForceApproveGroups,
 	}
 }
 

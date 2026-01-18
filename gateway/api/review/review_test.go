@@ -33,7 +33,9 @@ func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups) *m
 type inputData struct {
 	ctx    *storagev2.Context
 	rev    *models.Review
+	con    *models.Connection
 	status models.ReviewStatusType
+	force  bool
 }
 
 func TestDoReview(t *testing.T) {
@@ -42,6 +44,86 @@ func TestDoReview(t *testing.T) {
 		input        inputData
 		validateFunc func(t *testing.T, rev *models.Review)
 	}{
+		{
+			name: "successful force approve by a eligible reviewer - multiple groups",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "sre-team", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+					{GroupName: "management", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					ForceApproveGroups: []string{"issuing"},
+				},
+				status: models.ReviewStatusApproved,
+				force:  true,
+			},
+			validateFunc: func(t *testing.T, got *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, got.ReviewGroups[3].Status)
+				assert.Equal(t, models.ReviewStatusApproved, got.Status)
+				assert.NotNil(t, got.ReviewGroups[3].ReviewedAt)
+			},
+		},
+		{
+			name: "successful force approve by a eligible reviewer - multiple groups",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"engineering"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "sre-team", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+					{GroupName: "management", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					ForceApproveGroups: []string{"engineering"},
+				},
+				status: models.ReviewStatusApproved,
+				force:  true,
+			},
+			validateFunc: func(t *testing.T, got *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, got.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusApproved, got.Status)
+				assert.NotNil(t, got.ReviewGroups[1].ReviewedAt)
+			},
+		},
+		{
+			name: "successful force approve by a eligible reviewer",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"engineering"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					ForceApproveGroups: []string{"engineering"},
+				},
+				status: models.ReviewStatusApproved,
+				force:  true,
+			},
+			validateFunc: func(t *testing.T, got *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, got.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusApproved, got.Status)
+				assert.NotNil(t, got.ReviewGroups[0].ReviewedAt)
+			},
+		},
+		{
+			name: "successful force approve by a non-eligible reviewer",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"engineering"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					ForceApproveGroups: []string{"engineering"},
+				},
+				status: models.ReviewStatusApproved,
+				force:  true,
+			},
+			validateFunc: func(t *testing.T, got *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, got.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusApproved, got.Status)
+				assert.NotNil(t, got.ReviewGroups[1].ReviewedAt)
+			},
+		},
 		{
 			name: "successful approval by eligible reviewer",
 			input: inputData{
@@ -163,7 +245,7 @@ func TestDoReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := doReview(tt.input.ctx, tt.input.rev, tt.input.status)
+			got, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.status, tt.input.force)
 			assert.NoError(t, err)
 			tt.validateFunc(t, got)
 			// assert.Equal(t, tt.expectedReview, tt.input.rev)
@@ -177,6 +259,23 @@ func TestErrDoReview(t *testing.T) {
 		input         inputData
 		expectedError error
 	}{
+		{
+			name: "force approve by a not listed force approve group should fail",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "sre-team", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+					{GroupName: "management", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					ForceApproveGroups: []string{"admin"},
+				},
+				status: models.ReviewStatusApproved,
+				force:  true,
+			},
+			expectedError: ErrNotEligible,
+		},
 		{
 			name: "it must match unknown status error",
 			input: inputData{
@@ -237,7 +336,7 @@ func TestErrDoReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rev, err := doReview(tt.input.ctx, tt.input.rev, tt.input.status)
+			rev, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.status, tt.input.force)
 			if tt.expectedError != nil {
 				assert.EqualError(t, err, tt.expectedError.Error())
 				return
