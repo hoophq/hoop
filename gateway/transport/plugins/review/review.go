@@ -105,8 +105,8 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			return nil, plugintypes.InternalErr("failed fetching connection", err)
 		}
 
-		if connection.AccessMaxDuration.Valid {
-			maxDuration := time.Duration(connection.AccessMaxDuration.Int64) * time.Second
+		if connection.AccessMaxDuration != nil {
+			maxDuration := time.Duration(*connection.AccessMaxDuration) * time.Second
 
 			if accessDuration > maxDuration {
 				return nil, plugintypes.InvalidArgument("jit access input exceeds connection max duration of %vs",

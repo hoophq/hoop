@@ -59,7 +59,7 @@ type Connection struct {
 
 	// Access control
 	ForceApproveGroups pq.StringArray `gorm:"column:force_approve_groups;type:text[]"`
-	AccessMaxDuration  sql.NullInt64  `gorm:"column:access_max_duration"`
+	AccessMaxDuration  *int           `gorm:"column:access_max_duration"`
 
 	// Read Only fields
 	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`

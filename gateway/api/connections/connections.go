@@ -150,12 +150,6 @@ func Put(c *gin.Context) {
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = models.ConnectionStatusOnline
 	}
-	var accessMaxDuration sql.NullInt64
-	if req.AccessMaxDuration != nil {
-		accessMaxDuration = sql.NullInt64{Int64: *req.AccessMaxDuration, Valid: true}
-	} else {
-		accessMaxDuration = sql.NullInt64{Int64: 0, Valid: false}
-	}
 
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
@@ -179,7 +173,7 @@ func Put(c *gin.Context) {
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
-		AccessMaxDuration:   accessMaxDuration,
+		AccessMaxDuration:   req.AccessMaxDuration,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -471,10 +465,6 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	if len(defaultDB) == 0 {
 		defaultDB = []byte(``)
 	}
-	var maxDuration *int64
-	if conn.AccessMaxDuration.Valid {
-		maxDuration = &conn.AccessMaxDuration.Int64
-	}
 
 	return openapi.Connection{
 		ID:                  conn.ID,
@@ -500,7 +490,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		GuardRailRules:      conn.GuardRailRules,
 		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 		ForceApproveGroups:  conn.ForceApproveGroups,
-		AccessMaxDuration:   maxDuration,
+		AccessMaxDuration:   conn.AccessMaxDuration,
 	}
 }
 

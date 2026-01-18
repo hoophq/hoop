@@ -266,7 +266,7 @@ type Connection struct {
 	// Groups that can force approve reviews for this connection
 	ForceApproveGroups []string `json:"force_approve_groups" example:"sre-team"`
 	// Maximum duration in seconds for JIT access sessions on this connection
-	AccessMaxDuration *int64 `json:"access_max_duration" example:"3600"`
+	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 }
 
 type ConnectionPatch struct {
