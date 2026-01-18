@@ -57,7 +57,7 @@ type Connection struct {
 	AccessSchema        string         `gorm:"column:access_schema"`
 	JiraIssueTemplateID sql.NullString `gorm:"column:jira_issue_template_id"`
 
-	AccessMaxDuration sql.NullInt64 `gorm:"column:access_max_duration"`
+	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 
 	// Read Only fields
 	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`

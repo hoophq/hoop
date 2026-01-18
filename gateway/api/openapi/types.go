@@ -264,7 +264,7 @@ type Connection struct {
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// Maximum duration in seconds for JIT access sessions on this connection
-	AccessMaxDuration *int64 `json:"access_max_duration" example:"3600"`
+	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 }
 
 type ConnectionPatch struct {
