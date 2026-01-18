@@ -263,6 +263,8 @@ type Connection struct {
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// Maximum duration in seconds for JIT access sessions on this connection
+	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 }
 
 type ConnectionPatch struct {
@@ -1730,7 +1732,6 @@ type HttpProxyServerConfig struct {
 	// The HTTP proxy server URL
 	ListenAddress string `json:"listen_address" example:"http://0.0.0.0:18888"`
 }
-
 
 type ServerAuthOidcConfig struct {
 	// Identity Provider Issuer URL (Oauth2)

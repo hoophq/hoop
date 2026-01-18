@@ -94,13 +94,25 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	reviewType := models.ReviewTypeOneTime
 	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
 	if isJitReview {
-
 		reviewType = models.ReviewTypeJit
 		accessDuration, err = time.ParseDuration(string(durationStr))
 		if err != nil {
 			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%v", string(durationStr))
 		}
-		if accessDuration.Hours() > 48 {
+
+		connection, err := models.GetConnectionByNameOrID(pctx, pctx.ConnectionID)
+		if err != nil {
+			return nil, plugintypes.InternalErr("failed fetching connection", err)
+		}
+
+		if connection.AccessMaxDuration != nil {
+			maxDuration := time.Duration(*connection.AccessMaxDuration) * time.Second
+
+			if accessDuration > maxDuration {
+				return nil, plugintypes.InvalidArgument("jit access input exceeds connection max duration of %vs",
+					maxDuration.Seconds())
+			}
+		} else if accessDuration.Hours() > 48 {
 			return nil, plugintypes.InvalidArgument("jit access input must not be greater than 48 hours")
 		}
 	}

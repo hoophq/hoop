@@ -149,6 +149,7 @@ func Put(c *gin.Context) {
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = models.ConnectionStatusOnline
 	}
+
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
@@ -171,6 +172,7 @@ func Put(c *gin.Context) {
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
+		AccessMaxDuration:   req.AccessMaxDuration,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -462,6 +464,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	if len(defaultDB) == 0 {
 		defaultDB = []byte(``)
 	}
+
 	return openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
@@ -485,6 +488,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		AccessSchema:        conn.AccessSchema,
 		GuardRailRules:      conn.GuardRailRules,
 		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
+		AccessMaxDuration:   conn.AccessMaxDuration,
 	}
 }
 
