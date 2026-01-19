@@ -278,7 +278,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCredentials, error) {
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
-		pb.ConnectionTypeHttpProxy.String(),
+		[]string{pb.ConnectionTypeHttpProxy.String(), pb.ConnectionTypeKubernetes.String()},
 		secretKeyHash)
 
 	if err != nil {

@@ -33,9 +33,9 @@ const (
 	ModeAgentAutoRegister = "autoregister"
 )
 
-// NewHomeDir creates a home dir and any inner level folders passed in
+// newHomeDir creates a home dir and any inner level folders passed in
 // Passing any folder path will create only the default hoop home dir folder
-func NewHomeDir(folderPaths ...string) (string, error) {
+func newHomeDir(folderPaths ...string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed obtaing home dir, err=%v", err)
@@ -50,19 +50,19 @@ func NewHomeDir(folderPaths ...string) (string, error) {
 	return hoopHomeDir, nil
 }
 
-func NewPath(configFile string) (string, error) {
-	hoopHomeDir, err := NewHomeDir()
+func NewPath(configFile string) (filePath, hoopHomeDir string, err error) {
+	hoopHomeDir, err = newHomeDir()
 	if err != nil {
-		return "", err
+		return
 	}
-	filepath := fmt.Sprintf("%s/%s", hoopHomeDir, configFile)
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		f, err := os.Create(filepath)
+	filePath = fmt.Sprintf("%s/%s", hoopHomeDir, configFile)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		f, err := os.Create(filePath)
 		if err != nil {
-			return filepath, fmt.Errorf("failed creating config file (%s), err=%v", filepath, err)
+			return filePath, hoopHomeDir, fmt.Errorf("failed creating config file (%s), err=%v", filePath, err)
 		}
 		_ = f.Chmod(0600)
 		_ = f.Close()
 	}
-	return filepath, nil
+	return
 }

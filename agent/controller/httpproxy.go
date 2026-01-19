@@ -40,7 +40,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		return
 	}
 	httpStreamClient := pb.NewStreamWriter(a.client, pbclient.HttpProxyConnectionWrite, pkt.Spec)
-	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionTypeHttpProxy)
+	connenv, err := parseConnectionEnvVars(connParams.EnvVars, pb.ConnectionType(connParams.ConnectionType))
 	if err != nil {
 		log.Infof("missing connection credentials in memory, err=%v", err)
 		a.sendClientSessionClose(sessionID, "credentials are empty, contact the administrator")
@@ -61,10 +61,16 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 
 	connenv.httpProxyHeaders["dlp_provider"] = connParams.DlpProvider
 	connenv.httpProxyHeaders["dlp_mode"] = connParams.DlpMode
-
 	connenv.httpProxyHeaders["mspresidio_anonymizer_url"] = connParams.DlpPresidioAnonymizerURL
 	connenv.httpProxyHeaders["mspresidio_analyzer_url"] = connParams.DlpPresidioAnalyzerURL
 	connenv.httpProxyHeaders["guard_rail_rules"] = guardRailRules
+
+	// add default values for kubernetes type
+	if connParams.ConnectionType == pb.ConnectionTypeKubernetes.String() {
+		connenv.httpProxyHeaders["remote_url"] = connenv.kubernetesClusterURL
+		connenv.httpProxyHeaders["authorization"] = fmt.Sprintf("Bearer %v", connenv.kubernetesToken)
+		connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.kubernetesInsecureSkipVerify)
+	}
 
 	httpProxy, err := libhoop.NewHttpProxy(context.Background(), httpStreamClient, connenv.httpProxyHeaders)
 	if err != nil {

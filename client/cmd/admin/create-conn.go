@@ -119,6 +119,8 @@ var createConnectionCmd = &cobra.Command{
 				if envVar["envvar:REMOTE_URL"] == "" {
 					styles.PrintErrorAndExit("missing required REMOTE_URL env for %v", pb.ConnectionTypeHttpProxy)
 				}
+			case pb.ConnectionTypeKubernetes:
+
 			case pb.ConnectionTypeSSH:
 				if err := validateSSHEnvs(envVar); err != nil {
 					styles.PrintErrorAndExit(err.Error())
