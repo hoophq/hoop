@@ -182,7 +182,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 			}
 
 			// Retrieve the connection credentials using the hashed secret key
-			dba, err := models.GetValidConnectionCredentialsBySecretKey(pb.ConnectionTypeSSH.String(), secretKeyHash)
+			dba, err := models.GetValidConnectionCredentialsBySecretKey([]string{pb.ConnectionTypeSSH.String()}, secretKeyHash)
 			if err != nil {
 				// Differentiate between not found and other errors
 				if err == models.ErrNotFound {

@@ -31,12 +31,13 @@ type Config struct {
 	SkipTLSVerify bool   `toml:"skip_tls_verify"`
 	Mode          string `toml:"-"`
 	InsecureGRPC  bool   `toml:"-"`
+	HoopHomeDir   string `toml:"-"`
 	filepath      string `toml:"-"`
 }
 
 // NewConfigFile creates a new configuration in the filesystem
 func NewConfigFile(apiURL, grpcURL, token, tlsCA string) (string, error) {
-	filepath, err := clientconfig.NewPath(clientconfig.ClientFile)
+	filepath, _, err := clientconfig.NewPath(clientconfig.ClientFile)
 	if err != nil {
 		return "", err
 	}
@@ -54,7 +55,7 @@ func NewConfigFile(apiURL, grpcURL, token, tlsCA string) (string, error) {
 
 // Remove the configuration file if it exists
 func Remove() error {
-	filepath, _ := clientconfig.NewPath(clientconfig.ClientFile)
+	filepath, _, _ := clientconfig.NewPath(clientconfig.ClientFile)
 	if filepath != "" {
 		return os.Remove(filepath)
 	}
@@ -87,7 +88,7 @@ func Load() (*Config, error) {
 	}
 
 	// fallback to reading the configuration file
-	filepath, err := clientconfig.NewPath(clientconfig.ClientFile)
+	filepath, hoopHomeDir, err := clientconfig.NewPath(clientconfig.ClientFile)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,7 @@ func Load() (*Config, error) {
 	if _, err := toml.DecodeFile(filepath, &conf); err != nil {
 		return nil, fmt.Errorf("failed decoding configuration file=%v, err=%v", filepath, err)
 	}
-
+	conf.HoopHomeDir = hoopHomeDir
 	if !conf.isEmpty() {
 		if conf.TlsCAB64Enc == "" {
 			conf.TlsCAB64Enc = base64.StdEncoding.EncodeToString([]byte(tlsCA))

@@ -16,6 +16,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
+	"github.com/hoophq/hoop/agent/controller/awseks"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
@@ -57,6 +58,10 @@ type (
 		awsRegion          string
 		awsSecretAccessKey string
 		awsAccessKeyID     string
+
+		kubernetesClusterURL         string
+		kubernetesToken              string
+		kubernetesInsecureSkipVerify bool
 	}
 	ioMetricFlush struct {
 		client pb.ClientTransport
@@ -226,6 +231,12 @@ func (a *Agent) processSessionOpen(pkt *pb.Packet) {
 		return
 	}
 
+	// eksToken, err := awseks.CreateEKSToken("hoop-prod", "admin")
+	// if err != nil {
+	// 	log.Errorf("failed creating eks token: %v", err)
+	// }
+	// fmt.Println("EKS TOKEN ---->>>>", eksToken)
+
 	connParams.EnvVars["envvar:HOOP_CONNECTION_NAME"] = b64Enc([]byte(connParams.ConnectionName))
 	connParams.EnvVars["envvar:HOOP_CONNECTION_TYPE"] = b64Enc([]byte(connParams.ConnectionType))
 	connParams.EnvVars["envvar:HOOP_CLIENT_ORIGIN"] = b64Enc([]byte(connParams.ClientOrigin))
@@ -388,6 +399,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		connParams.EnvVars[key] = val
 	}
 
+	// expose agent envs to session
 	connType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 	for key, b64EncVal := range connParams.EnvVars {
 		if !strings.HasPrefix(key, "envvar:") {
@@ -405,6 +417,21 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		}
 	}
 
+	if _, ok := connParams.EnvVars["envvar:EKS_CLUSTER"]; ok {
+		eksClusterName, eksAwsRegion, eksSessionRole, err := parseEksIntegrationEnvs(connParams.EnvVars)
+		if err != nil {
+			return nil, err
+		}
+		log.With("sid", sessionIDKey).
+			Infof("generating eks token, cluster=%v, region=%v, session-role=%v", eksClusterName, eksAwsRegion, eksSessionRole)
+		token, err := awseks.CreateEKSToken(eksClusterName, eksAwsRegion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate eks token: %v", err)
+		}
+		connParams.EnvVars["envvar:KUBERNETES_BEARER_TOKEN"] = b64Enc([]byte(token))
+	}
+
+	// add rds iam auth token
 	userValue, ok := connParams.EnvVars["envvar:USER"]
 	if ok {
 		d, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", userValue))
@@ -573,6 +600,10 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		connectionString:   envVarS.Getenv("CONNECTION_STRING"),
 		httpProxyRemoteURL: envVarS.Getenv("REMOTE_URL"),
 		httpProxyHeaders:   httpProxyHeaders,
+
+		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
+		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),
+		kubernetesInsecureSkipVerify: envVarS.Getenv("KUBERNETES_INSECURE_SKIP_VERIFY") == "true",
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
@@ -640,10 +671,44 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		if env.host == "" || env.port == "" {
 			return nil, errors.New("missing required environment for connection [HOST, PORT]")
 		}
+	case pb.ConnectionTypeKubernetes:
+		if env.kubernetesToken == "" {
+			return nil, errors.New("missing required environment for connection [KUBERNETES_BEARER_TOKEN]")
+		}
+		if env.kubernetesClusterURL == "" {
+			// default url when running in-cluster
+			env.kubernetesClusterURL = "https://kubernetes.default.svc.cluster.local"
+		}
+		env.httpProxyHeaders["HEADER_AUTHORIZATION"] = fmt.Sprintf("Bearer %s", env.kubernetesToken)
 	case pb.ConnectionTypeHttpProxy:
 		if env.httpProxyRemoteURL == "" {
 			return nil, fmt.Errorf("missing required environment for connection [REMOTE_URL]")
 		}
+
+		// coerce to add the Bearer prefix to Authorization header
+		// it will ensure compatibility with kubernetes-token subtype and secrets manager
+		// TODO(san): Add a specific type to map kubernetes-token instead of reusing http proxy
+
+		// HOOP_EKS_TOKEN_GENERATOR=cluster=hoop-prod,region=us-east-1,k8sgroup=foo
+		// if configStr := envVarS.Getenv("HOOP_EKS_TOKEN_GENERATOR"); configStr != "" {
+		// 	clusterName, _, awsRegion, err := parseEksTokenGeneratorConfig(configStr)
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		// 	token, err := awseks.CreateEKSToken(clusterName, awsRegion)
+		// 	if err != nil {
+		// 		return nil, fmt.Errorf("failed generate eks token: %v", err)
+		// 	}
+		// 	env.httpProxyHeaders["HEADER_AUTHORIZATION"] = fmt.Sprintf("Bearer %s", token)
+		// }
+
+		// env.httpProxyHeaders
+		// for key, val := range env.httpProxyHeaders {
+		// 	if key == "HEADER_AUTHORIZATION" && !strings.HasPrefix(val, "Bearer ") {
+
+		// 		env.httpProxyHeaders[key] = fmt.Sprintf("Bearer %s", val)
+		// 	}
+		// }
 		if _, err := url.Parse(env.httpProxyRemoteURL); err != nil {
 			return nil, fmt.Errorf("failed parsing REMOTE_URL env, reason=%v", err)
 		}
@@ -673,4 +738,60 @@ func parseMongoDbUriHost(env *connEnv) (hostname string, port string, err error)
 		return parts[0], parts[1], nil
 	}
 	return connStr.Hosts[0], "27017", nil
+}
+
+// func parseEksTokenGeneratorConfig(configStr string) (cluster, k8sGroup, awsRegion string, err error) {
+// 	// cluster=<name>,region=<region>,k8sgroup=<name>
+// 	parts := strings.Split(configStr, ";")
+// 	switch {
+// 	case len(parts) == 2:
+// 		awsRegion = os.Getenv("AWS_REGION")
+// 	case len(parts) == 3:
+// 	default:
+// 		return "", "", "", fmt.Errorf("unable to parse eks token generator configuration, value=%q", configStr)
+// 	}
+
+// 	for _, keyValConfig := range parts {
+// 		key, val, found := strings.Cut(keyValConfig, "=")
+// 		if !found {
+// 			continue
+// 		}
+// 		key = strings.TrimSpace(key)
+// 		val = strings.TrimSpace(val)
+// 		switch key {
+// 		case "cluster":
+// 			cluster = val
+// 		case "k8sgroup":
+// 			k8sGroup = val
+// 		case "region":
+// 			awsRegion = val
+// 		}
+// 	}
+
+// 	if cluster == "" || k8sGroup == "" || awsRegion == "" {
+// 		return "", "", "", fmt.Errorf("missing required configuration for eks token generator, config=%v", configStr)
+// 	}
+// 	return
+// }
+
+func parseEksIntegrationEnvs(envVar map[string]any) (cluster, awsRegion, roleSession string, err error) {
+	awsRegion = os.Getenv("AWS_REGION")
+	for key, encVal := range envVar {
+		// if !strings.HasPrefix(key, "envvar:") {
+		// 	continue
+		// }
+		val, _ := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", encVal))
+		switch key {
+		case "envvar:EKS_CLUSTER":
+			cluster = string(val)
+		case "envvar:EKS_AWS_REGION":
+			awsRegion = string(val)
+		case "envvar:EKS_ROLE_SESSION":
+			roleSession = string(val)
+		}
+	}
+	if cluster == "" || awsRegion == "" {
+		return "", "", "", fmt.Errorf("missing required envs [EKS_CLUSTER EKS_AWS_REGION]")
+	}
+	return
 }

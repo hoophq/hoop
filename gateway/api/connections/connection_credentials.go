@@ -20,7 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes"}
 
 // CreateConnectionCredentials
 //
@@ -195,7 +195,7 @@ func buildConnectionCredentialsResponse(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
-	case proto.ConnectionTypeHttpProxy:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
 		scheme := "http"
 		host := serverHost
 		if appconfig.Get().GatewayTLSKey() != "" {
@@ -245,7 +245,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -295,6 +295,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("aws-ssm", keySize)
 	case proto.ConnectionTypeHttpProxy:
 		return keys.GenerateSecureRandomKey("httpproxy", keySize)
+	case proto.ConnectionTypeKubernetes:
+		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

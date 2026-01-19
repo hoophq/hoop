@@ -59,7 +59,7 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 		return
 	}
 
-	dba, err := models.GetValidConnectionCredentialsBySecretKey(pb.ConnectionTypeRDP.String(), secretKeyHash)
+	dba, err := models.GetValidConnectionCredentialsBySecretKey([]string{pb.ConnectionTypeRDP.String()}, secretKeyHash)
 	if err != nil {
 		log.Errorf("failed to get connection by id, reason=%v", err)
 		c.String(http.StatusBadRequest, "Invalid request")

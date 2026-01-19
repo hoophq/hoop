@@ -1,11 +1,19 @@
 #!/bin/bash
 [[ "$CONNECTION_DEBUG" == "1" ]] && set -x
+
+if [[ -v KUBERNETES_BEARER_TOKEN ]]; then
+    KUBERNETES_INSECURE_SKIP_VERIFY=${KUBERNETES_INSECURE_SKIP_VERIFY:=false} 
+    /usr/local/bin/kubectl --server="$KUBERNETES_CLUSTER_URL" --insecure-skip-tls-verify=$KUBERNETES_INSECURE_SKIP_VERIFY --token="$KUBERNETES_BEARER_TOKEN" "$@"
+    exit $?
+fi
+
+# legacy backward compatible logic for kubernetes-token type connections
 INSECURE=${INSECURE:=false}
 
 if [[ -z "$HEADER_AUTHORIZATION" ]]; then
-    /usr/local/bin/kubectl $@
+    /usr/local/bin/kubectl "$@"
     exit $?
 fi
 
 HEADER_AUTHORIZATION=$(sed 's|Bearer ||g' <<< $HEADER_AUTHORIZATION)
-/usr/local/bin/kubectl --server="$REMOTE_URL" --insecure-skip-tls-verify=$INSECURE --token="$HEADER_AUTHORIZATION" $@
+/usr/local/bin/kubectl --server="$REMOTE_URL" --insecure-skip-tls-verify=$INSECURE --token="$HEADER_AUTHORIZATION" "$@"
