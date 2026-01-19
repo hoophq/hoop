@@ -263,6 +263,8 @@ type Connection struct {
 	GuardRailRules []string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// Groups that can force approve reviews for this connection
+	ForceApproveGroups []string `json:"force_approve_groups" example:"sre-team"`
 }
 
 type ConnectionPatch struct {
@@ -697,8 +699,9 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status     ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow *ReviewSessionTimeWindow `json:"time_window"`
+	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
+	ForceReview bool                     `json:"force_review" example:"false"`
 }
 
 type SessionReview struct {
@@ -796,6 +799,8 @@ type ReviewGroup struct {
 	ReviewedBy *ReviewOwner `json:"reviewed_by" readonly:"true"`
 	// The date which this review was performed
 	ReviewDate *time.Time `json:"review_date" readonly:"true" example:"2024-07-25T19:36:41Z"`
+	// Indicates if this group is forcing the review
+	ForcedReview bool `json:"forced_review" readonly:"true" example:"false"`
 }
 
 type Plugin struct {
