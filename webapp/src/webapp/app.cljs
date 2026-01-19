@@ -126,8 +126,6 @@
    [webapp.views.home :as home]
    [webapp.webclient.events.codemirror]
    [webapp.webclient.events.primary-connection]
-   [webapp.webclient.events.multiple-connections]
-   [webapp.webclient.events.multiple-connection-execution]
    [webapp.webclient.events.search]
    [webapp.webclient.events.metadata]
    [webapp.webclient.panel :as webclient]))

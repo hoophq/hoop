@@ -40,6 +40,7 @@ type SessionOption struct {
 	ConnectionName      string
 	ReviewStatus        string
 	ReviewApproverEmail *string
+	BatchID             *string
 	StartDate           sql.NullString
 	EndDate             sql.NullString
 	Offset              int
@@ -80,6 +81,7 @@ type Session struct {
 	Status               string            `gorm:"column:status"`
 	ExitCode             *int              `gorm:"column:exit_code"`
 	Review               *SessionReview    `gorm:"column:review;->"`
+	SessionBatchID       *string           `gorm:"column:session_batch_id"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -198,7 +200,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	err := DB.Raw(`
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
+		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		CASE
@@ -278,6 +280,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 					)
 				ELSE true
 			END AND
+			CASE WHEN (@batch_id)::TEXT IS NOT NULL
+				THEN s.session_batch_id = @batch_id
+				ELSE true
+			END AND
 			CASE WHEN (@start_date)::text IS NOT NULL
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
@@ -289,6 +295,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"connection_type":       opt.ConnectionType,
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
+			"batch_id":              opt.BatchID,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
 			"is_auditor_or_admin":   isAuditorOrAdmin,
@@ -301,7 +308,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		err = tx.Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics,
+			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
 			CASE
@@ -361,6 +368,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 					)
 				ELSE true
 			END AND
+			CASE WHEN (@batch_id)::TEXT IS NOT NULL
+				THEN s.session_batch_id = @batch_id
+				ELSE true
+			END AND
 			CASE WHEN (@start_date)::text IS NOT NULL
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
@@ -376,6 +387,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"connection_type":       opt.ConnectionType,
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
+			"batch_id":              opt.BatchID,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
 			"limit":                 opt.Limit,
@@ -435,6 +447,7 @@ func UpsertSession(sess Session) error {
 				BlobInputID:          blobInputID,
 				Status:               sess.Status,
 				ExitCode:             sess.ExitCode,
+				SessionBatchID:       sess.SessionBatchID,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
 			}).Error

@@ -79,27 +79,34 @@
   :on-sucess -> callback that receives as argument the response payload
   :on-failure -> callback that receives the complete error object (not just the :message)
   :options -> this is a map of options, like headers
+  :abort-controller -> AbortController instance for cancelling the request
 
   it returns a promise with the response in a clojure map and executes a on-sucess callback"
-  [{:keys [method url body query-params on-success on-failure options]}]
+  [{:keys [method url body query-params on-success on-failure options abort-controller]}]
   (let [json-body (.stringify js/JSON (clj->js body))
-        actual-on-failure (or on-failure error-handling)]
+        actual-on-failure (or on-failure error-handling)
+        fetch-options (merge options
+                             {:method (or method "GET")}
+                             (when abort-controller
+                               {:signal (.-signal abort-controller)})
+                             (when-let [_ (and (not= method "GET")
+                                               (not= method "HEAD"))]
+                               {:body json-body}))]
     (.catch
      (.then
       (js/fetch (str url (query-params-parser query-params))
-                (clj->js (merge options
-                                {:method (or method "GET")}
-                                (when-let [_ (and (not= method "GET")
-                                                  (not= method "HEAD"))]
-                                  {:body json-body}))))
+                (clj->js fetch-options))
       (fn [response]
         (handle-response method response on-success actual-on-failure)))
      (fn [error]
-       (let [error-payload (if (= (.-message error) "Failed to fetch")
-                             {:message "Network error: Failed to fetch" :type "network-error"}
-                             (try
-                               (js->clj (js/JSON.parse (.-message error)) :keywordize-keys true)
-                               (catch js/Error _
-                                 {:message (.-message error) :type "unknown-error"})))]
-         (actual-on-failure error-payload))))))
+       ;; Don't call on-failure for aborted requests
+       (if (= (.-name error) "AbortError")
+         (js/Promise.resolve nil)
+         (let [error-payload (if (= (.-message error) "Failed to fetch")
+                               {:message "Network error: Failed to fetch" :type "network-error"}
+                               (try
+                                 (js->clj (js/JSON.parse (.-message error)) :keywordize-keys true)
+                                 (catch js/Error _
+                                   {:message (.-message error) :type "unknown-error"})))]
+           (actual-on-failure error-payload)))))))
 

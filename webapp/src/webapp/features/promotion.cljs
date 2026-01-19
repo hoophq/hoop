@@ -4,7 +4,7 @@
                                Text]]
    ["lucide-react" :refer [Combine FileLock2 FolderLock ListCheck ListTodo
                            Settings2 ShieldCheck SlidersHorizontal TextSearch
-                           UserRoundCheck ArrowUpRight]]
+                           UserRoundCheck ArrowUpRight MonitorCheck FastForward]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -18,7 +18,7 @@
       (.open js/window "https://hoop.dev/meet" "_blank"))))
 
 (defn feature-item
-  "Componente para exibir um item da feature com ícone"
+  "Component to display a feature item with an icon"
   [{:keys [icon title description]}]
   [:> Flex {:align "start" :gap "5"}
    [:> Avatar {:size "4"
@@ -32,18 +32,18 @@
      description]]])
 
 (defn feature-promotion
-  "Componente genérico para exibir estado de feature:
-   - Empty state: quando a feature está disponível mas não tem conteúdo
-   - Upgrade plan: quando a feature requer upgrade de plano
+  "Generic component to display feature state:
+   - Empty state: when the feature is available but has no content
+   - Upgrade plan: when the feature requires a plan upgrade
 
-   Parâmetros:
-   feature-name      - Nome da feature (Access Control, Guardrails, etc.)
-   mode              - :empty-state ou :upgrade-plan
-   image             - Caminho da imagem (relativo a /images/illustrations/)
-   description       - Descrição curta da feature
-   feature-items     - Lista de itens com detalhes da feature (título, descrição, ícone)
-   on-primary-click  - Função para o clique do botão principal
-   primary-text      - Texto do botão principal (opcional, padrão baseado no mode)"
+   Parameters:
+   feature-name      - Name of the feature (Access Control, Guardrails, etc.)
+   mode              - :empty-state or :upgrade-plan
+   image             - Path to the image (relative to /images/illustrations/)
+   description       - Short description of the feature
+   feature-items     - List of items with feature details (title, description, icon)
+   on-primary-click  - Function for the primary button click
+   primary-text      - Text for the primary button (optional, default is based on mode)"
   [{:keys [feature-name
            mode
            image
@@ -98,7 +98,7 @@
              :class "w-full h-full object-cover"}]]]))
 
 (defn access-control-promotion
-  "Componente específico para Access Control"
+  "Specific component for Access Control"
   [{:keys [mode installed?]}]
   [feature-promotion
    {:feature-name "Access Control"
@@ -136,7 +136,7 @@
                     "Request demo")}])
 
 (defn guardrails-promotion
-  "Componente específico para Guardrails"
+  "Specific component for Guardrails"
   [{:keys [mode installed?]}]
   [feature-promotion
    {:feature-name "Guardrails"
@@ -160,7 +160,7 @@
                     "Request demo")}])
 
 (defn jira-templates-promotion
-  "Componente específico para Jira templates"
+  "Specific component for Jira templates"
   [{:keys [mode installed?]}]
   [feature-promotion
    {:feature-name "JIRA Templates"
@@ -184,7 +184,7 @@
                     "Request demo")}])
 
 (defn runbooks-promotion
-  "Componente específico para Runbooks"
+  "Specific component for Runbooks"
   [{:keys [mode on-promotion-seen]}]
   [feature-promotion
    {:feature-name "Runbooks"
@@ -211,8 +211,28 @@
                     "Configure Runbooks"
                     "Request demo")}])
 
+(defn parallel-mode-promotion
+  "Specific component for Parallel Mode"
+  [{:keys [mode]}]
+  [feature-promotion
+   {:feature-name "Parallel Mode"
+    :mode mode
+    :image "parallel-mode-promotion.png"
+    :description "Improve your workflow and boost your productivity"
+    :feature-items [{:icon [:> FastForward {:size 20}]
+                     :title "Simplified execution flow"
+                     :description "Run multiple resources simultaneously with a redesigned, faster, and more intuitive experience."}
+                    {:icon [:> ListTodo {:size 20}]
+                     :title "Smarter selection & control"
+                     :description "Access from Terminal or Runbooks to easily search, filter, or select by resource type with instant prefill."}
+                    {:icon [:> MonitorCheck {:size 20}]
+                     :title "Clear visibility & feedback"
+                     :description "Monitor with the new Execution Summary and identify statuses: Success, Error, or Approval Required  all in a single, organized view."}]
+    :on-primary-click #(rf/dispatch [:parallel-mode/mark-promotion-seen])
+    :primary-text "Get Started"}])
+
 (defn users-promotion
-  "Componente específico para User Access"
+  "Specific component for User Access"
   [{:keys [mode]}]
   [feature-promotion
    {:feature-name "User Access"
@@ -232,7 +252,7 @@
     :primary-text "Get Started"}])
 
 (defn ai-data-masking-promotion
-  "Componente específico para AI Data Masking"
+  "Specific component for AI Data Masking"
   [{:keys [mode redact-provider]}]
   [feature-promotion
    (merge

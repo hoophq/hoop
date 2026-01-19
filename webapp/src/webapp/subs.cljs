@@ -1,5 +1,6 @@
 (ns webapp.subs
   (:require
+   [clojure.string :as cs]
    [re-frame.core :as re-frame]))
 
 (re-frame/reg-sub
@@ -332,6 +333,27 @@
  :audit->filtered-session-by-id
  (fn [db _]
    (:audit->filtered-session-by-id db)))
+
+(re-frame/reg-sub
+ :audit->filtered-session-search-term
+ (fn [db _]
+   (get-in db [:audit->filtered-session-by-id :search-term] "")))
+
+(re-frame/reg-sub
+ :audit->filtered-sessions-by-id-filtered
+ :<- [:audit->filtered-session-by-id]
+ :<- [:audit->filtered-session-search-term]
+ (fn [[session-state search-term] _]
+   (let [sessions (:data session-state)
+         search-term-lower (cs/lower-case search-term)]
+     (if (cs/blank? search-term)
+       sessions
+       (filter (fn [session]
+                 (or (cs/includes? (cs/lower-case (or (:connection session) "")) search-term-lower)
+                     (cs/includes? (cs/lower-case (or (:type session) "")) search-term-lower)
+                     (cs/includes? (cs/lower-case (or (:id session) "")) search-term-lower)
+                     (cs/includes? (cs/lower-case (or (:user_name session) "")) search-term-lower)))
+               sessions)))))
 
 (re-frame/reg-sub
  :new-dialog

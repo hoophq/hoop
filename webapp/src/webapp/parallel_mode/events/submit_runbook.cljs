@@ -1,4 +1,4 @@
-(ns webapp.parallel-mode.events.submit
+(ns webapp.parallel-mode.events.submit-runbook
   (:require
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -13,8 +13,8 @@
        (clj->js)))
 
 (rf/reg-event-fx
- :parallel-mode/submit-task-with-fresh-data
- (fn [{:keys [db]} [_ {:keys [script]}]]
+ :parallel-mode/submit-runbook-with-fresh-data
+ (fn [{:keys [db]} [_ {:keys [file-name params repository ref-hash]}]]
    (let [parallel-connection-names (set (map :name (get-in db [:parallel-mode :selection :connections])))
          connection-details (get-in db [:connections :details])
 
@@ -30,10 +30,10 @@
          {:keys [to-execute pre-failed]} (helpers/split-by-validation all-connections jira-integration-enabled?)
 
          ;; Get metadata
-         keep-metadata? (get-in db [:editor-plugin :keep-metadata?])
-         current-metadatas (get-in db [:editor-plugin :metadata])
-         current-metadata-key (get-in db [:editor-plugin :metadata-key])
-         current-metadata-value (get-in db [:editor-plugin :metadata-value])
+         keep-metadata? (get-in db [:runbooks :keep-metadata?])
+         current-metadatas (get-in db [:runbooks :metadata])
+         current-metadata-key (get-in db [:runbooks :metadata-key])
+         current-metadata-value (get-in db [:runbooks :metadata-value])
          metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
 
          ;; Get selected database (for database connections)
@@ -52,13 +52,17 @@
 
                                             :else nil)]
                              {:connection-name (:name conn)
-                              :script script
+                              :file-name file-name
+                              :repository repository
+                              :parameters params
+                              :ref-hash ref-hash
                               :metadata (metadata->json-stringify metadata)
-                              :env_vars env-vars
+                              :env-vars env-vars
                               :type (:type conn)
                               :subtype (:subtype conn)
                               :session-id nil
                               :status status
+                              :execution-type :runbook
                               :error-reason (:pre-validation-error conn)}))
 
          ;; Build exec lists
@@ -78,12 +82,13 @@
        {:fx [[:dispatch [:dialog->open
                          {:title "Cannot Execute in Parallel Mode"
                           :action-button? false
-                          :text "All selected roles have restrictions (Jira Templates, Review Required, or Required Metadata) that prevent parallel execution."}]]]}
+                          :text "All selected roles have restrictions (Jira Templates or Required Metadata) that prevent parallel execution."}]]]}
 
        ;; Execute immediately (no preview)
        :else
        {:fx [[:dispatch [:parallel-mode/execute-immediately all-exec-list to-execute-list]]]
         :db (when-not keep-metadata?
-              (update db :editor-plugin merge {:metadata []
-                                               :metadata-key ""
-                                               :metadata-value ""}))}))))
+              (update db :runbooks merge {:metadata []
+                                          :metadata-key ""
+                                          :metadata-value ""}))}))))
+

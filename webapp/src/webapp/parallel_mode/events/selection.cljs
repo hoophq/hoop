@@ -17,6 +17,24 @@
      (assoc-in db [:parallel-mode :selection :connections] new-connections))))
 
 (rf/reg-event-fx
+ :parallel-mode/request-clear-all
+ (fn [_ _]
+   {:fx [[:dispatch [:dialog->open
+                     {:title "Remove selections"
+                      :text "This will remove all selected resource roles. This action can't be undone."
+                      :action-button? true
+                      :text-action-button "Remove"
+                      :on-success (fn []
+                                    (rf/dispatch [:parallel-mode/clear-all-confirmed]))}]]]}))
+
+(rf/reg-event-fx
+ :parallel-mode/clear-all-confirmed
+ (fn [{:keys [db]} _]
+   {:db (assoc-in db [:parallel-mode :selection :connections] [])
+    :fx [[:dispatch [:parallel-mode/persist]]
+         [:dispatch [:parallel-mode/close-modal]]]}))
+
+(rf/reg-event-fx
  :parallel-mode/clear-all
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:parallel-mode :selection :connections] [])

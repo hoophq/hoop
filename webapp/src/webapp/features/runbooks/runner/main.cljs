@@ -1,21 +1,27 @@
 (ns webapp.features.runbooks.runner.main
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton ScrollArea Text Tooltip]]
-   ["lucide-react" :refer [LibraryBig PackagePlus Play Sun Moon ChevronDown ChevronsLeft ChevronsRight]]
+   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton
+                               ScrollArea Text Tooltip]]
    ["allotment" :refer [Allotment]]
-   [reagent.core :as r]
-   [re-frame.core :as rf]
+   ["lucide-react" :refer [ChevronDown ChevronsLeft ChevronsRight LibraryBig
+                           Moon PackagePlus Play Sun]]
    [cljs.core :as c]
    [clojure.string :as cs]
-   [webapp.components.notification-badge :refer [notification-badge]]
-   [webapp.webclient.components.search :as search]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
-   [webapp.features.runbooks.runner.views.metadata-panel :as metadata-panel]
-   [webapp.webclient.log-area.main :as log-area]
-   [webapp.webclient.panel :refer [discover-connection-type]]
+   [webapp.components.notification-badge :refer [notification-badge]]
+   [webapp.features.promotion :as promotion]
    [webapp.features.runbooks.runner.views.connections-dialog :as connections-dialog]
+   [webapp.features.runbooks.runner.views.form :as runbook-form]
    [webapp.features.runbooks.runner.views.list :as runbooks-list]
-   [webapp.features.runbooks.runner.views.form :as runbook-form]))
+   [webapp.features.runbooks.runner.views.metadata-panel :as metadata-panel]
+   [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
+   [webapp.parallel-mode.components.header-button :as parallel-mode-button]
+   [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
+   [webapp.webclient.components.search :as search]
+   [webapp.webclient.log-area.main :as log-area]
+   [webapp.webclient.panel :refer [discover-connection-type]]))
 
 (defn header []
   (let [selected-template (rf/subscribe [:runbooks->selected-runbooks])
@@ -23,12 +29,14 @@
         metadata-key (rf/subscribe [:runbooks/metadata-key])
         metadata-value (rf/subscribe [:runbooks/metadata-value])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         script-response (rf/subscribe [:runbooks->exec])]
     (fn [{:keys [dark-mode? metadata-open? toggle-metadata-open]}]
       (let [template @selected-template
-            connection @runbooks-connection
-            run-disabled? (or (nil? connection)
-                              (empty? (:data template)))
+            has-connection-selected? (or @parallel-mode-active?
+                                         (boolean @runbooks-connection))
+            disabled-run-button? (or (not has-connection-selected?)
+                                     (empty? (:data template)))
             has-metadata? (or (seq @metadata)
                               (seq @metadata-key)
                               (seq @metadata-value))
@@ -88,13 +96,16 @@
                 :has-notification? has-metadata?
                 :disabled? false}]]
 
+             ;; Parallel Mode Button
+             [parallel-mode-button/parallel-mode-button]
+
              [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
               [:> Button
                {:form "runbook-form"
                 :type "submit"
-                :disabled run-disabled?
+                :disabled disabled-run-button?
                 :loading runbook-loading?
-                :class (when run-disabled? "cursor-not-allowed")}
+                :class (when disabled-run-button? "cursor-not-allowed")}
                [:> Play {:size 16}]
                "Run"]]]]]
           (finally
@@ -128,6 +139,7 @@
         selected-template (rf/subscribe [:runbooks->selected-runbooks])
         search-term (rf/subscribe [:search/term])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
@@ -145,42 +157,49 @@
                  (= :success (:status @templates)))
         (rf/dispatch [:search/filter-runbooks @search-term]))
 
-      [:> Box {:class (str "h-full bg-gray-2 overflow-hidden " (when @dark-mode? "dark"))}
-       [header {:dark-mode? dark-mode?
-                :metadata-open? @metadata-open?
-                :toggle-metadata-open #(swap! metadata-open? not)}]
-       [:> Allotment {:key "outer-allotment"
-                      :horizontal true
-                      :separator false}
-        [:> Flex {:class "h-[calc(100%-4rem)]"}
-         [:> Allotment {:key (str "main-allotment-" @collapsed?)
-                        :defaultSizes (if @collapsed? [64 950] x-panel-sizes)
-                        :onDragEnd #(.setItem js/localStorage "runbook-x-panel-sizes" (str %))
+      (if (not @parallel-mode-promotion-seen)
+        [:> Box {:class "bg-gray-1 h-full"}
+         [promotion/parallel-mode-promotion {:mode :empty-state}]]
+
+        [:> Box {:class (str "h-full bg-gray-2 overflow-hidden " (when @dark-mode? "dark"))}
+         [parallel-mode-modal/parallel-mode-modal]
+         [execution-summary/execution-summary-modal]
+
+         [header {:dark-mode? dark-mode?
+                  :metadata-open? @metadata-open?
+                  :toggle-metadata-open #(swap! metadata-open? not)}]
+         [:> Allotment {:key "outer-allotment"
                         :horizontal true
                         :separator false}
-          [:> (.-Pane Allotment) {:minSize (if @collapsed? 64 270)
-                                  :maxSize (if @collapsed? 64 1000)}
-           [runbooks-library {:collapsed? @collapsed? :on-toggle-collapse #(swap! collapsed? not)}]]
-          [:> Allotment {:defaultSizes y-panel-sizes
-                         :onDragEnd #(.setItem js/localStorage "runbook-y-panel-sizes" (str %))
-                         :vertical true
-                         :separator false}
-           [:> Box {:class "h-full flex-1"}
-            [connections-dialog/connections-dialog]
-            [runbook-form/main {:runbook @selected-template
-                                :selected-connection @runbooks-connection}]]
-           [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
-            [log-area/main
-             (discover-connection-type @runbooks-connection)
-             true
-             @dark-mode?]]]]]
-        (when @metadata-open?
-          [:> (.-Pane Allotment) {:minSize 250 :maxSize 370}
-           [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"}
-            [:> Flex {:justify "between"
-                      :align "center"
-                      :class "px-4 py-3 border-b border-gray-3"}
-             [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Metadata"]]
-            [:> Box {:class "p-4"}
-             [metadata-panel/main]]]])]])))
+          [:> Flex {:class "h-[calc(100%-4rem)]"}
+           [:> Allotment {:key (str "main-allotment-" @collapsed?)
+                          :defaultSizes (if @collapsed? [64 950] x-panel-sizes)
+                          :onDragEnd #(.setItem js/localStorage "runbook-x-panel-sizes" (str %))
+                          :horizontal true
+                          :separator false}
+            [:> (.-Pane Allotment) {:minSize (if @collapsed? 64 270)
+                                    :maxSize (if @collapsed? 64 1000)}
+             [runbooks-library {:collapsed? @collapsed? :on-toggle-collapse #(swap! collapsed? not)}]]
+            [:> Allotment {:defaultSizes y-panel-sizes
+                           :onDragEnd #(.setItem js/localStorage "runbook-y-panel-sizes" (str %))
+                           :vertical true
+                           :separator false}
+             [:> Box {:class "h-full flex-1"}
+              [connections-dialog/connections-dialog]
+              [runbook-form/main {:runbook @selected-template
+                                  :selected-connection @runbooks-connection}]]
+             [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
+              [log-area/main
+               (discover-connection-type @runbooks-connection)
+               true
+               @dark-mode?]]]]]
+          (when @metadata-open?
+            [:> (.-Pane Allotment) {:minSize 250 :maxSize 370}
+             [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"}
+              [:> Flex {:justify "between"
+                        :align "center"
+                        :class "px-4 py-3 border-b border-gray-3"}
+               [:> Text {:size "3" :weight "bold" :class "text-gray-12"} "Metadata"]]
+              [:> Box {:class "p-4"}
+               [metadata-panel/main]]]])]]))))
 

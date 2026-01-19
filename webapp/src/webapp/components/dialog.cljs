@@ -48,6 +48,7 @@
         [:> Flex {:justify "end" :gap "3" :mt "4"}
          [:> AlertDialog.Cancel
           [:> Button {:color "gray"
+                      :highContrast true
                       :variant "soft"}
            "Cancel"]]
          (when (:action-button? @dialog-state)

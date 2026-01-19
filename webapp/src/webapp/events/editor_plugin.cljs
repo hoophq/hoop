@@ -24,7 +24,7 @@
 (rf/reg-event-fx
  :editor-plugin->exec-script
  (fn
-   [{:keys [_db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
+   [{:keys [db]} [_ {:keys [script env_vars connection-name metadata jira_fields]}]]
    (let [payload {:script script
                   :env_vars env_vars
                   :connection connection-name
@@ -40,33 +40,12 @@
                        [:show-snackbar {:level :success
                                         :text "Script was executed!"}])
                       (rf/dispatch [::editor-plugin->set-script-success res script]))]
-     {:fx [[:dispatch [:fetch {:method "POST"
+     {:db (assoc-in db [:editor-plugin->script] {:status :loading})
+      :fx [[:dispatch [:fetch {:method "POST"
                                :uri "/sessions"
                                :on-success on-success
                                :on-failure on-failure
                                :body payload}]]]})))
-
-(rf/reg-event-fx
- :editor-plugin->multiple-connections-update-metadata
- (fn
-   [{:keys [_db]} [_ exec-list]]
-   (let [dispatchs (mapv (fn [exec]
-                           [:dispatch-later {:ms 1000
-                                             :dispatch [:fetch
-                                                        {:method "PATCH"
-                                                         :uri (str "/sessions/" (:session-id exec) "/metadata")
-                                                         :on-success (fn [] false)
-                                                         :on-failure (fn [error]
-                                                                       (rf/dispatch [:show-snackbar {:text "Failed to update metadata session"
-                                                                                                     :level :error
-                                                                                                     :details error}]))
-                                                         :body {:metadata
-                                                                {"View related sessions"
-                                                                 (str (. (. js/window -location) -origin)
-                                                                      "/sessions/filtered?id="
-                                                                      (cs/join "," (mapv :session-id exec-list)))}}}]}])
-                         exec-list)]
-     {:fx dispatchs})))
 
 (rf/reg-event-fx
  :editor-plugin->clear-connection-script
@@ -130,16 +109,9 @@
  :editor-plugin/submit-task-with-fresh-data
  (fn [{:keys [db]} [_ {:keys [script]}]]
    (let [primary-name (get-in db [:editor :connections :selected :name])
-         multi-names (set (map :name (get-in db [:editor :multi-connections :selected])))
          connection-details (get-in db [:connections :details])
 
          fresh-primary-connection (get connection-details primary-name)
-         fresh-multiples-connections (filter #(contains? multi-names (:name %)) (vals connection-details))
-         all-connections (when fresh-primary-connection (cons fresh-primary-connection fresh-multiples-connections))
-         multiple-connections? (> (count all-connections) 1)
-
-         has-jira-template-multiple-connections? (some #(not (cs/blank? (:jira_issue_template_id %)))
-                                                       all-connections)
          needs-template? (boolean (and fresh-primary-connection
                                        (not (cs/blank? (:jira_issue_template_id fresh-primary-connection)))))
          connection-type (discover-connection-type fresh-primary-connection)
@@ -168,22 +140,18 @@
          metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
          final-script (cond
                         (and selected-db
-                             (= connection-type "postgres")
-                             (not multiple-connections?)) (str "\\set QUIET on\n"
-                                                               "\\c " selected-db "\n"
-                                                               "\\set QUIET off\n"
-                                                               script)
+                             (= connection-type "postgres")) (str "\\set QUIET on\n"
+                                                                  "\\c " selected-db "\n"
+                                                                  "\\set QUIET off\n"
+                                                                  script)
                         (and selected-db
-                             (= connection-type "mssql")
-                             (not multiple-connections?)) (str "SET NOCOUNT ON;\n"
+                             (= connection-type "mssql")) (str "SET NOCOUNT ON;\n"
                                                                "USE " selected-db ";\n"
                                                                script)
                         (and selected-db
-                             (= connection-type "mysql")
-                             (not multiple-connections?)) (str "use " selected-db ";\n" script)
+                             (= connection-type "mysql")) (str "use " selected-db ";\n" script)
                         (and selected-db
-                             (= connection-type "mongodb")
-                             (not multiple-connections?)) (str "use " selected-db ";\n" script)
+                             (= connection-type "mongodb")) (str "use " selected-db ";\n" script)
                         :else script)]
 
      (cond
@@ -192,30 +160,6 @@
        {:fx [[:dispatch [:show-snackbar
                          {:level :error
                           :text "Connection not found"}]]]}
-
-       ;; Multiple connections with Jira template not allowed
-       (and multiple-connections?
-            has-jira-template-multiple-connections?
-            jira-integration-enabled?)
-       {:fx [[:dispatch [:dialog->open
-                         {:title "Running in multiple connections not allowed"
-                          :action-button? false
-                          :text "For now, it's not possible to run commands in multiple connections with Jira Templates activated. Please select just one connection before running your command."}]]]}
-
-       ;; Multiple connections - show execution modal
-       multiple-connections?
-       {:fx [[:dispatch [:multiple-connection-execution/show-modal
-                         (map #(hash-map
-                                :connection-name (:name %)
-                                :script final-script
-                                :metadata (metadata->json-stringify metadata)
-                                :env_vars (when (and (= (:subtype %) "dynamodb") selected-db)
-                                            {"envvar:TABLE_NAME" (js/btoa selected-db)})
-                                :type (:type %)
-                                :subtype (:subtype %)
-                                :session-id nil
-                                :status :ready)
-                              all-connections)]]]}
 
        ;; Single connection with JIRA template
        (and needs-template? jira-integration-enabled?)

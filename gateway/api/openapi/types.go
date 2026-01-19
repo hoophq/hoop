@@ -412,6 +412,8 @@ type RunbookRequest struct {
 	Metadata map[string]any `json:"metadata"`
 	// Jira fields to create a Jira issue
 	JiraFields map[string]string `json:"jira_fields"`
+	// Batch identifier to group sessions that were executed simultaneously
+	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 }
 
 type RunbookList struct {
@@ -513,6 +515,7 @@ const (
 	SessionOptionConnection          SessionOptionKey = "connection"
 	SessionOptionReviewStatus        SessionOptionKey = "review.status"
 	SessionOptionReviewApproverEmail SessionOptionKey = "review.approver"
+	SessionOptionBatchID             SessionOptionKey = "batch_id"
 	SessionOptionStartDate           SessionOptionKey = "start_date"
 	SessionOptionEndDate             SessionOptionKey = "end_date"
 	SessionOptionOffset              SessionOptionKey = "offset"
@@ -525,6 +528,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionConnection,
 	SessionOptionReviewStatus,
 	SessionOptionReviewApproverEmail,
+	SessionOptionBatchID,
 	SessionOptionStartDate,
 	SessionOptionEndDate,
 	SessionOptionLimit,
@@ -594,6 +598,8 @@ type Session struct {
 	// When any parsing is applied to the request the value display the computed parsed size.
 	// The pre-computed size will be available in the attribute `metrics.event_size`
 	EventSize int64 `json:"event_size" example:"569"`
+	// Batch identifier to group sessions that were executed simultaneously
+	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
@@ -1731,7 +1737,6 @@ type HttpProxyServerConfig struct {
 	ListenAddress string `json:"listen_address" example:"http://0.0.0.0:18888"`
 }
 
-
 type ServerAuthOidcConfig struct {
 	// Identity Provider Issuer URL (Oauth2)
 	IssuerURL string `json:"issuer_url" example:"https://auth.domain.tld/oidc" binding:"required"`
@@ -2221,4 +2226,6 @@ type RunbookExec struct {
 	Metadata map[string]any `json:"metadata"`
 	// Jira fields to create a Jira issue
 	JiraFields map[string]string `json:"jira_fields"`
+	// Batch identifier to group sessions that were executed simultaneously
+	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 }
