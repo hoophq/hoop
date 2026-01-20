@@ -7,7 +7,6 @@
    [clojure.string :as string]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.forms :as forms]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]
    [webapp.components.searchbox :as searchbox]
    [webapp.config :as config]
@@ -31,7 +30,7 @@
         session-id-search (r/atom "")
         session-id-debounce-timer (r/atom nil)
 
-        jira-ticket-search (r/atom "")
+        jira-ticket-search (r/atom (get filters "jira_issue_key" ""))
         jira-ticket-debounce-timer (r/atom nil)
 
         date (r/atom #js{"startDate" (if-let [date (get filters "start_date")]
@@ -76,13 +75,14 @@
                                     (let [trimmed (string/trim value)]
                                       (if (string/blank? trimmed)
                                         ;; Clear filter when input is empty
-                                        (rf/dispatch [:audit->filter-sessions {"jira_ticket_id" ""}])
+                                        (rf/dispatch [:audit->filter-sessions {"jira_issue_key" ""}])
                                         ;; Dispatch filter with debounce
                                         (reset! jira-ticket-debounce-timer
                                                 (js/setTimeout
                                                  (fn []
+                                                   (reset! jira-ticket-debounce-timer nil)
                                                    (rf/dispatch [:audit->filter-sessions
-                                                                 {"jira_ticket_id" trimmed}]))
+                                                                 {"jira_issue_key" trimmed}]))
                                                  500)))))]
     (fn [filters]
       (let [connections-data (or (:data @connections) [])
@@ -94,7 +94,13 @@
                                    @searched-users)
             connection-types-search-options (if (empty? @searched-connections-types)
                                               connection-types-options
-                                              @searched-connections-types)]
+                                              @searched-connections-types)
+            _ (let [filter-value (get filters "jira_issue_key" "")
+                    is-user-typing? (some? @jira-ticket-debounce-timer)]
+                ;; Only sync when user is not typing and values differ
+                (when (and (not is-user-typing?)
+                           (not= @jira-ticket-search filter-value))
+                  (reset! jira-ticket-search filter-value)))]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
          [:> TextField.Root {:class "relative w-[310px] h-[40px] rounded-lg"
                              :placeholder "Search by IDs (separated by comma)"
@@ -355,9 +361,7 @@
                     :onChange #(handle-jira-ticket-search (-> % .-target .-value))}]
            (when (seq @jira-ticket-search)
              [:button {:class "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                       :on-click (fn []
-                                   (reset! jira-ticket-search "")
-                                   (rf/dispatch [:audit->filter-sessions {"jira_ticket_id" ""}]))}
+                       :on-click #(handle-jira-ticket-search "")}
               [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]])]]]))))
 
 (defn audit-filters [_]
