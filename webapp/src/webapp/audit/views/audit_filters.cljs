@@ -1,14 +1,17 @@
 (ns webapp.audit.views.audit-filters
-  (:require ["@heroicons/react/16/solid" :as hero-micro-icon]
-            ["@radix-ui/themes" :refer [Popover Button TextField]]
-            ["lucide-react" :refer [Search]]
-            ["react-tailwindcss-datepicker" :as Datepicker]
-            [clojure.string :as string]
-            [re-frame.core :as rf]
-            [reagent.core :as r]
-            [webapp.components.infinite-scroll :refer [infinite-scroll]]
-            [webapp.components.searchbox :as searchbox]
-            [webapp.connections.constants :as connection-constants]))
+  (:require
+   ["@heroicons/react/16/solid" :as hero-micro-icon]
+   ["@radix-ui/themes" :refer [Button Popover TextField]]
+   ["lucide-react" :refer [Search]]
+   ["react-tailwindcss-datepicker" :as Datepicker]
+   [clojure.string :as string]
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.forms :as forms]
+   [webapp.components.infinite-scroll :refer [infinite-scroll]]
+   [webapp.components.searchbox :as searchbox]
+   [webapp.config :as config]
+   [webapp.connections.constants :as connection-constants]))
 
 (defn- form [filters]
   (let [users (rf/subscribe [:users])
@@ -27,6 +30,9 @@
 
         session-id-search (r/atom "")
         session-id-debounce-timer (r/atom nil)
+
+        jira-ticket-search (r/atom "")
+        jira-ticket-debounce-timer (r/atom nil)
 
         date (r/atom #js{"startDate" (if-let [date (get filters "start_date")]
                                        (subs date 0 10) "")
@@ -62,7 +68,22 @@
                                                    (js/setTimeout
                                                     (fn []
                                                       (rf/dispatch [:audit->get-filtered-sessions-by-id session-ids]))
-                                                    500)))))))]
+                                                    500)))))))
+        handle-jira-ticket-search (fn [value]
+                                    (reset! jira-ticket-search value)
+                                    (when @jira-ticket-debounce-timer
+                                      (js/clearTimeout @jira-ticket-debounce-timer))
+                                    (let [trimmed (string/trim value)]
+                                      (if (string/blank? trimmed)
+                                        ;; Clear filter when input is empty
+                                        (rf/dispatch [:audit->filter-sessions {"jira_ticket_id" ""}])
+                                        ;; Dispatch filter with debounce
+                                        (reset! jira-ticket-debounce-timer
+                                                (js/setTimeout
+                                                 (fn []
+                                                   (rf/dispatch [:audit->filter-sessions
+                                                                 {"jira_ticket_id" trimmed}]))
+                                                 500)))))]
     (fn [filters]
       (let [connections-data (or (:data @connections) [])
             connections-loading? (:loading @connections)
@@ -75,7 +96,7 @@
                                               connection-types-options
                                               @searched-connections-types)]
         [:div {:class "flex gap-regular flex-wrap mb-4"}
-         [:> TextField.Root {:class "relative w-80 h-[40px] rounded-lg"
+         [:> TextField.Root {:class "relative w-[310px] h-[40px] rounded-lg"
                              :placeholder "Search by IDs (separated by comma)"
                              :value @session-id-search
                              :onChange (fn [e]
@@ -313,7 +334,31 @@
                           :showShortcuts true
                           :onChange (fn [v]
                                       (reset! date v)
-                                      (dispatch-date v))}]]]))))
+                                      (dispatch-date v))}]
+
+          [:div {:class "relative w-48"}
+           [:div {:class "absolute left-3 top-1/2 transform -translate-y-1/2"}
+            [:img {:src (str config/webapp-url "/icons/icon-jira-gray.svg")
+                   :class "w-4 h-4"}]]
+           [:input {:type "text"
+                    :class (str "pl-10 pr-8 py-2 w-full rounded-lg text-gray-600 "
+                                "font-semibold text-sm focus:ring-0 "
+                                "border h-[40px] "
+                                "placeholder:text-gray-500 "
+                                (if @jira-ticket-search
+                                  "border-gray-300"
+                                  "border-gray-400")
+                                " hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
+                                "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
+                    :placeholder "Jira Ticket ID"
+                    :value @jira-ticket-search
+                    :onChange #(handle-jira-ticket-search (-> % .-target .-value))}]
+           (when (seq @jira-ticket-search)
+             [:button {:class "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                       :on-click (fn []
+                                   (reset! jira-ticket-search "")
+                                   (rf/dispatch [:audit->filter-sessions {"jira_ticket_id" ""}]))}
+              [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]])]]]))))
 
 (defn audit-filters [_]
   (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
