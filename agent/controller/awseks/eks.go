@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 const (
@@ -25,15 +27,24 @@ const (
 	emptyPayloadHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 )
 
-func CreateEKSToken(clusterName, region string) (string, error) {
+func CreateEKSToken(clusterName, region, roleArn, roleSessionName string) (string, error) {
 	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(
-		ctx,
+	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRetryMaxAttempts(1),
 		config.WithRegion(region),
 	)
 	if err != nil {
 		return "", fmt.Errorf("unable to load SDK config: %w", err)
+	}
+	// If roleArn is provided, assume that role first
+	if roleArn != "" {
+		stsClient := sts.NewFromConfig(cfg)
+		creds := stscreds.NewAssumeRoleProvider(stsClient, roleArn, func(o *stscreds.AssumeRoleOptions) {
+			if roleSessionName != "" {
+				o.RoleSessionName = roleSessionName // e.g., "hoopdev.eks.groups:developers"
+			}
+		})
+		cfg.Credentials = aws.NewCredentialsCache(creds)
 	}
 
 	return generatePresignedURL(ctx, cfg, clusterName)

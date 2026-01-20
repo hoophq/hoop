@@ -68,7 +68,7 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	// add default values for kubernetes type
 	if connParams.ConnectionType == pb.ConnectionTypeKubernetes.String() {
 		connenv.httpProxyHeaders["remote_url"] = connenv.kubernetesClusterURL
-		connenv.httpProxyHeaders["authorization"] = fmt.Sprintf("Bearer %v", connenv.kubernetesToken)
+		connenv.httpProxyHeaders["authorization"] = connenv.kubernetesToken
 		connenv.httpProxyHeaders["insecure"] = fmt.Sprintf("%v", connenv.kubernetesInsecureSkipVerify)
 	}
 
