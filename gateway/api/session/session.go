@@ -315,7 +315,11 @@ func List(c *gin.Context) {
 			case openapi.SessionOptionBatchID:
 				option.BatchID = &queryOptVal
 			case openapi.SessionOptionJiraIssueKey:
-				option.JiraIssueKey = &queryOptVal
+				keys := strings.Split(queryOptVal, ",")
+				for i, k := range keys {
+					keys[i] = strings.ToLower(strings.TrimSpace(k))
+				}
+				option.JiraIssueKey = keys
 			case openapi.SessionOptionStartDate:
 				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
 				if err != nil {
