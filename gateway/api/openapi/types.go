@@ -522,6 +522,7 @@ const (
 	SessionOptionEndDate             SessionOptionKey = "end_date"
 	SessionOptionOffset              SessionOptionKey = "offset"
 	SessionOptionLimit               SessionOptionKey = "limit"
+	SessionOptionJiraIssueKey        SessionOptionKey = "jira_issue_key"
 )
 
 var AvailableSessionOptions = []SessionOptionKey{
@@ -535,6 +536,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionEndDate,
 	SessionOptionLimit,
 	SessionOptionOffset,
+	SessionOptionJiraIssueKey,
 }
 
 type SessionStatusType string

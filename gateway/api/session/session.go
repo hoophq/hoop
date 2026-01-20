@@ -288,6 +288,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			type			query		string	false	"Filter by connection's type"
 //	@Param			review.approver	query		string	false	"Filter by the approver's email of a review"
 //	@Param			review.status	query		string	false	"Filter by the review status"
+//	@Param			jira_issue_key	query		string	false	"Filter by Jira issue key"
 //	@Param			start_date		query		string	false	"Filter starting on this date"	Format(RFC3339)
 //	@Param			end_date		query		string	false	"Filter ending on this date"	Format(RFC3339)
 //	@Param			limit			query		int		false	"Limit the amount of records to return (max: 100)"
@@ -313,6 +314,8 @@ func List(c *gin.Context) {
 				option.ReviewApproverEmail = &queryOptVal
 			case openapi.SessionOptionBatchID:
 				option.BatchID = &queryOptVal
+			case openapi.SessionOptionJiraIssueKey:
+				option.JiraIssueKey = &queryOptVal
 			case openapi.SessionOptionStartDate:
 				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
 				if err != nil {

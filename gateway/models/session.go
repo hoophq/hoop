@@ -41,6 +41,7 @@ type SessionOption struct {
 	ReviewStatus        string
 	ReviewApproverEmail *string
 	BatchID             *string
+	JiraIssueKey        *string
 	StartDate           sql.NullString
 	EndDate             sql.NullString
 	Offset              int
@@ -284,6 +285,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@jira_issue_key)::TEXT IS NOT NULL
+				THEN s.integrations_metadata->>'jira_issue_key' = @jira_issue_key
+				ELSE true
+			END AND
 			CASE WHEN (@start_date)::text IS NOT NULL
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
@@ -296,6 +301,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"jira_issue_key":        opt.JiraIssueKey,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
 			"is_auditor_or_admin":   isAuditorOrAdmin,
@@ -372,6 +378,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@jira_issue_key)::TEXT IS NOT NULL
+				THEN s.integrations_metadata->>'jira_issue_key' = @jira_issue_key
+				ELSE true
+			END AND
 			CASE WHEN (@start_date)::text IS NOT NULL
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
@@ -388,6 +398,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"jira_issue_key":        opt.JiraIssueKey,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
 			"limit":                 opt.Limit,
