@@ -128,6 +128,12 @@ func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
 	}
 }
 
+// toConnectionType maps the connection type and subtype to the appropriate proto.ConnectionType
+// This is because we have some connection types that are represented as subtypes in the database.
+// The decap uses the subtype to determine the actual connection type.
+// for keep the code consistent with other places, we keep this mapping logic here.
+// but basically some stuff happen in the frontend base on the (connectionType, subtype) pair, but for 
+// the backend we just need the final connection type.
 func toConnectionType(connectionType, subtype string) proto.ConnectionType {
 	switch connectionType {
 	case "command-line":
@@ -244,7 +250,7 @@ func buildConnectionCredentialsResponse(
 				"curl": "` + curlCommand + `",
 				"browser": "` + browserCommand + `"
 			}`
-		base.ConnectionType =  proto.ConnectionType(connectionType).String()
+		base.ConnectionType = proto.ConnectionType(connectionType).String()
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
 			Hostname:   host,
 			Port:       serverPort,
