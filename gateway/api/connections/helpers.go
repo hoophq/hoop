@@ -141,7 +141,7 @@ func validateConnectionRequest(req openapi.Connection) error {
 		return fmt.Errorf("max tag association reached (10)")
 	}
 
-	if req.MinReviewApprovals != nil && *req.MinReviewApprovals > 0 {
+	if req.MinReviewApprovals != nil && *req.MinReviewApprovals <= 0 {
 		return fmt.Errorf("min review approvals must be greater than 0 or null")
 	}
 
