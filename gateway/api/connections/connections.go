@@ -92,6 +92,7 @@ func Post(c *gin.Context) {
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
 		ForceApproveGroups:  req.ForceApproveGroups,
+		AccessMaxDuration:   req.AccessMaxDuration,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -173,6 +174,7 @@ func Put(c *gin.Context) {
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
+		ForceApproveGroups:  req.ForceApproveGroups,
 		AccessMaxDuration:   req.AccessMaxDuration,
 	})
 	if err != nil {
