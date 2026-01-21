@@ -6498,6 +6498,11 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "access_max_duration": {
+                    "description": "Maximum duration in seconds for JIT access sessions on this connection",
+                    "type": "integer",
+                    "example": 3600
+                },
                 "access_mode_connect": {
                     "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection",
                     "type": "string",

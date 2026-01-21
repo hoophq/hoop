@@ -92,6 +92,7 @@ func Post(c *gin.Context) {
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
 		ForceApproveGroups:  req.ForceApproveGroups,
+		AccessMaxDuration:   req.AccessMaxDuration,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -150,6 +151,7 @@ func Put(c *gin.Context) {
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(req.AgentId, "")) {
 		req.Status = models.ConnectionStatusOnline
 	}
+
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
 		ID:                  conn.ID,
 		OrgID:               conn.OrgID,
@@ -172,6 +174,8 @@ func Put(c *gin.Context) {
 		GuardRailRules:      req.GuardRailRules,
 		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
 		ConnectionTags:      req.ConnectionTags,
+		ForceApproveGroups:  req.ForceApproveGroups,
+		AccessMaxDuration:   req.AccessMaxDuration,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -463,6 +467,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	if len(defaultDB) == 0 {
 		defaultDB = []byte(``)
 	}
+
 	return openapi.Connection{
 		ID:                  conn.ID,
 		Name:                conn.Name,
@@ -487,6 +492,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		GuardRailRules:      conn.GuardRailRules,
 		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 		ForceApproveGroups:  conn.ForceApproveGroups,
+		AccessMaxDuration:   conn.AccessMaxDuration,
 	}
 }
 
