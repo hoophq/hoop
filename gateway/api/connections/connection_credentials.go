@@ -121,9 +121,24 @@ func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
 	switch conn.SubType.String {
 	case "grafana", "kibana", "kubernetes-token":
 		return proto.ConnectionTypeHttpProxy
+	case "kubernetes", "kubernetes-eks":
+		return proto.ConnectionTypeKubernetes
 	default:
 		return proto.ConnectionType(conn.SubType.String)
 	}
+}
+
+func toConnectionType(connectionType, subtype string) proto.ConnectionType {
+	switch connectionType {
+	case "command-line":
+		switch subtype {
+		case "kubernetes", "kubernetes-eks":
+			return proto.ConnectionType(proto.ConnectionTypeKubernetes)
+		case "kubernetes-token", "httpproxy":
+			return proto.ConnectionType(proto.ConnectionTypeHttpProxy)
+		}
+	}
+	return proto.ConnectionType(connectionType)
 }
 
 func buildConnectionCredentialsResponse(
@@ -141,7 +156,7 @@ func buildConnectionCredentialsResponse(
 		ExpireAt:       cred.ExpireAt,
 	}
 
-	connectionType := proto.ConnectionType(cred.ConnectionType)
+	connectionType := toConnectionType(cred.ConnectionType, conn.SubType.String)
 	serverHost, serverPort := getServerHostAndPort(serverConf, connectionType)
 
 	switch connectionType {
@@ -229,6 +244,7 @@ func buildConnectionCredentialsResponse(
 				"curl": "` + curlCommand + `",
 				"browser": "` + browserCommand + `"
 			}`
+		base.ConnectionType =  proto.ConnectionType(connectionType).String()
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
 			Hostname:   host,
 			Port:       serverPort,
@@ -281,7 +297,7 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
 		}
-	case proto.ConnectionTypeHttpProxy:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
 		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
 			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}
