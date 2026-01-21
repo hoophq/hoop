@@ -412,13 +412,8 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	err := tx.Raw(`
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
-<<<<<<< HEAD
-		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups,
-=======
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
-		c.agent_id, a.name AS agent_name, a.mode AS agent_mode,
->>>>>>> 823343e4 (feat: add AccessMaxDuration field to connections and implement JIT access duration validation)
+		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
@@ -484,13 +479,8 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-<<<<<<< HEAD
-		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode,
-		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups,
-=======
 		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
-		c.jira_issue_template_id, it.issue_transition_name_on_close,
->>>>>>> 823343e4 (feat: add AccessMaxDuration field to connections and implement JIT access duration validation)
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
 			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
