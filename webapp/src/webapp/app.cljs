@@ -529,8 +529,9 @@
 
 (defmethod routes/panels :sessions-panel []
   (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full overflow-auto"}
-                             [h/h2 "Sessions" {:class "mb-6"}]
+  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
+                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
+                              "Sessions"]
                              [audit/panel]]])
 
 (defmethod routes/panels :session-details-panel []

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -41,6 +43,7 @@ type SessionOption struct {
 	ReviewStatus        string
 	ReviewApproverEmail *string
 	BatchID             *string
+	JiraIssueKey        []string
 	StartDate           sql.NullString
 	EndDate             sql.NullString
 	Offset              int
@@ -238,6 +241,14 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 
 func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt SessionOption) (*SessionList, error) {
 	sessionList := &SessionList{Items: []Session{}}
+	// Prepare lowercase jira issue keys array
+	var jiraIssueKeysLower pq.StringArray
+	if len(opt.JiraIssueKey) > 0 {
+		jiraIssueKeysLower = make(pq.StringArray, len(opt.JiraIssueKey))
+		for i, key := range opt.JiraIssueKey {
+			jiraIssueKeysLower[i] = strings.ToLower(key)
+		}
+	}
 	return sessionList, DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Raw(`
 		SELECT COUNT(s.id)
@@ -273,6 +284,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
+				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
+				ELSE true
+			END AND
 			CASE WHEN (@start_date)::text IS NOT NULL
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
@@ -285,6 +300,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"jira_issue_keys":       jiraIssueKeysLower,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
 			"is_auditor_or_admin":   isAuditorOrAdmin,
@@ -361,6 +377,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
+				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
+				ELSE true
+			END AND
 			CASE WHEN (@start_date)::text IS NOT NULL
 				THEN s.created_at BETWEEN @start_date AND @end_date
 				ELSE true
@@ -377,6 +397,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"jira_issue_keys":       jiraIssueKeysLower,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
 			"limit":                 opt.Limit,
