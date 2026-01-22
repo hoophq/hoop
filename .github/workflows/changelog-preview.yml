@@ -1,6 +1,9 @@
 name: Generate Changelog Preview
 
 on:
+  push:
+    branches:
+      - nathan/changelog
   workflow_dispatch:
     inputs:
       from_tag:
@@ -54,25 +57,40 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Set defaults for push events (when inputs are empty)
+          FROM_TAG="${{ inputs.from_tag }}"
+          TO_TAG="${{ inputs.to_tag }}"
+          FETCH_PRS="${{ inputs.fetch_prs }}"
+          USE_AI="${{ inputs.use_ai }}"
+
+          # Use defaults if triggered by push
+          if [[ -z "$FROM_TAG" ]]; then
+            FROM_TAG="1.47.2"
+            TO_TAG="1.48.0"
+            FETCH_PRS="true"
+            USE_AI="true"
+            echo "Using default test values: $FROM_TAG to $TO_TAG"
+          fi
+
           # Build flags
           FLAGS=""
-          if [[ "${{ inputs.fetch_prs }}" == "true" ]]; then
+          if [[ "$FETCH_PRS" == "true" ]]; then
             FLAGS="$FLAGS --fetch-prs"
           fi
-          if [[ "${{ inputs.use_ai }}" == "true" ]]; then
+          if [[ "$USE_AI" == "true" ]]; then
             FLAGS="$FLAGS --ai-summary"
           fi
 
           # Generate raw commits
-          echo "Generating changelog from ${{ inputs.from_tag }} to ${{ inputs.to_tag }}..."
-          git log ${{ inputs.from_tag }}..${{ inputs.to_tag }} --pretty=format:"%h %s" --no-merges > /tmp/commits.txt
+          echo "Generating changelog from $FROM_TAG to $TO_TAG..."
+          git log $FROM_TAG..$TO_TAG --pretty=format:"%h %s" --no-merges > /tmp/commits.txt
 
           # Count commits
           COMMIT_COUNT=$(wc -l < /tmp/commits.txt)
           echo "Found $COMMIT_COUNT commits"
 
           if [[ $COMMIT_COUNT -eq 0 ]]; then
-            echo "::error::No commits found between ${{ inputs.from_tag }} and ${{ inputs.to_tag }}"
+            echo "::error::No commits found between $FROM_TAG and $TO_TAG"
             exit 1
           fi
 
@@ -86,7 +104,7 @@ jobs:
       - name: Upload Changelog
         uses: actions/upload-artifact@v4
         with:
-          name: changelog-preview-${{ inputs.from_tag }}-to-${{ inputs.to_tag }}
+          name: changelog-preview-test
           path: changelog-preview.md
           retention-days: 30
 
@@ -94,10 +112,10 @@ jobs:
         run: |
           echo "✅ Changelog preview generated successfully!"
           echo ""
-          echo "**Configuration:**"
-          echo "- From: ${{ inputs.from_tag }}"
-          echo "- To: ${{ inputs.to_tag }}"
-          echo "- Fetch PRs: ${{ inputs.fetch_prs }}"
-          echo "- Use AI: ${{ inputs.use_ai }}"
+          echo "**Test Configuration:**"
+          echo "- Branch: nathan/changelog"
+          echo "- Test range: 1.47.2 to 1.48.0"
+          echo "- Fetch PRs: enabled"
+          echo "- Use AI: enabled"
           echo ""
           echo "Download the artifact above to view the full changelog."
