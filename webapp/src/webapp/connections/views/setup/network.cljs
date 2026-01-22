@@ -58,8 +58,7 @@
        ;; HTTP Headers Section
        [configuration-inputs/environment-variables-section
         {:title "HTTP headers"
-         :subtitle "Add HTTP headers that will be used in your requests."
-         :hide-default-title true}]
+         :subtitle "Add HTTP headers that will be used in your requests."}]
 
        ;; Allow insecure SSL switch
        [:> Flex {:align "center" :gap "3"}
