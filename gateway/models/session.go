@@ -98,17 +98,6 @@ type SessionDone struct {
 	EndSession *time.Time
 }
 
-type sessionDone struct {
-	ID           string          `gorm:"column:id"`
-	OrgID        string          `gorm:"column:org_id"`
-	Metrics      map[string]any  `gorm:"column:metrics;serializer:json"`
-	BlobStreamID sql.NullString  `gorm:"column:blob_stream_id"`
-	BlobStream   json.RawMessage `gorm:"column:blob_stream"`
-	ExitCode     *int            `gorm:"column:exit_code"`
-	Status       string          `gorm:"column:status"`
-	EndSession   *time.Time      `gorm:"column:ended_at"`
-}
-
 type SessionList struct {
 	Total       int64
 	HasNextPage bool
