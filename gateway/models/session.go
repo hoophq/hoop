@@ -482,16 +482,14 @@ func UpdateSessionEventStream(sess SessionDone) error {
 		}
 
 		// update: status, labels, metrics, end_date, exit_code, event_stream
-		return tx.Table("private.sessions").
+		return tx.Table("private.sessions AS s").
 			Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
-			Updates(sessionDone{
-				ID:           sess.ID,
-				OrgID:        sess.OrgID,
-				Metrics:      sess.Metrics,
-				BlobStreamID: blobStreamID,
-				ExitCode:     sess.ExitCode,
-				Status:       sess.Status,
-				EndSession:   sess.EndSession,
+			Updates(map[string]interface{}{
+				"blob_stream_id": blobStreamID,
+				"exit_code":      sess.ExitCode,
+				"status":         sess.Status,
+				"ended_at":       sess.EndSession,
+				"metrics":        gorm.Expr("COALESCE(s.metrics, '{}'::jsonb) || ?::jsonb", sess.Metrics),
 			}).
 			Error
 	})
