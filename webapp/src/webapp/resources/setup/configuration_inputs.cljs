@@ -13,9 +13,11 @@
 (defn valid-posix? [value]
   (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" value)))
 
+(defn valid-posix-env? [value]
+  (boolean (re-matches #"\S+" value)))
+
 (defn parse-env-key [e role-index]
   (let [new-value (-> e .-target .-value)
-        upper-value (str/upper-case new-value)
         current-value @(rf/subscribe [:resource-setup/role-env-current-key role-index])]
     (cond
       (empty? new-value)
@@ -23,15 +25,15 @@
 
       ;; Handle paste operation
       (> (count new-value) 1)
-      (when (valid-posix? new-value)
-        (rf/dispatch [:resource-setup->update-role-env-current-key role-index upper-value]))
+      (when (valid-posix-env? new-value)
+        (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
-        (rf/dispatch [:resource-setup->update-role-env-current-key role-index upper-value]))
+        (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))
 
-      (valid-posix? new-value)
-      (rf/dispatch [:resource-setup->update-role-env-current-key role-index upper-value]))))
+      (valid-posix-env? new-value)
+      (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))))
 
 (defn parse-config-file-name [e role-index]
   (let [new-value (-> e .-target .-value)
@@ -55,7 +57,6 @@
 
 (defn parse-existing-env-key [e role-index idx]
   (let [new-value (-> e .-target .-value)
-        upper-value (str/upper-case new-value)
         env-vars @(rf/subscribe [:resource-setup/role-env-vars role-index])
         current-value (get-in env-vars [idx :key])]
     (cond
@@ -64,15 +65,15 @@
 
       ;; Handle paste operation
       (> (count new-value) 1)
-      (when (valid-posix? new-value)
-        (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key upper-value]))
+      (when (valid-posix-env? new-value)
+        (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
-        (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key upper-value]))
+        (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))
 
-      (valid-posix? new-value)
-      (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key upper-value]))))
+      (valid-posix-env? new-value)
+      (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))))
 
 (defn parse-existing-config-file-name [e role-index idx]
   (let [new-value (-> e .-target .-value)

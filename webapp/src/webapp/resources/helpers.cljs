@@ -26,7 +26,10 @@
        (filter (fn [{:keys [key value]}]
                  (not (or (s/blank? key) (s/blank? value)))))
        (map (fn [{:keys [key value]}]
-              (let [prefixed-key (str prefix (s/upper-case key))
+              (let [upper-key (if (s/starts-with? key "HEADER_")
+                                key
+                                (s/upper-case key))
+                    prefixed-key (str prefix upper-key)
                     final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
                                   (str value "\n")
                                   value)]

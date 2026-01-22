@@ -13,9 +13,11 @@
 (defn valid-posix? [value]
   (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" value)))
 
+(defn valid-posix-env? [value]
+  (boolean (re-matches #"\S+" value)))
+
 (defn parse-env-key [e]
   (let [new-value (-> e .-target .-value)
-        upper-value (str/upper-case new-value)
         current-value (get-in @(rf/subscribe [:connection-setup/form-data])
                               [:credentials :current-key])]
     (cond
@@ -24,15 +26,15 @@
 
       ;; Handle paste operation
       (> (count new-value) 1)
-      (when (valid-posix? new-value)
-        (rf/dispatch [:connection-setup/update-env-current-key upper-value]))
+      (when (valid-posix-env? new-value)
+        (rf/dispatch [:connection-setup/update-env-current-key new-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
-        (rf/dispatch [:connection-setup/update-env-current-key upper-value]))
+        (rf/dispatch [:connection-setup/update-env-current-key new-value]))
 
-      (valid-posix? new-value)
-      (rf/dispatch [:connection-setup/update-env-current-key upper-value]))))
+      (valid-posix-env? new-value)
+      (rf/dispatch [:connection-setup/update-env-current-key new-value]))))
 
 (defn parse-config-file-name [e]
   (let [new-value (-> e .-target .-value)
@@ -57,7 +59,6 @@
 
 (defn parse-existing-env-key [e index]
   (let [new-value (-> e .-target .-value)
-        upper-value (str/upper-case new-value)
         env-vars (get-in @(rf/subscribe [:connection-setup/form-data])
                          [:credentials :environment-variables])
         current-value (get-in env-vars [index :key])]
@@ -67,15 +68,15 @@
 
       ;; Handle paste operation
       (> (count new-value) 1)
-      (when (valid-posix? new-value)
-        (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))
+      (when (valid-posix-env? new-value)
+        (rf/dispatch [:connection-setup/update-env-var index :key new-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
-        (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))
+        (rf/dispatch [:connection-setup/update-env-var index :key new-value]))
 
-      (valid-posix? new-value)
-      (rf/dispatch [:connection-setup/update-env-var index :key upper-value]))))
+      (valid-posix-env? new-value)
+      (rf/dispatch [:connection-setup/update-env-var index :key new-value]))))
 
 (defn parse-existing-config-file-name [e index]
   (let [new-value (-> e .-target .-value)
