@@ -93,6 +93,7 @@ func Post(c *gin.Context) {
 		ConnectionTags:      req.ConnectionTags,
 		ForceApproveGroups:  req.ForceApproveGroups,
 		AccessMaxDuration:   req.AccessMaxDuration,
+		MinReviewApprovals:  req.MinReviewApprovals,
 	})
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
@@ -176,6 +177,7 @@ func Put(c *gin.Context) {
 		ConnectionTags:      req.ConnectionTags,
 		ForceApproveGroups:  req.ForceApproveGroups,
 		AccessMaxDuration:   req.AccessMaxDuration,
+		MinReviewApprovals:  req.MinReviewApprovals,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -493,6 +495,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
 		ForceApproveGroups:  conn.ForceApproveGroups,
 		AccessMaxDuration:   conn.AccessMaxDuration,
+		MinReviewApprovals:  conn.MinReviewApprovals,
 	}
 }
 

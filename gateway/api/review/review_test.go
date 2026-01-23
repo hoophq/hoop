@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -44,6 +45,48 @@ func TestDoReview(t *testing.T) {
 		input        inputData
 		validateFunc func(t *testing.T, rev *models.Review)
 	}{
+		{
+			name: "partial approve with minimal groups",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(2),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal of one group",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(1),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
 		{
 			name: "successful force approve by a eligible reviewer - multiple groups",
 			input: inputData{
@@ -131,6 +174,7 @@ func TestDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			validateFunc: func(t *testing.T, got *models.Review) {
@@ -146,6 +190,7 @@ func TestDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusRejected,
 			},
 			validateFunc: func(t *testing.T, got *models.Review) {
@@ -162,6 +207,7 @@ func TestDoReview(t *testing.T) {
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 					{GroupName: "banking", Status: models.ReviewStatusPending},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			validateFunc: func(t *testing.T, rev *models.Review) {
@@ -178,6 +224,7 @@ func TestDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusRejected,
 			},
 			validateFunc: func(t *testing.T, rev *models.Review) {
@@ -195,6 +242,7 @@ func TestDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusRejected,
 			},
 			validateFunc: func(t *testing.T, rev *models.Review) {
@@ -211,6 +259,7 @@ func TestDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "APPROVED", "jit", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusApproved},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			validateFunc: func(t *testing.T, rev *models.Review) {
@@ -231,6 +280,7 @@ func TestDoReview(t *testing.T) {
 						{GroupName: "issuing", Status: models.ReviewStatusPending},
 					},
 				},
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			validateFunc: func(t *testing.T, rev *models.Review) {
@@ -281,6 +331,7 @@ func TestErrDoReview(t *testing.T) {
 			input: inputData{
 				ctx:    nil,
 				rev:    nil,
+				con:    &models.Connection{},
 				status: models.ReviewStatusType("deny"),
 			},
 			expectedError: ErrUnknownStatus,
@@ -290,6 +341,7 @@ func TestErrDoReview(t *testing.T) {
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
 				rev:    newFakeReview("user1", "PENDING", "onetime", nil),
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			expectedError: ErrSelfApproval,
@@ -299,6 +351,7 @@ func TestErrDoReview(t *testing.T) {
 			input: inputData{
 				ctx:    newFakeContext("user2", "user2@example.com", []string{"issuing"}),
 				rev:    newFakeReview("user1", string(models.ReviewStatusExecuted), "onetime", nil),
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			expectedError: ErrWrongState,
@@ -308,6 +361,7 @@ func TestErrDoReview(t *testing.T) {
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
 				rev:    newFakeReview("user1", "PENDING", "onetime", nil),
+				con:    &models.Connection{},
 				status: models.ReviewStatusRevoked,
 			},
 			expectedError: ErrWrongState,
@@ -317,6 +371,7 @@ func TestErrDoReview(t *testing.T) {
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
 				rev:    newFakeReview("user1", "APPROVED", "onetime", nil),
+				con:    &models.Connection{},
 				status: models.ReviewStatusRevoked,
 			},
 			expectedError: ErrNotFound,
@@ -328,6 +383,7 @@ func TestErrDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: "PENDING"},
 				}),
+				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
 			expectedError: ErrNotEligible,
