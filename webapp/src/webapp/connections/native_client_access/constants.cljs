@@ -7,7 +7,13 @@
    {:text "30 minutes" :value 30}
    {:text "1 hour" :value 60}
    {:text "2 hours" :value 120}
-   {:text "4 hours" :value 240}])
+   {:text "4 hours" :value 240}
+   {:text "8 hours" :value 480}
+   {:text "16 hours" :value 960}
+   {:text "24 hours" :value 1440}
+   {:text "32 hours" :value 1920}
+   {:text "40 hours" :value 2400}
+   {:text "48 hours" :value 2880}])
 
 ;; Convert minutes to seconds for API
 (defn minutes->seconds [minutes]
