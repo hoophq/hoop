@@ -705,9 +705,8 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
-	ForceReview bool                     `json:"force_review" example:"false"`
+	Status     ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow *ReviewSessionTimeWindow `json:"time_window"`
 }
 
 type SessionReview struct {

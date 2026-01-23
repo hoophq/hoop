@@ -5085,6 +5085,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Filter by Jira issue key",
+                        "name": "jira_issue_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "format": "RFC3339",
                         "description": "Filter starting on this date",
                         "name": "start_date",
@@ -6604,6 +6610,11 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": ""
+                },
+                "min_review_approvals": {
+                    "description": "Minimum number of review approvals required to execute this connection",
+                    "type": "integer",
+                    "example": 2
                 },
                 "name": {
                     "description": "Name of the connection. This attribute is immutable when updating it",
@@ -9000,10 +9011,6 @@ const docTemplate = `{
                 "status"
             ],
             "properties": {
-                "force_review": {
-                    "type": "boolean",
-                    "example": false
-                },
                 "status": {
                     "description": "The reviewed status\n* APPROVED - Approve the review resource\n* REJECTED - Reject the review resource\n* REVOKED - Revoke an approved review",
                     "allOf": [
@@ -9255,6 +9262,11 @@ const docTemplate = `{
                     "description": "Repository name where the runbook is located",
                     "type": "string",
                     "example": "github.com/myorg/myrepo"
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 }
             }
         },
@@ -9492,6 +9504,11 @@ const docTemplate = `{
                     "description": "The commit sha reference to obtain the file",
                     "type": "string",
                     "example": "20320ebbf9fc612256b67dc9e899bbd6e4745c77"
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 }
             }
         },
@@ -10246,6 +10263,11 @@ const docTemplate = `{
                     "description": "The input size of the session in bytes",
                     "type": "integer",
                     "example": 12
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 },
                 "start_date": {
                     "description": "When the execution started",

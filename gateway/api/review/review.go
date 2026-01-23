@@ -159,7 +159,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	}
 
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
-	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview)
+	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow)
 	switch err {
 	case ErrNotEligible, ErrSelfApproval, ErrWrongState:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -198,14 +198,14 @@ func (h *handler) ReviewBySid(c *gin.Context) { h.ReviewByIdOrSid(c) }
 // DoReview updates the status of a review identified by reviewIdOrSid. The hasForced parameter
 // indicates whether the review status change was forced by an administrator or privileged user,
 // bypassing normal review validation rules or approval workflows.
-func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow, hasForced bool) (*models.Review, error) {
+func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.ReviewStatusType, timeWindow *models.ReviewTimeWindow) (*models.Review, error) {
 	rev, err := models.GetReviewByIdOrSid(ctx.OrgID, reviewIdOrSid)
 	switch err {
 	case models.ErrNotFound:
 		return nil, ErrNotFound
 	case nil:
-		log.Infof("updating review state, review-id=%v, sid=%v, type=%v, from=%v, to=%v, forced=%v, ctx-user=%v, owner=%v, groups=%v, created-at=%v",
-			rev.ID, rev.SessionID, rev.Type, rev.Status, status, hasForced, ctx.UserEmail,
+		log.Infof("updating review state, review-id=%v, sid=%v, type=%v, from=%v, to=%v, ctx-user=%v, owner=%v, groups=%v, created-at=%v",
+			rev.ID, rev.SessionID, rev.Type, rev.Status, status, ctx.UserEmail,
 			rev.OwnerEmail, len(rev.ReviewGroups), rev.CreatedAt.Format(time.RFC3339))
 	default:
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
@@ -216,7 +216,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed fetching connection for forced review, err=%v", err)
 	}
 
-	rev, err = doReview(ctx, rev, connection, status, hasForced)
+	rev, err = doReview(ctx, rev, connection, status)
 	if err != nil {
 		return nil, err
 	}
@@ -231,14 +231,15 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	return rev, nil
 }
 
-func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
+func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
 	err := validateReviewStatusTransition(ctx, rev, status)
 	if err != nil {
 		return nil, err
 	}
 
-	if force {
-		rev, err = doForcedReview(ctx, rev, connection, status)
+	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, connection.ForceApproveGroups)
+	if forceGroupFound != nil {
+		rev, err = doForcedReview(ctx, rev, connection, *forceGroupFound, status)
 	} else {
 		rev, err = doIndividualReview(ctx, rev, connection, status)
 	}
@@ -256,16 +257,10 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 	return rev, nil
 }
 
-func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
-	// check if the user has permissions to force the review
-	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, connection.ForceApproveGroups)
-	if forceGroupFound == nil {
-		return nil, ErrNotEligible
-	}
-
+func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, groupName string, status models.ReviewStatusType) (*models.Review, error) {
 	// update review group to
 	forceGroupIndex := slices.IndexFunc(rev.ReviewGroups, func(rg models.ReviewGroups) bool {
-		return rg.GroupName == *forceGroupFound
+		return rg.GroupName == groupName
 	})
 
 	reviewedAt := time.Now().UTC()
@@ -283,7 +278,7 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 			OrgID:        ctx.OrgID,
 			ID:           uuid.NewString(),
 			ReviewID:     rev.ID,
-			GroupName:    *forceGroupFound,
+			GroupName:    groupName,
 			Status:       status,
 			OwnerID:      &ctx.UserID,
 			OwnerEmail:   &ctx.UserEmail,
