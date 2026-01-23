@@ -216,13 +216,19 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed fetching connection for forced review, err=%v", err)
 	}
 
+	if timeWindow != nil {
+		if rev.TimeWindow != nil {
+			return nil, fmt.Errorf("time window can only be set once")
+		}
+
+		if status == models.ReviewStatusApproved {
+			rev.TimeWindow = timeWindow
+		}
+	}
+
 	rev, err = doReview(ctx, rev, connection, status, hasForced)
 	if err != nil {
 		return nil, err
-	}
-
-	if rev.Status == models.ReviewStatusApproved {
-		rev.TimeWindow = timeWindow
 	}
 
 	if err := models.UpdateReview(rev); err != nil {
