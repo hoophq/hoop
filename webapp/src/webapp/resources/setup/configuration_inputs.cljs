@@ -13,7 +13,7 @@
 (defn valid-posix? [value]
   (boolean (re-matches #"[A-Za-z][A-Za-z0-9_]*" value)))
 
-(defn valid-posix-env? [value]
+(defn valid-header-key? [value]
   (boolean (re-matches #"\S+" value)))
 
 (defn parse-env-key [e role-index]
@@ -25,14 +25,14 @@
 
       ;; Handle paste operation
       (> (count new-value) 1)
-      (when (valid-posix-env? new-value)
+      (when (valid-posix? new-value)
         (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
         (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))
 
-      (valid-posix-env? new-value)
+      (valid-posix? new-value)
       (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))))
 
 (defn parse-config-file-name [e role-index]
@@ -65,14 +65,32 @@
 
       ;; Handle paste operation
       (> (count new-value) 1)
-      (when (valid-posix-env? new-value)
+      (when (valid-posix? new-value)
         (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))
 
       (empty? current-value)
       (when (valid-first-char? new-value)
         (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))
 
-      (valid-posix-env? new-value)
+      (valid-posix? new-value)
+      (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))))
+
+(defn parse-header-key [e role-index]
+  (let [new-value (-> e .-target .-value)]
+    (cond
+      (empty? new-value)
+      (rf/dispatch [:resource-setup->update-role-env-current-key role-index ""])
+
+      (valid-header-key? new-value)
+      (rf/dispatch [:resource-setup->update-role-env-current-key role-index new-value]))))
+
+(defn parse-existing-header-key [e role-index idx]
+  (let [new-value (-> e .-target .-value)]
+    (cond
+      (empty? new-value)
+      (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key ""])
+
+      (valid-header-key? new-value)
       (rf/dispatch [:resource-setup->update-role-env-var role-index idx :key new-value]))))
 
 (defn parse-existing-config-file-name [e role-index idx]
@@ -96,16 +114,16 @@
       (valid-posix? new-value)
       (rf/dispatch [:resource-setup->update-role-config-file role-index idx :key upper-value]))))
 
-(defn environment-variables-section [role-index {:keys [title subtitle]}]
+(defn key-value-section
+  [role-index {:keys [title subtitle key-placeholder parse-key parse-existing-key]}]
   (let [current-key @(rf/subscribe [:resource-setup/role-env-current-key role-index])
         current-value @(rf/subscribe [:resource-setup/role-env-current-value role-index])
         env-vars @(rf/subscribe [:resource-setup/role-env-vars role-index])
         connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
         show-selector? (= connection-method "secrets-manager")]
     [:> Box {:class "space-y-4"}
-     [:> Heading {:size "3"} (if title title "Environment variables")]
-     [:> Text {:size "2" :color "gray"}
-      (if subtitle subtitle "Include environment variables to be used in your resource role.")]
+     [:> Heading {:size "3"} title]
+     [:> Text {:size "2" :color "gray"} subtitle]
 
      (when (seq env-vars)
        [:> Grid {:columns "2" :gap "2"}
@@ -115,31 +133,41 @@
            [forms/input
             {:label "Key"
              :value key
-             :placeholder "API_KEY"
-             :on-change #(parse-existing-env-key % role-index idx)}]
+             :placeholder key-placeholder
+             :on-change #(parse-existing-key % idx)}]
            [forms/input
             {:label "Value"
              :value value
              :type "password"
              :placeholder "* * * *"
-             :on-change #(rf/dispatch [:resource-setup->update-role-env-var role-index idx :value (-> % .-target .-value)])
+             :on-change #(rf/dispatch [:resource-setup->update-role-env-var
+                                       role-index
+                                       idx
+                                       :value
+                                       (-> % .-target .-value)])
              :start-adornment (when show-selector?
-                                [connection-method/source-selector role-index (str "env-var-" idx)])}]])])
+                                [connection-method/source-selector
+                                 role-index
+                                 (str "env-var-" idx)])}]])])
 
      [:> Grid {:columns "2" :gap "2"}
       [forms/input
        {:label "Key"
-        :placeholder "API_KEY"
+        :placeholder key-placeholder
         :value current-key
-        :on-change #(parse-env-key % role-index)}]
+        :on-change parse-key}]
       [forms/input
        {:label "Value"
         :placeholder "* * * *"
         :type "password"
         :value current-value
-        :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value role-index (-> % .-target .-value)])
+        :on-change #(rf/dispatch [:resource-setup->update-role-env-current-value
+                                  role-index
+                                  (-> % .-target .-value)])
         :start-adornment (when show-selector?
-                           [connection-method/source-selector role-index "env-current-value"])}]]
+                           [connection-method/source-selector
+                            role-index
+                            "env-current-value"])}]]
 
      [:> Button
       {:size "2"
@@ -148,6 +176,24 @@
        :on-click #(rf/dispatch [:resource-setup->add-role-env-row role-index])}
       [:> Plus {:size 16}]
       "Add key/value"]]))
+
+(defn environment-variables-section [role-index {:keys [title subtitle]}]
+  [key-value-section
+   role-index
+   {:title (if title title "Environment variables")
+    :subtitle (if subtitle subtitle "Include environment variables to be used in your resource role.")
+    :key-placeholder "API_KEY"
+    :parse-key #(parse-env-key % role-index)
+    :parse-existing-key #(parse-existing-env-key % role-index %2)}])
+
+(defn http-headers-section [role-index]
+  [key-value-section
+   role-index
+   {:title "HTTP headers"
+    :subtitle "Add HTTP headers that will be used in your requests."
+    :key-placeholder "X-Request-Id"
+    :parse-key #(parse-header-key % role-index)
+    :parse-existing-key #(parse-existing-header-key % role-index %2)}])
 
 (defn configuration-files-section [role-index]
   (let [config-files @(rf/subscribe [:resource-setup/role-config-files role-index])

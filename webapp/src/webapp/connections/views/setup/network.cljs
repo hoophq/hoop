@@ -56,9 +56,7 @@
                              [connection-method/source-selector "remote_url"])}]]
 
        ;; HTTP Headers Section
-       [configuration-inputs/environment-variables-section
-        {:title "HTTP headers"
-         :subtitle "Add HTTP headers that will be used in your requests."}]
+       [configuration-inputs/http-headers-section]
 
        ;; Allow insecure SSL switch
        [:> Flex {:align "center" :gap "3"}
