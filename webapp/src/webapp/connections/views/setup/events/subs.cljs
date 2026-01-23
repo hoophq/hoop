@@ -127,6 +127,18 @@
    (get-in config [:review-groups] [])))
 
 (rf/reg-sub
+ :connection-setup/min-review-approvals
+ :<- [:connection-setup/config]
+ (fn [config]
+   (get-in config [:min-review-approvals])))
+
+(rf/reg-sub
+ :connection-setup/force-approve-groups
+ :<- [:connection-setup/config]
+ (fn [config]
+   (get-in config [:force-approve-groups] [])))
+
+(rf/reg-sub
  :connection-setup/data-masking-types
  :<- [:connection-setup/config]
  (fn [config]
