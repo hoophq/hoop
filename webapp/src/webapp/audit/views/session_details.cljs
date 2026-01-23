@@ -148,21 +148,26 @@
 (defmethod ^:private review-status-icon "REJECTED" [] "close-red")
 
 (defmulti ^:private review-status-text identity)
-(defmethod ^:private review-status-text "PENDING" [_ group-name]
+(defmethod ^:private review-status-text "PENDING" [_ group]
   [:> Flex {:gap "1" :align "center"}
-   [:> Clock2 {:size 16 :class "text-gray-11"}]
+   [:> Box
+    [:> Clock2 {:size 16 :class "text-gray-11"}]]
    [:> Text {:size "2" :class "text-gray-11"}
-    (str "Pending by " group-name)]])
-(defmethod ^:private review-status-text "APPROVED" [_ group-name]
+    (str "Pending by " (:group group))]])
+(defmethod ^:private review-status-text "APPROVED" [_ group]
   [:> Flex {:gap "1" :align "center"}
-   [:> CircleCheckBig {:size 16 :class "text-success-11"}]
+   [:> Box
+    [:> CircleCheckBig {:size 16 :class "text-success-11"}]]
    [:> Text {:size "2" :class "text-success-11"}
-    (str "Approved by " group-name)]])
-(defmethod ^:private review-status-text "REJECTED" [_ group-name]
+    (str
+     (when (:forced_review group) "Force ")
+     "Approved by " (:group group))]])
+(defmethod ^:private review-status-text "REJECTED" [_ group]
   [:> Flex {:gap "1" :align "center"}
-   [:> OctagonX {:size 16 :class "text-error-11"}]
+   [:> Box
+    [:> OctagonX {:size 16 :class "text-error-11"}]]
    [:> Text {:size "2" :class "text-error-11"}
-    (str "Rejected by " group-name)]])
+    (str "Rejected by " (:group group))]])
 
 (defn data-masking-analytics [session-report]
   (let [redacted-types (map #(utilities/sanitize-string (:info_type %))
@@ -470,7 +475,7 @@
 
                    (for [group review-groups]
                      ^{:key (:id group)}
-                     [review-status-text (:status group) (:group group)]))]]])]
+                     [review-status-text (:status group) group]))]]])]
 
            ;; parallel mode batch
            (when session-batch-id
