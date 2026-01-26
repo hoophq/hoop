@@ -53,6 +53,7 @@ const (
 	ConnectionTypeOracleDB    ConnectionType = "oracledb"
 	ConnectionTypeTCP         ConnectionType = "tcp"
 	ConnectionTypeHttpProxy   ConnectionType = "httpproxy"
+	ConnectionTypeKubernetes  ConnectionType = "kubernetes"
 	ConnectionTypeSSH         ConnectionType = "ssh"
 	ConnectionTypeRDP         ConnectionType = "rdp"
 	ConnectionTypeSSM         ConnectionType = "aws-ssm"

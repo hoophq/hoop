@@ -30,7 +30,6 @@
                                                     :length 1})]
     (str characterName "-" numberDictionary)))
 
-
 (defn config->json
   "Converts configuration maps to a JSON format with prefixed keys.
 
@@ -111,6 +110,7 @@
 (defn- native-subtype? [{:keys [subtype type]}]
   (or (direct-native-subtypes subtype)
       (http-proxy-subtypes subtype)
+      (#{"kubernetes-token" "kubernetes" "kubernetes-eks"} subtype)
       (and (= type "custom")
            (custom-native-subtypes subtype))))
 

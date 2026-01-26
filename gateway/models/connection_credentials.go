@@ -36,10 +36,10 @@ func GetConnectionCredentialsByID(orgID, id string) (*ConnectionCredentials, err
 
 // GetValidConnectionCredentialsBySecretKey retrieves a valid connection credential by its secret key hash.
 // if a user has a valid connection credential, it could be used to connect in the requested resource
-func GetValidConnectionCredentialsBySecretKey(connectionType, secretKeyHash string) (*ConnectionCredentials, error) {
+func GetValidConnectionCredentialsBySecretKey(connectionTypes []string, secretKeyHash string) (*ConnectionCredentials, error) {
 	var resp ConnectionCredentials
-	err := DB.Table("private.connection_credentials").
-		Where("connection_type = ? AND secret_key_hash = ?", connectionType, secretKeyHash).
+	err := DB.Debug().Table("private.connection_credentials").
+		Where("connection_type IN ? AND secret_key_hash = ?", connectionTypes, secretKeyHash).
 		First(&resp).
 		Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

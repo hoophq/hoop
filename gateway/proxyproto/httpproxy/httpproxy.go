@@ -278,7 +278,10 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCredentials, error) {
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
-		pb.ConnectionTypeHttpProxy.String(),
+		[]string{
+			pb.ConnectionTypeHttpProxy.String(), pb.ConnectionTypeKubernetes.String(),
+			pb.ConnectionTypeCommandLine.String(),
+		},
 		secretKeyHash)
 
 	if err != nil {
@@ -411,7 +414,7 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	}
 
 	connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
-	if connectionType != pb.ConnectionTypeHttpProxy {
+	if connectionType != pb.ConnectionTypeHttpProxy && connectionType != pb.ConnectionTypeKubernetes {
 		session.cancelFn("unsupported connection type: %v", connectionType)
 		return nil, fmt.Errorf("unsupported connection type: %v", connectionType)
 	}

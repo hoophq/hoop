@@ -237,7 +237,7 @@ func checkAndPrepareRDP(firstRDPData []byte) (duration time.Duration, at *models
 	}
 
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
-		pb.ConnectionTypeRDP.String(),
+		[]string{pb.ConnectionTypeRDP.String()},
 		secretKeyHash)
 
 	if err != nil {
