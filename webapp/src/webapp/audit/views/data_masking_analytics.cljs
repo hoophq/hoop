@@ -59,8 +59,10 @@
         total-items-text (str total-redact " " (if (<= total-redact 1) "item" "items"))
         count-less-1 (- (count redacted-types) 1)
         redacted-types-list (cs/join ", " redacted-types)
-        redacted-types-display (str (count redacted-types)
-                                    " (" redacted-types-list ")")
+        redacted-types-display (if (pos? (count redacted-types))
+                                 (str (count redacted-types)
+                                      " (" redacted-types-list ")")
+                                 "-")
         redacted-types-summary (if (pos? (count redacted-types))
                                  (let [first-type (first redacted-types)]
                                    (if (>= count-less-1 1)
