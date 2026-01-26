@@ -165,7 +165,6 @@
 (defn main [session]
   (let [user-details (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:audit->session-details])
-        session-report (rf/subscribe [:reports->session])
         gateway-info (rf/subscribe [:gateway->info])
         executing-status (r/atom :ready)
         connecting-status (r/atom :ready)
@@ -449,8 +448,7 @@
            ;; end script area
 
 
-           [data-masking-analytics/main {:session-report @session-report
-                                         :session session}]
+           [data-masking-analytics/main {:session session}]
 
            ;; response logs area
            (when-not (or ready?

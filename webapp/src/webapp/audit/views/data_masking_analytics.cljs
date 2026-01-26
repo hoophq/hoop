@@ -115,12 +115,13 @@
          [:> Text {:size "2" :class "font-semibold"}
           total-items-text]]]]]]))
 
-(defn main [{:keys [session-report session]}]
+(defn main [{:keys [session]}]
   (let [user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
+        session-report (rf/subscribe [:reports->session])
         free-license? (-> @user :data :free-license?)
         redact-provider (-> @gateway-info :data :redact_provider)
-        analytics-report (build-analytics-report session-report session)]
+        analytics-report (build-analytics-report @session-report session)]
     (cond
       (not= redact-provider "mspresidio")
       [no-presidio-callout]
