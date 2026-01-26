@@ -123,6 +123,42 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
+// SessionCloser interface allows sending SessionClose packets through a stream
+type SessionCloser interface {
+	SendSessionClose(errMsg string) error
+}
+
+// SendSessionClose sends a SessionClose packet with the given error message
+// This is used to close a session with a specific error (e.g., guardrails violation)
+func (s *streamWriter) SendSessionClose(errMsg string) error {
+	if s.client == nil {
+		return fmt.Errorf("stream writer client is empty")
+	}
+
+	exitCode := "0"
+	if errMsg != "" {
+		exitCode = "1" // non-zero exit code indicates error
+	}
+
+	var errPayload []byte
+	if errMsg != "" {
+		errPayload = []byte(errMsg)
+	}
+
+	// Copy the spec and add exit code
+	spec := make(map[string][]byte)
+	for k, v := range s.packetSpec {
+		spec[k] = v
+	}
+	spec[SpecClientExitCodeKey] = []byte(exitCode)
+
+	return s.client.Send(&Packet{
+		Type:    "ClientSessionClose",
+		Payload: errPayload,
+		Spec:    spec,
+	})
+}
+
 func GobEncode(data any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(data)

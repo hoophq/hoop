@@ -850,8 +850,13 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			}
 
 		case pbclient.SessionClose:
-			log.Infof("session closed by server, sid=%s", sess.sid)
-			sess.cancelFn("session closed by server")
+			// Extract the error message from payload if present
+			errMsg := "session closed by agent"
+			if len(pkt.Payload) > 0 {
+				errMsg = string(pkt.Payload)
+			}
+			log.Infof("session closed by agent, sid=%s, reason=%s", sess.sid, errMsg)
+			sess.cancelFn(errMsg)
 			return
 		// this is the case when the agent closes the connection
 		case pbclient.TCPConnectionClose:
