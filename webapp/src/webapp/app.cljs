@@ -152,7 +152,8 @@
   []
   (let [search-string (.. js/window -location -search)
         url-params (new js/URLSearchParams search-string)
-        token (get-cookie-value "hoop_access_token")
+        token (or (get-cookie-value "hoop_access_token")
+                  (.get url-params "token"))
         error (.get url-params "error")
         redirect-after-auth (.getItem js/localStorage "redirect-after-auth")]
 
