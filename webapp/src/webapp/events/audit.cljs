@@ -399,13 +399,16 @@
  :audit->add-review
  (fn
    [_ [_ session status & {:keys [start-time
-                                  end-time]}]]
-   (let [body (merge {:status (string/upper-case status)}
-                     ;; Time window configuration
-                     (when (and start-time end-time)
-                       {:time_window {:type "time_range"
-                                      :configuration {:start_time (formatters/local-time->utc-time start-time)
-                                                      :end_time (formatters/local-time->utc-time end-time)}}}))]
+                                  end-time
+                                  force-review]}]]
+   (let [body (cond-> {:status (string/upper-case status)}
+                (and start-time end-time)
+                (assoc :time_window {:type "time_range"
+                                     :configuration {:start_time (formatters/local-time->utc-time start-time)
+                                                     :end_time (formatters/local-time->utc-time end-time)}})
+
+                force-review
+                (assoc :force_review true))]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (-> session :review :id))

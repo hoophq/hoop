@@ -278,6 +278,8 @@
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
      "httpproxy" [http-proxy-credentials-fields connection_credentials]
+     "kubernetes" [http-proxy-credentials-fields connection_credentials]
+     "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
      "grafana" [http-proxy-credentials-fields connection_credentials]
      "kibana" [http-proxy-credentials-fields connection_credentials]
      [postgres-credentials-fields connection_credentials])])
@@ -333,8 +335,9 @@
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
+        subtype (:subtype native-client-access-data)
         connection-type (or (:connection_type native-client-access-data)
-                            (:subtype native-client-access-data))
+                            subtype)
         has-command? (contains? #{"ssh" "rdp"} connection-type)]
 
     (fn []
@@ -391,7 +394,8 @@
           (= connection-type "aws-ssm")
           [aws-ssm-command-view native-client-access-data]
 
-          (http-proxy-subtypes connection-type)
+          (or (http-proxy-subtypes connection-type)
+              (#{"kubernetes" "kubernetes-eks"} connection-type))
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -459,6 +463,8 @@
         "rdp" "Remote Desktop"
         "ssh" "SSH"
         "aws-ssm" "AWS SSM"
+        "kubernetes" "Kubernetes"
+        "httpproxy" "HTTP Proxy"
         "Unknown")]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}

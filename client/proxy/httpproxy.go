@@ -108,4 +108,10 @@ func (p *HttpProxy) getConnection(connectionID string) (io.WriteCloser, error) {
 	return conn, nil
 }
 
-func (s *HttpProxy) Host() Host { return getListenAddr(s.listenAddr) }
+func (s *HttpProxy) Host() Host {
+	host := getListenAddr(s.listenAddr)
+	if host.Host == "0.0.0.0" {
+		host.Host = "127.0.0.1"
+	}
+	return host
+}

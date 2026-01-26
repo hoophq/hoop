@@ -215,6 +215,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 							'owner_email', rg.owner_email,
 							'owner_name', rg.owner_name,
 							'owner_slack_id', rg.owner_slack_id,
+							'forced_review', rg.forced_review,
 							'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 						)
 					)
@@ -335,6 +336,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 								'owner_email', rg.owner_email,
 								'owner_name', rg.owner_name,
 								'owner_slack_id', rg.owner_slack_id,
+								'forced_review', rg.forced_review,
 								'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
 							)
 						)

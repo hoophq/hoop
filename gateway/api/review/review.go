@@ -211,21 +211,24 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
 
-	var connection *models.Connection
-	if hasForced {
-		connection, err = models.GetConnectionByNameOrID(ctx, rev.ConnectionName)
-		if connection == nil || err != nil {
-			return nil, fmt.Errorf("failed fetching connection for forced review, err=%v", err)
+	connection, err := models.GetConnectionByNameOrID(ctx, rev.ConnectionName)
+	if connection == nil || err != nil {
+		return nil, fmt.Errorf("failed fetching connection for forced review, err=%v", err)
+	}
+
+	if timeWindow != nil {
+		if rev.TimeWindow != nil {
+			return nil, fmt.Errorf("time window can only be set once")
+		}
+
+		if status == models.ReviewStatusApproved {
+			rev.TimeWindow = timeWindow
 		}
 	}
 
 	rev, err = doReview(ctx, rev, connection, status, hasForced)
 	if err != nil {
 		return nil, err
-	}
-
-	if rev.Status == models.ReviewStatusApproved {
-		rev.TimeWindow = timeWindow
 	}
 
 	if err := models.UpdateReview(rev); err != nil {
@@ -243,7 +246,7 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 	if force {
 		rev, err = doForcedReview(ctx, rev, connection, status)
 	} else {
-		rev, err = doIndividualReview(ctx, rev, status)
+		rev, err = doIndividualReview(ctx, rev, connection, status)
 	}
 
 	if err != nil {
@@ -302,10 +305,13 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 	return rev, nil
 }
 
-func doIndividualReview(ctx *storagev2.Context, rev *models.Review, status models.ReviewStatusType) (*models.Review, error) {
+func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
 	reviewedAt := time.Now().UTC()
-	reviewsCountNeeded := len(rev.ReviewGroups)
 	approvedCount := 0
+	reviewsCountNeeded := len(rev.ReviewGroups)
+	if connection.MinReviewApprovals != nil {
+		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
+	}
 
 	var isEligibleReviewer bool
 	for i, r := range rev.ReviewGroups {

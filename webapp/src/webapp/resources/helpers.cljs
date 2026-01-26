@@ -21,17 +21,21 @@
   "Converts configuration maps to a JSON format with prefixed keys.
    Takes a vector of config maps with :key and :value and a prefix string.
    Returns a map with prefixed keys and base64 encoded values."
-  [configs prefix]
-  (->> configs
-       (filter (fn [{:keys [key value]}]
-                 (not (or (s/blank? key) (s/blank? value)))))
-       (map (fn [{:keys [key value]}]
-              (let [prefixed-key (str prefix (s/upper-case key))
-                    final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
-                                  (str value "\n")
-                                  value)]
-                {prefixed-key (js/btoa final-value)})))
-       (reduce into {})))
+  [configs prefix & [subtype]]
+  (let [is-http-proxy? (http-proxy-subtypes subtype)]
+    (->> configs
+         (filter (fn [{:keys [key value]}]
+                   (not (or (s/blank? key) (s/blank? value)))))
+         (map (fn [{:keys [key value]}]
+                (let [final-key (if (and is-http-proxy? (s/starts-with? key "HEADER_"))
+                                  key
+                                  (s/upper-case key))
+                      prefixed-key (str prefix final-key)
+                      final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
+                                    (str value "\n")
+                                    value)]
+                  {prefixed-key (js/btoa final-value)})))
+         (reduce into {}))))
 
 (defn can-open-web-terminal?
   "Check if a role/connection can open web terminal based on subtype and access modes"
