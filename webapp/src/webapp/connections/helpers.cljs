@@ -42,17 +42,21 @@
    Example:
    (config->json [{:key \"foo\" :value \"bar\"}] \"envvar:\")
    ;=> {\"envvar:FOO\" \"<base64 of bar>\"}"
-  [configs prefix]
-  (->> configs
-       (filter (fn [{:keys [key value]}]
-                 (not (or (s/blank? key) (s/blank? value)))))
-       (map (fn [{:keys [key value]}]
-              (let [prefixed-key (str prefix (s/upper-case key))
-                    final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
-                                  (str value "\n")
-                                  value)]
-                {prefixed-key (js/btoa final-value)})))
-       (reduce into {})))
+  [configs prefix & [subtype]]
+  (let [is-http-proxy? (http-proxy-subtypes subtype)]
+    (->> configs
+         (filter (fn [{:keys [key value]}]
+                   (not (or (s/blank? key) (s/blank? value)))))
+         (map (fn [{:keys [key value]}]
+                (let [final-key (if (and is-http-proxy? (s/starts-with? key "HEADER_"))
+                                  key
+                                  (s/upper-case key))
+                      prefixed-key (str prefix final-key)
+                      final-value (if (= prefixed-key "filesystem:SSH_PRIVATE_KEY")
+                                    (str value "\n")
+                                    value)]
+                  {prefixed-key (js/btoa final-value)})))
+         (reduce into {}))))
 
 (def testable-connection-types
   "Connection types and subtypes that support testing"

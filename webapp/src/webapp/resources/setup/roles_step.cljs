@@ -194,10 +194,8 @@
                      :start-adornment (when show-selector?
                                         [connection-method/source-selector role-index "remote_url"])}]
 
-       ;; HTTP headers section (usando configuration-inputs)
-       [configuration-inputs/environment-variables-section role-index
-        {:title "HTTP headers"
-         :subtitle "Add HTTP headers that will be used in your requests."}]
+       ;; HTTP headers section
+       [configuration-inputs/http-headers-section role-index]
 
        [:> Flex {:align "center" :gap "3"}
         [:> Switch {:checked (get credentials "insecure" false)
