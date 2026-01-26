@@ -294,7 +294,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
 	url, _ := url.Parse(login.Redirect)
-	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
+	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {
 		redirectSuccessURL = login.Redirect
 
 		http.SetCookie(c.Writer, &http.Cookie{
