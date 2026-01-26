@@ -1,7 +1,5 @@
 (ns webapp.audit.views.session-details
   (:require
-   ["@headlessui/react" :as ui]
-   ["@heroicons/react/20/solid" :as hero-solid-icon]
    ["@heroicons/react/24/outline" :as hero-outline-icon]
    ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu
                                Flex Text Tooltip ScrollArea]]
@@ -9,13 +7,13 @@
    ["is-url-http" :as is-url-http?]
    ["lucide-react" :refer [Download FileDown Info ChevronDown ArrowUpRight
                            CalendarClock Check CircleCheckBig Clock2 OctagonX CheckCheck]]
-   ["react" :as react]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.audit.views.results-container :as results-container]
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
+   [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.time-window-modal :as time-window-modal]
    [webapp.components.button :as button]
    [webapp.components.headings :as h]
@@ -169,76 +167,9 @@
    [:> Text {:size "2" :class "text-error-11"}
     (str "Rejected by " (:group group))]])
 
-(defn data-masking-analytics [session-report]
-  (let [redacted-types (map #(utilities/sanitize-string (:info_type %))
-                            (-> session-report :data :items))
-        total-redact (-> session-report :data :total_redact_count)
-        count-less-1 (- (count redacted-types) 1)]
-    [:> ui/Disclosure
-     (fn [params]
-       (r/as-element
-        [:<>
-         [:> (.-Button ui/Disclosure)
-          {:class (str "w-full flex justify-between items-center gap-small bg-purple-50 p-3 rounded-t-md "
-                       "text-base font-semibold focus:outline-none focus-visible:ring text-sm "
-                       "focus-visible:ring-gray-500 focus-visible:ring-opacity-75")}
-          [:div {:class "flex items-center gap-small"}
-           [:> hero-solid-icon/SparklesIcon {:class "text-purple-500 h-5 w-5 shrink-0"
-                                             :aria-hidden "true"}]
-           "AI Data Masking"]
-
-          [:div {:class "flex items-center gap-regular"}
-           (when-not (.-open params)
-             [:div
-              [:span
-               "Redacted Types: "]
-              [:span {:class "font-normal"}
-               (str (count redacted-types)
-                    " (" (first redacted-types)
-                    (if (>= count-less-1 1)
-                      (str  " + "
-                            count-less-1
-                            " more)")
-                      ")"))]])
-           (when-not (.-open params)
-             [:div
-              [:span
-               "Total Items: "]
-              [:span {:class "font-normal"}
-               total-redact]])
-
-           [:> hero-solid-icon/ChevronDownIcon {:class (str (when (.-open params) "rotate-180 transform ")
-                                                            "text-dark-900 h-5 w-5 shrink-0")
-                                                :aria-hidden "true"}]]]
-         [:> (.-Child ui/Transition) {:as react/Fragment
-                                      :enter "transform transition ease-in duration-[200ms]"
-                                      :enterFrom "opacity-0 -translate-y-6"
-                                      :enterTo "opacity-100 translate-y-0"
-                                      :leave "transform duration-200 transition ease-in duration-[200ms]"
-                                      :leaveFrom "opacity-100 translate-y-0"
-                                      :leaveTo "opacity-0 -translate-y-6"}
-          [:> (.-Panel ui/Disclosure) {:className "bg-purple-50 p-2 rounded-b-md"}
-           [:div {:class "grid grid-cols-2 gap-2 text-xs"}
-            [:div {:class "flex flex-col justify-center items-center gap-1 rounded-md bg-purple-100 p-2"}
-             [:> hero-solid-icon/NewspaperIcon {:class "text-purple-300 h-5 w-5 shrink-0"
-                                                :aria-hidden "true"}]
-             [:span
-              "Redacted Types"]
-             [:span {:class "font-semibold"}
-              (cs/join ", " redacted-types)]]
-            [:div {:class "flex flex-col justify-center items-center gap-1 rounded-md bg-purple-100 p-2"}
-             [:> hero-solid-icon/CheckBadgeIcon {:class "text-purple-300 h-5 w-5 shrink-0"
-                                                 :aria-hidden "true"}]
-             [:span
-              "Total Redacted Data"]
-             [:span {:class "font-semibold"}
-              (str total-redact " "
-                   (if (<= total-redact 1) "item" "items"))]]]]]]))]))
-
 (defn main [session]
   (let [user-details (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:audit->session-details])
-        session-report (rf/subscribe [:reports->session])
         gateway-info (rf/subscribe [:gateway->info])
         connection-details (rf/subscribe [:connections->connection-details])
         executing-status (r/atom :ready)
@@ -281,7 +212,6 @@
               can-kill-session? (and (or is-session-owner?
                                          admin?)
                                      (not (= session-status "done")))
-              has-session-report? (seq (-> @session-report :data :items))
               ready? (= (:status session) "ready")
               revoke-at (when (get-in session [:review :revoke_at])
                           (js/Date. (get-in session [:review :revoke_at])))
@@ -541,13 +471,8 @@
                     [:article script-data]]]))])
            ;; end script area
 
-           ;; data masking analytics
-           (when-not (or has-review?
-                         (= :loading (:status @session-report))
-                         (not has-session-report?))
-             [:div
-              [data-masking-analytics @session-report]])
-           ;; end data masking analytics
+
+           [data-masking-analytics/main {:session session}]
 
            ;; response logs area
            (when-not (or ready?

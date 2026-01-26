@@ -64,8 +64,6 @@
         connection-subtype (rf/subscribe [:connection-setup/connection-subtype])
         jira-template-id (rf/subscribe [:connection-setup/jira-template-id])
         guardrails (rf/subscribe [:connection-setup/guardrails])
-        tags (rf/subscribe [:connection-setup/tags])
-        tags-input (rf/subscribe [:connection-setup/tags-input])
         is-tcp? (= @connection-subtype "tcp")
         default-modes (get-access-mode-defaults @connection-subtype)]
 
