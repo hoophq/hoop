@@ -30,6 +30,7 @@ type Config struct {
 	authMethod                      idptypes.ProviderType
 	pgCred                          *pgCredentials
 	gcpDLPJsonCredentials           string
+	forceUrlTokenExchange           bool
 	dlpProvider                     string
 	dlpMode                         string
 	hasRedactCredentials            bool
@@ -214,6 +215,7 @@ func Load() error {
 		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
+		forceUrlTokenExchange:           os.Getenv("URL_TOKEN_EXCHANGE") == "force",
 	}
 	return nil
 }
@@ -343,6 +345,7 @@ func (c Config) ApiScheme() string                     { return c.apiScheme }
 func (c Config) ApiURLPath() string                    { return c.apiURLPath }
 func (c Config) ApiKey() string                        { return c.apiKey }
 func (c Config) AuthMethod() idptypes.ProviderType     { return c.authMethod }
+func (c Config) ForceUrlTokenExchange() bool           { return c.forceUrlTokenExchange }
 func (c Config) WebhookAppKey() string                 { return c.webhookAppKey }
 func (c Config) WebhookAppURL() *url.URL               { return c.webhookAppURL }
 func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCredentials }
