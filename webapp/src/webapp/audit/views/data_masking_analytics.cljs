@@ -25,7 +25,7 @@
                :on-click (fn [e]
                            (.preventDefault e)
                            (rf/dispatch [:close-modal])
-                           (rf/dispatch [:navigate :ai-data-masking]))}
+                           (rf/dispatch [:navigate :upgrade-plan]))}
       "Configure it on AI Data Masking"
       [:> ArrowUpRight {:size 16}]]
      [:> Link {:href (get-in config/docs-url [:features :ai-datamasking])
@@ -140,7 +140,7 @@
                              :on-click (fn [e]
                                          (.preventDefault e)
                                          (rf/dispatch [:close-modal])
-                                         (rf/dispatch [:navigate :ai-data-masking]))}
+                                         (rf/dispatch [:navigate :upgrade-plan]))}
                     "Configure it on AI Data Masking"
                     [:> ArrowUpRight {:size 14}]]]}]
 
