@@ -8,7 +8,7 @@
    ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
    ["lucide-react" :refer [Download FileDown Info ChevronDown ArrowUpRight
-                           CalendarClock Check CircleCheckBig Clock2 OctagonX]]
+                           CalendarClock Check CircleCheckBig Clock2 OctagonX CheckCheck]]
    ["react" :as react]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -148,21 +148,26 @@
 (defmethod ^:private review-status-icon "REJECTED" [] "close-red")
 
 (defmulti ^:private review-status-text identity)
-(defmethod ^:private review-status-text "PENDING" [_ group-name]
+(defmethod ^:private review-status-text "PENDING" [_ group]
   [:> Flex {:gap "1" :align "center"}
-   [:> Clock2 {:size 16 :class "text-gray-11"}]
+   [:> Box
+    [:> Clock2 {:size 16 :class "text-gray-11"}]]
    [:> Text {:size "2" :class "text-gray-11"}
-    (str "Pending by " group-name)]])
-(defmethod ^:private review-status-text "APPROVED" [_ group-name]
+    (str "Pending by " (:group group))]])
+(defmethod ^:private review-status-text "APPROVED" [_ group]
   [:> Flex {:gap "1" :align "center"}
-   [:> CircleCheckBig {:size 16 :class "text-success-11"}]
+   [:> Box
+    [:> CircleCheckBig {:size 16 :class "text-success-11"}]]
    [:> Text {:size "2" :class "text-success-11"}
-    (str "Approved by " group-name)]])
-(defmethod ^:private review-status-text "REJECTED" [_ group-name]
+    (str
+     (when (:forced_review group) "Force ")
+     "Approved by " (:group group))]])
+(defmethod ^:private review-status-text "REJECTED" [_ group]
   [:> Flex {:gap "1" :align "center"}
-   [:> OctagonX {:size 16 :class "text-error-11"}]
+   [:> Box
+    [:> OctagonX {:size 16 :class "text-error-11"}]]
    [:> Text {:size "2" :class "text-error-11"}
-    (str "Rejected by " group-name)]])
+    (str "Rejected by " (:group group))]])
 
 (defn data-masking-analytics [session-report]
   (let [redacted-types (map #(utilities/sanitize-string (:info_type %))
@@ -235,6 +240,7 @@
         session-details (rf/subscribe [:audit->session-details])
         session-report (rf/subscribe [:reports->session])
         gateway-info (rf/subscribe [:gateway->info])
+        connection-details (rf/subscribe [:connections->connection-details])
         executing-status (r/atom :ready)
         connecting-status (r/atom :ready)
         killing-status (r/atom :ready)]
@@ -246,6 +252,7 @@
                    _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
         (let [session (:session @session-details)
               user (:data @user-details)
+              admin? (:admin? user)
               session-user-name (:user_name session)
               session-user-id (:user_id session)
               current-user-id (:id user)
@@ -256,19 +263,24 @@
               session-batch-id (:session_batch_id session)
               verb (:verb session)
               session-status (:status session)
+              is-session-owner? (= session-user-id current-user-id)
               has-large-payload? (:has-large-payload? @session-details)
               has-large-input? (:has-large-input? @session-details)
               disabled-download (-> @gateway-info :data :disable_sessions_download)
+              review-status (-> session :review :status)
               review-groups (-> session :review :review_groups_data)
               in-progress? (or (= end-date nil)
                                (= end-date ""))
               all-groups-pending? (every? #(= (:status %) "PENDING") review-groups)
               has-review? (boolean (seq (-> session :review)))
-              review-status (when has-review?
-                              (some #(when (= (:status %) "APPROVED") "APPROVED") review-groups))
-              can-kill-session? (and (= session-status "open")
-                                     (or (not has-review?)
-                                         (= review-status "APPROVED")))
+              _ (when (and has-review?
+                           connection-name
+                           (not (:loading @connection-details))
+                           (not= (:name (:data @connection-details)) connection-name))
+                  (rf/dispatch [:connections->get-connection-details connection-name]))
+              can-kill-session? (and (or is-session-owner?
+                                         admin?)
+                                     (not (= session-status "done")))
               has-session-report? (seq (-> @session-report :data :items))
               ready? (= (:status session) "ready")
               revoke-at (when (get-in session [:review :revoke_at])
@@ -276,11 +288,18 @@
               not-revoked? (when revoke-at (> (.getTime revoke-at) (.getTime (js/Date.))))
               can-connect? (and ready? (= verb "connect") not-revoked?)
               can-review? (let [user-groups (set (:groups user))]
-                            (some (fn [review-group]
-                                    (and (= "PENDING" (:status review-group))
-                                         (contains? user-groups (:group review-group))))
-                                  review-groups))
-              is-session-owner? (= session-user-id current-user-id)
+                            (and (some (fn [review-group]
+                                         (and (= "PENDING" (:status review-group))
+                                              (contains? user-groups (:group review-group))))
+                                       review-groups)
+                                 (= "PENDING" review-status)))
+              can-force-approve? (let [user-groups (set (:groups user))
+                                       connection-data (:data @connection-details)
+                                       force-groups (when connection-data
+                                                      (set (:force_approve_groups connection-data)))]
+                                   (and can-review?
+                                        force-groups
+                                        (some #(contains? force-groups %) user-groups)))
               handle-reject (fn []
                               (rf/dispatch [:audit->add-review
                                             session
@@ -289,6 +308,11 @@
                                (rf/dispatch [:audit->add-review
                                              session
                                              "approved"]))
+              handle-force-approve (fn []
+                                     (rf/dispatch [:audit->add-review
+                                                   session
+                                                   "approved"
+                                                   :force-review true]))
               handle-approve-time-window (fn [data]
                                            (rf/dispatch [:audit->add-review
                                                          session
@@ -451,7 +475,7 @@
 
                    (for [group review-groups]
                      ^{:key (:id group)}
-                     [review-status-text (:status group) (:group group)]))]]])]
+                     [review-status-text (:status group) group]))]]])]
 
            ;; parallel mode batch
            (when session-batch-id
@@ -527,8 +551,9 @@
 
            ;; response logs area
            (when-not (or ready?
-                         (some #(= "PENDING" (:status %))
-                               review-groups))
+                         (and (some #(= "PENDING" (:status %))
+                                    review-groups)
+                              (= "PENDING" review-status)))
              [:section {:id "session-event-stream"
                         :class "max-h-[700px]"}
               (if (= (:status @session-details) :loading)
@@ -555,6 +580,26 @@
            ;; action buttons section
            (when can-review?
              [:> Flex {:justify "end" :gap "2"}
+              ;; Time window message when pending approvals remain
+              (when (and (not ready?)
+                         (= (:verb session) "exec")
+                         (get-in session [:review :time_window :configuration :start_time])
+                         (get-in session [:review :time_window :configuration :end_time]))
+                (let [start-time-utc (get-in session [:review :time_window :configuration :start_time])
+                      end-time-utc (get-in session [:review :time_window :configuration :end_time])
+                      start-time (formatters/utc-time->display-time start-time-utc)
+                      end-time (formatters/utc-time->display-time end-time-utc)]
+                  [:> Flex {:align "center" :justify "end" :gap "2"}
+                   [:> CalendarClock {:size 16 :class "text-gray-11"}]
+                   [:> Text {:size "2" :class "text-gray-11"}
+                    "This session is set to be executed from "
+                    [:> Text {:size "2" :weight "medium" :class "text-gray-11"}
+                     start-time]
+                    " to "
+                    [:> Text {:size "2" :weight "medium" :class "text-gray-11"}
+                     end-time]
+                    "."]]))
+
               [:> Button {:color "red" :size "2" :variant "soft" :on-click handle-reject}
                "Reject"]
 
@@ -565,14 +610,24 @@
                  "Approve"
                  [:> ChevronDown {:size 16}]]]
                [:> DropdownMenu.Content
-                [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
-                                       :on-click open-time-window-modal}
-                 "Approve in a Time Window"
-                 [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                (when-not
+                 (and (get-in session [:review :time_window :configuration :start_time])
+                      (get-in session [:review :time_window :configuration :end_time]))
+                  [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                                         :on-click open-time-window-modal}
+                   "Approve in a Time Window"
+                   [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]])
                 [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
                                        :on-click handle-approve}
                  "Approve"
-                 [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]]]])
+                 [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                (when can-force-approve?
+                  [:<>
+                   [:> DropdownMenu.Separator]
+                   [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                                          :on-click handle-force-approve}
+                    "Force Approve"
+                    [:> CheckCheck {:size 16 :class "text-gray-10 group-hover:text-white"}]]])]]])
 
            ;; execution schedule information (time window)
            (when (and ready?

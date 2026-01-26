@@ -258,6 +258,16 @@
    (assoc-in db [:connection-setup :config :review-groups] groups)))
 
 (rf/reg-event-db
+ :connection-setup/set-min-review-approvals
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :config :min-review-approvals] value)))
+
+(rf/reg-event-db
+ :connection-setup/set-force-approve-groups
+ (fn [db [_ groups]]
+   (assoc-in db [:connection-setup :config :force-approve-groups] groups)))
+
+(rf/reg-event-db
  :connection-setup/set-data-masking-types
  (fn [db [_ types]]
    (assoc-in db [:connection-setup :config :data-masking-types] types)))

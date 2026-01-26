@@ -59,13 +59,14 @@
                          (when-not not-margin-bottom? " mb-regular")
                          (when full-width? " w-full")
                          (when hidden " hidden"))}
-       [:div {:class "flex items-center gap-2"}
-        (when label
-          (if dark
-            [form-label-dark label]
-            [form-label label]))
-        (when (not (cs/blank? helper-text))
-          [form-helper-text helper-text dark])]
+       (when (or label (not (cs/blank? helper-text)))
+         [:div {:class "flex items-center mb-1 gap-2"}
+          (when label
+            (if dark
+              [form-label-dark label]
+              [form-label label]))
+          (when (not (cs/blank? helper-text))
+            [form-helper-text helper-text dark])])
 
        [:div {:class (str "rt-TextFieldRoot rt-variant-surface "
                           (case size
