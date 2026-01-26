@@ -185,7 +185,7 @@
 
         secret (clj->js
                 (merge
-                 (helpers/config->json all-env-vars "envvar:")
+                 (helpers/config->json all-env-vars "envvar:" connection-subtype)
                  (when (seq config-files)
                    (helpers/config->json config-files "filesystem:"))))
 
