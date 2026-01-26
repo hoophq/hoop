@@ -215,7 +215,9 @@ func Load() error {
 		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
-		forceUrlTokenExchange:           os.Getenv("URL_TOKEN_EXCHANGE") == "force",
+		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
+		// This will be removed in future versions
+		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
 	}
 	return nil
 }
