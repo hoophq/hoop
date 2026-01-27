@@ -8,6 +8,7 @@
    [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
+   [webapp.connections.native-client-access.constants :as constants]
    [webapp.routes :as routes]))
 
 (defn toggle-section
@@ -105,12 +106,8 @@
                                       :default-value @force-approve-groups
                                       :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]
 
-                                    (let [time-range-options [{"value" 15 "label" "15 minutes"}
-                                                              {"value" 30 "label" "30 minutes"}
-                                                              {"value" 60 "label" "1 hora"}
-                                                              {"value" 120 "label" "2 horas"}
-                                                              {"value" 240 "label" "4 horas"}
-                                                              {"value" 480 "label" "8 horas"}]
+                                    (let [time-range-options (mapv #(into {} {"value" (:value %) "label" (:text %)})
+                                                                   constants/access-duration-options)
                                           selected-option (when @access-max-duration
                                                             (if (map? @access-max-duration)
                                                               @access-max-duration
