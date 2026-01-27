@@ -2,6 +2,7 @@ package apigdatamasking
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +27,20 @@ func getLicenseType(ctx *storagev2.Context) string {
 	}
 
 	return licenseType
+}
+
+func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
+	if len(req.SupportedEntityTypes) > 1 || len(req.SupportedEntityTypes[0].EntityTypes) > 1 {
+		return fmt.Errorf("supported entity types are limited to 1 rule in OSS version")
+	}
+
+	if len(req.CustomEntityTypesEntrys) > 1 ||
+		len(req.CustomEntityTypesEntrys[0].DenyList) > 1 ||
+		(len(req.CustomEntityTypesEntrys[0].Regex) > 0 && len(req.CustomEntityTypesEntrys[0].DenyList) > 0) {
+		return fmt.Errorf("custom entity types are limited to 1 rule in OSS version")
+	}
+
+	return nil
 }
 
 // CreateDataMaskingRule
@@ -60,15 +75,8 @@ func Post(c *gin.Context) {
 			return
 		}
 
-		if len(req.SupportedEntityTypes) > 1 || len(req.SupportedEntityTypes[0].EntityTypes) > 1 {
-			c.JSON(http.StatusForbidden, gin.H{"message": "supported entity types are limited to 1 rule in OSS version"})
-			return
-		}
-
-		if len(req.CustomEntityTypesEntrys) > 1 ||
-			len(req.CustomEntityTypesEntrys[0].DenyList) > 1 ||
-			(len(req.CustomEntityTypesEntrys[0].Regex) > 0 && len(req.CustomEntityTypesEntrys[0].DenyList) > 0) {
-			c.JSON(http.StatusForbidden, gin.H{"message": "custom entity types are limited to 1 rule in OSS version"})
+		if err := validateOssRulesLimitations(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
 			return
 		}
 	}
@@ -135,15 +143,8 @@ func Put(c *gin.Context) {
 
 	licenseType := getLicenseType(ctx)
 	if licenseType == license.OSSType {
-		if len(req.SupportedEntityTypes) > 1 || len(req.SupportedEntityTypes[0].EntityTypes) > 1 {
-			c.JSON(http.StatusForbidden, gin.H{"message": "supported entity types are limited to 1 rule in OSS version"})
-			return
-		}
-
-		if len(req.CustomEntityTypesEntrys) > 1 ||
-			len(req.CustomEntityTypesEntrys[0].DenyList) > 1 ||
-			(len(req.CustomEntityTypesEntrys[0].Regex) > 0 && len(req.CustomEntityTypesEntrys[0].DenyList) > 0) {
-			c.JSON(http.StatusForbidden, gin.H{"message": "custom entity types are limited to 1 rule in OSS version"})
+		if err := validateOssRulesLimitations(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
 			return
 		}
 	}
