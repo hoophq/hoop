@@ -113,15 +113,22 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	a.connStore.Set(clientConnectionIDKey, httpProxy)
 }
 
-// isGuardrailsError checks if the error is a guardrails validation failure
+// isGuardrailsError checks if the error is a guardrails validation failure.
+//
+// Note: This uses string matching because the error originates from libhoop
+// (a separate Go module) and the agent cannot import libhoop's typed errors.
+// The error message format is defined in libhoop/redactor/mspresidio/client.go.
+//
+// When modifying the guardrails error message format in mspresidio/client.go,
+// ensure this function is updated accordingly.
 func isGuardrailsError(err error) bool {
 	if err == nil {
 		return false
 	}
 	errStr := err.Error()
-	return strings.Contains(errStr, "Guardrails") ||
-		strings.Contains(errStr, "guardrails validation error") ||
-		strings.Contains(errStr, "Blocked by the following Hoop Guardrails Rules")
+	// Check for the standard guardrails error message format from mspresidio/client.go:
+	// "Blocked by the following Hoop Guardrails Rules: <rule_names>"
+	return strings.Contains(errStr, "Blocked by the following Hoop Guardrails Rules")
 }
 
 // isWebSocketModeError checks if the error is the special ErrWebSocketMode
