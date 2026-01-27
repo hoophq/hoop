@@ -123,19 +123,29 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
-// SessionCloser interface allows sending SessionClose packets through a stream
+// SessionCloser interface allows sending SessionClose packets through a stream.
+//
+// This interface is specifically designed for use in the libhoop/agent/httpproxy package
+// when WebSocket guardrails validation fails. Since libhoop is a separate Go module and
+// cannot import common/proto directly, the httpproxy proxy uses an anonymous interface
+// type assertion to call SendSessionClose when needed.
+//
+// For HTTP (non-WebSocket) errors, the agent controller handles sending SessionClose
+// directly via Agent.sendClientSessionClose() instead.
+//
+// Usage: When a guardrails violation is detected during WebSocket communication,
+// the proxy calls p.sendSessionClose(errMsg) which type-asserts the clientW to this
+// interface and sends the error message to be recorded in audit logs.
 type SessionCloser interface {
 	SendSessionClose(errMsg string) error
 }
 
-// SendSessionClose sends a SessionClose packet with the given error message
-// This is used to close a session with a specific error (e.g., guardrails violation)
 func (s *streamWriter) SendSessionClose(errMsg string) error {
 	if s.client == nil {
 		return fmt.Errorf("stream writer client is empty")
 	}
 
-	exitCode := "0"
+	exitCode := "0" // success exist code (session closed normally)
 	if errMsg != "" {
 		exitCode = "1" // non-zero exit code indicates error
 	}
