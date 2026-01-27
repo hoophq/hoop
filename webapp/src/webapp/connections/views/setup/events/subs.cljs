@@ -144,6 +144,12 @@
  (fn [config]
    (get-in config [:data-masking-types] [])))
 
+(rf/reg-sub
+ :connection-setup/access-max-duration
+ :<- [:connection-setup/config]
+ (fn [config]
+   (get-in config [:access-max-duration])))
+
 ;; Network specific
 (rf/reg-sub
  :connection-setup/network-type

@@ -46,6 +46,7 @@
         review-groups (rf/subscribe [:connection-setup/review-groups])
         min-review-approvals (rf/subscribe [:connection-setup/min-review-approvals])
         force-approve-groups (rf/subscribe [:connection-setup/force-approve-groups])
+        access-max-duration (rf/subscribe [:connection-setup/access-max-duration])
         data-masking? (rf/subscribe [:connection-setup/data-masking])
         data-masking-types (rf/subscribe [:connection-setup/data-masking-types])]
 
@@ -102,7 +103,28 @@
                                       :id "force-approve-groups-input"
                                       :name "force-approve-groups-input"
                                       :default-value @force-approve-groups
-                                      :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]])
+                                      :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]
+
+                                    (let [time-range-options [{"value" 15 "label" "15 minutes"}
+                                                              {"value" 30 "label" "30 minutes"}
+                                                              {"value" 60 "label" "1 hora"}
+                                                              {"value" 120 "label" "2 horas"}
+                                                              {"value" 240 "label" "4 horas"}
+                                                              {"value" 480 "label" "8 horas"}]
+                                          selected-option (when @access-max-duration
+                                                            (if (map? @access-max-duration)
+                                                              @access-max-duration
+                                                              (first (filter #(= (get % "value") @access-max-duration) time-range-options))))]
+                                      [multi-select/single
+                                       {:options time-range-options
+                                        :label "Time Range"
+                                        :id "access-max-duration-input"
+                                        :name "access-max-duration-input"
+                                        :default-value selected-option
+                                        :clearable? true
+                                        :on-change #(let [selected (js->clj %)]
+                                                      (rf/dispatch [:connection-setup/set-access-max-duration
+                                                                    (when selected (get selected "value"))]))}])])
            :learning-component
            [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
                      :target "_blank"}
