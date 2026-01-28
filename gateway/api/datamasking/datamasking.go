@@ -1,17 +1,47 @@
 package apigdatamasking
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
+
+func getLicenseType(ctx *storagev2.Context) string {
+	licenseType := license.OSSType
+	if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
+		var l license.License
+		err := json.Unmarshal(*ctx.OrgLicenseData, &l)
+		if err == nil {
+			licenseType = l.Payload.Type
+		}
+	}
+
+	return licenseType
+}
+
+func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
+	if len(req.SupportedEntityTypes) > 1 || len(req.SupportedEntityTypes[0].EntityTypes) > 1 {
+		return fmt.Errorf("supported entity types are limited to 1 rule in OSS version")
+	}
+
+	if len(req.CustomEntityTypesEntrys) > 1 ||
+		len(req.CustomEntityTypesEntrys[0].DenyList) > 1 ||
+		(len(req.CustomEntityTypesEntrys[0].Regex) > 0 && len(req.CustomEntityTypesEntrys[0].DenyList) > 0) {
+		return fmt.Errorf("custom entity types are limited to 1 rule in OSS version")
+	}
+
+	return nil
+}
 
 // CreateDataMaskingRule
 //
@@ -29,6 +59,26 @@ func Post(c *gin.Context) {
 	req := parseRequestPayload(c)
 	if req == nil {
 		return
+	}
+
+	licenseType := getLicenseType(ctx)
+	if licenseType == license.OSSType {
+		rules, err := models.ListDataMaskingRules(ctx.GetOrgID())
+		if err != nil {
+			log.Errorf("failed listing data masking rules, reason=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+
+		if len(rules) >= 1 {
+			c.JSON(http.StatusForbidden, gin.H{"message": "data masking rules are limited to 1 rule in OSS version"})
+			return
+		}
+
+		if err := validateOssRulesLimitations(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	supportedEntityTypes := []models.SupportedEntityTypesEntry{}
@@ -89,6 +139,14 @@ func Put(c *gin.Context) {
 	req := parseRequestPayload(c)
 	if req == nil {
 		return
+	}
+
+	licenseType := getLicenseType(ctx)
+	if licenseType == license.OSSType {
+		if err := validateOssRulesLimitations(req); err != nil {
+			c.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	supportedEntityTypes := []models.SupportedEntityTypesEntry{}
