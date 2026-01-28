@@ -101,14 +101,14 @@
       nil)))
 
 (defn main [{:keys [state
-                   select-state
-                   on-rule-field-change
-                   on-rule-select
-                   on-toggle-rules-select
-                   on-toggle-all-rules
-                   on-rules-delete
-                   on-rule-add
-                   free-license?]}]
+                    select-state
+                    on-rule-field-change
+                    on-rule-select
+                    on-toggle-rules-select
+                    on-toggle-all-rules
+                    on-rules-delete
+                    on-rule-add
+                    free-license?]}]
   [:> Box {:class "space-y-radix-5"}
    [:> Box
     [:> Table.Root {:size "2" :variant "surface"}
