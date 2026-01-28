@@ -1,6 +1,7 @@
 (ns webapp.ai-data-masking.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link Text]]
+   ["lucide-react" :refer [AlertCircle]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
@@ -10,7 +11,8 @@
 (defn main []
   (let [ai-data-masking-list (rf/subscribe [:ai-data-masking->list])
         min-loading-done (r/atom false)
-        gateway-info (rf/subscribe [:gateway->info])]
+        gateway-info (rf/subscribe [:gateway->info])
+        user (rf/subscribe [:users->current-user])]
     (rf/dispatch [:ai-data-masking->get-all])
     (rf/dispatch [:connections->get-connections])
 
@@ -20,14 +22,17 @@
     (fn []
       (let [loading? (or (= :loading (:status @ai-data-masking-list))
                          (not @min-loading-done))
-            redact-provider (-> @gateway-info :data :redact_provider)]
+            redact-provider (-> @gateway-info :data :redact_provider)
+            free-license? (-> @user :data :free-license?)
+            rules (:data @ai-data-masking-list)
+            limit-reached? (and free-license? (>= (count rules) 1))]
         (cond
           loading?
           [:> Flex {:height "100%" :direction "column" :gap "5"
                     :class "bg-gray-1" :align "center" :justify "center"}
            [loaders/simple-loader]]
 
-          (empty? (:data @ai-data-masking-list))
+          (empty? rules)
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/ai-data-masking-promotion {:mode :empty-state
                                                  :redact-provider redact-provider}]]
@@ -44,9 +49,24 @@
 
              [:> Button {:size "3"
                          :variant "solid"
+                         :disabled limit-reached?
                          :on-click #(rf/dispatch [:navigate :create-ai-data-masking])}
               "Create new"]]]
 
+           (when limit-reached?
+             [:> Callout.Root {:color "red" :class "mb-5"}
+              [:> Callout.Icon
+               [:> AlertCircle {:size 16}]]
+              [:> Callout.Text
+               "Your organization has reached AI Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected. "
+               [:> Link {:href "#"
+                         :class "font-medium"
+                         :color "red"
+                         :on-click (fn [e]
+                                     (.preventDefault e)
+                                     (promotion/request-demo))}
+                "Contact our Sales team \u2197"]]])
+
            [rule-list/main
-            {:rules (:data @ai-data-masking-list)
+            {:rules rules
              :on-configure #(rf/dispatch [:navigate :edit-ai-data-masking {} :ai-data-masking-id %])}]])))))

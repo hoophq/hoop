@@ -8,11 +8,13 @@
                     select-state
                     selected?
                     on-toggle-all
-                    on-rules-delete]}]
+                    on-rules-delete
+                    add-disabled?]}]
   [:> Flex {:align "center" :gap "2"}
    [:> Button {:size "2"
                :type "button"
                :variant "soft"
+               :disabled add-disabled?
                :on-click on-rule-add}
     [:> Plus {:size 14}]
     "New"]

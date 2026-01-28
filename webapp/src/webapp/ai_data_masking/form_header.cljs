@@ -1,13 +1,17 @@
 (ns webapp.ai-data-masking.form-header
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Heading]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link]]
+   ["lucide-react" :refer [Info]]
    [re-frame.core :as rf]
-   [webapp.components.button :as button]))
+   [webapp.components.button :as button]
+   [webapp.features.promotion :as promotion]))
 
 (defn main [{:keys [form-type id scroll-pos loading?]}]
-  (let [form-title (if (= :edit form-type)
+  (let [user (rf/subscribe [:users->current-user])
+        form-title (if (= :edit form-type)
                      "Edit AI Data Masking rule"
-                     "Create new AI Data Masking rule")]
+                     "Create new AI Data Masking rule")
+        free-license? (-> @user :data :free-license?)]
     [:<>
      [:> Flex {:p "5" :gap "2"}
       [button/HeaderBack]]
@@ -41,4 +45,18 @@
                     :form "ai-data-masking-form"
                     :disabled loading?
                     :loading loading?}
-         "Save"]]]]]))
+         "Save"]]]]
+
+     (when free-license?
+       [:> Callout.Root {:size "1" :color "blue" :class "mx-7 mt-4" :highContrast true}
+        [:> Callout.Icon
+         [:> Info {:size 16}]]
+        [:> Callout.Text
+         "Organizations with Free plan have limited data protection. Upgrade to Enterprise to have unlimited access to AI Data Masking. "
+         [:> Link {:href "#"
+                   :class "font-medium"
+                   :style {:color "var(--blue-12)"}
+                   :on-click (fn [e]
+                               (.preventDefault e)
+                               (promotion/request-demo))}
+          "Contact our Sales team \u2197"]]])]))
