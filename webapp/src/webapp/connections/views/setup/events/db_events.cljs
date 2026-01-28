@@ -272,6 +272,11 @@
  (fn [db [_ types]]
    (assoc-in db [:connection-setup :config :data-masking-types] types)))
 
+(rf/reg-event-db
+ :connection-setup/set-access-max-duration
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :config :access-max-duration] value)))
+
 ;; Environment Variables management
 (rf/reg-event-db
  :connection-setup/add-env-row

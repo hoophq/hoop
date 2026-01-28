@@ -62,7 +62,7 @@
             :on-click (fn []
                         (let [template (filter-template-selected filename repository)]
                           (rf/dispatch [:runbooks/set-active-runbook template repository])))}
-   [:> Flex {:class (str "w-fit gap-2 items-center py-1.5 px-2" (when selected?  " bg-[--indigo-a3] rounded-2"))}
+   [:> Flex {:class (str "w-fit gap-2 items-center py-1.5" (when selected?  " bg-[--indigo-a3] rounded-2"))}
     [:> File {:size 16
               :class "text-[--gray-11]"}]
     [:> Text {:size "2" :weight "medium" :class "flex items-center block truncate"}
@@ -78,7 +78,7 @@
             selected-name (get-in @selected-template [:data :name])
             selected-repo (get-in @selected-template [:data :repository])
             is-selected? (and (= selected-name current-path)
-                             (= selected-repo repository))
+                              (= selected-repo repository))
             ;; Make dropdown key unique per repository to avoid conflicts
             dropdown-key (str (hash repository) "-" name)]
 
@@ -147,7 +147,7 @@
                 (let [selected-name (get-in @selected-template [:data :name])
                       selected-repo (get-in @selected-template [:data :repository])
                       is-selected? (and (= selected-name item)
-                                       (= selected-repo repository))]
+                                        (= selected-repo repository))]
                   [file item filter-template-selected (inc level) is-selected? repository])))]])))))
 
 (defn directory-tree [tree filter-template-selected repository]
@@ -248,13 +248,13 @@
             ;; Transform items for tree view
             display-items (if (seq @search-term)
                             (filter (fn [item]
-                                     (cs/includes?
-                                      (cs/lower-case (:name item))
-                                      (cs/lower-case @search-term)))
-                                   items)
+                                      (cs/includes?
+                                       (cs/lower-case (:name item))
+                                       (cs/lower-case @search-term)))
+                                    items)
                             items)
             transformed-payload (when (seq display-items)
-                                (sort-tree (transform-payload display-items)))]
+                                  (sort-tree (transform-payload display-items)))]
 
         (when has-items?
           (let [display-repo-name (extract-repo-name repo-name)]
@@ -302,22 +302,22 @@
 
           ;; Group filtered results by repository for proper display
           filtered-repositories (when (and has-search? (seq filtered-data))
-                                 (let [filtered-by-repo (group-by :repository filtered-data)]
-                                   (map (fn [[repo-name filtered-items]]
-                                          {:repository repo-name
-                                           :items filtered-items})
-                                        filtered-by-repo)))]
+                                  (let [filtered-by-repo (group-by :repository filtered-data)]
+                                    (map (fn [[repo-name filtered-items]]
+                                           {:repository repo-name
+                                            :items filtered-items})
+                                         filtered-by-repo)))]
 
       (cond
         (= :loading (:status @templates)) [loading-list-view]
         (= :error (:status @templates)) [no-integration-templates-view]
         (and (empty? repositories) (= :success (:status @templates))) [empty-templates-view]
         (empty? repositories) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
-                              [:> Text {:size "1" :class "text-gray-8"}
-                               "No repositories available."]]
+                               [:> Text {:size "1" :class "text-gray-8"}
+                                "No repositories available."]]
         (not has-search?) [repositories-view repositories filter-template-selected]
         (and has-search? (empty? filtered-data)) [:> Flex {:class "pt-2 text-center flex-col justify-center items-center" :gap "4"}
-                                                   [:> Text {:size "1" :class "text-gray-8"}
-                                                    (str "No runbooks matching \"" @search-term "\".")]]
+                                                  [:> Text {:size "1" :class "text-gray-8"}
+                                                   (str "No runbooks matching \"" @search-term "\".")]]
         (and has-search? (seq filtered-repositories)) [repositories-view filtered-repositories filter-template-selected]
         :else [empty-templates-view]))))
