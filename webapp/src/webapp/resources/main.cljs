@@ -21,19 +21,20 @@
    [:> Box {:class "flex flex-col flex-1 h-full items-center justify-center"}
 
     [:> Flex {:direction "column" :gap "6" :align "center"}
-     [:> Rotate3D {:size 48
-                   :class "text-gray-11"}]
+     [:> Box {:class "w-80"}
+      [:img {:src "/images/illustrations/empty-state.png"
+             :alt "Empty state illustration"}]]
 
      [:> Text {:size "3" :class "text-gray-11 text-center"}
       (if is-admin?
         "Get started by setting up your environment resources in your Organization"
-        "No resources available yet. Browse the catalog to see what resources you can access")]
+        "Discover the resources your organization can connect to securely through Hoop")]
 
      [:> Button {:size "3"
                  :onClick #(rf/dispatch [:navigate :resource-catalog])}
       (if is-admin?
         "Setup new Resource"
-        "See the resources catalog")]]]
+        "Explore Resource Catalog")]]]
 
    [:> Flex {:align "center" :justify "center"}
     [:> Text {:size "2" :class "text-gray-11 mr-1"}
@@ -308,10 +309,13 @@
          ^{:key "infinite-scroll-children"}
          [:> Box {:height "100%"}
           ;; Add button (admin only)
-          (when (-> @user :data :admin?)
+
+          (when-not (empty? resources-data)
             [:> Box {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
              [:> Button {:on-click #(rf/dispatch [:navigate :resource-catalog])}
-              "Setup new Resource"]])
+              (if (-> @user :data :admin?)
+                "Setup new Resource"
+                "Explore Resource Catalog")]])
 
           ;; Tab Header and Filters in SAME ROW
           [:> Flex {:justify "between" :align "center" :class "mb-4"}
