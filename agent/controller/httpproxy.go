@@ -53,6 +53,10 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 	if connParams.GuardRailRules != nil {
 		guardRailRules = string(connParams.GuardRailRules)
 	}
+	var dataMaskingEntityTypesData string
+	if connParams.DataMaskingEntityTypesData != nil {
+		dataMaskingEntityTypesData = string(connParams.DataMaskingEntityTypesData)
+	}
 	connenv.httpProxyHeaders["remote_url"] = connenv.httpProxyRemoteURL
 	connenv.httpProxyHeaders["connection_id"] = clientConnectionID
 	connenv.httpProxyHeaders["sid"] = sessionID
@@ -61,9 +65,11 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 
 	connenv.httpProxyHeaders["dlp_provider"] = connParams.DlpProvider
 	connenv.httpProxyHeaders["dlp_mode"] = connParams.DlpMode
+	connenv.httpProxyHeaders["dlp_masking_character"] = "#"
 	connenv.httpProxyHeaders["mspresidio_anonymizer_url"] = connParams.DlpPresidioAnonymizerURL
 	connenv.httpProxyHeaders["mspresidio_analyzer_url"] = connParams.DlpPresidioAnalyzerURL
 	connenv.httpProxyHeaders["guard_rail_rules"] = guardRailRules
+	connenv.httpProxyHeaders["data_masking_entity_data"] = dataMaskingEntityTypesData
 
 	// add default values for kubernetes type
 	if connParams.ConnectionType == pb.ConnectionTypeKubernetes.String() {
