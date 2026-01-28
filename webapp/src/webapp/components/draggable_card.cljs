@@ -20,16 +20,15 @@
    {:display-name (str "draggable-card-" connection-name)
     :component-did-mount
     (fn []
-      (let [selector (str ".draggable-" connection-name)]
+      (let [selector (str "[data-draggable-id='" connection-name "']")]
         (.create Draggable selector)))
 
     :reagent-render
     (fn [connection-name {:keys [component on-click-expand status]} _index _total]
       (if (= status :open)
         (let [position (calculate-card-position index total)]
-          [:div {:class (str "draggable-" connection-name
-                             " bg-white shadow-lg absolute z-50 rounded-5 "
-                             "border border-gray-200 overflow-auto p-radix-4 space-y-radix-4")
+          [:div {:data-draggable-id connection-name
+                 :class "bg-white shadow-lg absolute z-50 rounded-5 border border-gray-200 overflow-auto p-radix-4 space-y-radix-4"
                  :style {:bottom (str (:bottom position) "px")
                          :left (str (:left position) "px")}}
            (when on-click-expand
@@ -40,7 +39,7 @@
               [:> Expand {:size 16}]])
 
            component])
-        [:div {:class (str "draggable-" connection-name)}]))}))
+        [:div {:data-draggable-id connection-name}]))}))
 
 (defn main
   "Render multiple draggable cards"
