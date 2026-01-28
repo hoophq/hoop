@@ -11,6 +11,7 @@
 
 (defn main []
   (let [connections-metadata (rf/subscribe [:connections->metadata])
+        user (rf/subscribe [:users->current-user])
         search-term (r/atom "")
         selected-categories (r/atom #{})
         selected-tags (r/atom #{})
@@ -19,6 +20,9 @@
 
     (when (nil? @connections-metadata)
       (rf/dispatch [:connections->load-metadata]))
+
+    (when (empty? (:data @user))
+      (rf/dispatch [:users->get-user]))
 
     (fn []
       (if-not @connections-metadata
@@ -93,4 +97,5 @@
                    (reset! modal-open? true))])]]]
 
            [connection-detail-modal/main @selected-connection @modal-open?
-            #(reset! modal-open? false)]])))))
+            #(reset! modal-open? false)
+            (-> @user :data :admin?)]])))))

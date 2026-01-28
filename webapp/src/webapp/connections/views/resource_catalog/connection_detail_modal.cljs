@@ -76,11 +76,11 @@
               "Execute securely git-based predefined scripts in your resources."]]]]])
 
        (when
-         ;; Show CLI only if native access is not available
-         ;; for that Resource because of the decomissioning
-         ;; of our CLI for native access.
-         (and (not (:native access-methods))
-              (:cli access-methods))
+        ;; Show CLI only if native access is not available
+        ;; for that Resource because of the decomissioning
+        ;; of our CLI for native access.
+        (and (not (:native access-methods))
+             (:cli access-methods))
          [:> Card {:size "1"}
           [:> Flex {:direction "column" :gap "3"}
            [:> Flex {:align "center" :gap "2"}
@@ -121,7 +121,7 @@
             {:size "2" :class "text-gray-11"}
             {:size "2" :target "_blank" :class "text-blue-11"}]]])]])])
 
-(defn main [connection open? on-close]
+(defn main [connection open? on-close is-admin?]
   (when connection
     (let [{:keys [name description overview setupGuide]} connection
           badge (helpers/get-connection-badge connection)]
@@ -156,9 +156,10 @@
            [:> Button {:variant "soft"
                        :size "3"}
             "View Docs"]]
-          [:> Button {:variant "solid" :size "3"
-                      :on-click #(navigate-to-setup connection)}
-           "Continue Setup"]]]
+          (when is-admin?
+            [:> Button {:variant "solid" :size "3"
+                        :on-click #(navigate-to-setup connection)}
+             "Continue Setup"])]]
 
         [:> Tabs.Root {:default-value "overview" :class "w-full"}
          [:> Tabs.List {:class "border-b border-gray-200 mb-6"}
