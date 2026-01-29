@@ -121,6 +121,8 @@ func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
 	switch conn.SubType.String {
 	case "grafana", "kibana", "kubernetes-token":
 		return proto.ConnectionTypeHttpProxy
+	case "git", "github":
+		return proto.ConnectionTypeSSH
 	default:
 		return proto.ConnectionType(conn.SubType.String)
 	}

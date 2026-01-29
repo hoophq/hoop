@@ -20,7 +20,9 @@
 ;; Create a new connection
 (defn get-api-connection-type [ui-type subtype]
   (cond
-    (= subtype "ssh") "application"
+    (or (= subtype "ssh")
+        (= subtype "git")
+        (= subtype "github")) "application"
     :else (case ui-type
             "network" "application"
             "server" "custom"
@@ -163,7 +165,9 @@
                              processed-headers (process-http-headers headers connection-method secrets-provider)]
                          (concat http-env-vars processed-headers))
 
-                       (= connection-subtype "ssh")
+                       (or (= connection-subtype "ssh")
+                           (= connection-subtype "git")
+                           (= connection-subtype "github"))
                        (let [ssh-credentials (get-in db [:connection-setup :ssh-credentials])
                              host-value (get ssh-credentials "host")
                              port-value (get ssh-credentials "port")
@@ -388,7 +392,9 @@
                                     is-http-proxy-subtype?)
                            (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
-                                   (= connection-subtype "ssh"))
+                                   (or (= connection-subtype "ssh")
+                                       (= connection-subtype "git")
+                                       (= connection-subtype "github")))
                           (extract-ssh-credentials credentials))
         kubernetes-token (when (and (= connection-type "custom")
                                     (= connection-subtype "kubernetes-token"))

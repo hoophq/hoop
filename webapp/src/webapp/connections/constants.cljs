@@ -75,6 +75,7 @@
    :googlecloud (str config/webapp-url "/icons/connections/googlecloud-rounded.svg")
    :helm (str config/webapp-url "/icons/connections/helm-rounded.svg")
    :git (str config/webapp-url "/icons/connections/git-rounded.svg")
+   :github (str config/webapp-url "/icons/connections/github.svg")
    :sentry (str config/webapp-url "/icons/connections/sentry-rounded.svg")
    :django (str config/webapp-url "/icons/connections/django-rounded.svg")
    :elixir (str config/webapp-url "/icons/connections/elixir-rounded.svg")
@@ -123,6 +124,7 @@
    :googlecloud (str config/webapp-url "/icons/connections/googlecloud-default.svg")
    :helm (str config/webapp-url "/icons/connections/helm-default.svg")
    :git (str config/webapp-url "/icons/connections/git-default.svg")
+   :github (str config/webapp-url "/icons/connections/github.svg")
    :sentry (str config/webapp-url "/icons/connections/sentry-default.svg")
    :django (str config/webapp-url "/icons/connections/django-default.svg")
    :elixir (str config/webapp-url "/icons/connections/elixir-default.svg")
@@ -149,6 +151,7 @@
    "docker-compose" :docker
    "gcloud" :googlecloud
    "git" :git
+   "github" :github
    "helm" :helm
    "kubectl" :kubernetes
    "mongosh" :mongodb

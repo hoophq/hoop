@@ -64,9 +64,12 @@
                               (let [connection-type (:type connection-data)
                                     connection-subtype (:subtype connection-data)
                                     form-id (cond
-                                              (and (= connection-type "application")
-                                                   (= connection-subtype "ssh")) "ssh-credentials-form"
-                                              :else "credentials-form")
+                                             (and (= connection-type "application")
+                                                  (or (= connection-subtype "ssh")
+                                                      (= connection-subtype "git")
+                                                      (= connection-subtype "github")))
+                                             "ssh-credentials-form"
+                                             :else "credentials-form")
                                     form (.getElementById js/document form-id)]
                                 (when form
                                   (.reportValidity form)
@@ -85,7 +88,9 @@
                                                         (contains? http-proxy-subtypes connection-subtype))))
                                           "metadata-credentials-form"
                                           (and (= connection-type "application")
-                                               (= connection-subtype "ssh")) "ssh-credentials-form"
+                                               (or (= connection-subtype "ssh")
+                                                   (= connection-subtype "git")
+                                                   (= connection-subtype "github"))) "ssh-credentials-form"
                                           :else "credentials-form")
                                 form (.getElementById js/document form-id)
                                 current-env-key @env-current-key
@@ -101,7 +106,9 @@
 
                             (when @credentials-valid?
                               (when (and (= connection-type "application")
-                                         (= connection-subtype "ssh"))
+                                         (or (= connection-subtype "ssh")
+                                             (= connection-subtype "git")
+                                             (= connection-subtype "github")))
                                 (let [auth-method @ssh-auth-method]
                                   (case auth-method
                                     "password"
@@ -209,7 +216,9 @@
                                                     (contains? http-proxy-subtypes subtype))))
                                     [metadata-driven/credentials-step subtype :update]
                                     [server/credentials-step :update]))
-                       "application" (if (= (:subtype (:data @connection)) "ssh")
+                       "application" (if (or (= (:subtype (:data @connection)) "ssh")
+                                             (= (:subtype (:data @connection)) "git")
+                                             (= (:subtype (:data @connection)) "github"))
                                        [server/ssh-credentials]
                                        [network/credentials-form
                                         {:connection-type (:subtype (:data @connection))}])

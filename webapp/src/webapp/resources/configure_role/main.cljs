@@ -32,7 +32,9 @@
 
     ;; SSH connections
     (and (= connection-type "application")
-         (= connection-subtype "ssh"))
+         (or (= connection-subtype "ssh")
+             (= connection-subtype "git")
+             (= connection-subtype "github")))
     "ssh-credentials-form"
 
     ;; Default
@@ -98,7 +100,10 @@
 
                               (if (.checkValidity form)
                                 (do
-                                  (when (and (= type "application") (= subtype "ssh"))
+                                  (when (and (= type "application")
+                                             (or (= subtype "ssh")
+                                                 (= subtype "git")
+                                                 (= subtype "github")))
                                     (let [auth-method @(rf/subscribe [:connection-setup/ssh-auth-method])]
                                       (case auth-method
                                         "password" (rf/dispatch [:connection-setup/update-ssh-credentials "authorized_server_keys" ""])

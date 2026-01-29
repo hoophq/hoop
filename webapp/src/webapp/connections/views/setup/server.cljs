@@ -26,6 +26,12 @@
    "ssh" {:icon (r/as-element [:> SquareTerminal {:size 18}])
           :title "Secure Shell Protocol (SSH)"
           :subtitle "Access and manage with terminal commands."}
+   "git" {:icon (r/as-element [:img {:src "/icons/connections/git-rounded.svg" :style {:width "24px" :height "24px"}}])
+          :title "Git"
+          :subtitle "Version control system access."}
+   "github" {:icon (r/as-element [:img {:src "/icons/connections/github.svg" :style {:width "24px" :height "24px"}}])
+             :title "GitHub"
+             :subtitle "Access GitHub repositories and resources."}
    "console" {:icon (r/as-element [:> Blocks {:size 18}])
               :title "Console"
               :subtitle "For Ruby on Rails, Python, Node JS and more."}})
@@ -61,7 +67,7 @@
    [:> Box {:class "space-y-8 max-w-[600px]"}
     [connection-method/main "custom"]
 
-    ;; Environment Variables Section 
+    ;; Environment Variables Section
     [configuration-inputs/environment-variables-section]
 
     ;; Configuration Files Section
@@ -140,7 +146,7 @@
     (cond
       (= type "textarea")
       [forms/textarea base-props]
-      
+
       :else
       [forms/input (assoc base-props
                           :start-adornment (when show-source-selector?
@@ -302,7 +308,9 @@
      (when (= connection-subtype "custom")
        [credentials-step])
 
-     (when (= connection-subtype "ssh")
+     (when (or (= connection-subtype "ssh")
+               (= connection-subtype "git")
+               (= connection-subtype "github"))
        [ssh-credentials])
 
      (when (= connection-subtype "kubernetes-token")
@@ -339,7 +347,9 @@
                                            (= connection-subtype "console")
                                            #(rf/dispatch [:connection-setup/next-step :installation])
 
-                                           (= connection-subtype "ssh")
+                                           (or (= connection-subtype "ssh")
+                                               (= connection-subtype "git")
+                                               (= connection-subtype "github"))
                                            #(rf/dispatch [:connection-setup/submit])
 
                                            :else
@@ -352,11 +362,15 @@
        :next-text (case current-step
                     :credentials (cond
                                    (= connection-subtype "console") "Next"
-                                   (= connection-subtype "ssh") "Next: Configuration"
+                                   (or (= connection-subtype "ssh")
+                                       (= connection-subtype "git")
+                                       (= connection-subtype "github")) "Next: Configuration"
                                    :else "Next: Configuration")
                     :additional-config (cond
                                          (= connection-subtype "console") "Next: Installation"
-                                         (= connection-subtype "ssh") "Confirm"
+                                         (or (= connection-subtype "ssh")
+                                             (= connection-subtype "git")
+                                             (= connection-subtype "github")) "Confirm"
                                          :else "Confirm")
                     :installation "Done"
                     "Next")
@@ -372,7 +386,9 @@
                                                  (cond
                                                    (= current-step :credentials)
                                                    (cond
-                                                     (= connection-subtype "ssh")
+                                                     (or (= connection-subtype "ssh")
+                                                         (= connection-subtype "git")
+                                                         (= connection-subtype "github"))
                                                      "ssh-credentials-form"
                                                      (= connection-subtype "kubernetes-token")
                                                      "kubernetes-token-form"
@@ -401,7 +417,9 @@
                                   (rf/dispatch [:connection-setup/initialize-state nil]))
                   (fn []
                     (let [form-id (cond
-                                    (= connection-subtype "ssh") "ssh-credentials-form"
+                                    (or (= connection-subtype "ssh")
+                                        (= connection-subtype "git")
+                                        (= connection-subtype "github")) "ssh-credentials-form"
                                     (= connection-subtype "kubernetes-token") "kubernetes-token-form"
                                     :else "credentials-form")
                           form (.getElementById js/document form-id)]
