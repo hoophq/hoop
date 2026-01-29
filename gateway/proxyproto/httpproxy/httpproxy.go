@@ -278,7 +278,10 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCredentials, error) {
 	dba, err := models.GetValidConnectionCredentialsBySecretKey(
-		pb.ConnectionTypeHttpProxy.String(),
+		[]string{
+			pb.ConnectionTypeHttpProxy.String(), pb.ConnectionTypeKubernetes.String(),
+			pb.ConnectionTypeCommandLine.String(),
+		},
 		secretKeyHash)
 
 	if err != nil {
@@ -411,7 +414,7 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	}
 
 	connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
-	if connectionType != pb.ConnectionTypeHttpProxy {
+	if connectionType != pb.ConnectionTypeHttpProxy && connectionType != pb.ConnectionTypeKubernetes {
 		session.cancelFn("unsupported connection type: %v", connectionType)
 		return nil, fmt.Errorf("unsupported connection type: %v", connectionType)
 	}
@@ -847,8 +850,13 @@ func (sess *httpProxySession) handleAgentResponses(server *HttpProxyServer, secr
 			}
 
 		case pbclient.SessionClose:
-			log.Infof("session closed by server, sid=%s", sess.sid)
-			sess.cancelFn("session closed by server")
+			// Extract the error message from payload if present
+			errMsg := "session closed by agent"
+			if len(pkt.Payload) > 0 {
+				errMsg = string(pkt.Payload)
+			}
+			log.Infof("session closed by agent, sid=%s, reason=%s", sess.sid, errMsg)
+			sess.cancelFn(errMsg)
 			return
 		// this is the case when the agent closes the connection
 		case pbclient.TCPConnectionClose:

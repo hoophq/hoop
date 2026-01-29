@@ -91,7 +91,7 @@
                          (concat all-credential-env-vars processed-headers))
                        (concat all-credential-env-vars processed-env-vars))
 
-        envvar-result (helpers/config->json all-env-vars "envvar:")
+        envvar-result (helpers/config->json all-env-vars "envvar:" subtype)
         filesystem-result (when (seq config-files)
                             (helpers/config->json config-files "filesystem:"))]
 

@@ -5,11 +5,8 @@
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.resources.constants :refer [http-proxy-subtypes]]
-   [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
-   [webapp.connections.views.setup.connection-method :as connection-method]
-   [webapp.connections.views.setup.headers :as headers]
-   [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 (defn metadata-credential-field
   [{:keys [key label value required placeholder type description
@@ -140,45 +137,3 @@
 
          [metadata-credentials connection-subtype form-type]
          [agent-selector/main]])]]))
-
-(defn main [form-type]
-  (let [connection-subtype @(rf/subscribe [:connection-setup/connection-subtype])
-        current-step @(rf/subscribe [:connection-setup/current-step])
-        agent-id @(rf/subscribe [:connection-setup/agent-id])]
-    [page-wrapper/main
-     {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-                 [headers/setup-header form-type]
-
-                 (case current-step
-                   :credentials [credentials-step connection-subtype form-type]
-                   :additional-config [additional-configuration/main
-                                       {:selected-type connection-subtype
-                                        :form-type form-type
-                                        :submit-fn #(rf/dispatch [:connection-setup/submit])}]
-                   nil)]
-
-      :footer-props {:form-type form-type
-                     :next-text (if (= current-step :additional-config)
-                                  "Confirm"
-                                  "Next")
-                     :on-click (fn []
-                                 (let [form (.getElementById js/document
-                                                             (if (= current-step :credentials)
-                                                               "metadata-credentials-form"
-                                                               "additional-config-form"))]
-                                   (.reportValidity form)))
-                     :next-disabled? (and (= current-step :credentials)
-                                          (not agent-id))
-                     :on-next (fn []
-                                (let [form (.getElementById js/document
-                                                            (if (= current-step :credentials)
-                                                              "metadata-credentials-form"
-                                                              "additional-config-form"))]
-                                  (when form
-                                    (let [is-valid (.reportValidity form)]
-                                      (if (and is-valid agent-id)
-                                        (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
-                                          (.dispatchEvent form event))
-                                        (js/console.warn "Form validation failed or agent not selected!"))))))
-                     :next-hidden? (= current-step :installation)
-                     :hide-footer? (= current-step :installation)}}]))

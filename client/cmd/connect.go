@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -258,6 +259,27 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				fmt.Printf("               host=%s port=%s\n", srv.Host().Host, srv.Host().Port)
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
+			case pb.ConnectionTypeKubernetes:
+				srv := proxy.NewHttpProxy(c.proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
+				if err := srv.Serve(string(sessionID)); err != nil {
+					c.processGracefulExit(err)
+				}
+				c.loader.Stop()
+				c.client.StartKeepAlive()
+				c.connStore.Set(string(sessionID), srv)
+				c.printHeader(connectionType, pkt)
+				fmt.Println()
+				fmt.Println("--------------------kubernetes-api-------------------")
+				fmt.Printf("               host=%s port=%s\n", srv.Host().Host, srv.Host().Port)
+				fmt.Println("------------------------------------------------------")
+				if config.HoopHomeDir != "" {
+					kubeconfigContent := fmt.Sprintf(defaultKubeConfigTempl, fmt.Sprintf("http://%s:%s", srv.Host().Host, srv.Host().Port))
+					kubeconfigFilePath := filepath.Join(config.HoopHomeDir, "kubeconfig")
+					_ = os.WriteFile(kubeconfigFilePath, []byte(kubeconfigContent), 0600)
+
+					fmt.Println("\nissue the command below to interact with the cluster via kubectl")
+					fmt.Printf("export KUBECONFIG=%s\n", kubeconfigFilePath)
+				}
 			case pb.ConnectionTypeCommandLine:
 				c.loader.Stop()
 				// https://github.com/creack/pty/issues/95
@@ -589,3 +611,23 @@ func (o *osInterrupt) handleOsInterrupt() {
 		}
 	}()
 }
+
+const defaultKubeConfigTempl = `
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: %s
+    insecure-skip-tls-verify: true
+  name: hoop-local-tunnel
+contexts:
+- context:
+    cluster: hoop-local-tunnel
+    user: local-tunnel
+  name: default
+current-context: default
+users:
+- name: local-tunnel
+  user:
+    token: noop
+`

@@ -92,7 +92,8 @@
            "Loading..."]]]
 
         [:> ScrollArea {:scrollbars "vertical"
-                        :size "2"}
+                        :size "2"
+                        :viewport-style {:min-width "0"}}
          [:> CommandList
-          {:className "flex-1 overflow-y-auto p-4"}
+          {:className "flex-1 overflow-y-auto p-4 overscroll-auto"}
           (or content children)]])]]]])

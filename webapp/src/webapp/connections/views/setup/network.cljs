@@ -1,19 +1,12 @@
 (ns webapp.connections.views.setup.network
   (:require
-   ["@radix-ui/themes" :refer [Box Flex Grid RadioGroup Text Heading Switch]]
-   ["lucide-react" :refer [Network]]
+   ["@radix-ui/themes" :refer [Box Flex Text Heading Switch]]
+
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
-   [webapp.connections.views.setup.additional-configuration :as additional-configuration]
    [webapp.connections.views.setup.agent-selector :as agent-selector]
    [webapp.connections.views.setup.configuration-inputs :as configuration-inputs]
-   [webapp.connections.views.setup.connection-method :as connection-method]
-   [webapp.connections.views.setup.headers :as headers]
-   [webapp.connections.views.setup.page-wrapper :as page-wrapper]))
-
-(def network-types
-  [{:id "tcp" :title "TCP"}
-   {:id "httpproxy" :title "HTTP Proxy"}])
+   [webapp.connections.views.setup.connection-method :as connection-method]))
 
 (defn http-credentials-form []
   (let [credentials @(rf/subscribe [:connection-setup/network-credentials])
@@ -56,10 +49,7 @@
                              [connection-method/source-selector "remote_url"])}]]
 
        ;; HTTP Headers Section
-       [configuration-inputs/environment-variables-section
-        {:title "HTTP headers"
-         :subtitle "Add HTTP headers that will be used in your requests."
-         :hide-default-title true}]
+       [configuration-inputs/http-headers-section]
 
        ;; Allow insecure SSL switch
        [:> Flex {:align "center" :gap "3"}
@@ -132,73 +122,3 @@
       "kibana" [http-credentials-form]
       nil)))
 
-(defn resource-step []
-  (let [selected-subtype @(rf/subscribe [:connection-setup/connection-subtype])]
-    [:> Box {:class "space-y-5"}
-     [:> Text {:size "4" :weight "bold"} "Network access type"]
-     [:> RadioGroup.Root {:name "network-type"
-                          :value selected-subtype
-                          :on-value-change #(rf/dispatch [:connection-setup/select-connection "network" %])}
-      [:> Grid {:columns "1" :gap "3"}
-       (for [{:keys [id title disabled]} network-types]
-         ^{:key id}
-         [:> RadioGroup.Item
-          {:value id
-           :class (str "p-4 " (when disabled "opacity-50 cursor-not-allowed"))
-           :disabled disabled}
-          [:> Flex {:gap "3" :align "center"}
-           [:> Network {:size 16}]
-           title]])]]
-
-     (when selected-subtype
-       [credentials-form])]))
-
-(defn main [form-type]
-  (let [network-type @(rf/subscribe [:connection-setup/network-type])
-        current-step @(rf/subscribe [:connection-setup/current-step])
-        credentials @(rf/subscribe [:connection-setup/network-credentials])
-        agent-id @(rf/subscribe [:connection-setup/agent-id])]
-
-    [page-wrapper/main
-     {:children [:> Box {:class "max-w-[600px] mx-auto p-6 space-y-7"}
-                 [headers/setup-header form-type]
-
-                 (case current-step
-                   :resource [resource-step]
-                   :additional-config [additional-configuration/main
-                                       {:selected-type network-type
-                                        :form-type form-type
-                                        :submit-fn #(rf/dispatch [:connection-setup/submit])}]
-                   [resource-step])]
-
-      :footer-props {:form-type form-type
-                     :next-text (if (= current-step :additional-config)
-                                  "Confirm"
-                                  "Next: Configuration")
-                     :next-disabled? (case current-step
-                                       :resource (or
-                                                  (not network-type)
-                                                  (and (= network-type "tcp")
-                                                       (let [host-value (get credentials :host)
-                                                             port-value (get credentials :port)
-                                                             host (if (map? host-value) (:value host-value) host-value)
-                                                             port (if (map? port-value) (:value port-value) port-value)]
-                                                         (or
-                                                          (empty? (str host))
-                                                          (empty? (str port)))))
-                                                  (and (= network-type "httpproxy")
-                                                       (let [remote-url-value (get credentials :remote_url)
-                                                             remote-url (if (map? remote-url-value) (:value remote-url-value) remote-url-value)]
-                                                         (empty? (str remote-url)))))
-                                       false)
-                     :on-next (fn []
-                                (let [form (.getElementById js/document
-                                                            (if (= current-step :credentials)
-                                                              "credentials-form"
-                                                              "additional-config-form"))]
-                                  (when form
-                                    (if (and (.reportValidity form)
-                                             agent-id)
-                                      (let [event (js/Event. "submit" #js {:bubbles true :cancelable true})]
-                                        (.dispatchEvent form event))
-                                      (js/console.warn "Invalid form!")))))}}]))

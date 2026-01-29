@@ -5,29 +5,6 @@
    [webapp.connections.views.setup.tags-utils :as tags-utils]
    [webapp.connections.views.setup.connection-method :as connection-method]))
 
-;; Basic db updates
-(rf/reg-event-fx
- :connection-setup/select-connection
- (fn [{:keys [db]} [_ type subtype]]
-   {:db (-> db
-            (assoc-in [:connection-setup :type] type)
-            (assoc-in [:connection-setup :subtype] subtype))
-    :fx [[:dispatch [:connection-setup/next-step :credentials]]]}))
-
-;; App type and OS selection
-(rf/reg-event-db
- :connection-setup/select-app-type
- (fn [db [_ app-type]]
-   (-> db
-       (assoc-in [:connection-setup :app-type] app-type))))
-
-(rf/reg-event-db
- :connection-setup/select-os-type
- (fn [db [_ os-type]]
-   (-> db
-       (assoc-in [:connection-setup :os-type] os-type)
-       (assoc-in [:connection-setup :current-step] :additional-config))))
-
 ;; Network specific events
 (rf/reg-event-db
  :connection-setup/update-network-credentials
@@ -47,12 +24,6 @@
  :connection-setup/toggle-network-insecure
  (fn [db [_ enabled?]]
    (assoc-in db [:connection-setup :network-credentials :insecure] (boolean enabled?))))
-
-;; Database specific events
-(rf/reg-event-db
- :connection-setup/update-database-credentials
- (fn [db [_ field value]]
-   (assoc-in db [:connection-setup :database-credentials field] value)))
 
 ;; Metadata-driven specific events
 (defn update-credentials-source
@@ -100,14 +71,14 @@
                                            (not= current-source provider)))
                                   (contains? secrets-providers current-source)))
         update-value-source (fn [value]
-                             (let [current-source (when (map? value) (:source value))
-                                   raw-value (if (map? value)
-                                               (:value value)
-                                               (str value))]
-                               (if (should-update-source? current-source)
-                                 (let [normalized (connection-method/normalize-credential-value raw-value)]
-                                   {:value (:value normalized) :source target-source})
-                                 value)))
+                              (let [current-source (when (map? value) (:source value))
+                                    raw-value (if (map? value)
+                                                (:value value)
+                                                (str value))]
+                                (if (should-update-source? current-source)
+                                  (let [normalized (connection-method/normalize-credential-value raw-value)]
+                                    {:value (:value normalized) :source target-source})
+                                  value)))
         update-env-var-source (fn [env-var]
                                 (let [value-map (:value env-var)]
                                   (assoc env-var :value (update-value-source value-map))))]
@@ -230,17 +201,6 @@
                            current-value)]
      (assoc-in db [:connection-setup :config :access-modes mode] (not effective-value)))))
 
-;; Basic form events
-(rf/reg-event-db
- :connection-setup/set-name
- (fn [db [_ name]]
-   (assoc-in db [:connection-setup :name] name)))
-
-(rf/reg-event-db
- :connection-setup/set-command
- (fn [db [_ command]]
-   (assoc-in db [:connection-setup :command] command)))
-
 (rf/reg-event-db
  :connection-setup/set-command-args
  (fn [db [_ args]]
@@ -258,9 +218,24 @@
    (assoc-in db [:connection-setup :config :review-groups] groups)))
 
 (rf/reg-event-db
+ :connection-setup/set-min-review-approvals
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :config :min-review-approvals] value)))
+
+(rf/reg-event-db
+ :connection-setup/set-force-approve-groups
+ (fn [db [_ groups]]
+   (assoc-in db [:connection-setup :config :force-approve-groups] groups)))
+
+(rf/reg-event-db
  :connection-setup/set-data-masking-types
  (fn [db [_ types]]
    (assoc-in db [:connection-setup :config :data-masking-types] types)))
+
+(rf/reg-event-db
+ :connection-setup/set-access-max-duration
+ (fn [db [_ value]]
+   (assoc-in db [:connection-setup :config :access-max-duration] value)))
 
 ;; Environment Variables management
 (rf/reg-event-db
@@ -509,11 +484,6 @@
                              "manual-input")
          new-value {:value (str value) :source inferred-source}]
      (assoc-in db [:connection-setup :ssh-credentials field] new-value))))
-
-(rf/reg-event-db
- :connection-setup/clear-ssh-credentials
- (fn [db _]
-   (assoc-in db [:connection-setup :ssh-credentials] {})))
 
 ;; Kubernetes Token events
 (rf/reg-event-db

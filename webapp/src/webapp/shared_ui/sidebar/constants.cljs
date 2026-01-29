@@ -148,8 +148,7 @@
     :icon (get icons-registry "AIDataMasking")
     :uri (routes/url-for :ai-data-masking)
     :navigate :ai-data-masking
-    :free-feature? false
-    :upgrade-plan-route :upgrade-plan
+    :free-feature? true
     :admin-only? true}
    {:name "AccessControl"
     :label "Access Control"

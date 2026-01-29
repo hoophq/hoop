@@ -205,9 +205,9 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	redirectSuccessURL := login.Redirect + "?token=" + token.AccessToken
 
 	url, _ := url.Parse(login.Redirect)
-	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
+	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {
 		redirectSuccessURL = login.Redirect
-		
+
 		isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
 		http.SetCookie(c.Writer, &http.Cookie{
 			Name:     "hoop_access_token",

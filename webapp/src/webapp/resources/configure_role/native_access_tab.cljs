@@ -3,10 +3,12 @@
    ["@radix-ui/themes" :refer [Box Callout Flex Heading Link Switch Text]]
    ["lucide-react" :refer [ArrowUpRight Star]]
    [re-frame.core :as rf]
+   [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
    [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
    [webapp.connections.helpers :as helpers]
+   [webapp.connections.native-client-access.constants :as constants]
    [webapp.routes :as routes]))
 
 (defn toggle-section
@@ -43,6 +45,9 @@
         access-modes (rf/subscribe [:connection-setup/access-modes])
         review? (rf/subscribe [:connection-setup/review])
         review-groups (rf/subscribe [:connection-setup/review-groups])
+        min-review-approvals (rf/subscribe [:connection-setup/min-review-approvals])
+        force-approve-groups (rf/subscribe [:connection-setup/force-approve-groups])
+        access-max-duration (rf/subscribe [:connection-setup/access-max-duration])
         data-masking? (rf/subscribe [:connection-setup/data-masking])
         data-masking-types (rf/subscribe [:connection-setup/data-masking-types])]
 
@@ -70,14 +75,53 @@
            :checked @review?
            :on-change #(rf/dispatch [:connection-setup/toggle-review])
            :complement-component (when @review?
-                                   [:> Box {:mt "4"}
+                                   [:> Box {:mt "4" :class "space-y-4"}
+
                                     [multi-select/main
                                      {:options (helpers/array->select-options @user-groups)
+                                      :label "Approval user groups"
                                       :id "approval-groups-input"
                                       :name "approval-groups-input"
                                       :required? @review?
                                       :default-value @review-groups
-                                      :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]])
+                                      :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]
+
+                                    [forms/input
+                                     {:label "Minimum approval amount (optional)"
+                                      :type "number"
+                                      :id "min-review-approvals-input"
+                                      :name "min-review-approvals-input"
+                                      :value (if (some? @min-review-approvals) (str @min-review-approvals) "")
+                                      :on-change #(let [val (-> % .-target .-value)]
+                                                    (rf/dispatch [:connection-setup/set-min-review-approvals
+                                                                  (when (not= val "")
+                                                                    (js/parseInt val 10))]))
+                                      :min 1}]
+
+                                    [multi-select/main
+                                     {:options (helpers/array->select-options @user-groups)
+                                      :label "Force approval groups (optional)"
+                                      :id "force-approve-groups-input"
+                                      :name "force-approve-groups-input"
+                                      :default-value @force-approve-groups
+                                      :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]
+
+                                    (let [time-range-options (mapv #(into {} {"value" (:value %) "label" (:text %)})
+                                                                   constants/access-duration-options)
+                                          selected-option (when @access-max-duration
+                                                            (if (map? @access-max-duration)
+                                                              @access-max-duration
+                                                              (first (filter #(= (get % "value") @access-max-duration) time-range-options))))]
+                                      [multi-select/single
+                                       {:options time-range-options
+                                        :label "Time Range"
+                                        :id "access-max-duration-input"
+                                        :name "access-max-duration-input"
+                                        :default-value selected-option
+                                        :clearable? true
+                                        :on-change #(let [selected (js->clj %)]
+                                                      (rf/dispatch [:connection-setup/set-access-max-duration
+                                                                    (when selected (get selected "value"))]))}])])
            :learning-component
            [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
                      :target "_blank"}

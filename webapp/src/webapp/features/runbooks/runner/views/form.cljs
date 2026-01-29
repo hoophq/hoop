@@ -171,7 +171,7 @@
                       repo-name (extract-repo-name repository)]
                   [:> Box
                    [:> Text {:size "1" :class "font-normal text-gray-11"} (str repo-name " / ")]
-                   [:> Text {:size "1" :class "font-normal text-gray-11"} (when path (str path " / "))]
+                   [:> Text {:size "1" :class "font-normal text-gray-11"} (when (seq path) (str path " / "))]
                    [:> Text {:size "3" :class "font-bold"} file-name]])]]
               [:> ScrollArea
                [:> Box {:class "p-3 space-y-6 flex-1"}

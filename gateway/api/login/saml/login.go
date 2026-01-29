@@ -294,18 +294,17 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)
 	url, _ := url.Parse(login.Redirect)
-	if url != nil && url.Host != proto.ClientLoginCallbackAddress {
+	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {
 		redirectSuccessURL = login.Redirect
 
-		isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
 		http.SetCookie(c.Writer, &http.Cookie{
 			Name:     "hoop_access_token",
 			Value:    sessionToken,
 			Path:     "/",
 			MaxAge:   0,
 			HttpOnly: false,
-			Secure:   isSecure,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
 		})
 	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)

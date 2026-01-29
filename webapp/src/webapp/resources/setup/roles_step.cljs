@@ -183,34 +183,32 @@
                     role-index
                     "insecure"
                     false]))
-      [:> Box {:class "space-y-4"}
-       ;; Remote URL
-       [forms/input {:label "Remote URL"
-                     :placeholder "e.g. http://example.com"
-                     :value remote-url-value
-                     :required true
-                     :type "text"
-                     :on-change handle-remote-url-change
-                     :start-adornment (when show-selector?
-                                        [connection-method/source-selector role-index "remote_url"])}]
+    [:> Box {:class "space-y-4"}
+     ;; Remote URL
+     [forms/input {:label "Remote URL"
+                   :placeholder "e.g. http://example.com"
+                   :value remote-url-value
+                   :required true
+                   :type "text"
+                   :on-change handle-remote-url-change
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "remote_url"])}]
 
-       ;; HTTP headers section (usando configuration-inputs)
-       [configuration-inputs/environment-variables-section role-index
-        {:title "HTTP headers"
-         :subtitle "Add HTTP headers that will be used in your requests."}]
+     ;; HTTP headers section
+     [configuration-inputs/http-headers-section role-index]
 
-       [:> Flex {:align "center" :gap "3"}
-        [:> Switch {:checked (get credentials "insecure" false)
-                    :size "3"
-                    :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
-                                                    role-index
-                                                    "insecure"
-                                                    %])}]
-        [:> Box
-         [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
-          "Allow insecure SSL"]
-         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-          "Skip SSL certificate verification for HTTPS connections."]]]]))
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get credentials "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index
+                                                  "insecure"
+                                                  %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
 
 
 ;; Custom/Metadata-driven role form (includes databases)
@@ -221,6 +219,8 @@
         config-files @(rf/subscribe [:resource-setup/role-config-files role-index])
         config-files-map (into {} (map (fn [{:keys [key value]}] [key value]) config-files))
         connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        field-source (fn [env-var-name]
+                       @(rf/subscribe [:resource-setup/field-source role-index env-var-name]))
         is-aws-iam-role? (= connection-method "aws-iam-role")
         is-secrets-manager? (= connection-method "secrets-manager")]
     (when (seq credentials-config)
@@ -248,7 +248,7 @@
                     display-value field-value
                     handle-change (fn [e]
                                     (let [new-value (-> e .-target .-value)
-                                          field-source @(rf/subscribe [:resource-setup/field-source role-index env-var-name])]
+                                          field-source (field-source env-var-name)]
                                       (if is-filesystem?
                                         (rf/dispatch [:resource-setup->update-role-config-file-by-key
                                                       role-index
@@ -259,14 +259,16 @@
                                                       env-var-name
                                                       new-value
                                                       field-source]))))]
-                ^{:key env-var-name}
                 (if (= display-type "textarea")
+                  ^{:key env-var-name}
                   [forms/textarea {:label sanitized-name
                                    :placeholder (or (:placeholder field) (:description field))
                                    :value display-value
                                    :required (:required field)
                                    :helper-text (:description field)
                                    :on-change handle-change}]
+
+                  ^{:key env-var-name}
                   [forms/input {:label sanitized-name
                                 :placeholder (or (:placeholder field) (:description field))
                                 :value display-value

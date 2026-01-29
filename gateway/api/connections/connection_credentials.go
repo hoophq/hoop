@@ -21,7 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes"}
 
 // CreateConnectionCredentials
 //
@@ -123,9 +123,30 @@ func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {
 		return proto.ConnectionTypeHttpProxy
 	case "git", "github":
 		return proto.ConnectionTypeSSH
+	case "kubernetes", "kubernetes-eks":
+		return proto.ConnectionTypeKubernetes
 	default:
 		return proto.ConnectionType(conn.SubType.String)
 	}
+}
+
+// toConnectionType maps the connection type and subtype to the appropriate proto.ConnectionType
+// This is because we have some connection types that are represented as subtypes in the database.
+// The decap uses the subtype to determine the actual connection type.
+// for keep the code consistent with other places, we keep this mapping logic here.
+// but basically some stuff happen in the frontend base on the (connectionType, subtype) pair, but for 
+// the backend we just need the final connection type.
+func toConnectionType(connectionType, subtype string) proto.ConnectionType {
+	switch connectionType {
+	case "command-line":
+		switch subtype {
+		case "kubernetes", "kubernetes-eks":
+			return proto.ConnectionType(proto.ConnectionTypeKubernetes)
+		case "kubernetes-token", "httpproxy":
+			return proto.ConnectionType(proto.ConnectionTypeHttpProxy)
+		}
+	}
+	return proto.ConnectionType(connectionType)
 }
 
 func buildConnectionCredentialsResponse(
@@ -143,7 +164,7 @@ func buildConnectionCredentialsResponse(
 		ExpireAt:       cred.ExpireAt,
 	}
 
-	connectionType := proto.ConnectionType(cred.ConnectionType)
+	connectionType := toConnectionType(cred.ConnectionType, conn.SubType.String)
 	serverHost, serverPort := getServerHostAndPort(serverConf, connectionType)
 
 	switch connectionType {
@@ -211,7 +232,7 @@ func buildConnectionCredentialsResponse(
 				"AWS_ACCESS_KEY_ID=%q AWS_SECRET_ACCESS_KEY=%q aws ssm start-session --target {TARGET_INSTANCE} --endpoint-url %q",
 				accessKeyId, accessSecret, endpoint),
 		}
-	case proto.ConnectionTypeHttpProxy:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
 		scheme := "http"
 		host := serverHost
 		if appconfig.Get().GatewayTLSKey() != "" {
@@ -231,6 +252,7 @@ func buildConnectionCredentialsResponse(
 				"curl": "` + curlCommand + `",
 				"browser": "` + browserCommand + `"
 			}`
+		base.ConnectionType = proto.ConnectionType(connectionType).String()
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
 			Hostname:   host,
 			Port:       serverPort,
@@ -261,7 +283,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -283,7 +305,7 @@ func getServerHostAndPort(serverConf *models.ServerMiscConfig, connType proto.Co
 		if serverConf != nil && serverConf.RDPServerConfig != nil {
 			listenAddr = serverConf.RDPServerConfig.ListenAddress
 		}
-	case proto.ConnectionTypeHttpProxy:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
 		if serverConf != nil && serverConf.HttpProxyServerConfig != nil {
 			listenAddr = serverConf.HttpProxyServerConfig.ListenAddress
 		}
@@ -311,6 +333,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("aws-ssm", keySize)
 	case proto.ConnectionTypeHttpProxy:
 		return keys.GenerateSecureRandomKey("httpproxy", keySize)
+	case proto.ConnectionTypeKubernetes:
+		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:
 		return "", "", fmt.Errorf("unsupported connection type %v", connType)
 	}

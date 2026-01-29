@@ -123,6 +123,52 @@ func (s *streamWriter) Close() error {
 	return nil
 }
 
+// SessionCloser interface allows sending SessionClose packets through a stream.
+//
+// This interface is specifically designed for use in the libhoop/agent/httpproxy package
+// when WebSocket guardrails validation fails. Since libhoop is a separate Go module and
+// cannot import common/proto directly, the httpproxy proxy uses an anonymous interface
+// type assertion to call SendSessionClose when needed.
+//
+// For HTTP (non-WebSocket) errors, the agent controller handles sending SessionClose
+// directly via Agent.sendClientSessionClose() instead.
+//
+// Usage: When a guardrails violation is detected during WebSocket communication,
+// the proxy calls p.sendSessionClose(errMsg) which type-asserts the clientW to this
+// interface and sends the error message to be recorded in audit logs.
+type SessionCloser interface {
+	SendSessionClose(errMsg string) error
+}
+
+func (s *streamWriter) SendSessionClose(errMsg string) error {
+	if s.client == nil {
+		return fmt.Errorf("stream writer client is empty")
+	}
+
+	exitCode := "0" // success exist code (session closed normally)
+	if errMsg != "" {
+		exitCode = "1" // non-zero exit code indicates error
+	}
+
+	var errPayload []byte
+	if errMsg != "" {
+		errPayload = []byte(errMsg)
+	}
+
+	// Copy the spec and add exit code
+	spec := make(map[string][]byte)
+	for k, v := range s.packetSpec {
+		spec[k] = v
+	}
+	spec[SpecClientExitCodeKey] = []byte(exitCode)
+
+	return s.client.Send(&Packet{
+		Type:    "ClientSessionClose",
+		Payload: errPayload,
+		Spec:    spec,
+	})
+}
+
 func GobEncode(data any) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := gob.NewEncoder(buf).Encode(data)
@@ -196,6 +242,9 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeRDP)
 		case "aws-ssm":
 			return ConnectionType(ConnectionTypeSSM)
+		case "kubernetes", "kubernetes-eks":
+			return ConnectionType(ConnectionTypeKubernetes)
+		// TODO(san): deprecate it in flavor of kubernetes type
 		case "kubernetes-token":
 			return ConnectionType(ConnectionTypeHttpProxy)
 		default:

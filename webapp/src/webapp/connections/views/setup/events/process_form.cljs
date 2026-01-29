@@ -69,6 +69,9 @@
         env-vars (get-in db [:connection-setup :credentials :environment-variables] [])
         config-files (get-in db [:connection-setup :credentials :configuration-files] [])
         review-groups (get-in config [:review-groups])
+        min-review-approvals (get-in config [:min-review-approvals])
+        force-approve-groups (get-in config [:force-approve-groups])
+        access-max-duration (get-in config [:access-max-duration])
         data-masking-types (get-in config [:data-masking-types])
         access-modes (get-in config [:access-modes])
         guardrails (get-in db [:connection-setup :config :guardrails])
@@ -189,7 +192,7 @@
 
         secret (clj->js
                 (merge
-                 (helpers/config->json all-env-vars "envvar:")
+                 (helpers/config->json all-env-vars "envvar:" connection-subtype)
                  (when (seq config-files)
                    (helpers/config->json config-files "filesystem:"))))
 
@@ -250,7 +253,15 @@
                                  (mapv #(get % "value") data-masking-types)
                                  [])
                  :reviewers (when (and (:review config) (seq review-groups))
-                              (mapv #(get % "value") review-groups))}]
+                              (mapv #(get % "value") review-groups))
+                 :min_review_approvals (when (and (:review config) min-review-approvals)
+                                         min-review-approvals)
+                 :force_approve_groups (when (and (:review config) (seq force-approve-groups))
+                                         (mapv #(get % "value") force-approve-groups))
+                 :access_max_duration (when access-max-duration
+                                        (if (number? access-max-duration)
+                                          access-max-duration
+                                          (js/parseInt access-max-duration 10)))}]
 
     payload))
 
@@ -588,6 +599,11 @@
 
      :config {:review (seq (:reviewers connection))
               :review-groups (mapv #(hash-map "value" % "label" %) (:reviewers connection))
+              :min-review-approvals (:min_review_approvals connection)
+              :force-approve-groups (if (seq (:force_approve_groups connection))
+                                      (mapv #(hash-map "value" % "label" %) (:force_approve_groups connection))
+                                      [])
+              :access-max-duration (:access_max_duration connection)
               :data-masking (:redact_enabled connection)
               :data-masking-types (if (:redact_enabled connection)
                                     (mapv #(hash-map "value" % "label" %) (:redact_types connection))
