@@ -13,55 +13,58 @@
 (defn ai-data-masking-form [form-type ai-data-masking scroll-pos]
   (let [state (helpers/create-form-state ai-data-masking)
         handlers (helpers/create-form-handlers state)
-        submitting? (rf/subscribe [:ai-data-masking->submitting?])]
+        submitting? (rf/subscribe [:ai-data-masking->submitting?])
+        user (rf/subscribe [:users->current-user])]
     (fn []
-      [:> Box {:class "min-h-screen bg-gray-1"}
-       [:form {:id "ai-data-masking-form"
-               :on-submit (fn [e]
-                            (.preventDefault e)
-                            (let [data (helpers/prepare-payload state)]
-                              (if (= :edit form-type)
-                                (rf/dispatch [:ai-data-masking->update-by-id data])
-                                (rf/dispatch [:ai-data-masking->create data]))))}
+      (let [free-license? (-> @user :data :free-license?)]
+        [:> Box {:class "min-h-screen bg-gray-1"}
+         [:form {:id "ai-data-masking-form"
+                 :on-submit (fn [e]
+                              (.preventDefault e)
+                              (let [data (helpers/prepare-payload state)]
+                                (if (= :edit form-type)
+                                  (rf/dispatch [:ai-data-masking->update-by-id data])
+                                  (rf/dispatch [:ai-data-masking->create data]))))}
 
-        [form-header/main
-         {:form-type form-type
-          :id @(:id state)
-          :scroll-pos scroll-pos
-          :loading? @submitting?}]
+          [form-header/main
+           {:form-type form-type
+            :id @(:id state)
+            :scroll-pos scroll-pos
+            :loading? @submitting?}]
 
-        [:> Box {:p "7" :class "space-y-radix-9"}
-         [basic-info/main
-          {:name (:name state)
-           :description (:description state)
-           :score_threshold (:score_threshold state)
-           :on-name-change #(reset! (:name state) %)
-           :on-description-change #(reset! (:description state) %)
-           :on-score-threshold-change #(reset! (:score_threshold state) %)}]
+          [:> Box {:p "7" :class "space-y-radix-9"}
+           [basic-info/main
+            {:name (:name state)
+             :description (:description state)
+             :score_threshold (:score_threshold state)
+             :on-name-change #(reset! (:name state) %)
+             :on-description-change #(reset! (:description state) %)
+             :on-score-threshold-change #(reset! (:score_threshold state) %)}]
 
-         ;; Connections section
-         [connections-section/main
-          {:connection-ids (:connection_ids state)
-           :on-connections-change (:on-connections-change handlers)}]
+           ;; Connections section
+           [connections-section/main
+            {:connection-ids (:connection_ids state)
+             :on-connections-change (:on-connections-change handlers)}]
 
-         ;; Output rules section
-         [:> Flex {:direction "column" :gap "5"}
-          [:> Box
-           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-            "Output rules"]]
+           ;; Output rules section
+           [:> Flex {:direction "column" :gap "5"}
+            [:> Box
+             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+              "Output rules"]]
 
-          [:> Box {:class "space-y-radix-7"}
-           [rules-table/main
-            (merge
-             {:state (:rules state)
-              :select-state (:rules-select-state state)}
-             (select-keys handlers
-                          [:on-rule-field-change
-                           :on-rule-select
-                           :on-toggle-rules-select
-                           :on-toggle-all-rules
-                           :on-rules-delete
-                           :on-rule-add]))]]]]]])))
+            [:> Box {:class "space-y-radix-7"}
+             [rules-table/main
+              (merge
+               {:state (:rules state)
+                :select-state (:rules-select-state state)
+                :free-license? free-license?}
+               (select-keys handlers
+                            [:on-rule-field-change
+                             :on-rule-select
+                             :on-toggle-rules-select
+                             :on-toggle-all-rules
+                             :on-rules-delete
+                             :on-rule-add]))]]]]]]))))
 
 (defn- loading []
   [:div {:class "flex items-center justify-center rounded-lg border bg-white h-full"}

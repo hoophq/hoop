@@ -165,7 +165,8 @@
 (defn- option
   [item _]
   ^{:key (:value item)}
-  [:> Select.Item {:value (:value item)} (:text item)])
+  [:> Select.Item {:value (:value item)
+                   :disabled (:disabled item)} (:text item)])
 
 (defn select
   "HTML select.

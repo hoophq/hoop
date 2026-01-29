@@ -24,18 +24,23 @@
     :full-width? true
     :options helpers/rule-types}])
 
-(defn- rule-field [rule state idx on-rule-field-change]
+(defn- rule-field [rule state idx on-rule-field-change free-license?]
   (when-not (empty? (:type rule))
     (case (:type rule)
       "presets"
-      [forms/select
-       {:size "2"
-        :variant "ghost"
-        :not-margin-bottom? true
-        :on-change #(on-rule-field-change state idx :rule %)
-        :selected (:rule rule)
-        :full-width? true
-        :options (helpers/get-preset-options)}]
+      (let [preset-options (helpers/get-preset-options)
+            options-with-disabled (if free-license?
+                                    (mapv #(assoc % :disabled (not= (:value %) (:rule rule)))
+                                          preset-options)
+                                    preset-options)]
+        [forms/select
+         {:size "2"
+          :variant "ghost"
+          :not-margin-bottom? true
+          :on-change #(on-rule-field-change state idx :rule %)
+          :selected (:rule rule)
+          :full-width? true
+          :options options-with-disabled}])
 
       "fields"
       [:> Text {:size "2" :class "text-[--gray-12]"} "Custom Selection"]
@@ -55,7 +60,7 @@
 
       nil)))
 
-(defn- details-field [rule state idx on-rule-field-change]
+(defn- details-field [rule state idx on-rule-field-change free-license?]
   (when-not (empty? (:type rule))
     (case (:type rule)
       "presets"
@@ -71,7 +76,11 @@
        {:name "data-masking-rules"
         :placeholder "Select rules..."
         :on-change #(let [selected-values (js->clj % :keywordize-keys true)
-                          field-values (mapv :value selected-values)]
+                          ;; For free license, only keep the last selected value
+                          limited-values (if free-license?
+                                           (take-last 1 selected-values)
+                                           selected-values)
+                          field-values (mapv :value limited-values)]
                       (on-rule-field-change state idx :details field-values))
         :default-value (mapv (fn [rule-id]
                                (some #(when (= (get % "value") rule-id) %)
@@ -98,7 +107,8 @@
                     on-toggle-rules-select
                     on-toggle-all-rules
                     on-rules-delete
-                    on-rule-add]}]
+                    on-rule-add
+                    free-license?]}]
   [:> Box {:class "space-y-radix-5"}
    [:> Box
     [:> Table.Root {:size "2" :variant "surface"}
@@ -125,15 +135,16 @@
            [type-field rule state idx on-rule-field-change]]
 
           [:> Table.Cell {:p "4"}
-           [rule-field rule state idx on-rule-field-change]]
+           [rule-field rule state idx on-rule-field-change free-license?]]
 
           [:> Table.Cell {:p "4"}
-           [details-field rule state idx on-rule-field-change]]]))]]]
+           [details-field rule state idx on-rule-field-change free-license?]]]))]]]
 
-   [rule-buttons/main
-    {:on-rule-add #(on-rule-add state)
-     :on-toggle-select #(on-toggle-rules-select select-state)
-     :select-state select-state
-     :selected? (every? :selected @state)
-     :on-toggle-all #(on-toggle-all-rules state)
-     :on-rules-delete #(on-rules-delete state)}]])
+   (when-not free-license?
+     [rule-buttons/main
+      {:on-rule-add #(on-rule-add state)
+       :on-toggle-select #(on-toggle-rules-select select-state)
+       :select-state select-state
+       :selected? (every? :selected @state)
+       :on-toggle-all #(on-toggle-all-rules state)
+       :on-rules-delete #(on-rules-delete state)}])])
