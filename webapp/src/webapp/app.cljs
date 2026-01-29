@@ -27,12 +27,9 @@
    [webapp.components.snackbar :as snackbar]
    [webapp.components.theme-provider :refer [theme-provider]]
    [webapp.shared-ui.cmdk.command-palette :as command-palette]
-   [webapp.connections.views.connection-list :as connections]
-   [webapp.connections.views.setup.connection-update-form :as connection-update-form]
    [webapp.connections.views.setup.events.db-events]
    [webapp.connections.views.setup.events.effects]
    [webapp.connections.views.setup.events.subs]
-   [webapp.connections.views.setup.main :as connection-setup]
    [webapp.dashboard.main :as dashboard]
    [webapp.connections.views.resource-catalog.main :as resource-catalog]
    [webapp.resources.setup.main :as resource-setup]
@@ -378,12 +375,6 @@
    [routes/wrap-admin-only
     [users/main]]])
 
-(defmethod routes/panels :connections-panel []
-  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
-                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
-                              "Connections"]
-                             [connections/panel]]])
-
 (defmethod routes/panels :resources-panel []
   [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
                              [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
@@ -490,20 +481,6 @@
     (rf/dispatch [:reviews-plugin->get-review-details review-id])
     [layout :application-hoop [:div {:class "bg-white p-large h-full"}
                                [review-detail/review-detail]]]))
-
-(defmethod routes/panels :create-connection-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "bg-gray-1 min-h-full h-full"}
-                             [routes/wrap-admin-only
-                              [connection-setup/main :create {}]]]])
-
-(defmethod routes/panels :edit-connection-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        connection-name (:connection-name (:route-params current-route))]
-    [layout :application-hoop [:div {:class "bg-[--gray-2] px-4 py-10 sm:px-6 lg:px-20 lg:pt-6 lg:pb-10 h-full overflow-auto"}
-                               [routes/wrap-admin-only
-                                [connection-update-form/main connection-name]]]]))
 
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)

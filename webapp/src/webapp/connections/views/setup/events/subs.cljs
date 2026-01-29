@@ -3,47 +3,10 @@
    [re-frame.core :as rf]
    [webapp.connections.views.setup.tags-utils :as tags-utils]))
 
-;; Basic form state
-(rf/reg-sub
- :connection-setup/current-step
- (fn [db _]
-   (get-in db [:connection-setup :current-step])))
-
-(rf/reg-sub
- :connection-setup/connection-type
- (fn [db _]
-   (get-in db [:connection-setup :type])))
-
 (rf/reg-sub
  :connection-setup/connection-subtype
  (fn [db _]
    (get-in db [:connection-setup :subtype])))
-
-(rf/reg-sub
- :connection-setup/from-catalog?
- (fn [db _]
-   (get-in db [:connection-setup :from-catalog?] false)))
-
-(rf/reg-sub
- :connection-setup/name
- (fn [db]
-   (get-in db [:connection-setup :name])))
-
-;; App type and OS
-(rf/reg-sub
- :connection-setup/app-type
- (fn [db _]
-   (get-in db [:connection-setup :app-type])))
-
-(rf/reg-sub
- :connection-setup/os-type
- (fn [db _]
-   (get-in db [:connection-setup :os-type])))
-
-(rf/reg-sub
- :connection-setup/database-credentials
- (fn [db _]
-   (get-in db [:connection-setup :database-credentials])))
 
 (rf/reg-sub
  :connection-setup/metadata-credentials
@@ -149,12 +112,6 @@
  :<- [:connection-setup/config]
  (fn [config]
    (get-in config [:access-max-duration])))
-
-;; Network specific
-(rf/reg-sub
- :connection-setup/network-type
- (fn [db]
-   (get-in db [:connection-setup :network-type])))
 
 (rf/reg-sub
  :connection-setup/network-credentials
@@ -267,11 +224,6 @@
  (fn [tags-data]
    (when tags-data
      (:grouped-options (tags-utils/format-keys-for-select tags-data)))))
-
-(rf/reg-sub
- :connection-setup/tags-input
- (fn [db]
-   (get-in db [:connection-setup :tags-input] [])))
 
 (rf/reg-sub
  :connection-setup/current-key

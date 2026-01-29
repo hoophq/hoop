@@ -2,7 +2,6 @@
   "Helper functions for working with connections in the webapp.
   Provides utilities for handling connection names, configurations, and data transformations."
   (:require
-   ["unique-names-generator" :as ung] ; Library for generating unique names
    [clojure.string :as s]
    [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
@@ -17,18 +16,6 @@
    ;=> [{\"value\" \"FOO_BAR\" \"label\" \"foo bar\"}]"
   [array]
   (mapv #(into {} {"value" % "label" (s/lower-case (s/replace % #"_" " "))}) array))
-
-(defn random-connection-name
-  "Generates a random connection name using animal names and Star Wars references.
-
-   Returns a string in the format \"<name>-<4 digits>\"
-   Example: \"wookie-1234\""
-  []
-  (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})
-        characterName (ung/uniqueNamesGenerator #js{:dictionaries #js[ung/animals ung/starWars]
-                                                    :style "lowerCase"
-                                                    :length 1})]
-    (str characterName "-" numberDictionary)))
 
 (defn config->json
   "Converts configuration maps to a JSON format with prefixed keys.

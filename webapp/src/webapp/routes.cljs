@@ -23,11 +23,6 @@
                 ["/new" :new-agent]]
      "/auth/callback" :auth-callback-hoop
      "/resource-catalog" :resource-catalog
-     "/connections" [["" :connections] 
-                     ["/details" :connection-details]
-                     ["/new" :create-connection]
-                     [["/connections/" :connection-type "/new"] :onboarding-create-connection]
-                     [["/edit/" :connection-name] :edit-connection]]
      "/resources" [["" :resources]
                    ["/new" :resource-setup-new]
                    [["/configure/" :resource-id] :configure-resource]
