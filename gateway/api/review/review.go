@@ -211,9 +211,9 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
 
-	connection, err := models.GetConnectionByNameOrID(ctx, rev.ConnectionName)
+	connection, err := models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
 	if connection == nil || err != nil {
-		return nil, fmt.Errorf("failed fetching connection for forced review, err=%v", err)
+		return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
 	}
 
 	if timeWindow != nil {
