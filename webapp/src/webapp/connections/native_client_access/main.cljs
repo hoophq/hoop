@@ -170,7 +170,7 @@
 
 (defn- rdp-credentials-fields
   "RDP specific credentials fields"
-  [connection-credentials]
+  []
   [:> Box {:class "space-y-4"}
 
    [:> Callout.Root {:size "1" :color "blue" :class "w-full"}
@@ -186,7 +186,7 @@
   (let [{:keys [curl browser]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
     [:> Box {:class "space-y-4"}
 
-   ;; Host
+     ;; Host
      [:> Box {:class "space-y-2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
        "Host"]
@@ -219,7 +219,7 @@
         :id "command-browser"
         :logs browser}]]
 
-   ;; Port
+     ;; Port
      [:> Box {:class "space-y-2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
        "Port"]

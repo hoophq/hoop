@@ -1,7 +1,7 @@
 (ns webapp.resources.main
-  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search]]
+  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search Rotate3D]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
-                                        Flex Text Popover TextField]]
+                                        Flex Text Popover TextField Link]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -16,30 +16,34 @@
             [webapp.connections.views.test-connection-modal :as test-connection-modal]
             [webapp.config :as config]))
 
-(defn empty-list-view []
-  [:> Box {:class "flex flex-col h-full items-center justify-between py-16 px-4 max-w-3xl mx-auto"}
+(defn empty-list-view [is-admin?]
+  [:<>
+   [:> Box {:class "flex flex-col flex-1 h-full items-center justify-center"}
 
-   [:> Flex {:direction "column" :gap "3" :align "center"}
-    [:> Box {:class "mb-8"}
-     [:img {:src "/images/illustrations/empty-state.png"
-            :alt "Empty state illustration"
-            :class "w-96"}]]
+    [:> Flex {:direction "column" :gap "6" :align "center"}
+     [:> Box {:class "w-80"}
+      [:img {:src "/images/illustrations/empty-state.png"
+             :alt "Empty state illustration"}]]
 
-    [:> Flex {:direction "column" :align "center" :gap "3" :class "text-center"}
-     [:> Text {:size "3" :class "text-gray-11 max-w-md text-center"}
-      "No resources found with these filters"]]
+     [:> Text {:size "3" :class "text-gray-11 text-center"}
+      (if is-admin?
+        "Get started by setting up your environment resources in your Organization"
+        "Discover the resources your organization can connect to securely through Hoop")]
 
-    [:> Button {:size "3"
-                :onClick #(rf/dispatch [:navigate :resource-catalog])}
-     "Setup new Resource"]]
+     [:> Button {:size "3"
+                 :onClick #(rf/dispatch [:navigate :resource-catalog])}
+      (if is-admin?
+        "Setup new Resource"
+        "Explore Resource Catalog")]]]
 
-   [:> Flex {:align "center"}
-    [:> Text {:class "text-gray-11 mr-1"}
+   [:> Flex {:align "center" :justify "center"}
+    [:> Text {:size "2" :class "text-gray-11 mr-1"}
      "Need more information? Check out"]
-    [:a {:href (config/docs-url :introduction :getting-started)
-         :class "text-blue-600 hover:underline"}
+    [:> Link {:size "2"
+              :href (get-in config/docs-url [:introduction :getting-started])
+              :target "_blank"}
      "getting started documentation"]
-    [:> Text {:class "text-gray-11 ml-1"}
+    [:> Text {:size "2" :class "text-gray-11"}
      "."]]])
 
 (defn- loading-list-view []
@@ -303,12 +307,15 @@
           :loading? current-loading?}
 
          ^{:key "infinite-scroll-children"}
-         [:> Box
+         [:> Box {:height "100%"}
           ;; Add button (admin only)
-          (when (-> @user :data :admin?)
+
+          (when-not (empty? resources-data)
             [:> Box {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
              [:> Button {:on-click #(rf/dispatch [:navigate :resource-catalog])}
-              "Setup new Resource"]])
+              (if (-> @user :data :admin?)
+                "Setup new Resource"
+                "Explore Resource Catalog")]])
 
           ;; Tab Header and Filters in SAME ROW
           [:> Flex {:justify "between" :align "center" :class "mb-4"}
@@ -408,18 +415,20 @@
              (get-in @test-connection-state [:connection-name])])
 
           ;; Tab Content (just the list content, no wrappers)
-          [:> Box {:class "flex-1 h-full"}
-           (cond
-             ;; Loading state when no data
-             (and current-loading? (empty? current-data))
-             [loading-list-view]
+          (cond
+            ;; Loading state when no data
+            (and current-loading? (empty? current-data))
+            [:> Box {:class "flex-1 h-full"}
+             [loading-list-view]]
 
-             ;; Empty state
-             (and (empty? current-data) (not current-loading?))
-             [empty-list-view (if (= @active-tab "resources") "resources" "roles")]
+            ;; Empty state
+            (and (empty? current-data) (not current-loading?))
+            [:> Box {:class "flex flex-col h-full"}
+             [empty-list-view (-> @user :data :admin?)]]
 
-             ;; Content
-             :else
+            ;; Content
+            :else
+            [:> Box {:class "flex-1 h-full"}
              (if (= @active-tab "resources")
                [resources-list-content resources-data @user]
-               [roles-list-content connections-data @user @test-connection-state]))]]]))))
+               [roles-list-content connections-data @user @test-connection-state])])]]))))
