@@ -24,10 +24,11 @@ One query, one screenshot, **one data breach**.
 ## With Hoop
 
 Same query through Hoop
+
 *You see:*
 
 
-![Debugging With Hoop](assets/readme-2.png)
+![Debugging With Hoop](assets/readme-5.png)
 
 It's safe to share 🔒
 
@@ -43,9 +44,9 @@ It's safe to share 🔒
 
 *Fixing bug at 3AM...*
 
-![Fixing Bug Without Hoop](assets/readme-4.png)
+![Fixing Bug Without Hoop](assets/readme-6.png)
 
-Query blocked by Guardrail: "Prevent UPDATE without WHERE" 🚫
+Query blocked by Guardrails: "Prevent UPDATE without WHERE" 🚫
 
 **That's it.** Hoop sits between you and your infrastructure. Sensitive data gets masked automatically. Dangerous operations blocked. Everything gets recorded.
 
