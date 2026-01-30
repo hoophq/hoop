@@ -200,6 +200,8 @@ func (s *Server) proccessConnectOKAck(stream *streamclient.ProxyStream) error {
 			"connection-name":    req.RequestConnectionName,
 			"connection-type":    conn.Type,
 			"connection-subtype": conn.SubType,
+			"org-id":             pctx.OrgID,
+			"license-type":       pctx.OrgLicenseType,
 			"client-version":     stream.GetMeta("version"),
 			"platform":           stream.GetMeta("platform"),
 			"user-agent":         userAgent,

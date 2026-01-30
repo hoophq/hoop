@@ -109,6 +109,7 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	})
 	analytics.New().Track(pctx.UserID, eventName, map[string]any{
 		"org-id":                pctx.OrgID,
+		"license-type":          pctx.OrgLicenseType,
 		"connection-name":       pctx.ConnectionName,
 		"connection-type":       pctx.ConnectionType,
 		"connection-subtype":    pctx.ConnectionSubType,

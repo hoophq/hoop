@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"slices"
 
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -48,6 +49,17 @@ func (c *Context) GetUserID() string       { return c.UserID }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }
 func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }
 func (c *Context) IsAuditor() bool         { return slices.Contains(c.UserGroups, types.GroupAuditor) }
+func (c *Context) GetLicenseType() string {
+	licenseType := license.OSSType
+	if len(c.OrgLicenseData) > 0 {
+		var l license.License
+		err := json.Unmarshal(c.OrgLicenseData, &l)
+		if err == nil {
+			licenseType = l.Payload.Type
+		}
+	}
+	return licenseType
+}
 
 // GetUserContext retrieves user context data based on the subject claim or OIDC information.
 //

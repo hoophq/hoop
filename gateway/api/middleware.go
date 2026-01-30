@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
-	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -23,21 +22,13 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			return
 		}
 
-		licenseType := license.OSSType
-		if ctx.OrgLicenseData != nil && len(*ctx.OrgLicenseData) > 0 {
-			var l license.License
-			err := json.Unmarshal(*ctx.OrgLicenseData, &l)
-			if err == nil {
-				licenseType = l.Payload.Type
-			}
-		}
-
 		properties := map[string]any{
 			"org-id":         ctx.OrgID,
 			"auth-method":    appconfig.Get().AuthMethod(),
-			"license-type":   licenseType,
+			"license-type":   ctx.GetLicenseType(),
 			"content-length": c.Request.ContentLength,
 			"user-agent":     apiutils.NormalizeUserAgent(c.Request.Header.Values),
+			"api-hostname":   c.Request.Host,
 		}
 		switch eventName {
 		case analytics.EventCreateAgent:
