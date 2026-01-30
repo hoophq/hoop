@@ -23,9 +23,10 @@ One query, one screenshot, **one data breach**.
 
 ## With Hoop
 
-Same query through Hoop:
-
+Same query through Hoop
 *You see:*
+
+
 ![Debugging With Hoop](assets/readme-2.png)
 
 It's safe to share 🔒
