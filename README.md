@@ -1,4 +1,3 @@
-
 ![hero](github.png)
 
 <h1 align="center">
@@ -14,52 +13,38 @@ The only access proxy that blocks dangerous linux commands and scrubs sensitive 
 
 ## Without Hoop
 
-```sql
--- Debugging production issue...
-SELECT * FROM users WHERE id = 42;
-┌────┬─────────────────────────┬─────────────┬─────────────────┬─────────────────────┐
-│ id │ email                   │ ssn         │ phone           │ credit_card         │
-├────┼─────────────────────────┼─────────────┼─────────────────┼─────────────────────┤
-│ 42 │ john.doe@example.com    │ 123-45-6789 │ (555) 123-4567  │ 4111-1111-1111-1111 │
-└────┴─────────────────────────┴─────────────┴─────────────────┴─────────────────────┘
--- You screenshot the result for Slack...
--- 💀 SSNs, credit cards, and phone numbers now in your team chat
-```
+*Debugging production issue...*
+![Debugging Without Hoop](assets/readme-1.png)
 
-One query, one screenshot, one data breach.
+*You screenshot the result for Slack...*
+SSNs, credit cards, and phone numbers now in your team chat 💀
+
+One query, one screenshot, **one data breach**.
 
 ## With Hoop
 
 Same query through Hoop:
 
-```sql
--- You see:
-┌────┬──────────────────┬─────────────┬──────────────────┬─────────────────┐
-│ id │ email            │ ssn         │ phone            │ credit_card     │
-├────┼──────────────────┼─────────────┼──────────────────┼─────────────────┤
-│ 42 │ **************** │ *********** │ ************     │ *************** │
-└────┴──────────────────┴─────────────┴──────────────────┴─────────────────┘
+*You see:*
+![Debugging With Hoop](assets/readme-2.png)
 
--- Now it's safe to share
-```
+It's safe to share 🔒
 
 ## Without Hoop
-```sql
--- Fixing bug at 3AM...
-UPDATE users SET name = 'Bob Ross'
 
--- 💀 1000000 rows updated
+*Fixing bug at 3AM...*
 
-```
+![Fixing Bug Without Hoop](assets/readme-3.png)
+
+1000000 rows updated 💀
 
 ## With Hoop
-```sql
--- Fixing bug at 3AM...
-UPDATE users SET name = 'Bob Ross'
 
--- 🚫 Query blocked by Guardrail: "Prevent UPDATE without WHERE
+*Fixing bug at 3AM...*
 
-```
+![Fixing Bug Without Hoop](assets/readme-4.png)
+
+Query blocked by Guardrail: "Prevent UPDATE without WHERE" 🚫
 
 **That's it.** Hoop sits between you and your infrastructure. Sensitive data gets masked automatically. Dangerous operations blocked. Everything gets recorded.
 
