@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	ttemplate "text/template"
 	"text/template/parse"
@@ -131,6 +132,10 @@ func parseNode(node string) map[string]any {
 			specs[fnName] = strings.Split(fnVal, " ")
 		case "asenv":
 			specs[fnName] = fnVal
+		case "order":
+			if orderVal, err := strconv.Atoi(fnVal); err == nil {
+				specs[fnName] = orderVal
+			}
 		}
 	}
 	return specs
