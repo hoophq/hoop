@@ -346,7 +346,6 @@
     (fn []
       (let [script-response (rf/subscribe [:editor-plugin->script])]
         (rf/dispatch [:editor-plugin->clear-script])
-        (rf/dispatch [:editor-plugin->clear-connection-script])
         (rf/dispatch [:audit->clear-session])
         (rf/dispatch [:plugins->get-my-plugins])
         (rf/dispatch [:jira-templates->get-all])

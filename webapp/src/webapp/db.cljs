@@ -3,11 +3,9 @@
 
 (def default-db
   {:agents {:status :loading, :data []}
-   :agents-embedded []
    :ai-data-masking {:list {:status :idle :data []}
                      :active-rule {:status :idle :data nil}
                      :submitting? false}
-   :ask-ai->question-responses []
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
@@ -18,8 +16,6 @@
                              :page-size 50
                              :has-more? false
                              :total 0}
-   :connections->connection-connected {:status :loading, :data nil}
-   :connections->updating-connection {:loading true, :data []}
    :native-client-access {:requesting-connections #{}
                           :sessions {}}
    :aws-connect {:status :not-started
@@ -56,10 +52,6 @@
    :dialog-title ""
    :draggable-cards {}
    :editor {}
-   :editor-plugin->connections-exec-list {:status :ready :data nil}
-   :editor-plugin->connections-runbook-list {:status :ready :data nil}
-   :editor-plugin->current-connection {:status :loading :data nil}
-   :editor-plugin->select-language "shell"
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
    :guardrails->active-guardrail {:action nil

@@ -188,11 +188,6 @@
    (:audit->session-logs db)))
 
 (re-frame/reg-sub
- :connections->connection-connected
- (fn [db _]
-   (:connections->connection-connected db)))
-
-(re-frame/reg-sub
  :connections->test-connection
  (fn [db _]
    (:connections->test-connection db)))
@@ -232,21 +227,6 @@
  (fn [db _]
    (:editor-plugin->script db)))
 
-(re-frame/reg-sub
- :editor-plugin->current-connection
- (fn [db _]
-   (:editor-plugin->current-connection db)))
-
-(re-frame/reg-sub
- :editor-plugin->select-language
- (fn [db _]
-   (:editor-plugin->select-language db)))
-
-(re-frame/reg-sub
- :ask-ai->question-responses
- (fn [db _]
-   (:ask-ai->question-responses db)))
-
 
 (re-frame/reg-sub
  :use-cases->list
@@ -264,19 +244,9 @@
    (:hoop-app->my-configs db)))
 
 (re-frame/reg-sub
- :hoop-app->running?
- (fn [db _]
-   (:hoop-app->running? db)))
-
-(re-frame/reg-sub
  :policies->list
  (fn [db _]
    (:policies->list db)))
-
-(re-frame/reg-sub
- :agents-embedded
- (fn [db _]
-   (:agents-embedded db)))
 
 (re-frame/reg-sub
  :sidebar-desktop
@@ -318,16 +288,6 @@
  :webclient->active-panel
  (fn [db _]
    (get db :webclient->active-panel nil)))
-
-(re-frame/reg-sub
- :editor-plugin->connections-exec-list
- (fn [db _]
-   (:editor-plugin->connections-exec-list db)))
-
-(re-frame/reg-sub
- :editor-plugin->connections-runbook-list
- (fn [db _]
-   (:editor-plugin->connections-runbook-list db)))
 
 (re-frame/reg-sub
  :audit->filtered-session-by-id
