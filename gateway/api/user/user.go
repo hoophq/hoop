@@ -136,7 +136,10 @@ func Create(c *gin.Context) {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		properties := map[string]any{
-			"user-agent": apiutils.NormalizeUserAgent(c.Request.Header.Values),
+			"user-agent":   apiutils.NormalizeUserAgent(c.Request.Header.Values),
+			"org-id":       ctx.OrgID,
+			"license-type": ctx.GetLicenseType(),
+			"api-hostname": c.Request.Host,
 		}
 		ctx.Analytics().Track(userSubject, analytics.EventSignup, properties)
 		ctx.Analytics().Track(userSubject, analytics.EventCreateInvitedUser, properties)

@@ -1,7 +1,6 @@
 package loginoidcapi
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
-	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
@@ -462,7 +460,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			UserID:          newUser.Subject,
 			UserAnonSubject: org.ID,
 		})
-		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, nil)
+		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, map[string]any{
+			"org-id":       org.ID,
+			"license-type": ctx.GetLicenseType(),
+		})
 	}
 
 	// add the user to the default group
@@ -489,14 +490,7 @@ func updateLoginState(login *models.Login) {
 
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
-	licenseType := license.OSSType
-	if len(ctx.OrgLicenseData) > 0 {
-		var l license.License
-		err := json.Unmarshal(ctx.OrgLicenseData, &l)
-		if err == nil {
-			licenseType = l.Payload.Type
-		}
-	}
+	licenseType := ctx.GetLicenseType()
 	client := analytics.New()
 	if !isNewUser {
 		client.Track(ctx.UserID, analytics.EventLogin, map[string]any{
