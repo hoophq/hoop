@@ -62,11 +62,8 @@
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed
-   :new-task->selected-connection nil
-   :new-task nil
    :organization->api-key {:status :loading, :data nil}
    :page-loader-status :open
-   :plugins->active-tab :plugins-store
    :plugins->plugin-details {:status :loading, :plugin {}}
    :reports->session {:status :loading, :data nil}
    :routes->route (.-pathname (.-location js/window))
