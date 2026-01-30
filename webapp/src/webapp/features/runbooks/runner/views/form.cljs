@@ -84,6 +84,12 @@
     [:> Box {:class " text-sm mb-large"}
      error]]])
 
+(defn- sort-params-by-order [params metadata]
+  (let [params-with-order (filter #(some? (:order ((keyword %) metadata))) params)
+        params-without-order (filter #(nil? (:order ((keyword %) metadata))) params)
+        sorted-with-order (sort-by #(:order ((keyword %) metadata)) params-with-order)]
+    (concat sorted-with-order params-without-order)))
+
 (defmulti template-view identity)
 
 (defmethod template-view :ready [_ _ _]
@@ -179,7 +185,8 @@
                  {:size "1" :class "text-gray-11"}
                  "Fill the params below for this Runbook"]
 
-                (doall (for [param (-> template :data :params)
+                (doall (for [param (sort-params-by-order (-> template :data :params)
+                                                         (-> template :data :metadata))
                              :let [metadata ((keyword param) (-> template :data :metadata))]]
                          ^{:key param}
                          [dynamic-form
