@@ -150,6 +150,7 @@
                             (cs/split
                              (or (.getItem js/localStorage "runbook-y-panel-sizes") "650,210") ","))]
 
+    (rf/dispatch [:editor-plugin->clear-script])
     (rf/dispatch [:runbooks/load-persisted-connection])
 
     (fn []
