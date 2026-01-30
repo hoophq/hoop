@@ -282,6 +282,8 @@
      "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
      "grafana" [http-proxy-credentials-fields connection_credentials]
      "kibana" [http-proxy-credentials-fields connection_credentials]
+     "git" [ssh-credentials-fields connection_credentials]
+     "github" [ssh-credentials-fields connection_credentials]
      [postgres-credentials-fields connection_credentials])])
 
 (defn- connect-uri-tab

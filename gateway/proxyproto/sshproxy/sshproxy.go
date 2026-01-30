@@ -156,6 +156,11 @@ func runProxyServer(listenAddr string, hostKey ssh.Signer) (*proxyServer, error)
 	return server, nil
 }
 
+type pendingSSHRequest struct {
+	req   *ssh.Request
+	reply chan bool
+}
+
 type sshConnection struct {
 	id                  string
 	sid                 string
@@ -165,6 +170,7 @@ type sshConnection struct {
 	clientNewSshChannel <-chan ssh.NewChannel
 	sshConn             *ssh.ServerConn
 	sshChannels         sync.Map
+	pendingRequests     sync.Map // maps channelID (uint16) to pending SSH request
 }
 
 func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*sshConnection, error) {
@@ -406,6 +412,55 @@ func (c *sshConnection) handleClientWrite() {
 							Debugf("closing client ssh channel type=%v, err=%v", cc.Type, err)
 					}
 
+				case sshtypes.SSHRequestReplyType:
+					var reply sshtypes.SSHRequestReply
+					if err := sshtypes.Decode(pkt.Payload, &reply); err != nil {
+						c.cancelFn("failed decoding ssh request reply, err=%v", err)
+						return
+					}
+					log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
+						Debugf("received ssh request reply, ok=%v", reply.OK)
+
+					// Forward the reply to the pending client request
+					if pendingReqObj, ok := c.pendingRequests.Load(reply.ChannelID); ok {
+						if pendingReq, ok := pendingReqObj.(*pendingSSHRequest); ok {
+							select {
+							case pendingReq.reply <- reply.OK:
+								log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
+									Debugf("forwarded ssh request reply to client")
+							case <-c.ctx.Done():
+								return
+							default:
+								// Channel full or already handled, drop the reply
+							}
+						}
+					}
+
+				case sshtypes.ServerSSHRequestType:
+					var serverReq sshtypes.ServerSSHRequest
+					if err := sshtypes.Decode(pkt.Payload, &serverReq); err != nil {
+						c.cancelFn("failed decoding server ssh request, err=%v", err)
+						return
+					}
+					log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
+						Debugf("received server ssh request type=%q, wantreply=%v, payload-length=%v",
+							serverReq.RequestType, serverReq.WantReply, len(serverReq.Payload))
+
+					// Forward the request to the client channel
+					connWrapperObj, _ := c.sshChannels.Load(fmt.Sprintf("%v", serverReq.ChannelID))
+					clientCh, ok := connWrapperObj.(ssh.Channel)
+					if !ok {
+						log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
+							Warnf("local channel not found for server request")
+						continue
+					}
+					// Send the request to the client (e.g., exit-status)
+					_, err := clientCh.SendRequest(serverReq.RequestType, serverReq.WantReply, serverReq.Payload)
+					if err != nil {
+						log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
+							Debugf("failed sending server request to client: %v", err)
+					}
+
 				default:
 					c.cancelFn("received unknown ssh message type (%v)", sshtypes.DecodeType(pkt.Payload))
 					return
@@ -478,12 +533,39 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 		return
 	}
 
-	// close the channel and notify the server when done
+	// Copy data from client to agent. Note: We don't close clientCh here because
+	// the client may still be waiting to receive data (e.g., git clone sends a command
+	// then waits for the response). The channel will be closed when we receive
+	// a CloseChannel message from the agent.
 	go func() {
-		defer clientCh.Close()
-		_, err = io.Copy(sshtypes.NewDataWriter(streamW, channelID), clientCh)
-		if err != nil {
-			c.cancelFn("failed copying ssh buffer, err=%v", err)
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := clientCh.Read(buf)
+			if n > 0 {
+				log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+					Debugf("read %d bytes from client, forwarding to agent", n)
+				data := sshtypes.Data{ChannelID: channelID, Payload: buf[:n]}
+				if _, writeErr := streamW.Write(data.Encode()); writeErr != nil {
+					c.cancelFn("failed writing client data to agent, err=%v", writeErr)
+					return
+				}
+			}
+			if readErr != nil {
+				if readErr != io.EOF {
+					log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+						Debugf("error reading from client: %v", readErr)
+				} else {
+					log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+						Debugf("client closed write side (EOF), sending EOF to agent")
+					// Signal to the agent that the client has closed its write side
+					eofData := sshtypes.EOF{ChannelID: channelID}
+					if _, writeErr := streamW.Write(eofData.Encode()); writeErr != nil {
+						log.With("sid", c.sid, "conn", c.id, "ch", channelID).
+							Debugf("failed sending EOF to agent: %v", writeErr)
+					}
+				}
+				break
+			}
 		}
 	}()
 
@@ -508,10 +590,33 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 
 			// respond to the request if needed
 			if req.WantReply {
-				if err := req.Reply(true, nil); err != nil {
-					c.cancelFn("failed sending response to channel, err=%v", err)
-					return
+				// Store the pending request to wait for agent's reply
+				replyChan := make(chan bool, 1)
+				pendingReq := &pendingSSHRequest{
+					req:   req,
+					reply: replyChan,
 				}
+				c.pendingRequests.Store(channelID, pendingReq)
+
+				// Wait for the agent's reply in a separate goroutine to avoid blocking
+				go func(clientReq *ssh.Request, chID uint16) {
+					select {
+					case <-c.ctx.Done():
+						return
+					case ok := <-replyChan:
+						if err := clientReq.Reply(ok, nil); err != nil {
+							log.With("sid", c.sid, "conn", c.id, "ch", chID, "type", clientReq.Type).
+								Debugf("failed sending response to channel, err=%v", err)
+						}
+					case <-time.After(5 * time.Second):
+						// Timeout waiting for agent reply, assume failure
+						if err := clientReq.Reply(false, nil); err != nil {
+							log.With("sid", c.sid, "conn", c.id, "ch", chID, "type", clientReq.Type).
+								Debugf("failed sending response to channel (timeout), err=%v", err)
+						}
+					}
+					c.pendingRequests.Delete(chID)
+				}(req, channelID)
 			}
 		}
 

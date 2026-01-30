@@ -18,7 +18,9 @@
                   :else
                   [server/credentials-step :update]))
 
-     "application" (if (= (:subtype connection) "ssh")
+     "application" (if (or (= (:subtype connection) "ssh")
+                           (= (:subtype connection) "git")
+                           (= (:subtype connection) "github"))
                      [server/ssh-credentials]
                      [network/credentials-form
                       {:connection-type (:subtype connection)}])
