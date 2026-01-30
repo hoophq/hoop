@@ -16,10 +16,10 @@
    [webapp.features.runbooks.runner.views.form :as runbook-form]
    [webapp.features.runbooks.runner.views.list :as runbooks-list]
    [webapp.features.runbooks.runner.views.metadata-panel :as metadata-panel]
+   [webapp.features.runbooks.runner.views.search :as search]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
    [webapp.parallel-mode.components.header-button :as parallel-mode-button]
    [webapp.parallel-mode.components.modal.main :as parallel-mode-modal]
-   [webapp.webclient.components.search :as search]
    [webapp.webclient.log-area.main :as log-area]
    [webapp.webclient.panel :refer [discover-connection-type]]))
 
@@ -70,7 +70,7 @@
                 "Resource Role")
               [:> ChevronDown {:size 12}]]]
 
-            [:> Flex {:class "items-center gap-2"}
+            [:> Flex {:class "items-center gap-4"}
              [:> Tooltip {:content "Search"}
               [search/main :runbooks]]
 
@@ -81,6 +81,7 @@
                 :size "2"
                 :color "gray"
                 :variant "soft"
+                :highContrast true
                 :onClick (fn []
                            (swap! dark-mode? not)
                            (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
