@@ -85,10 +85,7 @@
      error]]])
 
 (defn- sort-params-by-order [params metadata]
-  (let [params-with-order (filter #(some? (:order ((keyword %) metadata))) params)
-        params-without-order (filter #(nil? (:order ((keyword %) metadata))) params)
-        sorted-with-order (sort-by #(:order ((keyword %) metadata)) params-with-order)]
-    (concat sorted-with-order params-without-order)))
+  (sort-by #(or (:order ((keyword %) metadata)) js/Number.MAX_SAFE_INTEGER) params))
 
 (defmulti template-view identity)
 
