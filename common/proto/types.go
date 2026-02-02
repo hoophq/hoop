@@ -213,6 +213,8 @@ func IsInList(item string, items []string) bool {
 // to maintain compatibility with old types enums in the database
 func ToConnectionType(connectionType, subtype string) ConnectionType {
 	switch connectionType {
+	case "httpproxy":
+		return ConnectionType(ConnectionTypeHttpProxy)
 	case "application":
 		switch subtype {
 		case "tcp":
