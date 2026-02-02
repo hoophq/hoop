@@ -53,8 +53,8 @@
   (let [hostname (get-hostname)
         origin (.-origin js/location)
         endpoint-url (if (= hostname "localhost")
-                       (or endpoint_url (str origin "/ssm"))
-                       (str origin "/ssm"))]
+                       (or endpoint_url (str origin "/ssm/"))
+                       (str origin "/ssm/"))]
     (str "AWS_ACCESS_KEY_ID=\"" aws_access_key_id "\" "
          "AWS_SECRET_ACCESS_KEY=\"" aws_secret_access_key "\" "
          "aws ssm start-session --target {TARGET_INSTANCE} "
