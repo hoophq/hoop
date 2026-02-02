@@ -126,7 +126,8 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 	// Get host and port from connection to pass as target websocket url
 	host := c.Request.Host
 	scheme := "ws"
-	if c.Request.URL.Scheme == "https" {
+	// Check X-Forwarded-Proto header for reverse proxy scenarios
+	if c.Request.URL.Scheme == "https" || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "wss"
 	}
 
