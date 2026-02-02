@@ -48,12 +48,6 @@
                                :body payload}]]]})))
 
 (rf/reg-event-fx
- :editor-plugin->clear-connection-script
- (fn
-   [{:keys [db]} [_]]
-   {:db (assoc db :editor-plugin->connections-exec-list {:data [] :status :ready})}))
-
-(rf/reg-event-fx
  ::editor-plugin->set-script-success
  (fn [{:keys [db]} [_ data script]]
    {:db (assoc-in db [:editor-plugin->script] {:status :success

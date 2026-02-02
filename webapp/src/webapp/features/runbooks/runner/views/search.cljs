@@ -1,4 +1,4 @@
-(ns webapp.webclient.components.search
+(ns webapp.features.runbooks.runner.views.search
   (:require
    ["@radix-ui/themes" :refer [IconButton]]
    ["lucide-react" :refer [Search X]]
@@ -46,6 +46,7 @@
              :size "2"
              :variant "soft"
              :color "gray"
+             :highContrast true
              :onClick (fn [e]
                         (.stopPropagation e)
 
@@ -63,5 +64,6 @@
              :size "2"
              :variant "soft"
              :color "gray"
+             :highContrast true
              :onClick #(.focus (.getElementById js/document input-id))}
             [:> Search {:size 16}]])]))))

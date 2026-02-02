@@ -14,11 +14,6 @@
    (:active-panel db)))
 
 (re-frame/reg-sub
- :feature-flags
- (fn [db _]
-   (:feature-flags db)))
-
-(re-frame/reg-sub
  :users
  (fn [db _]
    (:users db)))
@@ -39,19 +34,9 @@
    (:connections->pagination db)))
 
 (re-frame/reg-sub
- :all-connections
- (fn [db _]
-   (:all-connections db)))
-
-(re-frame/reg-sub
  :connections->connection-details
  (fn [db _]
    (:connections->connection-details db)))
-
-(re-frame/reg-sub
- :new-task
- (fn [db _]
-   (:new-task db)))
 
 (re-frame/reg-sub
  ::database-schema
@@ -67,21 +52,6 @@
  :reviews
  (fn [db _]
    (:reviews db)))
-
-(re-frame/reg-sub
- :templates
- (fn [db _]
-   (:templates db)))
-
-(re-frame/reg-sub
- :templates->filtered-templates
- (fn [db _]
-   (:templates->filtered-templates db)))
-
-(re-frame/reg-sub
- :templates->selected-template
- (fn [db _]
-   (:templates->selected-template db)))
 
 (re-frame/reg-sub
  ::page-loader
@@ -123,46 +93,6 @@
       :on-click-out (:on-click-out modal)})))
 
 (re-frame/reg-sub
- :new-task->selected-connection
- (fn [db _]
-   (:new-task->selected-connection db)))
-
-(re-frame/reg-sub
- :new-task->editor-language
- (fn [db _]
-   (:new-task->editor-language db)))
-
-(re-frame/reg-sub
- :dashboard->running-queries
- (fn [db _]
-   (:dashboard->running-queries db)))
-
-(re-frame/reg-sub
- :dashboard->waiting-review-queries
- (fn [db _]
-   (:dashboard->waiting-review-queries db)))
-
-(re-frame/reg-sub
- :dashboard->status-total-by-date
- (fn [db _]
-   (:dashboard->status-total-by-date db)))
-
-(re-frame/reg-sub
- :dashboard->slower-queries
- (fn [db _]
-   (:dashboard->slower-queries db)))
-
-(re-frame/reg-sub
- :dashboard->filters
- (fn [db _]
-   (:dashboard->filters db)))
-
-(re-frame/reg-sub
- :plugins->active-tab
- (fn [db _]
-   (:plugins->active-tab db)))
-
-(re-frame/reg-sub
  :plugins->my-plugins
  (fn [db _]
    (:plugins->my-plugins db)))
@@ -186,11 +116,6 @@
  :audit->session-logs
  (fn [db _]
    (:audit->session-logs db)))
-
-(re-frame/reg-sub
- :connections->connection-connected
- (fn [db _]
-   (:connections->connection-connected db)))
 
 (re-frame/reg-sub
  :connections->test-connection
@@ -232,51 +157,12 @@
  (fn [db _]
    (:editor-plugin->script db)))
 
-(re-frame/reg-sub
- :editor-plugin->current-connection
- (fn [db _]
-   (:editor-plugin->current-connection db)))
-
-(re-frame/reg-sub
- :editor-plugin->select-language
- (fn [db _]
-   (:editor-plugin->select-language db)))
-
-(re-frame/reg-sub
- :ask-ai->question-responses
- (fn [db _]
-   (:ask-ai->question-responses db)))
-
-
-(re-frame/reg-sub
- :use-cases->list
- (fn [db _]
-   (:use-cases->list db)))
 
 (re-frame/reg-sub
  :indexer-plugin->search
  (fn [db _]
    (:indexer-plugin->search db)))
 
-(re-frame/reg-sub
- :hoop-app->my-configs
- (fn [db _]
-   (:hoop-app->my-configs db)))
-
-(re-frame/reg-sub
- :hoop-app->running?
- (fn [db _]
-   (:hoop-app->running? db)))
-
-(re-frame/reg-sub
- :policies->list
- (fn [db _]
-   (:policies->list db)))
-
-(re-frame/reg-sub
- :agents-embedded
- (fn [db _]
-   (:agents-embedded db)))
 
 (re-frame/reg-sub
  :sidebar-desktop
@@ -318,16 +204,6 @@
  :webclient->active-panel
  (fn [db _]
    (get db :webclient->active-panel nil)))
-
-(re-frame/reg-sub
- :editor-plugin->connections-exec-list
- (fn [db _]
-   (:editor-plugin->connections-exec-list db)))
-
-(re-frame/reg-sub
- :editor-plugin->connections-runbook-list
- (fn [db _]
-   (:editor-plugin->connections-runbook-list db)))
 
 (re-frame/reg-sub
  :audit->filtered-session-by-id

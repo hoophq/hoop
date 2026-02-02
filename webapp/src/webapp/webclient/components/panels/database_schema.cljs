@@ -21,7 +21,7 @@
                 "Database Schema")]
 
     [:> Box {:as "aside"
-             :class (str "h-full transition-all duration-300 border-r border-gray-3 bg-gray-1 "
+             :class (str "h-full transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
                          (if collapsed? "w-16" "w-full"))}
 
      [:> Flex {:align "center"

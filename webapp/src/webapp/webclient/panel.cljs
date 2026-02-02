@@ -303,7 +303,8 @@
                [:> (.-Pane Allotment)
                 [:> Allotment {:defaultSizes horizontal-pane-sizes
                                :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
-                               :vertical true}
+                               :vertical true
+                               :separator false}
                  [:div {:class "relative w-full h-full"}
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))
@@ -316,7 +317,7 @@
                      :extensions codemirror-exts
                      :on-change optimized-change-handler}]]]
 
-                 [:> Flex {:direction "column" :justify "between" :class "h-full"}
+                 [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
                   [log-area/main
                    connection-type
                    @parallel-mode-active?
@@ -346,7 +347,6 @@
     (fn []
       (let [script-response (rf/subscribe [:editor-plugin->script])]
         (rf/dispatch [:editor-plugin->clear-script])
-        (rf/dispatch [:editor-plugin->clear-connection-script])
         (rf/dispatch [:audit->clear-session])
         (rf/dispatch [:plugins->get-my-plugins])
         (rf/dispatch [:jira-templates->get-all])
