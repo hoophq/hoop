@@ -127,7 +127,7 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 	host := c.Request.Host
 	scheme := "ws"
 	// Check X-Forwarded-Proto header for reverse proxy scenarios
-	if c.Request.URL.Scheme == "https" || c.GetHeader("X-Forwarded-Proto") == "https" {
+	if c.Request.URL.Scheme == "https" || c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "wss"
 	}
 
