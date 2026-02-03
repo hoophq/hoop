@@ -181,7 +181,7 @@
      [code-snippet/main
       {:code (str "export HOOP_KEY=" hoop-key)}]
      [code-snippet/main
-      {:code (str "hoop start agent")}] ]
+      {:code (str "hoop agent start")}] ]
     [:> Flex {:direction "column" :gap "0"}
      [:> Flex {:direction "column" :gap "2"}
       [:> Text {:size "2" :weight "bold"}
