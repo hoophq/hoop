@@ -225,14 +225,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeSSH)
 		case "github":
 			return ConnectionType(ConnectionTypeSSH)
-		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		// TODO(chico): needs to keep it for backward compatibility
 		case "httpproxy":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
-		case "kibana":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
-		case "grafana":
 			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
@@ -249,11 +243,8 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeSSM)
 		case "kubernetes", "kubernetes-eks":
 			return ConnectionType(ConnectionTypeKubernetes)
-		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		// TODO(chico): needs to keep it for backward compatibility
 		case "httpproxy":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
-		case "kubernetes-token":
 			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
