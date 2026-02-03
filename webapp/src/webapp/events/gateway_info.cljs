@@ -68,3 +68,8 @@
              three-months-ms (* 90 24 60 60 1000) ; 90 days in milliseconds
              warning-date (- expire-date three-months-ms)]
          (>= now warning-date))))))
+
+(rf/reg-sub
+ :gateway->clipboard-disabled?
+ (fn [db _]
+   (get-in db [:gateway->info :data :disable_clipboard_copy] false)))

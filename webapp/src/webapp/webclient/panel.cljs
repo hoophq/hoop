@@ -119,11 +119,25 @@
 
 (defn create-codemirror-extensions [parser
                                     keymap
-                                    is-template-ready?]
+                                    is-template-ready?
+                                    clipboard-disabled?]
 
-  (let [extensions
+  (let [clipboard-keymap (when clipboard-disabled?
+                           [{:key "Mod-c"
+                             :run (fn [_]
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text "Clipboard copy/cut operations are disabled by administrator"}])
+                                    true)}
+                            {:key "Mod-x"
+                             :run (fn [_]
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text "Clipboard copy/cut operations are disabled by administrator"}])
+                                    true)}])
+        extensions
         (concat
          [(.of cm-view/keymap (clj->js keymap))]
+         (when clipboard-disabled?
+           [(.of cm-view/keymap (clj->js clipboard-keymap))])
          parser
          (when is-template-ready?
            [(.of (.-editable cm-view/EditorView) false)
@@ -168,6 +182,7 @@
 
 (defn editor []
   (let [gateway-info (rf/subscribe [:gateway->info])
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
@@ -240,7 +255,8 @@
             codemirror-exts (create-codemirror-extensions
                              language-parser-case
                              keymap
-                             false)
+                             false
+                             @clipboard-disabled?)
 
             optimized-change-handler (fn [value _]
                                        (reset! script value)
