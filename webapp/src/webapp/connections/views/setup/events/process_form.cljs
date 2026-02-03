@@ -402,6 +402,9 @@
         http-credentials (when (and (= connection-type "application")
                                     is-http-proxy-subtype?)
                            (extract-http-credentials credentials))
+
+        http-credentials-v1 (when (= connection-type "httpproxy")
+                              (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (or (= connection-subtype "ssh")
                                        (= connection-subtype "git")
@@ -461,8 +464,9 @@
 
         valid-tags (filter-valid-tags connection-tags)
 
-        http-env-vars (when (and (= (:type connection) "application")
-                                 is-http-proxy-subtype?)
+        http-env-vars (when (or (and (= (:type connection) "application")
+                                    is-http-proxy-subtype?)
+                                (= (:type connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
                               insecure? #(= (:key %) "INSECURE")
@@ -526,12 +530,19 @@
                                  (when (seq combined-credentials)
                                    (connection-method/infer-connection-method combined-credentials))))
 
+        http-proxy-connection-info (when (and (= connection-type "httpproxy")
+                                              (seq http-credentials-v1))
+                                     (connection-method/infer-connection-method http-credentials-v1))
+
         inferred-connection-info (cond
                                    (seq normalized-credentials)
                                    (connection-method/infer-connection-method normalized-credentials)
 
                                    http-connection-info
                                    http-connection-info
+
+                                   http-proxy-connection-info
+                                   http-proxy-connection-info
 
                                    env-vars-connection-info
                                    env-vars-connection-info
@@ -567,7 +578,7 @@
                           "manual-input")
      :secrets-manager-provider (when inferred-connection-info
                                  (:secrets-manager-provider inferred-connection-info))
-     :network-credentials (or network-credentials http-credentials)
+     :network-credentials (or network-credentials http-credentials http-credentials-v1)
      :ssh-credentials ssh-credentials
      :kubernetes-token kubernetes-token
      :ssh-auth-method (or ssh-auth-method "password")
@@ -585,8 +596,9 @@
                                             (= connection-type "custom")
                                             (process-connection-envvars (:secret connection) "envvar")
 
-                                            (and (= connection-type "application")
-                                                 is-http-proxy-subtype?)
+                                            (or (and (= connection-type "application")
+                                                    is-http-proxy-subtype?)
+                                                (= connection-type "httpproxy"))
                                             http-env-vars
 
                                             :else [])

@@ -219,21 +219,6 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		switch subtype {
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
-		// TODO: (chico) deprecate it in flavor of httpproxy type
-		// we are keep it for backward compatibility with frontend clients
-		// frontend decap has some "application"->"httpproxy" mapping logic
-		case "httpproxy":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		//TODO: (chico) deprecate
-		// remove when frontend decap no longer uses type :"application"->subtype:" grafana".
-		// we will migrate to "httpproxy" type directly and the subtype will be ignored
-		case "grafana":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		//TODO: (chico) deprecate
-		// remove when frontend decap no longer uses type :"application"->subtype:"kibana".
-		// we will migrate to "httpproxy" type directly and the subtype will be ignored
-		case "kibana":
-			return ConnectionType(ConnectionTypeHttpProxy)
 		case "ssh":
 			return ConnectionType(ConnectionTypeSSH)
 		case "git":
