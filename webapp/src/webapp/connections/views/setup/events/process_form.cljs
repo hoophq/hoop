@@ -407,6 +407,9 @@
 
         http-credentials (when (= connection-type "httpproxy")
                            (extract-http-credentials credentials))
+
+        http-credentials-v1 (when (= connection-type "httpproxy")
+                              (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (or (= connection-subtype "ssh")
                                        (= connection-subtype "git")
@@ -467,7 +470,7 @@
         valid-tags (filter-valid-tags connection-tags)
 
         http-env-vars (when (or (and (= (:type connection) "application")
-                                    is-http-proxy-subtype?)
+                                     is-http-proxy-subtype?)
                                 (= (:type connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
@@ -599,7 +602,7 @@
                                             (process-connection-envvars (:secret connection) "envvar")
 
                                             (or (and (= connection-type "application")
-                                                    is-http-proxy-subtype?)
+                                                     is-http-proxy-subtype?)
                                                 (= connection-type "httpproxy"))
                                             http-env-vars
 
