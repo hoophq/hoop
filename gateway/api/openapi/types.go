@@ -1056,6 +1056,10 @@ type ServerInfo struct {
 	// * true - Session download is disabled and not available to users
 	// * false - Session download is enabled and available to users
 	DisableSessionsDownload bool `json:"disable_sessions_download"`
+	// Indicates if clipboard copy functionality is disabled
+	// * true - Clipboard copy is disabled and not available to users
+	// * false - Clipboard copy is enabled and available to users
+	DisableClipboardCopy bool `json:"disable_clipboard_copy"`
 	// Indicates if all tracking and analytics should be enabled or disabled
 	// * enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)
 	// * disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)
