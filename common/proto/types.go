@@ -225,6 +225,9 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeSSH)
 		case "github":
 			return ConnectionType(ConnectionTypeSSH)
+		// TODO(chico): needs to keep it for backward compatibility
+		case "httpproxy":
+			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
@@ -240,6 +243,9 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeSSM)
 		case "kubernetes", "kubernetes-eks":
 			return ConnectionType(ConnectionTypeKubernetes)
+		// TODO(chico): needs to keep it for backward compatibility
+		case "httpproxy":
+			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
