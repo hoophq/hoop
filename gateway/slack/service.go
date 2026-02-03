@@ -234,6 +234,40 @@ func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool
 	return err
 }
 
+// UpdateMessagePartialApproval updates just the action block for a specific group
+// when a partial approval occurs (review still pending other approvals)
+func (s *SlackService) UpdateMessagePartialApproval(msg *MessageReviewResponse, approvedCount, totalCount int) error {
+	blockID := msg.item.ActionCallback.BlockActions[0].BlockID
+	blocks := msg.item.Message.Blocks.BlockSet
+
+	for i, b := range blocks {
+		if b.BlockType() == "actions" {
+			bl := b.(*slack.ActionBlock)
+			if bl.BlockID == blockID {
+				// Replace action buttons with approval confirmation
+				blocks[i] = slack.NewSectionBlock(&slack.TextBlockObject{
+					Type: slack.MarkdownType,
+					Text: fmt.Sprintf("@%s `%s` this session at _%v_",
+						msg.item.User.Name, msg.Status, time.Now().UTC().Format(time.RFC1123)),
+				}, nil, nil)
+			}
+		}
+	}
+
+	// Add status section showing progress
+	statusText := fmt.Sprintf("_Approved by %d of %d required group(s)_", approvedCount, totalCount)
+	blocks = append(blocks,
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject(slack.MarkdownType, statusText, false, false),
+		),
+	)
+
+	_, _, err := s.apiClient.PostMessage(msg.item.Channel.ID,
+		slack.MsgOptionReplaceOriginal(msg.item.ResponseURL),
+		slack.MsgOptionBlocks(blocks...))
+	return err
+}
+
 func (s *SlackService) OpenModalError(msg *MessageReviewResponse, message string) error {
 	_, err := s.apiClient.OpenView(msg.item.TriggerID, slack.ModalViewRequest{
 		ClearOnClose: true,

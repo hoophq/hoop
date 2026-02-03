@@ -1,7 +1,6 @@
 package slack
 
 import (
-	"fmt"
 	"slices"
 
 	"github.com/aws/smithy-go/ptr"
@@ -95,13 +94,27 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 	case nil:
 		isApproved := rev.Status == models.ReviewStatusApproved
 		isStillPending := rev.Status == models.ReviewStatusPending
+
 		if isStillPending {
-			err = fmt.Errorf("user was able to approve it, but the resource is still pending")
+			// Count how many groups have approved
+			approvedCount := 0
+			for _, rg := range rev.ReviewGroups {
+				if rg.Status == models.ReviewStatusApproved {
+					approvedCount++
+				}
+			}
+
+			// Update message showing partial approval
+			err = ev.ss.UpdateMessagePartialApproval(ev.msg, approvedCount, len(rev.ReviewGroups))
+			log.With("sid", ev.msg.SessionID).Infof("review id=%s, partial approval, approved=%d/%d, update-msg-err=%v",
+				ev.msg.ID, approvedCount, len(rev.ReviewGroups), err)
 		} else {
+			// Full approval or rejection
 			err = ev.ss.UpdateMessage(ev.msg, isApproved)
+			log.With("sid", ev.msg.SessionID).Infof("review id=%s, isapproved=%v, status=%v, update-msg-err=%v",
+				ev.msg.ID, isApproved, rev.Status, err)
 		}
-		log.With("sid", ev.msg.SessionID).Infof("review id=%s, isapproved=%v, status=%v, update-msg-err=%v",
-			ev.msg.ID, isApproved, rev.Status, err)
+
 		if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
 			// release any gRPC connection waiting for a review
 			p.TransportReleaseConnection(
