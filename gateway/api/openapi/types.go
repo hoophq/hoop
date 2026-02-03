@@ -443,17 +443,20 @@ type Runbook struct {
 				"description": "the id of the customer",
 				"required": true,
 				"type": "text",
-				"default": "Default value to use"
+				"default": "Default value to use",
+				"order": 1
 			},
 			"country": {
 				"description": "the country code US; BR, etc",
 				"required": false,
 				"type": "select",
-				"options": ["US", "BR"]
+				"options": ["US", "BR"],
+				"order": 2
 			}
 		}
 	*/
 	// By default it will have the attributes `description=""`, `required=false` and `type="text"`.
+	// Optional attributes include `order` (int), `default`, `placeholder`, `options`, and `asenv`.
 	Metadata map[string]any `json:"metadata"`
 	// The connections that could be used for this runbook
 	ConnectionList []string `json:"connections,omitempty" example:"pgdemo,bash"`
@@ -2135,17 +2138,20 @@ type RunbookV2 struct {
 				"description": "the id of the customer",
 				"required": true,
 				"type": "text",
-				"default": "Default value to use"
+				"default": "Default value to use",
+				"order": 1
 			},
 			"country": {
 				"description": "the country code US; BR, etc",
 				"required": false,
 				"type": "select",
-				"options": ["US", "BR"]
+				"options": ["US", "BR"],
+				"order": 2
 			}
 		}
 	*/
 	// By default it will have the attributes `description=""`, `required=false` and `type="text"`.
+	// Optional attributes include `order` (int), `default`, `placeholder`, `options`, and `asenv`.
 	Metadata map[string]any `json:"metadata"`
 	// The connections that could be used for this runbook
 	ConnectionList []string `json:"connections,omitempty" example:"pgdemo,bash"`

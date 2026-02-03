@@ -84,6 +84,9 @@
     [:> Box {:class " text-sm mb-large"}
      error]]])
 
+(defn- sort-params-by-order [params metadata]
+  (sort-by #(or (:order ((keyword %) metadata)) js/Number.MAX_SAFE_INTEGER) params))
+
 (defmulti template-view identity)
 
 (defmethod template-view :ready [_ _ _]
@@ -179,7 +182,8 @@
                  {:size "1" :class "text-gray-11"}
                  "Fill the params below for this Runbook"]
 
-                (doall (for [param (-> template :data :params)
+                (doall (for [param (sort-params-by-order (-> template :data :params)
+                                                         (-> template :data :metadata))
                              :let [metadata ((keyword param) (-> template :data :metadata))]]
                          ^{:key param}
                          [dynamic-form

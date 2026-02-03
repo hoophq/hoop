@@ -51,6 +51,7 @@ func defaultStaticTemplateFuncs() ttemplate.FuncMap {
 		},
 		"description": func(_, s string) string { return s },
 		"type":        func(_, s string) string { return s },
+		"order":       func(_, s string) string { return s },
 		"squote":      func(s string) string { return fmt.Sprintf(`'%s'`, s) },
 		"dquote":      func(s string) string { return fmt.Sprintf(`"%s"`, s) },
 		"quotechar":   func(c, s string) string { return fmt.Sprintf(`%s%s%s`, c, s, c) },
