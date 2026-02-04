@@ -502,8 +502,7 @@
                                   connection-subtype)
                         :results-status (:status @session-details)
                         :fixed-height? true
-                        :results-id (:id session)
-                        :not-clipboard? disabled-download}]
+                        :results-id (:id session)}]
                       [session-event-stream (:type session) session])])])])
 
            ;; action buttons section

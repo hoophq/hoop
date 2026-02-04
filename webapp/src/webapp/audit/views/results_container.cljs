@@ -16,13 +16,13 @@
       (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
 
 (defn tab-container
-  [{:keys [results-heads results-body not-clipboard? log-view]}
+  [{:keys [results-heads results-body log-view]}
    {:keys [status results]}]
   [:div {:class "flex flex-col h-96"}
    [tabs/tabs {:on-change #(reset! log-view %)
                :tabs ["Plain text" "Table"]}]
    (case @log-view
-     "Plain text" [logs/new-container {:status status :logs results :not-clipboard? not-clipboard? :whitespace? true}]
+     "Plain text" [logs/new-container {:status status :logs results :whitespace? true}]
      "Table" [ag-grid-table/main results-heads results-body false true
               {:height "100%"
                :theme "alpine"
@@ -31,28 +31,26 @@
 
 (defmulti results-view identity)
 (defmethod results-view :sql
-  [_ {:keys [results-heads results-body results status fixed-height? classes not-clipboard? log-view]}]
+  [_ {:keys [results-heads results-body results status fixed-height? classes log-view]}]
   [tab-container
    {:results-heads results-heads
     :results-body results-body
-    :not-clipboard? not-clipboard?
     :log-view log-view}
    {:status status :results results :fixed-height? fixed-height? :classes classes}])
 
 (defmethod results-view :not-sql
-  [_ {:keys [results status fixed-height? classes not-clipboard?]}]
+  [_ {:keys [results status fixed-height? classes]}]
   [:div {:class "h-96"}
    [logs/new-container {:status status
                         :fixed-height? fixed-height?
                         :logs results
                         :classes classes
-                        :whitespace? true
-                        :not-clipboard? not-clipboard?}]])
+                        :whitespace? true}]])
 
 (defn main []
   (let [log-view (r/atom "Plain text")]
 
-    (fn [connection-subtype {:keys [results results-status fixed-height? classes not-clipboard?]}]
+    (fn [connection-subtype {:keys [results results-status fixed-height? classes]}]
       (let [results-transformed (transform-results->matrix results connection-subtype)
             results-heads (first results-transformed)
             results-body (next results-transformed)
@@ -62,7 +60,6 @@
                             :status results-status
                             :results results
                             :classes classes
-                            :not-clipboard? not-clipboard?
                             :log-view log-view}]
 
         (if (= results-status :success)

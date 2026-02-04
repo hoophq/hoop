@@ -181,8 +181,7 @@
 
 
 (defn editor []
-  (let [gateway-info (rf/subscribe [:gateway->info])
-        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
+  (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
@@ -203,7 +202,6 @@
     (fn [{:keys [script-output]}]
       (let [current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
-            disabled-download (-> @gateway-info :data :disable_sessions_download)
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
             no-connection-selected? (not @primary-connection)
             run-disabled? (or (not exec-enabled?) no-connection-selected?)
@@ -337,8 +335,7 @@
                   [log-area/main
                    connection-type
                    @parallel-mode-active?
-                   @dark-mode?
-                   (not disabled-download)]
+                   @dark-mode?]
 
                   [:div {:class "bg-gray-1"}
                    [:footer {:class "flex justify-between items-center p-2 gap-small"}
