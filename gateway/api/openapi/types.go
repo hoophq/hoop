@@ -2252,3 +2252,39 @@ type RunbookExec struct {
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 }
+
+type AccessControlRule struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The name of the access control rule
+	Name string `json:"name" binding:"required" example:"default-access-control-rule"`
+	// The description of the access control rule
+	Description *string `json:"description,omitempty" example:"Access control rule for production databases"`
+	// Groups that can review sessions
+	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
+	// Groups that can force approve sessions
+	ForceApproveGroups []string `json:"force_approve_groups" example:"admin"`
+	// Maximum access duration in seconds
+	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
+	// Minimum number of approvals required
+	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AccessControlRuleRequest struct {
+	// The name of the access control rule
+	Name string `json:"name" binding:"required" example:"default-access-control-rule"`
+	// The description of the access control rule
+	Description *string `json:"description,omitempty" example:"Access control rule for production databases"`
+	// Groups that can review sessions
+	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
+	// Groups that can force approve sessions
+	ForceApproveGroups []string `json:"force_approve_groups" example:"admin"`
+	// Maximum access duration in seconds
+	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
+	// Minimum number of approvals required
+	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+}
