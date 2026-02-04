@@ -46,7 +46,11 @@
                               {:icon-dark-path "/images/kubernetes-dark.svg"
                                :icon-light-path "/images/kubernetes-light.svg"
                                :title "Kubernetes"
-                               :description "Setup a new Agent with a Helm chart."}]
+                               :description "Setup a new Agent with a Helm chart."}
+                              {:icon-dark-path "/images/command-line-dark.svg"
+                               :icon-light-path "/images/command-line-light.svg"
+                               :title "Local or VM"
+                               :description "Setup a new Agent locally or on a VM."}]
         agent-key (rf/subscribe [:agents->agent-key])
         ;; initial value for the selected installation method
         ;; see webapp/agents/deployment.cljs for more details
