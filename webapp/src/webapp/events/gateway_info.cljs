@@ -19,7 +19,8 @@
    {:db (assoc db :gateway->info {:loading false
                                   :data info})
     :fx [[:dispatch [:tracking->initialize-if-allowed]]
-         [:dispatch [:initialize-monitoring]]]}))
+         [:dispatch [:initialize-monitoring]]
+         [:dispatch [:clipboard/initialize]]]}))
 
 (rf/reg-event-fx
  :gateway->get-public-info

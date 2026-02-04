@@ -216,8 +216,7 @@
       [:> Spinner {:size "3"}]]]]])
 
 (defn- hoop-layout [_]
-  (let [user (rf/subscribe [:users->current-user])
-        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
+  (let [user (rf/subscribe [:users->current-user])]
     (if (nil? (.getItem js/localStorage "jwt-token"))
       (do
         (let [current-url (.. js/window -location -href)]
@@ -234,9 +233,6 @@
           (rf/dispatch [:clarity->verify-environment (:data @user)])
           (rf/dispatch [:native-client-access->cleanup-all-expired])
           (rf/dispatch [:native-client-access->check-active-sessions])
-          
-          ;; Update clipboard state when gateway info changes
-          (rf/dispatch [:clipboard/update-state @clipboard-disabled?])
 
           (cond
             (:loading @user)

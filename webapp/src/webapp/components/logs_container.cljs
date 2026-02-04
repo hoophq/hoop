@@ -26,11 +26,14 @@
   :logs -> the actual string with the logs"
   [config title]
   (let [container-id (or (:id config) "task-logs")
-        unique-clipboard-class (str "copy-to-clipboard-" container-id)]
+        unique-clipboard-class (str "copy-to-clipboard-" container-id)
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
 
-    (r/with-let [clipboard (new clipboardjs (str "." unique-clipboard-class))]
+    (r/with-let [clipboard (when-not @clipboard-disabled?
+                             (new clipboardjs (str "." unique-clipboard-class)))]
       ;; Setup clipboard success handler
-      (.on clipboard "success" #(rf/dispatch [:show-snackbar {:level :success :text "Text copied to clipboard"}]))
+      (when clipboard
+        (.on clipboard "success" #(rf/dispatch [:show-snackbar {:level :success :text "Text copied to clipboard"}])))
 
       ;; Render component
       [:div {:class "h-full overflow-auto"}
@@ -40,9 +43,9 @@
                      " text-gray-200 text-sm"
                      " p-radix-4 rounded-lg group"
                      (when (:whitespace? config) " whitespace-pre"))
-         :on-copy (when (:not-clipboard? config)
+         :on-copy (when (or (:not-clipboard? config) @clipboard-disabled?)
                     (fn [e] (.preventDefault e)))}
-        (when-not (:not-clipboard? config)
+        (when-not (or (:not-clipboard? config) @clipboard-disabled?)
           [:div {:class (str unique-clipboard-class " absolute rounded-lg p-x-small "
                              "top-2 right-2 cursor-pointer box-border "
                              "opacity-0 group-hover:opacity-100 transition z-20")
@@ -55,8 +58,8 @@
            :class (str (when (:classes config) (:classes config))
                        " h-full"
                        (when-not (:fixed-height? config) " max-h-80")
-                       (when (:not-clipboard? config) " select-none"))
-           :style (when (:not-clipboard? config)
+                       (when (or (:not-clipboard? config) @clipboard-disabled?) " select-none"))
+           :style (when (or (:not-clipboard? config) @clipboard-disabled?)
                     #js {:WebkitUserSelect "none"
                          :MozUserSelect "none"
                          :msUserSelect "none"
@@ -65,4 +68,5 @@
 
       ;; Cleanup on unmount
       (finally
-        (.destroy clipboard)))))
+        (when clipboard
+          (.destroy clipboard))))))

@@ -101,67 +101,71 @@
      {:code (deployment-yml hoop-key)}]]])
 
 (defmethod installation "Docker Hub" [_ hoop-key]
-  [:> Flex {:direction "column" :gap "6"}
-   [:> Box
-    [:> Flex {:direction "column" :gap "4"}
-     [:> Text {:size "2" :weight "bold"}
-      "Docker image repository"]
-     [:> Box {:p "3"
-              :class "border border-[--gray-a6] rounded-xl"}
-      [:> Flex {:gap "2" :align "center"}
-       [:img {:src (str config/webapp-url "/images/docker-blue.svg")}]
-       [:> Text {:size "1"}
-        "hoophq/hoopdev:latest"]
-       [:> Box {:ml "2"
-                :on-click (fn []
-                            (js/navigator.clipboard.writeText "hoophq/hoopdev:latest")
-                            (rf/dispatch [:show-snackbar {:level :success
-                                                          :text "Copied to clipboard"}]))
-                :class "cursor-pointer"}
-        [:> Copy {:size 14 :color "gray"}]]]]]]
-   [:> Box
-    [:> Flex {:direction "column" :gap "4"}
-     [:> Text {:size "2" :weight "bold"}
-      "Environment variables"]
-     [:> Table.Root {:variant "surface"}
-      [:> Table.Header
-       [:> Table.Row
-        [:> Table.ColumnHeaderCell "env-var"]
-        [:> Table.ColumnHeaderCell "value"]]]
-      [:> Table.Body
-       [:> Table.Row
-        [:> Table.RowHeaderCell
-         [:> Flex {:gap "4"
-                   :align "center"
-                   :justify "center"
-                   :height "100%"}
-          [:> Text "HOOP_KEY"]
-          [:> Box {:on-click (fn []
-                               (js/navigator.clipboard.writeText "HOOP_KEY")
-                               (rf/dispatch [:show-snackbar {:level :success
-                                                             :text "Copied to clipboard"}]))
-                   :class "cursor-pointer"}
-           [:> Copy {:size 14 :color "gray"}]]]]
-        [:> Table.Cell
-         [:> Flex {:gap "4" :align "center"}
-          [:> Text hoop-key]
-          [:> Box {:on-click (fn []
-                               (js/navigator.clipboard.writeText hoop-key)
-                               (rf/dispatch [:show-snackbar {:level :success
-                                                             :text "Copied to clipboard"}]))
-                   :class "cursor-pointer"}
-           [:> Copy {:size 14 :color "gray"}]]]]]]]]]
-   [:> Box
-    [:> Flex {:direction "column" :gap "4"}
-     [:> Flex {:direction "column" :gap "2"}
-      [:> Text {:size "2" :weight "bold"}
-       "Manually running in a Docker container"]
-      [:> Text {:size "1" :color "gray"}
-       "If preferred, it is also possible to configure it manually with the following command."]]
-     [code-snippet/main
-      {:code (str "docker container run \\\n"
-                  "-e HOOP_KEY='" hoop-key "' \\\n"
-                  "--rm -d hoophq/hoopdev")}]]]])
+  (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
+    [:> Flex {:direction "column" :gap "6"}
+     [:> Box
+      [:> Flex {:direction "column" :gap "4"}
+       [:> Text {:size "2" :weight "bold"}
+        "Docker image repository"]
+       [:> Box {:p "3"
+                :class "border border-[--gray-a6] rounded-xl"}
+        [:> Flex {:gap "2" :align "center"}
+         [:img {:src (str config/webapp-url "/images/docker-blue.svg")}]
+         [:> Text {:size "1"}
+          "hoophq/hoopdev:latest"]
+         (when-not @clipboard-disabled?
+           [:> Box {:ml "2"
+                    :on-click (fn []
+                                (js/navigator.clipboard.writeText "hoophq/hoopdev:latest")
+                                (rf/dispatch [:show-snackbar {:level :success
+                                                              :text "Copied to clipboard"}]))
+                    :class "cursor-pointer"}
+            [:> Copy {:size 14 :color "gray"}]])]]]]
+     [:> Box
+      [:> Flex {:direction "column" :gap "4"}
+       [:> Text {:size "2" :weight "bold"}
+        "Environment variables"]
+       [:> Table.Root {:variant "surface"}
+        [:> Table.Header
+         [:> Table.Row
+          [:> Table.ColumnHeaderCell "env-var"]
+          [:> Table.ColumnHeaderCell "value"]]]
+        [:> Table.Body
+         [:> Table.Row
+          [:> Table.RowHeaderCell
+           [:> Flex {:gap "4"
+                     :align "center"
+                     :justify "center"
+                     :height "100%"}
+            [:> Text "HOOP_KEY"]
+            (when-not @clipboard-disabled?
+              [:> Box {:on-click (fn []
+                                   (js/navigator.clipboard.writeText "HOOP_KEY")
+                                   (rf/dispatch [:show-snackbar {:level :success
+                                                                 :text "Copied to clipboard"}]))
+                       :class "cursor-pointer"}
+               [:> Copy {:size 14 :color "gray"}]])]]
+          [:> Table.Cell
+           [:> Flex {:gap "4" :align "center"}
+            [:> Text hoop-key]
+            (when-not @clipboard-disabled?
+              [:> Box {:on-click (fn []
+                                   (js/navigator.clipboard.writeText hoop-key)
+                                   (rf/dispatch [:show-snackbar {:level :success
+                                                                 :text "Copied to clipboard"}]))
+                       :class "cursor-pointer"}
+               [:> Copy {:size 14 :color "gray"}]])]]]]]]]
+     [:> Box
+      [:> Flex {:direction "column" :gap "4"}
+       [:> Flex {:direction "column" :gap "2"}
+        [:> Text {:size "2" :weight "bold"}
+         "Manually running in a Docker container"]
+        [:> Text {:size "1" :color "gray"}
+         "If preferred, it is also possible to configure it manually with the following command."]]
+       [code-snippet/main
+        {:code (str "docker container run \\\n"
+                    "-e HOOP_KEY='" hoop-key "' \\\n"
+                    "--rm -d hoophq/hoopdev")}]]]]))
 
 (defmethod installation "Local or remote machine" [_ hoop-key]
   [:> Flex {:direction "column" :gap "6"}
