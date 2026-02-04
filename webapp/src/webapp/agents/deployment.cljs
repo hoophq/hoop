@@ -171,7 +171,7 @@
       "Install Hoop CLI"]
      [button/DocsBtnCallOut
       {:text "See our installation docs for your OS"
-       :href "https://hoop.dev/docs/clients/cli"}]]
+       :href (get-in config/docs-url [:clients :command-line :overview])}]]
     [:> Flex {:direction "column" :gap "4"}
      [:> Flex {:direction "column" :gap "2"}
       [:> Text {:size "2" :weight "bold"}
