@@ -52,7 +52,7 @@ type Config struct {
 	webappUsersManagement           string
 	webappStaticUIPath              string
 	disableSessionsDownload         bool
-	disableClipboardCopy            bool
+	disableClipboardCopyCut         bool
 	gatewayUseTLS                   bool
 	grpcClientTLSCa                 string
 	gatewayTLSKey                   string
@@ -208,7 +208,7 @@ func Load() error {
 		webappStaticUIPath:              webappStaticUiPath,
 		isLoaded:                        true,
 		disableSessionsDownload:         os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
-		disableClipboardCopy:            os.Getenv("DISABLE_CLIPBOARD_COPY") == "true",
+		disableClipboardCopyCut:         os.Getenv("DISABLE_CLIPBOARD_COPY_CUT") == "true",
 		gatewayUseTLS:                   gatewayUseTLS,
 		grpcClientTLSCa:                 grpcClientTLSCa,
 		gatewayTLSKey:                   gatewayTLSKey,
@@ -362,7 +362,7 @@ func (c Config) PgUsername() string                    { return c.pgCred.usernam
 func (c Config) PgURI() string                         { return c.pgCred.connectionString }
 func (c Config) AnalyticsTracking() bool               { return c.analyticsTracking }
 func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
-func (c Config) DisableClipboardCopy() bool            { return c.disableClipboardCopy }
+func (c Config) DisableClipboardCopyCut() bool         { return c.disableClipboardCopyCut }
 func (c Config) MigrationPathFiles() string            { return c.migrationPathFiles }
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
 func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }

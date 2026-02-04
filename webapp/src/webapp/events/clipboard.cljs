@@ -61,5 +61,5 @@
 (rf/reg-event-fx
  :clipboard/initialize
  (fn [{db :db} _]
-   (let [disabled? (get-in db [:gateway->info :data :disable_clipboard_copy] false)]
+   (let [disabled? (get-in db [:gateway->info :data :disable_clipboard_copy_cut] false)]
      {:clipboard/manage-listeners disabled?})))

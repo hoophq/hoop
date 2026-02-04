@@ -73,4 +73,4 @@
 (rf/reg-sub
  :gateway->clipboard-disabled?
  (fn [db _]
-   (get-in db [:gateway->info :data :disable_clipboard_copy] false)))
+   (get-in db [:gateway->info :data :disable_clipboard_copy_cut] false)))
