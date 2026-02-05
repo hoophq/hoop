@@ -407,9 +407,6 @@
 
         http-credentials (when (= connection-type "httpproxy")
                            (extract-http-credentials credentials))
-
-        http-credentials-v1 (when (= connection-type "httpproxy")
-                              (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (or (= connection-subtype "ssh")
                                        (= connection-subtype "git")
