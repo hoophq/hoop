@@ -399,12 +399,14 @@
         network-credentials (when (and (= connection-type "application")
                                        (= connection-subtype "tcp"))
                               (extract-network-credentials credentials))
-        http-credentials (when (and (= connection-type "application")
-                                    is-http-proxy-subtype?)
-                           (extract-http-credentials credentials))
+        ;; Deprecated: we are moving to httpproxy being its own connection type, not a subtype
+        ;; of application. This is needed to render older forms saved in that format.
+        http-credentials-deprecated (when (and (= connection-type "application")
+                                               is-http-proxy-subtype?)
+                                      (extract-http-credentials credentials))
 
-        http-credentials-v1 (when (= connection-type "httpproxy")
-                              (extract-http-credentials credentials))
+        http-credentials (when (= connection-type "httpproxy")
+                           (extract-http-credentials credentials))
         ssh-credentials (when (and (= connection-type "application")
                                    (or (= connection-subtype "ssh")
                                        (= connection-subtype "git")
@@ -518,7 +520,7 @@
 
         http-connection-info (when (and (= connection-type "application")
                                         is-http-proxy-subtype?
-                                        (or (seq http-credentials) (seq http-env-vars)))
+                                        (or (seq http-credentials-deprecated) (seq http-env-vars)))
                                (let [env-vars-map (when (seq http-env-vars)
                                                     (reduce (fn [acc {:keys [key value]}]
                                                               (if (map? value)
@@ -526,13 +528,13 @@
                                                                 (assoc acc (keyword key) {:value (str value) :source "manual-input"})))
                                                             {}
                                                             http-env-vars))
-                                     combined-credentials (merge http-credentials env-vars-map)]
+                                     combined-credentials (merge http-credentials-deprecated env-vars-map)]
                                  (when (seq combined-credentials)
                                    (connection-method/infer-connection-method combined-credentials))))
 
         http-proxy-connection-info (when (and (= connection-type "httpproxy")
-                                              (seq http-credentials-v1))
-                                     (connection-method/infer-connection-method http-credentials-v1))
+                                              (seq http-credentials))
+                                     (connection-method/infer-connection-method http-credentials))
 
         inferred-connection-info (cond
                                    (seq normalized-credentials)
@@ -578,7 +580,7 @@
                           "manual-input")
      :secrets-manager-provider (when inferred-connection-info
                                  (:secrets-manager-provider inferred-connection-info))
-     :network-credentials (or network-credentials http-credentials http-credentials-v1)
+     :network-credentials (or network-credentials http-credentials http-credentials-deprecated)
      :ssh-credentials ssh-credentials
      :kubernetes-token kubernetes-token
      :ssh-auth-method (or ssh-auth-method "password")
