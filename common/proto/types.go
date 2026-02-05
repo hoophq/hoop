@@ -228,6 +228,12 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
 		case "httpproxy":
 			return ConnectionType(ConnectionTypeHttpProxy)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "kibana":
+			return ConnectionType(ConnectionTypeHttpProxy)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "grafana":
+			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
@@ -245,6 +251,9 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeKubernetes)
 		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
 		case "httpproxy":
+			return ConnectionType(ConnectionTypeHttpProxy)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "kubernetes-token":
 			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
