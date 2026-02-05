@@ -349,6 +349,32 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		reviewHandler.ReviewByIdOrSid,
 	)
 
+	r.GET("/reviews/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewapi.ListAccessRequestRules,
+	)
+	r.POST("/reviews/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewapi.CreateAccessRequestRule,
+	)
+	r.GET("/reviews/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewapi.GetAccessRequestRule,
+	)
+	r.PUT("/reviews/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewapi.UpdateAccessRequestRule,
+	)
+	r.DELETE("/reviews/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		reviewapi.DeleteAccessRequestRule,
+	)
+
 	r.POST("/agents",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
