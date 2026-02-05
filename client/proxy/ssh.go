@@ -330,7 +330,46 @@ func (p *SSHServer) PacketWriteClient(connectionID string, pkt *pb.Packet) (int,
 				cc.Type, err)
 		}
 		return 0, nil
+	case sshtypes.SSHRequestReplyType:
+		// Server's reply to a channel request (e.g. pty-req, shell); we already replied locally
+		var reply sshtypes.SSHRequestReply
+		if err := sshtypes.Decode(pkt.Payload, &reply); err != nil {
+			return 0, err
+		}
+		return 0, nil
+	case sshtypes.EOFType:
+		var eof sshtypes.EOF
+		if err := sshtypes.Decode(pkt.Payload, &eof); err != nil {
+			return 0, err
+		}
+		obj := p.connectionStore.Get(fmt.Sprintf("%s:%v", connectionID, eof.ChannelID))
+		if ch, ok := obj.(interface{ CloseWrite() error }); ok {
+			_ = ch.CloseWrite()
+		}
+		return 0, nil
+	case sshtypes.ServerSSHRequestType:
+		var sreq sshtypes.ServerSSHRequest
+		if err := sshtypes.Decode(pkt.Payload, &sreq); err != nil {
+			return 0, err
+		}
+		obj := p.connectionStore.Get(fmt.Sprintf("%s:%v", connectionID, sreq.ChannelID))
+		clientCh, ok := obj.(interface {
+			SendRequest(name string, wantReply bool, payload []byte) (bool, error)
+		})
+		if !ok {
+			return 0, fmt.Errorf("local channel %q not found or does not support requests", connectionID)
+		}
+		_, err := clientCh.SendRequest(sreq.RequestType, sreq.WantReply, sreq.Payload)
+		return 0, err
 	default:
+		// Defensive: handle type 5 (SSHRequestReply) by raw byte in case of constant mismatch
+		if len(pkt.Payload) > 0 && pkt.Payload[0] == 5 {
+			var reply sshtypes.SSHRequestReply
+			if err := sshtypes.Decode(pkt.Payload, &reply); err != nil {
+				return 0, err
+			}
+			return 0, nil
+		}
 		return 0, fmt.Errorf("unknown ssh message type (%v)", sshtypes.DecodeType(pkt.Payload))
 	}
 }

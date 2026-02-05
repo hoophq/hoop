@@ -161,6 +161,13 @@ type pendingSSHRequest struct {
 	reply chan bool
 }
 
+// pendingReplyQueue holds pending SSH requests per channel in FIFO order
+// so that replies from the agent are matched to the correct request (e.g. pty-req then shell).
+type pendingReplyQueue struct {
+	mu      sync.Mutex
+	pending []*pendingSSHRequest
+}
+
 type sshConnection struct {
 	id                  string
 	sid                 string
@@ -170,7 +177,7 @@ type sshConnection struct {
 	clientNewSshChannel <-chan ssh.NewChannel
 	sshConn             *ssh.ServerConn
 	sshChannels         sync.Map
-	pendingRequests     sync.Map // maps channelID (uint16) to pending SSH request
+	pendingRequests     sync.Map // maps channelID (uint16) to *pendingReplyQueue
 }
 
 func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*sshConnection, error) {
@@ -421,9 +428,17 @@ func (c *sshConnection) handleClientWrite() {
 					log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
 						Debugf("received ssh request reply, ok=%v", reply.OK)
 
-					// Forward the reply to the pending client request
-					if pendingReqObj, ok := c.pendingRequests.Load(reply.ChannelID); ok {
-						if pendingReq, ok := pendingReqObj.(*pendingSSHRequest); ok {
+					// Forward the reply to the next pending client request (FIFO per channel)
+					queue := c.loadPendingReplyQueue(reply.ChannelID)
+					if queue == nil {
+						log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
+							Infof("pending reply queue missing or invalid, dropping reply")
+					} else {
+						queue.mu.Lock()
+						if len(queue.pending) > 0 {
+							pendingReq := queue.pending[0]
+							queue.pending = queue.pending[1:]
+							queue.mu.Unlock()
 							select {
 							case pendingReq.reply <- reply.OK:
 								log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).
@@ -431,8 +446,10 @@ func (c *sshConnection) handleClientWrite() {
 							case <-c.ctx.Done():
 								return
 							default:
-								// Channel full or already handled, drop the reply
+								log.With("sid", c.sid, "ch", reply.ChannelID, "conn", c.id).Infof("channel full or already handled (e.g. timeout), dropping request")
 							}
+						} else {
+							queue.mu.Unlock()
 						}
 					}
 
@@ -459,6 +476,19 @@ func (c *sshConnection) handleClientWrite() {
 					if err != nil {
 						log.With("sid", c.sid, "ch", serverReq.ChannelID, "conn", c.id).
 							Debugf("failed sending server request to client: %v", err)
+					}
+
+				case sshtypes.EOFType:
+					var eof sshtypes.EOF
+					if err := sshtypes.Decode(pkt.Payload, &eof); err != nil {
+						log.With("sid", c.sid, "ch", eof.ChannelID, "conn", c.id).
+							Infof("failed decoding ssh eof, err=%v", err)
+						c.cancelFn("failed decoding ssh eof, err=%v", err)
+						return
+					}
+					obj, _ := c.sshChannels.Load(fmt.Sprintf("%v", eof.ChannelID))
+					if ch, ok := obj.(interface{ CloseWrite() error }); ok {
+						_ = ch.CloseWrite()
 					}
 
 				default:
@@ -489,6 +519,19 @@ func (c *sshConnection) handleClientWrite() {
 	case <-openSessionReadyTimeout.Done():
 		c.cancelFn("session timed out before it was ready")
 	}
+}
+
+// loadPendingReplyQueue returns the pending reply queue for the channel, or nil if missing or invalid.
+func (c *sshConnection) loadPendingReplyQueue(channelID uint16) *pendingReplyQueue {
+	queueObj, ok := c.pendingRequests.Load(channelID)
+	if !ok {
+		return nil
+	}
+	queue, ok := queueObj.(*pendingReplyQueue)
+	if !ok || queue == nil {
+		return nil
+	}
+	return queue
 }
 
 func (c *sshConnection) handleServerWrite() {
@@ -590,13 +633,20 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 
 			// respond to the request if needed
 			if req.WantReply {
-				// Store the pending request to wait for agent's reply
 				replyChan := make(chan bool, 1)
 				pendingReq := &pendingSSHRequest{
 					req:   req,
 					reply: replyChan,
 				}
-				c.pendingRequests.Store(channelID, pendingReq)
+				v, _ := c.pendingRequests.LoadOrStore(channelID, &pendingReplyQueue{})
+				queue, ok := v.(*pendingReplyQueue)
+				if !ok || queue == nil {
+					log.With("sid", c.sid, "conn", c.id, "ch", channelID).Warnf("pending reply queue missing or invalid, skipping")
+					continue
+				}
+				queue.mu.Lock()
+				queue.pending = append(queue.pending, pendingReq)
+				queue.mu.Unlock()
 
 				// Wait for the agent's reply in a separate goroutine to avoid blocking
 				go func(clientReq *ssh.Request, chID uint16) {
@@ -615,7 +665,6 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 								Debugf("failed sending response to channel (timeout), err=%v", err)
 						}
 					}
-					c.pendingRequests.Delete(chID)
 				}(req, channelID)
 			}
 		}
