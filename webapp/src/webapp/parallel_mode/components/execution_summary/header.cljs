@@ -8,7 +8,8 @@
 (defn main []
   (let [search-term (rf/subscribe [:parallel-mode/execution-search-term])
         is-running? (rf/subscribe [:parallel-mode/is-executing?])
-        batch-id (rf/subscribe [:parallel-mode/batch-id])]
+        batch-id (rf/subscribe [:parallel-mode/batch-id])
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
     (fn []
       [:> Box {:class "sticky top-0 z-50 bg-white p-6"}
        [:> Flex {:justify "between" :align "center" :gap "4"}
@@ -16,26 +17,27 @@
          [:> Heading {:size "5" :weight "bold" :class "text-gray-12"}
           "Execution Summary"]
 
-         [:> Button
-          {:size "2"
-           :variant "soft"
-           :color "gray"
-           :highContrast true
-           :disabled (nil? @batch-id)
-           :onClick (when @batch-id
-                      #(let [url (str (.. js/window -location -origin) "/sessions/filtered?batch_id=" @batch-id)]
-                         (-> js/navigator
-                             .-clipboard
-                             (.writeText url)
-                             (.then (fn []
-                                      (rf/dispatch [:show-snackbar {:level :success
-                                                                    :text "Link copied to clipboard!"}])))
-                             (.catch (fn [err]
-                                       (js/console.error "Failed to copy:" err)
-                                       (rf/dispatch [:show-snackbar {:level :error
-                                                                     :text "Failed to copy link"}]))))))}
-          [:> Link {:size 16}]
-          "Share"]]
+         (when-not @clipboard-disabled?
+           [:> Button
+            {:size "2"
+             :variant "soft"
+             :color "gray"
+             :highContrast true
+             :disabled (nil? @batch-id)
+             :onClick (when @batch-id
+                        #(let [url (str (.. js/window -location -origin) "/sessions/filtered?batch_id=" @batch-id)]
+                           (-> js/navigator
+                               .-clipboard
+                               (.writeText url)
+                               (.then (fn []
+                                        (rf/dispatch [:show-snackbar {:level :success
+                                                                      :text "Link copied to clipboard!"}])))
+                               (.catch (fn [err]
+                                         (js/console.error "Failed to copy:" err)
+                                         (rf/dispatch [:show-snackbar {:level :error
+                                                                       :text "Failed to copy link"}]))))))}
+            [:> Link {:size 16}]
+            "Share"])]
 
         [:> Flex {:align "center" :gap "3"}
          ;; Search

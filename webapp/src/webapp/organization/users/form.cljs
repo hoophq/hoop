@@ -52,7 +52,8 @@
                                                        :style :capital
                                                        :separator "-"
                                                        :length 3}))
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
     (fn [_ user]
       [:div
        [header form-type (:name user)]
@@ -133,12 +134,13 @@
               [:> EyeOpenIcon {:color "gray"
                                :cursor "pointer"
                                :on-click #(reset! see-password? (not @see-password?))}])
-            [:> CopyIcon {:color "gray"
-                          :cursor "pointer"
-                          :onClick (fn []
-                                     (js/navigator.clipboard.writeText @password)
-                                     (rf/dispatch [:show-snackbar {:level :success
-                                                                   :text "Password copied to clipboard"}]))}]]])
+            (when-not @clipboard-disabled?
+              [:> CopyIcon {:color "gray"
+                            :cursor "pointer"
+                            :onClick (fn []
+                                       (js/navigator.clipboard.writeText @password)
+                                       (rf/dispatch [:show-snackbar {:level :success
+                                                                     :text "Password copied to clipboard"}]))}])]])
         [divider/main]
         [:div {:class "grid grid-cols-2 gap-regular"}
          [button/secondary {:text "Cancel"

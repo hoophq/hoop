@@ -62,12 +62,15 @@
 (defn review-details-page [session]
   (let [user (rf/subscribe [:users->current-user])
         session-details (rf/subscribe [:reviews-plugin->review-details])
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         add-review-popover-open? (r/atom false)]
     (when session
       (rf/dispatch [:reviews-plugin->get-review-by-id session]))
     (fn [_]
-      (r/with-let [clipboard-url (new clipboardjs ".copy-to-clipboard-url")
-                   _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
+      (r/with-let [clipboard-url (when-not @clipboard-disabled?
+                                   (new clipboardjs ".copy-to-clipboard-url"))
+                   _ (when clipboard-url
+                       (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}])))]
         (let [current-session (:review @session-details)
               user-name (:user_name current-session)
               connection-name (:connection current-session)
@@ -123,13 +126,14 @@
                               :style {:color "currentColor"}}
                      [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
 
-              [:div {:class "relative group"}
-               [:> Tooltip {:content "Copy link"}
-                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
-                       :data-clipboard-text (str (-> js/document .-location .-origin)
-                                                 (routes/url-for :reviews-plugin)
-                                                 "/" (-> current-session :review :id))}
-                 [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]]]]
+              (when-not @clipboard-disabled?
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Copy link"}
+                  [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
+                         :data-clipboard-text (str (-> js/document .-location .-origin)
+                                                   (routes/url-for :reviews-plugin)
+                                                   "/" (-> current-session :review :id))}
+                   [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]])]]]
 
            ;; Information Grid
            [:section {:class "grid grid-cols-1 gap-regular pb-regular lg:grid-cols-3"}
@@ -200,7 +204,8 @@
               [:article (-> current-session :script :data)]])])
 
         (finally
-          (.destroy clipboard-url))))))
+          (when clipboard-url
+            (.destroy clipboard-url)))))))
 
 (defmulti item-view identity)
 (defmethod item-view :opened [_ review-details]

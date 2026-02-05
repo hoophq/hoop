@@ -37,6 +37,7 @@
         session-list (rf/subscribe [:audit->filtered-session-by-id])
         filtered-sessions (rf/subscribe [:audit->filtered-sessions-by-id-filtered])
         search-term (rf/subscribe [:audit->filtered-session-search-term])
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         initialized (atom false)]
 
     (when (empty? (:data @user))
@@ -76,26 +77,27 @@
               [:> Heading {:size "5" :weight "bold" :class "text-gray-12"}
                "Execution Summary"]
 
-              [:> Button
-               {:size "2"
-                :variant "soft"
-                :color "gray"
-                :highContrast true
-                :disabled (nil? batch-id)
-                :onClick (when batch-id
-                           #(let [url (str (.. js/window -location -origin) "/sessions/filtered?batch_id=" batch-id)]
-                              (-> js/navigator
-                                  .-clipboard
-                                  (.writeText url)
-                                  (.then (fn []
-                                           (rf/dispatch [:show-snackbar {:level :success
-                                                                         :text "Link copied to clipboard!"}])))
-                                  (.catch (fn [err]
-                                            (js/console.error "Failed to copy:" err)
-                                            (rf/dispatch [:show-snackbar {:level :error
-                                                                          :text "Failed to copy link"}]))))))}
-               [:> Link {:size 16}]
-               "Share"]]
+              (when-not @clipboard-disabled?
+                [:> Button
+                 {:size "2"
+                  :variant "soft"
+                  :color "gray"
+                  :highContrast true
+                  :disabled (nil? batch-id)
+                  :onClick (when batch-id
+                             #(let [url (str (.. js/window -location -origin) "/sessions/filtered?batch_id=" batch-id)]
+                                (-> js/navigator
+                                    .-clipboard
+                                    (.writeText url)
+                                    (.then (fn []
+                                             (rf/dispatch [:show-snackbar {:level :success
+                                                                           :text "Link copied to clipboard!"}])))
+                                    (.catch (fn [err]
+                                              (js/console.error "Failed to copy:" err)
+                                              (rf/dispatch [:show-snackbar {:level :error
+                                                                            :text "Failed to copy link"}]))))))}
+                 [:> Link {:size 16}]
+                 "Share"])]
 
              [:> Flex {:align "center" :gap "3"}
               ;; Search

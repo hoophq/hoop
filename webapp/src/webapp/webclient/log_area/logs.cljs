@@ -6,30 +6,32 @@
             [webapp.formatters :as formatters]))
 
 (defn action-buttons-container [session-id logs-content]
-  [:div {:class "sticky top-1 right-0 h-0 w-full z-30"
-         :style {:pointer-events "none"}}
-   [:div {:class "absolute -top-10 -right-2"
-          :style {:pointer-events "auto"}}
-    [:> DropdownMenu.Root
-     [:> DropdownMenu.Trigger {:class (str "cursor-pointer p-1.5 rounded-full "
-                                           "bg-gray-3 hover:bg-gray-5 shadow-sm "
-                                           "opacity-100 transition border border-gray-5")}
-      [:> Box
-       [:> EllipsisVertical {:size 18 :class "text-gray-12"}]]]
-     [:> DropdownMenu.Content
-      [:> DropdownMenu.Item {:on-select #(rf/dispatch [:open-modal
-                                                       [session-details/main {:id session-id :verb "exec"}]
-                                                       :large
-                                                       (fn []
-                                                         (rf/dispatch [:audit->clear-session])
-                                                         (rf/dispatch [:close-modal]))])}
-       [:> Flex {:align "center" :gap "2"}
-        [:> SquareArrowOutUpRight {:size 16}]
-        [:> Text {:size "2"} "View session details"]]]
-      [:> DropdownMenu.Item {:on-select #(js/navigator.clipboard.writeText logs-content)}
-       [:> Flex {:align "center" :gap "2"}
-        [:> Copy {:size 16}]
-        [:> Text {:size "2"} "Copy logs content"]]]]]]])
+  (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])]
+    [:div {:class "sticky top-1 right-0 h-0 w-full z-30"
+           :style {:pointer-events "none"}}
+     [:div {:class "absolute -top-10 -right-2"
+            :style {:pointer-events "auto"}}
+      [:> DropdownMenu.Root
+       [:> DropdownMenu.Trigger {:class (str "cursor-pointer p-1.5 rounded-full "
+                                             "bg-gray-3 hover:bg-gray-5 shadow-sm "
+                                             "opacity-100 transition border border-gray-5")}
+        [:> Box
+         [:> EllipsisVertical {:size 18 :class "text-gray-12"}]]]
+       [:> DropdownMenu.Content
+        [:> DropdownMenu.Item {:on-select #(rf/dispatch [:open-modal
+                                                         [session-details/main {:id session-id :verb "exec"}]
+                                                         :large
+                                                         (fn []
+                                                           (rf/dispatch [:audit->clear-session])
+                                                           (rf/dispatch [:close-modal]))])}
+         [:> Flex {:align "center" :gap "2"}
+          [:> SquareArrowOutUpRight {:size 16}]
+          [:> Text {:size "2"} "View session details"]]]
+        (when-not @clipboard-disabled?
+          [:> DropdownMenu.Item {:on-select #(js/navigator.clipboard.writeText logs-content)}
+           [:> Flex {:align "center" :gap "2"}
+            [:> Copy {:size 16}]
+            [:> Text {:size "2"} "Copy logs content"]]])]]]]))
 
 (defn- logs-area-list
   [status {:keys [logs logs-status execution-time has-review? session-id]}]
