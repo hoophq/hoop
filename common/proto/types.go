@@ -243,7 +243,7 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeSSM)
 		case "kubernetes", "kubernetes-eks":
 			return ConnectionType(ConnectionTypeKubernetes)
-		// TODO(chico): needs to keep it for backward compatibility
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
 		case "httpproxy":
 			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
