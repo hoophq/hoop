@@ -58,9 +58,11 @@ type Connection struct {
 	JiraIssueTemplateID sql.NullString `gorm:"column:jira_issue_template_id"`
 
 	// Access control
-	ForceApproveGroups pq.StringArray `gorm:"column:force_approve_groups;type:text[]"`
-	AccessMaxDuration  *int           `gorm:"column:access_max_duration"`
-	MinReviewApprovals *int           `gorm:"column:min_review_approvals"`
+	ForceApproveGroups    pq.StringArray      `gorm:"column:force_approve_groups;type:text[]"`
+	AccessMaxDuration     *int                `gorm:"column:access_max_duration"`
+	MinReviewApprovals    *int                `gorm:"column:min_review_approvals"`
+	AccessRequestRuleName *string             `gorm:"column:access_request_rule_name"`
+	AccessRequestRule     *AccessRequestRules `gorm:"column:access_request_rule;serializer:json;->"`
 
 	// Read Only fields
 	RedactEnabled             bool              `gorm:"column:redact_enabled;->"`
@@ -415,7 +417,19 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
-		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		c.access_request_rule_name, c.jira_issue_template_id, it.issue_transition_name_on_close,
+		CASE WHEN acr IS NOT NULL THEN jsonb_build_object(
+			'id', acr.id,
+			'org_id', acr.org_id,
+			'name', acr.name,
+			'description', acr.description,
+			'reviewers_groups', acr.reviewers_groups,
+			'force_approval_groups', acr.force_approval_groups,
+			'access_max_duration', acr.access_max_duration,
+			'min_approvals', acr.min_approvals,
+			'created_at', to_char(acr.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+			'updated_at', to_char(acr.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+		) ELSE NULL END AS access_request_rule,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
 			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
@@ -434,6 +448,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
+	LEFT JOIN private.access_request_rules acr ON acr.name = c.access_request_rule_name AND acr.org_id = @org_id
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = @org_id
 	LEFT JOIN private.plugin_connections reviewc ON reviewc.connection_id = c.id AND reviewc.plugin_id = review.id
@@ -480,8 +495,23 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
-		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals,
+		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode,
+		COALESCE(acr.access_max_duration, c.access_max_duration) AS access_max_duration,
+		c.access_request_rule_name, c.jira_issue_template_id, it.issue_transition_name_on_close,
+		COALESCE(acr.force_approval_groups, c.force_approve_groups) AS force_approve_groups,
+		COALESCE(acr.min_approvals, c.min_review_approvals) AS min_review_approvals,
+		CASE WHEN acr IS NOT NULL THEN jsonb_build_object(
+			'id', acr.id,
+			'org_id', acr.org_id,
+			'name', acr.name,
+			'description', acr.description,
+			'reviewers_groups', acr.reviewers_groups,
+			'force_approval_groups', acr.force_approval_groups,
+			'access_max_duration', acr.access_max_duration,
+			'min_approvals', acr.min_approvals,
+			'created_at', to_char(acr.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+			'updated_at', to_char(acr.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+		) ELSE NULL END AS access_request_rule,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
 			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
@@ -493,13 +523,14 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		COALESCE (( SELECT envs FROM private.env_vars WHERE id = r.id ), '{}') ||
 			COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
-		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
+		COALESCE(acr.reviewers_groups, reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules
 	FROM private.connections c
+	LEFT JOIN private.access_request_rules acr ON acr.name = c.access_request_rule_name AND acr.org_id = @org_id
 	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.resource_name
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
