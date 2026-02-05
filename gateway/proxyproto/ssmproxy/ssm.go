@@ -126,7 +126,8 @@ func (r *SSMProxy) handleStartSession(c *gin.Context) {
 	// Get host and port from connection to pass as target websocket url
 	host := c.Request.Host
 	scheme := "ws"
-	if c.Request.URL.Scheme == "https" {
+	// Check X-Forwarded-Proto header for reverse proxy scenarios
+	if c.Request.URL.Scheme == "https" || c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "wss"
 	}
 
@@ -328,6 +329,7 @@ func (r *SSMProxy) handleTXPipe(ctx context.Context, ws *websocket.Conn, client 
 			if err != nil {
 				log.With("sid", sessionID, "conn", cID).Errorf("failed to receive packet from hoop server, reason=%v", err)
 				running.Store(false)
+				break
 			}
 			packetChan <- msg
 		}
@@ -339,7 +341,11 @@ func (r *SSMProxy) handleTXPipe(ctx context.Context, ws *websocket.Conn, client 
 		case <-ctx.Done():
 			log.With("sid", sessionID, "conn", cID).Infof("tx-pipe context done, reason=%v", ctx.Err())
 			return
-		case msg := <-packetChan:
+		case msg, ok := <-packetChan:
+			if !ok {
+				log.With("sid", sessionID, "conn", cID).Infof("packet channel closed")
+				return
+			}
 			switch msg.Type {
 			case pbclient.SSMConnectionWrite:
 				err := ws.WriteMessage(int(msg.Spec[pb.SpecAwsSSMWebsocketMsgType][0]), msg.Payload)

@@ -220,7 +220,7 @@ func buildConnectionCredentialsResponse(
 			return nil
 		}
 
-		endpoint := fmt.Sprintf("%s/ssm", appconfig.Get().ApiURL())
+		endpoint := fmt.Sprintf("%s/ssm/", appconfig.Get().ApiURL())
 		// We pass hash here, since it's used for signing
 		// Trimmed secret key since AWS only handles 40 characters
 		accessSecret := cred.SecretKeyHash[:40]
