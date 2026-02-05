@@ -18,6 +18,8 @@
                   :else
                   [server/credentials-step :update]))
 
+     "httpproxy" [network/http-credentials-form]
+
      "application" (if (or (= (:subtype connection) "ssh")
                            (= (:subtype connection) "git")
                            (= (:subtype connection) "github"))

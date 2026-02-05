@@ -140,7 +140,9 @@
    ;; Application connections (new resources flow)
    "ssh" {:type "application" :subtype "ssh"}
    "tcp" {:type "application" :subtype "tcp"}
-   "httpproxy" {:type "application" :subtype "httpproxy"}
+   ;; leaving the subtype as "httpproxy" because we use it in other places
+   ;; for e.g in the setup your resource screen
+   "httpproxy" {:type "httpproxy" :subtype "httpproxy"}
    ;; Custom connections (new resources flow)
    "linux-vm" {:type "custom" :subtype "linux-vm" :command ["bash"]}})
 
