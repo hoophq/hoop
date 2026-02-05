@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func validateAccessControlRuleBody(req *openapi.AccessControlRuleRequest) error {
+func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		return err
 	}
@@ -26,21 +26,21 @@ func validateAccessControlRuleBody(req *openapi.AccessControlRuleRequest) error 
 	return nil
 }
 
-// CreateAccessControlRule
+// CreateAccessRequestRule
 //
-//	@Summary		Create Access Control Rule
-//	@Description	Create a new access control rule for the organization
-//	@Tags			Access Control Rules
+//	@Summary		Create Access Request Rule
+//	@Description	Create a new access request rule for the organization
+//	@Tags			Access Request Rules
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.AccessControlRuleRequest	true	"The request body resource"
-//	@Success		201				{object}	openapi.AccessControlRule
+//	@Param			request			body		openapi.AccessRequestRuleRequest	true	"The request body resource"
+//	@Success		201				{object}	openapi.AccessRequestRule
 //	@Failure		400,422,500		{object}	openapi.HTTPError
 //	@Router			/reviews/rules [post]
-func CreateAccessControlRule(c *gin.Context) {
+func CreateAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	var req openapi.AccessControlRuleRequest
+	var req openapi.AccessRequestRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -53,46 +53,46 @@ func CreateAccessControlRule(c *gin.Context) {
 		return
 	}
 
-	if err := validateAccessControlRuleBody(&req); err != nil {
+	if err := validateAccessRequestRuleBody(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
-	accessControlRule := &models.AccessControlRules{
-		OrgID:              orgID,
-		Name:               req.Name,
-		Description:        req.Description,
-		ReviewersGroups:    req.ReviewersGroups,
-		ForceApproveGroups: req.ForceApproveGroups,
-		AccessMaxDuration:  req.AccessMaxDuration,
-		MinApprovals:       req.MinApprovals,
+	accessRequestRule := &models.AccessRequestRules{
+		OrgID:               orgID,
+		Name:                req.Name,
+		Description:         req.Description,
+		ReviewersGroups:     req.ReviewersGroups,
+		ForceApprovalGroups: req.ForceApprovalGroups,
+		AccessMaxDuration:   req.AccessMaxDuration,
+		MinApprovals:        req.MinApprovals,
 	}
 
-	if err := models.CreateAccessControlRules(models.DB, accessControlRule); err != nil {
+	if err := models.CreateAccessRequestRules(models.DB, accessRequestRule); err != nil {
 		if err == gorm.ErrDuplicatedKey {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access control rule with the same name already exists"})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access request rule with the same name already exists"})
 			return
 		}
 
-		log.Errorf("failed to create access control rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access control rule"})
+		log.Errorf("failed to create access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, toAccessControlRuleOpenAPI(accessControlRule))
+	c.JSON(http.StatusCreated, toAccessRequestRuleOpenApi(accessRequestRule))
 }
 
-// GetAccessControlRule
+// GetAccessRequestRule
 //
-//	@Summary		Get Access Control Rule
-//	@Description	Get an access control rule by ID
-//	@Tags			Access Control Rules
+//	@Summary		Get Access Request Rule
+//	@Description	Get an access request rule by ID
+//	@Tags			Access Request Rules
 //	@Produce		json
-//	@Param			name	path		string	true	"Access Control Rule Name"
-//	@Success		200	{object}	openapi.AccessControlRule
+//	@Param			name	path		string	true	"Access request rule Name"
+//	@Success		200	{object}	openapi.AccessRequestRule
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/reviews/rules/{name} [get]
-func GetAccessControlRule(c *gin.Context) {
+func GetAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	name := c.Param("name")
@@ -104,32 +104,32 @@ func GetAccessControlRule(c *gin.Context) {
 		return
 	}
 
-	accessControlRule, err := models.GetAccessControlRulesByName(models.DB, name, orgID)
+	accessRequestRule, err := models.GetAccessRequestRulesByName(models.DB, name, orgID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"message": "access control rule not found"})
+			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
 			return
 		}
-		log.Errorf("failed to get access control rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get access control rule"})
+		log.Errorf("failed to get access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get access request rule"})
 		return
 	}
 
-	c.JSON(http.StatusOK, toAccessControlRuleOpenAPI(accessControlRule))
+	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(accessRequestRule))
 }
 
-// ListAccessControlRules
+// ListAccessRequestRules
 //
-//	@Summary		List Access Control Rules
-//	@Description	List all access control rules for the organization with pagination
-//	@Tags			Access Control Rules
+//	@Summary		List Access Request Rules
+//	@Description	List all access request rules for the organization with pagination
+//	@Tags			Access Request Rules
 //	@Produce		json
 //	@Param			page		query		int	false	"Page number (default: 1)"
 //	@Param			page_size	query		int	false	"Page size (default: 0 for all)"
-//	@Success		200	{object}	openapi.PaginatedResponse[openapi.AccessControlRule]
+//	@Success		200	{object}	openapi.PaginatedResponse[openapi.AccessRequestRule]
 //	@Failure		400,500	{object}	openapi.HTTPError
 //	@Router			/reviews/rules [get]
-func ListAccessControlRules(c *gin.Context) {
+func ListAccessRequestRules(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
@@ -144,7 +144,7 @@ func ListAccessControlRules(c *gin.Context) {
 	pageStr := queryParams.Get("page")
 	pageSizeStr := queryParams.Get("page_size")
 
-	opts := models.AccessControlRulesFilterOption{
+	opts := models.AccessRequestRulesFilterOption{
 		Page:     1,
 		PageSize: 0, // 0 means no pagination, return all
 	}
@@ -167,23 +167,23 @@ func ListAccessControlRules(c *gin.Context) {
 		}
 	}
 
-	accessControlRules, total, err := models.ListAccessControlRules(models.DB, orgID, opts)
+	accessRequestRules, total, err := models.ListAccessRequestRules(models.DB, orgID, opts)
 	if err != nil {
-		log.Errorf("failed to list access control rules: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to list access control rules"})
+		log.Errorf("failed to list access request rules: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to list access request rules"})
 		return
 	}
 
-	var data []openapi.AccessControlRule
-	for _, rule := range accessControlRules {
-		data = append(data, *toAccessControlRuleOpenAPI(&rule))
+	var data []openapi.AccessRequestRule
+	for _, rule := range accessRequestRules {
+		data = append(data, *toAccessRequestRuleOpenApi(&rule))
 	}
 
 	if data == nil {
-		data = []openapi.AccessControlRule{}
+		data = []openapi.AccessRequestRule{}
 	}
 
-	response := openapi.PaginatedResponse[openapi.AccessControlRule]{
+	response := openapi.PaginatedResponse[openapi.AccessRequestRule]{
 		Pages: openapi.Pagination{
 			Total: int(total),
 			Page:  opts.Page,
@@ -195,24 +195,24 @@ func ListAccessControlRules(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// UpdateAccessControlRule
+// UpdateAccessRequestRule
 //
-//	@Summary		Update Access Control Rule
-//	@Description	Update an access control rule by ID
-//	@Tags			Access Control Rules
+//	@Summary		Update Access Request Rule
+//	@Description	Update an access request rule by ID
+//	@Tags			Access Request Rules
 //	@Accept			json
 //	@Produce		json
-//	@Param			id		path		string						true	"Access Control Rule ID"
-//	@Param			request	body		openapi.AccessControlRuleRequest	true	"The request body resource"
-//	@Success		200		{object}	openapi.AccessControlRule
+//	@Param			id		path		string						true	"Access request Rule ID"
+//	@Param			request	body		openapi.AccessRequestRuleRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.AccessRequestRule
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/reviews/rules/{name} [put]
-func UpdateAccessControlRule(c *gin.Context) {
+func UpdateAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	name := c.Param("name")
 
-	var req openapi.AccessControlRuleRequest
+	var req openapi.AccessRequestRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -225,20 +225,20 @@ func UpdateAccessControlRule(c *gin.Context) {
 		return
 	}
 
-	if err := validateAccessControlRuleBody(&req); err != nil {
+	if err := validateAccessRequestRuleBody(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
-	// Check if access control rule exists
-	existingRule, err := models.GetAccessControlRulesByName(models.DB, name, orgID)
+	// Check if access request rule exists
+	existingRule, err := models.GetAccessRequestRulesByName(models.DB, name, orgID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"message": "access control rule not found"})
+			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
 			return
 		}
-		log.Errorf("failed to get access control rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get access control rule"})
+		log.Errorf("failed to get access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get access request rule"})
 		return
 	}
 
@@ -246,30 +246,30 @@ func UpdateAccessControlRule(c *gin.Context) {
 	existingRule.Name = req.Name
 	existingRule.Description = req.Description
 	existingRule.ReviewersGroups = req.ReviewersGroups
-	existingRule.ForceApproveGroups = req.ForceApproveGroups
+	existingRule.ForceApprovalGroups = req.ForceApprovalGroups
 	existingRule.AccessMaxDuration = req.AccessMaxDuration
 	existingRule.MinApprovals = req.MinApprovals
 
-	if err := models.UpdateAccessControlRules(models.DB, existingRule); err != nil {
-		log.Errorf("failed to update access control rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update access control rule"})
+	if err := models.UpdateAccessRequestRules(models.DB, existingRule); err != nil {
+		log.Errorf("failed to update access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update access request rule"})
 		return
 	}
 
-	c.JSON(http.StatusOK, toAccessControlRuleOpenAPI(existingRule))
+	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(existingRule))
 }
 
-// DeleteAccessControlRule
+// DeleteAccessRequestRule
 //
-//	@Summary		Delete Access Control Rule
-//	@Description	Delete an access control rule by Name
-//	@Tags			Access Control Rules
+//	@Summary		Delete Access Request Rule
+//	@Description	Delete an access request rule by name
+//	@Tags			Access Request Rules
 //	@Produce		json
-//	@Param			name	path		string	true	"Access Control Rule Name"
+//	@Param			name	path		string	true	"Access request rule name"
 //	@Success		204	"No Content"
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/reviews/rules/{name} [delete]
-func DeleteAccessControlRule(c *gin.Context) {
+func DeleteAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	name := c.Param("name")
@@ -281,31 +281,31 @@ func DeleteAccessControlRule(c *gin.Context) {
 		return
 	}
 
-	err = models.DeleteAccessControlRulesByName(models.DB, name, orgID)
+	err = models.DeleteAccessRequestRulesByName(models.DB, name, orgID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"message": "access control rule not found"})
+			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
 			return
 		}
-		log.Errorf("failed to delete access control rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to delete access control rule"})
+		log.Errorf("failed to delete access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to delete access request rule"})
 		return
 	}
 
 	c.Status(http.StatusNoContent)
 }
 
-func toAccessControlRuleOpenAPI(rule *models.AccessControlRules) *openapi.AccessControlRule {
-	return &openapi.AccessControlRule{
-		ID:                 rule.ID.String(),
-		Name:               rule.Name,
-		Description:        rule.Description,
-		ReviewersGroups:    rule.ReviewersGroups,
-		ForceApproveGroups: rule.ForceApproveGroups,
-		AccessMaxDuration:  rule.AccessMaxDuration,
-		MinApprovals:       rule.MinApprovals,
-		CreatedAt:          rule.CreatedAt,
-		UpdatedAt:          rule.UpdatedAt,
+func toAccessRequestRuleOpenApi(rule *models.AccessRequestRules) *openapi.AccessRequestRule {
+	return &openapi.AccessRequestRule{
+		ID:                  rule.ID.String(),
+		Name:                rule.Name,
+		Description:         rule.Description,
+		ReviewersGroups:     rule.ReviewersGroups,
+		ForceApprovalGroups: rule.ForceApprovalGroups,
+		AccessMaxDuration:   rule.AccessMaxDuration,
+		MinApprovals:        rule.MinApprovals,
+		CreatedAt:           rule.CreatedAt,
+		UpdatedAt:           rule.UpdatedAt,
 	}
 }
 
