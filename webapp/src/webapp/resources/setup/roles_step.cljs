@@ -210,6 +210,75 @@
        [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
         "Skip SSL certificate verification for HTTPS connections."]]]]))
 
+(defn claude-code-role-form [role-index]
+  (let [credentials @(rf/subscribe [:resource-setup/role-credentials role-index])
+        connection-method @(rf/subscribe [:resource-setup/role-connection-method role-index])
+        api-url-value (get credentials "remote_url" "")
+        api-key-value (get credentials "HEADER_X_API_KEY" "")
+        show-selector? (= connection-method "secrets-manager")
+        handle-api-url-change (fn [e]
+                                (let [new-value (-> e .-target .-value)]
+                                  (rf/dispatch [:resource-setup->update-role-credentials
+                                                role-index
+                                                "remote_url"
+                                                new-value])))
+        handle-api-key-change (fn [e]
+                                (let [new-value (-> e .-target .-value)]
+                                  (rf/dispatch [:resource-setup->update-role-credentials
+                                                role-index
+                                                "HEADER_X_API_KEY"
+                                                new-value])))]
+
+    ;; Initialize default values
+    (when (empty? api-url-value)
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "remote_url"
+                    "https://api.anthropic.com"]))
+
+    (when (nil? (get credentials "insecure"))
+      (rf/dispatch [:resource-setup->update-role-credentials
+                    role-index
+                    "insecure"
+                    false]))
+
+    [:> Box {:class "space-y-4"}
+     ;; Anthropic API URL (preenchido)
+     [forms/input {:label "Anthropic API URL"
+                   :placeholder "https://api.anthropic.com"
+                   :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
+                   :required true
+                   :type "text"
+                   :on-change handle-api-url-change
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "remote_url"])}]
+
+     ;; Anthropic API Key (vazio)
+     [forms/input {:label "Anthropic API Key"
+                   :placeholder "sk-ant-..."
+                   :value api-key-value
+                   :required true
+                   :type "password"
+                   :on-change handle-api-key-change
+                   :start-adornment (when show-selector?
+                                      [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]
+
+     ;; HTTP headers section
+     [configuration-inputs/http-headers-section role-index]
+
+     [:> Flex {:align "center" :gap "3"}
+      [:> Switch {:checked (get credentials "insecure" false)
+                  :size "3"
+                  :onCheckedChange #(rf/dispatch [:resource-setup->update-role-credentials
+                                                  role-index
+                                                  "insecure"
+                                                  %])}]
+      [:> Box
+       [:> Heading {:as "h4" :size "3" :weight "medium" :class "text-[--gray-12]"}
+        "Allow insecure SSL"]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Skip SSL certificate verification for HTTPS connections."]]]]))
+
 
 ;; Custom/Metadata-driven role form (includes databases)
 (defn metadata-driven-role-form [role-index]
@@ -351,6 +420,9 @@
 
         (= resource-subtype "tcp")
         [tcp-role-form role-index]
+
+        (= resource-subtype "claude-code")
+        [claude-code-role-form role-index]
 
         (contains? constants/http-proxy-subtypes resource-subtype)
         [http-proxy-role-form role-index]
