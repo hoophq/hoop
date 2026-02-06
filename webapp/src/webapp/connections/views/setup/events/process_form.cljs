@@ -24,6 +24,7 @@
         (= subtype "git")
         (= subtype "github")) "application"
     :else (case ui-type
+            "httpproxy" "httpproxy"
             "network" "application"
             "server" "custom"
             "database" "database"
