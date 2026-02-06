@@ -1829,6 +1829,8 @@ type ConnectionCredentialsResponse struct {
 	ConnectionName string `json:"connection_name" example:"pgdemo"`
 	// Connection type
 	ConnectionType string `json:"connection_type" example:"postgres"`
+	// The connection subtype
+	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
 	// The connection information
 	ConnectionCredentials any `json:"connection_credentials"`
 	// When the database access connection expires

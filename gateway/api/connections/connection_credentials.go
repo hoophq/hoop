@@ -21,7 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
-var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes"}
+var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code"}
 
 // CreateConnectionCredentials
 //
@@ -145,6 +145,7 @@ func toConnectionType(connectionType, subtype string) proto.ConnectionType {
 			return proto.ConnectionType(proto.ConnectionTypeHttpProxy)
 		}
 	}
+
 	return proto.ConnectionType(connectionType)
 }
 
@@ -156,11 +157,12 @@ func buildConnectionCredentialsResponse(
 	const dummyString = "hoop"
 
 	base := openapi.ConnectionCredentialsResponse{
-		ID:             cred.ID,
-		ConnectionType: cred.ConnectionType,
-		ConnectionName: cred.ConnectionName,
-		CreatedAt:      cred.CreatedAt,
-		ExpireAt:       cred.ExpireAt,
+		ID:                cred.ID,
+		ConnectionType:    conn.Type,
+		ConnectionName:    cred.ConnectionName,
+		ConnectionSubType: conn.SubType.String,
+		CreatedAt:         cred.CreatedAt,
+		ExpireAt:          cred.ExpireAt,
 	}
 
 	connectionType := toConnectionType(cred.ConnectionType, conn.SubType.String)
@@ -282,7 +284,7 @@ func isConnectionTypeConfigured(connType proto.ConnectionType) bool {
 		return serverConf.SSHServerConfig != nil && serverConf.SSHServerConfig.ListenAddress != ""
 	case proto.ConnectionTypeRDP:
 		return serverConf.RDPServerConfig != nil && serverConf.RDPServerConfig.ListenAddress != ""
-	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes:
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode:
 		return serverConf.HttpProxyServerConfig != nil && serverConf.HttpProxyServerConfig.ListenAddress != ""
 	default:
 		return false
@@ -332,6 +334,8 @@ func generateSecretKey(connType proto.ConnectionType) (string, string, error) {
 		return keys.GenerateSecureRandomKey("aws-ssm", keySize)
 	case proto.ConnectionTypeHttpProxy:
 		return keys.GenerateSecureRandomKey("httpproxy", keySize)
+	case proto.ConnectionTypeClaudeCode:
+		return keys.GenerateSecureRandomKey("claude-code", keySize)
 	case proto.ConnectionTypeKubernetes:
 		return keys.GenerateSecureRandomKey("k8s", keySize)
 	default:
