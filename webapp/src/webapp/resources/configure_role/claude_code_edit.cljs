@@ -18,16 +18,10 @@
 
         (let [show-selector? (= @connection-method "secrets-manager")
               all-env-vars @env-vars
-
-              ;; Pegar a env que queremos no input
               x-api-key-env (some #(when (= (:key %) "X_API_KEY") %) all-env-vars)
-
-              ;; Valores para os inputs
               remote-url-value (if (map? (:remote_url @credentials))
                                  (:value (:remote_url @credentials))
                                  (or (:remote_url @credentials) "https://api.anthropic.com"))
-
-              ;; API Key: pega das credentials OU das env-vars se não existir nas credentials
               api-key-value (if (map? (:HEADER_X_API_KEY @credentials))
                               (:value (:HEADER_X_API_KEY @credentials))
                               (or (:HEADER_X_API_KEY @credentials)
@@ -36,7 +30,6 @@
                                       (:value (:value x-api-key-env))
                                       (:value x-api-key-env)))
                                   ""))
-
               insecure-value (let [raw-insecure (:insecure @credentials)]
                                (cond
                                  (boolean? raw-insecure) raw-insecure
@@ -44,17 +37,17 @@
                                  (string? raw-insecure) (= raw-insecure "true")
                                  :else false))]
 
-          ;; Inicializar uma vez: mover X_API_KEY para credentials e filtrar das env-vars
+          ;; Initialize once: move X_API_KEY to credentials and filter from env-vars
           (when (and (not @initialized?) x-api-key-env)
             (reset! initialized? true)
-            ;; Mover para credentials se não existe
+            ;; Move to credentials if it doesn't exist
             (when (empty? (or (:HEADER_X_API_KEY @credentials) ""))
               (rf/dispatch [:connection-setup/update-claude-code-credentials
                             "HEADER_X_API_KEY"
                             (if (map? (:value x-api-key-env))
                               (:value (:value x-api-key-env))
                               (:value x-api-key-env))]))
-            ;; Limpar das env-vars
+            ;; Clear from env-vars
             (let [filtered (filterv #(not= (:key %) "X_API_KEY") all-env-vars)]
               (rf/dispatch [:connection-setup/set-env-vars filtered])))
 
@@ -91,10 +84,8 @@
                :start-adornment (when show-selector?
                                   [connection-method/source-selector "HEADER_X_API_KEY"])}]]
 
-            ;; HTTP Headers Section
             [configuration-inputs/http-headers-section]
 
-            ;; Allow insecure SSL
             [:> Flex {:align "center" :gap "3"}
              [:> Switch {:checked insecure-value
                          :size "3"

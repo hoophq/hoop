@@ -153,7 +153,7 @@
                          (concat tcp-env-vars processed-env-vars))
 
                        is-http-proxy-subtype?
-                       (let [;; Claude Code usa claude-code-credentials, outros http proxies usam network-credentials
+                       (let [;; Claude Code uses claude-code-credentials, other http proxies use network-credentials
                              credentials (if (= connection-subtype "claude-code")
                                            (get-in db [:connection-setup :claude-code-credentials])
                                            (get-in db [:connection-setup :network-credentials]))
@@ -166,7 +166,7 @@
                                               (str insecure-value)
                                               (if insecure-value "true" "false")))
 
-                             ;; Para claude-code, incluir o HEADER_X_API_KEY nas env vars base
+                             ;; For claude-code, include the HEADER_X_API_KEY in the base env vars
                              base-env-vars (if (= connection-subtype "claude-code")
                                              (let [api-key-value (get credentials :HEADER_X_API_KEY)
                                                    api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)]
