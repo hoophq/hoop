@@ -168,6 +168,24 @@
                              processed-headers (process-http-headers headers connection-method secrets-provider)]
                          (concat http-env-vars processed-headers))
 
+                       (= connection-subtype "claude-code")
+                       (let [claude-code-credentials (get-in db [:connection-setup :claude-code-credentials])
+                             remote-url-value (get claude-code-credentials :remote_url)
+                             api-key-value (get claude-code-credentials :HEADER_X_API_KEY)
+                             insecure-value (get claude-code-credentials :insecure)
+                             remote-url (resource-process-form/extract-value remote-url-value connection-method :remote_url secrets-provider)
+                             api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)
+                             insecure-str (if (map? insecure-value)
+                                            (:value insecure-value)
+                                            (if (boolean? insecure-value)
+                                              (str insecure-value)
+                                              (if insecure-value "true" "false")))
+                             claude-code-env-vars (filterv #(not (str/blank? (:value %)))
+                                                           [{:key "REMOTE_URL" :value remote-url}
+                                                            {:key "HEADER_X_API_KEY" :value api-key}
+                                                            {:key "INSECURE" :value insecure-str}])]
+                         claude-code-env-vars)
+
                        (or (= connection-subtype "ssh")
                            (= connection-subtype "git")
                            (= connection-subtype "github"))
@@ -383,6 +401,20 @@
                  (= insecure-value "true")
                  (boolean insecure-value))}))
 
+(defn extract-claude-code-credentials
+  "Retrieves and normalizes remote_url, API key and insecure flag from secrets for claude-code credentials"
+  [credentials]
+  (let [remote-url-value (get credentials "REMOTE_URL")
+        normalized-remote-url (connection-method/normalize-credential-value remote-url-value)
+        api-key-value (get credentials "HEADER_X_API_KEY")
+        normalized-api-key (connection-method/normalize-credential-value api-key-value)
+        insecure-value (get credentials "INSECURE")]
+    {:remote_url normalized-remote-url
+     :HEADER_X_API_KEY normalized-api-key
+     :insecure (if (string? insecure-value)
+                 (= insecure-value "true")
+                 (boolean insecure-value))}))
+
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
@@ -415,6 +447,9 @@
         kubernetes-token (when (and (= connection-type "custom")
                                     (= connection-subtype "kubernetes-token"))
                            (extract-kubernetes-token-credentials credentials))
+        claude-code-credentials (when (and (= connection-type "custom")
+                                           (= connection-subtype "claude-code"))
+                                  (extract-claude-code-credentials credentials))
         ssh-auth-method (when ssh-credentials
                           (let [keys-cred (get ssh-credentials "authorized_server_keys")
                                 pass-cred (get ssh-credentials "pass")
@@ -583,6 +618,7 @@
      :network-credentials (or network-credentials http-credentials http-credentials-deprecated)
      :ssh-credentials ssh-credentials
      :kubernetes-token kubernetes-token
+     :claude-code-credentials claude-code-credentials
      :ssh-auth-method (or ssh-auth-method "password")
      :command (if (empty? (:command connection))
                 (get constants/connection-commands connection-subtype)

@@ -242,26 +242,29 @@
                     "insecure"
                     false]))
 
-    [:> Box {:class "space-y-4"}
-     ;; Anthropic API URL (preenchido)
-     [forms/input {:label "Anthropic API URL"
-                   :placeholder "https://api.anthropic.com"
-                   :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
-                   :required true
-                   :type "text"
-                   :on-change handle-api-url-change
-                   :start-adornment (when show-selector?
-                                      [connection-method/source-selector role-index "remote_url"])}]
+    [:> Box {:class "space-y-radix-6"}
+     [:> Box {:class "space-y-radix-4"}
+      [:> Heading {:size "3"} "Basic info"]
 
-     ;; Anthropic API Key (vazio)
-     [forms/input {:label "Anthropic API Key"
-                   :placeholder "sk-ant-..."
-                   :value api-key-value
-                   :required true
-                   :type "password"
-                   :on-change handle-api-key-change
-                   :start-adornment (when show-selector?
-                                      [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]
+      ;; Anthropic API URL (preenchido)
+      [forms/input {:label "Anthropic API URL"
+                    :placeholder "https://api.anthropic.com"
+                    :value (if (empty? api-url-value) "https://api.anthropic.com" api-url-value)
+                    :required true
+                    :type "text"
+                    :on-change handle-api-url-change
+                    :start-adornment (when show-selector?
+                                       [connection-method/source-selector role-index "remote_url"])}]
+
+      ;; Anthropic API Key (vazio)
+      [forms/input {:label "Anthropic API Key"
+                    :placeholder "sk-ant-..."
+                    :value api-key-value
+                    :required true
+                    :type "password"
+                    :on-change handle-api-key-change
+                    :start-adornment (when show-selector?
+                                       [connection-method/source-selector role-index "HEADER_X_API_KEY"])}]]
 
      ;; HTTP headers section
      [configuration-inputs/http-headers-section role-index]
