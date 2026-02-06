@@ -153,39 +153,35 @@
                          (concat tcp-env-vars processed-env-vars))
 
                        is-http-proxy-subtype?
-                       (let [network-credentials (get-in db [:connection-setup :network-credentials])
-                             remote-url-value (get network-credentials :remote_url)
-                             insecure-value (get network-credentials :insecure)
+                       (let [;; Claude Code usa claude-code-credentials, outros http proxies usam network-credentials
+                             credentials (if (= connection-subtype "claude-code")
+                                           (get-in db [:connection-setup :claude-code-credentials])
+                                           (get-in db [:connection-setup :network-credentials]))
+                             remote-url-value (get credentials :remote_url)
+                             insecure-value (get credentials :insecure)
                              remote-url (resource-process-form/extract-value remote-url-value connection-method :remote_url secrets-provider)
                              insecure-str (if (map? insecure-value)
                                             (:value insecure-value)
                                             (if (boolean? insecure-value)
                                               (str insecure-value)
                                               (if insecure-value "true" "false")))
-                             http-env-vars (filterv #(not (str/blank? (:value %)))
-                                                    [{:key "REMOTE_URL" :value remote-url}
-                                                     {:key "INSECURE" :value insecure-str}])
+
+                             ;; Para claude-code, incluir o HEADER_X_API_KEY nas env vars base
+                             base-env-vars (if (= connection-subtype "claude-code")
+                                             (let [api-key-value (get credentials :HEADER_X_API_KEY)
+                                                   api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)]
+                                               (filterv #(not (str/blank? (:value %)))
+                                                        [{:key "REMOTE_URL" :value remote-url}
+                                                         {:key "HEADER_X_API_KEY" :value api-key}
+                                                         {:key "INSECURE" :value insecure-str}]))
+                                             (filterv #(not (str/blank? (:value %)))
+                                                      [{:key "REMOTE_URL" :value remote-url}
+                                                       {:key "INSECURE" :value insecure-str}]))
+
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])
                              processed-headers (process-http-headers headers connection-method secrets-provider)]
-                         (concat http-env-vars processed-headers))
+                         (concat base-env-vars processed-headers))
 
-                       (= connection-subtype "claude-code")
-                       (let [claude-code-credentials (get-in db [:connection-setup :claude-code-credentials])
-                             remote-url-value (get claude-code-credentials :remote_url)
-                             api-key-value (get claude-code-credentials :HEADER_X_API_KEY)
-                             insecure-value (get claude-code-credentials :insecure)
-                             remote-url (resource-process-form/extract-value remote-url-value connection-method :remote_url secrets-provider)
-                             api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)
-                             insecure-str (if (map? insecure-value)
-                                            (:value insecure-value)
-                                            (if (boolean? insecure-value)
-                                              (str insecure-value)
-                                              (if insecure-value "true" "false")))
-                             claude-code-env-vars (filterv #(not (str/blank? (:value %)))
-                                                           [{:key "REMOTE_URL" :value remote-url}
-                                                            {:key "HEADER_X_API_KEY" :value api-key}
-                                                            {:key "INSECURE" :value insecure-str}])]
-                         claude-code-env-vars)
 
                        (or (= connection-subtype "ssh")
                            (= connection-subtype "git")
@@ -448,7 +444,7 @@
         kubernetes-token (when (and (= connection-type "custom")
                                     (= connection-subtype "kubernetes-token"))
                            (extract-kubernetes-token-credentials credentials))
-        claude-code-credentials (when (and (= connection-type "custom")
+        claude-code-credentials (when (and (= connection-type "httpproxy")
                                            (= connection-subtype "claude-code"))
                                   (extract-claude-code-credentials credentials))
         ssh-auth-method (when ssh-credentials
@@ -479,6 +475,10 @@
         ;; Infer connection method from network credentials (TCP)
         network-connection-info (when (seq network-credentials)
                                   (connection-method/infer-connection-method network-credentials))
+
+        ;; Infer connection method from Claude Code credentials
+        claude-code-connection-info (when (seq claude-code-credentials)
+                                      (connection-method/infer-connection-method claude-code-credentials))
 
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
@@ -593,6 +593,9 @@
 
                                    network-connection-info
                                    network-connection-info
+
+                                   claude-code-connection-info
+                                   claude-code-connection-info
 
                                    :else
                                    {:connection-method "manual-input"
