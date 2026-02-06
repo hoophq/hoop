@@ -24,6 +24,7 @@
         (= subtype "git")
         (= subtype "github")) "application"
     :else (case ui-type
+            "httpproxy" "httpproxy"
             "network" "application"
             "server" "custom"
             "database" "database"
@@ -502,7 +503,7 @@
         valid-tags (filter-valid-tags connection-tags)
 
         http-env-vars (when (or (and (= (:type connection) "application")
-                                    is-http-proxy-subtype?)
+                                     is-http-proxy-subtype?)
                                 (= (:type connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
@@ -635,7 +636,7 @@
                                             (process-connection-envvars (:secret connection) "envvar")
 
                                             (or (and (= connection-type "application")
-                                                    is-http-proxy-subtype?)
+                                                     is-http-proxy-subtype?)
                                                 (= connection-type "httpproxy"))
                                             http-env-vars
 

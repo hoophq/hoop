@@ -247,6 +247,11 @@
 
 ;; Environment Variables management
 (rf/reg-event-db
+ :connection-setup/set-env-vars
+ (fn [db [_ env-vars]]
+   (assoc-in db [:connection-setup :credentials :environment-variables] env-vars)))
+
+(rf/reg-event-db
  :connection-setup/add-env-row
  (fn [db [_]]
    (let [current-key (get-in db [:connection-setup :credentials :current-key])
