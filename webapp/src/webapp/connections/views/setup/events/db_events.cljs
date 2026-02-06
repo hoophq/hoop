@@ -56,6 +56,11 @@
   [conn source]
   (update conn :network-credentials #(update-credentials-source % source)))
 
+(defn update-connection-claude-code-credentials-source
+  "Updates all claude-code-credentials to use the given source, preserving values."
+  [conn source]
+  (update conn :claude-code-credentials #(update-credentials-source % source)))
+
 (defn update-connection-secrets-manager-provider
   "Updates the secrets manager provider and all credentials sources."
   [conn provider]
@@ -88,6 +93,7 @@
         (update-connection-ssh-credentials-source target-source)
         (update-connection-kubernetes-token-source target-source)
         (update-connection-network-credentials-source target-source)
+        (update-connection-claude-code-credentials-source target-source)
         (update-in [:credentials :environment-variables]
                    (fn [env-vars]
                      (mapv update-env-var-source (or env-vars []))))
@@ -144,6 +150,8 @@
                                  {:path [:connection-setup :kubernetes-token]
                                   :key field-key-kw}
                                  {:path [:connection-setup :network-credentials]
+                                  :key field-key-kw}
+                                 {:path [:connection-setup :claude-code-credentials]
                                   :key field-key-kw}]
 
            target-location (some (fn [{:keys [path key]}]
@@ -499,3 +507,23 @@
                              "manual-input")
          new-value {:value (str value) :source inferred-source}]
      (assoc-in db [:connection-setup :kubernetes-token field-key] new-value))))
+
+;; Claude Code specific events
+(rf/reg-event-db
+ :connection-setup/update-claude-code-credentials
+ (fn [db [_ field value]]
+   (let [field-key (keyword field)
+         current-value (get-in db [:connection-setup :claude-code-credentials field-key])
+         connection-method (get-in db [:connection-setup :connection-method] "manual-input")
+         secrets-provider (get-in db [:connection-setup :secrets-manager-provider] "vault-kv1")
+         existing-source (when (map? current-value) (:source current-value))
+         inferred-source (or existing-source
+                             (when (= connection-method "secrets-manager") secrets-provider)
+                             "manual-input")
+         new-value {:value (str value) :source inferred-source}]
+     (assoc-in db [:connection-setup :claude-code-credentials field-key] new-value))))
+
+(rf/reg-event-db
+ :connection-setup/update-claude-code-insecure
+ (fn [db [_ enabled?]]
+   (assoc-in db [:connection-setup :claude-code-credentials :insecure] (boolean enabled?))))
