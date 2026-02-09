@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -95,6 +96,11 @@ func Post(c *gin.Context) {
 		AccessMaxDuration:   req.AccessMaxDuration,
 		MinReviewApprovals:  req.MinReviewApprovals,
 	})
+	resourceID := ""
+	if resp != nil {
+		resourceID = resp.ID
+	}
+	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionCreate, resourceID, req.Name, audit.Redact(map[string]any{"name": req.Name, "type": req.Type, "agent_id": req.AgentId}), err)
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -289,6 +295,7 @@ func Patch(c *gin.Context) {
 	}
 
 	resp, err := models.UpsertConnection(ctx, conn)
+	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionUpdate, conn.ID, conn.Name, audit.Redact(map[string]any{"name": conn.Name, "type": conn.Type}), err)
 	if err != nil {
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
@@ -320,6 +327,7 @@ func Delete(c *gin.Context) {
 		return
 	}
 	err := models.DeleteConnection(ctx.OrgID, connName)
+	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionDelete, connName, connName, nil, err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})

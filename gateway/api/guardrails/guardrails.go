@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -46,7 +47,7 @@ func Post(c *gin.Context) {
 
 	// Create guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
-
+	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionCreate, rule.ID, rule.Name, audit.Redact(map[string]any{"name": req.Name, "description": req.Description, "connection_ids": validConnectionIDs}), err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -101,7 +102,7 @@ func Put(c *gin.Context) {
 
 	// Update guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
-
+	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionUpdate, rule.ID, rule.Name, audit.Redact(map[string]any{"name": req.Name, "description": req.Description, "connection_ids": validConnectionIDs}), err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -204,7 +205,9 @@ func Get(c *gin.Context) {
 //	@Router			/guardrails/{id} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	err := models.DeleteGuardRailRules(ctx.GetOrgID(), c.Param("id"))
+	ruleID := c.Param("id")
+	err := models.DeleteGuardRailRules(ctx.GetOrgID(), ruleID)
+	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionDelete, ruleID, "", nil, err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
