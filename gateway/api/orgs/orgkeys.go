@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -33,6 +34,7 @@ var (
 func CreateAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	agentID, dsn, err := ProvisionOrgAgentKey(ctx.OrgID, storagev2.ParseContext(c).GrpcURL)
+	audit.LogFromContextErr(c, audit.ResourceOrgKey, audit.ActionCreate, agentID, agentKeyDefaultName, nil, err)
 	switch err {
 	case ErrAlreadyExists:
 		log.Infof("agent (org token) %v already exists", agentKeyDefaultName)
@@ -101,12 +103,15 @@ func RevokeAgentKey(c *gin.Context) {
 		c.Writer.WriteHeader(204)
 		return
 	case nil:
-		if err := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName); err != nil {
-			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		delErr := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
+		audit.LogFromContextErr(c, audit.ResourceOrgKey, audit.ActionRevoke, agentKeyDefaultName, agentKeyDefaultName, nil, delErr)
+		if delErr != nil {
+			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, delErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": delErr.Error()})
 			return
 		}
 	default:
+		audit.LogFromContextErr(c, audit.ResourceOrgKey, audit.ActionRevoke, agentKeyDefaultName, agentKeyDefaultName, nil, err)
 		log.Errorf("failed fetching for existing organization token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return

@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/idp"
 	oidcprovider "github.com/hoophq/hoop/gateway/idp/oidc"
 	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
@@ -219,6 +220,7 @@ func UpdateAuthConfig(c *gin.Context) {
 	}
 
 	resp, err := models.UpdateServerAuthConfig(existentConfig)
+	audit.LogFromContextErr(c, audit.ResourceAuthConfig, audit.ActionUpdate, "", "", audit.Redact(map[string]any{"auth_method": req.AuthMethod, "admin_role_name": adminRoleName, "auditor_role_name": auditorRoleName, "provider_name": req.ProviderName}), err)
 	if err != nil {
 		log.Errorf("failed to update server auth config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server auth config"})

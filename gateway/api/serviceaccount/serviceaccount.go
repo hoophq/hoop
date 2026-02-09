@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -72,6 +73,7 @@ func Create(c *gin.Context) {
 		Status:  string(req.Status),
 	}
 	err := models.CreateServiceAccount(sa)
+	audit.LogFromContextErr(c, audit.ResourceServiceAccount, audit.ActionCreate, sa.ID, sa.Name, audit.Redact(map[string]any{"subject": req.Subject, "name": req.Name, "groups": req.Groups, "status": req.Status}), err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -122,6 +124,7 @@ func Update(c *gin.Context) {
 		Status:  string(req.Status),
 	}
 	err := models.UpdateServiceAccount(sa)
+	audit.LogFromContextErr(c, audit.ResourceServiceAccount, audit.ActionUpdate, sa.ID, sa.Name, audit.Redact(map[string]any{"subject": req.Subject, "name": req.Name, "groups": req.Groups, "status": req.Status}), err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
