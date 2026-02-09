@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type AccessRequestRules struct {
+type AccessRequestRule struct {
 	ID    uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	OrgID uuid.UUID `gorm:"column:org_id;index:idx_access_request_rules_org_name,unique"`
 
@@ -29,50 +29,50 @@ type AccessRequestRules struct {
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
 
-func (m AccessRequestRules) TableName() string {
+func (m AccessRequestRule) TableName() string {
 	return "private.access_request_rules"
 }
 
-func GetAccessRequestRuleByResourceNameAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName, accessType string) (*AccessRequestRules, error) {
-	var accessRequestRules AccessRequestRules
+func GetAccessRequestRuleByResourceNameAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName, accessType string) (*AccessRequestRule, error) {
+	var accessRequestRule AccessRequestRule
 	result := db.
 		Where("org_id = ? AND connection_names @> ? AND access_type = ?", orgID, pq.Array([]string{resourceName}), accessType).
-		First(&accessRequestRules)
+		First(&accessRequestRule)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
-	return &accessRequestRules, nil
+	return &accessRequestRule, nil
 }
 
-func GetAccessRequestRuleByResourceNamesAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName []string, accessType string) (*AccessRequestRules, error) {
-	var accessRequestRules AccessRequestRules
+func GetAccessRequestRuleByResourceNamesAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName []string, accessType string) (*AccessRequestRule, error) {
+	var accessRequestRule AccessRequestRule
 	result := db.
 		Where("org_id = ? AND connection_names && ? AND access_type = ?", orgID, pq.StringArray(resourceName), accessType).
-		First(&accessRequestRules)
+		First(&accessRequestRule)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
-	return &accessRequestRules, nil
+	return &accessRequestRule, nil
 }
 
-func GetAccessRequestRulesByName(db *gorm.DB, name string, orgID uuid.UUID) (*AccessRequestRules, error) {
-	var accessRequestRules AccessRequestRules
-	result := db.Where("name = ? AND org_id = ?", name, orgID).First(&accessRequestRules)
+func GetAccessRequestRuleByName(db *gorm.DB, name string, orgID uuid.UUID) (*AccessRequestRule, error) {
+	var accessRequestRule AccessRequestRule
+	result := db.Where("name = ? AND org_id = ?", name, orgID).First(&accessRequestRule)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 
-	return &accessRequestRules, nil
+	return &accessRequestRule, nil
 }
 
-func CreateAccessRequestRules(db *gorm.DB, accessRequestRules *AccessRequestRules) error {
+func CreateAccessRequestRule(db *gorm.DB, accessRequestRules *AccessRequestRule) error {
 	result := db.Create(accessRequestRules)
 	return result.Error
 }
 
-func UpdateAccessRequestRules(db *gorm.DB, accessRequestRules *AccessRequestRules) error {
+func UpdateAccessRequestRule(db *gorm.DB, accessRequestRules *AccessRequestRule) error {
 	result := db.Save(accessRequestRules)
 	return result.Error
 }
@@ -82,12 +82,12 @@ type AccessRequestRulesFilterOption struct {
 	PageSize int
 }
 
-func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRulesFilterOption) ([]AccessRequestRules, int64, error) {
-	var accessRequestRules []AccessRequestRules
+func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRulesFilterOption) ([]AccessRequestRule, int64, error) {
+	var accessRequestRules []AccessRequestRule
 	var total int64
 
 	// Get total count
-	if err := db.Model(&AccessRequestRules{}).Where("org_id = ?", orgID).Count(&total).Error; err != nil {
+	if err := db.Model(&AccessRequestRule{}).Where("org_id = ?", orgID).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -111,8 +111,8 @@ func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRule
 	return accessRequestRules, total, nil
 }
 
-func GetConnectionAccessRequestRules(db *gorm.DB, orgID uuid.UUID, connectionName string) ([]AccessRequestRules, error) {
-	var accessRequestRules []AccessRequestRules
+func GetConnectionAccessRequestRules(db *gorm.DB, orgID uuid.UUID, connectionName string) ([]AccessRequestRule, error) {
+	var accessRequestRules []AccessRequestRule
 	result := db.
 		Where("org_id = ? AND connection_names @> ?", orgID, pq.Array([]string{connectionName})).
 		Find(&accessRequestRules)
@@ -123,8 +123,8 @@ func GetConnectionAccessRequestRules(db *gorm.DB, orgID uuid.UUID, connectionNam
 	return accessRequestRules, nil
 }
 
-func DeleteAccessRequestRulesByName(db *gorm.DB, name string, orgID uuid.UUID) error {
-	result := db.Where("name = ? AND org_id = ?", name, orgID).Delete(&AccessRequestRules{})
+func DeleteAccessRequestRuleByName(db *gorm.DB, name string, orgID uuid.UUID) error {
+	result := db.Where("name = ? AND org_id = ?", name, orgID).Delete(&AccessRequestRule{})
 	if result.Error != nil {
 		return result.Error
 	}

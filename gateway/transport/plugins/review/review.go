@@ -46,7 +46,7 @@ func (p *reviewPlugin) getReviewersFromPlugin(pctx plugintypes.Context) []models
 
 	return reviewGroups
 }
-func (p *reviewPlugin) getReviewersFromAccessRequestRule(pctx plugintypes.Context, rule *models.AccessRequestRules) ([]models.ReviewGroups, error) {
+func (p *reviewPlugin) getReviewersFromAccessRequestRule(pctx plugintypes.Context, rule *models.AccessRequestRule) ([]models.ReviewGroups, error) {
 	var reviewersGroups []string
 
 	if rule.AllGroupsMustApprove {

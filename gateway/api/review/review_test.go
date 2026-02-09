@@ -32,11 +32,12 @@ func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups) *m
 }
 
 type inputData struct {
-	ctx    *storagev2.Context
-	rev    *models.Review
-	con    *models.Connection
-	status models.ReviewStatusType
-	force  bool
+	ctx        *storagev2.Context
+	rev        *models.Review
+	con        *models.Connection
+	accessRule *models.AccessRequestRule
+	status     models.ReviewStatusType
+	force      bool
 }
 
 func TestDoReview(t *testing.T) {
@@ -295,7 +296,7 @@ func TestDoReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.status, tt.input.force)
+			got, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.accessRule, tt.input.status, tt.input.force)
 			assert.NoError(t, err)
 			tt.validateFunc(t, got)
 			// assert.Equal(t, tt.expectedReview, tt.input.rev)
@@ -392,7 +393,7 @@ func TestErrDoReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rev, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.status, tt.input.force)
+			rev, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.accessRule, tt.input.status, tt.input.force)
 			if tt.expectedError != nil {
 				assert.EqualError(t, err, tt.expectedError.Error())
 				return

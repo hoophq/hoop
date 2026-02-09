@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRules) error {
+func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRule) error {
 	if foundRule != nil {
 		return fmt.Errorf("an access request rule with the same connection names and access type already exists")
 	}
@@ -73,7 +73,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	accessRequestRule := &models.AccessRequestRules{
+	accessRequestRule := &models.AccessRequestRule{
 		OrgID:                  orgID,
 		Name:                   req.Name,
 		Description:            req.Description,
@@ -87,7 +87,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		MinApprovals:           req.MinApprovals,
 	}
 
-	if err := models.CreateAccessRequestRules(models.DB, accessRequestRule); err != nil {
+	if err := models.CreateAccessRequestRule(models.DB, accessRequestRule); err != nil {
 		if err == gorm.ErrDuplicatedKey {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access request rule with the same name already exists"})
 			return
@@ -123,7 +123,7 @@ func GetAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	accessRequestRule, err := models.GetAccessRequestRulesByName(models.DB, name, orgID)
+	accessRequestRule, err := models.GetAccessRequestRuleByName(models.DB, name, orgID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
@@ -253,7 +253,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	}
 
 	// Check if access request rule exists
-	existingRule, err := models.GetAccessRequestRulesByName(models.DB, name, orgID)
+	existingRule, err := models.GetAccessRequestRuleByName(models.DB, name, orgID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
@@ -286,7 +286,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	existingRule.AccessMaxDuration = req.AccessMaxDuration
 	existingRule.MinApprovals = req.MinApprovals
 
-	if err := models.UpdateAccessRequestRules(models.DB, existingRule); err != nil {
+	if err := models.UpdateAccessRequestRule(models.DB, existingRule); err != nil {
 		log.Errorf("failed to update access request rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update access request rule"})
 		return
@@ -317,7 +317,7 @@ func DeleteAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	err = models.DeleteAccessRequestRulesByName(models.DB, name, orgID)
+	err = models.DeleteAccessRequestRuleByName(models.DB, name, orgID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
@@ -331,7 +331,7 @@ func DeleteAccessRequestRule(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func toAccessRequestRuleOpenApi(rule *models.AccessRequestRules) *openapi.AccessRequestRule {
+func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessRequestRule {
 	return &openapi.AccessRequestRule{
 		ID:                     rule.ID.String(),
 		Name:                   rule.Name,
