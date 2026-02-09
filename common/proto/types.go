@@ -213,22 +213,27 @@ func IsInList(item string, items []string) bool {
 // to maintain compatibility with old types enums in the database
 func ToConnectionType(connectionType, subtype string) ConnectionType {
 	switch connectionType {
+	case "httpproxy":
+		return ConnectionType(ConnectionTypeHttpProxy)
 	case "application":
 		switch subtype {
 		case "tcp":
 			return ConnectionType(ConnectionTypeTCP)
-		case "httpproxy":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		case "grafana":
-			return ConnectionType(ConnectionTypeHttpProxy)
-		case "kibana":
-			return ConnectionType(ConnectionTypeHttpProxy)
 		case "ssh":
 			return ConnectionType(ConnectionTypeSSH)
 		case "git":
 			return ConnectionType(ConnectionTypeSSH)
 		case "github":
 			return ConnectionType(ConnectionTypeSSH)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "httpproxy":
+			return ConnectionType(ConnectionTypeHttpProxy)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "kibana":
+			return ConnectionType(ConnectionTypeHttpProxy)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "grafana":
+			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
 			return ConnectionType(ConnectionTypeCommandLine)
 		}
@@ -244,7 +249,10 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 			return ConnectionType(ConnectionTypeSSM)
 		case "kubernetes", "kubernetes-eks":
 			return ConnectionType(ConnectionTypeKubernetes)
-		// TODO(san): deprecate it in flavor of kubernetes type
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
+		case "httpproxy":
+			return ConnectionType(ConnectionTypeHttpProxy)
+		// TODO(chico): remove this case in the future, for now we need it to keep it for backward compatibility
 		case "kubernetes-token":
 			return ConnectionType(ConnectionTypeHttpProxy)
 		default:
