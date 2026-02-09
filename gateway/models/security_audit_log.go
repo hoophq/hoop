@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const tableSecurityAuditLog = "private.security_audit_log"
@@ -39,4 +40,74 @@ func CreateSecurityAuditLog(row *SecurityAuditLog) error {
 		row.CreatedAt = time.Now().UTC()
 	}
 	return DB.Table(tableSecurityAuditLog).Create(row).Error
+}
+
+// SecurityAuditLogFilter holds optional filters and pagination for listing audit logs.
+type SecurityAuditLogFilter struct {
+	Page          int
+	PageSize      int
+	ActorSubject  string // exact or partial (LIKE)
+	ActorEmail    string
+	ResourceType  string
+	Action        string
+	ResourceID    string // UUID string
+	ResourceName  string
+	Outcome       *bool  // true = success only, false = failure only, nil = all
+	CreatedAfter   string // RFC3339 or date
+	CreatedBefore  string
+}
+
+// ListSecurityAuditLogs returns audit logs for the org with filters and pagination. Order: created_at DESC.
+func ListSecurityAuditLogs(db *gorm.DB, orgID string, f SecurityAuditLogFilter) ([]SecurityAuditLog, int64, error) {
+	if f.PageSize <= 0 {
+		f.PageSize = 50
+	}
+	if f.PageSize > 100 {
+		f.PageSize = 100
+	}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	offset := (f.Page - 1) * f.PageSize
+
+	q := db.Table(tableSecurityAuditLog).Where("org_id = ?", orgID)
+
+	if f.ActorSubject != "" {
+		q = q.Where("actor_subject ILIKE ?", "%"+f.ActorSubject+"%")
+	}
+	if f.ActorEmail != "" {
+		q = q.Where("actor_email ILIKE ?", "%"+f.ActorEmail+"%")
+	}
+	if f.ResourceType != "" {
+		q = q.Where("resource_type = ?", f.ResourceType)
+	}
+	if f.Action != "" {
+		q = q.Where("action = ?", f.Action)
+	}
+	if f.ResourceID != "" {
+		if u, err := uuid.Parse(f.ResourceID); err == nil {
+			q = q.Where("resource_id = ?", u)
+		}
+	}
+	if f.ResourceName != "" {
+		q = q.Where("resource_name ILIKE ?", "%"+f.ResourceName+"%")
+	}
+	if f.Outcome != nil {
+		q = q.Where("outcome = ?", *f.Outcome)
+	}
+	if f.CreatedAfter != "" {
+		q = q.Where("created_at >= ?", f.CreatedAfter)
+	}
+	if f.CreatedBefore != "" {
+		q = q.Where("created_at <= ?", f.CreatedBefore)
+	}
+
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []SecurityAuditLog
+	err := q.Order("created_at DESC").Limit(f.PageSize).Offset(offset).Find(&rows).Error
+	return rows, total, err
 }
