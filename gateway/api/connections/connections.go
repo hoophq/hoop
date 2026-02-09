@@ -185,6 +185,7 @@ func Put(c *gin.Context) {
 		AccessMaxDuration:   req.AccessMaxDuration,
 		MinReviewApprovals:  req.MinReviewApprovals,
 	})
+	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionUpdate, conn.ID, conn.Name, payloadConnectionUpdate(conn.Name, conn.Type), err)
 	if err != nil {
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:

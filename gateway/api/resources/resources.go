@@ -11,6 +11,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -161,6 +162,7 @@ func CreateResource(c *gin.Context) {
 		return nil
 	})
 
+	audit.LogFromContextErr(c, audit.ResourceResource, audit.ActionCreate, resource.ID, resource.Name, payloadResourceCreate(req.Name, req.Type, req.SubType, req.AgentID), err)
 	if err != nil {
 		log.Errorf("failed to create resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + err.Error()})
@@ -295,6 +297,7 @@ func UpdateResource(c *gin.Context) {
 	}
 
 	err = models.UpsertResource(models.DB, &resource, true)
+	audit.LogFromContextErr(c, audit.ResourceResource, audit.ActionUpdate, resource.ID, resource.Name, payloadResourceUpdate(req.Name, req.Type, req.SubType), err)
 	if err != nil {
 		log.Errorf("failed to upsert resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
@@ -341,6 +344,7 @@ func DeleteResource(c *gin.Context) {
 	}
 
 	err = models.DeleteResource(models.DB, ctx.OrgID, name)
+	audit.LogFromContextErr(c, audit.ResourceResource, audit.ActionDelete, name, name, nil, err)
 	if err != nil {
 		log.Errorf("failed to delete resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
@@ -360,5 +364,17 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 		SubType:   r.SubType.String,
 		EnvVars:   r.Envs,
 		AgentID:   r.AgentID.String,
+	}
+}
+
+func payloadResourceCreate(name, resourceType, subType, agentID string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "type": resourceType, "subtype": subType, "agent_id": agentID}
+	}
+}
+
+func payloadResourceUpdate(name, resourceType, subType string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "type": resourceType, "subtype": subType}
 	}
 }
