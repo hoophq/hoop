@@ -44,16 +44,21 @@ const (
 	OutcomeFailure Outcome = false
 )
 
+// PayloadFn returns the raw request/context payload for an event. Implement per event;
+// the result is redacted before storage. May be nil to store no payload.
+type PayloadFn func() map[string]any
+
 // LogParams is the minimal, reusable input for every audit event.
 // Who and When are filled from context and time; pass only what changes per call.
+// RequestPayloadFn is the per-event function that returns the payload to store (redacted).
 type LogParams struct {
-	ResourceType   ResourceType
-	Action         Action
-	Outcome        Outcome
-	ResourceID     string
-	ResourceName   string
-	ErrorMessage   string
-	RequestPayload map[string]any
+	ResourceType    ResourceType
+	Action          Action
+	Outcome         Outcome
+	ResourceID      string
+	ResourceName    string
+	ErrorMessage    string
+	RequestPayloadFn PayloadFn
 }
 
 // Logger writes audit events to storage.
@@ -70,7 +75,10 @@ func (defaultLogger) Log(ctx context.Context, p LogParams, actorSubject, actorEm
 			resourceID = &u
 		}
 	}
-	payload := Redact(p.RequestPayload)
+	var payload map[string]any
+	if p.RequestPayloadFn != nil {
+		payload = Redact(p.RequestPayloadFn())
+	}
 	row := &models.SecurityAuditLog{
 		OrgID:                   orgID,
 		ActorSubject:            actorSubject,
@@ -102,7 +110,8 @@ func LogFromContext(c *gin.Context, p LogParams) {
 // LogFromContextErr logs one audit event and sets Outcome + ErrorMessage from err.
 // If err != nil: Outcome = OutcomeFailure, ErrorMessage = err.Error().
 // If err == nil: Outcome = OutcomeSuccess.
-func LogFromContextErr(c *gin.Context, resourceType ResourceType, action Action, resourceID, resourceName string, payload map[string]any, err error) {
+// payloadFn is the per-event raw payload function; implement for each event type. May be nil.
+func LogFromContextErr(c *gin.Context, resourceType ResourceType, action Action, resourceID, resourceName string, payloadFn PayloadFn, err error) {
 	outcome := OutcomeSuccess
 	errMsg := ""
 	if err != nil {
@@ -110,12 +119,12 @@ func LogFromContextErr(c *gin.Context, resourceType ResourceType, action Action,
 		errMsg = err.Error()
 	}
 	LogFromContext(c, LogParams{
-		ResourceType:   resourceType,
-		Action:         action,
-		Outcome:        outcome,
-		ResourceID:     resourceID,
-		ResourceName:   resourceName,
-		ErrorMessage:   errMsg,
-		RequestPayload: payload,
+		ResourceType:     resourceType,
+		Action:           action,
+		Outcome:          outcome,
+		ResourceID:       resourceID,
+		ResourceName:     resourceName,
+		ErrorMessage:     errMsg,
+		RequestPayloadFn: payloadFn,
 	})
 }

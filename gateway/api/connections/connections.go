@@ -100,7 +100,7 @@ func Post(c *gin.Context) {
 	if resp != nil {
 		resourceID = resp.ID
 	}
-	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionCreate, resourceID, req.Name, audit.Redact(map[string]any{"name": req.Name, "type": req.Type, "agent_id": req.AgentId}), err)
+	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionCreate, resourceID, req.Name, payloadConnectionCreate(req.Name, req.Type, req.AgentId), err)
 	if err != nil {
 		log.Errorf("failed creating connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -295,7 +295,7 @@ func Patch(c *gin.Context) {
 	}
 
 	resp, err := models.UpsertConnection(ctx, conn)
-	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionUpdate, conn.ID, conn.Name, audit.Redact(map[string]any{"name": conn.Name, "type": conn.Type}), err)
+	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionUpdate, conn.ID, conn.Name, payloadConnectionUpdate(conn.Name, conn.Type), err)
 	if err != nil {
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
@@ -600,4 +600,16 @@ func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Con
 	log.Infof("successful connection test for connection '%s': %v", conn.Name, outcome.Output)
 
 	return nil
+}
+
+func payloadConnectionCreate(name, connType, agentID string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "type": connType, "agent_id": agentID}
+	}
+}
+
+func payloadConnectionUpdate(name, connType string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "type": connType}
+	}
 }
