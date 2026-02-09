@@ -73,7 +73,7 @@ func Create(c *gin.Context) {
 		Status:  string(req.Status),
 	}
 	err := models.CreateServiceAccount(sa)
-	audit.LogFromContextErr(c, audit.ResourceServiceAccount, audit.ActionCreate, sa.ID, sa.Name, audit.Redact(map[string]any{"subject": req.Subject, "name": req.Name, "groups": req.Groups, "status": req.Status}), err)
+	audit.LogFromContextErr(c, audit.ResourceServiceAccount, audit.ActionCreate, sa.ID, sa.Name, payloadServiceAccount(req.Subject, req.Name, req.Groups, string(req.Status)), err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -124,7 +124,7 @@ func Update(c *gin.Context) {
 		Status:  string(req.Status),
 	}
 	err := models.UpdateServiceAccount(sa)
-	audit.LogFromContextErr(c, audit.ResourceServiceAccount, audit.ActionUpdate, sa.ID, sa.Name, audit.Redact(map[string]any{"subject": req.Subject, "name": req.Name, "groups": req.Groups, "status": req.Status}), err)
+	audit.LogFromContextErr(c, audit.ResourceServiceAccount, audit.ActionUpdate, sa.ID, sa.Name, payloadServiceAccount(req.Subject, req.Name, req.Groups, string(req.Status)), err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
@@ -155,5 +155,11 @@ func toOpenID(svc models.ServiceAccount) openapi.ServiceAccount {
 		Name:    svc.Name,
 		Status:  openapi.ServiceAccountStatusType(svc.Status),
 		Groups:  svc.Groups,
+	}
+}
+
+func payloadServiceAccount(subject, name string, groups []string, status string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"subject": subject, "name": name, "groups": groups, "status": status}
 	}
 }

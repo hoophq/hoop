@@ -67,7 +67,7 @@ func Post(c *gin.Context) {
 	}
 
 	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
-	audit.LogFromContextErr(c, audit.ResourceAgent, audit.ActionCreate, req.Name, req.Name, map[string]any{"name": req.Name, "mode": req.Mode}, err)
+	audit.LogFromContextErr(c, audit.ResourceAgent, audit.ActionCreate, req.Name, req.Name, payloadAgentCreate(req.Name, req.Mode), err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -212,4 +212,10 @@ func List(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func payloadAgentCreate(name, mode string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "mode": mode}
+	}
 }

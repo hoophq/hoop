@@ -106,7 +106,7 @@ func Create(c *gin.Context) {
 		SlackID:        newUser.SlackID,
 	}
 	if err := models.CreateUser(modelsUser); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, "", newUser.Email, audit.Redact(map[string]any{"email": newUser.Email, "name": newUser.Name, "groups": newUser.Groups}), err)
+		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, "", newUser.Email, payloadUserCreate(newUser.Email, newUser.Name, newUser.Groups), err)
 		log.Errorf("failed persisting user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -123,7 +123,7 @@ func Create(c *gin.Context) {
 			})
 		}
 		if err := models.InsertUserGroups(userGroups); err != nil {
-			audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, newUser.ID, newUser.Email, audit.Redact(map[string]any{"email": newUser.Email, "name": newUser.Name, "groups": newUser.Groups}), err)
+			audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, newUser.ID, newUser.Email, payloadUserCreate(newUser.Email, newUser.Name, newUser.Groups), err)
 			log.Errorf("failed persisting user groups, err=%v", err)
 			sentry.CaptureException(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -131,7 +131,7 @@ func Create(c *gin.Context) {
 		}
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, newUser.ID, newUser.Email, audit.Redact(map[string]any{"email": newUser.Email, "name": newUser.Name, "groups": newUser.Groups}), nil)
+	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, newUser.ID, newUser.Email, payloadUserCreate(newUser.Email, newUser.Name, newUser.Groups), nil)
 	ctx.Analytics().Identify(&types.APIContext{
 		OrgID:  ctx.OrgID,
 		UserID: userSubject,
@@ -217,14 +217,14 @@ func Update(c *gin.Context) {
 	}
 	// update user and user groups
 	if err := models.UpdateUserAndUserGroups(existingUser, newUserGroups); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionUpdate, existingUser.ID, existingUser.Email, audit.Redact(map[string]any{"name": req.Name, "status": req.Status, "groups": req.Groups}), err)
+		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionUpdate, existingUser.ID, existingUser.Email, payloadUserUpdate(req.Name, string(req.Status), req.Groups), err)
 		log.Errorf("failed updating user and user groups, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating user and user groups"})
 		return
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionUpdate, existingUser.ID, existingUser.Email, audit.Redact(map[string]any{"name": req.Name, "status": req.Status, "groups": req.Groups}), nil)
+	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionUpdate, existingUser.ID, existingUser.Email, payloadUserUpdate(req.Name, string(req.Status), req.Groups), nil)
 	analytics.New().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		UserID:     existingUser.ID,
@@ -619,7 +619,7 @@ func CreateGroup(c *gin.Context) {
 	}
 
 	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionCreate, req.Name, req.Name, map[string]any{"name": req.Name}, err)
+		audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionCreate, req.Name, req.Name, payloadUserGroupCreate(req.Name), err)
 		if errors.Is(err, models.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
@@ -630,7 +630,7 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionCreate, req.Name, req.Name, map[string]any{"name": req.Name}, nil)
+	audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionCreate, req.Name, req.Name, payloadUserGroupCreate(req.Name), nil)
 	c.JSON(http.StatusCreated, req)
 }
 
@@ -683,4 +683,22 @@ func toRole(user openapi.User) string {
 		return string(openapi.RoleAdminType)
 	}
 	return string(openapi.RoleStandardType)
+}
+
+func payloadUserCreate(email, name string, groups []string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"email": email, "name": name, "groups": groups}
+	}
+}
+
+func payloadUserUpdate(name, status string, groups []string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "status": status, "groups": groups}
+	}
+}
+
+func payloadUserGroupCreate(name string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name}
+	}
 }

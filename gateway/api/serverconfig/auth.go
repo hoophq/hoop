@@ -220,7 +220,7 @@ func UpdateAuthConfig(c *gin.Context) {
 	}
 
 	resp, err := models.UpdateServerAuthConfig(existentConfig)
-	audit.LogFromContextErr(c, audit.ResourceAuthConfig, audit.ActionUpdate, "", "", audit.Redact(map[string]any{"auth_method": req.AuthMethod, "admin_role_name": adminRoleName, "auditor_role_name": auditorRoleName, "provider_name": req.ProviderName}), err)
+	audit.LogFromContextErr(c, audit.ResourceAuthConfig, audit.ActionUpdate, "", "", payloadAuthConfigUpdate(string(req.AuthMethod), adminRoleName, auditorRoleName, req.ProviderName), err)
 	if err != nil {
 		log.Errorf("failed to update server auth config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server auth config"})
@@ -366,5 +366,11 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 		WebappUsersManagementStatus: ptr.ToString(cfg.WebappUsersManagement),
 		AdminRoleName:               ptr.ToString(cfg.AdminRoleName),
 		AuditorRoleName:             ptr.ToString(cfg.AuditorRoleName),
+	}
+}
+
+func payloadAuthConfigUpdate(authMethod, adminRoleName, auditorRoleName, providerName string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"auth_method": authMethod, "admin_role_name": adminRoleName, "auditor_role_name": auditorRoleName, "provider_name": providerName}
 	}
 }

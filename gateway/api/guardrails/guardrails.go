@@ -47,7 +47,7 @@ func Post(c *gin.Context) {
 
 	// Create guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
-	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionCreate, rule.ID, rule.Name, audit.Redact(map[string]any{"name": req.Name, "description": req.Description, "connection_ids": validConnectionIDs}), err)
+	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionCreate, rule.ID, rule.Name, payloadGuardrailRule(req.Name, req.Description, validConnectionIDs), err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -102,7 +102,7 @@ func Put(c *gin.Context) {
 
 	// Update guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
-	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionUpdate, rule.ID, rule.Name, audit.Redact(map[string]any{"name": req.Name, "description": req.Description, "connection_ids": validConnectionIDs}), err)
+	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionUpdate, rule.ID, rule.Name, payloadGuardrailRule(req.Name, req.Description, validConnectionIDs), err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -238,4 +238,10 @@ func filterEmptyIDs(ids []string) []string {
 		}
 	}
 	return result
+}
+
+func payloadGuardrailRule(name, description string, connectionIDs []string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "description": description, "connection_ids": connectionIDs}
+	}
 }

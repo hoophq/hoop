@@ -127,7 +127,7 @@ func Post(c *gin.Context) {
 	if rule != nil {
 		resourceID = rule.ID
 	}
-	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionCreate, resourceID, req.Name, audit.Redact(map[string]any{"name": req.Name, "description": req.Description, "connection_ids": req.ConnectionIDs}), err)
+	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionCreate, resourceID, req.Name, payloadDataMaskingRule(req.Name, req.Description, req.ConnectionIDs), err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -196,7 +196,7 @@ func Put(c *gin.Context) {
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
-	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionUpdate, ruleID, req.Name, audit.Redact(map[string]any{"name": req.Name, "description": req.Description, "connection_ids": req.ConnectionIDs}), err)
+	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionUpdate, ruleID, req.Name, payloadDataMaskingRule(req.Name, req.Description, req.ConnectionIDs), err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -355,4 +355,10 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 		}
 	}
 	return &req
+}
+
+func payloadDataMaskingRule(name, description string, connectionIDs []string) audit.PayloadFn {
+	return func() map[string]any {
+		return map[string]any{"name": name, "description": description, "connection_ids": connectionIDs}
+	}
 }
