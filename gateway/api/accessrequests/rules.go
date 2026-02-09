@@ -1,4 +1,4 @@
-package reviewapi
+package accessrequests
 
 import (
 	"fmt"
@@ -14,9 +14,17 @@ import (
 	"gorm.io/gorm"
 )
 
-func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
+func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRules) error {
+	if foundRule != nil {
+		return fmt.Errorf("an access request rule with the same connection names and access type already exists")
+	}
+
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		return err
+	}
+
+	if len(req.ConnectionNames) == 0 {
+		return fmt.Errorf("connection_names must have at least 1 entry")
 	}
 
 	if len(req.ReviewersGroups) == 0 {
@@ -36,7 +44,7 @@ func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error 
 //	@Param			request			body		openapi.AccessRequestRuleRequest	true	"The request body resource"
 //	@Success		201				{object}	openapi.AccessRequestRule
 //	@Failure		400,422,500		{object}	openapi.HTTPError
-//	@Router			/reviews/rules [post]
+//	@Router			/access-requests/rules [post]
 func CreateAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -53,19 +61,30 @@ func CreateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	if err := validateAccessRequestRuleBody(&req); err != nil {
+	foundRule, err := models.GetAccessRequestRuleByResourceNamesAndAccessType(models.DB, orgID, req.ConnectionNames, req.AccessType)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		log.Errorf("failed to check existing access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
+		return
+	}
+
+	if err := validateAccessRequestRuleBody(&req, foundRule); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
 	accessRequestRule := &models.AccessRequestRules{
-		OrgID:               orgID,
-		Name:                req.Name,
-		Description:         req.Description,
-		ReviewersGroups:     req.ReviewersGroups,
-		ForceApprovalGroups: req.ForceApprovalGroups,
-		AccessMaxDuration:   req.AccessMaxDuration,
-		MinApprovals:        req.MinApprovals,
+		OrgID:                  orgID,
+		Name:                   req.Name,
+		Description:            req.Description,
+		AccessType:             req.AccessType,
+		ConnectionNames:        req.ConnectionNames,
+		ApprovalRequiredGroups: req.ApprovalRequiredGroups,
+		AllGroupsMustApprove:   req.AllGroupsMustApprove,
+		ReviewersGroups:        req.ReviewersGroups,
+		ForceApprovalGroups:    req.ForceApprovalGroups,
+		AccessMaxDuration:      req.AccessMaxDuration,
+		MinApprovals:           req.MinApprovals,
 	}
 
 	if err := models.CreateAccessRequestRules(models.DB, accessRequestRule); err != nil {
@@ -91,7 +110,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 //	@Param			name	path		string	true	"Access request rule Name"
 //	@Success		200	{object}	openapi.AccessRequestRule
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/reviews/rules/{name} [get]
+//	@Router			/access-requests/rules/{name} [get]
 func GetAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -128,7 +147,7 @@ func GetAccessRequestRule(c *gin.Context) {
 //	@Param			page_size	query		int	false	"Page size (default: 0 for all)"
 //	@Success		200	{object}	openapi.PaginatedResponse[openapi.AccessRequestRule]
 //	@Failure		400,500	{object}	openapi.HTTPError
-//	@Router			/reviews/rules [get]
+//	@Router			/access-requests/rules [get]
 func ListAccessRequestRules(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -206,7 +225,7 @@ func ListAccessRequestRules(c *gin.Context) {
 //	@Param			request	body		openapi.AccessRequestRuleRequest	true	"The request body resource"
 //	@Success		200		{object}	openapi.AccessRequestRule
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
-//	@Router			/reviews/rules/{name} [put]
+//	@Router			/access-requests/rules/{name} [put]
 func UpdateAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -225,8 +244,11 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	if err := validateAccessRequestRuleBody(&req); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	// Check if another access request rule with the same connection names and access type exists
+	foundRule, err := models.GetAccessRequestRuleByResourceNamesAndAccessType(models.DB, orgID, req.ConnectionNames, req.AccessType)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		log.Errorf("failed to check existing access request rule: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
 		return
 	}
 
@@ -242,9 +264,23 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
+	if foundRule != nil && foundRule.ID != existingRule.ID {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an access request rule with the same connection names and access type already exists"})
+		return
+	}
+
+	if err := validateAccessRequestRuleBody(&req, nil); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	// Update fields
 	existingRule.Name = req.Name
 	existingRule.Description = req.Description
+	existingRule.AccessType = req.AccessType
+	existingRule.ConnectionNames = req.ConnectionNames
+	existingRule.ApprovalRequiredGroups = req.ApprovalRequiredGroups
+	existingRule.AllGroupsMustApprove = req.AllGroupsMustApprove
 	existingRule.ReviewersGroups = req.ReviewersGroups
 	existingRule.ForceApprovalGroups = req.ForceApprovalGroups
 	existingRule.AccessMaxDuration = req.AccessMaxDuration
@@ -268,7 +304,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 //	@Param			name	path		string	true	"Access request rule name"
 //	@Success		204	"No Content"
 //	@Failure		400,404,500	{object}	openapi.HTTPError
-//	@Router			/reviews/rules/{name} [delete]
+//	@Router			/access-requests/rules/{name} [delete]
 func DeleteAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -297,15 +333,19 @@ func DeleteAccessRequestRule(c *gin.Context) {
 
 func toAccessRequestRuleOpenApi(rule *models.AccessRequestRules) *openapi.AccessRequestRule {
 	return &openapi.AccessRequestRule{
-		ID:                  rule.ID.String(),
-		Name:                rule.Name,
-		Description:         rule.Description,
-		ReviewersGroups:     rule.ReviewersGroups,
-		ForceApprovalGroups: rule.ForceApprovalGroups,
-		AccessMaxDuration:   rule.AccessMaxDuration,
-		MinApprovals:        rule.MinApprovals,
-		CreatedAt:           rule.CreatedAt,
-		UpdatedAt:           rule.UpdatedAt,
+		ID:                     rule.ID.String(),
+		Name:                   rule.Name,
+		Description:            rule.Description,
+		AccessType:             rule.AccessType,
+		ConnectionNames:        rule.ConnectionNames,
+		ApprovalRequiredGroups: rule.ApprovalRequiredGroups,
+		ReviewersGroups:        rule.ReviewersGroups,
+		AllGroupsMustApprove:   rule.AllGroupsMustApprove,
+		ForceApprovalGroups:    rule.ForceApprovalGroups,
+		AccessMaxDuration:      rule.AccessMaxDuration,
+		MinApprovals:           rule.MinApprovals,
+		CreatedAt:              rule.CreatedAt,
+		UpdatedAt:              rule.UpdatedAt,
 	}
 }
 

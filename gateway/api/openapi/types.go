@@ -2262,6 +2262,14 @@ type AccessRequestRule struct {
 	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
 	// The description of the access request rule
 	Description *string `json:"description,omitempty" example:"Access control rule for production databases"`
+	// The access type
+	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	// Connection names that this rule applies to
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Groups that require approval
+	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
+	// Whether all groups must approve
+	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
 	// Groups that can review sessions
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions
@@ -2281,6 +2289,14 @@ type AccessRequestRuleRequest struct {
 	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
 	// The description of the access request rule
 	Description *string `json:"description,omitempty" example:"Access request rule for production databases"`
+	// The access type
+	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	// Connection names that this rule applies to
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Groups that require approval
+	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
+	// Whether all groups must approve
+	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
 	// Groups that can review sessions
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions

@@ -9,23 +9,52 @@ import (
 )
 
 type AccessRequestRules struct {
-	ID    uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	OrgID uuid.UUID `gorm:"column:org_id;uniqueIndex:idx_access_request_rules_org_name" json:"org_id"`
+	ID    uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID uuid.UUID `gorm:"column:org_id;index:idx_access_request_rules_org_name,unique"`
 
-	Name        string  `gorm:"column:name;uniqueIndex:idx_access_request_rules_org_name" json:"name"`
-	Description *string `gorm:"column:description" json:"description"`
+	Name        string  `gorm:"column:name;index:idx_access_request_rules_org_name,unique"`
+	Description *string `gorm:"column:description"`
+	AccessType  string  `gorm:"column:access_type"`
 
-	ReviewersGroups     pq.StringArray `gorm:"column:reviewers_groups;type:text[]" json:"reviewers_groups"`
-	ForceApprovalGroups pq.StringArray `gorm:"column:force_approval_groups;type:text[]" json:"force_approval_groups"`
-	AccessMaxDuration   *int           `gorm:"column:access_max_duration" json:"access_max_duration"`
-	MinApprovals        *int           `gorm:"column:min_approvals" json:"min_approvals"`
+	ConnectionNames        pq.StringArray `gorm:"column:connection_names;type:text[]"`
+	ApprovalRequiredGroups pq.StringArray `gorm:"column:approval_required_groups;type:text[]"`
+	AllGroupsMustApprove   bool           `gorm:"column:all_groups_must_approve;default:false"`
+	ReviewersGroups        pq.StringArray `gorm:"column:reviewers_groups;type:text[]"`
+	ForceApprovalGroups    pq.StringArray `gorm:"column:force_approval_groups;type:text[]"`
 
-	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	AccessMaxDuration *int `gorm:"column:access_max_duration"`
+	MinApprovals      *int `gorm:"column:min_approvals"`
+
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (m AccessRequestRules) TableName() string {
 	return "private.access_request_rules"
+}
+
+func GetAccessRequestRuleByResourceNameAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName, accessType string) (*AccessRequestRules, error) {
+	var accessRequestRules AccessRequestRules
+	result := db.
+		Where("org_id = ? AND connection_names @> ? AND access_type = ?", orgID, pq.Array([]string{resourceName}), accessType).
+		First(&accessRequestRules)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &accessRequestRules, nil
+}
+
+func GetAccessRequestRuleByResourceNamesAndAccessType(db *gorm.DB, orgID uuid.UUID, resourceName []string, accessType string) (*AccessRequestRules, error) {
+	var accessRequestRules AccessRequestRules
+	result := db.
+		Where("org_id = ? AND connection_names && ? AND access_type = ?", orgID, pq.StringArray(resourceName), accessType).
+		First(&accessRequestRules)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &accessRequestRules, nil
 }
 
 func GetAccessRequestRulesByName(db *gorm.DB, name string, orgID uuid.UUID) (*AccessRequestRules, error) {
@@ -80,6 +109,18 @@ func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRule
 	}
 
 	return accessRequestRules, total, nil
+}
+
+func GetConnectionAccessRequestRules(db *gorm.DB, orgID uuid.UUID, connectionName string) ([]AccessRequestRules, error) {
+	var accessRequestRules []AccessRequestRules
+	result := db.
+		Where("org_id = ? AND connection_names @> ?", orgID, pq.Array([]string{connectionName})).
+		Find(&accessRequestRules)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return accessRequestRules, nil
 }
 
 func DeleteAccessRequestRulesByName(db *gorm.DB, name string, orgID uuid.UUID) error {

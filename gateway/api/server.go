@@ -18,6 +18,7 @@ import (
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
+	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
@@ -349,30 +350,30 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		reviewHandler.ReviewByIdOrSid,
 	)
 
-	r.GET("/reviews/rules",
+	r.GET("/access-requests/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		reviewapi.ListAccessRequestRules,
+		accessrequestsapi.ListAccessRequestRules,
 	)
-	r.POST("/reviews/rules",
+	r.POST("/access-requests/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		reviewapi.CreateAccessRequestRule,
+		accessrequestsapi.CreateAccessRequestRule,
 	)
-	r.GET("/reviews/rules/:name",
+	r.GET("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		reviewapi.GetAccessRequestRule,
+		accessrequestsapi.GetAccessRequestRule,
 	)
-	r.PUT("/reviews/rules/:name",
+	r.PUT("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		reviewapi.UpdateAccessRequestRule,
+		accessrequestsapi.UpdateAccessRequestRule,
 	)
-	r.DELETE("/reviews/rules/:name",
+	r.DELETE("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		reviewapi.DeleteAccessRequestRule,
+		accessrequestsapi.DeleteAccessRequestRule,
 	)
 
 	r.POST("/agents",

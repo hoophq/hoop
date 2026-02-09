@@ -33,6 +33,47 @@ func (p *reviewPlugin) Name() string                                   { return 
 func (p *reviewPlugin) OnStartup(_ plugintypes.Context) error          { return nil }
 func (p *reviewPlugin) OnUpdate(_, _ plugintypes.PluginResource) error { return nil }
 func (p *reviewPlugin) OnConnect(_ plugintypes.Context) error          { return nil }
+func (p *reviewPlugin) getReviewersFromPlugin(pctx plugintypes.Context) []models.ReviewGroups {
+	var reviewGroups []models.ReviewGroups
+	for _, approvalGroupName := range pctx.PluginConnectionConfig {
+		reviewGroups = append(reviewGroups, models.ReviewGroups{
+			ID:        uuid.NewString(),
+			OrgID:     pctx.OrgID,
+			GroupName: approvalGroupName,
+			Status:    models.ReviewStatusPending,
+		})
+	}
+
+	return reviewGroups
+}
+func (p *reviewPlugin) getReviewersFromAccessRequestRule(pctx plugintypes.Context, rule *models.AccessRequestRules) ([]models.ReviewGroups, error) {
+	var reviewersGroups []string
+
+	if rule.AllGroupsMustApprove {
+		groups, err := models.GetUserGroupsByOrgID(pctx.OrgID)
+		if err != nil {
+			return nil, plugintypes.InternalErr("failed fetching user groups for org", err)
+		}
+
+		for _, approvalGroup := range groups {
+			reviewersGroups = append(reviewersGroups, approvalGroup.Name)
+		}
+	} else {
+		reviewersGroups = rule.ReviewersGroups
+	}
+
+	var reviewGroups []models.ReviewGroups
+	for _, approvalGroupName := range reviewersGroups {
+		reviewGroups = append(reviewGroups, models.ReviewGroups{
+			ID:        uuid.NewString(),
+			OrgID:     pctx.OrgID,
+			GroupName: approvalGroupName,
+			Status:    models.ReviewStatusPending,
+		})
+	}
+
+	return reviewGroups, nil
+}
 
 func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	if pkt.Type != pbagent.SessionOpen {
@@ -91,10 +132,23 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 		Infof("jit review not found")
 
 	var accessDuration time.Duration
-	reviewType := models.ReviewTypeOneTime
 	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
+	accessType := "command"
 	if isJitReview {
-		reviewType = models.ReviewTypeJit
+		accessType = "jit"
+	}
+
+	orgID, err := uuid.Parse(pctx.OrgID)
+	if err != nil {
+		return nil, plugintypes.InvalidArgument("invalid organization id format")
+	}
+
+	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, pctx.ConnectionName, accessType)
+	if err != nil && err != models.ErrNotFound {
+		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
+	}
+
+	if isJitReview {
 		accessDuration, err = time.ParseDuration(string(durationStr))
 		if err != nil {
 			return nil, plugintypes.InvalidArgument("invalid access time duration, got=%v", string(durationStr))
@@ -105,8 +159,15 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 			return nil, plugintypes.InternalErr("failed fetching connection", err)
 		}
 
-		if connection.AccessMaxDuration != nil {
-			maxDuration := time.Duration(*connection.AccessMaxDuration) * time.Second
+		var accessMaxDuration *int
+		if accessRule != nil {
+			accessMaxDuration = accessRule.AccessMaxDuration
+		} else {
+			accessMaxDuration = connection.AccessMaxDuration
+		}
+
+		if accessMaxDuration != nil {
+			maxDuration := time.Duration(*accessMaxDuration) * time.Second
 
 			if accessDuration > maxDuration {
 				return nil, plugintypes.InvalidArgument("jit access input exceeds connection max duration of %vs",
@@ -123,13 +184,18 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	}
 
 	var reviewGroups []models.ReviewGroups
-	for _, approvalGroupName := range pctx.PluginConnectionConfig {
-		reviewGroups = append(reviewGroups, models.ReviewGroups{
-			ID:        uuid.NewString(),
-			OrgID:     pctx.OrgID,
-			GroupName: approvalGroupName,
-			Status:    models.ReviewStatusPending,
-		})
+	if accessRule != nil {
+		reviewGroups, err = p.getReviewersFromAccessRequestRule(pctx, accessRule)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		reviewGroups = p.getReviewersFromPlugin(pctx)
+	}
+
+	reviewType := models.ReviewTypeOneTime
+	if isJitReview {
+		reviewType = models.ReviewTypeJit
 	}
 
 	// these values are only used for ad-hoc executions

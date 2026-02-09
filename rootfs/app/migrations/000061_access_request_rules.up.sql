@@ -9,8 +9,15 @@ CREATE TABLE access_request_rules(
     name TEXT NOT NULL,
     description TEXT,
 
+    connection_names TEXT[] NOT NULL,
+    access_type VARCHAR(16) NOT NULL,
+
+    approval_required_groups TEXT[] NOT NULL,
+    all_groups_must_approve BOOLEAN DEFAULT FALSE,
+
     reviewers_groups TEXT[] NOT NULL,
-    force_approval_groups TEXT[] DEFAULT '{}'::TEXT[],
+    force_approval_groups TEXT[] NOT NULL,
+
     access_max_duration INT,
     min_approvals INT,
 
@@ -19,11 +26,6 @@ CREATE TABLE access_request_rules(
 );
 
 CREATE UNIQUE INDEX idx_access_request_rules_org_name ON access_request_rules(org_id, name);
-
-ALTER TABLE connections ADD COLUMN IF NOT EXISTS access_request_rule_name VARCHAR(128),
-    ADD CONSTRAINT connection_access_request_rule_fk
-        FOREIGN KEY (org_id, access_request_rule_name)
-        REFERENCES access_request_rules(org_id, name)
-        ON UPDATE CASCADE ON DELETE SET NULL;
+CREATE INDEX idx_access_request_rules_org_id_access_type_connection_names ON access_request_rules USING GIN(org_id, access_type, connection_names);
 
 COMMIT;
