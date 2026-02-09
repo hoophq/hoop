@@ -21,6 +21,7 @@ const (
 	ResourceUserGroup      ResourceType = "user_groups"
 	ResourceServiceAccount ResourceType = "service_accounts"
 	ResourceConnection     ResourceType = "connections"
+	ResourceResource       ResourceType = "resources"
 	ResourceAgent          ResourceType = "agents"
 	ResourceAuthConfig     ResourceType = "auth_config"
 	ResourceOrgKey         ResourceType = "org_keys"
@@ -103,7 +104,7 @@ var DefaultLogger Logger = defaultLogger{}
 func LogFromContext(c *gin.Context, p LogParams) {
 	ctx := storagev2.ParseContext(c)
 	if err := DefaultLogger.Log(c.Request.Context(), p, ctx.UserID, ctx.UserEmail, ctx.UserName, ctx.OrgID); err != nil {
-		log.Warnf("security audit log write failed: %v", err)
+		log.Errorf("security audit log write failed (table private.security_audit_log may be missing or migration 000062 not applied): %v", err)
 	}
 }
 
