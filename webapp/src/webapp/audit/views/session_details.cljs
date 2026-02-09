@@ -172,6 +172,7 @@
         session-details (rf/subscribe [:audit->session-details])
         gateway-info (rf/subscribe [:gateway->info])
         connection-details (rf/subscribe [:connections->connection-details])
+        clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         executing-status (r/atom :ready)
         connecting-status (r/atom :ready)
         killing-status (r/atom :ready)]
@@ -179,8 +180,10 @@
     (when session
       (rf/dispatch [:audit->get-session-by-id session]))
     (fn []
-      (r/with-let [clipboard-url (new clipboardjs ".copy-to-clipboard-url")
-                   _ (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))]
+      (r/with-let [clipboard-url (when-not @clipboard-disabled?
+                                   (new clipboardjs ".copy-to-clipboard-url"))
+                   _ (when clipboard-url
+                       (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}])))]
         (let [session (:session @session-details)
               user (:data @user-details)
               admin? (:admin? user)
@@ -323,13 +326,14 @@
                               :style {:color "currentColor"}}
                      [:img {:src (str config/webapp-url "/icons/icon-jira-current-color.svg")}]]]]]])
 
-              [:div {:class "relative group"}
-               [:> Tooltip {:content "Copy link"}
-                [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
-                       :data-clipboard-text (str (-> js/document .-location .-origin)
-                                                 (routes/url-for :sessions)
-                                                 "/" (:id session))}
-                 [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]]
+              (when-not @clipboard-disabled?
+                [:div {:class "relative group"}
+                 [:> Tooltip {:content "Copy link"}
+                  [:div {:class "rounded-full p-2 bg-gray-100 hover:bg-gray-200 transition cursor-pointer copy-to-clipboard-url"
+                         :data-clipboard-text (str (-> js/document .-location .-origin)
+                                                   (routes/url-for :sessions)
+                                                   "/" (:id session))}
+                   [:> hero-outline-icon/ClipboardDocumentIcon {:class "h-5 w-5 text-gray-600"}]]]])
 
               (when (and (= (:verb session) "exec")
                          (or (:output session) (:event_stream session))
@@ -498,8 +502,7 @@
                                   connection-subtype)
                         :results-status (:status @session-details)
                         :fixed-height? true
-                        :results-id (:id session)
-                        :not-clipboard? disabled-download}]
+                        :results-id (:id session)}]
                       [session-event-stream (:type session) session])])])])
 
            ;; action buttons section
@@ -600,7 +603,8 @@
                "Execute"]])])
 
         (finally
-          (.destroy clipboard-url)
+          (when clipboard-url
+            (.destroy clipboard-url))
           (rf/dispatch [:audit->clear-session])
           (rf/dispatch [:reports->clear-session-report-by-id]))))))
 

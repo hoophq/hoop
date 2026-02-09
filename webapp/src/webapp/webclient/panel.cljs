@@ -119,11 +119,25 @@
 
 (defn create-codemirror-extensions [parser
                                     keymap
-                                    is-template-ready?]
+                                    is-template-ready?
+                                    clipboard-disabled?]
 
-  (let [extensions
+  (let [clipboard-keymap (when clipboard-disabled?
+                           [{:key "Mod-c"
+                             :run (fn [_]
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text "Clipboard copy/cut operations are disabled by administrator"}])
+                                    true)}
+                            {:key "Mod-x"
+                             :run (fn [_]
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                  :text "Clipboard copy/cut operations are disabled by administrator"}])
+                                    true)}])
+        extensions
         (concat
          [(.of cm-view/keymap (clj->js keymap))]
+         (when clipboard-disabled?
+           [(.of cm-view/keymap (clj->js clipboard-keymap))])
          parser
          (when is-template-ready?
            [(.of (.-editable cm-view/EditorView) false)
@@ -167,7 +181,7 @@
 
 
 (defn editor []
-  (let [gateway-info (rf/subscribe [:gateway->info])
+  (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
         active-panel (rf/subscribe [:webclient->active-panel])
@@ -188,7 +202,6 @@
     (fn [{:keys [script-output]}]
       (let [current-connection @primary-connection
             connection-type (discover-connection-type current-connection)
-            disabled-download (-> @gateway-info :data :disable_sessions_download)
             exec-enabled? (= "enabled" (:access_mode_exec current-connection))
             no-connection-selected? (not @primary-connection)
             run-disabled? (or (not exec-enabled?) no-connection-selected?)
@@ -240,7 +253,8 @@
             codemirror-exts (create-codemirror-extensions
                              language-parser-case
                              keymap
-                             false)
+                             false
+                             @clipboard-disabled?)
 
             optimized-change-handler (fn [value _]
                                        (reset! script value)
@@ -321,8 +335,7 @@
                   [log-area/main
                    connection-type
                    @parallel-mode-active?
-                   @dark-mode?
-                   (not disabled-download)]
+                   @dark-mode?]
 
                   [:div {:class "bg-gray-1"}
                    [:footer {:class "flex justify-between items-center p-2 gap-small"}

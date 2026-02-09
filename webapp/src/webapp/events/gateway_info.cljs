@@ -19,7 +19,8 @@
    {:db (assoc db :gateway->info {:loading false
                                   :data info})
     :fx [[:dispatch [:tracking->initialize-if-allowed]]
-         [:dispatch [:initialize-monitoring]]]}))
+         [:dispatch [:initialize-monitoring]]
+         [:dispatch [:clipboard/initialize]]]}))
 
 (rf/reg-event-fx
  :gateway->get-public-info
@@ -68,3 +69,8 @@
              three-months-ms (* 90 24 60 60 1000) ; 90 days in milliseconds
              warning-date (- expire-date three-months-ms)]
          (>= now warning-date))))))
+
+(rf/reg-sub
+ :gateway->clipboard-disabled?
+ (fn [db _]
+   (get-in db [:gateway->info :data :disable_clipboard_copy_cut] false)))
