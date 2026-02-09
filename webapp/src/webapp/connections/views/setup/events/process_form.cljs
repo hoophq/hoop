@@ -28,7 +28,8 @@
             "server" "custom"
             "database" "database"
             "custom" "custom"
-            "application" "application")))
+            "application" "application"
+            "httpproxy" "httpproxy")))
 
 (defn tags-array->map
   "Convert an array of tags [{:key k :value v}] to a map {k v}
