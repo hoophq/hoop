@@ -48,16 +48,17 @@
   [:> Badge {:color "gray" :size "2"}
    (or status "Unknown")])
 
-(defn- detail-row [{:keys [icon label value]}]
-  [:> Flex {:align "center"}
-   [:> Flex {:gap "2" :align "center" :class "w-40"}
-    (when icon
-      [:> Box {:class "text-gray-11"}
-       icon])
-    [:> Text {:size "2" :class "text-gray-11"}
-     label]]
-   [:> Box
-    value]])
+(defn- detail-row [{:keys [icon label value show-gradient?]}]
+  [:> Box {:class (str "relative " (when show-gradient? "after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-8 after:bg-gradient-to-b after:from-transparent after:via-transparent after:to-white after:pointer-events-none"))}
+   [:> Flex {:align "center"}
+    [:> Flex {:gap "2" :align "center" :class "w-40"}
+     (when icon
+       [:> Box {:class "text-gray-11"}
+        icon])
+     [:> Text {:size "2" :class "text-gray-11"}
+      label]]
+    [:> Box
+     value]]])
 
 (defn main []
   (let [expanded? (r/atom false)]
@@ -109,57 +110,61 @@
 
           [detail-row {:label "Status"
                        :icon [:> BadgeCheck {:size 20}]
+                       :show-gradient? (not @expanded?)
                        :value [status-badge session-status]}]
 
-          ;; Conditionally visible fields (when expanded)
-          (when @expanded?
-            [:> Box {:class "space-y-radix-4"}
-             [detail-row {:icon [:> CircleUser {:size 20}]
-                          :label "Created by"
-                          :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
-                                  user-name]}]
+          ;; Conditionally visible fields (when expanded) with animation
+          [:> Box {:class (str "overflow-hidden transition-all duration-300 ease-in-out "
+                               (if @expanded?
+                                 "max-h-[1000px] opacity-100"
+                                 "max-h-0 opacity-0"))}
+           [:> Box {:class "space-y-radix-4"}
+            [detail-row {:icon [:> CircleUser {:size 20}]
+                         :label "Created by"
+                         :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
+                                 user-name]}]
 
-             [detail-row {:icon [:> CircleUser {:size 20}]
-                          :label "Executed by"
-                          :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
-                                  user-name]}]
+            [detail-row {:icon [:> CircleUser {:size 20}]
+                         :label "Executed by"
+                         :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
+                                 user-name]}]
 
-             [detail-row {:icon [:> CalendarArrowUp {:size 20}]
-                          :label "Created at"
-                          :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
-                                  (formatters/time-parsed->full-date start-date)]}]
+            [detail-row {:icon [:> CalendarArrowUp {:size 20}]
+                         :label "Created at"
+                         :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
+                                 (formatters/time-parsed->full-date start-date)]}]
 
-             (when end-date
-               [detail-row {:icon [:> CalendarArrowDown {:size 20}]
-                            :label "Finished at"
-                            :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
-                                    (formatters/time-parsed->full-date end-date)]}])
+            (when end-date
+              [detail-row {:icon [:> CalendarArrowDown {:size 20}]
+                           :label "Finished at"
+                           :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
+                                   (formatters/time-parsed->full-date end-date)]}])
 
-             (when jira-url
-               [detail-row {:icon [:> ExternalLink {:size 20}]
-                            :label "Integrations"
-                            :value [:> Flex {:gap "2" :align "center"}
-                                    [:a {:href jira-url
-                                         :target "_blank"
-                                         :class "text-blue-11 hover:text-blue-12 underline"}
-                                     [:> Text {:size "2" :weight "medium"}
-                                      "Open in Jira"]]]}])
+            (when jira-url
+              [detail-row {:icon [:> ExternalLink {:size 20}]
+                           :label "Integrations"
+                           :value [:> Flex {:gap "2" :align "center"}
+                                   [:a {:href jira-url
+                                        :target "_blank"
+                                        :class "text-blue-11 hover:text-blue-12 underline"}
+                                    [:> Text {:size "2" :weight "medium"}
+                                     "Open in Jira"]]]}])
 
-             (when session-batch-id
-               [detail-row {:icon [:> FastForward {:size 20}]
-                            :label "Parallel Sessions"
-                            :value [:> Flex {:gap "2" :align "center"}
-                                    [:a {:href (str (-> js/document .-location .-origin)
-                                                    (routes/url-for :sessions-list-filtered-by-ids)
-                                                    "?batch_id=" session-batch-id)
-                                         :target "_blank"
-                                         :class "text-blue-11 hover:text-blue-12 underline"}
-                                     [:> Text {:size "2" :weight "medium"}
-                                      "Open Parallel Summary"]]]}])])]
+            (when session-batch-id
+              [detail-row {:icon [:> FastForward {:size 20}]
+                           :label "Parallel Sessions"
+                           :value [:> Flex {:gap "2" :align "center"}
+                                   [:a {:href (str (-> js/document .-location .-origin)
+                                                   (routes/url-for :sessions-list-filtered-by-ids)
+                                                   "?batch_id=" session-batch-id)
+                                        :target "_blank"
+                                        :class "text-blue-11 hover:text-blue-12 underline"}
+                                    [:> Text {:size "2" :weight "medium"}
+                                     "Open Parallel Summary"]]]}])]]]
 
-         ;; See more / See less button
-         [:> Box {:class "mt-4 pt-4"}
-          [:> Flex {:justify "center"}
+         ;; See more / See less button - left aligned
+         [:> Box {:class "mt-4"}
+          [:> Flex {:justify "start"}
            [:button {:class "flex items-center gap-2 text-gray-11 hover:text-gray-12 transition cursor-pointer"
                      :on-click #(swap! expanded? not)}
             [:> Text {:size "2" :weight "medium"}
