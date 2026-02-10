@@ -73,9 +73,12 @@ ORDER BY n.nspname, c.relname;`, dbName)
 }
 
 func getMSSQLTablesQuery(dbName string) string {
+	fmt.Println(">>>>>>>>>>>>>>>>>qqqtables>>>>>>>>>>>>>>>>>")
+	fmt.Println(dbName)
+	fmt.Println(">>>>>>>>>>>>>>>>>>>>>qqqtables>>>>>>>>>>>>>>")
 	return fmt.Sprintf(`
 -- connect to the target database
-USE %s;
+USE [%s];
 GO
 
 -- Run the schema query
@@ -197,7 +200,7 @@ ORDER BY a.attnum;`, dbName, tableName, schemaName)
 
 func getMSSQLColumnsQuery(dbName, tableName, schemaName string) string {
 	return fmt.Sprintf(`
-USE %s;
+USE [%s];
 GO
 
 SET NOCOUNT ON;
