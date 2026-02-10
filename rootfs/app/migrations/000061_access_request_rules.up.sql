@@ -26,6 +26,6 @@ CREATE TABLE access_request_rules(
 );
 
 CREATE UNIQUE INDEX idx_access_request_rules_org_name ON access_request_rules(org_id, name);
-CREATE INDEX idx_access_request_rules_org_id_access_type_connection_names ON access_request_rules USING GIN(org_id, access_type, connection_names);
+CREATE INDEX idx_access_request_rules_org_id_access_type ON access_request_rules(org_id, access_type);
 
 COMMIT;
