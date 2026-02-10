@@ -1,11 +1,12 @@
 (ns webapp.connections.views.setup.connection-method
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Card Flex Heading Link Select Text]]
+   ["@radix-ui/themes" :refer [Box Flex Heading Link Select Text]]
    ["lucide-react" :refer [FileSpreadsheet GlobeLock]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
+   [webapp.components.selection-card :refer [selection-card]]
    [webapp.config :as config]))
 
 (defn prefix-to-source
@@ -82,33 +83,6 @@
       {:connection-method "manual-input"
        :secrets-manager-provider nil})))
 
-;; Connection method selector components
-(defn connection-method-card [{:keys [icon title description selected? on-click icon-class]}]
-  [:> Card {:size "1"
-            :variant "surface"
-            :class (str "w-full cursor-pointer transition-all "
-                        (if selected?
-                          "before:bg-primary-12"
-                          ""))
-            :on-click on-click}
-   [:> Flex {:align "start" :gap "3" :class (if selected? "text-[--gray-1]" "text-[--gray-12]")}
-    (when icon
-      [:> Avatar {:radius "large"
-                  :fallback (if (fn? icon)
-                              (r/as-element [icon])
-                              (r/as-element [:> icon {:size 20}]))
-                  :size "4"
-                  :variant "soft"
-                  :color "gray"
-                  :class (str "flex-shrink-0 "
-                              (when selected? "dark")
-                              (or icon-class ""))}])
-    [:> Flex {:direction "column" :gap "1"}
-     [:> Text {:size "3" :weight "medium" :class (if selected? "text-[--gray-1]" "text-[--gray-12]")}
-      title]
-     [:> Text {:size "2" :class (if selected? "text-[--gray-1]" "text-[--gray-11]")}
-      description]]]])
-
 (defn connection-method-selector
   "Connection method selector for connection setup (not role-based)"
   [connection-subtype]
@@ -117,27 +91,27 @@
       (let [connection-method @connection-method-sub
             supports-aws-iam? (contains? #{"mysql" "postgres"} connection-subtype)]
         [:> Box {:class "space-y-3"}
-         [connection-method-card
-          {:icon FileSpreadsheet
+         [selection-card
+          {:icon (r/as-element [:> FileSpreadsheet {:size 20}])
            :title "Manual Input"
            :description "Enter credentials directly, including host, user, password, and other connection details."
            :selected? (= connection-method "manual-input")
            :on-click #(rf/dispatch [:connection-setup/update-connection-method "manual-input"])}]
-         [connection-method-card
-          {:icon GlobeLock
+         [selection-card
+          {:icon (r/as-element [:> GlobeLock {:size 20}])
            :title "Secrets Manager"
            :description "Connect to a secrets provider like AWS Secrets Manager or HashiCorp Vault to automatically fetch your resource credentials."
            :selected? (= connection-method "secrets-manager")
            :on-click #(rf/dispatch [:connection-setup/update-connection-method "secrets-manager"])}]
          (when supports-aws-iam?
-           (let [aws-icon (fn [] (r/as-element
-                                  [:> Box {:class "w-5 h-5 flex items-center justify-center"}
-                                   [:img {:role "aws-icon"
-                                          :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
-                                          :class "w-full h-full"
-                                          :alt "AWS"}]]))
+           (let [aws-icon (r/as-element
+                           [:> Box {:class "w-5 h-5 flex items-center justify-center"}
+                            [:img {:role "aws-icon"
+                                   :src (str config/webapp-url "/icons/automatic-resources/aws.svg")
+                                   :class "w-full h-full"
+                                   :alt "AWS"}]])
                  icon-class (when (= connection-method "aws-iam-role") "brightness-0 invert")]
-             [connection-method-card
+             [selection-card
               {:icon aws-icon
                :icon-class icon-class
                :title "AWS IAM Role"

@@ -79,6 +79,10 @@
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.subs]
    [webapp.features.access-control.views.group-form :as group-form]
+   [webapp.features.access-request.events]
+   [webapp.features.access-request.main :as access-request]
+   [webapp.features.access-request.subs]
+   [webapp.features.access-request.views.rule-form :as rule-form]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -598,6 +602,29 @@
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [group-form/main :edit {:group-id group-id}]]]]))
+
+(defmethod routes/panels :access-request-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [access-request/main]]])
+
+(defmethod routes/panels :access-request-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [rule-form/main :create]]]])
+
+(defmethod routes/panels :access-request-edit-panel []
+  (let [search (.. js/window -location -search)
+        url-params (new js/URLSearchParams search)
+        rule-name (.get url-params "rule")]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [rule-form/main :edit {:rule-name rule-name}]]]]))
 
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])
