@@ -48,23 +48,8 @@ func (p *reviewPlugin) getReviewersFromPlugin(pctx plugintypes.Context) []models
 	return reviewGroups
 }
 func (p *reviewPlugin) getReviewersFromAccessRequestRule(pctx plugintypes.Context, rule *models.AccessRequestRule) ([]models.ReviewGroups, error) {
-	var reviewersGroups []string
-
-	if rule.AllGroupsMustApprove {
-		groups, err := models.GetUserGroupsByOrgID(pctx.OrgID)
-		if err != nil {
-			return nil, plugintypes.InternalErr("failed fetching user groups for org", err)
-		}
-
-		for _, approvalGroup := range groups {
-			reviewersGroups = append(reviewersGroups, approvalGroup.Name)
-		}
-	} else {
-		reviewersGroups = rule.ReviewersGroups
-	}
-
 	var reviewGroups []models.ReviewGroups
-	for _, approvalGroupName := range reviewersGroups {
+	for _, approvalGroupName := range rule.ReviewersGroups {
 		reviewGroups = append(reviewGroups, models.ReviewGroups{
 			ID:        uuid.NewString(),
 			OrgID:     pctx.OrgID,

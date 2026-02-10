@@ -31,8 +31,12 @@ func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundR
 		return fmt.Errorf("access_type must be either 'jit' or 'command'")
 	}
 
-	if len(req.ReviewersGroups) == 0 && !req.AllGroupsMustApprove {
-		return fmt.Errorf("reviewers_groups must have at least 1 entry or all_groups_must_approve must be true")
+	if len(req.ReviewersGroups) == 0 {
+		return fmt.Errorf("reviewers_groups must have at least 1 entry")
+	}
+
+	if !req.AllGroupsMustApprove && (req.MinApprovals == nil || *req.MinApprovals < 1) {
+		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
 	}
 
 	return nil

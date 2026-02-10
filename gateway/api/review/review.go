@@ -331,8 +331,10 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	if accessRule != nil && accessRule.MinApprovals != nil {
-		reviewsCountNeeded = min(reviewsCountNeeded, *accessRule.MinApprovals)
+	if accessRule != nil {
+		if !accessRule.AllGroupsMustApprove {
+			reviewsCountNeeded = min(reviewsCountNeeded, *accessRule.MinApprovals)
+		}
 	} else if connection.MinReviewApprovals != nil {
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
