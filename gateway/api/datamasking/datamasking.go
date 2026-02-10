@@ -30,14 +30,27 @@ func getLicenseType(ctx *storagev2.Context) string {
 }
 
 func validateOssRulesLimitations(req *openapi.DataMaskingRuleRequest) error {
-	if len(req.SupportedEntityTypes) > 1 || len(req.SupportedEntityTypes[0].EntityTypes) > 1 {
-		return fmt.Errorf("supported entity types are limited to 1 rule in OSS version")
+	if len(req.SupportedEntityTypes) > 0 && len(req.CustomEntityTypesEntrys) > 0 {
+		return fmt.Errorf("supported entity types and custom entity types cannot be both defined in OSS version")
 	}
 
-	if len(req.CustomEntityTypesEntrys) > 1 ||
-		len(req.CustomEntityTypesEntrys[0].DenyList) > 1 ||
-		(len(req.CustomEntityTypesEntrys[0].Regex) > 0 && len(req.CustomEntityTypesEntrys[0].DenyList) > 0) {
+	if len(req.SupportedEntityTypes) > 1 {
+		return fmt.Errorf("supported entity types are limited to 1 rule in OSS version")
+	}
+	if len(req.SupportedEntityTypes) > 0 && len(req.SupportedEntityTypes[0].EntityTypes) > 1 {
+		return fmt.Errorf("supported entity types are limited to 1 entity type in OSS version")
+	}
+
+	if len(req.CustomEntityTypesEntrys) > 1 {
 		return fmt.Errorf("custom entity types are limited to 1 rule in OSS version")
+	}
+	if len(req.CustomEntityTypesEntrys) > 0 {
+		if len(req.CustomEntityTypesEntrys[0].DenyList) > 1 {
+			return fmt.Errorf("custom entity types deny list is limited to 1 entry in OSS version")
+		}
+		if len(req.CustomEntityTypesEntrys[0].Regex) > 0 && len(req.CustomEntityTypesEntrys[0].DenyList) > 0 {
+			return fmt.Errorf("custom entity types cannot have both regex and deny list in OSS version")
+		}
 	}
 
 	return nil
