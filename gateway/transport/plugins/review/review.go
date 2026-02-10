@@ -17,6 +17,7 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/models"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
+	"github.com/hoophq/hoop/gateway/utils"
 )
 
 type reviewPlugin struct {
@@ -146,6 +147,15 @@ func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plu
 	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, pctx.ConnectionName, accessType)
 	if err != nil && err != models.ErrNotFound {
 		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
+	}
+
+	if accessRule != nil && len(accessRule.ApprovalRequiredGroups) > 0 {
+		needsReview := utils.SlicesHasIntersection(accessRule.ApprovalRequiredGroups, pctx.UserGroups)
+		if !needsReview {
+			log.With("sid", pctx.SID, "orgid", pctx.GetOrgID(), "user-id", pctx.UserID, "connection-id", pctx.ConnectionID,
+				"access-rule-id", accessRule.ID).Infof("user is not part of access rule approval groups, skipping review")
+			return nil, nil
+		}
 	}
 
 	if isJitReview {

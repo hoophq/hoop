@@ -2286,19 +2286,19 @@ type AccessRequestRuleRequest struct {
 	// The name of the access request rule
 	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
 	// The description of the access request rule
-	Description *string `json:"description,omitempty" example:"Access request rule for production databases"`
+	Description *string `json:"description" example:"Access request rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Groups that require approval
-	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
+	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve
 	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
 	// Groups that can review sessions
-	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
+	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
 	// Groups that can force approve sessions
-	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required

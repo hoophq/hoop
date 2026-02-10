@@ -6708,8 +6708,12 @@ const docTemplate = `{
         "openapi.AccessRequestRuleRequest": {
             "type": "object",
             "required": [
+                "access_type",
+                "approval_required_groups",
                 "connection_names",
-                "name"
+                "force_approval_groups",
+                "name",
+                "reviewers_groups"
             ],
             "properties": {
                 "access_max_duration": {
