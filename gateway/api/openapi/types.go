@@ -269,8 +269,6 @@ type Connection struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of review approvals required to execute this connection
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
-	// The access request rule name associated to this connection
-	AccessRequestRuleName *string `json:"access_request_rule_name" example:"critical-databases-rule"`
 }
 
 type ConnectionPatch struct {

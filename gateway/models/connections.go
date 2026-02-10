@@ -480,8 +480,8 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
-		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
 			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
@@ -493,7 +493,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		COALESCE (( SELECT envs FROM private.env_vars WHERE id = r.id ), '{}') ||
 			COALESCE (( SELECT envs FROM private.env_vars WHERE id = c.id ), '{}') AS envs,
 		COALESCE(dlpc.config, ARRAY[]::TEXT[]) AS redact_types,
-		COALESCE(acr.reviewers_groups, reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
+		COALESCE(reviewc.config, ARRAY[]::TEXT[]) AS reviewers,
 		(SELECT array_length(dlpc.config, 1) > 0) AS redact_enabled,
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections

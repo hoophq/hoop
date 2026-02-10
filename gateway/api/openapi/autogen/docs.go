@@ -6971,11 +6971,6 @@ const docTemplate = `{
                         "disabled"
                     ]
                 },
-                "access_request_rule_name": {
-                    "description": "The access request rule name associated to this connection",
-                    "type": "string",
-                    "example": "critical-databases-rule"
-                },
                 "access_schema": {
                     "description": "Toggle Introspection Schema\n* enabled - Enable the instrospection schema in the webapp\n* disabled - Disable the instrospection schema in the webapp",
                     "type": "string",
