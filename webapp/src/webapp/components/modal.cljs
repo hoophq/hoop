@@ -46,7 +46,7 @@
           [:> Box {:id (:id @modal)}
            [:> Dialog.Root {:open (:open? @modal)
                             :on-open-change #(rf/dispatch [:modal->set-status %])}
-            [:> Dialog.Content {;;:maxWidth (or (:maxWidth @modal) "916px")
+            [:> Dialog.Content {:maxWidth (or (:maxWidth @modal) "916px")
                                 :maxHeight "calc(100vh - 96px)"
                                 :on-escape-key-down on-click-out
                                 :on-pointer-down-outside on-click-out
