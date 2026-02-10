@@ -298,8 +298,7 @@
                          (and (some #(= "PENDING" (:status %))
                                     review-groups)
                               (= "PENDING" review-status)))
-             [:section {:id "session-event-stream"
-                        :class "max-h-[700px]"}
+             [:section {:id "session-event-stream"}
               (if (= (:status @session-details) :loading)
                 [loading-player]
 

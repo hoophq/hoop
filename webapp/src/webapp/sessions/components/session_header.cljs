@@ -1,7 +1,7 @@
 (ns webapp.sessions.components.session-header
   (:require
    ["@heroicons/react/24/outline" :as hero-outline-icon]
-   ["@radix-ui/themes" :refer [Box Flex Text Heading Tooltip]]
+   ["@radix-ui/themes" :refer [Box Flex Heading Tooltip]]
    ["lucide-react" :refer [Share2 X]]
    ["clipboard" :as clipboardjs]
    [re-frame.core :as rf]
@@ -39,7 +39,7 @@
                _ (when clipboard-url (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}])))]
     (let [can-rerun? (and (= (:verb session) "exec")
                           (nil? (-> session :integrations_metadata :jira_issue_url)))]
-      [:> Box {:class "mb-5"}
+      [:> Box {:class "sticky top-0 z-10 bg-white pt-5 pb-5 -mt-6 mb-5"}
        [:> Flex {:justify "between" :align "start"}
         ;; Left side - Title and role
         [:> Heading {:as "h2" :size "5" :weight "bold" :class "text-gray-12"}
