@@ -617,9 +617,9 @@
      [rule-form/main :create]]]])
 
 (defmethod routes/panels :access-request-edit-panel []
-  (let [search (.. js/window -location -search)
-        url-params (new js/URLSearchParams search)
-        rule-name (.get url-params "rule")]
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        rule-name (:rule-name (:route-params current-route))]
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop
      [routes/wrap-admin-only

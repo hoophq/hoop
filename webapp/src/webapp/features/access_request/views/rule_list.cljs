@@ -18,7 +18,7 @@
     [:> Button {:size "3"
                 :variant "soft"
                 :color "gray"
-                :on-click #(rf/dispatch [:navigate :access-request-edit {:rule name}])}
+                :on-click #(rf/dispatch [:navigate :access-request-edit {} :rule-name name])}
      "Configure"]]])
 
 (defn main []

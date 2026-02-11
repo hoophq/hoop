@@ -36,7 +36,7 @@
                   ["/access-control/edit" :access-control-edit]
                   ["/access-request" :access-request]
                   ["/access-request/new" :access-request-new]
-                  ["/access-request/edit" :access-request-edit]
+                  [["/access-request/edit/" :rule-name] :access-request-edit]
                   ["/runbooks/setup" :runbooks-setup]
                   ["/runbooks/rules/new" :create-runbooks-rule]
                   [["/runbooks/rules/edit/" :rule-id] :edit-runbooks-rule]
