@@ -140,7 +140,7 @@
                                                                   script)
                         (and selected-db
                              (= connection-type "mssql")) (str "SET NOCOUNT ON;\n"
-                                                               "USE " selected-db ";\n"
+                                                               "USE [" selected-db "];\n"
                                                                script)
                         (and selected-db
                              (= connection-type "mysql")) (str "use " selected-db ";\n" script)
