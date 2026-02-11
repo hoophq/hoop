@@ -8,7 +8,8 @@
    [webapp.components.logs-container :as logs]
    [webapp.components.timer :as timer]
    [webapp.resources.constants :refer [http-proxy-subtypes]]
-   [webapp.connections.native-client-access.constants :as constants]))
+   [webapp.connections.native-client-access.constants :as constants]
+   [webapp.connections.native-client-access.custom-credential-views :as custom-views]))
 
 (defn disconnect-session
   "Handle disconnect with confirmation"
@@ -271,13 +272,15 @@
 
 (defn- connect-credentials-tab
   "Credentials tab content - adapts based on connection type"
-  [{:keys [connection_type connection_credentials]}]
-  [:> Box {:class "space-y-4"}
+  [{:keys [connection_type connection_subtype connection_credentials] :as native-client-access-data}]
+  [:> Box {:class "space-y-radix-6"}
    (case connection_type
      "postgres" [postgres-credentials-fields connection_credentials]
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
-     "httpproxy" [http-proxy-credentials-fields connection_credentials]
+     "httpproxy" (case connection_subtype
+                   "claude-code" [custom-views/claude-code-credentials-fields native-client-access-data]
+                   [http-proxy-credentials-fields connection_credentials])
      "kubernetes" [http-proxy-credentials-fields connection_credentials]
      "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
      "grafana" [http-proxy-credentials-fields connection_credentials]

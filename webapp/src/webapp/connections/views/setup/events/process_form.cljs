@@ -24,6 +24,7 @@
         (= subtype "git")
         (= subtype "github")) "application"
     :else (case ui-type
+            "httpproxy" "httpproxy"
             "network" "application"
             "server" "custom"
             "database" "database"
@@ -153,21 +154,35 @@
                          (concat tcp-env-vars processed-env-vars))
 
                        is-http-proxy-subtype?
-                       (let [network-credentials (get-in db [:connection-setup :network-credentials])
-                             remote-url-value (get network-credentials :remote_url)
-                             insecure-value (get network-credentials :insecure)
+                       (let [;; Claude Code uses claude-code-credentials, other http proxies use network-credentials
+                             credentials (if (= connection-subtype "claude-code")
+                                           (get-in db [:connection-setup :claude-code-credentials])
+                                           (get-in db [:connection-setup :network-credentials]))
+                             remote-url-value (get credentials :remote_url)
+                             insecure-value (get credentials :insecure)
                              remote-url (resource-process-form/extract-value remote-url-value connection-method :remote_url secrets-provider)
                              insecure-str (if (map? insecure-value)
                                             (:value insecure-value)
                                             (if (boolean? insecure-value)
                                               (str insecure-value)
                                               (if insecure-value "true" "false")))
-                             http-env-vars (filterv #(not (str/blank? (:value %)))
-                                                    [{:key "REMOTE_URL" :value remote-url}
-                                                     {:key "INSECURE" :value insecure-str}])
+
+                             ;; For claude-code, include the HEADER_X_API_KEY in the base env vars
+                             base-env-vars (if (= connection-subtype "claude-code")
+                                             (let [api-key-value (get credentials :HEADER_X_API_KEY)
+                                                   api-key (resource-process-form/extract-value api-key-value connection-method :HEADER_X_API_KEY secrets-provider)]
+                                               (filterv #(not (str/blank? (:value %)))
+                                                        [{:key "REMOTE_URL" :value remote-url}
+                                                         {:key "HEADER_X_API_KEY" :value api-key}
+                                                         {:key "INSECURE" :value insecure-str}]))
+                                             (filterv #(not (str/blank? (:value %)))
+                                                      [{:key "REMOTE_URL" :value remote-url}
+                                                       {:key "INSECURE" :value insecure-str}]))
+
                              headers (get-in db [:connection-setup :credentials :environment-variables] [])
                              processed-headers (process-http-headers headers connection-method secrets-provider)]
-                         (concat http-env-vars processed-headers))
+                         (concat base-env-vars processed-headers))
+
 
                        (or (= connection-subtype "ssh")
                            (= connection-subtype "git")
@@ -384,6 +399,20 @@
                  (= insecure-value "true")
                  (boolean insecure-value))}))
 
+(defn extract-claude-code-credentials
+  "Retrieves and normalizes remote_url, API key and insecure flag from secrets for claude-code credentials"
+  [credentials]
+  (let [remote-url-value (get credentials "REMOTE_URL")
+        normalized-remote-url (connection-method/normalize-credential-value remote-url-value)
+        api-key-value (get credentials "HEADER_X_API_KEY")
+        normalized-api-key (connection-method/normalize-credential-value api-key-value)
+        insecure-value (get credentials "INSECURE")]
+    {:remote_url normalized-remote-url
+     :HEADER_X_API_KEY normalized-api-key
+     :insecure (if (string? insecure-value)
+                 (= insecure-value "true")
+                 (boolean insecure-value))}))
+
 (defn process-connection-for-update
   "Process an existing connection for the format used in the update form"
   [connection guardrails-list jira-templates-list]
@@ -416,6 +445,9 @@
         kubernetes-token (when (and (= connection-type "custom")
                                     (= connection-subtype "kubernetes-token"))
                            (extract-kubernetes-token-credentials credentials))
+        claude-code-credentials (when (and (= connection-type "httpproxy")
+                                           (= connection-subtype "claude-code"))
+                                  (extract-claude-code-credentials credentials))
         ssh-auth-method (when ssh-credentials
                           (let [keys-cred (get ssh-credentials "authorized_server_keys")
                                 pass-cred (get ssh-credentials "pass")
@@ -445,6 +477,10 @@
         network-connection-info (when (seq network-credentials)
                                   (connection-method/infer-connection-method network-credentials))
 
+        ;; Infer connection method from Claude Code credentials
+        claude-code-connection-info (when (seq claude-code-credentials)
+                                      (connection-method/infer-connection-method claude-code-credentials))
+
         connection-tags (when-let [tags (:connection_tags connection)]
                           (cond
                             (map? tags)
@@ -468,7 +504,7 @@
         valid-tags (filter-valid-tags connection-tags)
 
         http-env-vars (when (or (and (= (:type connection) "application")
-                                    is-http-proxy-subtype?)
+                                     is-http-proxy-subtype?)
                                 (= (:type connection) "httpproxy"))
                         (let [headers (process-connection-envvars (:secret connection) "envvar")
                               remote-url? #(= (:key %) "REMOTE_URL")
@@ -559,6 +595,9 @@
                                    network-connection-info
                                    network-connection-info
 
+                                   claude-code-connection-info
+                                   claude-code-connection-info
+
                                    :else
                                    {:connection-method "manual-input"
                                     :secrets-manager-provider nil})]
@@ -584,6 +623,7 @@
      :network-credentials (or network-credentials http-credentials http-credentials-deprecated)
      :ssh-credentials ssh-credentials
      :kubernetes-token kubernetes-token
+     :claude-code-credentials claude-code-credentials
      :ssh-auth-method (or ssh-auth-method "password")
      :command (if (empty? (:command connection))
                 (get constants/connection-commands connection-subtype)
@@ -600,7 +640,7 @@
                                             (process-connection-envvars (:secret connection) "envvar")
 
                                             (or (and (= connection-type "application")
-                                                    is-http-proxy-subtype?)
+                                                     is-http-proxy-subtype?)
                                                 (= connection-type "httpproxy"))
                                             http-env-vars
 

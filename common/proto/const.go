@@ -44,6 +44,7 @@ const (
 	DefaultKeepAlive time.Duration = 10 * time.Second
 
 	ConnectionTypeCommandLine ConnectionType = "command-line"
+	ConnectionTypeClaudeCode  ConnectionType = "claude-code"
 	ConnectionTypeDynamoDB    ConnectionType = "dynamodb"
 	ConnectionTypeCloudWatch  ConnectionType = "cloudwatch"
 	ConnectionTypePostgres    ConnectionType = "postgres"
