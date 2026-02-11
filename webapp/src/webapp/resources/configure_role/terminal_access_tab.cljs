@@ -64,7 +64,11 @@
             has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
             redact-provider (-> @gateway-info :data :redact_provider)
             web-terminal-enabled? (get @access-modes :web true)
-            runbooks-enabled? (get @access-modes :runbooks true)]
+            runbooks-enabled? (get @access-modes :runbooks true)
+            ;; Keep this section visible for backward compatibility with previously configured reviews.
+            has-existing-review-config? (or (seq (:reviewers connection))
+                                            (some? (:min_review_approvals connection))
+                                            (seq (:force_approve_groups connection)))]
 
         [:> Box {:class "max-w-[600px] space-y-8"}
 
@@ -74,69 +78,70 @@
            :checked web-terminal-enabled?
            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]
 
-         [toggle-section
-          {:title "Review by Command"
-           :description "Require approval prior to resource role execution."
-           :checked @review?
-           :on-change #(rf/dispatch [:connection-setup/toggle-review])
-           :disabled? free-license?
-           :complement-component (when @review?
-                                   [:> Box {:mt "4" :class "space-y-4"}
+         (when has-existing-review-config?
+           [toggle-section
+            {:title "Review by Command"
+             :description "Require approval prior to resource role execution."
+             :checked @review?
+             :on-change #(rf/dispatch [:connection-setup/toggle-review])
+             :disabled? free-license?
+             :complement-component (when @review?
+                                     [:> Box {:mt "4" :class "space-y-4"}
 
-                                    [multi-select/main
-                                     {:options (helpers/array->select-options @user-groups)
-                                      :label "Approval user groups"
-                                      :id "approval-groups-input"
-                                      :name "approval-groups-input"
-                                      :required? @review?
-                                      :default-value @review-groups
-                                      :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]
+                                      [multi-select/main
+                                       {:options (helpers/array->select-options @user-groups)
+                                        :label "Approval user groups"
+                                        :id "approval-groups-input"
+                                        :name "approval-groups-input"
+                                        :required? @review?
+                                        :default-value @review-groups
+                                        :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]
 
-                                    [forms/input
-                                     {:label "Minimum approval amount (optional)"
-                                      :type "number"
-                                      :id "min-review-approvals-input"
-                                      :name "min-review-approvals-input"
-                                      :value (if (some? @min-review-approvals) (str @min-review-approvals) "")
-                                      :on-change #(let [val (-> % .-target .-value)]
-                                                    (rf/dispatch [:connection-setup/set-min-review-approvals
-                                                                  (when (not= val "")
-                                                                    (js/parseInt val 10))]))
-                                      :min 1}]
+                                      [forms/input
+                                       {:label "Minimum approval amount (optional)"
+                                        :type "number"
+                                        :id "min-review-approvals-input"
+                                        :name "min-review-approvals-input"
+                                        :value (if (some? @min-review-approvals) (str @min-review-approvals) "")
+                                        :on-change #(let [val (-> % .-target .-value)]
+                                                      (rf/dispatch [:connection-setup/set-min-review-approvals
+                                                                    (when (not= val "")
+                                                                      (js/parseInt val 10))]))
+                                        :min 1}]
 
-                                    [multi-select/main
-                                     {:options (helpers/array->select-options @user-groups)
-                                      :label "Force approval groups (optional)"
-                                      :id "force-approve-groups-input"
-                                      :name "force-approve-groups-input"
-                                      :default-value @force-approve-groups
-                                      :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]])
-           :upgrade-plan-component
-           (when (or free-license?
-                     (= form-type :onboarding))
-             [:> Callout.Root {:size "2" :mt "4" :mb "4"}
-              [:> Callout.Icon
-               [:> Star {:size 16}]]
-              [:> Callout.Text {:class "text-gray-12"}
-               "Enable Command reviews by "
-               [:> Link {:href "#"
-                         :underline "always"
-                         :class "text-primary-10"
-                         :on-click (fn []
-                                     (if (= form-type :onboarding)
-                                       (rf/dispatch [:modal->open
-                                                     {:content [:div {:class "bg-gray-1 min-h-full"}
-                                                                [upgrade-plan/main true]]}])
-                                       (rf/dispatch [:navigate :upgrade-plan])))}
-                "upgrading your plan."]]])
-           :learning-component
-           [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
-                     :target "_blank"}
-            [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
-             [:> Callout.Icon
-              [:> ArrowUpRight {:size 16}]]
-             [:> Callout.Text
-              "Learn more about Reviews"]]]}]
+                                      [multi-select/main
+                                       {:options (helpers/array->select-options @user-groups)
+                                        :label "Force approval groups (optional)"
+                                        :id "force-approve-groups-input"
+                                        :name "force-approve-groups-input"
+                                        :default-value @force-approve-groups
+                                        :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]])
+             :upgrade-plan-component
+             (when (or free-license?
+                       (= form-type :onboarding))
+               [:> Callout.Root {:size "2" :mt "4" :mb "4"}
+                [:> Callout.Icon
+                 [:> Star {:size 16}]]
+                [:> Callout.Text {:class "text-gray-12"}
+                 "Enable Command reviews by "
+                 [:> Link {:href "#"
+                           :underline "always"
+                           :class "text-primary-10"
+                           :on-click (fn []
+                                       (if (= form-type :onboarding)
+                                         (rf/dispatch [:modal->open
+                                                       {:content [:div {:class "bg-gray-1 min-h-full"}
+                                                                  [upgrade-plan/main true]]}])
+                                         (rf/dispatch [:navigate :upgrade-plan])))}
+                  "upgrading your plan."]]])
+             :learning-component
+             [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
+                       :target "_blank"}
+              [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+               [:> Callout.Icon
+                [:> ArrowUpRight {:size 16}]]
+               [:> Callout.Text
+                "Learn more about Reviews"]]]}])
 
          [toggle-section
           {:title "AI Data Masking"

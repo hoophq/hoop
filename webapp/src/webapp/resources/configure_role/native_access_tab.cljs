@@ -38,7 +38,7 @@
     (when learning-component
       learning-component)]])
 
-(defn main [_connection]
+(defn main [connection]
   (let [user-groups (rf/subscribe [:user-groups])
         user (rf/subscribe [:users->current-user])
         gateway-info (rf/subscribe [:gateway->info])
@@ -57,7 +57,11 @@
       (let [free-license? (-> @user :data :free-license?)
             has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
             redact-provider (-> @gateway-info :data :redact_provider)
-            native-access-enabled? (get @access-modes :native true)]
+            native-access-enabled? (get @access-modes :native true)
+            ;; Keep this section visible for backward compatibility with previously configured reviews.
+            has-existing-review-config? (or (seq (:reviewers connection))
+                                            (some? (:min_review_approvals connection))
+                                            (seq (:force_approve_groups connection)))]
 
         [:> Box {:class "max-w-[600px] space-y-8"}
 
@@ -69,67 +73,68 @@
            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :native])}]
 
          ;; Just-in-Time Review
-         [toggle-section
-          {:title "Just-in-Time Review"
-           :description "Require approval prior to resource role execution."
-           :checked @review?
-           :on-change #(rf/dispatch [:connection-setup/toggle-review])
-           :complement-component (when @review?
-                                   [:> Box {:mt "4" :class "space-y-4"}
+         (when has-existing-review-config?
+           [toggle-section
+            {:title "Just-in-Time Review"
+             :description "Require approval prior to resource role execution."
+             :checked @review?
+             :on-change #(rf/dispatch [:connection-setup/toggle-review])
+             :complement-component (when @review?
+                                     [:> Box {:mt "4" :class "space-y-4"}
 
-                                    [multi-select/main
-                                     {:options (helpers/array->select-options @user-groups)
-                                      :label "Approval user groups"
-                                      :id "approval-groups-input"
-                                      :name "approval-groups-input"
-                                      :required? @review?
-                                      :default-value @review-groups
-                                      :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]
+                                      [multi-select/main
+                                       {:options (helpers/array->select-options @user-groups)
+                                        :label "Approval user groups"
+                                        :id "approval-groups-input"
+                                        :name "approval-groups-input"
+                                        :required? @review?
+                                        :default-value @review-groups
+                                        :on-change #(rf/dispatch [:connection-setup/set-review-groups (js->clj %)])}]
 
-                                    [forms/input
-                                     {:label "Minimum approval amount (optional)"
-                                      :type "number"
-                                      :id "min-review-approvals-input"
-                                      :name "min-review-approvals-input"
-                                      :value (if (some? @min-review-approvals) (str @min-review-approvals) "")
-                                      :on-change #(let [val (-> % .-target .-value)]
-                                                    (rf/dispatch [:connection-setup/set-min-review-approvals
-                                                                  (when (not= val "")
-                                                                    (js/parseInt val 10))]))
-                                      :min 1}]
+                                      [forms/input
+                                       {:label "Minimum approval amount (optional)"
+                                        :type "number"
+                                        :id "min-review-approvals-input"
+                                        :name "min-review-approvals-input"
+                                        :value (if (some? @min-review-approvals) (str @min-review-approvals) "")
+                                        :on-change #(let [val (-> % .-target .-value)]
+                                                      (rf/dispatch [:connection-setup/set-min-review-approvals
+                                                                    (when (not= val "")
+                                                                      (js/parseInt val 10))]))
+                                        :min 1}]
 
-                                    [multi-select/main
-                                     {:options (helpers/array->select-options @user-groups)
-                                      :label "Force approval groups (optional)"
-                                      :id "force-approve-groups-input"
-                                      :name "force-approve-groups-input"
-                                      :default-value @force-approve-groups
-                                      :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]
+                                      [multi-select/main
+                                       {:options (helpers/array->select-options @user-groups)
+                                        :label "Force approval groups (optional)"
+                                        :id "force-approve-groups-input"
+                                        :name "force-approve-groups-input"
+                                        :default-value @force-approve-groups
+                                        :on-change #(rf/dispatch [:connection-setup/set-force-approve-groups (js->clj %)])}]
 
-                                    (let [time-range-options (mapv #(into {} {"value" (:value %) "label" (:text %)})
-                                                                   constants/access-duration-options)
-                                          selected-option (when @access-max-duration
-                                                            (if (map? @access-max-duration)
-                                                              @access-max-duration
-                                                              (first (filter #(= (get % "value") @access-max-duration) time-range-options))))]
-                                      [multi-select/single
-                                       {:options time-range-options
-                                        :label "Time Range"
-                                        :id "access-max-duration-input"
-                                        :name "access-max-duration-input"
-                                        :default-value selected-option
-                                        :clearable? true
-                                        :on-change #(let [selected (js->clj %)]
-                                                      (rf/dispatch [:connection-setup/set-access-max-duration
-                                                                    (when selected (get selected "value"))]))}])])
-           :learning-component
-           [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
-                     :target "_blank"}
-            [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
-             [:> Callout.Icon
-              [:> ArrowUpRight {:size 16}]]
-             [:> Callout.Text
-              "Learn more about Just-in-Time Reviews"]]]}]
+                                      (let [time-range-options (mapv #(into {} {"value" (:value %) "label" (:text %)})
+                                                                     constants/access-duration-options)
+                                            selected-option (when @access-max-duration
+                                                              (if (map? @access-max-duration)
+                                                                @access-max-duration
+                                                                (first (filter #(= (get % "value") @access-max-duration) time-range-options))))]
+                                        [multi-select/single
+                                         {:options time-range-options
+                                          :label "Time Range"
+                                          :id "access-max-duration-input"
+                                          :name "access-max-duration-input"
+                                          :default-value selected-option
+                                          :clearable? true
+                                          :on-change #(let [selected (js->clj %)]
+                                                        (rf/dispatch [:connection-setup/set-access-max-duration
+                                                                      (when selected (get selected "value"))]))}])])
+             :learning-component
+             [:> Link {:href (get-in config/docs-url [:features :jit-reviews])
+                       :target "_blank"}
+              [:> Callout.Root {:size "1" :mt "4" :variant "outline" :color "gray" :class "w-fit"}
+               [:> Callout.Icon
+                [:> ArrowUpRight {:size 16}]]
+               [:> Callout.Text
+                "Learn more about Just-in-Time Reviews"]]]}])
 
          ;; AI Data Masking
          [toggle-section
