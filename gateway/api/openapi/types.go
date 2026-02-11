@@ -2257,9 +2257,9 @@ type AccessRequestRule struct {
 	// The resource identifier
 	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The name of the access request rule
-	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
+	Name string `json:"name" example:"default-access-request-rule"`
 	// The description of the access request rule
-	Description *string `json:"description,omitempty" example:"Access control rule for production databases"`
+	Description *string `json:"description" example:"Access control rule for production databases"`
 	// The access type
 	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
@@ -2273,9 +2273,9 @@ type AccessRequestRule struct {
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
 	// Maximum access duration in seconds
-	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
+	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
-	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+	MinApprovals *int `json:"min_approvals" example:"2"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated

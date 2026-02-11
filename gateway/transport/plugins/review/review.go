@@ -36,6 +36,7 @@ func (p *reviewPlugin) OnUpdate(_, _ plugintypes.PluginResource) error { return 
 func (p *reviewPlugin) OnConnect(_ plugintypes.Context) error          { return nil }
 
 func (p *reviewPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
+	// check if it's already been processed by the access request
 	if bytes.Equal(pkt.Spec[pb.SpecHasReviewKey], []byte("true")) {
 		return nil, nil
 	}

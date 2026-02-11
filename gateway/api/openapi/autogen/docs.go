@@ -6603,9 +6603,6 @@ const docTemplate = `{
         },
         "openapi.AccessRequestRule": {
             "type": "object",
-            "required": [
-                "name"
-            ],
             "properties": {
                 "access_max_duration": {
                     "description": "Maximum access duration in seconds",

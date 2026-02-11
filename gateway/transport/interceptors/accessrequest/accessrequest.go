@@ -27,6 +27,7 @@ func getValidatedJitReview(pctx plugintypes.Context) (*plugintypes.ConnectRespon
 	if err != nil && err != models.ErrNotFound {
 		return nil, plugintypes.InternalErr("failed listing time based reviews", err)
 	}
+
 	if jitr != nil {
 		err = validateJit(jitr, time.Now().UTC())
 		switch err {
@@ -58,9 +59,9 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 	if otrev != nil && otrev.Type == models.ReviewTypeOneTime {
 		log.With("id", otrev.ID, "sid", pctx.SID, "user", otrev.OwnerEmail, "org", pctx.OrgID,
 			"status", otrev.Status).Info("one time review")
+
 		if !(otrev.Status == models.ReviewStatusApproved || otrev.Status == models.ReviewStatusProcessing) {
-			apiURL := appconfig.Get().FullApiURL()
-			reviewURL := fmt.Sprintf("%s/reviews/%s", apiURL, otrev.ID)
+			reviewURL := fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), otrev.ID)
 			return false, &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 				Type:    pbclient.SessionOpenWaitingApproval,
 				Payload: []byte(reviewURL),
@@ -136,10 +137,8 @@ func createReview(pctx plugintypes.Context, isJitReview bool, reviewersGroups []
 }
 
 func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
+	// for plain exec we don't require or create any review, just proceed with the execution
 	if pctx.ClientVerb == pb.ClientVerbPlainExec {
-		log.With("sid", pctx.SID, "orgid", pctx.OrgID, "user-id", pctx.UserID, "connection-id", pctx.ConnectionID).
-			Infof("skipping access review for plain exec")
-
 		return nil, nil
 	}
 
@@ -254,10 +253,9 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 
 	setSpecReview(pkt)
 
-	apiURL := appconfig.Get().FullApiURL()
 	return &plugintypes.ConnectResponse{Context: nil, ClientPacket: &pb.Packet{
 		Type:    pbclient.SessionOpenWaitingApproval,
-		Payload: fmt.Appendf(nil, "%s/reviews/%s", apiURL, newRev.ID),
+		Payload: fmt.Appendf(nil, "%s/reviews/%s", appconfig.Get().FullApiURL(), newRev.ID),
 		Spec:    map[string][]byte{pb.SpecGatewaySessionID: []byte(pctx.SID)},
 	}}, nil
 }
