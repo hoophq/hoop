@@ -148,10 +148,7 @@
     (when session
       (rf/dispatch [:audit->get-session-by-id session]))
     (fn []
-      (r/with-let [clipboard-url (when-not @clipboard-disabled?
-                                   (new clipboardjs ".copy-to-clipboard-url"))
-                   _ (when clipboard-url
-                       (.on clipboard-url "success" #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}])))]
+      (r/with-let []
         (let [session (:session @session-details)
               user (:data @user-details)
               session-user-id (:user_id session)
@@ -403,8 +400,6 @@
                 "Execute"]])]])
 
         (finally
-          (when clipboard-url
-            (.destroy clipboard-url))
           (rf/dispatch [:audit->clear-session])
           (rf/dispatch [:reports->clear-session-report-by-id]))))))
 
