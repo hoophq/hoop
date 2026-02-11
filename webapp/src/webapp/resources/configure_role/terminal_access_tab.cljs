@@ -65,7 +65,6 @@
             redact-provider (-> @gateway-info :data :redact_provider)
             web-terminal-enabled? (get @access-modes :web true)
             runbooks-enabled? (get @access-modes :runbooks true)
-            ;; Keep this section visible for backward compatibility with previously configured reviews.
             has-existing-review-config? (or (seq (:reviewers connection))
                                             (some? (:min_review_approvals connection))
                                             (seq (:force_approve_groups connection)))]
@@ -77,7 +76,8 @@
            :description "Use hoop.dev's Web Terminal or our CLI's One-Offs commands directly in your terminal."
            :checked web-terminal-enabled?
            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :web])}]
-
+         
+         ;; Keep this section visible for backward compatibility with previously configured reviews.
          (when has-existing-review-config?
            [toggle-section
             {:title "Review by Command"

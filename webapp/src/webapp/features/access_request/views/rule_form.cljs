@@ -53,6 +53,16 @@
                               (str (:min_approvals rule-data))
                               ""))}))
 
+(defn- form-section [{:keys [title description]} & children]
+  [:> Grid {:columns "7" :gap "7"}
+   [:> Box {:grid-column "span 2 / span 2"}
+    [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+     title]
+    [:> Text {:size "3" :class "text-[--gray-11]"}
+     description]]
+   (into [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}]
+         children)])
+
 (defn rule-form [form-type rule-data scroll-pos]
   (let [state (create-form-state rule-data)
         connections (rf/subscribe [:connections->pagination])
@@ -123,185 +133,134 @@
              [free-license-callout]])
 
           [:> Box {:p "7" :class "space-y-radix-9"}
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Set new rule information"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Used to identify your Access Request rule in your connections."]]
+           [form-section {:title "Set new rule information"
+                          :description "Used to identify your Access Request rule in your connections."}
+            [forms/input
+             (cond-> {:label "Name"
+                      :value @(:rule-name state)
+                      :required true
+                      :class "w-full"}
+               (= form-type :create) (assoc :placeholder "e.g. data-engineering"
+                                            :autoFocus true
+                                            :on-change #(reset! (:rule-name state) (-> % .-target .-value)))
+               (= form-type :edit) (assoc :disabled true))]
+            [forms/input
+             {:placeholder (if (= form-type :create)
+                             "Describe how this is used in your connections"
+                             "e.g. Time-based database access for Marketing teams")
+              :label "Description (Optional)"
+              :value @(:description state)
+              :class "w-full"
+              :on-change #(reset! (:description state) (-> % .-target .-value))}]]
 
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [forms/input
-              (cond-> {:label "Name"
-                       :value @(:rule-name state)
-                       :required true
-                       :class "w-full"}
-                (= form-type :create) (assoc :placeholder "e.g. data-engineering"
-                                             :autoFocus true
-                                             :on-change #(reset! (:rule-name state) (-> % .-target .-value)))
-                (= form-type :edit) (assoc :disabled true))]
-
-             [forms/input
-              {:placeholder (if (= form-type :create)
-                              "Describe how this is used in your connections"
-                              "e.g. Time-based database access for Marketing teams")
-               :label "Description (Optional)"
-               :value @(:description state)
-               :class "w-full"
-               :on-change #(reset! (:description state) (-> % .-target .-value))}]]]
-
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Request access type"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Define how to request to your connections."]]
-
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [:> Flex {:direction "column" :gap "4"}
-              [selection-card
-               {:icon (r/as-element [:> ClockArrowUp {:size 20}])
-                :title "Just-in-Time"
-                :description "For temporary access expiring automatically after defined time range"
-                :selected? (= @(:access-type state) "jit")
-                :on-click #(reset! (:access-type state) "jit")}]
-
-              [selection-card
-               {:icon (r/as-element [:> CodeXml {:size 20}])
-                :title "by Command"
-                :description "For execution-based with approval workflow"
-                :selected? (= @(:access-type state) "command")
-                :on-click #(reset! (:access-type state) "command")}]]]]
+           [form-section {:title "Request access type"
+                          :description "Define how to request to your connections."}
+            [:> Flex {:direction "column" :gap "4"}
+             [selection-card
+              {:icon (r/as-element [:> ClockArrowUp {:size 20}])
+               :title "Just-in-Time"
+               :description "For temporary access expiring automatically after defined time range"
+               :selected? (= @(:access-type state) "jit")
+               :on-click #(reset! (:access-type state) "jit")}]
+             [selection-card
+              {:icon (r/as-element [:> CodeXml {:size 20}])
+               :title "by Command"
+               :description "For execution-based with approval workflow"
+               :selected? (= @(:access-type state) "command")
+               :on-click #(reset! (:access-type state) "command")}]]]
 
            (when (= @(:access-type state) "jit")
-             [:> Grid {:columns "7" :gap "7"}
-              [:> Box {:grid-column "span 2 / span 2"}
-               [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-                "Access time range"]
-               [:> Text {:size "3" :class "text-[--gray-11]"}
-                "Select for how long temporary access will be available for your connections."]]
+             [form-section {:title "Access time range"
+                            :description "Select for how long temporary access will be available for your connections."}
+              (let [time-range-opts (mapv #(into {} {"value" (:value %) "label" (:text %)})
+                                          time-range-options)
+                    selected-option (when @(:access-duration state)
+                                      (if (map? @(:access-duration state))
+                                        @(:access-duration state)
+                                        (first (filter #(= (get % "value") @(:access-duration state)) time-range-opts))))]
+                [multiselect/single
+                 {:options time-range-opts
+                  :label "Time Range"
+                  :id "access-duration-input"
+                  :name "access-duration-input"
+                  :default-value selected-option
+                  :clearable? true
+                  :required? true
+                  :on-change #(let [selected (js->clj %)]
+                                (reset! (:access-duration state) (when selected (get selected "value"))))}])])
 
-              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-               (let [time-range-opts (mapv #(into {} {"value" (:value %) "label" (:text %)})
-                                           time-range-options)
-                     selected-option (when @(:access-duration state)
-                                       (if (map? @(:access-duration state))
-                                         @(:access-duration state)
-                                         (first (filter #(= (get % "value") @(:access-duration state)) time-range-opts))))]
-                 [multiselect/single
-                  {:options time-range-opts
-                   :label "Time Range"
-                   :id "access-duration-input"
-                   :name "access-duration-input"
-                   :default-value selected-option
-                   :clearable? true
-                   :required? true
-                   :on-change #(let [selected (js->clj %)]
-                                 (reset! (:access-duration state) (when selected (get selected "value"))))}])]])
+           [form-section {:title "Resource configuration"
+                          :description "Select which connections to apply this configuration."}
+            (let [conns (or (:data @connections) [])
+                  conn-by-name (into {} (map (juxt :name identity)) conns)
+                  selected-connection-names @(:connection-names state)
+                  selected-connections-data (mapv (fn [name]
+                                                    (let [conn (get conn-by-name name)]
+                                                      {:id (or (:id conn) name)
+                                                       :name name}))
+                                                  selected-connection-names)
+                  connection-ids (mapv (fn [name]
+                                         (or (:id (get conn-by-name name)) name))
+                                       selected-connection-names)]
+              [connections-select/main
+               {:connection-ids connection-ids
+                :selected-connections selected-connections-data
+                :on-connections-change (fn [selected-options]
+                                         (let [selected-js-options (js->clj selected-options :keywordize-keys true)
+                                               selected-names (mapv #(:label %) selected-js-options)]
+                                           (reset! (:connection-names state) selected-names)))}])]
 
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Resource configuration"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Select which connections to apply this configuration."]]
+           [form-section {:title "Required user groups"
+                          :description "Select which user groups are required to request access with this rule."}
+            [multiselect/main
+             {:label "User Groups"
+              :options user-groups-options
+              :default-value @(:approval-required-groups state)
+              :placeholder "Select groups..."
+              :on-change #(reset! (:approval-required-groups state) (js->clj % :keywordize-keys true))}]]
 
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             (let [conns (or (:data @connections) [])
-                   conn-by-name (into {} (map (juxt :name identity)) conns)
-                   selected-connection-names @(:connection-names state)
-                   selected-connections-data (mapv (fn [name]
-                                                     (let [conn (get conn-by-name name)]
-                                                       {:id (or (:id conn) name)
-                                                        :name name}))
-                                                   selected-connection-names)
-                   connection-ids (mapv (fn [name]
-                                          (or (:id (get conn-by-name name)) name))
-                                        selected-connection-names)]
-               [connections-select/main
-                {:connection-ids connection-ids
-                 :selected-connections selected-connections-data
-                 :on-connections-change (fn [selected-options]
-                                          (let [selected-js-options (js->clj selected-options :keywordize-keys true)
-                                                selected-names (mapv #(:label %) selected-js-options)]
-                                            (reset! (:connection-names state) selected-names)))}])]]
+           [form-section {:title "Approval user groups"
+                          :description "Select which user groups can approve access in this rule."}
+            [multiselect/main
+             {:label "User Groups"
+              :options user-groups-options
+              :default-value @(:reviewers-groups state)
+              :placeholder "Select groups..."
+              :on-change #(reset! (:reviewers-groups state) (js->clj % :keywordize-keys true))}]
+            [:> Flex {:align "center" :gap "3" :class "pt-4"}
+             [:> Switch {:checked @(:all-groups-must-approve state)
+                         :size "3"
+                         :onCheckedChange (fn [checked]
+                                            (reset! (:all-groups-must-approve state) checked)
+                                            (when (and (not checked) (empty? @(:min-approvals state)))
+                                              (reset! (:min-approvals state) "1")))}]
+             [:> Box
+              [:> Text {:size "2" :weight "bold" :class "block"}
+               "Require all groups approval"]
+              [:> Text {:size "2" :class "text-[--gray-11]"}
+               "Request additional approval from at least one member of each group"]]]]
 
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Required user groups"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Select which user groups are required to request access with this rule."]]
+           [form-section {:title "Approval amount"
+                          :description "Define the minimum number of approvals required for each session."}
+            [forms/input
+             {:type "number"
+              :placeholder "e.g. 2"
+              :label "Minimum Approval Amount"
+              :value (or @(:min-approvals state) "")
+              :class "w-full"
+              :min 1
+              :required (not @(:all-groups-must-approve state))
+              :disabled @(:all-groups-must-approve state)
+              :on-change #(reset! (:min-approvals state) (-> % .-target .-value))}]]
 
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [multiselect/main
-              {:label "User Groups"
-               :options user-groups-options
-               :default-value @(:approval-required-groups state)
-               :placeholder "Select groups..."
-               :on-change #(reset! (:approval-required-groups state) (js->clj % :keywordize-keys true))}]]]
-
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Approval user groups"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Select which user groups can approve access in this rule."]]
-
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [multiselect/main
-              {:label "User Groups"
-               :options user-groups-options
-               :default-value @(:reviewers-groups state)
-               :placeholder "Select groups..."
-               :on-change #(reset! (:reviewers-groups state) (js->clj % :keywordize-keys true))}]
-
-             [:> Flex {:align "center" :gap "3" :class "pt-4"}
-              [:> Switch {:checked @(:all-groups-must-approve state)
-                          :size "3"
-                          :onCheckedChange (fn [checked]
-                                             (reset! (:all-groups-must-approve state) checked)
-                                             (when (and (not checked) (empty? @(:min-approvals state)))
-                                               (reset! (:min-approvals state) "1")))}]
-              [:> Box
-               [:> Text {:size "2" :weight "bold" :class "block"}
-                "Require all groups approval"]
-               [:> Text {:size "2" :class "text-[--gray-11]"}
-                "Request additional approval from at least one member of each group"]]]]]
-
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Approval amount (Optional)"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Define the minimum number of approvals required for each session."]]
-
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [forms/input
-              {:type "number"
-               :placeholder "e.g. 2"
-               :label "Minimum Approval Amount"
-               :value (or @(:min-approvals state) "")
-               :class "w-full"
-               :min 1
-               :required (not @(:all-groups-must-approve state))
-               :disabled @(:all-groups-must-approve state)
-               :on-change #(reset! (:min-approvals state) (-> % .-target .-value))}]]]
-
-           [:> Grid {:columns "7" :gap "7"}
-            [:> Box {:grid-column "span 2 / span 2"}
-             [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              "Force approval groups (Optional)"]
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Select which user groups are allowed to bypass other approval rules."]]
-
-            [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
-             [multiselect/main
-              {:label "User Groups"
-               :options user-groups-options
-               :default-value @(:force-approval-groups state)
-               :placeholder "Select groups..."
-               :on-change #(reset! (:force-approval-groups state) (js->clj % :keywordize-keys true))}]]]]]]))))
+           [form-section {:title "Force approval groups (Optional)"
+                          :description "Select which user groups are allowed to bypass other approval rules."}
+            [multiselect/main
+             {:label "User Groups"
+              :options user-groups-options
+              :default-value @(:force-approval-groups state)
+              :placeholder "Select groups..."
+              :on-change #(reset! (:force-approval-groups state) (js->clj % :keywordize-keys true))}]]]]]))))
 
 (defn main [mode & [params]]
   (let [current-rule (rf/subscribe [:access-request/current-rule])

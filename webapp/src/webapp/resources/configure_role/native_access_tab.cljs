@@ -57,8 +57,7 @@
       (let [free-license? (-> @user :data :free-license?)
             has-redact-credentials? (-> @gateway-info :data :has_redact_credentials)
             redact-provider (-> @gateway-info :data :redact_provider)
-            native-access-enabled? (get @access-modes :native true)
-            ;; Keep this section visible for backward compatibility with previously configured reviews.
+            native-access-enabled? (get @access-modes :native true) 
             has-existing-review-config? (or (seq (:reviewers connection))
                                             (some? (:min_review_approvals connection))
                                             (seq (:force_approve_groups connection)))]
@@ -73,6 +72,7 @@
            :on-change #(rf/dispatch [:connection-setup/toggle-access-mode :native])}]
 
          ;; Just-in-Time Review
+         ;; Keep this section visible for backward compatibility with previously configured reviews.
          (when has-existing-review-config?
            [toggle-section
             {:title "Just-in-Time Review"
