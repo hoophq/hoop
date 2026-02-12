@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -104,12 +105,22 @@ func Create(c *gin.Context) {
 		Status:         string(newUser.Status),
 		SlackID:        newUser.SlackID,
 	}
+
+	evt := audit.NewEvent(audit.ResourceUser, audit.ActionCreate).
+		Resource("", newUser.Email).
+		SetStruct(modelsUser).
+		Set("groups", newUser.Groups)
+	defer func() { evt.Log(c) }()
+
 	if err := models.CreateUser(modelsUser); err != nil {
+		evt.Err(err)
 		log.Errorf("failed persisting user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
+	evt.Resource(newUser.ID, newUser.Email)
 
 	if len(newUser.Groups) > 0 {
 		var userGroups []models.UserGroup
@@ -121,6 +132,7 @@ func Create(c *gin.Context) {
 			})
 		}
 		if err := models.InsertUserGroups(userGroups); err != nil {
+			evt.Err(err)
 			log.Errorf("failed persisting user groups, err=%v", err)
 			sentry.CaptureException(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -212,7 +224,17 @@ func Update(c *gin.Context) {
 		})
 	}
 	// update user and user groups
+	evt := audit.NewEvent(audit.ResourceUser, audit.ActionUpdate).
+		Resource(existingUser.ID, existingUser.Email).
+		Set("name", req.Name).
+		Set("picture", req.Picture).
+		Set("status", string(req.Status)).
+		Set("slack_id", req.SlackID).
+		Set("groups", req.Groups)
+	defer func() { evt.Log(c) }()
+
 	if err := models.UpdateUserAndUserGroups(existingUser, newUserGroups); err != nil {
+		evt.Err(err)
 		log.Errorf("failed updating user and user groups, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating user and user groups"})
@@ -326,7 +348,12 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot delete yourself"})
 		return
 	}
+	evt := audit.NewEvent(audit.ResourceUser, audit.ActionDelete).
+		Resource(subject, user.Email)
+	defer func() { evt.Log(c) }()
+
 	if err := models.DeleteUser(ctx.OrgID, subject); err != nil {
+		evt.Err(err)
 		log.Errorf("failed removing user %s, err=%v", subject, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting user"})
@@ -610,7 +637,13 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceUserGroup, audit.ActionCreate).
+		Resource(req.Name, req.Name).
+		Set("name", req.Name)
+	defer func() { evt.Log(c) }()
+
 	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
+		evt.Err(err)
 		if errors.Is(err, models.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
@@ -647,7 +680,12 @@ func DeleteGroup(c *gin.Context) {
 	}
 
 	// Delete all instances of this group
+	evt := audit.NewEvent(audit.ResourceUserGroup, audit.ActionDelete).
+		Resource(name, name)
+	defer func() { evt.Log(c) }()
+
 	if err := models.DeleteUserGroup(ctx.OrgID, name); err != nil {
+		evt.Err(err)
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
 			return

@@ -194,6 +194,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/audit/logs": {
+            "get": {
+                "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Audit Logs"
+                ],
+                "summary": "List security audit logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-100, default: 50)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by actor subject (partial match)",
+                        "name": "actor_subject",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by actor email (partial match)",
+                        "name": "actor_email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource type (e.g. connections, users, resources)",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by action (create, update, delete, revoke)",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource ID (UUID)",
+                        "name": "resource_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource name (partial match)",
+                        "name": "resource_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by outcome (true = success, false = failure)",
+                        "name": "outcome",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter entries created on or after this time (RFC3339 or YYYY-MM-DD)",
+                        "name": "created_after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter entries created on or before this time (RFC3339 or YYYY-MM-DD)",
+                        "name": "created_before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_SecurityAuditLogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/callback": {
             "get": {
                 "description": "Exchanges and validates the authorization code for an access token after being redirect by the external provider.\nA success authentication will redirect the user back to the default redirect url provided in the /login route.\n\nIn case of error it will include the query string ` + "`" + `error=unexpected_error` + "`" + ` when redirecting.\n",
@@ -5085,6 +5193,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Filter by Jira issue key",
+                        "name": "jira_issue_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "format": "RFC3339",
                         "description": "Filter starting on this date",
                         "name": "start_date",
@@ -6605,6 +6719,11 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "min_review_approvals": {
+                    "description": "Minimum number of review approvals required to execute this connection",
+                    "type": "integer",
+                    "example": 2
+                },
                 "name": {
                     "description": "Name of the connection. This attribute is immutable when updating it",
                     "type": "string",
@@ -6715,6 +6834,11 @@ const docTemplate = `{
                     "description": "The name of the connection",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "connection_subtype": {
+                    "description": "The connection subtype",
+                    "type": "string",
+                    "example": "postgres"
                 },
                 "connection_type": {
                     "description": "Connection type",
@@ -8254,6 +8378,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_SecurityAuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SecurityAuditLogResponse"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_SessionMetricResponse": {
             "type": "object",
             "properties": {
@@ -9120,7 +9258,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata contains the attributes parsed from a template.\nPayload Example:\n\n\t\t{\n\t\t\t\"customer_id\" : {\n\t\t\t\t\"description\": \"the id of the customer\",\n\t\t\t\t\"required\": true,\n\t\t\t\t\"type\": \"text\",\n\t\t\t\t\"default\": \"Default value to use\"\n\t\t\t},\n\t\t\t\"country\": {\n\t\t\t\t\"description\": \"the country code US; BR, etc\",\n\t\t\t\t\"required\": false,\n\t\t\t\t\"type\": \"select\",\n\t\t\t\t\"options\": [\"US\", \"BR\"]\n\t\t\t}\n\t\t}\n\nBy default it will have the attributes ` + "`" + `description=\"\"` + "`" + `, ` + "`" + `required=false` + "`" + ` and ` + "`" + `type=\"text\"` + "`" + `.",
+                    "description": "Metadata contains the attributes parsed from a template.\nPayload Example:\n\n\t\t{\n\t\t\t\"customer_id\" : {\n\t\t\t\t\"description\": \"the id of the customer\",\n\t\t\t\t\"required\": true,\n\t\t\t\t\"type\": \"text\",\n\t\t\t\t\"default\": \"Default value to use\",\n\t\t\t\t\"order\": 1\n\t\t\t},\n\t\t\t\"country\": {\n\t\t\t\t\"description\": \"the country code US; BR, etc\",\n\t\t\t\t\"required\": false,\n\t\t\t\t\"type\": \"select\",\n\t\t\t\t\"options\": [\"US\", \"BR\"],\n\t\t\t\t\"order\": 2\n\t\t\t}\n\t\t}\n\nBy default it will have the attributes ` + "`" + `description=\"\"` + "`" + `, ` + "`" + `required=false` + "`" + ` and ` + "`" + `type=\"text\"` + "`" + `.\nOptional attributes include ` + "`" + `order` + "`" + ` (int), ` + "`" + `default` + "`" + `, ` + "`" + `placeholder` + "`" + `, ` + "`" + `options` + "`" + `, and ` + "`" + `asenv` + "`" + `.",
                     "type": "object",
                     "additionalProperties": {}
                 },
@@ -9255,6 +9393,11 @@ const docTemplate = `{
                     "description": "Repository name where the runbook is located",
                     "type": "string",
                     "example": "github.com/myorg/myrepo"
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 }
             }
         },
@@ -9492,6 +9635,11 @@ const docTemplate = `{
                     "description": "The commit sha reference to obtain the file",
                     "type": "string",
                     "example": "20320ebbf9fc612256b67dc9e899bbd6e4745c77"
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 }
             }
         },
@@ -9726,6 +9874,68 @@ const docTemplate = `{
                 "SecretsManagerProviderVault"
             ]
         },
+        "openapi.SecurityAuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "create"
+                },
+                "actor_email": {
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "actor_name": {
+                    "type": "string",
+                    "example": "Admin User"
+                },
+                "actor_subject": {
+                    "type": "string",
+                    "example": "auth0|abc123"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "error_message": {
+                    "type": "string",
+                    "example": ""
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "org_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
+                },
+                "outcome": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "request_payload_redacted": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "resource_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "resource_name": {
+                    "type": "string",
+                    "example": "my-connection"
+                },
+                "resource_type": {
+                    "type": "string",
+                    "example": "connections"
+                }
+            }
+        },
         "openapi.ServerAuthConfig": {
             "type": "object",
             "required": [
@@ -9889,6 +10099,10 @@ const docTemplate = `{
                     "description": "Commit SHA of the version",
                     "type": "string",
                     "example": "e6b94e86352e934b66d9c7ab2821a267dc18dfee"
+                },
+                "disable_clipboard_copy_cut": {
+                    "description": "Indicates if clipboard copy functionality is disabled\n* true - Clipboard copy and cut are disabled and not available to users\n* false - Clipboard copy and cut are enabled and available to users",
+                    "type": "boolean"
                 },
                 "disable_sessions_download": {
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
@@ -10246,6 +10460,11 @@ const docTemplate = `{
                     "description": "The input size of the session in bytes",
                     "type": "integer",
                     "example": 12
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 },
                 "start_date": {
                     "description": "When the execution started",
@@ -10955,6 +11174,10 @@ const docTemplate = `{
         },
         {
             "name": "Reports"
+        },
+        {
+            "description": "Security audit log API. Only users in the **admin** group can access these endpoints.\n\nAudit log entries record security-relevant events (who performed an action, when, on which resource, and whether it succeeded). Use the list endpoint with filters to query by actor, resource type, action, outcome, or date range. Results are paginated and ordered by ` + "`" + `created_at` + "`" + ` descending.\n",
+            "name": "Audit Logs"
         }
     ]
 }`

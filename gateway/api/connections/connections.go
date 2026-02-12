@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -95,11 +96,20 @@ func Post(c *gin.Context) {
 		AccessMaxDuration:   req.AccessMaxDuration,
 		MinReviewApprovals:  req.MinReviewApprovals,
 	})
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionCreate).
+		Resource("", req.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("agent_id", req.AgentId)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed creating connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	evt.Resource(resp.ID, req.Name)
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
@@ -179,7 +189,14 @@ func Put(c *gin.Context) {
 		AccessMaxDuration:   req.AccessMaxDuration,
 		MinReviewApprovals:  req.MinReviewApprovals,
 	})
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
+		Resource(conn.ID, conn.Name).
+		Set("name", conn.Name).
+		Set("type", conn.Type)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -288,8 +305,15 @@ func Patch(c *gin.Context) {
 		conn.Status = models.ConnectionStatusOnline
 	}
 
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
+		Resource(conn.ID, conn.Name).
+		Set("name", conn.Name).
+		Set("type", conn.Type)
+	defer func() { evt.Log(c) }()
+
 	resp, err := models.UpsertConnection(ctx, conn)
 	if err != nil {
+		evt.Err(err)
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -319,7 +343,12 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
 	}
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionDelete).
+		Resource(connName, connName)
+	defer func() { evt.Log(c) }()
+
 	err := models.DeleteConnection(ctx.OrgID, connName)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
@@ -593,3 +622,4 @@ func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Con
 
 	return nil
 }
+
