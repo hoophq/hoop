@@ -45,9 +45,18 @@ func Post(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
+	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionCreate).
+		Resource(rule.ID, rule.Name).
+		Set("name", req.Name).
+		Set("description", req.Description).
+		Set("input", req.Input).
+		Set("output", req.Output).
+		Set("connection_ids", validConnectionIDs)
+	defer func() { evt.Log(c) }()
+
 	// Create guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
-	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionCreate, rule.ID, rule.Name, payloadGuardrailRule(req.Name, req.Description, validConnectionIDs), err)
+	evt.Err(err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -100,9 +109,18 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
+	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionUpdate).
+		Resource(rule.ID, rule.Name).
+		Set("name", req.Name).
+		Set("description", req.Description).
+		Set("input", req.Input).
+		Set("output", req.Output).
+		Set("connection_ids", validConnectionIDs)
+	defer func() { evt.Log(c) }()
+
 	// Update guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
-	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionUpdate, rule.ID, rule.Name, payloadGuardrailRule(req.Name, req.Description, validConnectionIDs), err)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -206,8 +224,12 @@ func Get(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleID := c.Param("id")
+	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionDelete).
+		Resource(ruleID, "")
+	defer func() { evt.Log(c) }()
+
 	err := models.DeleteGuardRailRules(ctx.GetOrgID(), ruleID)
-	audit.LogFromContextErr(c, audit.ResourceGuardrails, audit.ActionDelete, ruleID, "", nil, err)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -240,8 +262,3 @@ func filterEmptyIDs(ids []string) []string {
 	return result
 }
 
-func payloadGuardrailRule(name, description string, connectionIDs []string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "description": description, "connection_ids": connectionIDs}
-	}
-}

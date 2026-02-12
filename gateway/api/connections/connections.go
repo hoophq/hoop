@@ -96,16 +96,20 @@ func Post(c *gin.Context) {
 		AccessMaxDuration:   req.AccessMaxDuration,
 		MinReviewApprovals:  req.MinReviewApprovals,
 	})
-	resourceID := ""
-	if resp != nil {
-		resourceID = resp.ID
-	}
-	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionCreate, resourceID, req.Name, payloadConnectionCreate(req.Name, req.Type, req.AgentId), err)
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionCreate).
+		Resource("", req.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("agent_id", req.AgentId)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed creating connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	evt.Resource(resp.ID, req.Name)
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
@@ -185,8 +189,14 @@ func Put(c *gin.Context) {
 		AccessMaxDuration:   req.AccessMaxDuration,
 		MinReviewApprovals:  req.MinReviewApprovals,
 	})
-	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionUpdate, conn.ID, conn.Name, payloadConnectionUpdate(conn.Name, conn.Type), err)
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
+		Resource(conn.ID, conn.Name).
+		Set("name", conn.Name).
+		Set("type", conn.Type)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -295,9 +305,15 @@ func Patch(c *gin.Context) {
 		conn.Status = models.ConnectionStatusOnline
 	}
 
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
+		Resource(conn.ID, conn.Name).
+		Set("name", conn.Name).
+		Set("type", conn.Type)
+	defer func() { evt.Log(c) }()
+
 	resp, err := models.UpsertConnection(ctx, conn)
-	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionUpdate, conn.ID, conn.Name, payloadConnectionUpdate(conn.Name, conn.Type), err)
 	if err != nil {
+		evt.Err(err)
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -327,8 +343,12 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
 	}
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionDelete).
+		Resource(connName, connName)
+	defer func() { evt.Log(c) }()
+
 	err := models.DeleteConnection(ctx.OrgID, connName)
-	audit.LogFromContextErr(c, audit.ResourceConnection, audit.ActionDelete, connName, connName, nil, err)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
@@ -603,14 +623,3 @@ func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Con
 	return nil
 }
 
-func payloadConnectionCreate(name, connType, agentID string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "type": connType, "agent_id": agentID}
-	}
-}
-
-func payloadConnectionUpdate(name, connType string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "type": connType}
-	}
-}
