@@ -85,6 +85,7 @@
             end-date (:end_date session)
             user-name (:user_name session)
             session-batch-id (:session_batch_id session)
+            review-status (-> session :review :status)
             jira-url (get-in session [:integrations_metadata :jira_issue_url])
             has-review? (boolean (seq review-groups))
             all-groups-pending? (every? #(= (:status %) "PENDING") review-groups)
@@ -115,17 +116,10 @@
             [:<>
              [detail-row {:label "Access Request"
                           :icon [:> CircleCheckBig {:size 20}]
-                          :value (if all-groups-pending?
-                                   [access-request-badge "PENDING"]
-                                   [:> Flex {:gap "1" :wrap "wrap"}
-                                    (for [group review-groups]
-                                      ^{:key (:id group)}
-                                      [access-request-badge (:status group)])])}]
+                          :value [access-request-badge review-status]}]
 
              ;; Indented list of individual review groups
-             (when (and (seq review-groups)
-                        (or (> (count review-groups) 1)
-                            (not all-groups-pending?)))
+             (when (seq review-groups)
                [:> Box {:class "ml-[28px] space-y-radix-4"}
                 (for [group review-groups]
                   ^{:key (:id group)}
