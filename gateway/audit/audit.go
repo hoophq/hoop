@@ -1,7 +1,7 @@
 package audit
 
 import (
-	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +24,7 @@ const (
 	ResourceResource       ResourceType = "resources"
 	ResourceAgent          ResourceType = "agents"
 	ResourceAuthConfig     ResourceType = "auth_config"
+	ResourceServerConfig   ResourceType = "server_config"
 	ResourceOrgKey         ResourceType = "org_keys"
 )
 
@@ -37,95 +38,119 @@ const (
 	ActionRevoke Action = "revoke"
 )
 
-// Outcome represents success or failure (stored as boolean in DB).
-type Outcome bool
+// outcome represents success or failure (stored as boolean in DB).
+type outcome bool
 
 const (
-	OutcomeSuccess Outcome = true
-	OutcomeFailure Outcome = false
+	outcomeSuccess outcome = true
+	outcomeFailure outcome = false
 )
 
-// PayloadFn returns the raw request/context payload for an event. Implement per event;
-// the result is redacted before storage. May be nil to store no payload.
-type PayloadFn func() map[string]any
-
-// LogParams is the minimal, reusable input for every audit event.
-// Who and When are filled from context and time; pass only what changes per call.
-// RequestPayloadFn is the per-event function that returns the payload to store (redacted).
-type LogParams struct {
-	ResourceType    ResourceType
-	Action          Action
-	Outcome         Outcome
-	ResourceID      string
-	ResourceName    string
-	ErrorMessage    string
-	RequestPayloadFn PayloadFn
+// Event is a builder for a single audit log entry.
+// Callers chain methods to set fields and call .Log(c) to write the event.
+// Failures (errors or panics) are only logged; they never panic or stop the caller's flow.
+type Event struct {
+	resourceType ResourceType
+	action       Action
+	resourceID   string
+	resourceName string
+	payload      map[string]any
+	err          error
 }
 
-// Logger writes audit events to storage.
-type Logger interface {
-	Log(ctx context.Context, p LogParams, actorSubject, actorEmail, actorName, orgID string) error
+// NewEvent starts an audit event builder.
+func NewEvent(resourceType ResourceType, action Action) *Event {
+	return &Event{
+		resourceType: resourceType,
+		action:       action,
+		payload:      make(map[string]any),
+	}
 }
 
-type defaultLogger struct{}
+// Resource sets the resource ID and name.
+func (e *Event) Resource(id, name string) *Event {
+	e.resourceID = id
+	e.resourceName = name
+	return e
+}
 
-func (defaultLogger) Log(ctx context.Context, p LogParams, actorSubject, actorEmail, actorName, orgID string) error {
+// Set adds a key-value pair to the audit payload.
+func (e *Event) Set(key string, value any) *Event {
+	e.payload[key] = value
+	return e
+}
+
+// setMap merges all entries from m into the audit payload.
+func (e *Event) setMap(m map[string]any) *Event {
+	for k, v := range m {
+		e.payload[k] = v
+	}
+	return e
+}
+
+// SetStruct merges exported fields of v into the audit payload via JSON round-trip.
+// Fields with sensitive keys (password, secret, etc.) are redacted later by Redact.
+func (e *Event) SetStruct(v any) *Event {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return e
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return e
+	}
+	return e.setMap(m)
+}
+
+// Err sets the error; if non-nil, outcome becomes failure and ErrorMessage is populated.
+func (e *Event) Err(err error) *Event {
+	e.err = err
+	return e
+}
+
+// Log writes the event. Panics and errors are recovered/logged; the caller's flow is never interrupted.
+func (e *Event) Log(c *gin.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("security audit log panic (recovered): %v", r)
+		}
+	}()
+
+	o := outcomeSuccess
+	errMsg := ""
+	if e.err != nil {
+		o = outcomeFailure
+		errMsg = e.err.Error()
+	}
+
 	var resourceID *uuid.UUID
-	if p.ResourceID != "" {
-		if u, err := uuid.Parse(p.ResourceID); err == nil {
+	if e.resourceID != "" {
+		if u, err := uuid.Parse(e.resourceID); err == nil {
 			resourceID = &u
 		}
 	}
+
 	var payload map[string]any
-	if p.RequestPayloadFn != nil {
-		payload = Redact(p.RequestPayloadFn())
+	if len(e.payload) > 0 {
+		payload = Redact(e.payload)
 	}
-	row := &models.SecurityAuditLog{
-		OrgID:                   orgID,
-		ActorSubject:            actorSubject,
-		ActorEmail:              actorEmail,
-		ActorName:               actorName,
-		CreatedAt:               time.Now().UTC(),
-		ResourceType:            string(p.ResourceType),
-		Action:                  string(p.Action),
-		ResourceID:              resourceID,
-		ResourceName:            p.ResourceName,
-		RequestPayloadRedacted:  payload,
-		Outcome:                 bool(p.Outcome),
-		ErrorMessage:            p.ErrorMessage,
-	}
-	return models.CreateSecurityAuditLog(row)
-}
 
-// DefaultLogger is the logger used by LogFromContext. Set at startup or leave as default.
-var DefaultLogger Logger = defaultLogger{}
-
-// LogFromContext records one audit event. Who (actor, org) and When come from c and now.
-func LogFromContext(c *gin.Context, p LogParams) {
 	ctx := storagev2.ParseContext(c)
-	if err := DefaultLogger.Log(c.Request.Context(), p, ctx.UserID, ctx.UserEmail, ctx.UserName, ctx.OrgID); err != nil {
-		log.Errorf("security audit log write failed (table private.security_audit_log may be missing or migration 000062 not applied): %v", err)
+	row := &models.SecurityAuditLog{
+		OrgID:                  ctx.OrgID,
+		ActorSubject:           ctx.UserID,
+		ActorEmail:             ctx.UserEmail,
+		ActorName:              ctx.UserName,
+		CreatedAt:              time.Now().UTC(),
+		ResourceType:           string(e.resourceType),
+		Action:                 string(e.action),
+		ResourceID:             resourceID,
+		ResourceName:           e.resourceName,
+		RequestPayloadRedacted: payload,
+		Outcome:                bool(o),
+		ErrorMessage:           errMsg,
 	}
-}
-
-// LogFromContextErr logs one audit event and sets Outcome + ErrorMessage from err.
-// If err != nil: Outcome = OutcomeFailure, ErrorMessage = err.Error().
-// If err == nil: Outcome = OutcomeSuccess.
-// payloadFn is the per-event raw payload function; implement for each event type. May be nil.
-func LogFromContextErr(c *gin.Context, resourceType ResourceType, action Action, resourceID, resourceName string, payloadFn PayloadFn, err error) {
-	outcome := OutcomeSuccess
-	errMsg := ""
-	if err != nil {
-		outcome = OutcomeFailure
-		errMsg = err.Error()
+	if err := models.CreateSecurityAuditLog(row); err != nil {
+		log.Errorf("security audit log write failed: %v", err)
 	}
-	LogFromContext(c, LogParams{
-		ResourceType:     resourceType,
-		Action:           action,
-		Outcome:          outcome,
-		ResourceID:       resourceID,
-		ResourceName:     resourceName,
-		ErrorMessage:     errMsg,
-		RequestPayloadFn: payloadFn,
-	})
 }

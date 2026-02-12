@@ -123,11 +123,20 @@ func Post(c *gin.Context) {
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
-	resourceID := ""
+	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionCreate).
+		Resource("", req.Name).
+		Set("name", req.Name).
+		Set("description", req.Description).
+		Set("supported_entity_types", supportedEntityTypes).
+		Set("custom_entity_types", customEntityTypes).
+		Set("score_threshold", req.ScoreThreshold).
+		Set("connection_ids", req.ConnectionIDs)
+	defer func() { evt.Log(c) }()
+
 	if rule != nil {
-		resourceID = rule.ID
+		evt.Resource(rule.ID, req.Name)
 	}
-	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionCreate, resourceID, req.Name, payloadDataMaskingRule(req.Name, req.Description, req.ConnectionIDs), err)
+	evt.Err(err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -185,6 +194,16 @@ func Put(c *gin.Context) {
 	}
 
 	ruleID := c.Param("id")
+	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionUpdate).
+		Resource(ruleID, req.Name).
+		Set("name", req.Name).
+		Set("description", req.Description).
+		Set("supported_entity_types", supportedEntityTypes).
+		Set("custom_entity_types", customEntityTypes).
+		Set("score_threshold", req.ScoreThreshold).
+		Set("connection_ids", req.ConnectionIDs)
+	defer func() { evt.Log(c) }()
+
 	rule, err := models.UpdateDataMaskingRule(&models.DataMaskingRule{
 		ID:                   ruleID,
 		OrgID:                ctx.GetOrgID(),
@@ -196,7 +215,7 @@ func Put(c *gin.Context) {
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})
-	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionUpdate, ruleID, req.Name, payloadDataMaskingRule(req.Name, req.Description, req.ConnectionIDs), err)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -272,8 +291,12 @@ func Get(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleID := c.Param("id")
+	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionDelete).
+		Resource(ruleID, "")
+	defer func() { evt.Log(c) }()
+
 	err := models.DeleteDataMaskingRule(ctx.GetOrgID(), ruleID)
-	audit.LogFromContextErr(c, audit.ResourceDataMasking, audit.ActionDelete, ruleID, "", nil, err)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -357,8 +380,3 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 	return &req
 }
 
-func payloadDataMaskingRule(name, description string, connectionIDs []string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "description": description, "connection_ids": connectionIDs}
-	}
-}

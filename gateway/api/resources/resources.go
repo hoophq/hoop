@@ -162,8 +162,16 @@ func CreateResource(c *gin.Context) {
 		return nil
 	})
 
-	audit.LogFromContextErr(c, audit.ResourceResource, audit.ActionCreate, resource.ID, resource.Name, payloadResourceCreate(req.Name, req.Type, req.SubType, req.AgentID), err)
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionCreate).
+		Resource(resource.ID, resource.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("subtype", req.SubType).
+		Set("agent_id", req.AgentID)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to create resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + err.Error()})
 		return
@@ -296,9 +304,16 @@ func UpdateResource(c *gin.Context) {
 		AgentID: sql.NullString{String: req.AgentID, Valid: req.AgentID != ""},
 	}
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionUpdate).
+		Resource(resource.ID, resource.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("subtype", req.SubType)
+	defer func() { evt.Log(c) }()
+
 	err = models.UpsertResource(models.DB, &resource, true)
-	audit.LogFromContextErr(c, audit.ResourceResource, audit.ActionUpdate, resource.ID, resource.Name, payloadResourceUpdate(req.Name, req.Type, req.SubType), err)
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to upsert resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
@@ -343,9 +358,13 @@ func DeleteResource(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionDelete).
+		Resource(name, name)
+	defer func() { evt.Log(c) }()
+
 	err = models.DeleteResource(models.DB, ctx.OrgID, name)
-	audit.LogFromContextErr(c, audit.ResourceResource, audit.ActionDelete, name, name, nil, err)
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to delete resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
@@ -367,14 +386,3 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 	}
 }
 
-func payloadResourceCreate(name, resourceType, subType, agentID string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "type": resourceType, "subtype": subType, "agent_id": agentID}
-	}
-}
-
-func payloadResourceUpdate(name, resourceType, subType string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "type": resourceType, "subtype": subType}
-	}
-}

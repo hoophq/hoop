@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
@@ -218,6 +219,11 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceServerConfig, audit.ActionUpdate).
+		Set("product_analytics", ptr.ToString(newState.ProductAnalytics)).
+		Set("grpc_server_url", ptr.ToString(newState.GrpcServerURL))
+	defer func() { evt.Log(c) }()
+
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
 		ProductAnalytics:      newState.ProductAnalytics,
 		GrpcServerURL:         newState.GrpcServerURL,
@@ -227,6 +233,7 @@ func UpdateServerMisc(c *gin.Context) {
 		HttpProxyServerConfig: newState.HttpProxyServerConfig,
 	})
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to update server config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server config"})
 		return

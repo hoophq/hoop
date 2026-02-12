@@ -33,8 +33,12 @@ var (
 //	@Router			/orgs/keys [post]
 func CreateAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+	evt := audit.NewEvent(audit.ResourceOrgKey, audit.ActionCreate).
+		Resource("", agentKeyDefaultName)
+	defer func() { evt.Log(c) }()
+
 	agentID, dsn, err := ProvisionOrgAgentKey(ctx.OrgID, storagev2.ParseContext(c).GrpcURL)
-	audit.LogFromContextErr(c, audit.ResourceOrgKey, audit.ActionCreate, agentID, agentKeyDefaultName, nil, err)
+	evt.Resource(agentID, agentKeyDefaultName).Err(err)
 	switch err {
 	case ErrAlreadyExists:
 		log.Infof("agent (org token) %v already exists", agentKeyDefaultName)
@@ -103,15 +107,22 @@ func RevokeAgentKey(c *gin.Context) {
 		c.Writer.WriteHeader(204)
 		return
 	case nil:
+		evt := audit.NewEvent(audit.ResourceOrgKey, audit.ActionRevoke).
+			Resource(agentKeyDefaultName, agentKeyDefaultName)
+		defer func() { evt.Log(c) }()
+
 		delErr := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
-		audit.LogFromContextErr(c, audit.ResourceOrgKey, audit.ActionRevoke, agentKeyDefaultName, agentKeyDefaultName, nil, delErr)
+		evt.Err(delErr)
 		if delErr != nil {
 			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, delErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": delErr.Error()})
 			return
 		}
 	default:
-		audit.LogFromContextErr(c, audit.ResourceOrgKey, audit.ActionRevoke, agentKeyDefaultName, agentKeyDefaultName, nil, err)
+		audit.NewEvent(audit.ResourceOrgKey, audit.ActionRevoke).
+			Resource(agentKeyDefaultName, agentKeyDefaultName).
+			Err(err).
+			Log(c)
 		log.Errorf("failed fetching for existing organization token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return

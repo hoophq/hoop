@@ -105,13 +105,22 @@ func Create(c *gin.Context) {
 		Status:         string(newUser.Status),
 		SlackID:        newUser.SlackID,
 	}
+
+	evt := audit.NewEvent(audit.ResourceUser, audit.ActionCreate).
+		Resource("", newUser.Email).
+		SetStruct(modelsUser).
+		Set("groups", newUser.Groups)
+	defer func() { evt.Log(c) }()
+
 	if err := models.CreateUser(modelsUser); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, "", newUser.Email, payloadUserCreate(newUser.Email, newUser.Name, newUser.Groups), err)
+		evt.Err(err)
 		log.Errorf("failed persisting user, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+
+	evt.Resource(newUser.ID, newUser.Email)
 
 	if len(newUser.Groups) > 0 {
 		var userGroups []models.UserGroup
@@ -123,7 +132,7 @@ func Create(c *gin.Context) {
 			})
 		}
 		if err := models.InsertUserGroups(userGroups); err != nil {
-			audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, newUser.ID, newUser.Email, payloadUserCreate(newUser.Email, newUser.Name, newUser.Groups), err)
+			evt.Err(err)
 			log.Errorf("failed persisting user groups, err=%v", err)
 			sentry.CaptureException(err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -131,7 +140,6 @@ func Create(c *gin.Context) {
 		}
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionCreate, newUser.ID, newUser.Email, payloadUserCreate(newUser.Email, newUser.Name, newUser.Groups), nil)
 	ctx.Analytics().Identify(&types.APIContext{
 		OrgID:  ctx.OrgID,
 		UserID: userSubject,
@@ -216,15 +224,23 @@ func Update(c *gin.Context) {
 		})
 	}
 	// update user and user groups
+	evt := audit.NewEvent(audit.ResourceUser, audit.ActionUpdate).
+		Resource(existingUser.ID, existingUser.Email).
+		Set("name", req.Name).
+		Set("picture", req.Picture).
+		Set("status", string(req.Status)).
+		Set("slack_id", req.SlackID).
+		Set("groups", req.Groups)
+	defer func() { evt.Log(c) }()
+
 	if err := models.UpdateUserAndUserGroups(existingUser, newUserGroups); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionUpdate, existingUser.ID, existingUser.Email, payloadUserUpdate(req.Name, string(req.Status), req.Groups), err)
+		evt.Err(err)
 		log.Errorf("failed updating user and user groups, err=%v", err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating user and user groups"})
 		return
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionUpdate, existingUser.ID, existingUser.Email, payloadUserUpdate(req.Name, string(req.Status), req.Groups), nil)
 	analytics.New().Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		UserID:     existingUser.ID,
@@ -332,14 +348,17 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot delete yourself"})
 		return
 	}
+	evt := audit.NewEvent(audit.ResourceUser, audit.ActionDelete).
+		Resource(subject, user.Email)
+	defer func() { evt.Log(c) }()
+
 	if err := models.DeleteUser(ctx.OrgID, subject); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionDelete, subject, user.Email, nil, err)
+		evt.Err(err)
 		log.Errorf("failed removing user %s, err=%v", subject, err)
 		sentry.CaptureException(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting user"})
 		return
 	}
-	audit.LogFromContextErr(c, audit.ResourceUser, audit.ActionDelete, subject, user.Email, nil, nil)
 	c.Writer.WriteHeader(204)
 }
 
@@ -618,8 +637,13 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceUserGroup, audit.ActionCreate).
+		Resource(req.Name, req.Name).
+		Set("name", req.Name)
+	defer func() { evt.Log(c) }()
+
 	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionCreate, req.Name, req.Name, payloadUserGroupCreate(req.Name), err)
+		evt.Err(err)
 		if errors.Is(err, models.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
@@ -630,7 +654,6 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionCreate, req.Name, req.Name, payloadUserGroupCreate(req.Name), nil)
 	c.JSON(http.StatusCreated, req)
 }
 
@@ -657,8 +680,12 @@ func DeleteGroup(c *gin.Context) {
 	}
 
 	// Delete all instances of this group
+	evt := audit.NewEvent(audit.ResourceUserGroup, audit.ActionDelete).
+		Resource(name, name)
+	defer func() { evt.Log(c) }()
+
 	if err := models.DeleteUserGroup(ctx.OrgID, name); err != nil {
-		audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionDelete, name, name, nil, err)
+		evt.Err(err)
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
 			return
@@ -669,7 +696,6 @@ func DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	audit.LogFromContextErr(c, audit.ResourceUserGroup, audit.ActionDelete, name, name, nil, nil)
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -683,22 +709,4 @@ func toRole(user openapi.User) string {
 		return string(openapi.RoleAdminType)
 	}
 	return string(openapi.RoleStandardType)
-}
-
-func payloadUserCreate(email, name string, groups []string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"email": email, "name": name, "groups": groups}
-	}
-}
-
-func payloadUserUpdate(name, status string, groups []string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "status": status, "groups": groups}
-	}
-}
-
-func payloadUserGroupCreate(name string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name}
-	}
 }

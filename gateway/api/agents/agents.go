@@ -66,8 +66,14 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceAgent, audit.ActionCreate).
+		Resource(req.Name, req.Name).
+		Set("name", req.Name).
+		Set("mode", req.Mode)
+	defer func() { evt.Log(c) }()
+
 	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
-	audit.LogFromContextErr(c, audit.ResourceAgent, audit.ActionCreate, req.Name, req.Name, payloadAgentCreate(req.Name, req.Mode), err)
+	evt.Err(err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -93,8 +99,12 @@ func Post(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	nameOrID := c.Param("nameOrID")
+	evt := audit.NewEvent(audit.ResourceAgent, audit.ActionDelete).
+		Resource(nameOrID, nameOrID)
+	defer func() { evt.Log(c) }()
+
 	err := models.DeleteAgentByNameOrID(ctx.OrgID, nameOrID)
-	audit.LogFromContextErr(c, audit.ResourceAgent, audit.ActionDelete, nameOrID, nameOrID, nil, err)
+	evt.Err(err)
 	switch err {
 	case nil:
 		c.Writer.WriteHeader(204)
@@ -214,8 +224,3 @@ func List(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-func payloadAgentCreate(name, mode string) audit.PayloadFn {
-	return func() map[string]any {
-		return map[string]any{"name": name, "mode": mode}
-	}
-}
