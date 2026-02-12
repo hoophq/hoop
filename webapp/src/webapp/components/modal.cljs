@@ -45,12 +45,13 @@
           ;; Let the app-level Theme provider handle the appearance
           [:> Box {:id (:id @modal)}
            [:> Dialog.Root {:open (:open? @modal)
-                            :on-open-change #(rf/dispatch [:modal->set-status %])}
+                            :on-open-change #(rf/dispatch [:modal->set-status %])
+                            :class "pb-6"}
             [:> Dialog.Content {:maxWidth (or (:maxWidth @modal) "916px")
-                                :maxHeight "calc(100vh - 96px)"
+                                :maxHeight "calc(100vh - 56px)"
                                 :on-escape-key-down on-click-out
                                 :on-pointer-down-outside on-click-out
-                                :class "p-0"}
+                                :class "p-0 -mb-[34px]"}
              [:> VisuallyHidden :as-child true
               [:> Dialog.Title "Modal title"]]
              [:> VisuallyHidden :as-child true

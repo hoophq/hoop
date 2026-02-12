@@ -14,8 +14,9 @@
      {:class (str "overflow-hidden border-b cursor-pointer hover:bg-gray-50"
                   " p-regular text-sm grid grid-col-3 lg:grid-cols-5 gap-regular lg:gap-large")
       :on-click (fn []
-                  (rf/dispatch [:open-modal
-                                [session-details/main session] :large]))}
+                  (rf/dispatch [:modal->open {:id "session-details"
+                                              :maxWidth "none"
+                                              :content [session-details/main session]}]))}
 
      [:div {:id "user-info"
             :class "flex items-center"}
