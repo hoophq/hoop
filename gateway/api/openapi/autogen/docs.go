@@ -194,7 +194,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/audit-logs": {
+        "/audit/logs": {
             "get": {
                 "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.",
                 "produces": [
@@ -6834,6 +6834,11 @@ const docTemplate = `{
                     "description": "The name of the connection",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "connection_subtype": {
+                    "description": "The connection subtype",
+                    "type": "string",
+                    "example": "postgres"
                 },
                 "connection_type": {
                     "description": "Connection type",

@@ -839,7 +839,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
 
-	r.GET("/audit-logs",
+	r.GET("/audit/logs",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		auditlogapi.List)
