@@ -31,7 +31,7 @@ import (
 //	@Param			created_before		query		string	false	"Filter entries created on or before this time (RFC3339 or YYYY-MM-DD)"
 //	@Success		200					{object}	openapi.PaginatedResponse[openapi.SecurityAuditLogResponse]
 //	@Failure		400,403,500			{object}	openapi.HTTPError
-//	@Router			/audit-logs [get]
+//	@Router			/audit/logs [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
