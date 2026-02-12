@@ -4,7 +4,7 @@
    ["lucide-react" :refer [BadgeCheck CalendarArrowDown CalendarArrowUp
                            ChevronDown ChevronUp CircleCheckBig CircleUser
                            Clock2 ExternalLink FastForward OctagonX Package
-                           Rotate3d Users ArrowUpRight]]
+                           Rotate3d Users ArrowUpRight BookUp2]]
    [clojure.string :as cs]
    [reagent.core :as r]
    [webapp.components.tooltip :as tooltip]
@@ -156,6 +156,12 @@
                            :label "Finished at"
                            :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
                                    (formatters/time-parsed->full-date end-date)]}])
+
+            (when (-> session :labels :runbookFile)
+              [detail-row {:icon [:> BookUp2 {:size 20}]
+                           :label "Runbook"
+                           :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
+                                   (-> session :labels :runbookFile)]}])
 
             (when jira-url
               [detail-row {:icon [:> ExternalLink {:size 20}]

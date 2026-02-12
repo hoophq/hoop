@@ -102,10 +102,9 @@
 
        ;; Close button - only show when in modal context (not on dedicated page)
        (when-not is-dedicated-page?
-         [:> Tooltip {:content "Close"}
-          [:> IconButton
-           {:on-click on-close
-            :variant "soft"
-            :size "2"
-            :color "gray"}
-           [:> X {:size 20 :class "text-gray-11"}]]])]]]))
+         [:> IconButton
+          {:on-click on-close
+           :variant "soft"
+           :size "2"
+           :color "gray"}
+          [:> X {:size 20 :class "text-gray-11"}]])]]]))
