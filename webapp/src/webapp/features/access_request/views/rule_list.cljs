@@ -4,11 +4,10 @@
    ["lucide-react" :refer [ChevronRight]]
    [re-frame.core :as rf]))
 
-(defn rule-item [{:keys [name description total-items]}]
+(defn rule-item [{:keys [name description]}]
   [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 "
-                       "border-[--gray-a6] border "
-                       (when (> total-items 1) "first:border-b-0"))}
-   [:> Box {:p "5" :class "flex justify-between items-center"}
+                       "border-[--gray-a6] border-x border-t last:border-b bg-white")}
+   [:> Box {:p "5" :class "flex justify-between items-center min-h-[106px]"}
     [:> Flex {:direction "column" :gap "2"}
      [:> Heading {:as "h3" :size "5" :class "text-[--gray-12]"}
       name]
@@ -37,4 +36,4 @@
            (doall
             (for [rule processed-rules]
               ^{:key (:name rule)}
-              [rule-item (assoc rule :total-items (count processed-rules))])))]))))
+              [rule-item rule])))]))))

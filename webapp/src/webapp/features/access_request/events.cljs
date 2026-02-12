@@ -72,8 +72,7 @@
    {:db db
     :fx [[:dispatch [:navigate :access-request]]
          [:dispatch [:show-snackbar {:level :success
-                                     :text (str "Access Request rule '" (:name rule-data) "' created successfully!")}]]
-         [:dispatch [:access-request/list-rules]]]}))
+                                     :text (str "Access Request rule '" (:name rule-data) "' created successfully!")}]]]}))
 
 (rf/reg-event-fx
  :access-request/create-failure
@@ -99,8 +98,7 @@
    {:db db
     :fx [[:dispatch [:navigate :access-request]]
          [:dispatch [:show-snackbar {:level :success
-                                     :text (str "Access Request rule '" rule-name "' updated successfully!")}]]
-         [:dispatch [:access-request/list-rules]]]}))
+                                     :text (str "Access Request rule '" rule-name "' updated successfully!")}]]]}))
 
 (rf/reg-event-fx
  :access-request/update-failure
@@ -125,8 +123,7 @@
    {:db db
     :fx [[:dispatch [:navigate :access-request]]
          [:dispatch [:show-snackbar {:level :success
-                                     :text (str "Access Request rule '" rule-name "' deleted successfully!")}]]
-         [:dispatch [:access-request/list-rules]]]}))
+                                     :text (str "Access Request rule '" rule-name "' deleted successfully!")}]]]}))
 
 (rf/reg-event-fx
  :access-request/delete-failure
