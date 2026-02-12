@@ -284,3 +284,26 @@
       {:link-button-href [:features :ai-datamasking]
        :link-button-text "Go to AI Data Masking Docs"
        :extra-information "Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of AI Data Masking setup in your environment."}))])
+
+(defn access-request-promotion
+  "Specific component for Access Request"
+  [{:keys [mode on-promotion-seen]}]
+  [feature-promotion
+   {:feature-name "Access Request"
+    :mode mode
+    :image "access-request-promotion.png"
+    :description "Streamline secure access with time-based approvals and automated workflows for your critical resources."
+    :feature-items [{:icon [:> ListTodo {:size 20}]
+                     :title "Just-in-Time Access Control"
+                     :description "Request temporary access to resources for specific time periods. Automatically manage access when the time expires, reducing security exposure."}
+                    {:icon [:> ListCheck {:size 20}]
+                     :title "Multi-Level Approval Workflows"
+                     :description "Configure approval chains with multiple reviewer groups to match your compliance requirements. Commands execute only after all designated approvers grant permission."}
+                    {:icon [:> Settings2 {:size 20}]
+                     :title "Integrated Notifications & Audit"
+                     :description "Receive real-time notifications through Slack and other channels when approvals are needed. Maintain complete audit logs for compliance."}]
+    :on-primary-click (fn []
+                        (when on-promotion-seen
+                          (on-promotion-seen))
+                        (rf/dispatch [:navigate :access-request-new]))
+    :primary-text "Create new Access Request rule"}])

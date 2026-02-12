@@ -32,11 +32,12 @@ func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups) *m
 }
 
 type inputData struct {
-	ctx    *storagev2.Context
-	rev    *models.Review
-	con    *models.Connection
-	status models.ReviewStatusType
-	force  bool
+	ctx        *storagev2.Context
+	rev        *models.Review
+	con        *models.Connection
+	accessRule *models.AccessRequestRule
+	status     models.ReviewStatusType
+	force      bool
 }
 
 func TestDoReview(t *testing.T) {
@@ -45,6 +46,80 @@ func TestDoReview(t *testing.T) {
 		input        inputData
 		validateFunc func(t *testing.T, rev *models.Review)
 	}{
+		{
+			name: "partial approve with access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				accessRule: &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: true,
+				},
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(1),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal groups from access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				accessRule: &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: false,
+				},
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(3),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal groups from access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				accessRule: &models.AccessRequestRule{
+					MinApprovals: ptr.Int(1),
+				},
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(3),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
 		{
 			name: "partial approve with minimal groups",
 			input: inputData{
@@ -295,7 +370,7 @@ func TestDoReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.status, tt.input.force)
+			got, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.accessRule, tt.input.status, tt.input.force)
 			assert.NoError(t, err)
 			tt.validateFunc(t, got)
 			// assert.Equal(t, tt.expectedReview, tt.input.rev)
@@ -392,7 +467,7 @@ func TestErrDoReview(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rev, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.status, tt.input.force)
+			rev, err := doReview(tt.input.ctx, tt.input.rev, tt.input.con, tt.input.accessRule, tt.input.status, tt.input.force)
 			if tt.expectedError != nil {
 				assert.EqualError(t, err, tt.expectedError.Error())
 				return

@@ -2252,3 +2252,55 @@ type RunbookExec struct {
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
 }
+
+type AccessRequestRule struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The name of the access request rule
+	Name string `json:"name" example:"default-access-request-rule"`
+	// The description of the access request rule
+	Description *string `json:"description" example:"Access control rule for production databases"`
+	// The access type
+	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	// Connection names that this rule applies to
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Groups that require approval
+	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
+	// Whether all groups must approve
+	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
+	// Groups that can review sessions
+	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
+	// Groups that can force approve sessions
+	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	// Maximum access duration in seconds
+	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
+	// Minimum number of approvals required
+	MinApprovals *int `json:"min_approvals" example:"2"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AccessRequestRuleRequest struct {
+	// The name of the access request rule
+	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
+	// The description of the access request rule
+	Description *string `json:"description" example:"Access request rule for production databases"`
+	// The access type
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
+	// Connection names that this rule applies to
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Groups that require approval
+	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
+	// Whether all groups must approve
+	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
+	// Groups that can review sessions
+	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
+	// Groups that can force approve sessions
+	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
+	// Maximum access duration in seconds
+	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
+	// Minimum number of approvals required
+	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+}

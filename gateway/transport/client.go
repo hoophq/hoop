@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
+	accessrequestinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/accessrequest"
 	pluginslack "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -169,7 +170,24 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		}
 		pkt.Spec[pb.SpecGatewaySessionID] = []byte(pctx.SID)
 		shouldProcessClientPacket := true
-		connectResponse, err := stream.PluginExecOnReceive(pctx, pkt)
+
+		// Review check
+		connectResponse, err := accessrequestinterceptor.OnReceive(pctx, pkt)
+		if err != nil {
+			log.With("sid", pctx.SID).Errorf("access request interceptor error: %v", err)
+			return status.Errorf(codes.Internal, err.Error())
+		}
+		if connectResponse != nil {
+			if connectResponse.Context != nil {
+				pctx.Context = connectResponse.Context
+			}
+			if connectResponse.ClientPacket != nil {
+				_ = stream.Send(connectResponse.ClientPacket)
+				shouldProcessClientPacket = false
+			}
+		}
+
+		connectResponse, err = stream.PluginExecOnReceive(pctx, pkt)
 		switch v := err.(type) {
 		case *plugintypes.InternalError:
 			if v.HasInternalErr() {

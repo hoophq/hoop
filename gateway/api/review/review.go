@@ -226,7 +226,22 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		}
 	}
 
-	rev, err = doReview(ctx, rev, connection, status, hasForced)
+	orgID, err := uuid.Parse(ctx.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid organization ID format: %w", err)
+	}
+
+	accessType := "command"
+	if rev.Type == models.ReviewTypeJit {
+		accessType = "jit"
+	}
+
+	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, connection.Name, accessType)
+	if err != nil {
+		return nil, fmt.Errorf("failed fetching access request rule for review, err=%v", err)
+	}
+
+	rev, err = doReview(ctx, rev, connection, accessRule, status, hasForced)
 	if err != nil {
 		return nil, err
 	}
@@ -237,16 +252,16 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	return rev, nil
 }
 
-func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
+func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, accessRule *models.AccessRequestRule, status models.ReviewStatusType, force bool) (*models.Review, error) {
 	err := validateReviewStatusTransition(ctx, rev, status)
 	if err != nil {
 		return nil, err
 	}
 
 	if force {
-		rev, err = doForcedReview(ctx, rev, connection, status)
+		rev, err = doForcedReview(ctx, rev, connection, accessRule, status)
 	} else {
-		rev, err = doIndividualReview(ctx, rev, connection, status)
+		rev, err = doIndividualReview(ctx, rev, connection, accessRule, status)
 	}
 
 	if err != nil {
@@ -262,9 +277,16 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 	return rev, nil
 }
 
-func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
+func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, accessRule *models.AccessRequestRule, status models.ReviewStatusType) (*models.Review, error) {
 	// check if the user has permissions to force the review
-	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, connection.ForceApproveGroups)
+	var forceApproveGroups []string
+	if accessRule != nil && accessRule.ForceApprovalGroups != nil {
+		forceApproveGroups = accessRule.ForceApprovalGroups
+	} else if connection.ForceApproveGroups != nil {
+		forceApproveGroups = connection.ForceApproveGroups
+	}
+
+	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, forceApproveGroups)
 	if forceGroupFound == nil {
 		return nil, ErrNotEligible
 	}
@@ -305,11 +327,15 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 	return rev, nil
 }
 
-func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
+func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, accessRule *models.AccessRequestRule, status models.ReviewStatusType) (*models.Review, error) {
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	if connection.MinReviewApprovals != nil {
+	if accessRule != nil {
+		if !accessRule.AllGroupsMustApprove {
+			reviewsCountNeeded = min(reviewsCountNeeded, *accessRule.MinApprovals)
+		}
+	} else if connection.MinReviewApprovals != nil {
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
 
