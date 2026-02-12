@@ -57,8 +57,6 @@
             (when free-license?
               [free-license-callout])
 
-            [:> Box {:class "flex-grow"}
-             [:> Box {:class "h-full"}
-              (if (not has-rules?)
-                [empty-state/main]
-                [rule-list/main])]]]])))))
+            (if (not has-rules?)
+              [empty-state/main]
+              [rule-list/main])]])))))

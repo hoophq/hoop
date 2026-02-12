@@ -2,6 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Switch Text]]
    ["lucide-react" :refer [ClockArrowUp CodeXml]]
+   [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.button :as button]
@@ -35,6 +36,11 @@
   (mapv (fn [item]
           {:value item :label item})
         items))
+
+(defn- sanitize-rule-name [value]
+  (-> (or value "")
+      (str/replace #"\s+" "_")
+      (str/replace #"[^A-Za-z0-9_]" "")))
 
 (defn- create-form-state [initial-data]
   (let [rule-data (or initial-data {})]
@@ -142,7 +148,8 @@
                       :class "w-full"}
                (= form-type :create) (assoc :placeholder "e.g. data-engineering"
                                             :autoFocus true
-                                            :on-change #(reset! (:rule-name state) (-> % .-target .-value)))
+                                            :on-change #(reset! (:rule-name state)
+                                                                (sanitize-rule-name (-> % .-target .-value))))
                (= form-type :edit) (assoc :disabled true))]
             [forms/input
              {:placeholder (if (= form-type :create)
@@ -203,7 +210,10 @@
                                          (or (:id (get conn-by-name name)) name))
                                        selected-connection-names)]
               [connections-select/main
-               {:connection-ids connection-ids
+               {:id "connections-required-input"
+                :name "connections-required-input"
+                :required? true
+                :connection-ids connection-ids
                 :selected-connections selected-connections-data
                 :on-connections-change (fn [selected-options]
                                          (let [selected-js-options (js->clj selected-options :keywordize-keys true)
@@ -214,7 +224,10 @@
                           :description "Select which user groups are required to request access with this rule."}
             [multiselect/main
              {:label "User Groups"
+              :id "approval-required-groups-input"
+              :name "approval-required-groups-input"
               :options user-groups-options
+              :required? true
               :default-value @(:approval-required-groups state)
               :placeholder "Select groups..."
               :on-change #(reset! (:approval-required-groups state) (js->clj % :keywordize-keys true))}]]
@@ -223,7 +236,10 @@
                           :description "Select which user groups can approve access in this rule."}
             [multiselect/main
              {:label "User Groups"
+              :id "reviewers-groups-input"
+              :name "reviewers-groups-input"
               :options user-groups-options
+              :required? true
               :default-value @(:reviewers-groups state)
               :placeholder "Select groups..."
               :on-change #(reset! (:reviewers-groups state) (js->clj % :keywordize-keys true))}]
