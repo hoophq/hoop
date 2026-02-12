@@ -47,6 +47,80 @@ func TestDoReview(t *testing.T) {
 		validateFunc func(t *testing.T, rev *models.Review)
 	}{
 		{
+			name: "partial approve with access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				accessRule: &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: true,
+				},
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(1),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal groups from access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				accessRule: &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: false,
+				},
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(3),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal groups from access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}),
+				accessRule: &models.AccessRequestRule{
+					MinApprovals: ptr.Int(1),
+				},
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(3),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
 			name: "partial approve with minimal groups",
 			input: inputData{
 				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
