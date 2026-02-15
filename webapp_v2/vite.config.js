@@ -9,4 +9,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: process.env.VITE_GATEWAY_URL || 'http://localhost:8009',
+        changeOrigin: true,
+      },
+    },
+  },
 })
