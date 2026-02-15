@@ -18,6 +18,20 @@ import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 
+// Map error codes from backend to human-readable messages
+const LOGIN_ERROR_MESSAGES = {
+  slack_not_configured: 'You must configure your Slack with Hoop',
+  code_exchange_failure:
+    'Something went wrong. Try again and if the error persists, talk to the account administrator',
+  pending_review: 'The organization administrator must approve your access first',
+  unregistered:
+    'Your user is not registered. Try to signup or talk to the account administrator',
+}
+
+function getLoginErrorMessage(error) {
+  return LOGIN_ERROR_MESSAGES[error] || error
+}
+
 function Login() {
   const navigate = useNavigate()
   const { setToken, getAndClearRedirectUrl, isAuthenticated } = useAuthStore()
@@ -42,24 +56,52 @@ function Login() {
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
 
-  // Fetch auth method from gateway info
+  // Check for stored login error (set by callback page)
   useEffect(() => {
+    const loginError = localStorage.getItem('login_error')
+    if (loginError) {
+      setError(getLoginErrorMessage(loginError))
+      localStorage.removeItem('login_error')
+    }
+  }, [])
+
+  // Fetch auth method from /publicserverinfo
+  useEffect(() => {
+    if (isAuthenticated) return
+
     const fetchAuthMethod = async () => {
       try {
-        // Fetch public gateway info to determine auth method
-        const response = await fetch('/api/info/public')
-        const data = await response.json()
-        setAuthMethod(data.auth_method || 'local')
+        const serverInfo = await authService.getPublicServerInfo()
+        const method = serverInfo.auth_method || 'local'
+        setAuthMethod(method)
+
+        // If not local auth, redirect immediately to OAuth provider
+        if (method !== 'local') {
+          redirectToIdp()
+        }
       } catch (err) {
-        console.error('Failed to fetch auth method:', err)
-        setAuthMethod('local') // Default to local
+        console.error('Failed to fetch server info:', err)
+        setAuthMethod('local')
       } finally {
         setLoadingAuthMethod(false)
       }
     }
 
     fetchAuthMethod()
-  }, [])
+  }, [isAuthenticated])
+
+  // Redirect to IDP (OAuth) provider
+  const redirectToIdp = async (options = {}) => {
+    setLoading(true)
+    try {
+      const callbackUrl = `${window.location.origin}/auth/callback`
+      const loginUrl = await authService.getLoginUrl(callbackUrl, options)
+      window.location.replace(loginUrl)
+    } catch (err) {
+      setError('Failed to initialize login')
+      setLoading(false)
+    }
+  }
 
   // Handle local auth login
   const handleLocalLogin = async (e) => {
@@ -85,31 +127,39 @@ function Login() {
     }
   }
 
-  // Handle IDP login redirect
-  const handleIdpLogin = async () => {
-    setLoading(true)
+  // Handle signup redirect
+  const handleSignup = async () => {
+    if (authMethod === 'local') {
+      navigate('/signup')
+      return
+    }
+
+    // For IDP, redirect to signup URL
     try {
       const callbackUrl = `${window.location.origin}/auth/callback`
-      const loginUrl = await authService.getLoginUrl(callbackUrl)
-      window.location.href = loginUrl
+      const signupUrl = await authService.getSignupUrl(callbackUrl)
+      window.location.replace(signupUrl)
     } catch (err) {
-      setError('Failed to initialize login')
-      setLoading(false)
+      setError('Failed to initialize signup')
     }
   }
 
-  if (loadingAuthMethod) {
+  // Loading state while determining auth method
+  if (loadingAuthMethod || (authMethod !== 'local' && !error)) {
     return (
-      <Container size={420} my={40}>
-        <Center style={{ height: '50vh' }}>
+      <Center style={{ height: '100vh' }}>
+        <Stack align="center">
           <Loader size="lg" />
-        </Center>
-      </Container>
+          <Text size="sm" c="dimmed">
+            Redirecting to login...
+          </Text>
+        </Stack>
+      </Center>
     )
   }
 
-  // IDP Login (OAuth)
-  if (authMethod !== 'local') {
+  // If OAuth failed to redirect, show a fallback button
+  if (authMethod !== 'local' && error) {
     return (
       <Container size={420} my={40}>
         <Paper withBorder shadow="md" p={30} mt={30} radius="md">
@@ -117,14 +167,12 @@ function Login() {
             Welcome to Hoop
           </Title>
 
-          {error && (
-            <Alert color="red" mb="md">
-              {error}
-            </Alert>
-          )}
+          <Alert color="red" mb="md">
+            {error}
+          </Alert>
 
-          <Button fullWidth onClick={handleIdpLogin} loading={loading}>
-            Sign in with SSO
+          <Button fullWidth onClick={() => redirectToIdp({ promptLogin: true })} loading={loading}>
+            Try again
           </Button>
         </Paper>
       </Container>
@@ -136,7 +184,7 @@ function Login() {
     <Container size={420} my={40}>
       <Paper withBorder shadow="md" p={30} mt={30} radius="md">
         <Title order={2} ta="center" mb="lg">
-          Welcome back
+          Sign in to your account
         </Title>
 
         {error && (
@@ -172,8 +220,8 @@ function Login() {
 
         <Text c="dimmed" size="sm" ta="center" mt="md">
           Don't have an account?{' '}
-          <Anchor size="sm" onClick={() => navigate('/signup')}>
-            Create account
+          <Anchor size="sm" onClick={handleSignup}>
+            Sign Up
           </Anchor>
         </Text>
       </Paper>
