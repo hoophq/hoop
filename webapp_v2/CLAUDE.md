@@ -72,5 +72,33 @@ src/
 - Named exports for stores, default exports for page components
 - Keep components small and focused
 
+## Authentication Flow
+
+### Overview
+Authentication follows the same logic as the original webapp (ClojureScript):
+- Supports **local auth** (email/password) and **IDP/OAuth** providers
+- Token stored in localStorage as `jwt-token` (not just `token`)
+- Token can come from cookies (`hoop_access_token`) or query params (`?token=xxx`)
+- **No refresh token** - on 401, redirects to login
+- Saves current URL before redirect for post-auth navigation
+
+### Key Files
+- `stores/useAuthStore.js` - Token management, cookie/query param handling
+- `services/auth.js` - Login/logout API calls
+- `services/api.js` - Axios interceptor for auth header and 401 handling
+- `components/ProtectedRoute.jsx` - Route protection wrapper
+- `routes/Auth/Login/` - Login page (detects auth method from gateway)
+- `routes/Auth/Callback/` - OAuth callback handler
+
+### Auth Flow
+1. **Check token**: If no token in localStorage, redirect to `/login` (saves current URL)
+2. **Fetch user**: If token exists, fetch user data from `/api/users/me`
+3. **Validate user**: If user data is empty/invalid, clear token and redirect to login
+4. **401 Handling**: On any API 401 response, save URL, clear token, redirect to login
+5. **OAuth Callback**: On `/auth/callback`, extract token from cookie/query, save to localStorage, redirect to saved URL or home
+
+### Environment Variables
+- `VITE_API_URL` (optional): Custom API endpoint. Defaults to `/api` (relative to current domain)
+
 ## Reference Implementation
 - `routes/Agents/` is the reference route showing the full pattern: store + service + list page + create page

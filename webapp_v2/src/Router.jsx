@@ -1,4 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import Layout from '@/components/Layout'
 
 import Dashboard from '@/routes/Dashboard'
 import Resources from '@/routes/Resources'
@@ -30,55 +32,67 @@ import AuthCallback from '@/routes/Auth/Callback'
 function Router() {
   return (
     <Routes>
-      {/* Auth */}
+      {/* Public Auth Routes - No Layout */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
 
-      {/* Dashboard */}
-      <Route path="/" element={<Dashboard />} />
+      {/* Protected Routes - With Layout */}
+      <Route
+        path="/*"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Routes>
+                {/* Dashboard */}
+                <Route path="/" element={<Dashboard />} />
 
-      {/* Resources */}
-      <Route path="/resources" element={<Resources />} />
-      <Route path="/resources/new" element={<ResourcesCreate />} />
-      <Route path="/resources/:id/configure" element={<ResourcesConfigure />} />
+                {/* Resources */}
+                <Route path="/resources" element={<Resources />} />
+                <Route path="/resources/new" element={<ResourcesCreate />} />
+                <Route path="/resources/:id/configure" element={<ResourcesConfigure />} />
 
-      {/* Connections */}
-      <Route path="/connections" element={<Connections />} />
-      <Route path="/connections/setup" element={<ConnectionsSetup />} />
+                {/* Connections */}
+                <Route path="/connections" element={<Connections />} />
+                <Route path="/connections/setup" element={<ConnectionsSetup />} />
 
-      {/* Agents */}
-      <Route path="/agents" element={<Agents />} />
-      <Route path="/agents/new" element={<AgentsCreate />} />
+                {/* Agents */}
+                <Route path="/agents" element={<Agents />} />
+                <Route path="/agents/new" element={<AgentsCreate />} />
 
-      {/* Guardrails */}
-      <Route path="/guardrails" element={<Guardrails />} />
-      <Route path="/guardrails/new" element={<GuardrailsCreate />} />
+                {/* Guardrails */}
+                <Route path="/guardrails" element={<Guardrails />} />
+                <Route path="/guardrails/new" element={<GuardrailsCreate />} />
 
-      {/* Features */}
-      <Route path="/features/access-control" element={<AccessControl />} />
-      <Route path="/features/access-control/new" element={<AccessControlCreate />} />
-      <Route path="/features/runbooks" element={<Runbooks />} />
-      <Route path="/features/runbooks/setup" element={<RunbooksSetup />} />
-      <Route path="/features/data-masking" element={<DataMasking />} />
-      <Route path="/features/data-masking/new" element={<DataMaskingCreate />} />
+                {/* Features */}
+                <Route path="/features/access-control" element={<AccessControl />} />
+                <Route path="/features/access-control/new" element={<AccessControlCreate />} />
+                <Route path="/features/runbooks" element={<Runbooks />} />
+                <Route path="/features/runbooks/setup" element={<RunbooksSetup />} />
+                <Route path="/features/data-masking" element={<DataMasking />} />
+                <Route path="/features/data-masking/new" element={<DataMaskingCreate />} />
 
-      {/* Integrations */}
-      <Route path="/integrations/authentication" element={<IntegrationsAuth />} />
+                {/* Integrations */}
+                <Route path="/integrations/authentication" element={<IntegrationsAuth />} />
 
-      {/* Plugins */}
-      <Route path="/plugins" element={<Plugins />} />
+                {/* Plugins */}
+                <Route path="/plugins" element={<Plugins />} />
 
-      {/* Settings */}
-      <Route path="/settings/license" element={<SettingsLicense />} />
-      <Route path="/settings/infrastructure" element={<SettingsInfrastructure />} />
+                {/* Settings */}
+                <Route path="/settings/license" element={<SettingsLicense />} />
+                <Route path="/settings/infrastructure" element={<SettingsInfrastructure />} />
 
-      {/* Organization */}
-      <Route path="/organization/users" element={<OrganizationUsers />} />
+                {/* Organization */}
+                <Route path="/organization/users" element={<OrganizationUsers />} />
 
-      {/* Sessions & Reviews */}
-      <Route path="/sessions" element={<Sessions />} />
-      <Route path="/reviews" element={<Reviews />} />
+                {/* Sessions & Reviews */}
+                <Route path="/sessions" element={<Sessions />} />
+                <Route path="/reviews" element={<Reviews />} />
+              </Routes>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   )
 }
