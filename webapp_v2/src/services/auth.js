@@ -6,9 +6,16 @@ const AUTH_ENDPOINTS = {
   IDPS_LOGIN: '/login',
   SIGNUP: '/signup',
   USER: '/users/me',
+  PUBLIC_SERVER_INFO: '/publicserverinfo',
 }
 
 export const authService = {
+  // Fetch public server info to determine auth method
+  async getPublicServerInfo() {
+    const response = await api.get(AUTH_ENDPOINTS.PUBLIC_SERVER_INFO)
+    return response.data
+  },
+
   // Local auth login
   async loginLocal(email, password) {
     const response = await api.post(AUTH_ENDPOINTS.LOCAL_LOGIN, {
@@ -34,23 +41,32 @@ export const authService = {
   },
 
   // Get IDP login URL (for OAuth providers)
-  async getLoginUrl(redirectUrl, options = {}) {
+  // Calls GET /login?redirect=<callbackUrl> and returns login_url from response
+  // Handles Microsoft Entra ID prompt difference (select_account vs login)
+  async getLoginUrl(callbackUrl, options = {}) {
     const { promptLogin = false } = options
 
     const params = new URLSearchParams()
-    if (promptLogin) params.append('prompt', 'login')
-    params.append('redirect', redirectUrl)
+
+    if (promptLogin) {
+      const idpProviderName = localStorage.getItem('idp-provider-name')
+      const promptValue =
+        idpProviderName === 'microsoft-entra-id' ? 'select_account' : 'login'
+      params.append('prompt', promptValue)
+    }
+
+    params.append('redirect', callbackUrl)
 
     const response = await api.get(`${AUTH_ENDPOINTS.IDPS_LOGIN}?${params.toString()}`)
     return response.data.login_url
   },
 
   // Get signup URL
-  async getSignupUrl(redirectUrl) {
+  async getSignupUrl(callbackUrl) {
     const params = new URLSearchParams({
       prompt: 'login',
       screen_hint: 'signup',
-      redirect: redirectUrl,
+      redirect: callbackUrl,
     })
 
     const response = await api.get(`${AUTH_ENDPOINTS.IDPS_LOGIN}?${params.toString()}`)
