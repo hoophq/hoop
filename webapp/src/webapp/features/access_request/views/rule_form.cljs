@@ -38,9 +38,9 @@
         items))
 
 (defn- sanitize-rule-name [value]
-  (-> (or value "")
+  (-> (str value)
       (str/replace #"\s+" "_")
-      (str/replace #"[^A-Za-z0-9_]" "")))
+      (str/replace #"[^A-Za-z0-9_.\-]" "")))
 
 (defn- create-form-state [initial-data]
   (let [rule-data (or initial-data {})]
