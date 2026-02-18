@@ -186,7 +186,8 @@
                                        (rf/dispatch [:navigate :editor-plugin-panel]))}
                "Open in Web Terminal"])
 
-            (when (can-hoop-cli? connection)
+            (when (and (can-hoop-cli? connection)
+                       (not (can-access-native-client? connection)))
               [:> DropdownMenu.Item {:on-click
                                      #(rf/dispatch [:modal->open
                                                     {:content [hoop-cli-modal/main (:name connection)]
