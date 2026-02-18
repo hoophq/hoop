@@ -49,45 +49,6 @@
                   {prefixed-key (js/btoa final-value)})))
          (reduce into {}))))
 
-(defn can-open-web-terminal?
-  "Check if a role/connection can open web terminal based on subtype and access modes"
-  [role]
-  (if-not (or (#{"tcp" "ssh" "rdp" "github" "git"} (:subtype role))
-              (http-proxy-subtypes (:subtype role)))
-    (if (or (= "enabled" (:access_mode_runbooks role))
-            (= "enabled" (:access_mode_exec role)))
-      true
-      false)
-    false))
-
-(def ^:private direct-native-subtypes
-  #{"postgres" "ssh" "github" "git"})
-
-(def ^:private custom-native-subtypes
-  #{"rdp" "aws-ssm"})
-
-(defn- native-subtype? [{:keys [subtype type]}]
-  (or (direct-native-subtypes subtype)
-      (http-proxy-subtypes subtype)
-      (and (= type "custom")
-           (custom-native-subtypes subtype))))
-
-(defn can-access-native-client?
-  "Check if a role/connection can access native client based on subtype and access mode"
-  [{:keys [access_mode_connect] :as role}]
-  (and (= "enabled" access_mode_connect)
-       (native-subtype? role)))
-
-(defn get-secret-prefix
-  "Returns the prefix string for a given secret source or provider."
-  [source-or-provider]
-  (cond
-    (= source-or-provider "vault-kv1") "_vaultkv1:"
-    (= source-or-provider "vault-kv2") "_vaultkv2:"
-    (= source-or-provider "aws-secrets-manager") "_aws:"
-    (= source-or-provider "aws-iam-role") "_aws_iam_rds:"
-    :else ""))
-
 (def testable-connection-types
   "Connection types and subtypes that support testing"
   #{"database/postgres"
@@ -113,6 +74,46 @@
   (and test-connection-state
        (:loading test-connection-state)
        (= (:connection-name test-connection-state) connection-name)))
+
+(defn can-open-web-terminal?
+  "Check if a role/connection can open web terminal based on subtype and access modes"
+  [role]
+  (if-not (or (#{"tcp" "ssh" "rdp" "github" "git"} (:subtype role))
+              (http-proxy-subtypes (:subtype role)))
+    (if (or (= "enabled" (:access_mode_runbooks role))
+            (= "enabled" (:access_mode_exec role)))
+      true
+      false)
+    false))
+
+(def ^:private direct-native-subtypes
+  #{"postgres" "ssh" "github" "git"})
+
+(def ^:private custom-native-subtypes
+  #{"rdp" "aws-ssm"})
+
+(defn- native-subtype? [{:keys [subtype type]}]
+  (or (direct-native-subtypes subtype)
+      (http-proxy-subtypes subtype)
+      (#{"kubernetes-token" "kubernetes" "kubernetes-eks"} subtype)
+      (and (= type "custom")
+           (custom-native-subtypes subtype))))
+
+(defn can-access-native-client?
+  "Check if a role/connection can access native client based on subtype and access mode"
+  [{:keys [access_mode_connect] :as role}]
+  (and (= "enabled" access_mode_connect)
+       (native-subtype? role)))
+
+(defn get-secret-prefix
+  "Returns the prefix string for a given secret source or provider."
+  [source-or-provider]
+  (cond
+    (= source-or-provider "vault-kv1") "_vaultkv1:"
+    (= source-or-provider "vault-kv2") "_vaultkv2:"
+    (= source-or-provider "aws-secrets-manager") "_aws:"
+    (= source-or-provider "aws-iam-role") "_aws_iam_rds:"
+    :else ""))
 
 (defn can-connect? [connection]
   (not (and (= "disabled" (:access_mode_runbooks connection))
