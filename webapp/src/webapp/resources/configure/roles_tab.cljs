@@ -6,7 +6,7 @@
    [webapp.components.loaders :as loaders]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]
    [webapp.connections.constants :as connection-constants]
-   [webapp.connections.helpers :refer [is-connection-testing?]]
+   [webapp.resources.helpers :refer [is-connection-testing?]]
    [webapp.connections.views.test-connection-modal :as test-connection-modal]))
 
 (defn empty-roles-view []

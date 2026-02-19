@@ -7,7 +7,7 @@
    [webapp.components.multiselect :as multi-select]
    [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
-   [webapp.connections.helpers :as helpers]
+   [webapp.resources.helpers :as helpers]
    [webapp.connections.native-client-access.constants :as constants]
    [webapp.routes :as routes]))
 

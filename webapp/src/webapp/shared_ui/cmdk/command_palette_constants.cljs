@@ -2,8 +2,8 @@
   (:require
    ["lucide-react" :refer [SquareCode Settings]]
    [webapp.shared-ui.sidebar.constants :as sidebar-constants]
-   [webapp.connections.helpers :refer [can-test-connection? can-connect? can-open-web-terminal?
-                                       can-access-native-client?]]))
+   [webapp.resources.helpers :refer [can-test-connection? can-connect? can-open-web-terminal?
+                                     can-access-native-client?]]))
 
 ;; Simplified structure - direct pages + search only
 (def main-navigation-items

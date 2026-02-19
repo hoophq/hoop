@@ -17,6 +17,18 @@
   (let [numberDictionary (.generate ung/NumberDictionary #js{:length 4})]
     (str name "-role-" numberDictionary)))
 
+(defn array->select-options
+  "Converts an array of values into a format suitable for select options.
+
+   Takes an array of values and returns a vector of maps with :value and :label keys.
+   The label is lowercase with underscores replaced by spaces.
+
+   Example:
+   (array->select-options [\"FOO_BAR\"])
+   ;=> [{\"value\" \"FOO_BAR\" \"label\" \"foo bar\"}]"
+  [array]
+  (mapv #(into {} {"value" % "label" (s/lower-case (s/replace % #"_" " "))}) array))
+
 (defn config->json
   "Converts configuration maps to a JSON format with prefixed keys.
    Takes a vector of config maps with :key and :value and a prefix string.
@@ -37,10 +49,36 @@
                   {prefixed-key (js/btoa final-value)})))
          (reduce into {}))))
 
+(def testable-connection-types
+  "Connection types and subtypes that support testing"
+  #{"database/postgres"
+    "database/mysql"
+    "database/mssql"
+    "database/mongodb"
+    "database/oracledb"
+    "custom/dynamodb"
+    "custom/cloudwatch"})
+
+(defn can-test-connection?
+  "Check if a connection can be tested based on type and subtype"
+  [connection]
+  (when connection
+    (let [connection-type (:type connection)
+          connection-subtype (:subtype connection)
+          type-subtype-key (str connection-type "/" connection-subtype)]
+      (contains? testable-connection-types type-subtype-key))))
+
+(defn is-connection-testing?
+  "Check if a connection is currently being tested"
+  [test-connection-state connection-name]
+  (and test-connection-state
+       (:loading test-connection-state)
+       (= (:connection-name test-connection-state) connection-name)))
+
 (defn can-open-web-terminal?
   "Check if a role/connection can open web terminal based on subtype and access modes"
   [role]
-  (if-not (or (#{"tcp" "ssh" "rdp"} (:subtype role))
+  (if-not (or (#{"tcp" "ssh" "rdp" "github" "git"} (:subtype role))
               (http-proxy-subtypes (:subtype role)))
     (if (or (= "enabled" (:access_mode_runbooks role))
             (= "enabled" (:access_mode_exec role)))
@@ -49,7 +87,7 @@
     false))
 
 (def ^:private direct-native-subtypes
-  #{"postgres" "ssh"})
+  #{"postgres" "ssh" "github" "git"})
 
 (def ^:private custom-native-subtypes
   #{"rdp" "aws-ssm"})
@@ -57,6 +95,7 @@
 (defn- native-subtype? [{:keys [subtype type]}]
   (or (direct-native-subtypes subtype)
       (http-proxy-subtypes subtype)
+      (#{"kubernetes-token" "kubernetes" "kubernetes-eks"} subtype)
       (and (= type "custom")
            (custom-native-subtypes subtype))))
 
@@ -75,3 +114,13 @@
     (= source-or-provider "aws-secrets-manager") "_aws:"
     (= source-or-provider "aws-iam-role") "_aws_iam_rds:"
     :else ""))
+
+(defn can-connect? [connection]
+  (not (and (= "disabled" (:access_mode_runbooks connection))
+            (= "disabled" (:access_mode_exec connection))
+            (= "disabled" (:access_mode_connect connection)))))
+
+(defn can-hoop-cli? [connection]
+  (and (= "enabled" (:access_mode_connect connection))
+       (not (and (= (:type connection) "custom")
+                 (= (:subtype connection) "rdp")))))
