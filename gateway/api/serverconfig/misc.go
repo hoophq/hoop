@@ -221,7 +221,11 @@ func UpdateServerMisc(c *gin.Context) {
 
 	evt := audit.NewEvent(audit.ResourceServerConfig, audit.ActionUpdate).
 		Set("product_analytics", ptr.ToString(newState.ProductAnalytics)).
-		Set("grpc_server_url", ptr.ToString(newState.GrpcServerURL))
+		Set("grpc_server_url", ptr.ToString(newState.GrpcServerURL)).
+		Set("postgres_server_config", newState.PostgresServerConfig).
+		Set("ssh_server_config", newState.SSHServerConfig).
+		Set("rdp_server_config", newState.RDPServerConfig).
+		Set("http_proxy_server_config", newState.HttpProxyServerConfig)
 	defer func() { evt.Log(c) }()
 
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
