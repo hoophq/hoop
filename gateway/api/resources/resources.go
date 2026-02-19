@@ -141,39 +141,32 @@ func CreateResource(c *gin.Context) {
 		}
 	}
 
-	sess := &gorm.Session{FullSaveAssociations: true}
-	err = models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
-		// Insert resource
-		err = models.UpsertResource(tx, &resource, true)
-		if err != nil {
-			log.Errorf("failed to upsert resource: %v", err)
-			return err
-		}
-
-		// Insert connections
-		if len(connections) > 0 {
-			err = models.UpsertBatchConnections(tx, connections)
-			if err != nil {
-				log.Errorf("failed to upsert batch connections: %v", err)
-				return err
-			}
-		}
-
-		return nil
-	})
-
 	evt := audit.NewEvent(audit.ResourceResource, audit.ActionCreate).
 		Resource(resource.ID, resource.Name).
 		Set("name", req.Name).
 		Set("type", req.Type).
 		Set("subtype", req.SubType).
 		Set("agent_id", req.AgentID)
-	defer func() { evt.Log(c) }()
 
-	if err != nil {
-		evt.Err(err)
-		log.Errorf("failed to create resource: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + err.Error()})
+	sess := &gorm.Session{FullSaveAssociations: true}
+	txErr := models.DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertResource(tx, &resource, true); err != nil {
+			log.Errorf("failed to upsert resource: %v", err)
+			return err
+		}
+		if len(connections) > 0 {
+			if err := models.UpsertBatchConnections(tx, connections); err != nil {
+				log.Errorf("failed to upsert batch connections: %v", err)
+				return err
+			}
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed to create resource: %v", txErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + txErr.Error()})
 		return
 	}
 
@@ -309,12 +302,17 @@ func UpdateResource(c *gin.Context) {
 		Set("name", req.Name).
 		Set("type", req.Type).
 		Set("subtype", req.SubType)
-	defer func() { evt.Log(c) }()
 
-	err = models.UpsertResource(models.DB, &resource, true)
-	if err != nil {
-		evt.Err(err)
-		log.Errorf("failed to upsert resource: %v", err)
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertResource(tx, &resource, true); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed to upsert resource: %v", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
@@ -360,12 +358,17 @@ func DeleteResource(c *gin.Context) {
 
 	evt := audit.NewEvent(audit.ResourceResource, audit.ActionDelete).
 		Resource(name, name)
-	defer func() { evt.Log(c) }()
 
-	err = models.DeleteResource(models.DB, ctx.OrgID, name)
-	if err != nil {
-		evt.Err(err)
-		log.Errorf("failed to delete resource: %v", err)
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteResource(tx, ctx.OrgID, name); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed to delete resource: %v", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}

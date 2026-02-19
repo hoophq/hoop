@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 type AgentRequest struct {
@@ -70,20 +71,26 @@ func Post(c *gin.Context) {
 		Resource(req.Name, req.Name).
 		Set("name", req.Name).
 		Set("mode", req.Mode)
-	defer func() { evt.Log(c) }()
 
-	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
-	evt.Err(err)
-	switch err {
-	case models.ErrAlreadyExists:
-		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
-	case nil:
-		c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
-	default:
-		log.Errorf("failed creating agent resource, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateAgent(tx, ctx.OrgID, req.Name, req.Mode, secretKeyHash); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrAlreadyExists:
+			c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
+		default:
+			log.Errorf("failed creating agent resource, err=%v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
 		return
 	}
+	c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
 }
 
 // DeleteAgent
@@ -101,18 +108,21 @@ func Delete(c *gin.Context) {
 	nameOrID := c.Param("nameOrID")
 	evt := audit.NewEvent(audit.ResourceAgent, audit.ActionDelete).
 		Resource(nameOrID, nameOrID)
-	defer func() { evt.Log(c) }()
 
-	err := models.DeleteAgentByNameOrID(ctx.OrgID, nameOrID)
-	evt.Err(err)
-	switch err {
-	case nil:
-		c.Writer.WriteHeader(204)
-	default:
-		log.Errorf("failed removing agent resource %v, err=%#v", nameOrID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteAgentByNameOrID(tx, ctx.OrgID, nameOrID); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed removing agent resource %v, err=%#v", nameOrID, txErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
 		return
 	}
+	c.Writer.WriteHeader(204)
 }
 
 // GetAgent

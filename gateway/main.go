@@ -88,7 +88,7 @@ func Run() {
 			log.Errorf("failed creating default runbook configuration, reason=%v", err)
 		}
 
-		_, _, err = apiorgs.ProvisionOrgAgentKey(org.ID, serverConfig.GrpcURL)
+		_, _, err = apiorgs.ProvisionOrgAgentKey(models.DB, org.ID, serverConfig.GrpcURL)
 		if err != nil && err != apiorgs.ErrAlreadyExists {
 			log.Errorf("failed provisioning org agent key, reason=%v", err)
 		}

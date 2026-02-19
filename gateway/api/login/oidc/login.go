@@ -312,7 +312,7 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 			Status:   string(types.UserStatusActive),
 			SlackID:  slackID,
 		}
-		if err := models.CreateUser(newUser); err != nil {
+		if err := models.CreateUser(models.DB, newUser); err != nil {
 			return false, fmt.Errorf("failed saving new user %s/%s, err=%v", newUser.Subject, newUser.Email, err)
 		}
 		adminUserGroup := models.UserGroup{
@@ -320,7 +320,7 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 			UserID: userID,
 			Name:   types.GroupAdmin,
 		}
-		err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
+		err = models.InsertUserGroups(models.DB, []models.UserGroup{adminUserGroup})
 		if err != nil {
 			return false, fmt.Errorf("failed saving new user group %s/%s, err=%v", newUser.Subject, newUser.Email, err)
 		}
@@ -405,7 +405,7 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 				Name:   userGroups[i],
 			})
 		}
-		if err := models.UpdateUserAndUserGroups(&user, newUserGroups); err != nil {
+		if err := models.UpdateUserAndUserGroups(models.DB, &user, newUserGroups); err != nil {
 			return false, fmt.Errorf("failed updating user and user groups %s/%s, err=%v", ctx.UserSubject, ctx.UserEmail, err)
 		}
 
@@ -446,7 +446,7 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 		Status:   string(types.UserStatusActive),
 		SlackID:  ctx.UserSlackID,
 	}
-	if err := models.CreateUser(newUser); err != nil {
+	if err := models.CreateUser(models.DB, newUser); err != nil {
 		return false, fmt.Errorf("failed saving new user %s/%s, err=%v", uinfo.Subject, uinfo.Email, err)
 	}
 
@@ -475,7 +475,7 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			Name:   userGroups[i],
 		})
 	}
-	if err := models.InsertUserGroups(newUserGroups); err != nil {
+	if err := models.InsertUserGroups(models.DB, newUserGroups); err != nil {
 		return false, fmt.Errorf("failed saving new user group %s/%s, err=%v", uinfo.Subject, uinfo.Email, err)
 	}
 

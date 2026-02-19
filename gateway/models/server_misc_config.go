@@ -40,15 +40,15 @@ func GetServerMiscConfig() (*ServerMiscConfig, error) {
 	return &config, err
 }
 
-func UpsertServerMiscConfig(newObj *ServerMiscConfig) (*ServerMiscConfig, error) {
+func UpsertServerMiscConfig(db *gorm.DB, newObj *ServerMiscConfig) (*ServerMiscConfig, error) {
 	_, err := GetServerMiscConfig()
 	switch err {
 	case ErrNotFound:
-		return newObj, DB.Table("private.serverconfig").
+		return newObj, db.Table("private.serverconfig").
 			Create(newObj).
 			Error
 	case nil:
-		res := DB.Table("private.serverconfig").
+		res := db.Table("private.serverconfig").
 			Where("1=1").
 			Updates(map[string]any{
 				"product_analytics":        newObj.ProductAnalytics,

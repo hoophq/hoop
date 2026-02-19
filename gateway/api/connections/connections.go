@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 	streamtypes "github.com/hoophq/hoop/gateway/transport/streamclient/types"
@@ -70,46 +71,54 @@ func Post(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
-	resp, err := models.UpsertConnection(ctx, &models.Connection{
-		ID:                  req.ID,
-		OrgID:               ctx.OrgID,
-		ResourceName:        req.ResourceName,
-		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
-		Name:                req.Name,
-		Command:             req.Command,
-		Type:                req.Type,
-		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                CoerceToMapString(req.Secrets),
-		Status:              req.Status,
-		ManagedBy:           sql.NullString{},
-		Tags:                req.Tags,
-		AccessModeRunbooks:  req.AccessModeRunbooks,
-		AccessModeExec:      req.AccessModeExec,
-		AccessModeConnect:   req.AccessModeConnect,
-		AccessSchema:        req.AccessSchema,
-		Reviewers:           req.Reviewers,
-		RedactTypes:         req.RedactTypes,
-		GuardRailRules:      req.GuardRailRules,
-		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
-		ConnectionTags:      req.ConnectionTags,
-		ForceApproveGroups:  req.ForceApproveGroups,
-		AccessMaxDuration:   req.AccessMaxDuration,
-		MinReviewApprovals:  req.MinReviewApprovals,
-	})
 	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionCreate).
 		Resource("", req.Name).
 		Set("name", req.Name).
 		Set("type", req.Type).
 		Set("agent_id", req.AgentId)
-	defer func() { evt.Log(c) }()
 
-	if err != nil {
-		evt.Err(err)
-		log.Errorf("failed creating connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	var resp *models.Connection
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		resp, err = models.UpsertConnection(tx, ctx, &models.Connection{
+			ID:                  req.ID,
+			OrgID:               ctx.OrgID,
+			ResourceName:        req.ResourceName,
+			AgentID:             sql.NullString{String: req.AgentId, Valid: true},
+			Name:                req.Name,
+			Command:             req.Command,
+			Type:                req.Type,
+			SubType:             sql.NullString{String: req.SubType, Valid: true},
+			Envs:                CoerceToMapString(req.Secrets),
+			Status:              req.Status,
+			ManagedBy:           sql.NullString{},
+			Tags:                req.Tags,
+			AccessModeRunbooks:  req.AccessModeRunbooks,
+			AccessModeExec:      req.AccessModeExec,
+			AccessModeConnect:   req.AccessModeConnect,
+			AccessSchema:        req.AccessSchema,
+			Reviewers:           req.Reviewers,
+			RedactTypes:         req.RedactTypes,
+			GuardRailRules:      req.GuardRailRules,
+			JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+			ConnectionTags:      req.ConnectionTags,
+			ForceApproveGroups:  req.ForceApproveGroups,
+			AccessMaxDuration:   req.AccessMaxDuration,
+			MinReviewApprovals:  req.MinReviewApprovals,
+		})
+		if err != nil {
+			return err
+		}
+		evt.Resource(resp.ID, req.Name)
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed creating connection, err=%v", txErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
 		return
 	}
-	evt.Resource(resp.ID, req.Name)
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
@@ -163,46 +172,54 @@ func Put(c *gin.Context) {
 		req.Status = models.ConnectionStatusOnline
 	}
 
-	resp, err := models.UpsertConnection(ctx, &models.Connection{
-		ID:                  conn.ID,
-		OrgID:               conn.OrgID,
-		ResourceName:        req.ResourceName,
-		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
-		Name:                conn.Name,
-		Command:             req.Command,
-		Type:                req.Type,
-		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                CoerceToMapString(req.Secrets),
-		Status:              req.Status,
-		ManagedBy:           sql.NullString{},
-		Tags:                req.Tags,
-		AccessModeRunbooks:  req.AccessModeRunbooks,
-		AccessModeExec:      req.AccessModeExec,
-		AccessModeConnect:   req.AccessModeConnect,
-		AccessSchema:        req.AccessSchema,
-		Reviewers:           req.Reviewers,
-		RedactTypes:         req.RedactTypes,
-		GuardRailRules:      req.GuardRailRules,
-		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
-		ConnectionTags:      req.ConnectionTags,
-		ForceApproveGroups:  req.ForceApproveGroups,
-		AccessMaxDuration:   req.AccessMaxDuration,
-		MinReviewApprovals:  req.MinReviewApprovals,
-	})
 	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
 		Resource(conn.ID, conn.Name).
 		Set("name", conn.Name).
 		Set("type", conn.Type)
-	defer func() { evt.Log(c) }()
 
-	if err != nil {
-		evt.Err(err)
-		switch err.(type) {
+	var resp *models.Connection
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		resp, err = models.UpsertConnection(tx, ctx, &models.Connection{
+			ID:                  conn.ID,
+			OrgID:               conn.OrgID,
+			ResourceName:        req.ResourceName,
+			AgentID:             sql.NullString{String: req.AgentId, Valid: true},
+			Name:                conn.Name,
+			Command:             req.Command,
+			Type:                req.Type,
+			SubType:             sql.NullString{String: req.SubType, Valid: true},
+			Envs:                CoerceToMapString(req.Secrets),
+			Status:              req.Status,
+			ManagedBy:           sql.NullString{},
+			Tags:                req.Tags,
+			AccessModeRunbooks:  req.AccessModeRunbooks,
+			AccessModeExec:      req.AccessModeExec,
+			AccessModeConnect:   req.AccessModeConnect,
+			AccessSchema:        req.AccessSchema,
+			Reviewers:           req.Reviewers,
+			RedactTypes:         req.RedactTypes,
+			GuardRailRules:      req.GuardRailRules,
+			JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+			ConnectionTags:      req.ConnectionTags,
+			ForceApproveGroups:  req.ForceApproveGroups,
+			AccessMaxDuration:   req.AccessMaxDuration,
+			MinReviewApprovals:  req.MinReviewApprovals,
+		})
+		if err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr.(type) {
 		case *models.ErrNotFoundGuardRailRules:
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": txErr.Error()})
 		default:
-			log.Errorf("failed updating connection, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			log.Errorf("failed updating connection, err=%v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
 		}
 		return
 	}
@@ -309,17 +326,25 @@ func Patch(c *gin.Context) {
 		Resource(conn.ID, conn.Name).
 		Set("name", conn.Name).
 		Set("type", conn.Type)
-	defer func() { evt.Log(c) }()
 
-	resp, err := models.UpsertConnection(ctx, conn)
-	if err != nil {
-		evt.Err(err)
-		switch err.(type) {
+	var resp *models.Connection
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		resp, err = models.UpsertConnection(tx, ctx, conn)
+		if err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr.(type) {
 		case *models.ErrNotFoundGuardRailRules:
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": txErr.Error()})
 		default:
-			log.Errorf("failed patching connection, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			log.Errorf("failed patching connection, err=%v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
 		}
 		return
 	}
@@ -345,21 +370,28 @@ func Delete(c *gin.Context) {
 	}
 	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionDelete).
 		Resource(connName, connName)
-	defer func() { evt.Log(c) }()
 
-	err := models.DeleteConnection(ctx.OrgID, connName)
-	evt.Err(err)
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
-	case nil:
-		connectionrequests.InvalidateSyncCache(ctx.OrgID, connName)
-		c.Writer.WriteHeader(http.StatusNoContent)
-	default:
-		log.Errorf("failed removing connection %v, err=%v", connName, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing connection"})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteConnection(tx, ctx.OrgID, connName); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		default:
+			log.Errorf("failed removing connection %v, err=%v", connName, txErr)
+			sentry.CaptureException(txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing connection"})
+		}
+		return
 	}
+	connectionrequests.InvalidateSyncCache(ctx.OrgID, connName)
+	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 // List Connections

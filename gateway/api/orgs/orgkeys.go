@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 const agentKeyDefaultName string = "_default"
@@ -35,19 +36,28 @@ func CreateAgentKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	evt := audit.NewEvent(audit.ResourceOrgKey, audit.ActionCreate).
 		Resource("", agentKeyDefaultName)
-	defer func() { evt.Log(c) }()
 
-	agentID, dsn, err := ProvisionOrgAgentKey(ctx.OrgID, storagev2.ParseContext(c).GrpcURL)
-	evt.Resource(agentID, agentKeyDefaultName).Err(err)
-	switch err {
-	case ErrAlreadyExists:
-		log.Infof("agent (org token) %v already exists", agentKeyDefaultName)
-		c.JSON(http.StatusConflict, gin.H{"message": "organization token already exists"})
-		return
-	case nil: // noop
-	default:
-		log.Errorf("failed provisioning org agent key, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
+	var agentID, dsn string
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		agentID, dsn, err = ProvisionOrgAgentKey(tx, ctx.OrgID, storagev2.ParseContext(c).GrpcURL)
+		if err != nil {
+			return err
+		}
+		evt.Resource(agentID, agentKeyDefaultName)
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case ErrAlreadyExists:
+			log.Infof("agent (org token) %v already exists", agentKeyDefaultName)
+			c.JSON(http.StatusConflict, gin.H{"message": "organization token already exists"})
+		default:
+			log.Errorf("failed provisioning org agent key, err=%v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
+		}
 		return
 	}
 	c.JSON(http.StatusCreated, openapi.OrgKeyResponse{
@@ -109,20 +119,25 @@ func RevokeAgentKey(c *gin.Context) {
 	case nil:
 		evt := audit.NewEvent(audit.ResourceOrgKey, audit.ActionRevoke).
 			Resource(agentKeyDefaultName, agentKeyDefaultName)
-		defer func() { evt.Log(c) }()
 
-		delErr := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
-		evt.Err(delErr)
-		if delErr != nil {
-			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, delErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": delErr.Error()})
+		txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+			if err := models.DeleteAgentByNameOrID(tx, ctx.OrgID, agentKeyDefaultName); err != nil {
+				return err
+			}
+			return evt.Write(tx, c)
+		})
+		if txErr != nil {
+			evt.Err(txErr)
+			evt.Log(models.DB, c)
+			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
 			return
 		}
 	default:
 		audit.NewEvent(audit.ResourceOrgKey, audit.ActionRevoke).
 			Resource(agentKeyDefaultName, agentKeyDefaultName).
 			Err(err).
-			Log(c)
+			Log(models.DB, c)
 		log.Errorf("failed fetching for existing organization token, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -130,7 +145,7 @@ func RevokeAgentKey(c *gin.Context) {
 	c.Writer.WriteHeader(204)
 }
 
-func ProvisionOrgAgentKey(orgID, grpcURL string) (agentID, dsn string, err error) {
+func ProvisionOrgAgentKey(db *gorm.DB, orgID, grpcURL string) (agentID, dsn string, err error) {
 	_, err = models.GetAgentByNameOrID(orgID, agentKeyDefaultName)
 	switch err {
 	case models.ErrNotFound:
@@ -148,6 +163,7 @@ func ProvisionOrgAgentKey(orgID, grpcURL string) (agentID, dsn string, err error
 		return "", "", fmt.Errorf("failed generating agent key: %v", err)
 	}
 	err = models.CreateAgentOrgKey(
+		db,
 		orgID,
 		agentKeyDefaultName,
 		proto.AgentModeMultiConnectionType,

@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
+	"gorm.io/gorm"
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
@@ -226,19 +227,27 @@ func UpdateServerMisc(c *gin.Context) {
 		Set("ssh_server_config", newState.SSHServerConfig).
 		Set("rdp_server_config", newState.RDPServerConfig).
 		Set("http_proxy_server_config", newState.HttpProxyServerConfig)
-	defer func() { evt.Log(c) }()
 
-	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
-		ProductAnalytics:      newState.ProductAnalytics,
-		GrpcServerURL:         newState.GrpcServerURL,
-		PostgresServerConfig:  newState.PostgresServerConfig,
-		SSHServerConfig:       newState.SSHServerConfig,
-		RDPServerConfig:       newState.RDPServerConfig,
-		HttpProxyServerConfig: newState.HttpProxyServerConfig,
+	var updatedConfig *models.ServerMiscConfig
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		updatedConfig, err = models.UpsertServerMiscConfig(tx, &models.ServerMiscConfig{
+			ProductAnalytics:      newState.ProductAnalytics,
+			GrpcServerURL:         newState.GrpcServerURL,
+			PostgresServerConfig:  newState.PostgresServerConfig,
+			SSHServerConfig:       newState.SSHServerConfig,
+			RDPServerConfig:       newState.RDPServerConfig,
+			HttpProxyServerConfig: newState.HttpProxyServerConfig,
+		})
+		if err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
 	})
-	if err != nil {
-		evt.Err(err)
-		log.Errorf("failed to update server config, reason=%v", err)
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed to update server config, reason=%v", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server config"})
 		return
 	}

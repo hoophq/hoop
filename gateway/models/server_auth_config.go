@@ -77,7 +77,7 @@ func GetSharedSigningKey() (string, error) {
 //
 // Updating roles performs a global update on the user_groups table to change the previous
 // role names to the new ones.
-func UpdateServerAuthConfig(newObj *ServerAuthConfig) (*ServerAuthConfig, error) {
+func UpdateServerAuthConfig(db *gorm.DB, newObj *ServerAuthConfig) (*ServerAuthConfig, error) {
 	updatePayload := map[string]any{
 		"auth_method":             newObj.AuthMethod,
 		"oidc_config":             newObj.OidcConfig,
@@ -93,7 +93,7 @@ func UpdateServerAuthConfig(newObj *ServerAuthConfig) (*ServerAuthConfig, error)
 		updatePayload["api_key"] = newObj.ApiKey
 	}
 
-	return newObj, DB.Transaction(func(tx *gorm.DB) error {
+	return newObj, db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.authconfig").
 			Where("org_id = ?", newObj.OrgID).
 			Updates(updatePayload)

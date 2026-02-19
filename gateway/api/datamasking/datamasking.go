@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 func getLicenseType(ctx *storagev2.Context) string {
@@ -112,17 +113,6 @@ func Post(c *gin.Context) {
 		})
 	}
 
-	rule, err := models.CreateDataMaskingRule(&models.DataMaskingRule{
-		ID:                   uuid.NewString(),
-		OrgID:                ctx.OrgID,
-		Name:                 req.Name,
-		Description:          req.Description,
-		SupportedEntityTypes: supportedEntityTypes,
-		CustomEntityTypes:    customEntityTypes,
-		ScoreThreshold:       req.ScoreThreshold,
-		ConnectionIDs:        req.ConnectionIDs,
-		UpdatedAt:            time.Now().UTC(),
-	})
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionCreate).
 		Resource("", req.Name).
 		Set("name", req.Name).
@@ -131,23 +121,42 @@ func Post(c *gin.Context) {
 		Set("custom_entity_types", customEntityTypes).
 		Set("score_threshold", req.ScoreThreshold).
 		Set("connection_ids", req.ConnectionIDs)
-	defer func() { evt.Log(c) }()
 
-	if rule != nil {
+	var rule *models.DataMaskingRule
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		rule, err = models.CreateDataMaskingRule(tx, &models.DataMaskingRule{
+			ID:                   uuid.NewString(),
+			OrgID:                ctx.OrgID,
+			Name:                 req.Name,
+			Description:          req.Description,
+			SupportedEntityTypes: supportedEntityTypes,
+			CustomEntityTypes:    customEntityTypes,
+			ScoreThreshold:       req.ScoreThreshold,
+			ConnectionIDs:        req.ConnectionIDs,
+			UpdatedAt:            time.Now().UTC(),
+		})
+		if err != nil {
+			return err
+		}
 		evt.Resource(rule.ID, req.Name)
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrAlreadyExists:
+			c.JSON(http.StatusConflict, gin.H{"message": txErr.Error()})
+		case models.ErrNotFound:
+			c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
+		default:
+			log.Errorf("Failed creating data masking rule: %v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
+		return
 	}
-	evt.Err(err)
-	switch err {
-	case models.ErrAlreadyExists:
-		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
-	case models.ErrNotFound:
-		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
-	case nil:
-		c.JSON(http.StatusCreated, toOpenApi(rule))
-	default:
-		log.Errorf("Failed creating data masking rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-	}
+	c.JSON(http.StatusCreated, toOpenApi(rule))
 }
 
 // UpdateDataMaskingRule
@@ -202,29 +211,39 @@ func Put(c *gin.Context) {
 		Set("custom_entity_types", customEntityTypes).
 		Set("score_threshold", req.ScoreThreshold).
 		Set("connection_ids", req.ConnectionIDs)
-	defer func() { evt.Log(c) }()
 
-	rule, err := models.UpdateDataMaskingRule(&models.DataMaskingRule{
-		ID:                   ruleID,
-		OrgID:                ctx.GetOrgID(),
-		Name:                 req.Name,
-		Description:          req.Description,
-		SupportedEntityTypes: supportedEntityTypes,
-		CustomEntityTypes:    customEntityTypes,
-		ScoreThreshold:       req.ScoreThreshold,
-		ConnectionIDs:        req.ConnectionIDs,
-		UpdatedAt:            time.Now().UTC(),
+	var rule *models.DataMaskingRule
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		rule, err = models.UpdateDataMaskingRule(tx, &models.DataMaskingRule{
+			ID:                   ruleID,
+			OrgID:                ctx.GetOrgID(),
+			Name:                 req.Name,
+			Description:          req.Description,
+			SupportedEntityTypes: supportedEntityTypes,
+			CustomEntityTypes:    customEntityTypes,
+			ScoreThreshold:       req.ScoreThreshold,
+			ConnectionIDs:        req.ConnectionIDs,
+			UpdatedAt:            time.Now().UTC(),
+		})
+		if err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
 	})
-	evt.Err(err)
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
-	case nil:
-		c.JSON(http.StatusOK, toOpenApi(rule))
-	default:
-		log.Errorf("Failed updating data masking rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": txErr.Error()})
+		default:
+			log.Errorf("Failed updating data masking rule: %v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
+		return
 	}
+	c.JSON(http.StatusOK, toOpenApi(rule))
 }
 
 // ListDataMaskingRules
@@ -293,19 +312,26 @@ func Delete(c *gin.Context) {
 	ruleID := c.Param("id")
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionDelete).
 		Resource(ruleID, "")
-	defer func() { evt.Log(c) }()
 
-	err := models.DeleteDataMaskingRule(ctx.GetOrgID(), ruleID)
-	evt.Err(err)
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-	case nil:
-		c.Writer.WriteHeader(http.StatusNoContent)
-	default:
-		log.Errorf("failed removing data masking rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteDataMaskingRule(tx, ctx.GetOrgID(), ruleID); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		default:
+			log.Errorf("failed removing data masking rule, reason=%v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
+		return
 	}
+	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {

@@ -90,8 +90,8 @@ func GetUserByEmail(email string) (*User, error) {
 	return user, nil
 }
 
-func CreateUser(user User) error {
-	if err := DB.Create(&user).Error; err != nil {
+func CreateUser(db *gorm.DB, user User) error {
+	if err := db.Create(&user).Error; err != nil {
 		log.Errorf("failed to create user, reason=%v", err)
 		return err
 	}
@@ -103,33 +103,29 @@ func UpdateUser(user *User) error {
 	return DB.Save(&user).Error
 }
 
-func DeleteUser(orgID, subject string) error {
-	return DB.
+func DeleteUser(db *gorm.DB, orgID, subject string) error {
+	return db.
 		Where("org_id = ? AND subject = ?", orgID, subject).
 		Delete(&User{}).
 		Error
 }
 
-func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
-	tx := DB.Begin()
-	if err := tx.Save(&user).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	// delete old user groups
-	if err := tx.Where("user_id = ?", user.ID).Delete(&UserGroup{}).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	// create new user groups
-	if len(userGroups) > 0 {
-		if err := tx.Create(&userGroups).Error; err != nil {
-			tx.Rollback()
+func UpdateUserAndUserGroups(db *gorm.DB, user *User, userGroups []UserGroup) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
-	}
 
-	return tx.Commit().Error
+		if err := tx.Where("user_id = ?", user.ID).Delete(&UserGroup{}).Error; err != nil {
+			return err
+		}
+
+		if len(userGroups) > 0 {
+			if err := tx.Create(&userGroups).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }

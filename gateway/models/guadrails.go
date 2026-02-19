@@ -131,21 +131,19 @@ func UpdateGuardRailRules(r *GuardRailRules) error {
 	return res.Error
 }
 
-func DeleteGuardRailRules(orgID, ruleID string) error {
-	// TODO: change it to perform it in a single transaction
+func DeleteGuardRailRules(db *gorm.DB, orgID, ruleID string) error {
 	if _, err := GetGuardRailRules(orgID, ruleID); err != nil {
 		return err
 	}
 
-	// The associations will be deleted automatically due to the ON DELETE CASCADE
-	return DB.Table(tableGuardRails).
+	return db.Table(tableGuardRails).
 		Where(`org_id = ? and id = ?`, orgID, ruleID).
 		Delete(&GuardRailRules{}).Error
 }
 
 // UpsertGuardRailRuleWithConnections creates or updates a guardrail rule and its connections in a single transaction
-func UpsertGuardRailRuleWithConnections(rule *GuardRailRules, connectionIDs []string, isNew bool) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+func UpsertGuardRailRuleWithConnections(db *gorm.DB, rule *GuardRailRules, connectionIDs []string, isNew bool) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		// 1. Create or update the guardrail rule
 		var err error
 		if isNew {

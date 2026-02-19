@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // CreateGuardRailRules
@@ -52,30 +53,35 @@ func Post(c *gin.Context) {
 		Set("input", req.Input).
 		Set("output", req.Output).
 		Set("connection_ids", validConnectionIDs)
-	defer func() { evt.Log(c) }()
 
-	// Create guardrail and associate connections in a single transaction
-	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
-	evt.Err(err)
-	switch err {
-	case models.ErrAlreadyExists:
-		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnections(tx, rule, validConnectionIDs, true); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrAlreadyExists:
+			c.JSON(http.StatusConflict, gin.H{"message": txErr.Error()})
+		default:
+			log.Errorf("Failed creating guard rail rule: %v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
 		return
-	case nil:
-		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
-		})
-	default:
-		log.Errorf("Failed creating guard rail rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
+	c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
+		ID:            rule.ID,
+		Name:          rule.Name,
+		Description:   rule.Description,
+		Input:         rule.Input,
+		Output:        rule.Output,
+		ConnectionIDs: rule.ConnectionIDs,
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+	})
 }
 
 // UpdateGuardRailRules
@@ -116,30 +122,35 @@ func Put(c *gin.Context) {
 		Set("input", req.Input).
 		Set("output", req.Output).
 		Set("connection_ids", validConnectionIDs)
-	defer func() { evt.Log(c) }()
 
-	// Update guardrail and associate connections in a single transaction
-	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
-	evt.Err(err)
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnections(tx, rule, validConnectionIDs, false); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": txErr.Error()})
+		default:
+			log.Errorf("Failed updating guard rail rule: %v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
 		return
-	case nil:
-		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
-		})
-	default:
-		log.Errorf("Failed updating guard rail rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
+	c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
+		ID:            rule.ID,
+		Name:          rule.Name,
+		Description:   rule.Description,
+		Input:         rule.Input,
+		Output:        rule.Output,
+		ConnectionIDs: rule.ConnectionIDs,
+		CreatedAt:     rule.CreatedAt,
+		UpdatedAt:     rule.UpdatedAt,
+	})
 }
 
 // ListGuardRailRules
@@ -226,19 +237,26 @@ func Delete(c *gin.Context) {
 	ruleID := c.Param("id")
 	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionDelete).
 		Resource(ruleID, "")
-	defer func() { evt.Log(c) }()
 
-	err := models.DeleteGuardRailRules(ctx.GetOrgID(), ruleID)
-	evt.Err(err)
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-	case nil:
-		c.Writer.WriteHeader(http.StatusNoContent)
-	default:
-		log.Errorf("failed removing guard rail rules, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteGuardRailRules(tx, ctx.GetOrgID(), ruleID); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		default:
+			log.Errorf("failed removing guard rail rules, reason=%v", txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
+		return
 	}
+	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 func parseRequestPayload(c *gin.Context) *openapi.GuardRailRuleRequest {

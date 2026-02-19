@@ -110,34 +110,35 @@ func Create(c *gin.Context) {
 		Resource("", newUser.Email).
 		SetStruct(modelsUser).
 		Set("groups", newUser.Groups)
-	defer func() { evt.Log(c) }()
 
-	if err := models.CreateUser(modelsUser); err != nil {
-		evt.Err(err)
-		log.Errorf("failed persisting user, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateUser(tx, modelsUser); err != nil {
+			return err
+		}
+		evt.Resource(newUser.ID, newUser.Email)
+
+		if len(newUser.Groups) > 0 {
+			var userGroups []models.UserGroup
+			for i := range newUser.Groups {
+				userGroups = append(userGroups, models.UserGroup{
+					OrgID:  ctx.OrgID,
+					UserID: newUser.ID,
+					Name:   newUser.Groups[i],
+				})
+			}
+			if err := models.InsertUserGroups(tx, userGroups); err != nil {
+				return err
+			}
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed persisting user, err=%v", txErr)
+		sentry.CaptureException(txErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
 		return
-	}
-
-	evt.Resource(newUser.ID, newUser.Email)
-
-	if len(newUser.Groups) > 0 {
-		var userGroups []models.UserGroup
-		for i := range newUser.Groups {
-			userGroups = append(userGroups, models.UserGroup{
-				OrgID:  ctx.OrgID,
-				UserID: newUser.ID,
-				Name:   newUser.Groups[i],
-			})
-		}
-		if err := models.InsertUserGroups(userGroups); err != nil {
-			evt.Err(err)
-			log.Errorf("failed persisting user groups, err=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
-			return
-		}
 	}
 
 	ctx.Analytics().Identify(&types.APIContext{
@@ -145,7 +146,6 @@ func Create(c *gin.Context) {
 		UserID: userSubject,
 	})
 	go func() {
-		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
 		properties := map[string]any{
 			"user-agent":   apiutils.NormalizeUserAgent(c.Request.Header.Values),
@@ -223,7 +223,6 @@ func Update(c *gin.Context) {
 			Name:   req.Groups[i],
 		})
 	}
-	// update user and user groups
 	evt := audit.NewEvent(audit.ResourceUser, audit.ActionUpdate).
 		Resource(existingUser.ID, existingUser.Email).
 		Set("name", req.Name).
@@ -231,12 +230,18 @@ func Update(c *gin.Context) {
 		Set("status", string(req.Status)).
 		Set("slack_id", req.SlackID).
 		Set("groups", req.Groups)
-	defer func() { evt.Log(c) }()
 
-	if err := models.UpdateUserAndUserGroups(existingUser, newUserGroups); err != nil {
-		evt.Err(err)
-		log.Errorf("failed updating user and user groups, err=%v", err)
-		sentry.CaptureException(err)
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateUserAndUserGroups(tx, existingUser, newUserGroups); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed updating user and user groups, err=%v", txErr)
+		sentry.CaptureException(txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating user and user groups"})
 		return
 	}
@@ -350,12 +355,18 @@ func Delete(c *gin.Context) {
 	}
 	evt := audit.NewEvent(audit.ResourceUser, audit.ActionDelete).
 		Resource(subject, user.Email)
-	defer func() { evt.Log(c) }()
 
-	if err := models.DeleteUser(ctx.OrgID, subject); err != nil {
-		evt.Err(err)
-		log.Errorf("failed removing user %s, err=%v", subject, err)
-		sentry.CaptureException(err)
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteUser(tx, ctx.OrgID, subject); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed removing user %s, err=%v", subject, txErr)
+		sentry.CaptureException(txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting user"})
 		return
 	}
@@ -640,16 +651,22 @@ func CreateGroup(c *gin.Context) {
 	evt := audit.NewEvent(audit.ResourceUserGroup, audit.ActionCreate).
 		Resource(req.Name, req.Name).
 		Set("name", req.Name)
-	defer func() { evt.Log(c) }()
 
-	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
-		evt.Err(err)
-		if errors.Is(err, models.ErrAlreadyExists) {
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateUserGroupWithoutUser(tx, ctx.OrgID, req.Name); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		if errors.Is(txErr, models.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
 		}
-		log.Errorf("failed creating group, err=%v", err)
-		sentry.CaptureException(err)
+		log.Errorf("failed creating group, err=%v", txErr)
+		sentry.CaptureException(txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating group"})
 		return
 	}
@@ -682,16 +699,22 @@ func DeleteGroup(c *gin.Context) {
 	// Delete all instances of this group
 	evt := audit.NewEvent(audit.ResourceUserGroup, audit.ActionDelete).
 		Resource(name, name)
-	defer func() { evt.Log(c) }()
 
-	if err := models.DeleteUserGroup(ctx.OrgID, name); err != nil {
-		evt.Err(err)
-		if errors.Is(err, models.ErrNotFound) {
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteUserGroup(tx, ctx.OrgID, name); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		if errors.Is(txErr, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
 			return
 		}
-		log.Errorf("failed deleting group, err=%v", err)
-		sentry.CaptureException(err)
+		log.Errorf("failed deleting group, err=%v", txErr)
+		sentry.CaptureException(txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting group"})
 		return
 	}

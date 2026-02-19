@@ -112,7 +112,7 @@ func Post(c *gin.Context) {
 		UserID: user.ID,
 		Name:   types.GroupAdmin,
 	}
-	if err := models.InsertUserGroups([]models.UserGroup{adminGroup}); err != nil {
+	if err := models.InsertUserGroups(models.DB, []models.UserGroup{adminGroup}); err != nil {
 		log.Errorf("failed creating user group, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user group"})
 		return

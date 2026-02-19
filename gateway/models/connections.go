@@ -108,7 +108,7 @@ type ConnectionJiraIssueTemplateTypes struct {
 	IssueTemplatesPromptTypes  []byte `gorm:"column:prompt_types;->"`
 }
 
-func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
+func UpsertConnection(db *gorm.DB, ctx UserContext, c *Connection) (*Connection, error) {
 	if c.JiraIssueTemplateID.String == "" {
 		c.JiraIssueTemplateID.Valid = false
 	}
@@ -125,7 +125,7 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 
 	var newConnection *Connection
 	sess := &gorm.Session{FullSaveAssociations: true}
-	return newConnection, DB.Session(sess).Transaction(func(tx *gorm.DB) error {
+	return newConnection, db.Session(sess).Transaction(func(tx *gorm.DB) error {
 		if c.ResourceName == "" {
 			c.ResourceName = c.Name
 		}
@@ -363,8 +363,8 @@ func dedupeResourceNames(resourceNames []string) (v []string) {
 	return v
 }
 
-func DeleteConnection(orgID, name string) error {
-	res := DB.Table(tableConnections).
+func DeleteConnection(db *gorm.DB, orgID, name string) error {
+	res := db.Table(tableConnections).
 		Where(`org_id = ? and name = ?`, orgID, name).
 		Delete(&Connection{})
 	if res.Error != nil {

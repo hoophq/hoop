@@ -31,9 +31,11 @@ func (SecurityAuditLog) TableName() string {
 	return tableSecurityAuditLog
 }
 
-// CreateSecurityAuditLog inserts one audit event. ResourceID can be nil when the resource has a non-UUID id.
-func CreateSecurityAuditLog(row *SecurityAuditLog) error {
-	return DB.Table(tableSecurityAuditLog).Create(row).Error
+// CreateSecurityAuditLog inserts one audit event.
+// db allows callers to pass a transaction so the write participates in the
+// same transaction as the business operation.
+func CreateSecurityAuditLog(db *gorm.DB, row *SecurityAuditLog) error {
+	return db.Table(tableSecurityAuditLog).Create(row).Error
 }
 
 // SecurityAuditLogFilter holds optional filters and pagination for listing audit logs.

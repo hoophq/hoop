@@ -82,7 +82,7 @@ func Register(c *gin.Context) {
 	userID := uuid.New().String()
 	userSubject := user.Email
 
-	err = models.CreateUser(models.User{
+	err = models.CreateUser(models.DB, models.User{
 		ID:             userID,
 		Subject:        userSubject,
 		OrgID:          org.ID,
@@ -115,7 +115,7 @@ func Register(c *gin.Context) {
 		"api-hostname": c.Request.Host,
 	})
 
-	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
+	err = models.InsertUserGroups(models.DB, []models.UserGroup{adminUserGroup})
 	if err != nil {
 		log.Errorf("failed creating user group, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user group"})

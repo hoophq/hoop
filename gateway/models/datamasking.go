@@ -61,8 +61,8 @@ func (r *SupportedEntityTypesList) Scan(value any) error {
 	return json.Unmarshal(data, r)
 }
 
-func CreateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
-	return rule, DB.Transaction(func(tx *gorm.DB) error {
+func CreateDataMaskingRule(db *gorm.DB, rule *DataMaskingRule) (*DataMaskingRule, error) {
+	return rule, db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Table("private.datamasking_rules").Create(rule).Error; err != nil {
 			if err == gorm.ErrDuplicatedKey {
 				return ErrAlreadyExists
@@ -87,8 +87,8 @@ func CreateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	})
 }
 
-func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
-	return rule, DB.Transaction(func(tx *gorm.DB) error {
+func UpdateDataMaskingRule(db *gorm.DB, rule *DataMaskingRule) (*DataMaskingRule, error) {
+	return rule, db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.datamasking_rules").
 			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
 			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "updated_at").
@@ -186,8 +186,8 @@ func GetDataMaskingEntityTypes(orgID, connID string) (json.RawMessage, error) {
 	return json.RawMessage(jsonStr), nil
 }
 
-func DeleteDataMaskingRule(orgID, ruleID string) error {
-	return DB.Table("private.datamasking_rules").
+func DeleteDataMaskingRule(db *gorm.DB, orgID, ruleID string) error {
+	return db.Table("private.datamasking_rules").
 		Where("org_id = ? AND id = ?", orgID, ruleID).
 		Delete(&DataMaskingRule{}).
 		Error

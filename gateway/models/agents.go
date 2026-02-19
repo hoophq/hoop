@@ -76,9 +76,9 @@ func GetAgentByToken(token string) (*Agent, error) {
 	return &agent, err
 }
 
-func CreateAgentOrgKey(orgID, name, mode, key, secretKeyHash string) error {
+func CreateAgentOrgKey(db *gorm.DB, orgID, name, mode, key, secretKeyHash string) error {
 	identifier := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{"agent", orgID, name}, "/"))).String()
-	err := DB.Table("private.agents").
+	err := db.Table("private.agents").
 		Create(map[string]any{
 			"id":       identifier,
 			"org_id":   orgID,
@@ -95,9 +95,9 @@ func CreateAgentOrgKey(orgID, name, mode, key, secretKeyHash string) error {
 	return err
 }
 
-func CreateAgent(orgID, name, mode, secretKeyHash string) error {
+func CreateAgent(db *gorm.DB, orgID, name, mode, secretKeyHash string) error {
 	identifier := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.Join([]string{"agent", orgID, name}, "/"))).String()
-	err := DB.Table("private.agents").
+	err := db.Table("private.agents").
 		Model(Agent{}).
 		Create(map[string]any{
 			"id":       identifier,
@@ -161,8 +161,8 @@ func UpdateAllAgentsToOffline() error {
 	})
 }
 
-func DeleteAgentByNameOrID(orgID, nameOrID string) error {
-	return DB.Table("private.agents").
+func DeleteAgentByNameOrID(db *gorm.DB, orgID, nameOrID string) error {
+	return db.Table("private.agents").
 		Where("org_id = ? AND (name = ? OR id::TEXT = ?)", orgID, nameOrID, nameOrID).
 		Delete(&Agent{}).
 		Error

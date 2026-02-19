@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/idp"
+	"gorm.io/gorm"
 	oidcprovider "github.com/hoophq/hoop/gateway/idp/oidc"
 	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
@@ -224,17 +225,24 @@ func UpdateAuthConfig(c *gin.Context) {
 		Set("admin_role_name", adminRoleName).
 		Set("auditor_role_name", auditorRoleName).
 		Set("provider_name", req.ProviderName)
-	defer func() { evt.Log(c) }()
 
-	resp, err := models.UpdateServerAuthConfig(existentConfig)
-	if err != nil {
-		evt.Err(err)
-		log.Errorf("failed to update server auth config, reason=%v", err)
+	var resp *models.ServerAuthConfig
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		resp, err = models.UpdateServerAuthConfig(tx, existentConfig)
+		if err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		log.Errorf("failed to update server auth config, reason=%v", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server auth config"})
 		return
 	}
 
-	// in the future, refactor to propagate the roles as context to routes
 	setGlobalGatewayUserRoles(resp)
 
 	c.JSON(http.StatusOK, toAuthOpenApi(resp))
@@ -274,7 +282,7 @@ func GenerateApiKey(c *gin.Context) {
 
 	existentConfig.OrgID = ctx.OrgID
 	existentConfig.RolloutApiKey = ptr.String(rolloutKey)
-	if _, err := models.UpdateServerAuthConfig(existentConfig); err != nil {
+	if _, err := models.UpdateServerAuthConfig(models.DB, existentConfig); err != nil {
 		log.Errorf("failed updating rollout api key , reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating rollout api key"})
 		return

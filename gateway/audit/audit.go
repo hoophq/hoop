@@ -2,13 +2,13 @@ package audit
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // ResourceType identifies the kind of resource being audited.
@@ -47,8 +47,7 @@ const (
 )
 
 // Event is a builder for a single audit log entry.
-// Callers chain methods to set fields and call .Log(c) to write the event.
-// Failures (errors or panics) are only logged; they never panic or stop the caller's flow.
+// Callers chain methods to set fields and call .Log(db, c) to write the event.
 type Event struct {
 	resourceType ResourceType
 	action       Action
@@ -108,8 +107,22 @@ func (e *Event) Err(err error) *Event {
 	return e
 }
 
-// Log writes the event. Panics and errors are recovered/logged; the caller's flow is never interrupted.
-func (e *Event) Log(c *gin.Context) {
+// Write inserts the audit event using the provided *gorm.DB handle and returns
+// any error. Use this inside a transaction so the audit row participates in the
+// same commit/rollback as the business operation.
+func (e *Event) Write(db *gorm.DB, c *gin.Context) error {
+	return e.buildAndInsert(db, c)
+}
+
+// Log is a fire-and-forget wrapper around Write. It logs errors but never
+// returns them. Use this for standalone failure events outside a transaction.
+func (e *Event) Log(db *gorm.DB, c *gin.Context) {
+	if err := e.buildAndInsert(db, c); err != nil {
+		log.Errorf("security audit log write failed: %v", err)
+	}
+}
+
+func (e *Event) buildAndInsert(db *gorm.DB, c *gin.Context) error {
 	o := outcomeSuccess
 	errMsg := ""
 	if e.err != nil {
@@ -135,7 +148,6 @@ func (e *Event) Log(c *gin.Context) {
 		ActorSubject:           ctx.UserID,
 		ActorEmail:             ctx.UserEmail,
 		ActorName:              ctx.UserName,
-		CreatedAt:              time.Now().UTC(),
 		ResourceType:           string(e.resourceType),
 		Action:                 string(e.action),
 		ResourceID:             resourceID,
@@ -144,7 +156,5 @@ func (e *Event) Log(c *gin.Context) {
 		Outcome:                bool(o),
 		ErrorMessage:           errMsg,
 	}
-	if err := models.CreateSecurityAuditLog(row); err != nil {
-		log.Errorf("security audit log write failed: %v", err)
-	}
+	return models.CreateSecurityAuditLog(db, row)
 }

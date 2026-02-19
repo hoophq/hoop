@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // ListServiceAccounts
@@ -78,26 +79,33 @@ func Create(c *gin.Context) {
 		Set("name", req.Name).
 		Set("groups", req.Groups).
 		Set("status", string(req.Status))
-	defer func() { evt.Log(c) }()
 
-	err := models.CreateServiceAccount(sa)
-	evt.Err(err)
-	switch err {
-	case models.ErrAlreadyExists:
-		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
-	case nil:
-		c.JSON(http.StatusCreated, openapi.ServiceAccount{
-			ID:      sa.ID,
-			OrgID:   sa.OrgID,
-			Subject: sa.Subject,
-			Name:    sa.Name,
-			Groups:  sa.Groups,
-			Status:  openapi.ServiceAccountStatusType(sa.Status),
-		})
-	default:
-		log.Errorf("failed creating service account with subject %s, err=%v", req.Subject, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateServiceAccount(tx, sa); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrAlreadyExists:
+			c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
+		default:
+			log.Errorf("failed creating service account with subject %s, err=%v", req.Subject, txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
+		return
 	}
+	c.JSON(http.StatusCreated, openapi.ServiceAccount{
+		ID:      sa.ID,
+		OrgID:   sa.OrgID,
+		Subject: sa.Subject,
+		Name:    sa.Name,
+		Groups:  sa.Groups,
+		Status:  openapi.ServiceAccountStatusType(sa.Status),
+	})
 }
 
 // UpdateServiceAccount
@@ -137,26 +145,33 @@ func Update(c *gin.Context) {
 		Set("name", req.Name).
 		Set("groups", req.Groups).
 		Set("status", string(req.Status))
-	defer func() { evt.Log(c) }()
 
-	err := models.UpdateServiceAccount(sa)
-	evt.Err(err)
-	switch err {
-	case models.ErrNotFound:
-		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
-	case nil:
-		c.JSON(http.StatusOK, openapi.ServiceAccount{
-			ID:      sa.ID,
-			OrgID:   sa.OrgID,
-			Subject: sa.Subject,
-			Name:    sa.Name,
-			Groups:  sa.Groups,
-			Status:  openapi.ServiceAccountStatusType(sa.Status),
-		})
-	default:
-		log.Errorf("failed updating service account with subject %s, err=%v", req.Subject, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+	txErr := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateServiceAccount(tx, sa); err != nil {
+			return err
+		}
+		return evt.Write(tx, c)
+	})
+	if txErr != nil {
+		evt.Err(txErr)
+		evt.Log(models.DB, c)
+		switch txErr {
+		case models.ErrNotFound:
+			c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
+		default:
+			log.Errorf("failed updating service account with subject %s, err=%v", req.Subject, txErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": txErr.Error()})
+		}
+		return
 	}
+	c.JSON(http.StatusOK, openapi.ServiceAccount{
+		ID:      sa.ID,
+		OrgID:   sa.OrgID,
+		Subject: sa.Subject,
+		Name:    sa.Name,
+		Groups:  sa.Groups,
+		Status:  openapi.ServiceAccountStatusType(sa.Status),
+	})
 }
 
 func genDeterministicUUID(subject string) string {

@@ -72,7 +72,7 @@ func upsertConnection(orgID, agentID string, req *proto.PreConnectRequest, conn 
 	conn.AccessModeRunbooks = "enabled"
 	conn.AccessSchema = "enabled"
 	maps.Copy(conn.Envs, req.Envs)
-	_, err := models.UpsertConnection(models.NewAdminContext(orgID), conn)
+	_, err := models.UpsertConnection(models.DB, models.NewAdminContext(orgID), conn)
 	return err
 }
 

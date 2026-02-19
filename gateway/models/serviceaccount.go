@@ -34,8 +34,8 @@ func ListServiceAccounts(orgID string) ([]ServiceAccount, error) {
 		Error
 }
 
-func CreateServiceAccount(sa *ServiceAccount) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+func CreateServiceAccount(db *gorm.DB, sa *ServiceAccount) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		err := tx.Model(&ServiceAccount{}).Create(sa).Error
 		if err != nil {
 			if err == gorm.ErrDuplicatedKey {
@@ -56,8 +56,8 @@ func CreateServiceAccount(sa *ServiceAccount) error {
 	})
 }
 
-func UpdateServiceAccount(sa *ServiceAccount) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+func UpdateServiceAccount(db *gorm.DB, sa *ServiceAccount) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Model(sa).Updates(
 			ServiceAccount{
 				Name:   sa.Name,
