@@ -272,15 +272,14 @@
 
 (defn- connect-credentials-tab
   "Credentials tab content - adapts based on connection type"
-  [{:keys [connection_type connection_subtype connection_credentials] :as native-client-access-data}]
+  [{:keys [connection_subtype connection_credentials] :as native-client-access-data}]
   [:> Box {:class "space-y-radix-6"}
-   (case connection_type
+   (case connection_subtype
      "postgres" [postgres-credentials-fields connection_credentials]
      "rdp" [rdp-credentials-fields connection_credentials]
      "ssh" [ssh-credentials-fields connection_credentials]
-     "httpproxy" (case connection_subtype
-                   "claude-code" [custom-views/claude-code-credentials-fields native-client-access-data]
-                   [http-proxy-credentials-fields connection_credentials])
+     "claude-code" [custom-views/claude-code-credentials-fields native-client-access-data]
+     "httpproxy" [http-proxy-credentials-fields connection_credentials]
      "kubernetes" [http-proxy-credentials-fields connection_credentials]
      "kubernetes-eks" [http-proxy-credentials-fields connection_credentials]
      "grafana" [http-proxy-credentials-fields connection_credentials]
@@ -340,10 +339,10 @@
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
-        subtype (:subtype native-client-access-data)
-        connection-type (or (:connection_type native-client-access-data)
-                            subtype)
-        has-command? (contains? #{"ssh" "rdp"} connection-type)]
+        subtype (:connection_subtype native-client-access-data)
+        has-command? (contains? #{"ssh" "rdp"} subtype)]
+
+    (println native-client-access-data)
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}
@@ -368,7 +367,7 @@
                                                          :text "Native client access session has expired."}]))}]]]
 
         (cond
-          (= connection-type "postgres")
+          (= subtype "postgres")
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -381,7 +380,7 @@
            [:> Tabs.Content {:value "connection-uri" :class "mt-4"}
             [connect-uri-tab native-client-access-data]]]
 
-          (= connection-type "ssh")
+          (= subtype "ssh")
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -396,11 +395,11 @@
              [:> Tabs.Content {:value "command" :class "mt-4"}
               [connect-command-tab (build-ssh-command (:connection_credentials native-client-access-data))]])]
 
-          (= connection-type "aws-ssm")
+          (= subtype "aws-ssm")
           [aws-ssm-command-view native-client-access-data]
 
-          (or (http-proxy-subtypes connection-type)
-              (#{"kubernetes" "kubernetes-eks"} connection-type))
+          (or (http-proxy-subtypes subtype)
+              (#{"kubernetes" "kubernetes-eks"} subtype))
           [:> Tabs.Root {:value @active-tab
                          :onValueChange #(reset! active-tab %)}
            [:> Tabs.List {:aria-label "Connection methods"}
@@ -421,13 +420,13 @@
           :on-click minimize-fn}
          "Minimize"]
 
-        (when (= connection-type "rdp")
+        (when (= subtype "rdp")
           [:> Button
            {:variant "solid"
             :size "3"
             :on-click #(rf/dispatch [:native-client-access->open-rdp-web-client
                                      (get-in native-client-access-data [:connection_credentials :username])])}
-           "Open Web Client"])
+           "Open web client"])
 
         [:> Button
          {:variant "solid"
@@ -462,8 +461,7 @@
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Type: "]
      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-      (case (or (:connection_type native-client-access-data)
-                (:subtype native-client-access-data))
+      (case (:connection_subtype native-client-access-data)
         "postgres" "PostgreSQL"
         "rdp" "Remote Desktop"
         "ssh" "SSH"
