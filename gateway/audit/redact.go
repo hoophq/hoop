@@ -3,10 +3,10 @@ package audit
 import "encoding/json"
 
 // redactKeys are request payload keys that must be redacted before storing.
-var redactKeys = map[string]bool{
-	"password": true, "hashed_password": true, "client_secret": true,
-	"secret": true, "secrets": true, "api_key": true, "token": true, "key": true,
-	"env": true, "envs": true, "rollout_api_key": true, "hosts_key": true,
+var redactKeys = map[string]struct{}{
+	"password": {}, "hashed_password": {}, "client_secret": {},
+	"secret": {}, "secrets": {}, "api_key": {}, "token": {}, "key": {},
+	"env": {}, "envs": {}, "rollout_api_key": {}, "hosts_key": {},
 }
 
 const redactedPlaceholder = "[REDACTED]"
@@ -17,13 +17,19 @@ func Redact(m map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		if redactKeys[k] {
+		if _, ok := redactKeys[k]; ok {
 			out[k] = redactedPlaceholder
 			continue
 		}
 		switch val := v.(type) {
 		case map[string]any:
 			out[k] = Redact(val)
+		case []map[string]any:
+			items := make([]map[string]any, len(val))
+			for i, item := range val {
+				items[i] = Redact(item)
+			}
+			out[k] = items
 		default:
 			// Try JSON round-trip to handle structs/pointers
 			data, err := json.Marshal(val)

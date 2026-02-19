@@ -110,12 +110,6 @@ func (e *Event) Err(err error) *Event {
 
 // Log writes the event. Panics and errors are recovered/logged; the caller's flow is never interrupted.
 func (e *Event) Log(c *gin.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("security audit log panic (recovered): %v", r)
-		}
-	}()
-
 	o := outcomeSuccess
 	errMsg := ""
 	if e.err != nil {
