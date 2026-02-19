@@ -11,12 +11,12 @@ const tableSecurityAuditLog = "private.security_audit_log"
 
 // SecurityAuditLog is the persisted security audit event (who, when, what, details, outcome).
 type SecurityAuditLog struct {
-	ID                      uuid.UUID      `gorm:"column:id;type:uuid;primaryKey"`
+	ID                      uuid.UUID      `gorm:"column:id;type:uuid;primaryKey;default:uuid_generate_v4()"`
 	OrgID                   string         `gorm:"column:org_id;type:uuid;not null"`
 	ActorSubject            string         `gorm:"column:actor_subject;size:255;not null"`
 	ActorEmail              string         `gorm:"column:actor_email;size:255"`
 	ActorName               string         `gorm:"column:actor_name;size:255"`
-	CreatedAt               time.Time      `gorm:"column:created_at;type:timestamptz;not null"`
+	CreatedAt               time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	ResourceType            string         `gorm:"column:resource_type;size:64;not null"`
 	Action                  string         `gorm:"column:action;size:32;not null"`
 	ResourceID              *uuid.UUID     `gorm:"column:resource_id;type:uuid"`
@@ -33,12 +33,6 @@ func (SecurityAuditLog) TableName() string {
 
 // CreateSecurityAuditLog inserts one audit event. ResourceID can be nil when the resource has a non-UUID id.
 func CreateSecurityAuditLog(row *SecurityAuditLog) error {
-	if row.ID == uuid.Nil {
-		row.ID = uuid.New()
-	}
-	if row.CreatedAt.IsZero() {
-		row.CreatedAt = time.Now().UTC()
-	}
 	return DB.Table(tableSecurityAuditLog).Create(row).Error
 }
 
