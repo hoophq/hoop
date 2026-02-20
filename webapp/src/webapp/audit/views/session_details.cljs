@@ -2,10 +2,9 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu
                                Flex Text ScrollArea]]
-   ["clipboard" :as clipboardjs]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info ChevronDown ArrowUpRight
-                           CalendarClock Check CircleCheckBig Clock2 OctagonX CheckCheck]]
+   ["lucide-react" :refer [Download FileDown Info ChevronDown CalendarClock
+                           Check CircleCheckBig Clock2 OctagonX CheckCheck]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -16,7 +15,6 @@
    [webapp.audit.views.time-window-modal :as time-window-modal]
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
-   [webapp.routes :as routes]
    [webapp.utilities :as utilities]
    [webapp.sessions.components.session-header :as session-header]
    [webapp.sessions.components.session-details :as session-details-component]))

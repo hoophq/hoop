@@ -77,8 +77,8 @@
 (defn main []
   (let [expanded? (r/atom false)]
     (fn [{:keys [session review-groups]}]
-      (let [connection-resource-name (:connection session)
-            connection-role-name (:connection session)
+      (let [connection-resource-name (:resource_name session)
+            connection-role-name (:role_name session)
             connection-type (:connection_subtype session)
             session-status (:status session)
             start-date (:start_date session)
@@ -88,7 +88,6 @@
             review-status (-> session :review :status)
             jira-url (get-in session [:integrations_metadata :jira_issue_url])
             has-review? (boolean (seq review-groups))
-            all-groups-pending? (every? #(= (:status %) "PENDING") review-groups)
             user-name-split (cs/split user-name #" ")
             user-name-initials (str (first (take 1 (first user-name-split)))
                                     (first (take 1 (last user-name-split))))]
@@ -110,7 +109,13 @@
           [detail-row {:label "Role"
                        :icon [:> Rotate3d {:size 20}]
                        :value [:> Badge {:color "gray" :size "3"}
-                               connection-role-name]}]
+                               [:> Flex {:gap "2" :align "center"}
+                                [:> Box
+                                 [:figure {:class "w-3"}
+                                  [:img {:src  (connection-constants/get-connection-icon {:subtype connection-type})
+                                         :alt (str connection-type " icon")
+                                         :class "w-9"}]]]
+                                connection-role-name]]}]
 
           (when has-review?
             [:<>
