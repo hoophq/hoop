@@ -132,23 +132,6 @@
             [popover/top {:open @more-options-open?
                           :component [dropdown-more-options more-options on-click-option]}]])]))))
 
-(defn red-new
-  [{:keys [text on-click type disabled status size variant full-width more-options on-click-option]}]
-  [button-base {:on-click on-click
-                :text text
-                :type type
-                :disabled disabled
-                :full-width full-width
-                :variant (or size :default)
-                :status status
-                :more-options more-options
-                :on-click-option on-click-option
-                :classes (if (= variant :outline)
-                           (str "text-red-500 bg-gray-50 hover:bg-gray-100"
-                                " border border-gray-200 hover:border-gray-300")
-
-                           (str "text-gray-50 bg-red-600 hover:bg-red-700"
-                                " hover:shadow-red-button-hover"))}])
 
 (defn black
   [{:keys [text icon on-click type disabled status variant full-width more-options on-click-option]}]
@@ -192,34 +175,3 @@
                 :classes (str "text-gray-900 bg-transparent hover:bg-gray-100"
                               " hover:shadow-secondary-button-hover"
                               (when outlined " border border-gray-300 "))}])
-
-(defn tailwind-primary [{:keys [text on-click type disabled full-width classes]}]
-  [:button {:on-click on-click
-            :type (or type "button")
-            :disabled disabled
-            :class (str classes " "
-                        (when full-width "w-full ")
-                        "rounded-md leading-6 text-xs px-3.5 py-1.5 "
-                        "text-white font-semibold bg-blue-500 hover:bg-blue-600 "
-                        (when disabled "cursor-not-allowed opacity-70"))}
-   text])
-
-(defn tailwind-secondary [{:keys [text on-click type disabled full-width outlined? dark?]}]
-  [:button {:on-click on-click
-            :type (or type "button")
-            :disabled disabled
-            :class (str (when full-width "w-full ")
-                        "rounded-md leading-6 px-3.5 py-1.5 text-xs font-semibold "
-                        "shadow-sm hover:bg-white hover:bg-opacity-20"
-                        (when outlined? " border border-gray-300 text-gray-800")
-                        (when dark? " text-white "))}
-   text])
-
-(defn tailwind-tertiary [{:keys [text on-click type disabled full-width]}]
-  [:button {:on-click on-click
-            :type (or type "button")
-            :disabled disabled
-            :class (str (when full-width "w-full ")
-                        "rounded-md leading-6 px-3.5 py-1.5 text-xs font-semibold "
-                        "shadow-sm text-gray-800 bg-gray-100 hover:bg-opacity-20")}
-   text])
