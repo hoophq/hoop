@@ -228,8 +228,13 @@
                                  (= "PENDING" review-status)))
               can-force-approve? (let [user-groups (set (:groups user))
                                        connection-data (:data @connection-details)
-                                       force-groups (when connection-data
-                                                      (set (:force_approve_groups connection-data)))]
+                                       review (:review session)
+                                       force-groups (cond
+                                                      (and connection-data (nil? (:access_request_rule_name review)))
+                                                      (set (:force_approve_groups connection-data))
+
+                                                      :else
+                                                      (set (:force_approval_groups review)))]
                                    (and can-review?
                                         force-groups
                                         (some #(contains? force-groups %) user-groups)))
