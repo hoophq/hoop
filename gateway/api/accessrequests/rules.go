@@ -11,12 +11,18 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/utils"
 	"gorm.io/gorm"
 )
 
 func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRule) error {
 	if foundRule != nil {
-		return fmt.Errorf("an access request rule with the same connection names and access type already exists")
+		connection := utils.SlicesFindFirstIntersection(foundRule.ConnectionNames, req.ConnectionNames)
+		if connection == nil {
+			return fmt.Errorf("an access request rule with the same connection names and access type already exists")
+		}
+
+		return fmt.Errorf("an access request rule with the same connection names and access type already exists, conflicting connection: %s", *connection)
 	}
 
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
@@ -29,6 +35,10 @@ func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundR
 
 	if req.AccessType != "jit" && req.AccessType != "command" {
 		return fmt.Errorf("access_type must be either 'jit' or 'command'")
+	}
+
+	if len(req.ApprovalRequiredGroups) == 0 {
+		return fmt.Errorf("approval_required_groups must have at least 1 entry")
 	}
 
 	if len(req.ReviewersGroups) == 0 {
