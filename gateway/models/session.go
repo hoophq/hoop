@@ -115,15 +115,18 @@ type Blob struct {
 	BlobFormat *string         `gorm:"column:format"`
 }
 type SessionReview struct {
-	ID                string            `json:"id"`
-	SessionID         string            `json:"session_id"`
-	Type              string            `json:"type"`
-	Status            string            `json:"status"`
-	CreatedAt         time.Time         `json:"created_at"`
-	RevokedAt         *time.Time        `json:"revoked_at"`
-	AccessDurationSec int64             `json:"access_duration_sec"`
-	ReviewGroups      []ReviewGroups    `json:"review_groups" gorm:"review_groups;serializer:json"`
-	TimeWindow        *ReviewTimeWindow `json:"time_window" gorm:"time_window;serializer:json;"`
+	ID                    string            `json:"id"`
+	SessionID             string            `json:"session_id"`
+	Type                  string            `json:"type"`
+	Status                string            `json:"status"`
+	CreatedAt             time.Time         `json:"created_at"`
+	RevokedAt             *time.Time        `json:"revoked_at"`
+	AccessDurationSec     int64             `json:"access_duration_sec"`
+	ReviewGroups          []ReviewGroups    `json:"review_groups" gorm:"review_groups;serializer:json"`
+	TimeWindow            *ReviewTimeWindow `json:"time_window" gorm:"time_window;serializer:json;"`
+	AccessRequestRuleName *string           `json:"access_request_rule_name"`
+	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups"`
+	MinApprovals          *int              `json:"min_approvals"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -203,6 +206,9 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'access_duration_sec', rv.access_duration_sec,
 				'status', rv.status,
 				'time_window', rv.time_window,
+				'access_request_rule_name', rv.access_request_rule_name,
+				'min_approvals', rv.min_approvals,
+				'force_approval_groups', rv.force_approval_groups,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (

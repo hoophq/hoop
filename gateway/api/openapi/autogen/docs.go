@@ -7166,6 +7166,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "connection_subtype": {
+                    "description": "The connection subtype",
+                    "type": "string",
+                    "example": "postgres"
+                },
                 "connection_type": {
                     "description": "Connection type",
                     "type": "string",
@@ -9314,11 +9319,28 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 0
                 },
+                "access_request_rule_name": {
+                    "description": "The name of the access request rule that triggered this review, if null means it was triggered by the review plugin",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "default-access-request-rule"
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "force_approval_groups": {
+                    "description": "Groups that can force approve sessions for this review",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "sre-team"
+                    ]
                 },
                 "id": {
                     "description": "Resource identifier",
@@ -9326,6 +9348,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "min_approvals": {
+                    "description": "The minimum number of approvals required for this review",
+                    "type": "integer",
+                    "readOnly": true,
+                    "example": 2
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
@@ -10364,6 +10392,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "e6b94e86352e934b66d9c7ab2821a267dc18dfee"
                 },
+                "disable_clipboard_copy_cut": {
+                    "description": "Indicates if clipboard copy functionality is disabled\n* true - Clipboard copy and cut are disabled and not available to users\n* false - Clipboard copy and cut are enabled and available to users",
+                    "type": "boolean"
+                },
                 "disable_sessions_download": {
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
                     "type": "boolean"
@@ -10945,11 +10977,28 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 0
                 },
+                "access_request_rule_name": {
+                    "description": "The name of the access request rule that triggered this review, if null means it was triggered by the review plugin",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "default-access-request-rule"
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "force_approval_groups": {
+                    "description": "Groups that can force approve sessions for this review",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "sre-team"
+                    ]
                 },
                 "id": {
                     "description": "Resource identifier",
@@ -10957,6 +11006,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "min_approvals": {
+                    "description": "The minimum number of approvals required for this review",
+                    "type": "integer",
+                    "readOnly": true,
+                    "example": 2
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
