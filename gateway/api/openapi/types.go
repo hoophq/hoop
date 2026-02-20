@@ -774,6 +774,12 @@ type Review struct {
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
 	// The time window configuration that can execute the session
 	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
+	// The name of the access request rule that triggered this review, if null means it was triggered by the review plugin
+	AccessRequestRuleName *string `json:"access_request_rule_name" readonly:"true" example:"default-access-request-rule"`
+	// The minimum number of approvals required for this review
+	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
+	// Groups that can force approve sessions for this review
+	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
 }
 
 type ReviewOwner struct {

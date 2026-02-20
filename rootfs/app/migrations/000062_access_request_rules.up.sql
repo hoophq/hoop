@@ -28,4 +28,8 @@ CREATE TABLE access_request_rules(
 CREATE UNIQUE INDEX idx_access_request_rules_org_name ON access_request_rules(org_id, name);
 CREATE INDEX idx_access_request_rules_org_id_access_type ON access_request_rules(org_id, access_type);
 
+ALTER TABLE reviews ADD access_request_rule_name text NULL;
+ALTER TABLE reviews ADD min_approvals int NULL;
+ALTER TABLE reviews ADD force_approval_groups _text NULL;
+
 COMMIT;

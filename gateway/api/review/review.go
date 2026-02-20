@@ -226,22 +226,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		}
 	}
 
-	orgID, err := uuid.Parse(ctx.OrgID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid organization ID format: %w", err)
-	}
-
-	accessType := "command"
-	if rev.Type == models.ReviewTypeJit {
-		accessType = "jit"
-	}
-
-	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, connection.Name, accessType)
-	if err != nil {
-		return nil, fmt.Errorf("failed fetching access request rule for review, err=%v", err)
-	}
-
-	rev, err = doReview(ctx, rev, connection, accessRule, status, hasForced)
+	rev, err = doReview(ctx, rev, connection, status, hasForced)
 	if err != nil {
 		return nil, err
 	}
@@ -252,16 +237,16 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	return rev, nil
 }
 
-func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, accessRule *models.AccessRequestRule, status models.ReviewStatusType, force bool) (*models.Review, error) {
+func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
 	err := validateReviewStatusTransition(ctx, rev, status)
 	if err != nil {
 		return nil, err
 	}
 
 	if force {
-		rev, err = doForcedReview(ctx, rev, connection, accessRule, status)
+		rev, err = doForcedReview(ctx, rev, connection, status)
 	} else {
-		rev, err = doIndividualReview(ctx, rev, connection, accessRule, status)
+		rev, err = doIndividualReview(ctx, rev, connection, status)
 	}
 
 	if err != nil {
@@ -277,11 +262,12 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 	return rev, nil
 }
 
-func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, accessRule *models.AccessRequestRule, status models.ReviewStatusType) (*models.Review, error) {
+func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
 	// check if the user has permissions to force the review
 	var forceApproveGroups []string
-	if accessRule != nil && accessRule.ForceApprovalGroups != nil {
-		forceApproveGroups = accessRule.ForceApprovalGroups
+	// Only use ForceApprovalGroups from Review if it's AccessRequestRuleName is set, otherwise fallback to Connection
+	if rev.AccessRequestRuleName != nil && rev.ForceApprovalGroups != nil {
+		forceApproveGroups = rev.ForceApprovalGroups
 	} else if connection.ForceApproveGroups != nil {
 		forceApproveGroups = connection.ForceApproveGroups
 	}
@@ -327,13 +313,13 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 	return rev, nil
 }
 
-func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, accessRule *models.AccessRequestRule, status models.ReviewStatusType) (*models.Review, error) {
+func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	if accessRule != nil {
-		if !accessRule.AllGroupsMustApprove {
-			reviewsCountNeeded = min(reviewsCountNeeded, *accessRule.MinApprovals)
+	if rev.AccessRequestRuleName != nil {
+		if rev.MinApprovals != nil {
+			reviewsCountNeeded = min(reviewsCountNeeded, *rev.MinApprovals)
 		}
 	} else if connection.MinReviewApprovals != nil {
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
@@ -482,11 +468,14 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		Type:    openapi.ReviewType(r.Type),
 		// this attribute is saved as seconds
 		// but we keep compatibility with clients to show as nano seconds
-		AccessDuration:   time.Duration(r.AccessDurationSec) * time.Second,
-		Status:           openapi.ReviewStatusType(r.Status),
-		RevokeAt:         r.RevokedAt,
-		CreatedAt:        r.CreatedAt,
-		ReviewGroupsData: itemGroups,
-		TimeWindow:       timeWindow,
+		AccessDuration:        time.Duration(r.AccessDurationSec) * time.Second,
+		Status:                openapi.ReviewStatusType(r.Status),
+		RevokeAt:              r.RevokedAt,
+		CreatedAt:             r.CreatedAt,
+		ReviewGroupsData:      itemGroups,
+		TimeWindow:            timeWindow,
+		AccessRequestRuleName: r.AccessRequestRuleName,
+		MinApprovals:          r.MinApprovals,
+		ForceApprovalGroups:   r.ForceApprovalGroups,
 	}
 }

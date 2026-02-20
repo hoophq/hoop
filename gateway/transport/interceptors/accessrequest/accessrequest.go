@@ -82,9 +82,9 @@ func getValidatedOneTimeReview(pctx plugintypes.Context) (bool, *plugintypes.Con
 	return false, nil, nil
 }
 
-func createReview(pctx plugintypes.Context, isJitReview bool, reviewersGroups []string, accessDuration time.Duration, sessionInput string, inputEnvVars map[string]string, inputClientArgs []string) (*models.Review, error) {
+func createReview(pctx plugintypes.Context, isJitReview bool, accessRequestRule *models.AccessRequestRule, accessDuration time.Duration, sessionInput string, inputEnvVars map[string]string, inputClientArgs []string) (*models.Review, error) {
 	var reviewGroups []models.ReviewGroups
-	for _, approvalGroupName := range reviewersGroups {
+	for _, approvalGroupName := range accessRequestRule.ReviewersGroups {
 		reviewGroups = append(reviewGroups, models.ReviewGroups{
 			ID:        uuid.NewString(),
 			OrgID:     pctx.OrgID,
@@ -98,24 +98,34 @@ func createReview(pctx plugintypes.Context, isJitReview bool, reviewersGroups []
 		reviewType = models.ReviewTypeJit
 	}
 
+	var minApprovals int
+	if accessRequestRule.AllGroupsMustApprove {
+		minApprovals = len(reviewGroups)
+	} else {
+		minApprovals = *accessRequestRule.MinApprovals
+	}
+
 	newRev := &models.Review{
-		ID:                uuid.NewString(),
-		OrgID:             pctx.OrgID,
-		Type:              reviewType,
-		SessionID:         pctx.SID,
-		ConnectionName:    pctx.ConnectionName,
-		ConnectionID:      sql.NullString{String: pctx.ConnectionID, Valid: true},
-		AccessDurationSec: int64(accessDuration.Seconds()),
-		InputEnvVars:      inputEnvVars,
-		InputClientArgs:   inputClientArgs,
-		OwnerID:           pctx.UserID,
-		OwnerEmail:        pctx.UserEmail,
-		OwnerName:         ptr.String(pctx.UserName),
-		OwnerSlackID:      ptr.String(pctx.UserSlackID),
-		Status:            models.ReviewStatusPending,
-		ReviewGroups:      reviewGroups,
-		CreatedAt:         time.Now().UTC(),
-		RevokedAt:         nil,
+		ID:                    uuid.NewString(),
+		OrgID:                 pctx.OrgID,
+		Type:                  reviewType,
+		SessionID:             pctx.SID,
+		ConnectionName:        pctx.ConnectionName,
+		ConnectionID:          sql.NullString{String: pctx.ConnectionID, Valid: true},
+		AccessDurationSec:     int64(accessDuration.Seconds()),
+		InputEnvVars:          inputEnvVars,
+		InputClientArgs:       inputClientArgs,
+		OwnerID:               pctx.UserID,
+		OwnerEmail:            pctx.UserEmail,
+		OwnerName:             ptr.String(pctx.UserName),
+		OwnerSlackID:          ptr.String(pctx.UserSlackID),
+		Status:                models.ReviewStatusPending,
+		ReviewGroups:          reviewGroups,
+		ForceApprovalGroups:   accessRequestRule.ForceApprovalGroups,
+		AccessRequestRuleName: &accessRequestRule.Name,
+		MinApprovals:          &minApprovals,
+		CreatedAt:             time.Now().UTC(),
+		RevokedAt:             nil,
 	}
 
 	log.With("sid", pctx.SID, "id", newRev.ID, "user", pctx.UserID, "org", pctx.OrgID,
@@ -246,7 +256,7 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 		}
 	}
 
-	newRev, err := createReview(pctx, isJitReview, accessRule.ReviewersGroups, accessDuration, sessionInput, inputEnvVars, inputClientArgs)
+	newRev, err := createReview(pctx, isJitReview, accessRule, accessDuration, sessionInput, inputEnvVars, inputClientArgs)
 	if err != nil {
 		return nil, err
 	}
