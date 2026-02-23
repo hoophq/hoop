@@ -65,7 +65,7 @@ type Session struct {
 	ID                   string            `gorm:"column:id"`
 	OrgID                string            `gorm:"column:org_id"`
 	Connection           string            `gorm:"column:connection"`
-	ResourceName         string            `gorm:"column:resource_name"`
+	ResourceName         string            `gorm:"column:resource_name;->"`
 	ConnectionType       string            `gorm:"column:connection_type"`
 	ConnectionSubtype    string            `gorm:"column:connection_subtype"`
 	ConnectionTags       map[string]string `gorm:"column:connection_tags;serializer:json"`
