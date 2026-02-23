@@ -1,7 +1,7 @@
 (ns webapp.features.access-request.views.rule-form
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Switch Text]]
-   ["lucide-react" :refer [ClockArrowUp CodeXml]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Grid Heading Switch Text]]
+   ["lucide-react" :refer [ClockArrowUp CodeXml Info]]
    [clojure.string :as str]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -11,6 +11,7 @@
    [webapp.components.loaders :as loaders]
    [webapp.components.multiselect :as multiselect]
    [webapp.components.selection-card :refer [selection-card]]
+   [webapp.resources.helpers :as helpers]
    [webapp.features.access-request.views.free-license-callout :refer [free-license-callout]]))
 
 (def time-range-options
@@ -41,6 +42,24 @@
   (-> (str value)
       (str/replace #"\s+" "_")
       (str/replace #"[^A-Za-z0-9_.\-]" "")))
+
+(defn- command-eligible? [resource-role]
+  (helpers/can-open-web-terminal? resource-role))
+
+(defn- jit-eligible? [resource-role]
+  (or (helpers/can-access-native-client? resource-role)
+      (helpers/can-hoop-cli? resource-role)))
+
+(defn- eligible-for-type? [access-type resource-role]
+  (case access-type
+    "command" (command-eligible? resource-role)
+    "jit" (jit-eligible? resource-role)
+    false))
+
+(defn- access-type-label [access-type]
+  (if (= access-type "jit")
+    "Just-in-Time"
+    "by Command"))
 
 (defn- create-form-state [initial-data]
   (let [rule-data (or initial-data {})]
@@ -74,12 +93,40 @@
         connections (rf/subscribe [:connections->pagination])
         user-groups (rf/subscribe [:user-groups])
         current-user (rf/subscribe [:users->current-user])
-        existing-rules (rf/subscribe [:access-request/rules])]
+        existing-rules (rf/subscribe [:access-request/rules])
+        switch-access-type! (fn [all-resource-roles target-type]
+                              (when (not= target-type @(:access-type state))
+                                (let [selected-resource-names @(:connection-names state)
+                                      resource-by-name (into {} (map (juxt :name identity)) all-resource-roles)
+                                      invalid-selected-names
+                                      (->> selected-resource-names
+                                           (filter (fn [name]
+                                                     (let [resource-role (get resource-by-name name)]
+                                                       (and resource-role
+                                                            (not (eligible-for-type? target-type resource-role))))))
+                                           vec)]
+                                  (if (empty? invalid-selected-names)
+                                    (reset! (:access-type state) target-type)
+                                    (rf/dispatch
+                                     [:dialog->open
+                                      {:title "Change access type?"
+                                       :text (str "Switching to " (access-type-label target-type)
+                                                  " will remove " (count invalid-selected-names)
+                                                  " resource roles that don't support this type. This can't be undone.")
+                                       :text-action-button "Confirm"
+                                       :action-button? true
+                                       :type :info
+                                       :on-success (fn []
+                                                     (reset! (:access-type state) target-type)
+                                                     (reset! (:connection-names state)
+                                                             (vec (remove (set invalid-selected-names)
+                                                                          @(:connection-names state)))))}])))))]
     (fn []
       (let [user-groups-options (format-user-groups (or @user-groups []))
             free-license? (get-in @current-user [:data :free-license?])
             can-create? (or (not free-license?) (< (count (or @existing-rules [])) 1))
-            rule-name @(:rule-name state)]
+            rule-name @(:rule-name state)
+            all-resource-roles (or (:data @connections) [])]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
@@ -158,7 +205,7 @@
               :class "w-full"
               :on-change #(reset! (:description state) (-> % .-target .-value))}]]
 
-           [form-section {:title "Request access type"
+           [form-section {:title "Access request type"
                           :description "Define how to request to your resource roles."}
             [:> Flex {:direction "column" :gap "4"}
              [selection-card
@@ -166,13 +213,17 @@
                :title "Just-in-Time"
                :description "For temporary access expiring automatically after defined time range"
                :selected? (= @(:access-type state) "jit")
-               :on-click #(reset! (:access-type state) "jit")}]
+               :on-click #(switch-access-type! all-resource-roles "jit")}]
              [selection-card
               {:icon (r/as-element [:> CodeXml {:size 20}])
                :title "by Command"
                :description "For execution-based with approval workflow"
                :selected? (= @(:access-type state) "command")
-               :on-click #(reset! (:access-type state) "command")}]]]
+               :on-click #(switch-access-type! all-resource-roles "command")}]
+
+             [:> Callout.Root {:size "1" :color "gray" :class "bg-transparent p-0"}
+              [:> Callout.Icon [:> Info {:size 16}]]
+              [:> Callout.Text "Only resource roles that support the selected access type will be available."]]]]
 
            (when (= @(:access-type state) "jit")
              [form-section {:title "Access time range"
@@ -196,7 +247,7 @@
 
            [form-section {:title "Resource configuration"
                           :description "Select which resource roles to apply this configuration."}
-            (let [conns (or (:data @connections) [])
+            (let [conns all-resource-roles
                   conn-by-name (into {} (map (juxt :name identity)) conns)
                   selected-connection-names @(:connection-names state)
                   selected-connections-data (mapv (fn [name]
@@ -213,6 +264,7 @@
                 :required? true
                 :connection-ids connection-ids
                 :selected-connections selected-connections-data
+                :connection-filter-fn #(eligible-for-type? @(:access-type state) %)
                 :on-connections-change (fn [selected-options]
                                          (let [selected-js-options (js->clj selected-options :keywordize-keys true)
                                                selected-names (mapv #(:label %) selected-js-options)]
