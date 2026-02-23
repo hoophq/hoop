@@ -10,7 +10,6 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -154,12 +153,6 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
-	}
-
-	if pctx.OrgLicenseType == license.OSSType {
-		if pctx.ClientVerb != pb.ClientVerbConnect {
-			return nil, fmt.Errorf(`Accessing a connection with review from the web requires an Enterprise plan. Contact us for instant access to a 15-day trial license - no strings attached. If you want to continue using the OSS version, you can access your connection from the CLI or the Hoop desktop app. Check our docs for more information: https://hoop.dev/docs/clients/cli`)
-		}
 	}
 
 	// 1. check if there's an existing one-time review for this session, if yes validate and return it
