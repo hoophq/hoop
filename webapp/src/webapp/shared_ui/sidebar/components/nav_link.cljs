@@ -1,6 +1,7 @@
 (ns webapp.shared-ui.sidebar.components.nav-link
   (:require ["@radix-ui/themes" :refer [Badge]]
             [re-frame.core :as rf]
+            [webapp.routes :as routes]
             [webapp.shared-ui.sidebar.styles :as styles]))
 
 (defn nav-link
@@ -49,7 +50,7 @@
                                (when on-activate (on-activate)))
                    :class (str base-class " cursor-pointer w-full")}
           content]
-         [:a {:href (if blocked? "#" uri)
+         [:a {:href (if blocked? (routes/url-for upgrade-plan-route) uri)
               :on-click (fn [e]
                           (.preventDefault e)
                           (if blocked?
