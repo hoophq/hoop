@@ -140,7 +140,7 @@
 
           [:> Box {:p "7" :class "space-y-radix-9"}
            [form-section {:title "Set new rule information"
-                          :description "Used to identify your Access Request rule in your connections."}
+                          :description "Used to identify your Access Request rule in your resources."}
             [forms/input
              (cond-> {:label "Name"
                       :value @(:rule-name state)
@@ -152,16 +152,14 @@
                                                                 (sanitize-rule-name (-> % .-target .-value))))
                (= form-type :edit) (assoc :disabled true))]
             [forms/input
-             {:placeholder (if (= form-type :create)
-                             "Describe how this is used in your connections"
-                             "e.g. Time-based database access for Marketing teams")
+             {:placeholder "Describe how this is used in your resource roles"
               :label "Description (Optional)"
               :value @(:description state)
               :class "w-full"
               :on-change #(reset! (:description state) (-> % .-target .-value))}]]
 
            [form-section {:title "Request access type"
-                          :description "Define how to request to your connections."}
+                          :description "Define how to request to your resource roles."}
             [:> Flex {:direction "column" :gap "4"}
              [selection-card
               {:icon (r/as-element [:> ClockArrowUp {:size 20}])
@@ -178,7 +176,7 @@
 
            (when (= @(:access-type state) "jit")
              [form-section {:title "Access time range"
-                            :description "Select for how long temporary access will be available for your connections."}
+                            :description "Select for how long temporary access will be available for your resource roles."}
               (let [time-range-opts (mapv #(into {} {"value" (:value %) "label" (:text %)})
                                           time-range-options)
                     selected-option (when @(:access-duration state)
@@ -197,7 +195,7 @@
                                 (reset! (:access-duration state) (when selected (get selected "value"))))}])])
 
            [form-section {:title "Resource configuration"
-                          :description "Select which connections to apply this configuration."}
+                          :description "Select which resource roles to apply this configuration."}
             (let [conns (or (:data @connections) [])
                   conn-by-name (into {} (map (juxt :name identity)) conns)
                   selected-connection-names @(:connection-names state)
