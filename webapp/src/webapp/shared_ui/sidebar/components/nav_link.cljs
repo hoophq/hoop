@@ -1,44 +1,61 @@
 (ns webapp.shared-ui.sidebar.components.nav-link
-  (:require [re-frame.core :as rf]
+  (:require ["@radix-ui/themes" :refer [Badge]]
+            [re-frame.core :as rf]
             [webapp.shared-ui.sidebar.styles :as styles]))
 
 (defn nav-link
-  "Componente reutilizável para links de navegação.
-   Parâmetros:
-   - props: mapa com:
-     - :uri - URI do link
-     - :icon - função que retorna o ícone
-     - :label - texto do link
-     - :free-feature? - se é um recurso gratuito
-     - :admin-only? - se é apenas para admin
-     - :admin? - se o usuário é admin
-     - :current-route - rota atual
-     - :free-license? - se o usuário tem licença gratuita
-     - :navigate - keyword para navegação via re-frame
-     - :action - ação alternativa à navegação
-     - :badge - componente opcional para badge"
-  [{:keys [uri icon label free-feature? admin-only? admin? current-route free-license? navigate action badge]}]
-  (when-not (and admin-only? (not admin?))
-    [:li
-     [:a {:href "#"
-          :on-click (fn [e]
-                      (.preventDefault e)
-                      (when (and free-license? (not free-feature?))
-                        (rf/dispatch [:navigate :upgrade-plan]))
-                      (when (and navigate (not (and free-license? (not free-feature?))))
-                        (rf/dispatch [:navigate navigate]))
-                      (when action (action)))
-          :class (str (styles/hover-side-menu-link uri current-route)
-                      (:enabled styles/link-styles)
-                      (when (and free-license? (not free-feature?))
-                        " text-opacity-30")
-                      (when (some? action) " cursor-pointer"))}
-      [:div {:class "flex gap-3 items-center"}
-       [icon]
-       label]
-      (cond
-        (and free-license? (not free-feature?))
-        [:div {:class styles/badge-upgrade}
-         "Upgrade"]
-        badge
-        [badge])]]))
+  "Reusable navigation link component.
+   Parameters:
+   - props: map with:
+     - :uri - link URI
+     - :icon - function that returns the icon
+     - :label - link text
+     - :free-feature? - whether it's a free feature
+     - :admin-only? - whether it's admin-only
+     - :admin? - whether the user is an admin
+     - :current-route - current route
+     - :free-license? - whether the user has a free license
+     - :navigate - keyword for re-frame navigation
+     - :action - alternative action instead of navigation (opens command palette, etc)
+     - :badge - optional badge component
+     - :upgrade-plan-route - upgrade route (defaults to :upgrade-plan)
+     - :on-activate - callback after activation (e.g. close mobile sidebar)"
+  [{:keys [uri icon label free-feature? admin-only? admin? current-route free-license? navigate action badge upgrade-plan-route on-activate]
+    :or {upgrade-plan-route :upgrade-plan}}]
+  (let [blocked? (and free-license? (not free-feature?))
+        active? (= uri current-route)
+        base-class (str (styles/hover-side-menu-link uri current-route)
+                        (:enabled styles/link-styles)
+                        (when blocked? " text-opacity-30"))
+        content [:<>
+                 [:div {:class "flex gap-3 items-center"}
+                  [icon {:aria-hidden "true"}]
+                  label]
+                 (cond
+                   blocked?
+                   [:div {:class styles/badge-upgrade}
+                    "Upgrade"]
+                   (string? badge)
+                   [:> Badge {:color "indigo" :variant "solid" :size "1"}
+                    badge]
+                   (some? badge)
+                   [badge])]]
+    (when-not (and admin-only? (not admin?))
+      [:li
+       (if action
+         [:button {:on-click (fn []
+                               (action)
+                               (when on-activate (on-activate)))
+                   :class (str base-class " cursor-pointer w-full")}
+          content]
+         [:a {:href (if blocked? "#" uri)
+              :on-click (fn [e]
+                          (.preventDefault e)
+                          (if blocked?
+                            (rf/dispatch [:navigate upgrade-plan-route])
+                            (when navigate
+                              (rf/dispatch [:navigate navigate])))
+                          (when on-activate (on-activate)))
+              :class base-class
+              :aria-current (when active? "page")}
+          content])])))
