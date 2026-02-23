@@ -82,6 +82,12 @@ type AccessRequestRulesFilterOption struct {
 	PageSize int
 }
 
+func CountAccessRequestRules(db *gorm.DB, orgID uuid.UUID) (int64, error) {
+	var count int64
+	result := db.Model(&AccessRequestRule{}).Where("org_id = ?", orgID).Count(&count)
+	return count, result.Error
+}
+
 func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRulesFilterOption) ([]AccessRequestRule, int64, error) {
 	var accessRequestRules []AccessRequestRule
 	var total int64

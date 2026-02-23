@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
@@ -77,6 +78,20 @@ func CreateAccessRequestRule(c *gin.Context) {
 		log.Errorf("failed to parse org ID: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid organization ID"})
 		return
+	}
+
+	if ctx.GetLicenseType() == license.OSSType {
+		count, err := models.CountAccessRequestRules(models.DB, orgID)
+		if err != nil {
+			log.Errorf("failed to count access request rules: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
+			return
+		}
+
+		if count >= 1 {
+			c.JSON(http.StatusForbidden, gin.H{"message": "access request rules are limited to 1 in the OSS version"})
+			return
+		}
 	}
 
 	foundRule, err := models.GetAccessRequestRuleByResourceNamesAndAccessType(models.DB, orgID, req.ConnectionNames, req.AccessType)
