@@ -29,17 +29,18 @@
                         (when blocked? " text-opacity-30"))
         content [:<>
                  [:div {:class "flex gap-3 items-center"}
-                  [icon {:aria-hidden "true"}]
+                  [:div {:class "shrink-0"}
+                   [icon {:aria-hidden "true"}]]
                   label]
-                 (cond
-                   blocked?
-                   [:div {:class styles/badge-upgrade}
-                    "Upgrade"]
-                   (string? badge)
-                   [:> Badge {:color "indigo" :variant "solid" :size "1"}
-                    badge]
-                   (some? badge)
-                   [badge])]]
+                 [:div {:class "flex gap-2 items-center"}
+                  (when (string? badge)
+                    [:> Badge {:color "indigo" :variant "solid" :size "1"}
+                     badge])
+                  (when (fn? badge)
+                    [badge])
+                  (when blocked?
+                    [:div {:class styles/badge-upgrade}
+                     "Upgrade"])]]]
     (when-not (and admin-only? (not admin?))
       [:li
        (if action
