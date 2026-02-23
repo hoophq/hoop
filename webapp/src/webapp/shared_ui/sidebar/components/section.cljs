@@ -4,9 +4,10 @@
 
 (defn section-title
   "Título da seção da sidebar"
-  [title]
-  [:div {:class "py-0.5 text-xs text-white mb-3 font-semibold"}
-   title])
+  ([title id]
+   [:div {:id id
+          :class "py-0.5 text-xs text-white mb-3 font-semibold"}
+    title]))
 
 (defn disclosure-section
   "Seção expansível (dropdown) da sidebar"

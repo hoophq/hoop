@@ -31,6 +31,7 @@
                                       24 "w-6 h-6"
                                       "w-6 h-6")]
                        [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
+                              :alt "Jira"
                               :class css-size}]))
    "AIDataMasking" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> VenetianMask {:size size}])
