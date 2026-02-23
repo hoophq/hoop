@@ -20,11 +20,11 @@
 (defn claude-code-credentials-fields
   "Claude Code specific credentials fields"
   [{:keys [connection_credentials]}]
-  (println "connection_credentials" connection_credentials)
   (let [hostname (:hostname connection_credentials)
         port (:port connection_credentials)
         proxy-token (:proxy_token connection_credentials)
-        base-url (str "http://" hostname ":" port)
+        protocol (-> js/window .-location .-protocol)
+        base-url (str protocol "//" hostname ":" port)
         custom-headers (str "Authorization: " proxy-token)
         build-json-content (fn [base-url custom-headers]
                              {:env {:ANTHROPIC_BASE_URL base-url
