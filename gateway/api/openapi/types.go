@@ -580,8 +580,12 @@ type Session struct {
 	Type string `json:"type" example:"database"`
 	// The subtype of the connection
 	ConnectionSubtype string `json:"connection_subtype" example:"postgres"`
-	// The connection name of this resource
+	// The connection name of this resource (it will be deprecated in favor of RoleName)
 	Connection string `json:"connection" example:"pgdemo"`
+	// The resource name associated with this connection
+	ResourceName string `json:"resource_name" example:"my-resource"`
+	// The role name (same as connection name)
+	RoleName string `json:"role_name" example:"pgdemo"`
 	// The tags of the connection resource
 	ConnectionTags map[string]string `json:"connection_tags" example:"team:banking;environment:prod"`
 	// Review of this session. In case the review doesn't exist this field will be null

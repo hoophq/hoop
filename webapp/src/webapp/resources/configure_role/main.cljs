@@ -5,7 +5,7 @@
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.connections.constants :as constants]
-   [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?]]
+   [webapp.resources.helpers :refer [can-test-connection? is-connection-testing?]]
    [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.views.setup.events.process-form :as helpers]
    [webapp.connections.views.setup.page-wrapper :as page-wrapper]

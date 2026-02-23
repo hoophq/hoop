@@ -2,8 +2,7 @@
   (:require
    [clojure.string :as str]
    [webapp.connections.constants :as constants]
-   [webapp.connections.helpers :as helpers]
-   [webapp.resources.helpers :refer [get-secret-prefix]]
+   [webapp.resources.helpers :as helpers :refer [get-secret-prefix]]
    [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.resources.setup.events.process-form :as resource-process-form]
    [webapp.connections.views.setup.tags-utils :as tags-utils]
@@ -28,8 +27,7 @@
             "server" "custom"
             "database" "database"
             "custom" "custom"
-            "application" "application"
-            "httpproxy" "httpproxy")))
+            "application" "application")))
 
 (defn tags-array->map
   "Convert an array of tags [{:key k :value v}] to a map {k v}

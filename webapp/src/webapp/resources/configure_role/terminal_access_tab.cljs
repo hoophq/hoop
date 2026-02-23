@@ -8,7 +8,7 @@
    [webapp.components.multiselect :as multi-select]
    [webapp.config :as config]
    [webapp.connections.dlp-info-types :as dlp-info-types]
-   [webapp.connections.helpers :as helpers]
+   [webapp.resources.helpers :as helpers]
    [webapp.routes :as routes]
    [webapp.upgrade-plan.main :as upgrade-plan]))
 

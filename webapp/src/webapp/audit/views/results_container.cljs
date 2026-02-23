@@ -18,7 +18,7 @@
 (defn tab-container
   [{:keys [results-heads results-body log-view]}
    {:keys [status results]}]
-  [:div {:class "flex flex-col h-96"}
+  [:div {:class "flex flex-col h-96 min-h-96"}
    [tabs/tabs {:on-change #(reset! log-view %)
                :tabs ["Plain text" "Table"]}]
    (case @log-view

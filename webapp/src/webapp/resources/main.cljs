@@ -8,9 +8,9 @@
             [webapp.components.loaders :as loaders]
             [webapp.components.infinite-scroll :refer [infinite-scroll]]
             [webapp.connections.constants :as connection-constants]
-            [webapp.resources.helpers :refer [can-open-web-terminal?]]
-            [webapp.connections.helpers :refer [can-test-connection? is-connection-testing?
-                                                can-connect? can-hoop-cli? can-access-native-client?]]
+            [webapp.resources.helpers :refer [can-open-web-terminal?
+                                              can-test-connection? is-connection-testing?
+                                              can-connect? can-hoop-cli? can-access-native-client?]]
             [webapp.connections.views.hoop-cli-modal :as hoop-cli-modal]
             [webapp.connections.views.tag-selector :as tag-selector]
             [webapp.connections.views.test-connection-modal :as test-connection-modal]
@@ -186,7 +186,8 @@
                                        (rf/dispatch [:navigate :editor-plugin-panel]))}
                "Open in Web Terminal"])
 
-            (when (can-hoop-cli? connection)
+            (when (and (can-hoop-cli? connection)
+                       (not (can-access-native-client? connection)))
               [:> DropdownMenu.Item {:on-click
                                      #(rf/dispatch [:modal->open
                                                     {:content [hoop-cli-modal/main (:name connection)]

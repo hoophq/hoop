@@ -153,8 +153,9 @@
  :reviews-plugin->open-session-details
  (fn
    [{:keys [db]} [_ session]]
-   {:fx [[:dispatch [:open-modal
-                     [review-detail/review-details-page session] :large]]]}))
+   {:fx [[:dispatch [:modal->open {:id "review-details"
+                                   :maxWidth "900px"
+                                   :content [review-detail/review-details-page session]}]]]}))
 
 (rf/reg-event-fx
  :reviews-plugin->get-review-details

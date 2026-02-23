@@ -50,10 +50,8 @@
         searched-events-atom (r/atom event-stream-map)
         search-focused? (r/atom false)]
     (fn []
-      [:section
-       {:class "flex flex-col gap-small"}
-       [:header
-        {:id "session-details-search-container"}
+      [:section {:class "grid gap-small"}
+       [:header {:id "session-details-search-container"}
         [:div {:class (str "transition-all " (if @search-focused? "w-7/12" "w-1/2"))}
          [searchbox/main {:options event-stream-map
                           :clear? true
@@ -74,8 +72,7 @@
            [event-item event-type event-data parsed-date]))]])))
 
 (defn main [event-stream session-start-date]
-  [:div
-   (if (empty? event-stream)
-     [empty-event-stream/main]
-     [event-stream-content event-stream session-start-date])])
+  (if (empty? event-stream)
+    [empty-event-stream/main]
+    [event-stream-content event-stream session-start-date]))
 

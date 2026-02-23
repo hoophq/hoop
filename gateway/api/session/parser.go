@@ -51,7 +51,9 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		UserName:             s.UserName,
 		Type:                 s.ConnectionType,
 		ConnectionSubtype:    s.ConnectionSubtype,
-		Connection:           s.Connection,
+		Connection:           s.Connection, // it will be deprecated in favor of RoleName
+		ResourceName:         s.ResourceName,
+		RoleName:             s.Connection,
 		ConnectionTags:       s.ConnectionTags,
 		Review:               topOpenApiReview(s.Review),
 		Verb:                 s.Verb,
