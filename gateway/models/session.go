@@ -126,7 +126,7 @@ type SessionReview struct {
 	ReviewGroups          []ReviewGroups    `json:"review_groups" gorm:"review_groups;serializer:json"`
 	TimeWindow            *ReviewTimeWindow `json:"time_window" gorm:"time_window;serializer:json;"`
 	AccessRequestRuleName *string           `json:"access_request_rule_name"`
-	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups"`
+	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups" gorm:"force_approval_groups;serializer:json;"`
 	MinApprovals          *int              `json:"min_approvals"`
 }
 
