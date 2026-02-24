@@ -79,6 +79,9 @@
     {:class (str "bg-gray-2 font-mono h-full"
                  " whitespace-pre text-gray-11 text-sm overflow-auto"
                  " h-full")
+     :role "log"
+     :aria-label "Execution output"
+     :aria-live (if (= (:status config) :loading) "assertive" "polite")
      :style {:overflow-anchor "none"}}
     (case type
       :logs

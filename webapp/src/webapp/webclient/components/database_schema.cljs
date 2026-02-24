@@ -90,7 +90,10 @@
       (let [current-status @dropdown-status
             current-columns-status @dropdown-columns-status]
         [:div {:class "pl-small"}
-         [:div {:class "flex items-center gap-small mb-2"}
+         [:div {:class "flex items-center gap-small mb-2"
+                :role "treeitem"
+                :aria-expanded (if (= current-columns-status :open) "true" "false")
+                :aria-label "Columns"}
           (if (= current-columns-status :closed)
             [:> FolderClosed {:size 12}]
             [:> FolderOpen {:size 12}])
@@ -104,11 +107,15 @@
              [:> ChevronRight {:size 12}])]]
 
          (when (= current-columns-status :open)
-           [:div {:class "pl-small"}
+           [:div {:class "pl-small"
+                  :role "group"}
             (for [[field field-type] fields]
               ^{:key field}
               [:div
-               [:div {:class "flex items-center gap-small mb-2"}
+               [:div {:class "flex items-center gap-small mb-2"
+                      :role "treeitem"
+                      :aria-expanded (if (= (get current-status field) :open) "true" "false")
+                      :aria-label (str "Field: " field)}
                 [:> File {:size 12}]
                 [:span {:class "hover:text-blue-500 hover:underline cursor-pointer flex items-center"
                         :on-click #(swap! dropdown-status
@@ -134,7 +141,10 @@
                   has-columns (or (seq fields) (contains? columns-cache cache-key))]
               ^{:key table}
               [:div
-               [:div {:class "flex items-center gap-small mb-2"}
+               [:div {:class "flex items-center gap-small mb-2"
+                      :role "treeitem"
+                      :aria-expanded (if (= (get current-status table) :open) "true" "false")
+                      :aria-label (str "Table: " table)}
                 [:> Box
                  [:> Table {:size 12}]]
                 [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
@@ -158,7 +168,7 @@
                    [:> ChevronRight {:size 12}])]]
 
                (when (= (get current-status table) :open)
-                 [:div
+                 [:div {:role "group"}
                   (cond
                     is-loading
                     [loading-indicator "Loading columns..."]
@@ -186,7 +196,10 @@
             loading-columns (get-in current-schema [:loading-columns] #{})
             columns-cache (get-in current-schema [:columns-cache] {})]
         [:div
-         [:div {:class "flex items-center gap-small mb-2"}
+         [:div {:class "flex items-center gap-small mb-2"
+                :role "treeitem"
+                :aria-expanded (if (= @dropdown-status :open) "true" "false")
+                :aria-label (str "Schema: " schema-name)}
           [:> Database {:size 12}]
           [:span {:class "hover:text-blue-500 hover:underline cursor-pointer flex items-center"
                   :on-click #(reset! dropdown-status (if (= @dropdown-status :open) :closed :open))}
@@ -195,12 +208,13 @@
              [:> ChevronDown {:size 12}]
              [:> ChevronRight {:size 12}])]]
          (when (= @dropdown-status :open)
-           [tables-tree (into (sorted-map) tables)
-            connection-name
-            schema-name
-            current-database
-            loading-columns
-            columns-cache])]))))
+           [:div {:role "group"}
+            [tables-tree (into (sorted-map) tables)
+             connection-name
+             schema-name
+             current-database
+             loading-columns
+             columns-cache]])]))))
 
 (defn- database-item [db connection-name database-schema-status current-schema type]
   (let [is-selected (= db (get-in current-schema [:open-database]))
@@ -215,7 +229,10 @@
         database-errors (get-in current-schema [:database-errors] {})
         db-error (get database-errors db)]
     [:div
-     [:div {:class "flex items-center gap-smal mb-2"}
+     [:div {:class "flex items-center gap-smal mb-2"
+            :role "treeitem"
+            :aria-expanded (if is-selected "true" "false")
+            :aria-label (str "Database: " db)}
       [:span {:class (str "hover:text-blue-500 hover:underline cursor-pointer "
                           (when is-loading-this-db "opacity-75 ")
                           "flex items-center")
@@ -240,7 +257,7 @@
            [:> ChevronRight {:size 12}]))]]
 
      (when is-selected
-       [:div
+       [:div {:role "group"}
         (cond
           is-loading-this-db
           [loading-indicator (cond
@@ -374,7 +391,9 @@
                                 connection
                                 current-schema
                                 database-schema-status]}]
-  [:> Box {:class "text-gray-12"}
+  [:> Box {:class "text-gray-12"
+           :role "tree"
+           :aria-label "Database schema tree"}
    (cond
      (and (= status :loading) (empty? schema) (empty? databases))
      [loading-indicator "Loading schema"]

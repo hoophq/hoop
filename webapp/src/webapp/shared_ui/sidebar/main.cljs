@@ -99,6 +99,14 @@
             [:div {:class (:desktop styles/sidebar-container)}
              [:> ScrollArea {:class "h-[calc(100%-2.5rem)] flex grow flex-col"}
               [:div {:class "h-full flex flex-col gap-y-2 px-4 pb-10"}
+               ;; Skip to main content link for keyboard navigation
+               [:a {:href "#main-content"
+                    :class "absolute left-0 -top-96 focus:top-4 focus:left-4 z-50 bg-blue-600 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    :on-click (fn [e]
+                                (.preventDefault e)
+                                (when-let [main-elem (.querySelector js/document "main, [role='main'], #main-content")]
+                                  (.focus main-elem)))}
+                "Skip to main content"]
                [navigation/main user my-plugins]]]
              [:button {:class "w-full py-2 px-2 absolute bottom-0 bg-[#182449] dark border-t border-primary-5 hover:bg-primary-5 hover:text-white cursor-pointer flex justify-end z-10"
                        :onClick #(rf/dispatch [:sidebar-desktop->close])
@@ -113,6 +121,14 @@
            [:div {:class (:collapsed styles/sidebar-container)}
             [:> ScrollArea {:class "h-[calc(100%-2.5rem)] flex grow flex-col overflow-x-hidden bg-[#182449]"}
              [:div {:class "h-full flex flex-col gap-y-2 px-2 pb-1 w-full max-w-full"}
+              ;; Skip to main content link for keyboard navigation
+              [:a {:href "#main-content"
+                   :class "fixed left-0 -top-96 focus:top-4 focus:left-16 z-50 bg-blue-600 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                   :on-click (fn [e]
+                               (.preventDefault e)
+                               (when-let [main-elem (.querySelector js/document "main, [role='main'], #main-content")]
+                                 (.focus main-elem)))}
+               "Skip to main content"]
               [:div {:class "flex my-8 shrink-0 items-center justify-center w-full"}
                [:button {:class "cursor-pointer w-full flex justify-center rounded-md"
                          :on-click #(rf/dispatch [:navigate :home])
@@ -264,7 +280,7 @@
     (fn [panels]
       [:div
        [container]
-       [:main {:class (if (= :opened (:status @sidebar-desktop))
-                        "h-screen bg-[#182449] w-full absolute lg:pl-side-menu-width"
-                        "h-screen bg-[#182449] w-full absolute lg:pl-[72px]")}
+       [:div {:class (if (= :opened (:status @sidebar-desktop))
+                       "h-screen bg-[#182449] w-full absolute lg:pl-side-menu-width"
+                       "h-screen bg-[#182449] w-full absolute lg:pl-[72px]")}
         panels]])))

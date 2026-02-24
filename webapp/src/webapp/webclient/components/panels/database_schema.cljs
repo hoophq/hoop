@@ -22,7 +22,8 @@
 
     [:> Box {:as "aside"
              :class (str "h-full transition-all duration-300 border-r-2 border-gray-3 bg-gray-1 "
-                         (if collapsed? "w-16" "w-full"))}
+                         (if collapsed? "w-16" "w-full"))
+             :aria-label "Database schema"}
 
      [:> Flex {:align "center"
                :justify "between"
@@ -33,7 +34,11 @@
         [:> Heading {:size "3" :weight "bold" :class "text-gray-12"} title]]]
       [:> IconButton {:variant "ghost"
                       :color "gray"
-                      :onClick on-toggle-collapse}
+                      :onClick on-toggle-collapse
+                      :aria-label (if collapsed?
+                                    "Expand database schema panel"
+                                    "Collapse database schema panel")
+                      :aria-expanded (not collapsed?)}
        [:> (if collapsed? ChevronsRight ChevronsLeft) {:size 16}]]]
 
      (when-not collapsed?

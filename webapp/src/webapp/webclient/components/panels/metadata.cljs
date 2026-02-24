@@ -12,10 +12,15 @@
     (fn []
       [:> Box {:class "space-y-radix-4 px-4 py-3"}
        [:> Flex {:justify "between" :align "center"}
-        [:> Text {:as "p" :size "1" :class "text-gray-12"}
+        [:> Text {:as "label"
+                  :size "1"
+                  :class "text-gray-12"
+                  :htmlFor "keep-metadata-switch"}
          "Keep Metadata after running"]
-        [:> Switch {:checked @keep-metadata?
+        [:> Switch {:id "keep-metadata-switch"
+                    :checked @keep-metadata?
                     :size "1"
+                    :aria-label "Keep metadata after running script"
                     :onCheckedChange #(rf/dispatch [:editor-plugin/toggle-keep-metadata])}]]
        [:div {:class "grid grid-cols-2 gap-small"}
         (doall
@@ -30,6 +35,7 @@
                           :variant "surface"
                           :placeholder "Name"
                           :not-margin-bottom? true
+                          :aria-label (str "Metadata entry " (inc index) " name")
                           :value (get-in @metadata [index :key])}]
             [forms/input {:on-change #(rf/dispatch [:editor-plugin/update-metadata-at-index
                                                     index
@@ -39,6 +45,7 @@
                           :variant "surface"
                           :placeholder "Value"
                           :not-margin-bottom? true
+                          :aria-label (str "Metadata entry " (inc index) " value")
                           :value (get-in @metadata [index :value])}]]))
 
         [forms/input {:on-change #(rf/dispatch [:editor-plugin/update-metadata-key
@@ -47,6 +54,7 @@
                       :variant "surface"
                       :placeholder "Name"
                       :not-margin-bottom? true
+                      :aria-label "New metadata name"
                       :value @metadata-key}]
         [forms/input {:on-change #(rf/dispatch [:editor-plugin/update-metadata-value
                                                 (-> % .-target .-value)])
@@ -54,6 +62,7 @@
                       :variant "surface"
                       :placeholder "Value"
                       :not-margin-bottom? true
+                      :aria-label "New metadata value"
                       :value @metadata-value}]]
 
        [:div {:class "mt-4 flex justify-center w-full"}
@@ -64,5 +73,6 @@
                                                 :value @metadata-value}])))
                     :variant "soft"
                     :size "1"
-                    :color "gray"}
+                    :color "gray"
+                    :aria-label "Add metadata entry"}
          "Add Metadata"]]])))

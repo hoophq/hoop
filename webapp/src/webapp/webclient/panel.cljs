@@ -60,14 +60,18 @@
 
 (defmulti ^:private saved-status-el identity)
 (defmethod ^:private saved-status-el :saved [_]
-  [:div {:class "flex flex-row-reverse text-gray-11"}
+  [:div {:class "flex flex-row-reverse text-gray-11"
+         :role "status"
+         :aria-live "polite"}
    [:div {:class "flex items-center gap-small"}
     [:> hero-solid-icon/CheckIcon {:class "h-4 w-4 shrink-0 text-green-500"
                                    :aria-hidden "true"}]
     [:span {:class "text-xs"}
      "Saved!"]]])
 (defmethod ^:private saved-status-el :edited [_]
-  [:div {:class "flex flex-row-reverse text-gray-11"}
+  [:div {:class "flex flex-row-reverse text-gray-11"
+         :role "status"
+         :aria-live "polite"}
    [:div {:class "flex items-center gap-small"}
     [:> Spinner {:size "1" :color "gray"}]
     [:span {:class "text-xs italic"}
@@ -235,7 +239,22 @@
                     {:key "Shift-Alt-ArrowUp" :run cm-commands/copyLineUp}
                     {:key "Alt-ArrowDown" :run cm-commands/moveLineDown}
                     {:key "Shift-Alt-ArrowDown" :run cm-commands/copyLineDown}
-                    {:key "Escape" :run cm-commands/simplifySelection}
+                    {:key "Escape"
+                     :run (fn [view]
+                            (let [state (.-state view)
+                                  sel (.-selection state)
+                                  ranges (.-ranges sel)
+                                  is-simple (every? #(= (.-from %) (.-to %)) ranges)]
+                              (if is-simple
+                                ;; Selection is simple (just cursor), exit editor
+                                (do
+                                  (.blur (.-contentDOM view))
+                                  ;; Find next focusable element after editor
+                                  (when-let [next-elem (.querySelector js/document "[data-focus-after-editor]")]
+                                    (.focus next-elem))
+                                  true)
+                                ;; Has selection, simplify first
+                                (cm-commands/simplifySelection view))))}
                     {:key "Enter" :run cm-commands/insertNewlineAndIndent}
                     {:key "Alt-l" :mac "Ctrl-l" :run cm-commands/selectLine}
                     {:key "Mod-i" :run cm-commands/selectParentSyntax :preventDefault true}
@@ -271,6 +290,7 @@
             panel-content (fn [active-panel]
                             (case active-panel
                               :metadata {:title "Metadata"
+                                         :aria-label "Metadata panel"
                                          :content [metadata-panel/main {:metadata metadata
                                                                         :metadata-key metadata-key
                                                                         :metadata-value metadata-value}]}
@@ -287,9 +307,13 @@
 
           :else
           [:<>
-           [:> Box {:class (str "h-full bg-gray-2 overflow-hidden "
+           [:> Box {:as "main"
+                    :id "main-content"
+                    :tabIndex "-1"
+                    :class (str "h-full bg-gray-2 overflow-hidden "
                                 (when @dark-mode?
-                                  "dark"))}
+                                  "dark"))
+                    :aria-label "Terminal"}
             [connection-dialog/connection-dialog]
             [parallel-mode-modal/parallel-mode-modal]
             [execution-summary/execution-summary-modal]
@@ -319,26 +343,51 @@
                                :onDragEnd #(.setItem js/localStorage "editor-horizontal-pane-sizes" (str %))
                                :vertical true
                                :separator false}
-                 [:div {:class "relative w-full h-full"}
+                 [:> Box {:class "relative w-full h-full"
+                          :role "region"
+                          :id "editor-region"
+                          :aria-label "Script editor"}
+                  [:span {:class "sr-only"} "Press Escape to leave the editor. Press Tab to indent code."]
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))
                      [connection-state-indicator @dark-mode? (:command current-connection)])
-                   [codemirror-editor
-                    {:value @script
-                     :theme (if @dark-mode?
-                              materialDark
-                              materialLight)
-                     :extensions codemirror-exts
-                     :on-change optimized-change-handler}]]]
+                   [:> Box {:aria-label "Script editor. Press Escape to exit editor"
+                            :tabIndex "0"
+                            :on-focus (fn [e]
+                                        ;; When wrapper gets focus, move it to CodeMirror
+                                        (when-let [cm-elem (.querySelector (.-target e) ".cm-content")]
+                                          (.focus cm-elem)))}
+                    [codemirror-editor
+                     {:value @script
+                      :theme (if @dark-mode?
+                               materialDark
+                               materialLight)
+                      :extensions codemirror-exts
+                      :on-change optimized-change-handler}]]]]
 
-                 [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
+                 [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"
+                           :role "region"
+                           :aria-label "Script output"}
                   [log-area/main
                    connection-type
                    @parallel-mode-active?
                    @dark-mode?]
 
                   [:div {:class "bg-gray-1"}
-                   [:footer {:class "flex justify-between items-center p-2 gap-small"}
+                   ;; Screen reader announcements for execution status
+                   [:div {:class "sr-only"
+                          :role "status"
+                          :aria-live "assertive"
+                          :aria-atomic "true"}
+                    (case (:status @script-output)
+                      :loading "Script executing..."
+                      :success (when (:execution_time (:data @script-output))
+                                 (str "Script execution complete. Execution time: "
+                                      (formatters/time-elapsed (:execution_time (:data @script-output)))))
+                      :failure "Script execution failed"
+                      "")]
+                   [:footer {:class "flex justify-between items-center p-2 gap-small"
+                             :aria-label "Editor status"}
                     [:div {:class "flex items-center gap-small"}
                      [saved-status-el @code-saved-status]
                      (when (:execution_time (:data @script-output))
@@ -350,9 +399,9 @@
                     [:div {:class "flex-end items-center gap-regular pr-4 flex"}
                      [:div {:class "mr-3"}
                       [keyboard-shortcuts/keyboard-shortcuts-button]]
-                     [language-select/main current-connection]]]]]]]]]
+                     [language-select/main current-connection]]]]]]]]
 
-             (panel-content @active-panel)]]])))))
+              (panel-content @active-panel)]]]])))))
 
 (def main
   (r/create-class

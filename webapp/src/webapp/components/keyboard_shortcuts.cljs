@@ -76,7 +76,8 @@
               :variant "ghost"
               :color "gray"
               :class "flex items-center gap-1"
+              :aria-label "Keyboard shortcuts"
               :on-click #(rf/dispatch [:modal->open {:content [shortcuts-content]
                                                      :maxWidth "450px"}])}
-   [:> Keyboard {:size 16}]
+   [:> Keyboard {:size 16 :aria-hidden "true"}]
    [:> Text {:size "1"} "Shortcuts"]])

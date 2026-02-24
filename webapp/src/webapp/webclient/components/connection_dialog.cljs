@@ -24,6 +24,7 @@
    [:> Flex {:align "center" :gap "2" :class "w-full"}
     [:img {:src (connection-constants/get-connection-icon connection)
            :class "w-4"
+           :alt (str (:type connection) " connection icon")
            :loading "lazy"}]
     [:> Flex {:direction "column" :class "flex-1"}
      [:> Text {:size "2" :class (if selected? "text-primary-11" "text-[--gray-11]")}
@@ -32,7 +33,7 @@
        [:> Text {:size "1" :color "gray"} "Offline"])]
     (when selected?
       [:> Badge {:color "indigo" :size "1"} "Selected"])
-    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
+    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9" :aria-hidden "true"}]]])
 
 (defn- connections-list
   "Connections list with search results"
