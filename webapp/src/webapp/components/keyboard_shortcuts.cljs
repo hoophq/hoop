@@ -34,33 +34,36 @@
    [:> Code {:size "2" :variant "ghost" :color "gray"}
     (get-key-symbol shortcut)]])
 
-(defn- shortcut-section [title & items]
-  [:> Box {:class "mb-4"}
-   [:> Text {:as "h4" :size "2" :weight "medium" :class "mb-2"}
+(defn- shortcut-section [title section-id & items]
+  [:section {:aria-labelledby section-id}
+   [:> Heading {:as "h3" :size "3" :id section-id :class "mb-2"}
     title]
-   (for [item items]
-     ^{:key (:description item)}
-     [shortcut-item item])])
+   [:> Box {:class "mb-4"}
+    (for [item items]
+      ^{:key (:description item)}
+      [shortcut-item item])]])
 
 (defn- shortcuts-content []
-  [:<>
+  [:> Box {:role "region" :aria-labelledby "shortcuts-title"}
    [:> Flex {:justify "between" :align "center" :class "mb-4"}
-    [:> Heading {:size "4" :weight "medium"} "Keyboard Shortcuts"]
+    [:> Heading {:size "4" :weight "medium" :id "shortcuts-title"}
+     "Keyboard Shortcuts"]
     [:> Button {:size "1"
                 :variant "ghost"
                 :color "gray"
+                :aria-label "Close keyboard shortcuts"
                 :on-click #(rf/dispatch [:modal->close])}
-     [:> X {:size 16}]]]
+     [:> X {:size 16 :aria-hidden "true"}]]]
 
-   [shortcut-section "Execution"
+   [shortcut-section "Execution" "shortcuts-execution"
     {:shortcut "⌘ + Enter" :description "Execute entire script"}
     {:shortcut "⌘ + Shift + Enter" :description "Execute selected text"}]
 
-   [shortcut-section "Navigation"
+   [shortcut-section "Navigation" "shortcuts-navigation"
     {:shortcut "Alt + ←/→" :description "Move cursor to previous/next syntax boundary"}
     {:shortcut "⌘ + Shift + \\" :description "Jump to matching bracket"}]
 
-   [shortcut-section "Editing"
+   [shortcut-section "Editing" "shortcuts-editing"
     {:shortcut "Alt + ↑/↓" :description "Move line up/down"}
     {:shortcut "Shift + Alt + ↑/↓" :description "Copy line up/down"}
     {:shortcut "Alt + L" :description "Select current line"}

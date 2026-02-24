@@ -6,6 +6,7 @@
    [re-frame.core :as rf]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
+   [webapp.components.skip-link :as skip-link]
    [webapp.parallel-mode.components.header-button :as parallel-mode-button]))
 
 
@@ -65,14 +66,11 @@
               :else "Resource Role")
             [:> ChevronDown {:size 12 :aria-hidden "true"}]]
 
-           ;; Skip to editor link for keyboard navigation
-           [:a {:href "#editor-region"
-                :class "absolute left-0 -top-96 focus:top-20 focus:left-4 z-50 bg-blue-600 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                :on-click (fn [e]
-                            (.preventDefault e)
-                            (when-let [editor-elem (.querySelector js/document "[tabindex='0'][aria-label*='Script editor']")]
-                              (.focus editor-elem)))}
-            "Skip to editor"]]
+           ;; Skip link: Resource Role → Editor
+           [skip-link/main
+            {:target-selector "[tabindex='0'][aria-label*='Script editor']"
+             :text "Skip to editor"
+             :position "focus:left-4"}]]
           [:> Flex {:align "center" :gap "4"}
 
            [:> Tooltip {:content "Search"}
@@ -135,9 +133,11 @@
             [:> Button
              {:disabled disable-run-button?
               :loading script-loading?
+              :id "run-button"
+              :data-run-button true
               :class (when (or disable-run-button?
                                script-loading?) "cursor-not-allowed")
-              :aria-label "Run script"
+              :aria-label (str "Run script" (if (= os :mac) " (Cmd+Enter)" " (Ctrl+Enter)"))
               :onClick (fn []
                          (when-not script-loading?
                            (submit)))}

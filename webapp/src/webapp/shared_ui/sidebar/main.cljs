@@ -1,16 +1,18 @@
 (ns webapp.shared-ui.sidebar.main
-  (:require ["@headlessui/react" :as ui]
-            ["@heroicons/react/24/outline" :as hero-outline-icon]
-            ["@radix-ui/themes" :refer [ScrollArea]]
-            ["lucide-react" :refer [ChevronsRight ChevronsLeft Puzzle Settings]]
-            ["react" :as react]
-            [re-frame.core :as rf]
-            [webapp.components.theme-provider :refer [theme-provider]]
-            [webapp.components.user-icon :as user-icon]
-            [webapp.config :as config]
-            [webapp.shared-ui.sidebar.constants :as constants]
-            [webapp.shared-ui.sidebar.navigation :as navigation]
-            [webapp.shared-ui.sidebar.styles :as styles]))
+  (:require
+   ["@headlessui/react" :as ui]
+   ["@heroicons/react/24/outline" :as hero-outline-icon]
+   ["@radix-ui/themes" :refer [ScrollArea]]
+   ["lucide-react" :refer [ChevronsLeft ChevronsRight Puzzle Settings]]
+   ["react" :as react]
+   [re-frame.core :as rf]
+   [webapp.components.skip-link :as skip-link]
+   [webapp.components.theme-provider :refer [theme-provider]]
+   [webapp.components.user-icon :as user-icon]
+   [webapp.config :as config]
+   [webapp.shared-ui.sidebar.constants :as constants]
+   [webapp.shared-ui.sidebar.navigation :as navigation]
+   [webapp.shared-ui.sidebar.styles :as styles]))
 
 (defn mobile-sidebar [_ _ _]
   (let [sidebar-mobile (rf/subscribe [:sidebar-mobile])]
@@ -100,13 +102,9 @@
              [:> ScrollArea {:class "h-[calc(100%-2.5rem)] flex grow flex-col"}
               [:div {:class "h-full flex flex-col gap-y-2 px-4 pb-10"}
                ;; Skip to main content link for keyboard navigation
-               [:a {:href "#main-content"
-                    :class "absolute left-0 -top-96 focus:top-4 focus:left-4 z-50 bg-blue-600 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    :on-click (fn [e]
-                                (.preventDefault e)
-                                (when-let [main-elem (.querySelector js/document "main, [role='main'], #main-content")]
-                                  (.focus main-elem)))}
-                "Skip to main content"]
+               [skip-link/main
+                {:target-selector "#main-content"
+                 :text "Skip to main content"}]
                [navigation/main user my-plugins]]]
              [:button {:class "w-full py-2 px-2 absolute bottom-0 bg-[#182449] dark border-t border-primary-5 hover:bg-primary-5 hover:text-white cursor-pointer flex justify-end z-10"
                        :onClick #(rf/dispatch [:sidebar-desktop->close])
@@ -122,13 +120,9 @@
             [:> ScrollArea {:class "h-[calc(100%-2.5rem)] flex grow flex-col overflow-x-hidden bg-[#182449]"}
              [:div {:class "h-full flex flex-col gap-y-2 px-2 pb-1 w-full max-w-full"}
               ;; Skip to main content link for keyboard navigation
-              [:a {:href "#main-content"
-                   :class "fixed left-0 -top-96 focus:top-4 focus:left-16 z-50 bg-blue-600 text-white px-4 py-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                   :on-click (fn [e]
-                               (.preventDefault e)
-                               (when-let [main-elem (.querySelector js/document "main, [role='main'], #main-content")]
-                                 (.focus main-elem)))}
-               "Skip to main content"]
+              [skip-link/main
+               {:target-selector "#main-content"
+                :text "Skip to main content"}]
               [:div {:class "flex my-8 shrink-0 items-center justify-center w-full"}
                [:button {:class "cursor-pointer w-full flex justify-center rounded-md"
                          :on-click #(rf/dispatch [:navigate :home])

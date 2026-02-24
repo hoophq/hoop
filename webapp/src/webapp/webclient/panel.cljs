@@ -22,6 +22,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
+   [webapp.components.skip-link :as skip-link]
    [webapp.features.promotion :as promotion]
    [webapp.formatters :as formatters]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
@@ -347,11 +348,19 @@
                           :role "region"
                           :id "editor-region"
                           :aria-label "Script editor"}
-                  [:span {:class "sr-only"} "Press Escape to leave the editor. Press Tab to indent code."]
+                  [:span {:class "sr-only" :id "editor-instructions"}
+                   "Script editor. Use Tab key to indent code. Press Escape to exit editor and move to output tabs. Press Cmd+Enter to run script, Cmd+Shift+Enter to run selected text."]
+
+                  ;; Skip link: Editor → Run button (appears first when entering editor region)
+                  [skip-link/main
+                   {:target-selector "[data-run-button]"
+                    :text "Skip to Run button"}]
+
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))
                      [connection-state-indicator @dark-mode? (:command current-connection)])
                    [:> Box {:aria-label "Script editor. Press Escape to exit editor"
+                            :aria-describedby "editor-instructions"
                             :tabIndex "0"
                             :on-focus (fn [e]
                                         ;; When wrapper gets focus, move it to CodeMirror
@@ -367,6 +376,8 @@
 
                  [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"
                            :role "region"
+                           :data-output-region true
+                           :tabIndex "-1"
                            :aria-label "Script output"}
                   [log-area/main
                    connection-type
@@ -399,9 +410,9 @@
                     [:div {:class "flex-end items-center gap-regular pr-4 flex"}
                      [:div {:class "mr-3"}
                       [keyboard-shortcuts/keyboard-shortcuts-button]]
-                     [language-select/main current-connection]]]]]]]]
+                     [language-select/main current-connection]]]]]]]]]
 
-              (panel-content @active-panel)]]]])))))
+             (panel-content @active-panel)]]])))))
 
 (def main
   (r/create-class

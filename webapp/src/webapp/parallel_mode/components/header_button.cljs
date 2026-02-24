@@ -18,27 +18,35 @@
           :color (if @is-active? "green" "gray")
           :class (str "min-w-[140px] "
                       (when @modal-open? "ring-2 ring-green-500 ring-offset-2"))
+          :aria-label (str "Parallel Mode" 
+                          (when @is-active? 
+                            (str " - " @selected-count " resource role" 
+                                (when (not= 1 @selected-count) "s") " selected"))
+                          ". Click to " (if @modal-open? "close" "open") " selection dialog")
+          :aria-expanded (if @modal-open? "true" "false")
           :onClick (fn []
                      (rf/dispatch [:parallel-mode/toggle-modal])
                      (when-not @modal-open?
                        (rf/dispatch [:parallel-mode/seed-from-primary])))}
          [:> Flex {:align "center" :gap "2" :justify "center"}
-          [:> FastForward {:size 16}]
+          [:> FastForward {:size 16 :aria-hidden "true"}]
           (if @is-active?
             [:<>
              "Parallel Mode"
              [:> Badge {:variant "solid"
                         :color "green"
                         :radius "full"
-                        :size "1"}
+                        :size "1"
+                        :aria-label (str @selected-count " selected")}
               @selected-count]
              [:> IconButton
               {:size "1"
                :variant "ghost"
                :color "green"
+               :aria-label "Clear all selections"
                :onClick (fn [e]
                           (.stopPropagation e)
                           (rf/dispatch [:parallel-mode/request-clear-all]))}
-              [:> X {:size 14}]]]
+              [:> X {:size 14 :aria-hidden "true"}]]]
 
             "Parallel Mode")]]]])))
