@@ -18,6 +18,7 @@ import (
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
+	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
@@ -347,6 +348,32 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
+	)
+
+	r.GET("/access-requests/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		accessrequestsapi.ListAccessRequestRules,
+	)
+	r.POST("/access-requests/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		accessrequestsapi.CreateAccessRequestRule,
+	)
+	r.GET("/access-requests/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		accessrequestsapi.GetAccessRequestRule,
+	)
+	r.PUT("/access-requests/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		accessrequestsapi.UpdateAccessRequestRule,
+	)
+	r.DELETE("/access-requests/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		accessrequestsapi.DeleteAccessRequestRule,
 	)
 
 	r.POST("/agents",

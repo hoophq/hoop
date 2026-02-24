@@ -1,7 +1,7 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
-   ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
    [re-frame.core :as rf]
@@ -37,6 +37,8 @@
                      [:> VenetianMask {:size size}])
    "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> UserRoundCheck {:size size}])
+   "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
+                     [:> CircleCheckBig {:size size}])
    "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> PackageSearch {:size size}])
    "Agents" (fn [& [{:keys [size] :or {size 24}}]]
@@ -122,7 +124,14 @@
 
 ;; Seção Discover
 (def discover-routes
-  [{:name "RunbooksSetup"
+  [{:name "AccessRequest"
+    :label "Access Request"
+    :icon (get icons-registry "AccessRequest")
+    :uri (routes/url-for :access-request)
+    :navigate :access-request
+    :free-feature? true
+    :admin-only? true}
+   {:name "RunbooksSetup"
     :label "Runbooks Setup"
     :icon (get icons-registry "RunbooksSetup")
     :uri (routes/url-for :runbooks-setup)

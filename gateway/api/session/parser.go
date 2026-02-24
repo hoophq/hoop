@@ -116,12 +116,15 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		Type: openapi.ReviewType(r.Type),
 		// this attribute is saved as seconds
 		// but we keep compatibility with clients to show as nano seconds
-		AccessDuration:   time.Duration(r.AccessDurationSec) * time.Second,
-		Status:           openapi.ReviewStatusType(r.Status),
-		CreatedAt:        r.CreatedAt,
-		RevokeAt:         r.RevokedAt,
-		ReviewGroupsData: itemGroups,
-		TimeWindow:       timeWindow,
+		AccessDuration:        time.Duration(r.AccessDurationSec) * time.Second,
+		Status:                openapi.ReviewStatusType(r.Status),
+		CreatedAt:             r.CreatedAt,
+		RevokeAt:              r.RevokedAt,
+		ReviewGroupsData:      itemGroups,
+		TimeWindow:            timeWindow,
+		AccessRequestRuleName: r.AccessRequestRuleName,
+		MinApprovals:          r.MinApprovals,
+		ForceApprovalGroups:   r.ForceApprovalGroups,
 	}
 }
 

@@ -47,10 +47,15 @@ type Review struct {
 	OwnerEmail        string            `gorm:"column:owner_email"`
 	OwnerName         *string           `gorm:"column:owner_name"`
 	OwnerSlackID      *string           `gorm:"column:owner_slack_id"`
-	ReviewGroups      []ReviewGroups    `gorm:"column:review_groups;serializer:json;->"`
-	CreatedAt         time.Time         `gorm:"column:created_at"`
-	RevokedAt         *time.Time        `gorm:"column:revoked_at"`
-	TimeWindow        *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
+
+	ReviewGroups          []ReviewGroups `gorm:"column:review_groups;serializer:json;->"`
+	AccessRequestRuleName *string        `gorm:"column:access_request_rule_name"`
+	ForceApprovalGroups   pq.StringArray `gorm:"column:force_approval_groups;type:text[]"`
+	MinApprovals          *int           `gorm:"column:min_approvals"`
+
+	CreatedAt  time.Time         `gorm:"column:created_at"`
+	RevokedAt  *time.Time        `gorm:"column:revoked_at"`
+	TimeWindow *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
 }
 
 type ReviewTimeWindow struct {
@@ -117,8 +122,8 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	err := DB.Raw(`
 	SELECT
 		id, org_id, session_id, connection_name, type, access_duration_sec, status,
-		blob_input_id, input_env_vars, input_client_args, time_window,
-		owner_id, owner_email, owner_name, owner_slack_id,
+		blob_input_id, input_env_vars, input_client_args, time_window, access_request_rule_name,
+		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
 		( SELECT jsonb_agg(
 				jsonb_build_object(
 					'id', rg.id,
@@ -152,8 +157,8 @@ func ListReviews(orgID string) (*[]Review, error) {
 	err := DB.Raw(`
 	SELECT
 		id, org_id, session_id, connection_name, type, access_duration_sec, status,
-		blob_input_id, input_env_vars, input_client_args,
-		owner_id, owner_email, owner_name, owner_slack_id,
+		blob_input_id, input_env_vars, input_client_args, access_request_rule_name,
+		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
 		( SELECT jsonb_agg(
 				jsonb_build_object(
 					'id', rg.id,
