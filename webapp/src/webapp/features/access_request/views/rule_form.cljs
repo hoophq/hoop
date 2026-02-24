@@ -90,7 +90,7 @@
 
 (defn rule-form [form-type rule-data scroll-pos]
   (let [state (create-form-state rule-data)
-        connections (rf/subscribe [:connections->pagination])
+        resource-roles (rf/subscribe [:connections->pagination])
         user-groups (rf/subscribe [:user-groups])
         current-user (rf/subscribe [:users->current-user])
         existing-rules (rf/subscribe [:access-request/rules])
@@ -126,7 +126,7 @@
             free-license? (get-in @current-user [:data :free-license?])
             can-create? (or (not free-license?) (< (count (or @existing-rules [])) 1))
             rule-name @(:rule-name state)
-            all-resource-roles (or (:data @connections) [])]
+            all-resource-roles (or (:data @resource-roles) [])]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
@@ -247,28 +247,28 @@
 
            [form-section {:title "Resource configuration"
                           :description "Select which resource roles to apply this configuration."}
-            (let [conns all-resource-roles
-                  conn-by-name (into {} (map (juxt :name identity)) conns)
-                  selected-connection-names @(:connection-names state)
-                  selected-connections-data (mapv (fn [name]
-                                                    (let [conn (get conn-by-name name)]
-                                                      {:id (or (:id conn) name)
-                                                       :name name}))
-                                                  selected-connection-names)
-                  connection-ids (mapv (fn [name]
-                                         (or (:id (get conn-by-name name)) name))
-                                       selected-connection-names)]
+            (let [resource-roles all-resource-roles
+                  resource-role-by-name (into {} (map (juxt :name identity)) resource-roles)
+                  selected-resource-role-names @(:connection-names state)
+                  selected-resource-roles-data (mapv (fn [name]
+                                                       (let [resource-role (get resource-role-by-name name)]
+                                                         {:id (or (:id resource-role) name)
+                                                          :name name}))
+                                                     selected-resource-role-names)
+                  resource-role-ids (mapv (fn [name]
+                                            (or (:id (get resource-role-by-name name)) name))
+                                          selected-resource-role-names)]
               [connections-select/main
                {:id "connections-required-input"
                 :name "connections-required-input"
                 :required? true
-                :connection-ids connection-ids
-                :selected-connections selected-connections-data
+                :connection-ids resource-role-ids
+                :selected-connections selected-resource-roles-data
                 :connection-filter-fn #(eligible-for-type? @(:access-type state) %)
                 :on-connections-change (fn [selected-options]
                                          (let [selected-js-options (js->clj selected-options :keywordize-keys true)
-                                               selected-names (mapv #(:label %) selected-js-options)]
-                                           (reset! (:connection-names state) selected-names)))}])]
+                                               selected-resource-role-names (mapv #(:label %) selected-js-options)]
+                                           (reset! (:connection-names state) selected-resource-role-names)))}])]
 
            [form-section {:title "Required user groups"
                           :description "Select which user groups are required to request access with this rule."}

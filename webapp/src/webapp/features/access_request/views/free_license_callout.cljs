@@ -9,7 +9,7 @@
    [:> Callout.Icon
     [:> Star {:size 16 :style {:color "var(--accent-10)"}}]]
    [:> Callout.Text
-    "Enable creating unlimited rules and applying to multiple connections for Command type requests by "
+    "Enable creating unlimited rules and applying to multiple resource roles for Command type requests by "
     [:> Link {:href "#"
               :class "font-medium"
               :on-click (fn [e]
