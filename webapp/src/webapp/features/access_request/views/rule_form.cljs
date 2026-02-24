@@ -247,8 +247,8 @@
 
            [form-section {:title "Resource configuration"
                           :description "Select which resource roles to apply this configuration."}
-            (let [resource-roles all-resource-roles
-                  resource-role-by-name (into {} (map (juxt :name identity)) resource-roles)
+            (let [roles all-resource-roles
+                  resource-role-by-name (into {} (map (juxt :name identity)) roles)
                   selected-resource-role-names @(:connection-names state)
                   selected-resource-roles-data (mapv (fn [name]
                                                        (let [resource-role (get resource-role-by-name name)]
