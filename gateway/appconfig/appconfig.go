@@ -196,7 +196,7 @@ func Load() error {
 		licenseSignerOrgID:              allowedOrgID,
 		gcpDLPJsonCredentials:           gcpJsonCred,
 		orgMultitenant:                  os.Getenv("ORG_MULTI_TENANT") == "true",
-		analyticsTracking:               os.Getenv("ANALYTICS_TRACKING") == "enabled",
+		analyticsTracking:               true, // it's set on app startup
 		dlpProvider:                     os.Getenv("DLP_PROVIDER"),
 		dlpMode:                         dlpMode,
 		hasRedactCredentials:            hasRedactCredentials,
@@ -224,7 +224,8 @@ func Load() error {
 	return nil
 }
 
-func Get() Config { return runtimeConfig }
+func Get() Config     { return runtimeConfig }
+func GetRef() *Config { return &runtimeConfig }
 
 // maintains compatibility by loading oidc auth method when
 // the IDP_ envs are set.
@@ -335,6 +336,8 @@ func loadLicensePrivateKey() (string, *rsa.PrivateKey, error) {
 func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 	return c.licenseSignerOrgID, c.licenseSigningKey
 }
+
+func (c *Config) SetAnalyticsTracking(enabled bool) { c.analyticsTracking = enabled }
 
 // FullApiURL returns the full url which contains the path of the URL
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }

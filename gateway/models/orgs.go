@@ -39,15 +39,16 @@ func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 	return &org, err
 }
 
-func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organization, error) {
+func CreateOrgGetOrganization(name string, licenseDataJSON []byte) (*Organization, bool, error) {
 	org, err := GetOrganizationByNameOrID(name)
 	switch err {
 	case ErrNotFound:
-		return CreateOrganization(name, licenseDataJSON)
+		org, err = CreateOrganization(name, licenseDataJSON)
+		return org, true, err
 	case nil:
-		return org, nil
+		return org, false, nil
 	}
-	return nil, err
+	return nil, false, err
 }
 
 func CreateOrganization(name string, licenseDataJSON []byte) (*Organization, error) {

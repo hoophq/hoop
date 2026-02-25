@@ -1077,8 +1077,8 @@ type ServerInfo struct {
 	// * false - Clipboard copy and cut are enabled and available to users
 	DisableClipboardCopyCut bool `json:"disable_clipboard_copy_cut"`
 	// Indicates if all tracking and analytics should be enabled or disabled
-	// * enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)
-	// * disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)
+	// * enabled - Analytics/tracking are enabled
+	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
 }
 
