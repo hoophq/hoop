@@ -13,6 +13,7 @@
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.time-window-modal :as time-window-modal]
+   [webapp.components.logs-container :as logs]
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
@@ -140,6 +141,7 @@
   (r/with-let
     [user-details (rf/subscribe [:users->current-user])
      session-details (rf/subscribe [:audit->session-details])
+     session-stream-result (rf/subscribe [:audit->session-stream-result])
      connection-details (rf/subscribe [:connections->connection-details])
      clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
      executing-status (r/atom :ready)
@@ -297,8 +299,21 @@
 
                [:<>
                 (if has-large-payload?
-                  [large-payload-warning
-                   {:session session}]
+                  (let [stream-data (:data @session-stream-result)
+                        stream-status (:status @session-stream-result)]
+                    (if (= stream-status :loading)
+                      [loading-player]
+                      [:div {:class "h-full"}
+                       (if (= (:verb session) "exec")
+                         [results-container/main
+                          connection-subtype
+                          {:results (sanitize-response stream-data connection-subtype)
+                           :results-status (if stream-data :success :error)
+                           :fixed-height? true}]
+                         [logs/new-container {:status (if stream-data :success :error)
+                                             :logs stream-data
+                                             :whitespace? true
+                                             :fixed-height? true}])]))
 
                   [:div {:class "h-full"}
                    (if (= (:verb session) "exec")
