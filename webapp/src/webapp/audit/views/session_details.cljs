@@ -3,7 +3,7 @@
    ["@radix-ui/themes" :refer [Box Button Callout DropdownMenu
                                Flex Text ScrollArea]]
    ["is-url-http" :as is-url-http?]
-   ["lucide-react" :refer [Download FileDown Info ChevronDown CalendarClock
+   ["lucide-react" :refer [Download Info ChevronDown CalendarClock
                            Check CircleCheckBig Clock2 OctagonX CheckCheck]]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -43,25 +43,6 @@
     "Loading data for this session"]
    [loaders/simple-loader {:size 4}]])
 
-(defn large-payload-warning [{:keys [session]}]
-  [:> Flex {:height "400px"
-            :direction "column"
-            :gap "5"
-            :class "p-[--space-5] bg-[--gray-2] rounded-[9px]"
-            :align "center"
-            :justify "center"}
-   [:> FileDown {:size 48 :color "gray"}]
-   [:> Text {:size "3" :class "text-[--gray-11]"}
-    "This result is not currently supported to view in browser."]
-   [:> Button {:size "3"
-               :variant "solid"
-               :on-click #(rf/dispatch [:audit->session-file-generate
-                                        (:id session)
-                                        (get export-dictionary
-                                             (keyword (:type session))
-                                             "txt")])}
-    "Download file"
-    [:> Download {:size 18}]]])
 
 (defn large-input-warning [{:keys [session]}]
   [:> Box {:class "w-full p-regular rounded-lg bg-[--gray-2]"}
@@ -226,7 +207,11 @@
          [session-header/main {:session session
                                :user user
                                :on-close #(rf/dispatch [:modal->close])
-                               :clipboard-disabled? @clipboard-disabled?}]
+                               :clipboard-disabled? @clipboard-disabled?
+                               :has-large-payload? has-large-payload?
+                               :download-extension (get export-dictionary
+                                                        (keyword (:type session))
+                                                        "txt")}]
 
          [:> Box {:class (str "space-y-radix-5 "
                               (when is-dedicated-page? "pb-radix-6"))}
@@ -310,10 +295,8 @@
                           {:results (sanitize-response stream-data connection-subtype)
                            :results-status (if stream-data :success :error)
                            :fixed-height? true}]
-                         [logs/new-container {:status (if stream-data :success :error)
-                                             :logs stream-data
-                                             :whitespace? true
-                                             :fixed-height? true}])]))
+                         [logs/virtualized-container {:status (if stream-data :success :error)
+                                                   :logs stream-data}])]))
 
                   [:div {:class "h-full"}
                    (if (= (:verb session) "exec")

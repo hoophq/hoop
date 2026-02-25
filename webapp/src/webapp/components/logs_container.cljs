@@ -3,9 +3,11 @@
    ["@radix-ui/themes" :refer [ScrollArea]]
    ["lucide-react" :refer [Clipboard]]
    ["clipboard" :as clipboardjs]
+   [clojure.string :as string]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.headings :as h]
+   [webapp.components.virtualized-list :as vlist]
    [webapp.config :as config]))
 
 
@@ -70,3 +72,32 @@
       (finally
         (when clipboard
           (.destroy clipboard))))))
+
+(defn virtualized-container
+  "Renders a large log string using window virtualization.
+   Only visible lines are in the DOM — scroll is always fluid.
+   config keys: :status :logs :classes"
+  [config]
+  (let [logs (:logs config)
+        status (:status config)]
+    [:div {:class (str "relative bg-gray-900 font-mono overflow-hidden h-full"
+                       " text-gray-200 text-sm"
+                       " p-radix-4 rounded-lg"
+                       (when (:classes config) (str " " (:classes config))))}
+     (if (= status :success)
+       (let [lines (if (and logs (seq logs))
+                     (vec (string/split logs #"\n"))
+                     [])]
+         [vlist/virtualized-list
+          {:items lines
+           :item-height 20
+           :container-height 600
+           :render-item (fn [line _idx]
+                          [:div {:class "whitespace-pre leading-5"} line])}])
+       (case status
+         :loading [:div.flex.gap-small
+                   [:span "loading"]
+                   [:figure.w-4
+                    [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+         :failure "There was an error to get the logs for this task"
+         "No logs to show"))]))
