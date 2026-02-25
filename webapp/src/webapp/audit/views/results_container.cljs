@@ -22,7 +22,7 @@
    [tabs/tabs {:on-change #(reset! log-view %)
                :tabs ["Plain text" "Table"]}]
    (case @log-view
-     "Plain text" [logs/new-container {:status status :logs results :whitespace? true}]
+     "Plain text" [logs/virtualized-container {:status status :logs results}]
      "Table" [ag-grid-table/main results-heads results-body false true
               {:height "100%"
                :theme "alpine"
@@ -39,13 +39,8 @@
    {:status status :results results :fixed-height? fixed-height? :classes classes}])
 
 (defmethod results-view :not-sql
-  [_ {:keys [results status fixed-height? classes]}]
-  [:div {:class "h-96"}
-   [logs/new-container {:status status
-                        :fixed-height? fixed-height?
-                        :logs results
-                        :classes classes
-                        :whitespace? true}]])
+  [_ {:keys [results status classes]}]
+  [logs/virtualized-container {:status status :logs results :classes classes}])
 
 (defn main []
   (let [log-view (r/atom "Plain text")]

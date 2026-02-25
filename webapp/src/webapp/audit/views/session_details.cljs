@@ -13,7 +13,7 @@
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.time-window-modal :as time-window-modal]
-   [webapp.components.logs-container :as logs]
+
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
@@ -284,25 +284,31 @@
 
                [:<>
                 (if (= (:verb session) "exec")
-                  ;; exec: large payload uses virtualized stream, otherwise results-container
-                  (if has-large-payload?
-                    (let [stream-data (:data @session-stream-result)
-                          stream-status (:status @session-stream-result)]
-                      (if (= stream-status :loading)
-                        [loading-player]
-                        [logs/virtualized-container {:status (if stream-data :success :error)
-                                                     :logs stream-data}]))
-                    [:div {:class "h-full"}
-                     [results-container/main
-                      connection-subtype
-                      {:results (sanitize-response
-                                 (utilities/decode-b64 (or (first (:event_stream session)) ""))
-                                 connection-subtype)
-                       :results-status (:status @session-details)
-                       :fixed-height? true
-                       :results-id (:id session)}]])
+                  ;; exec: always results-container/main (table + virtualized plain text)
+                  ;; data source: large payload → stream endpoint; small → event_stream
+                  (let [stream-data   (:data @session-stream-result)
+                        stream-status (:status @session-stream-result)
+                        is-large-loading? (and has-large-payload?
+                                               (= stream-status :loading))]
+                    (if is-large-loading?
+                      [loading-player]
+                      (let [results (if has-large-payload?
+                                      (sanitize-response stream-data connection-subtype)
+                                      (sanitize-response
+                                        (utilities/decode-b64 (or (first (:event_stream session)) ""))
+                                        connection-subtype))
+                            results-status (if has-large-payload?
+                                             (if stream-data :success :error)
+                                             (:status @session-details))]
+                        [:div {:class "h-full"}
+                         [results-container/main
+                          connection-subtype
+                          {:results        results
+                           :results-status results-status
+                           :fixed-height?  true
+                           :results-id     (:id session)}]])))
 
-                  ;; connect: always use session-event-stream (video player, raw, etc.)
+                  ;; connect: session-event-stream unchanged (video player, raw, etc.)
                   [session-event-stream (:type session) session])])])
 
           ;; action buttons section
