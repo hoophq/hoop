@@ -208,10 +208,12 @@
          base-state {:session session
                      :status :success
                      :has-large-payload? has-large-event?
-                     :has-large-input? has-large-input?}]
+                     :has-large-input? has-large-input?}
+         is-exec? (= "exec" (:verb session))]
      (if (and has-large-event? has-large-input?)
        {:db (assoc db :audit->session-details base-state)
-        :fx [[:dispatch [:audit->get-session-stream-result (:id session)]]]}
+        :fx (cond-> []
+              is-exec? (conj [:dispatch [:audit->get-session-stream-result (:id session)]]))}
        {:db (assoc db :audit->session-details (assoc base-state :status :loading))
         :fx (cond-> [[:dispatch [:fetch
                                  {:method "GET"
@@ -219,7 +221,7 @@
                                   :on-success (fn [session-data]
                                                 (rf/dispatch [:audit->set-session session-data])
                                                 (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]
-              has-large-event? (conj [:dispatch [:audit->get-session-stream-result (:id session)]]))}))))
+              (and has-large-event? is-exec?) (conj [:dispatch [:audit->get-session-stream-result (:id session)]]))}))))
 
 (rf/reg-event-db
  :audit->clear-session-details-state

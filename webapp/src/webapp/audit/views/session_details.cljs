@@ -283,23 +283,16 @@
                [loading-player]
 
                [:<>
-                (if has-large-payload?
-                  (let [stream-data (:data @session-stream-result)
-                        stream-status (:status @session-stream-result)]
-                    (if (= stream-status :loading)
-                      [loading-player]
-                      [:div {:class "h-full"}
-                       (if (= (:verb session) "exec")
-                         [results-container/main
-                          connection-subtype
-                          {:results (sanitize-response stream-data connection-subtype)
-                           :results-status (if stream-data :success :error)
-                           :fixed-height? true}]
-                         [logs/virtualized-container {:status (if stream-data :success :error)
-                                                   :logs stream-data}])]))
-
-                  [:div {:class "h-full"}
-                   (if (= (:verb session) "exec")
+                (if (= (:verb session) "exec")
+                  ;; exec: large payload uses virtualized stream, otherwise results-container
+                  (if has-large-payload?
+                    (let [stream-data (:data @session-stream-result)
+                          stream-status (:status @session-stream-result)]
+                      (if (= stream-status :loading)
+                        [loading-player]
+                        [logs/virtualized-container {:status (if stream-data :success :error)
+                                                     :logs stream-data}]))
+                    [:div {:class "h-full"}
                      [results-container/main
                       connection-subtype
                       {:results (sanitize-response
@@ -307,8 +300,10 @@
                                  connection-subtype)
                        :results-status (:status @session-details)
                        :fixed-height? true
-                       :results-id (:id session)}]
-                     [session-event-stream (:type session) session])])])])
+                       :results-id (:id session)}]])
+
+                  ;; connect: always use session-event-stream (video player, raw, etc.)
+                  [session-event-stream (:type session) session])])])
 
           ;; action buttons section
           (when can-review?
