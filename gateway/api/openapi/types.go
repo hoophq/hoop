@@ -269,6 +269,8 @@ type Connection struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of review approvals required to execute this connection
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
+	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
+	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
 }
 
 type ConnectionPatch struct {
