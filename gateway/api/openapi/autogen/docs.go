@@ -5436,7 +5436,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/sessions/approved": {
+        "/sessions/provision": {
             "post": {
                 "consumes": [
                     "application/json"
