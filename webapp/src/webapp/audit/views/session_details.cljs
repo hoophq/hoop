@@ -410,7 +410,6 @@
 
 
         (finally
-          (.log js/console "finally")
           (rf/dispatch [:audit->clear-session])
           (rf/dispatch [:reports->clear-session-report-by-id]))))))
 
