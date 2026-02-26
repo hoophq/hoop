@@ -40,22 +40,23 @@ const (
 )
 
 type Connection struct {
-	OrgID               string         `gorm:"column:org_id"`
-	ID                  string         `gorm:"column:id"`
-	ResourceName        string         `gorm:"column:resource_name"`
-	AgentID             sql.NullString `gorm:"column:agent_id"`
-	Name                string         `gorm:"column:name"`
-	Command             pq.StringArray `gorm:"column:command;type:text[]"`
-	Type                string         `gorm:"column:type"`
-	SubType             sql.NullString `gorm:"column:subtype"`
-	Status              string         `gorm:"column:status"`
-	ManagedBy           sql.NullString `gorm:"column:managed_by"`
-	Tags                pq.StringArray `gorm:"column:_tags;type:text[]"`
-	AccessModeRunbooks  string         `gorm:"column:access_mode_runbooks"`
-	AccessModeExec      string         `gorm:"column:access_mode_exec"`
-	AccessModeConnect   string         `gorm:"column:access_mode_connect"`
-	AccessSchema        string         `gorm:"column:access_schema"`
-	JiraIssueTemplateID sql.NullString `gorm:"column:jira_issue_template_id"`
+	OrgID                   string         `gorm:"column:org_id"`
+	ID                      string         `gorm:"column:id"`
+	ResourceName            string         `gorm:"column:resource_name"`
+	AgentID                 sql.NullString `gorm:"column:agent_id"`
+	Name                    string         `gorm:"column:name"`
+	Command                 pq.StringArray `gorm:"column:command;type:text[]"`
+	Type                    string         `gorm:"column:type"`
+	SubType                 sql.NullString `gorm:"column:subtype"`
+	Status                  string         `gorm:"column:status"`
+	ManagedBy               sql.NullString `gorm:"column:managed_by"`
+	MandatoryMetadataFields pq.StringArray `gorm:"column:mandatory_metadata_fields;type:text[]"`
+	Tags                    pq.StringArray `gorm:"column:_tags;type:text[]"`
+	AccessModeRunbooks      string         `gorm:"column:access_mode_runbooks"`
+	AccessModeExec          string         `gorm:"column:access_mode_exec"`
+	AccessModeConnect       string         `gorm:"column:access_mode_connect"`
+	AccessSchema            string         `gorm:"column:access_schema"`
+	JiraIssueTemplateID     sql.NullString `gorm:"column:jira_issue_template_id"`
 
 	// Access control
 	ForceApproveGroups pq.StringArray `gorm:"column:force_approve_groups;type:text[]"`
