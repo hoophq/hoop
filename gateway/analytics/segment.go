@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/url"
 
+	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
@@ -46,7 +47,8 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 			Set("user-id", hashedUserID).
 			Set("is-admin", ctx.IsAdminUser()).
 			Set("environment", s.environmentName).
-			Set("status", ctx.UserStatus),
+			Set("status", ctx.UserStatus).
+			Set("client-version", version.Get().Version),
 	})
 
 	_ = s.Client.Enqueue(analytics.Group{
@@ -73,6 +75,7 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 	}
 	properties["environment"] = s.environmentName
 	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["client-version"] = version.Get().Version
 
 	_ = s.Enqueue(analytics.Track{
 		AnonymousId: anonymousId,
@@ -103,6 +106,7 @@ func (s *Segment) TrackEvent(eventName string, properties map[string]any) {
 	}
 
 	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["client-version"] = version.Get().Version
 
 	_ = s.Client.Enqueue(analytics.Track{
 		UserId:     "None",
@@ -137,6 +141,8 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 
 	properties["user-id"] = hashedUserID
 	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["client-version"] = version.Get().Version
+
 	_ = s.Client.Enqueue(analytics.Track{
 		UserId:     hashedUserID,
 		Event:      eventName,
