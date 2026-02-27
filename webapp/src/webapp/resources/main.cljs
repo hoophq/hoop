@@ -1,7 +1,7 @@
 (ns webapp.resources.main
   (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
-                                        Flex Text Popover TextField Link Tabs]]
+                                        Flex Text Popover TextField Link Tabs Heading]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -140,10 +140,10 @@
                :loading "lazy"}]
 
         [:> Box
-         [:> Text {:as "h3"
-                   :size "3"
-                   :weight "medium"
-                   :class "text-gray-12"}
+         [:> Heading {:as "h3"
+                      :size "3"
+                      :weight "medium"
+                      :class "text-gray-12"}
           (:name resource)]]]
 
        (when (-> user :data :admin?)
@@ -170,10 +170,10 @@
                :class "w-6"
                :loading "lazy"}]
         [:> Box
-         [:> Text {:as "h3"
-                   :size "3"
-                   :weight "medium"
-                   :class "text-gray-12"}
+         [:> Heading {:as "h3"
+                      :size "3"
+                      :weight "medium"
+                      :class "text-gray-12"}
           (:name connection)]
          [:> Text {:as "p" :size "1" :class "text-gray-11"}
           (:resource_name connection)]
