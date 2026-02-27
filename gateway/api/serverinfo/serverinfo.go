@@ -130,7 +130,7 @@ func isEnvSet(key string) bool {
 }
 
 func getAnalyticsTrackingStatus() string {
-	if os.Getenv("ANALYTICS_TRACKING") == "disabled" {
+	if appconfig.Get().AnalyticsTracking() == false {
 		return string(openapi.AnalyticsTrackingDisabled)
 	}
 	return string(openapi.AnalyticsTrackingEnabled)

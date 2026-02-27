@@ -232,6 +232,8 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	updateAnalyticsTracking(newState.ProductAnalytics)
+
 	var pgServerConfig *openapi.PostgresServerConfig
 	if updatedConfig.PostgresServerConfig != nil {
 		pgServerConfig = &openapi.PostgresServerConfig{
@@ -463,4 +465,8 @@ func newEd25519PrivateKey() (privateKey []byte, err error) {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
 	return sshproxy.EncodePrivateKeyToOpenSSH(privKey)
+}
+
+func updateAnalyticsTracking(newState *string) {
+	appconfig.GetRef().SetAnalyticsTracking(newState == nil || *newState == "active")
 }

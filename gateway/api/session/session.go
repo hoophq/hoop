@@ -933,7 +933,7 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 //	@Param					request		body		openapi.ProvisionSession		true	"The request body resource"
 //	@Success				200			{object}	openapi.ProvisionSessionResponse	"The session has been created"
 //	@Failure				400,422,500	{object}	openapi.HTTPError
-//	@Router					/sessions/approved [post]
+//	@Router					/sessions/provision [post]
 func Provision(c *gin.Context) {
 	sid := uuid.NewString()
 	apiroutes.SetSidSpanAttr(c, sid)

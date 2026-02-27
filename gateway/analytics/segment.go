@@ -81,6 +81,36 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 	})
 }
 
+func (s *Segment) TrackEvent(eventName string, properties map[string]any) {
+	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
+		return
+	}
+	if properties == nil {
+		properties = map[string]any{}
+	}
+
+	if apiUrl, exists := properties["api-hostname"]; (!exists || apiUrl == "") && appconfig.Get().ApiURL() != "" {
+		url, err := url.Parse(appconfig.Get().ApiURL())
+		if err == nil {
+			properties["api-hostname"] = url.Hostname()
+		}
+	}
+
+	if orgID, exists := properties["org-id"]; exists && orgID != "" {
+		properties["$groups"] = map[string]any{
+			"org-id": orgID,
+		}
+	}
+
+	properties["auth-method"] = appconfig.Get().AuthMethod()
+
+	_ = s.Client.Enqueue(analytics.Track{
+		UserId:     "None",
+		Event:      eventName,
+		Properties: properties,
+	})
+}
+
 // Track generates an event to segment
 func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {

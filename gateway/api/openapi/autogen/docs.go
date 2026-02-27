@@ -5436,7 +5436,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/sessions/approved": {
+        "/sessions/provision": {
             "post": {
                 "consumes": [
                     "application/json"
@@ -10365,7 +10365,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "analytics_tracking": {
-                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)\n* disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)",
+                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
                     "type": "string",
                     "enum": [
                         "enabled",
@@ -10655,7 +10655,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "connection": {
-                    "description": "The connection name of this resource",
+                    "description": "The connection name of this resource (it will be deprecated in favor of RoleName)",
                     "type": "string",
                     "example": "pgdemo"
                 },
@@ -10729,6 +10729,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "resource_name": {
+                    "description": "The resource name associated with this connection",
+                    "type": "string",
+                    "example": "my-resource"
+                },
                 "review": {
                     "description": "Review of this session. In case the review doesn't exist this field will be null",
                     "allOf": [
@@ -10736,6 +10741,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.SessionReview"
                         }
                     ]
+                },
+                "role_name": {
+                    "description": "The role name (same as connection name)",
+                    "type": "string",
+                    "example": "pgdemo"
                 },
                 "script": {
                     "description": "The input of the session. This value is only set for the verb ` + "`" + `exec` + "`" + `",
