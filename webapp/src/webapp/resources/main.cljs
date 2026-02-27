@@ -59,6 +59,18 @@
    {:id "ssh" :value "ssh" :label "SSH"}
    {:id "tcp" :value "tcp" :label "TCP"}])
 
+(defn- resource-name-map [resources-metadata]
+  (reduce
+   (fn [acc {:keys [id name]}]
+     (cond-> acc
+       (and (seq id) (seq name)) (assoc id name)))
+   {}
+   (:connections resources-metadata)))
+
+(defn- icon-alt-text [item display-name-map]
+  (let [subtype (:subtype item)]
+    (or (get display-name-map subtype) subtype)))
+
 (defn resource-type-component [selected-resource on-change]
   [:> Popover.Root
    [:> Popover.Trigger {:asChild true}
@@ -125,7 +137,7 @@
               :weight "bold"}
      "My Roles"]]])
 
-(defn resources-list-content [resources-data user]
+(defn resources-list-content [resources-data user display-name-map]
   [:ul {:role "list" :class "list-none m-0 p-0"}
    (doall
     (for [resource resources-data]
@@ -135,7 +147,7 @@
                         "p-regular text-xs flex justify-between items-center")}
        [:> Box {:class "flex items-center gap-regular"}
         [:img {:src (connection-constants/get-connection-icon resource)
-               :alt ""
+               :alt (icon-alt-text resource display-name-map)
                :class "w-6"
                :loading "lazy"}]
 
@@ -154,7 +166,7 @@
                      :on-click #(rf/dispatch [:navigate :configure-resource {} :resource-id (:name resource)])}
           "Configure"])]))])
 
-(defn roles-list-content [connections-data user test-connection-state]
+(defn roles-list-content [connections-data user test-connection-state display-name-map]
   [:ul {:role "list" :class "list-none m-0 p-0"}
    (doall
     (for [connection connections-data]
@@ -166,7 +178,7 @@
                         "p-regular text-xs flex gap-8 justify-between items-center")}
        [:> Box {:class "flex truncate items-center gap-regular"}
         [:img {:src (connection-constants/get-connection-icon connection)
-               :alt ""
+               :alt (icon-alt-text connection display-name-map)
                :class "w-6"
                :loading "lazy"}]
         [:> Box
@@ -289,6 +301,7 @@
     (fn []
       (let [resources-state @resources
             connections-state @connections
+            resource-names (resource-name-map @connections-metadata)
             resources-data (:data resources-state)
             connections-data (:data connections-state)
             resources-loading? (= :loading (:loading resources-state))
@@ -457,7 +470,7 @@
               ;; Content
               :else
               [:> Box {:class "flex-1 h-full"}
-               [resources-list-content resources-data @user]])]
+               [resources-list-content resources-data @user resource-names]])]
            
            [:> Tabs.Content {:value "roles"}
             [test-connection-modal/test-connection-modal
@@ -476,4 +489,4 @@
               ;; Content
               :else
               [:> Box {:class "flex-1 h-full"}
-               [roles-list-content connections-data @user @test-connection-state]])]]]]))))
+               [roles-list-content connections-data @user @test-connection-state resource-names]])]]]]))))
