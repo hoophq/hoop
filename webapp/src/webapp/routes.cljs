@@ -68,8 +68,6 @@
                     ["/setup/agent" :onboarding-setup-agent]
                     ["/resource-providers" :onboarding-resource-providers]]
      "/register" :register-hoop
-     "/reviews" [["" :reviews-plugin]
-                 [["/" :review-id] :review-details]]
      "/slack" [[["/user" "/new/" :slack-id] :slack-new-user]
                [["/organization" "/new"] :slack-new-organization]]
      "/sessions" [["" :sessions]
