@@ -27,7 +27,7 @@ type Review struct {
 	ApprovalGroups []string `json:"groups"`
 }
 
-// Post
+// Post Connection
 //
 //	@Summary				Create Connection
 //	@description.markdown	api-connection
@@ -104,7 +104,7 @@ func Post(c *gin.Context) {
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
-// UpdateConnection
+// Put Connection
 //
 //	@Summary		Update Connection
 //	@Description	Update a connection resource
@@ -155,30 +155,31 @@ func Put(c *gin.Context) {
 	}
 
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
-		ID:                  conn.ID,
-		OrgID:               conn.OrgID,
-		ResourceName:        req.ResourceName,
-		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
-		Name:                conn.Name,
-		Command:             req.Command,
-		Type:                req.Type,
-		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                CoerceToMapString(req.Secrets),
-		Status:              req.Status,
-		ManagedBy:           sql.NullString{},
-		Tags:                req.Tags,
-		AccessModeRunbooks:  req.AccessModeRunbooks,
-		AccessModeExec:      req.AccessModeExec,
-		AccessModeConnect:   req.AccessModeConnect,
-		AccessSchema:        req.AccessSchema,
-		Reviewers:           req.Reviewers,
-		RedactTypes:         req.RedactTypes,
-		GuardRailRules:      req.GuardRailRules,
-		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
-		ConnectionTags:      req.ConnectionTags,
-		ForceApproveGroups:  req.ForceApproveGroups,
-		AccessMaxDuration:   req.AccessMaxDuration,
-		MinReviewApprovals:  req.MinReviewApprovals,
+		ID:                      conn.ID,
+		OrgID:                   conn.OrgID,
+		ResourceName:            req.ResourceName,
+		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
+		Name:                    conn.Name,
+		Command:                 req.Command,
+		Type:                    req.Type,
+		SubType:                 sql.NullString{String: req.SubType, Valid: true},
+		Envs:                    CoerceToMapString(req.Secrets),
+		Status:                  req.Status,
+		ManagedBy:               sql.NullString{},
+		Tags:                    req.Tags,
+		AccessModeRunbooks:      req.AccessModeRunbooks,
+		AccessModeExec:          req.AccessModeExec,
+		AccessModeConnect:       req.AccessModeConnect,
+		AccessSchema:            req.AccessSchema,
+		Reviewers:               req.Reviewers,
+		RedactTypes:             req.RedactTypes,
+		GuardRailRules:          req.GuardRailRules,
+		JiraIssueTemplateID:     sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:          req.ConnectionTags,
+		ForceApproveGroups:      req.ForceApproveGroups,
+		AccessMaxDuration:       req.AccessMaxDuration,
+		MinReviewApprovals:      req.MinReviewApprovals,
+		MandatoryMetadataFields: req.MandatoryMetadataFields,
 	})
 	if err != nil {
 		switch err.(type) {
@@ -193,9 +194,9 @@ func Put(c *gin.Context) {
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
-// PatchConnection
+// Patch Connection
 //
-//	@Summary		Patch Connection
+//	@Summary	    Patch Connection
 //	@Description	Partial update of a connection resource. Only provided fields will be updated.
 //	@Tags			Connections
 //	@Accept			json
@@ -281,6 +282,10 @@ func Patch(c *gin.Context) {
 	}
 	if req.JiraIssueTemplateID != nil {
 		conn.JiraIssueTemplateID = sql.NullString{String: *req.JiraIssueTemplateID, Valid: *req.JiraIssueTemplateID != ""}
+	}
+
+	if req.MandatoryMetadataFields != nil {
+		conn.MandatoryMetadataFields = *req.MandatoryMetadataFields
 	}
 
 	// Update status
