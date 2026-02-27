@@ -18,12 +18,10 @@
         [:> Box
          [:> EllipsisVertical {:size 18 :class "text-gray-12"}]]]
        [:> DropdownMenu.Content
-        [:> DropdownMenu.Item {:on-select #(rf/dispatch [:open-modal
-                                                         [session-details/main {:id session-id :verb "exec"}]
-                                                         :large
-                                                         (fn []
-                                                           (rf/dispatch [:audit->clear-session])
-                                                           (rf/dispatch [:close-modal]))])}
+        [:> DropdownMenu.Item {:on-select #(rf/dispatch [:modal->open
+                                                         {:id "session-details"
+                                                          :maxWidth "95vw"
+                                                          :content [session-details/main {:id session-id :verb "exec"}]}])}
          [:> Flex {:align "center" :gap "2"}
           [:> SquareArrowOutUpRight {:size 16}]
           [:> Text {:size "2"} "View session details"]]]

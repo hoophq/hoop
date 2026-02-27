@@ -60,7 +60,9 @@
            :class (str (when (:classes config) (:classes config))
                        " h-full"
                        (when-not (:fixed-height? config) " max-h-80")
-                       (when (or (:not-clipboard? config) @clipboard-disabled?) " select-none"))
+                       (when (or (:not-clipboard? config)
+                                 @clipboard-disabled?)
+                         " select-none"))
            :style (when (or (:not-clipboard? config) @clipboard-disabled?)
                     #js {:WebkitUserSelect "none"
                          :MozUserSelect "none"
@@ -95,9 +97,11 @@
            :render-item (fn [line _idx]
                           [:div {:class "whitespace-pre leading-5"} line])}])
        (case status
-         :loading [:div.flex.gap-small
+         :loading [:div {:class "flex gap-small"}
                    [:span "loading"]
-                   [:figure.w-4
-                    [:img.animate-spin {:src (str config/webapp-url "/icons/icon-loader-circle-white.svg")}]]]
+                   [:figure {:class "w-4"}
+                    [:img {:class "animate-spin"
+                           :src (str config/webapp-url
+                                     "/icons/icon-loader-circle-white.svg")}]]]
          :failure "There was an error to get the logs for this task"
          "No logs to show"))]))
