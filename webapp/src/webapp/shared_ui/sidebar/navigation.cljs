@@ -129,8 +129,8 @@
                                                    :class "mt-1 px-2"}
                        (for [plugin sidebar-constants/integrations-management]
                          (when (or selfhosted? (not (:selfhosted-only? plugin)))
-                           ^{:key (:name plugin)}
                            (let [blocked? (and free-license? (not (:free-feature? plugin)))]
+                             ^{:key (:name plugin)}
                              [:li
                               [:a {:href (cond
                                            blocked? "#"
@@ -177,8 +177,8 @@
                                                    :class "mt-1 px-2"}
                        (for [route sidebar-constants/settings-management]
                          (when (or selfhosted? (not (:selfhosted-only? route)))
-                           ^{:key (:name route)}
                            (let [blocked? (and free-license? (not (:free-feature? route)))]
+                             ^{:key (:name route)}
                              [:li
                               [:button {:type "button"
                                         :on-click (fn []

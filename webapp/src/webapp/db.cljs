@@ -8,6 +8,7 @@
                      :submitting? false}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
+   :audit->session-stream-result {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
    :connections {:loading true :details {}}
    :connections->pagination {:data []

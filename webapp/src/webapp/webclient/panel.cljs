@@ -356,16 +356,21 @@
 
 (def main
   (r/create-class
-   {:reagent-render
+   {:component-did-mount
+    (fn []
+      (rf/dispatch [:plugins->get-my-plugins])
+      (rf/dispatch [:jira-templates->get-all])
+      (rf/dispatch [:jira-integration->get]))
+
+    :component-will-unmount
+    (fn []
+      (rf/dispatch [:editor-plugin->clear-script])
+      (rf/dispatch [:audit->clear-session])
+      (rf/dispatch [:search/clear-term]))
+
+    :reagent-render
     (fn []
       (let [script-response (rf/subscribe [:editor-plugin->script])]
-        (rf/dispatch [:editor-plugin->clear-script])
-        (rf/dispatch [:audit->clear-session])
-        (rf/dispatch [:plugins->get-my-plugins])
-        (rf/dispatch [:jira-templates->get-all])
-        (rf/dispatch [:jira-integration->get])
-        (rf/dispatch [:search/clear-term])
-
         (fn []
           (clearLocalCache)
           [editor {:script-output script-response}])))}))
