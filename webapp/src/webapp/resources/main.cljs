@@ -287,7 +287,10 @@
             ;; Conditional logic based on active tab
             current-state (if (= @active-tab "resources") resources-state connections-state)
             current-loading? (if (= @active-tab "resources") resources-loading? connections-loading?)
-            any-filters? (or (seq @selected-tags) @selected-resource)
+            has-filters? (or (seq @selected-tags) @selected-resource)
+            current-count (if (= @active-tab "resources")
+                            (count resources-data)
+                            (count connections-data))
 
             apply-filter (fn [filter-update]
                            (when @search-debounce-timer
@@ -349,7 +352,7 @@
             [custom-tab-header]
 
             [:> Flex {:gap "2"}
-             (when any-filters?
+             (when has-filters?
                [:> Button {:size "2" :variant "soft" :color "gray"
                            :on-click (fn []
                                        (reset! selected-tags {})
@@ -431,7 +434,20 @@
                 (reset! selected-resource resource)
                 (apply-filter (cond-> {}
                                 (not-empty @selected-tags) (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tags))
-                                resource (assoc :subtype resource))))]]]
+                                resource (assoc :subtype resource))))]]
+
+            [:div {:role "status"
+                   :aria-live "polite"
+                   :aria-atomic "true"
+                   :class "sr-only"}
+             (if current-loading?
+               (str "Searching " @active-tab "...")
+               (str current-count
+                    " "
+                    @active-tab
+                    " found"
+                    (when has-filters?
+                      " with active filters")))]]
 
            [:> Tabs.Content {:value "resources"}
             (cond
@@ -449,7 +465,7 @@
               :else
               [:> Box {:class "flex-1 h-full"}
                [resources-list-content resources-data @user resource-names]])]
-           
+
            [:> Tabs.Content {:value "roles"}
             [test-connection-modal/test-connection-modal
              (get-in @test-connection-state [:connection-name])]
