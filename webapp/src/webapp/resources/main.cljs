@@ -1,7 +1,7 @@
 (ns webapp.resources.main
-  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Check Search]]
+  (:require ["lucide-react" :refer [EllipsisVertical Tag Shapes Search]]
             ["@radix-ui/themes" :refer [IconButton Box Button DropdownMenu
-                                        Flex Text Popover TextField Link Tabs Heading]]
+                                        Flex Text Popover TextField Link Tabs Heading Select]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
@@ -72,47 +72,25 @@
     (or (get display-name-map subtype) subtype)))
 
 (defn resource-type-component [selected-resource on-change]
-  [:> Popover.Root
-   [:> Popover.Trigger {:asChild true}
-    [:> Button {:size "2"
-                :variant (if selected-resource "soft" "surface")
-                :color "gray"
-                :aria-label (if selected-resource
-                              "Filter by resource type, 1 selected"
-                              "Filter by resource type")}
-     [:> Flex {:gap "2" :align "center"}
-      [:> Shapes {:size 16
-                  :aria-hidden "true"}]
-      "Resource"
-      (when selected-resource
-        [:> Box {:class "flex items-center justify-center rounded-full h-5 w-5 bg-gray-11"
-                 :aria-hidden "true"}
-         [:> Text {:size "1" :weight "bold" :class "text-white"}
-          "1"]])]]]
-
-   [:> Popover.Content {:size "2"
-                        :style {:width "280px"}
-                        :aria-label "Resource type filter options"}
-    [:> Box {:class "w-full max-h-64 overflow-y-auto"}
-     [:> Box {:class "space-y-1 px-2 pt-2"}
-      (doall
-       (for [{:keys [id value label]} resource-types]
-         ^{:key id}
-         [:> Button
-          {:variant "ghost"
-           :color "gray"
-           :class "w-full justify-between gap-2"
-           :aria-label (if (= selected-resource value)
-                         (str label ", selected")
-                         label)
-           :onClick #(on-change (if (= selected-resource value)
-                                  nil
-                                  value))}
-          [:> Text {:size "2" :class "text-gray-12"}
-           label]
-          (when (= selected-resource value)
-            [:> Check {:size 16
-                       :aria-hidden "true"}])]))]]]])
+  [:> Select.Root {:value (or selected-resource "all")
+                   :onValueChange #(on-change (when-not (= % "all") %))}
+   [:> Select.Trigger {:size "2"
+                       :variant (if selected-resource "soft" "surface")
+                       :color "gray"
+                       :class "text-gray-11 [&_.rt-SelectIcon]:hidden"
+                       :aria-label "Filter by resource type"}
+    [:> Flex {:gap "2" :align "center"}
+     [:> Shapes {:size 16 :aria-hidden "true" :class "text-gray-11"}]
+     (or (some (fn [{:keys [value label]}]
+                 (when (= value selected-resource) label))
+               resource-types)
+         "Resource")]]
+   [:> Select.Content {:position "popper"}
+    [:> Select.Item {:value "all"} "All resources"]
+    (doall
+     (for [{:keys [id value label]} resource-types]
+       ^{:key id}
+       [:> Select.Item {:value value} label]))]])
 
 ;; Custom Tab Header Component
 (defn custom-tab-header []
