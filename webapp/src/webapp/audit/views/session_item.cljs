@@ -64,10 +64,7 @@
 
      [:> Box {:id "badge-column"}
       (when review
-        [:> Flex {:gap "2" :align "center"}
-         [:b {:class "text-xs"}
-          "Access Request:"]
-         [access-request-badge (-> session :review :status)]])]
+        [access-request-badge (-> session :review :status)])]
 
      [:> Flex {:id "status-info"
                :gap "4"
