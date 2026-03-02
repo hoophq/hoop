@@ -24,6 +24,7 @@
    [:> Flex {:align "center" :gap "2" :class "w-full"}
     [:img {:src (connection-constants/get-connection-icon connection)
            :class "w-4"
+           :alt (str (:type connection) " connection icon")
            :loading "lazy"}]
     [:> Flex {:direction "column" :class "flex-1"}
      [:> Text {:size "2" :class (if selected? "text-primary-11" "text-[--gray-11]")}
@@ -32,17 +33,28 @@
        [:> Text {:size "1" :color "gray"} "Offline"])]
     (when selected?
       [:> Badge {:color "indigo" :size "1"} "Selected"])
-    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9"}]]])
+    [:> ChevronRight {:size 16 :class "ml-auto text-gray-9" :aria-hidden "true"}]]])
 
 (defn- connections-list
   "Connections list with search results"
   [connections selected-connection]
   [:<>
-   (when (seq connections)
+   ;; Screen reader announcement for search results
+   [:div {:class "sr-only"
+          :role "status"
+          :aria-live "polite"
+          :aria-atomic "true"}
+    (when (seq connections)
+      (str (count connections) " resource role" (when (not= 1 (count connections)) "s") " found"))]
+   
+   (if (seq connections)
      [:> CommandGroup
       (for [connection connections]
         ^{:key (:id connection)}
-        [connection-result-item connection (= (:name connection) (:name selected-connection))])])])
+        [connection-result-item connection (= (:name connection) (:name selected-connection))])]
+     [:div {:class "py-6 text-center text-sm text-gray-11"
+            :role "status"}
+      "No resource roles found"])])
 
 (defn connection-dialog []
   (let [open? (rf/subscribe [:primary-connection/dialog-open?])

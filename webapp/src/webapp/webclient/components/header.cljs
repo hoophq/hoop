@@ -1,11 +1,12 @@
 (ns webapp.webclient.components.header
   (:require
-   ["@radix-ui/themes" :refer [Badge Box Button Flex Heading IconButton Tooltip]]
-   ["lucide-react" :refer [CircleHelp PackagePlus
-                           Play Sun Moon ChevronDown Search]]
+   ["@radix-ui/themes" :refer [Box Button Flex Heading IconButton Tooltip]]
+   ["lucide-react" :refer [CircleHelp PackagePlus ChevronDown
+                           Play Sun Moon Search]]
    [re-frame.core :as rf]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
+   [webapp.components.skip-link :as skip-link]
    [webapp.parallel-mode.components.header-button :as parallel-mode-button]))
 
 
@@ -36,15 +37,24 @@
            [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
             "Terminal"]
 
-           [:> Badge
+           [:> Button
             {:radius "full"
+             :size "1"
+             :variant "soft"
              :color (if (and @primary-connection
                              (not @parallel-mode-active?))
                       "indigo"
                       "gray")
-             :class (if @parallel-mode-active?
-                      "cursor-not-allowed opacity-50"
-                      "cursor-pointer")
+             :disabled @parallel-mode-active?
+             :class (str "gap-1 " (when @parallel-mode-active? "cursor-not-allowed"))
+             :aria-label (cond
+                           (and @primary-connection
+                                (not @parallel-mode-active?))
+                           (str "Selected a resource role: " (:name @primary-connection) ". Click to change")
+                           @parallel-mode-active?
+                           "Resource Roles - parallel mode active"
+                           :else
+                           "Select a resource role")
              :onClick (when-not @parallel-mode-active?
                         (fn []
                           (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
@@ -54,7 +64,13 @@
                    (not @parallel-mode-active?)) (:name @primary-connection)
               @parallel-mode-active? "Resource Roles"
               :else "Resource Role")
-            [:> ChevronDown {:size 12}]]]
+            [:> ChevronDown {:size 12 :aria-hidden "true"}]]
+
+           ;; Skip link: Resource Role → Editor
+           [skip-link/main
+            {:target-selector "[tabindex='0'][aria-label*='Script editor']"
+             :text "Skip to editor"
+             :position "focus:left-4"}]]
           [:> Flex {:align "center" :gap "4"}
 
            [:> Tooltip {:content "Search"}
@@ -63,6 +79,7 @@
               :variant "soft"
               :color "gray"
               :highContrast true
+              :aria-label "Search resource roles"
               :onClick (fn []
                          (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
                          (rf/dispatch [:primary-connection/toggle-dialog true]))}
@@ -74,6 +91,7 @@
               :color "gray"
               :variant "soft"
               :highContrast true
+              :aria-label "Open help documentation"
               :onClick (fn []
                          (js/window.open "https://help.hoop.dev" "_blank"))}
              [:> CircleHelp {:size 16}]]]
@@ -87,6 +105,9 @@
               :color "gray"
               :variant "soft"
               :highContrast true
+              :aria-label (if @dark-mode?
+                            "Switch to light theme"
+                            "Switch to dark theme")
               :onClick (fn []
                          (swap! dark-mode? not)
                          (.setItem js/localStorage "dark-mode" (str @dark-mode?)))}
@@ -101,7 +122,9 @@
                :on-click #(rf/dispatch [:webclient/set-active-panel :metadata])
                :active? (= @active-panel :metadata)
                :has-notification? has-metadata?
-               :disabled? false}]]]
+               :disabled? false
+               :aria-label "Toggle metadata panel"
+               :aria-expanded (= @active-panel :metadata)}]]]
 
            ;; New Parallel Mode Button
            [parallel-mode-button/parallel-mode-button]
@@ -110,8 +133,11 @@
             [:> Button
              {:disabled disable-run-button?
               :loading script-loading?
+              :id "run-button"
+              :data-run-button true
               :class (when (or disable-run-button?
                                script-loading?) "cursor-not-allowed")
+              :aria-label (str "Run script" (if (= os :mac) " (Cmd+Enter)" " (Ctrl+Enter)"))
               :onClick (fn []
                          (when-not script-loading?
                            (submit)))}

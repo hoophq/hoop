@@ -18,8 +18,12 @@
            :minHeight "90vh"
            :maxHeight "90vh"
            :class "p-0"
+           :aria-label "Parallel execution summary"
+           :aria-describedby "execution-summary-description"
            :onEscapeKeyDown (fn [e] (.preventDefault e))
            :onPointerDownOutside (fn [e] (.preventDefault e))}
+          [:span {:id "execution-summary-description" :class "sr-only"}
+           "Execution results for parallel mode. Press Escape is disabled while execution is running."]
           [:> ScrollArea
            {:type "auto"
             :scrollbars "vertical"
