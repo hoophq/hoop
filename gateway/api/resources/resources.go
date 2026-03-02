@@ -11,6 +11,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -161,7 +162,16 @@ func CreateResource(c *gin.Context) {
 		return nil
 	})
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionCreate).
+		Resource(resource.ID, resource.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("subtype", req.SubType).
+		Set("agent_id", req.AgentID)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to create resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + err.Error()})
 		return
@@ -294,8 +304,16 @@ func UpdateResource(c *gin.Context) {
 		AgentID: sql.NullString{String: req.AgentID, Valid: req.AgentID != ""},
 	}
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionUpdate).
+		Resource(resource.ID, resource.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("subtype", req.SubType)
+	defer func() { evt.Log(c) }()
+
 	err = models.UpsertResource(models.DB, &resource, true)
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to upsert resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
@@ -340,8 +358,13 @@ func DeleteResource(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionDelete).
+		Resource(name, name)
+	defer func() { evt.Log(c) }()
+
 	err = models.DeleteResource(models.DB, ctx.OrgID, name)
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to delete resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
@@ -362,3 +385,4 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 		AgentID:   r.AgentID.String,
 	}
 }
+
