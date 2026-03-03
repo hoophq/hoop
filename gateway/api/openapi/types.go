@@ -1687,8 +1687,10 @@ type SecurityAuditLogResponse struct {
 	CreatedAt              time.Time      `json:"created_at" example:"2023-08-15T14:30:45Z"`
 	ResourceType           string         `json:"resource_type" example:"connections"`
 	Action                 string         `json:"action" example:"create"`
-	ResourceID             string         `json:"resource_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
-	ResourceName           string         `json:"resource_name" example:"my-connection"`
+	HttpMethod             string         `json:"http_method" example:"POST"`
+	HttpStatus             int            `json:"http_status" example:"201"`
+	HttpPath               string         `json:"http_path" example:"/api/connections"`
+	ClientIP               string         `json:"client_ip" example:"192.168.1.100"`
 	RequestPayloadRedacted map[string]any `json:"request_payload_redacted" swaggertype:"object,string"`
 	Outcome                bool           `json:"outcome" example:"true"`
 	ErrorMessage           string         `json:"error_message" example:""`

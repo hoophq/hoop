@@ -19,8 +19,10 @@ type SecurityAuditLog struct {
 	CreatedAt               time.Time      `gorm:"column:created_at;type:timestamptz;not null;default:now()"`
 	ResourceType            string         `gorm:"column:resource_type;size:64;not null"`
 	Action                  string         `gorm:"column:action;size:32;not null"`
-	ResourceID              *uuid.UUID     `gorm:"column:resource_id;type:uuid"`
-	ResourceName            string         `gorm:"column:resource_name;size:255"`
+	HttpMethod              string         `gorm:"column:http_method;size:16;not null"`
+	HttpStatus              int            `gorm:"column:http_status;not null"`
+	HttpPath                string         `gorm:"column:http_path;size:512;not null"`
+	ClientIP                string         `gorm:"column:client_ip;size:45;not null"`
 	RequestPayloadRedacted  map[string]any `gorm:"column:request_payload_redacted;serializer:json"`
 	Outcome                 bool           `gorm:"column:outcome;not null"` // true = success, false = failure
 	ErrorMessage            string         `gorm:"column:error_message;type:text"`
@@ -44,11 +46,13 @@ type SecurityAuditLogFilter struct {
 	ActorEmail    string
 	ResourceType  string
 	Action        string
-	ResourceID    string // UUID string
-	ResourceName  string
+	HttpMethod    string // GET, POST, PUT, DELETE, PATCH
+	HttpStatus    int    // 0 = all, >0 = specific status code
+	HttpPath      string // partial match
+	ClientIP      string // exact or partial match
 	Outcome       *bool  // true = success only, false = failure only, nil = all
-	CreatedAfter   string // RFC3339 or date
-	CreatedBefore  string
+	CreatedAfter  string // RFC3339 or date
+	CreatedBefore string
 }
 
 // ListSecurityAuditLogs returns audit logs for the org with filters and pagination. Order: created_at DESC.
@@ -78,13 +82,17 @@ func ListSecurityAuditLogs(db *gorm.DB, orgID string, f SecurityAuditLogFilter) 
 	if f.Action != "" {
 		q = q.Where("action = ?", f.Action)
 	}
-	if f.ResourceID != "" {
-		if u, err := uuid.Parse(f.ResourceID); err == nil {
-			q = q.Where("resource_id = ?", u)
-		}
+	if f.HttpMethod != "" {
+		q = q.Where("http_method = ?", f.HttpMethod)
 	}
-	if f.ResourceName != "" {
-		q = q.Where("resource_name ILIKE ?", "%"+f.ResourceName+"%")
+	if f.HttpStatus > 0 {
+		q = q.Where("http_status = ?", f.HttpStatus)
+	}
+	if f.HttpPath != "" {
+		q = q.Where("http_path ILIKE ?", "%"+f.HttpPath+"%")
+	}
+	if f.ClientIP != "" {
+		q = q.Where("client_ip ILIKE ?", "%"+f.ClientIP+"%")
 	}
 	if f.Outcome != nil {
 		q = q.Where("outcome = ?", *f.Outcome)
