@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading IconButton Link Switch
                                Text TextField]]
-   ["lucide-react" :refer [ArrowUpRight Star Trash2]]
+   ["lucide-react" :refer [ArrowUpRight Plus Star Trash2]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
@@ -291,7 +291,8 @@
              :size "2"
              :type "button"
              :on-click #(rf/dispatch [:connection-setup/add-mandatory-metadata-field])}
-            "+ Add New Field"]]]
+            [:> Plus {:size 16}]
+            "Add New Field"]]]
 
          (when is-database?
            [:<>
