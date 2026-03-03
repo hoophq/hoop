@@ -23,7 +23,7 @@
    [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.components.skip-link :as skip-link]
-   [webapp.webclient.components.mandatory-metadata.callout :as mandatory-metadata-callout]
+   [webapp.webclient.components.execution-requirements-callout :as mandatory-metadata-callout]
    [webapp.features.promotion :as promotion]
    [webapp.formatters :as formatters]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
@@ -292,13 +292,15 @@
                                                 editor-debounce-time)))
 
             mandatory-metadata-fields (seq (:mandatory_metadata_fields current-connection))
+            needs-jira-template? (boolean (and current-connection
+                                               (not (cs/blank? (:jira_issue_template_id current-connection)))))
             current-connection-name (:name current-connection)
             _ (when (not= @last-banner-connection current-connection-name)
                 (reset! last-banner-connection current-connection-name)
                 (reset! banner-dismissed? false))
             show-info-banner? (and current-connection
                                    (not @banner-dismissed?)
-                                   mandatory-metadata-fields)
+                                   (or mandatory-metadata-fields needs-jira-template?))
             panel-content (fn [active-panel]
                             (case active-panel
                               :metadata {:title "Metadata"

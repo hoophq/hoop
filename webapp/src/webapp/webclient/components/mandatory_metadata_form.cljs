@@ -1,4 +1,4 @@
-(ns webapp.webclient.components.mandatory-metadata.form
+(ns webapp.webclient.components.mandatory-metadata-form
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
    [re-frame.core :as rf]

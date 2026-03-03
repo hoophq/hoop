@@ -2,7 +2,7 @@
   (:require
    [clojure.string :as cs]
    [re-frame.core :as rf]
-   [webapp.webclient.components.mandatory-metadata.form :as mandatory-metadata-form]
+   [webapp.webclient.components.mandatory-metadata-form :as mandatory-metadata-form]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]))
 

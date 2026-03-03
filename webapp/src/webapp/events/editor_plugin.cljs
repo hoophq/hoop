@@ -5,7 +5,7 @@
    [re-frame.core :as rf]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]
-   [webapp.webclient.components.mandatory-metadata.form :as mandatory-metadata-form]))
+   [webapp.webclient.components.mandatory-metadata-form :as mandatory-metadata-form]))
 
 (defn discover-connection-type [connection]
   (cond

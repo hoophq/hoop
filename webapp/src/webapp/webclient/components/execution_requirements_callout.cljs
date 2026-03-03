@@ -1,4 +1,4 @@
-(ns webapp.webclient.components.mandatory-metadata.callout
+(ns webapp.webclient.components.execution-requirements-callout
   (:require
    ["@radix-ui/themes" :refer [Box Flex IconButton Text]]
    ["lucide-react" :refer [Info X]]))

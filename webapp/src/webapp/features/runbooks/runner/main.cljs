@@ -10,7 +10,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :refer [detect-os]]
-   [webapp.webclient.components.mandatory-metadata.callout :as mandatory-metadata-callout]
+   [webapp.webclient.components.execution-requirements-callout :as mandatory-metadata-callout]
    [webapp.components.notification-badge :refer [notification-badge]]
    [webapp.features.promotion :as promotion]
    [webapp.features.runbooks.runner.views.connections-dialog :as connections-dialog]
