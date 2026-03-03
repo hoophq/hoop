@@ -23,6 +23,7 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -525,8 +526,14 @@ func RunbookExec(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
+
+		if errors.Is(err, services.ErrRequiredMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}
