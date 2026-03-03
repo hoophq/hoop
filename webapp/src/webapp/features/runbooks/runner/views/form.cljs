@@ -129,13 +129,23 @@
                                                                          :data
                                                                          :status)
                                                                      "enabled")
-                                        runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))]
+                                        runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))
+                                        mandatory-metadata-fields (seq (:mandatory_metadata_fields connection))]
                                     (cond
                                       (not runbooks-enabled?)
                                       (rf/dispatch [:dialog->open
                                                     {:title "Runbooks access mode is disabled"
                                                      :action-button? false
                                                      :text "Your connection does not have runbooks access mode enabled. Please enable it in the connection settings."}])
+
+                                      mandatory-metadata-fields
+                                      (rf/dispatch [:runbooks/show-mandatory-metadata-form
+                                                    {:fields (vec mandatory-metadata-fields)
+                                                     :file-name (-> template :data :name)
+                                                     :params @state
+                                                     :connection-name (:name connection)
+                                                     :repository (-> template :data :repository)
+                                                     :ref-hash (-> template :data :ref-hash)}])
 
                                       (and has-jira-template? jira-integration-enabled?)
                                       (rf/dispatch [:runbooks/show-jira-form

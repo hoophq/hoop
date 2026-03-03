@@ -209,6 +209,8 @@
                  (when (seq config-files)
                    (helpers/config->json config-files "filesystem:"))))
 
+        mandatory-metadata-fields (get-in config [:mandatory-metadata-fields] [])
+
         guardrails-processed (mapv #(get % "value") guardrails)
         jira-template-id-processed (when jira-template-id
                                      (get jira-template-id "value"))
@@ -251,6 +253,7 @@
                             command-array)
                  :guardrail_rules guardrails-processed
                  :jira_issue_template_id jira-template-id-processed
+                 :mandatory_metadata_fields mandatory-metadata-fields
                  :access_schema (or (when (or (= api-type "database")
                                               (= connection-subtype "dynamodb")
                                               (= connection-subtype "cloudwatch"))
@@ -673,4 +676,5 @@
                                   (transform-filtered-jira-template-selected
                                    jira-templates-list
                                    (:jira_issue_template_id connection))
-                                  "")}}))
+                                  "")
+              :mandatory-metadata-fields (or (:mandatory_metadata_fields connection) [])}}))

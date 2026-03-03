@@ -23,6 +23,7 @@
    [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.components.skip-link :as skip-link]
+   [webapp.webclient.components.mandatory-metadata.callout :as mandatory-metadata-callout]
    [webapp.features.promotion :as promotion]
    [webapp.formatters :as formatters]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
@@ -195,6 +196,8 @@
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
+        banner-dismissed? (r/atom false)
+        last-banner-connection (r/atom nil)
         horizontal-pane-sizes (mapv js/parseInt
                                     (cs/split
                                      (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,210") ","))
@@ -288,6 +291,14 @@
                                                   (save-code-to-localstorage value))
                                                 editor-debounce-time)))
 
+            mandatory-metadata-fields (seq (:mandatory_metadata_fields current-connection))
+            current-connection-name (:name current-connection)
+            _ (when (not= @last-banner-connection current-connection-name)
+                (reset! last-banner-connection current-connection-name)
+                (reset! banner-dismissed? false))
+            show-info-banner? (and current-connection
+                                   (not @banner-dismissed?)
+                                   mandatory-metadata-fields)
             panel-content (fn [active-panel]
                             (case active-panel
                               :metadata {:title "Metadata"
@@ -355,6 +366,11 @@
                   [skip-link/main
                    {:target-selector "[data-run-button]"
                     :text "Skip to Run button"}]
+
+                 [:> Box {:class "relative w-full h-full"}
+                  (when show-info-banner?
+                    [mandatory-metadata-callout/main
+                     {:on-dismiss #(reset! banner-dismissed? true)}])
 
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))

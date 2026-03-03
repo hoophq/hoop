@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [webapp.webclient.components.mandatory-metadata.form :as mandatory-metadata-form]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]))
 
@@ -114,7 +115,7 @@
 (rf/reg-event-fx
  :runbooks/exec
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields on-success on-failure] :as context}]]
+   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields extra-metadata on-success on-failure] :as context}]]
    ;; Check if parallel mode is active
    (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
          parallel-mode? (>= (count parallel-connections) 2)]
@@ -134,7 +135,10 @@
              current-metadatas (get-in db [:runbooks :metadata])
              current-metadata-key (get-in db [:runbooks :metadata-key])
              current-metadata-value (get-in db [:runbooks :metadata-value])
-             metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
+             extra-metadata-pairs (when extra-metadata
+                                    (map (fn [[k v]] {:key k :value v}) extra-metadata))
+             metadata (concat (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
+                               extra-metadata-pairs)
              repository (or repository
                             (let [list-data (get-in db [:runbooks :list])
                                   repositories (or (:data list-data) [])
@@ -372,3 +376,32 @@
                               :ref-hash ref-hash}
                        (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                        (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]]}))
+
+(rf/reg-event-fx
+ :runbooks/show-mandatory-metadata-form
+ (fn [_ [_ {:keys [fields file-name params connection-name repository ref-hash]}]]
+   {:fx [[:dispatch [:modal->open
+                     {:maxWidth "600px"
+                      :custom-on-click-out #(.preventDefault %)
+                      :content [mandatory-metadata-form/main
+                                {:fields fields
+                                 :on-submit #(rf/dispatch
+                                              [:runbooks/exec-after-mandatory-metadata
+                                               {:form-data %
+                                                :file-name file-name
+                                                :params params
+                                                :connection-name connection-name
+                                                :repository repository
+                                                :ref-hash ref-hash}])}]}]]]}))
+
+(rf/reg-event-fx
+ :runbooks/exec-after-mandatory-metadata
+ (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash]}]]
+   {:fx [[:dispatch [:modal->close]]
+         [:dispatch [:runbooks/exec
+                     {:file-name file-name
+                      :params params
+                      :connection-name connection-name
+                      :repository repository
+                      :ref-hash ref-hash
+                      :extra-metadata form-data}]]]}))
