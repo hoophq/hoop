@@ -460,7 +460,10 @@ func Get(c *gin.Context) {
 	}
 
 	// it will only load the blob stream if it's allowed and the client requested to expand the attribute
-	expandEventStream := slices.Contains(strings.Split(c.Query("expand"), ","), "event_stream")
+	expandParam := c.Query("expand")
+	expandedFields := strings.Split(expandParam, ",")
+
+	expandEventStream := slices.Contains(expandedFields, "event_stream")
 	if isAllowed && expandEventStream {
 		session.BlobStream, err = session.GetBlobStream()
 		if err != nil {
@@ -470,9 +473,9 @@ func Get(c *gin.Context) {
 		}
 	}
 
-	// it will only load the input blob stream if client requested to expand the attribute
-	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "session_input")
-	if expandInputStream {
+	// Load input by default for backward compat (no expand param),
+	// or when explicitly requested via ?expand=session_input
+	if expandParam == "" || slices.Contains(expandedFields, "session_input") {
 		session.BlobInput, err = session.GetBlobInput()
 		if err != nil {
 			log.Errorf("failed fetching input from session, err=%v", err)
@@ -495,7 +498,7 @@ func Get(c *gin.Context) {
 			return
 		}
 	}
-	obj := toOpenApiSession(session, expandInputStream)
+	obj := toOpenApiSession(session, true) // always include script in response (old behavior)
 
 	// encode the object manually to obtain any encoding errors.
 	c.Writer.Header().Set("Content-Type", "application/json")

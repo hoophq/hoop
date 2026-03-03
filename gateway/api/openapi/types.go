@@ -2027,8 +2027,10 @@ type SearchResponse struct {
 	Errors []string `json:"errors"`
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
-	// Runbooks found in the search
+	// Runbooks found in the search (enriched format with repository and name fields)
 	Runbooks []*RunbookSearch `json:"runbooks"`
+	// Runbook name paths for backward compatibility with older clients
+	RunbookNames []string `json:"runbook_names"`
 	// Resources found in the search
 	Resources []ResourceSearch `json:"resources"`
 }
@@ -2079,8 +2081,8 @@ type ResourceRequest struct {
 	Name string `json:"name" binding:"required" example:"my-resource"`
 	// The resource type
 	Type string `json:"type" binding:"required" example:"database"`
-	// The resource subtype
-	SubType string `json:"subtype" binding:"required" example:"mysql"`
+	// The resource subtype (optional; defaults to the value of 'type' when omitted)
+	SubType string `json:"subtype" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource

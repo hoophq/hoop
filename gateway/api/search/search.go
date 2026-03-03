@@ -109,11 +109,19 @@ func buildSearchResponse(connections []models.Connection, runbooks []*openapi.Ru
 		errorMessages = append(errorMessages, err.Error())
 	}
 
+	// Build legacy []string list for backwards compatibility with older clients
+	// that expect runbook_names as a flat list of name paths.
+	runbookNames := make([]string, 0, len(runbooks))
+	for _, rb := range runbooks {
+		runbookNames = append(runbookNames, rb.Name)
+	}
+
 	return openapi.SearchResponse{
-		Errors:      errorMessages,
-		Connections: connectionSearchResults,
-		Runbooks:    runbooks,
-		Resources:   resourcesSearchResults,
+		Errors:       errorMessages,
+		Connections:  connectionSearchResults,
+		Runbooks:     runbooks,
+		RunbookNames: runbookNames,
+		Resources:    resourcesSearchResults,
 	}
 }
 

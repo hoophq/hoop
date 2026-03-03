@@ -62,7 +62,11 @@ func ListRunbooksV2(c *gin.Context) {
 	}
 
 	urlQuery := c.Request.URL.Query()
+	// Accept legacy ?connection= param as an alias for ?connection_name=
 	connectionName := urlQuery.Get("connection_name")
+	if connectionName == "" {
+		connectionName = urlQuery.Get("connection")
+	}
 	listConnections := urlQuery.Get("list_connections") == "true"
 	removeEmptyConnections := urlQuery.Get("remove_empty_connections") != "false"
 
