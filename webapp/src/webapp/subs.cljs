@@ -118,6 +118,11 @@
    (:audit->session-logs db)))
 
 (re-frame/reg-sub
+ :audit->session-stream-result
+ (fn [db _]
+   (:audit->session-stream-result db)))
+
+(re-frame/reg-sub
  :connections->test-connection
  (fn [db _]
    (:connections->test-connection db)))

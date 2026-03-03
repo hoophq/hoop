@@ -21,6 +21,7 @@ import (
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
@@ -103,6 +104,9 @@ type Api struct {
 //	@tag.name	Organization Management
 
 //	@tag.name	Reports
+
+//	@tag.name	Audit Logs
+//	@tag.description.markdown
 
 // @securitydefinitions.oauth2.accessCode	OAuth2AccessCode
 // @tokenUrl								https://login.microsoftonline.com/d60ba6f0-ad5f-4917-aa19-f8d4241f8bc7/oauth2/v2.0/token
@@ -483,6 +487,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	r.GET("/sessions/:session_id/download/input", sessionapi.DownloadSessionInput)
+	r.GET("/sessions/:session_id/result/stream",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.StreamSessionResult)
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)
@@ -861,4 +869,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		resourcesapi.DeleteResource)
+
+	r.GET("/audit/logs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		auditlogapi.List)
 }

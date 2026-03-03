@@ -58,48 +58,92 @@
                       (second display-keys))]
     display-key))
 
-(defn values-view [key values display-key selected-values on-change on-back]
-  [:div {:class "w-full"}
-   [:> Flex {:justify "between" :align "center" :class "mb-3"}
-    [:> Button {:variant "ghost" :color "gray" :onClick on-back}
-     [:> ChevronLeft {:size 16}]
-     [:> Text {:size "1" :class "text-gray-11"}
-      "Back"]]
-    [:> Button {:variant "ghost" :color "gray" :onClick #(on-change (dissoc selected-values key))}
-     [:> Text {:size "1" :class "text-gray-11"}
-      "Clear"]]]
+(defn handle-list-keydown
+  "Handles arrow key navigation within a list of tag items."
+  [e]
+  (let [key (.-key e)
+        current (.-target e)
+        container (.-currentTarget e)
+        items (.querySelectorAll container "[data-tag-item]")
+        items-arr (js/Array.from items)
+        current-idx (.indexOf items-arr current)
+        len (.-length items-arr)]
+    (cond
+      (= key "ArrowDown")
+      (do
+        (.preventDefault e)
+        (when (< current-idx (dec len))
+          (.focus (aget items-arr (inc current-idx)))))
 
-   [:> Separator {:class "w-full"}]
+      (= key "ArrowUp")
+      (do
+        (.preventDefault e)
+        (when (pos? current-idx)
+          (.focus (aget items-arr (dec current-idx))))))))
 
-   [:> Text {:as "p" :size "1" :mt "3" :class "text-gray-11"}
-    (get-display-key display-key)]
+(defn values-view [_props]
+  (let [focused? (atom false)
+        container-ref (fn [el]
+                        (when (and el (not @focused?))
+                          (reset! focused? true)
+                          (js/requestAnimationFrame
+                           #(when-let [first-item (.querySelector el "[data-tag-item]")]
+                              (.focus first-item)))))]
+    (fn [{:keys [key values display-key selected-values on-change on-back]}]
+      [:div {:class "w-full"
+             :ref container-ref
+             :on-key-down (fn [e]
+                            (when (= (.-key e) "Escape")
+                              (.preventDefault e)
+                              (on-back))
+                            (handle-list-keydown e))}
+       [:> Flex {:justify "between" :align "center" :class "mb-3"}
+        [:> Button {:variant "ghost" :color "gray" :onClick on-back}
+         [:> ChevronLeft {:size 16}]
+         [:> Text {:size "1" :class "text-gray-11"}
+          "Back"]]
+        [:> Button {:variant "ghost" :color "gray" :onClick #(on-change (dissoc selected-values key))}
+         [:> Text {:size "1" :class "text-gray-11"}
+          "Clear"]]]
 
-   [:div {:class "space-y-1 px-2 pt-3"}
-    [:> Button {:variant "ghost"
-                :color "gray"
-                :class "w-full justify-between"
-                :onClick #(on-change (assoc selected-values key values))}
-     [:> Text {:size "2" :class "text-gray-12"}
-      "Select all"]]
+       [:> Separator {:class "w-full"}]
 
-    (for [value values
-          :let [is-selected (some #(= % value) (get selected-values key []))]]
-      ^{:key (str key "-" value)}
-      [:> Button {:variant "ghost"
-                  :color "gray"
-                  :class "w-full justify-between"
-                  :onClick (fn [_]
-                             (let [new-values (if is-selected
-                                                (remove (fn [v] (= v value)) (get selected-values key []))
-                                                (conj (or (get selected-values key []) []) value))
-                                   new-selected (if (empty? new-values)
-                                                  (dissoc selected-values key)
-                                                  (assoc selected-values key new-values))]
-                               (on-change new-selected)))}
-       [:> Text {:size "2" :class "text-gray-12"}
-        value]
-       (when is-selected
-         [:> Check {:size 16}])])]])
+       [:> Text {:as "p" :size "1" :mt "3" :class "text-gray-11"}
+        (get-display-key display-key)]
+
+       [:div {:class "space-y-1 px-2 pt-3"
+              :role "listbox"
+              :aria-label (str "Values for " (get-display-key display-key))}
+        [:> Button {:variant "ghost"
+                    :color "gray"
+                    :class "w-full justify-between"
+                    :data-tag-item true
+                    :role "option"
+                    :onClick #(on-change (assoc selected-values key values))}
+         [:> Text {:size "2" :class "text-gray-12"}
+          "Select all"]]
+
+        (for [value values
+              :let [is-selected (some #(= % value) (get selected-values key []))]]
+          ^{:key (str key "-" value)}
+          [:> Button {:variant "ghost"
+                      :color "gray"
+                      :class "w-full justify-between"
+                      :data-tag-item true
+                      :role "option"
+                      :aria-selected (boolean is-selected)
+                      :onClick (fn [_]
+                                 (let [new-values (if is-selected
+                                                    (remove (fn [v] (= v value)) (get selected-values key []))
+                                                    (conj (or (get selected-values key []) []) value))
+                                       new-selected (if (empty? new-values)
+                                                      (dissoc selected-values key)
+                                                      (assoc selected-values key new-values))]
+                                   (on-change new-selected)))}
+           [:> Text {:size "2" :class "text-gray-12"}
+            value]
+           (when is-selected
+             [:> Check {:size 16}])])]])))
 
 (defn keys-view [grouped-tags search-term selected-values on-change on-select-key]
   (let [filtered-keys (if (empty? search-term)
@@ -118,8 +162,11 @@
                                            values))))
                                 (keys grouped-tags)))]
 
-    [:div {:class "w-full max-h-64 overflow-y-auto"}
-     [:> Box {:class "space-y-1 p-2"}
+    [:div {:class "w-full max-h-64 overflow-y-auto"
+           :on-key-down handle-list-keydown}
+     [:> Box {:class "space-y-1 p-2"
+              :role "listbox"
+              :aria-label "Tag groups"}
       (for [key filtered-keys
             :let [display-key (get-key-name key)
                   selected-count (count (get selected-values key []))]]
@@ -127,6 +174,8 @@
         [:> Button {:variant "ghost"
                     :color "gray"
                     :onClick #(on-select-key key)
+                    :data-tag-item true
+                    :role "option"
                     :class "w-full justify-between gap-3"}
          [:> Text {:size "2" :class "truncate text-gray-12"}
           (get-display-key display-key)]
@@ -150,13 +199,18 @@
                           :value value
                           :display-key display-key})]
 
-    [:> Box {:class "w-full max-h-64 overflow-y-auto"}
-     [:> Box {:class "space-y-1 p-2"}
+    [:> Box {:class "w-full max-h-64 overflow-y-auto"
+             :onKeyDown handle-list-keydown}
+     [:> Box {:class "space-y-1 p-2"
+              :role "listbox"
+              :aria-label "Search results"}
       (for [{:keys [key value display-key]} search-results]
         ^{:key (str key "-" value)}
         [:> Button {:variant "ghost"
                     :color "gray"
                     :class "w-full justify-between gap-2"
+                    :data-tag-item true
+                    :role "option"
                     :onClick #(on-select-key key)}
          [:> Flex {:direction "column" :align "start"}
           [:> Text {:size "2" :class "text-gray-12"} value]
@@ -197,16 +251,16 @@
          (cond
            (= @current-view :values)
            [values-view
-            @current-key
-            (get grouped-tags @current-key)
-            (get-key-name @current-key)
-            @selected-values
-            (fn [new-values]
-              (reset! selected-values new-values)
-              (on-change new-values))
-            (fn []
-              (reset! current-view :keys)
-              (reset! search-term ""))]
+            {:key @current-key
+             :values (get grouped-tags @current-key)
+             :display-key (get-key-name @current-key)
+             :selected-values @selected-values
+             :on-change (fn [new-values]
+                          (reset! selected-values new-values)
+                          (on-change new-values))
+             :on-back (fn []
+                        (reset! current-view :keys)
+                        (reset! search-term ""))}]
 
            has-search-results?
            [search-results-view grouped-tags @search-term @selected-values

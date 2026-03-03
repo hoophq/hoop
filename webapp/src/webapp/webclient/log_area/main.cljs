@@ -80,10 +80,20 @@
                              (reset! selected-tab value))
                  :tabs available-tabs
                  :selected-tab @selected-tab}]
-          (case @selected-tab
-            "Tabular" [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
-                       {:height "100%"
-                        :pagination? (> (count results-body) 100)
-                        :auto-size-columns? true}]
-            "Logs" [logs/main :logs logs-content]
-            :else [logs/main logs-content])]]))))
+          [:div {:role "tabpanel"
+                 :id (str "tabpanel-" (case @selected-tab
+                                        "Tabular" :tabular
+                                        "Logs" :logs
+                                        :logs))
+                 :aria-labelledby (str "tab-" (case @selected-tab
+                                                "Tabular" :tabular
+                                                "Logs" :logs
+                                                :logs))
+                 :class "h-full"}
+           (case @selected-tab
+             "Tabular" [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
+                        {:height "100%"
+                         :pagination? (> (count results-body) 100)
+                         :auto-size-columns? true}]
+             "Logs" [logs/main :logs logs-content]
+             :else [logs/main logs-content])]]]))))

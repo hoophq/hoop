@@ -3,8 +3,10 @@
    ["@radix-ui/themes" :refer [Box Flex Text]]
    ["allotment" :refer [Allotment]]))
 
-(defn side-panel [{:keys [title content]}]
-  [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"}
+(defn side-panel [{:keys [title content aria-label]}]
+  [:> Box {:class "h-full w-full bg-gray-1 border-l border-gray-3 overflow-y-auto"
+           :role "complementary"
+           :aria-label (or aria-label title "Side panel")}
    (when title
      [:> Flex {:justify "between"
                :align "center"

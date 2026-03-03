@@ -1081,8 +1081,8 @@ type ServerInfo struct {
 	// * false - Clipboard copy and cut are enabled and available to users
 	DisableClipboardCopyCut bool `json:"disable_clipboard_copy_cut"`
 	// Indicates if all tracking and analytics should be enabled or disabled
-	// * enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)
-	// * disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)
+	// * enabled - Analytics/tracking are enabled
+	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
 }
 
@@ -1675,6 +1675,23 @@ type SessionMetricsAggregatedResponse struct {
 	TotalAnalyzed         int64  `json:"total_analyzed" example:"7850"`
 	SessionsWithMasking   int64  `json:"sessions_with_masking" example:"98"`
 	AvgSessionDurationSec *int64 `json:"avg_session_duration_sec" example:"285"`
+}
+
+// SecurityAuditLogResponse is a single security audit log entry (admin-only API).
+type SecurityAuditLogResponse struct {
+	ID                     string         `json:"id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	OrgID                  string         `json:"org_id" format:"uuid" example:"0CD7F941-2BB8-4F9F-93B0-11620D4652AB"`
+	ActorSubject           string         `json:"actor_subject" example:"auth0|abc123"`
+	ActorEmail             string         `json:"actor_email" example:"admin@example.com"`
+	ActorName              string         `json:"actor_name" example:"Admin User"`
+	CreatedAt              time.Time      `json:"created_at" example:"2023-08-15T14:30:45Z"`
+	ResourceType           string         `json:"resource_type" example:"connections"`
+	Action                 string         `json:"action" example:"create"`
+	ResourceID             string         `json:"resource_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	ResourceName           string         `json:"resource_name" example:"my-connection"`
+	RequestPayloadRedacted map[string]any `json:"request_payload_redacted" swaggertype:"object,string"`
+	Outcome                bool           `json:"outcome" example:"true"`
+	ErrorMessage           string         `json:"error_message" example:""`
 }
 
 type DataMaskingRule struct {

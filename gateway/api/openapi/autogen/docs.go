@@ -442,6 +442,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/audit/logs": {
+            "get": {
+                "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Audit Logs"
+                ],
+                "summary": "List security audit logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-100, default: 50)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by actor subject (partial match)",
+                        "name": "actor_subject",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by actor email (partial match)",
+                        "name": "actor_email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource type (e.g. connections, users, resources)",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by action (create, update, delete, revoke)",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource ID (UUID)",
+                        "name": "resource_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource name (partial match)",
+                        "name": "resource_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by outcome (true = success, false = failure)",
+                        "name": "outcome",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter entries created on or after this time (RFC3339 or YYYY-MM-DD)",
+                        "name": "created_after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter entries created on or before this time (RFC3339 or YYYY-MM-DD)",
+                        "name": "created_before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_SecurityAuditLogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/callback": {
             "get": {
                 "description": "Exchanges and validates the authorization code for an access token after being redirect by the external provider.\nA success authentication will redirect the user back to the default redirect url provided in the /login route.\n\nIn case of error it will include the query string ` + "`" + `error=unexpected_error` + "`" + ` when redirecting.\n",
@@ -5436,7 +5544,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/sessions/approved": {
+        "/sessions/provision": {
             "post": {
                 "consumes": [
                     "application/json"
@@ -8745,6 +8853,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_SecurityAuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SecurityAuditLogResponse"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_SessionMetricResponse": {
             "type": "object",
             "properties": {
@@ -10250,6 +10372,68 @@ const docTemplate = `{
                 "SecretsManagerProviderVault"
             ]
         },
+        "openapi.SecurityAuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "create"
+                },
+                "actor_email": {
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "actor_name": {
+                    "type": "string",
+                    "example": "Admin User"
+                },
+                "actor_subject": {
+                    "type": "string",
+                    "example": "auth0|abc123"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "error_message": {
+                    "type": "string",
+                    "example": ""
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "org_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
+                },
+                "outcome": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "request_payload_redacted": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "resource_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "resource_name": {
+                    "type": "string",
+                    "example": "my-connection"
+                },
+                "resource_type": {
+                    "type": "string",
+                    "example": "connections"
+                }
+            }
+        },
         "openapi.ServerAuthConfig": {
             "type": "object",
             "required": [
@@ -10387,7 +10571,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "analytics_tracking": {
-                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)\n* disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)",
+                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
                     "type": "string",
                     "enum": [
                         "enabled",
@@ -11521,6 +11705,10 @@ const docTemplate = `{
         },
         {
             "name": "Reports"
+        },
+        {
+            "description": "Security audit log API. Only users in the **admin** group can access these endpoints.\n\nAudit log entries record security-relevant events (who performed an action, when, on which resource, and whether it succeeded). Use the list endpoint with filters to query by actor, resource type, action, outcome, or date range. Results are paginated and ordered by ` + "`" + `created_at` + "`" + ` descending.\n",
+            "name": "Audit Logs"
         }
     ]
 }`

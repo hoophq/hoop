@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -44,9 +45,18 @@ func Post(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
+	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionCreate).
+		Resource(rule.ID, rule.Name).
+		Set("name", req.Name).
+		Set("description", req.Description).
+		Set("input", req.Input).
+		Set("output", req.Output).
+		Set("connection_ids", validConnectionIDs)
+	defer func() { evt.Log(c) }()
+
 	// Create guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
-
+	evt.Err(err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -99,9 +109,18 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
+	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionUpdate).
+		Resource(rule.ID, rule.Name).
+		Set("name", req.Name).
+		Set("description", req.Description).
+		Set("input", req.Input).
+		Set("output", req.Output).
+		Set("connection_ids", validConnectionIDs)
+	defer func() { evt.Log(c) }()
+
 	// Update guardrail and associate connections in a single transaction
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
-
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -204,7 +223,13 @@ func Get(c *gin.Context) {
 //	@Router			/guardrails/{id} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	err := models.DeleteGuardRailRules(ctx.GetOrgID(), c.Param("id"))
+	ruleID := c.Param("id")
+	evt := audit.NewEvent(audit.ResourceGuardrails, audit.ActionDelete).
+		Resource(ruleID, "")
+	defer func() { evt.Log(c) }()
+
+	err := models.DeleteGuardRailRules(ctx.GetOrgID(), ruleID)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -236,3 +261,4 @@ func filterEmptyIDs(ids []string) []string {
 	}
 	return result
 }
+

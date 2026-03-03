@@ -68,7 +68,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	org, err := models.CreateOrgGetOrganization(req.OrgName, licenseDataJSONBytes)
+	org, _, err := models.CreateOrgGetOrganization(req.OrgName, licenseDataJSONBytes)
 	if err != nil {
 		log.Errorf("failed creating organization, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating organization"})

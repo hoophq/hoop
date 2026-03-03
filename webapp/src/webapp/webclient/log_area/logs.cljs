@@ -1,6 +1,7 @@
 (ns webapp.webclient.log-area.logs
   (:require ["@radix-ui/themes" :refer [Box Spinner Flex Text DropdownMenu]]
             ["lucide-react" :refer [SquareArrowOutUpRight EllipsisVertical Copy]]
+            [clojure.string :as cs]
             [re-frame.core :as rf]
             [webapp.audit.views.session-details :as session-details]
             [webapp.formatters :as formatters]))
@@ -14,16 +15,15 @@
       [:> DropdownMenu.Root
        [:> DropdownMenu.Trigger {:class (str "cursor-pointer p-1.5 rounded-full "
                                              "bg-gray-3 hover:bg-gray-5 shadow-sm "
-                                             "opacity-100 transition border border-gray-5")}
+                                             "opacity-100 transition border border-gray-5")
+                                 :aria-label "Output actions menu"}
         [:> Box
-         [:> EllipsisVertical {:size 18 :class "text-gray-12"}]]]
+         [:> EllipsisVertical {:size 18 :class "text-gray-12" :aria-hidden "true"}]]]
        [:> DropdownMenu.Content
-        [:> DropdownMenu.Item {:on-select #(rf/dispatch [:open-modal
-                                                         [session-details/main {:id session-id :verb "exec"}]
-                                                         :large
-                                                         (fn []
-                                                           (rf/dispatch [:audit->clear-session])
-                                                           (rf/dispatch [:close-modal]))])}
+        [:> DropdownMenu.Item {:on-select #(rf/dispatch [:modal->open
+                                                         {:id "session-details"
+                                                          :maxWidth "95vw"
+                                                          :content [session-details/main {:id session-id :verb "exec"}]}])}
          [:> Flex {:align "center" :gap "2"}
           [:> SquareArrowOutUpRight {:size 16}]
           [:> Text {:size "2"} "View session details"]]]
@@ -74,35 +74,47 @@
       :id -> id to differentiate more than one log on the same page.
       :logs -> the actual string with the logs"
   [type config]
-  [:div {:class "relative h-full"}
-   [:section
-    {:class (str "bg-gray-2 font-mono h-full"
-                 " whitespace-pre text-gray-11 text-sm overflow-auto"
-                 " h-full")
-     :style {:overflow-anchor "none"}}
-    (case type
-      :logs
-      [logs-area-list (:status config)
-       {:logs (:response config)
-        :logs-status (:response-status config)
-        :script (:script config)
-        :execution-time (:execution-time config)
-        :has-review? (:has-review config)
-        :session-id (:response-id config)}])]
+  (let [line-count (when (:response config)
+                     (count (clojure.string/split-lines (:response config))))
+        aria-label-text (str "Execution output. "
+                            (case (:status config)
+                              :success (str "Status: success. " line-count " lines")
+                              :loading "Status: executing..."
+                              :failure "Status: failed"
+                              "No output"))]
+    [:div {:class "relative h-full"}
+     [:section
+      {:class (str "bg-gray-2 font-mono h-full"
+                   " whitespace-pre text-gray-11 text-sm overflow-auto"
+                   " h-full")
+       :role "log"
+       :tabIndex "0"
+       :aria-label aria-label-text
+       :aria-live (if (= (:status config) :loading) "assertive" "polite")
+       :style {:overflow-anchor "none"}}
+      (case type
+        :logs
+        [logs-area-list (:status config)
+         {:logs (:response config)
+          :logs-status (:response-status config)
+          :script (:script config)
+          :execution-time (:execution-time config)
+          :has-review? (:has-review config)
+          :session-id (:response-id config)}])]
 
-   (case (:status config)
-     :success
-     (if (:has-review config)
+     (case (:status config)
+       :success
+       (if (:has-review config)
+         [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
+          [:div {:class "pointer-events-auto"}
+           [action-buttons-container (:response-id config) "This task needs to be reviewed. Please click here to see the details."]]]
+
+         [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
+          [:div {:class "pointer-events-auto"}
+           [action-buttons-container (:response-id config) (:response config)]]])
+       :failure
        [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
         [:div {:class "pointer-events-auto"}
-         [action-buttons-container (:response-id config) "This task needs to be reviewed. Please click here to see the details."]]]
+         [action-buttons-container (:response-id config) "There was an error to get the logs for this task"]]]
 
-       [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
-        [:div {:class "pointer-events-auto"}
-         [action-buttons-container (:response-id config) (:response config)]]])
-     :failure
-     [:div {:class "absolute top-1 right-4 z-30 pointer-events-none"}
-      [:div {:class "pointer-events-auto"}
-       [action-buttons-container (:response-id config) "There was an error to get the logs for this task"]]]
-
-     nil)])
+       nil)]))

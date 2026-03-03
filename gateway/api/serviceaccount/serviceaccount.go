@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -71,7 +72,16 @@ func Create(c *gin.Context) {
 		Groups:  req.Groups,
 		Status:  string(req.Status),
 	}
+	evt := audit.NewEvent(audit.ResourceServiceAccount, audit.ActionCreate).
+		Resource(sa.ID, sa.Name).
+		Set("subject", req.Subject).
+		Set("name", req.Name).
+		Set("groups", req.Groups).
+		Set("status", string(req.Status))
+	defer func() { evt.Log(c) }()
+
 	err := models.CreateServiceAccount(sa)
+	evt.Err(err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -121,7 +131,16 @@ func Update(c *gin.Context) {
 		Groups:  req.Groups,
 		Status:  string(req.Status),
 	}
+	evt := audit.NewEvent(audit.ResourceServiceAccount, audit.ActionUpdate).
+		Resource(sa.ID, sa.Name).
+		Set("subject", req.Subject).
+		Set("name", req.Name).
+		Set("groups", req.Groups).
+		Set("status", string(req.Status))
+	defer func() { evt.Log(c) }()
+
 	err := models.UpdateServiceAccount(sa)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": models.ErrNotFound.Error()})
@@ -154,3 +173,4 @@ func toOpenID(svc models.ServiceAccount) openapi.ServiceAccount {
 		Groups:  svc.Groups,
 	}
 }
+

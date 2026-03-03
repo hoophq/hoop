@@ -71,8 +71,9 @@
         merged-options (merge default-options options)]
 
     (fn [{:keys [dark-mode?]}]
-      [:div {:style {:height (:height merged-options)
-                     :width "100%"}}
+      [:section {:style {:height (:height merged-options)
+                         :width "100%"}
+                 :aria-label "Query results table"}
        [:> AgGridReact {:theme (if dark-mode? alpine-dark alpine-light)
                         :columnDefs (clj->js columns)
                         :rowData (clj->js rows)
