@@ -33,6 +33,7 @@ import (
 //	@Description	List all Runbooks
 //	@Tags			Runbooks
 //	@Produce		json
+//	@Param			connection		query		string	false	"DEPRECATED: use connection_name instead"
 //	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
 //	@Param			list_connections	query		bool	false	"Show connections allowed for each runbook."
 //	@Param			remove_empty_connections	query		bool	false	"Remove runbooks with no connections."
@@ -98,6 +99,16 @@ func ListRunbooksV2(c *gin.Context) {
 			continue
 		}
 		runbookList.Repositories = append(runbookList.Repositories, *repositoryList)
+	}
+
+	// Populate deprecated top-level fields for backward compatibility with older clients.
+	for _, repo := range runbookList.Repositories {
+		runbookList.Items = append(runbookList.Items, repo.Items...)
+		if runbookList.Commit == "" {
+			runbookList.Commit = repo.Commit
+			runbookList.CommitAuthor = repo.CommitAuthor
+			runbookList.CommitMessage = repo.CommitMessage
+		}
 	}
 
 	c.JSON(http.StatusOK, runbookList)

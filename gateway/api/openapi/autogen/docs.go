@@ -4315,6 +4315,12 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "description": "DEPRECATED: use connection_name instead",
+                        "name": "connection",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Filter runbooks by connection name",
                         "name": "connection_name",
                         "in": "query"
@@ -9970,11 +9976,30 @@ const docTemplate = `{
         "openapi.RunbookListV2": {
             "type": "object",
             "properties": {
+                "commit": {
+                    "description": "DEPRECATED: use repositories[].commit instead. Commit SHA of the first repository.",
+                    "type": "string"
+                },
+                "commit_author": {
+                    "description": "DEPRECATED: use repositories[].commit_author instead. Commit author of the first repository.",
+                    "type": "string"
+                },
+                "commit_message": {
+                    "description": "DEPRECATED: use repositories[].commit_message instead. Commit message of the first repository.",
+                    "type": "string"
+                },
                 "errors": {
                     "description": "Errors encountered during fetching runbooks",
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                },
+                "items": {
+                    "description": "DEPRECATED: use repositories[].items instead. Flat list of all runbooks across all repositories.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Runbook"
                     }
                 },
                 "repositories": {
@@ -10067,6 +10092,10 @@ const docTemplate = `{
         },
         "openapi.RunbookRepositoryResponse": {
             "type": "object",
+            "required": [
+                "git_url",
+                "repository"
+            ],
             "properties": {
                 "git_hook_ttl": {
                     "description": "Enables runbook hooks when this value is greater than zero",
@@ -10394,18 +10423,18 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.ResourceSearch"
                     }
                 },
-                "runbook_names": {
-                    "description": "Runbook name paths for backward compatibility with older clients",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "runbooks": {
+                "runbook_search": {
                     "description": "Runbooks found in the search (enriched format with repository and name fields)",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.RunbookSearch"
+                    }
+                },
+                "runbooks": {
+                    "description": "Runbooks found in the search (flat list of runbook name paths, for backward compatibility)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 }
             }
