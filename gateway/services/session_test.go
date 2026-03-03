@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateRequiredMetadata(t *testing.T) {
+func TestValidateMandatoryMetadata(t *testing.T) {
 	tests := []struct {
 		name        string
 		connection  models.Connection
@@ -102,7 +102,7 @@ func TestValidateRequiredMetadata(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateRequiredMetadata(test.connection, test.session)
+			err := validateMandatoryMetadata(test.connection, test.session)
 			if (err != nil && test.expectedErr == nil) || (err == nil && test.expectedErr != nil) {
 				t.Errorf("Expected error: %v, got: %v", test.expectedErr, err)
 			}

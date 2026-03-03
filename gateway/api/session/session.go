@@ -225,7 +225,7 @@ func Post(c *gin.Context) {
 	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 
-		if errors.Is(err, services.ErrRequiredMetadata) {
+		if errors.Is(err, services.ErrMissingMetadata) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
@@ -1103,7 +1103,7 @@ func Provision(c *gin.Context) {
 	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 
-		if errors.Is(err, services.ErrRequiredMetadata) {
+		if errors.Is(err, services.ErrMissingMetadata) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
@@ -1126,7 +1126,7 @@ func Provision(c *gin.Context) {
 		if err := services.UpsertSession(c, newSession, *conn); err != nil {
 			log.Errorf("failed updating session, err=%v", err)
 
-			if errors.Is(err, services.ErrRequiredMetadata) {
+			if errors.Is(err, services.ErrMissingMetadata) {
 				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 				return
 			}

@@ -9,20 +9,20 @@ import (
 )
 
 var (
-	ErrRequiredMetadata = errors.New("missing required metadata field")
+	ErrMissingMetadata = errors.New("missing required metadata field")
 )
 
-func validateRequiredMetadata(connection models.Connection, session models.Session) error {
+func validateMandatoryMetadata(connection models.Connection, session models.Session) error {
 	for _, metadataField := range connection.MandatoryMetadataFields {
 		if value, found := session.Metadata[metadataField]; !found || value == nil || value == "" {
-			return fmt.Errorf("%w: %s", ErrRequiredMetadata, metadataField)
+			return fmt.Errorf("%w: %s", ErrMissingMetadata, metadataField)
 		}
 	}
 	return nil
 }
 
 func UpsertSession(_ context.Context, session models.Session, connection models.Connection) error {
-	if err := validateRequiredMetadata(connection, session); err != nil {
+	if err := validateMandatoryMetadata(connection, session); err != nil {
 		return err
 	}
 

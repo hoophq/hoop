@@ -275,7 +275,7 @@ func RunExec(c *gin.Context) {
 	if err := services.UpsertSession(c, newSession, *connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 
-		if errors.Is(err, services.ErrRequiredMetadata) {
+		if errors.Is(err, services.ErrMissingMetadata) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
