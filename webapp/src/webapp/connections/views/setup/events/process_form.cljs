@@ -209,7 +209,8 @@
                  (when (seq config-files)
                    (helpers/config->json config-files "filesystem:"))))
 
-        mandatory-metadata-fields (get-in config [:mandatory-metadata-fields] [])
+        mandatory-metadata-fields (->> (get-in config [:mandatory-metadata-fields] [])
+                                       (filterv #(not (str/blank? %))))
 
         guardrails-processed (mapv #(get % "value") guardrails)
         jira-template-id-processed (when jira-template-id
