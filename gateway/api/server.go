@@ -157,6 +157,10 @@ func (a *Api) StartAPI(sentryInit bool) {
 		}))
 	}
 	router := apiroutes.New(rg)
+	
+	// Register audit middleware globally to automatically log all write operations
+	rg.Use(a.AuditMiddleware())
+	
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
 
