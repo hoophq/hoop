@@ -7050,6 +7050,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
+                },
                 "min_review_approvals": {
                     "description": "Minimum number of review approvals required to execute this connection",
                     "type": "integer",
@@ -7283,6 +7294,17 @@ const docTemplate = `{
                     "description": "The jira issue templates ids associated to the connection",
                     "type": "string",
                     "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
@@ -10655,7 +10677,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "connection": {
-                    "description": "The connection name of this resource",
+                    "description": "The connection name of this resource (it will be deprecated in favor of RoleName)",
                     "type": "string",
                     "example": "pgdemo"
                 },
@@ -10729,6 +10751,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "resource_name": {
+                    "description": "The resource name associated with this connection",
+                    "type": "string",
+                    "example": "my-resource"
+                },
                 "review": {
                     "description": "Review of this session. In case the review doesn't exist this field will be null",
                     "allOf": [
@@ -10736,6 +10763,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.SessionReview"
                         }
                     ]
+                },
+                "role_name": {
+                    "description": "The role name (same as connection name)",
+                    "type": "string",
+                    "example": "pgdemo"
                 },
                 "script": {
                     "description": "The input of the session. This value is only set for the verb ` + "`" + `exec` + "`" + `",
