@@ -2341,3 +2341,70 @@ type AccessRequestRuleRequest struct {
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
 }
+
+// ---- AI Provider ----
+
+type AIProviderRequest struct {
+	// Name for the AI provider
+	Provider string `json:"provider" binding:"required" enums:"openai,anthropic,azure-openai,custom" example:"openai"`
+	// Base URL of the AI API
+	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// API key for authentication
+	ApiKey *string `json:"api_key" example:"sk-..."`
+	// Model to use
+	Model string `json:"model" binding:"required" example:"gpt-4o"`
+}
+
+type AIProviderResponse struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Name for the AI provider
+	Provider string `json:"provider" example:"openai"`
+	// Base URL of the AI API
+	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// Model to use
+	Model string `json:"model" example:"gpt-4o"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+// ---- AI Session Analyzer Rules ----
+
+type AISessionAnalyzerRiskEvaluation struct {
+	// Action for low-risk sessions
+	LowRiskAction string `json:"low_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Action for medium-risk sessions
+	MediumRiskAction string `json:"medium_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Action for high-risk sessions
+	HighRiskAction string `json:"high_risk_action" enums:"allow_execution,block_execution" example:"block_execution"`
+}
+
+type AISessionAnalyzerRuleRequest struct {
+	// Unique name for the rule
+	Name string `json:"name" binding:"required" example:"block-dangerous-queries"`
+	// Optional description
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names this rule applies to
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Risk evaluation actions per level
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
+}
+
+type AISessionAnalyzerRule struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique name for the rule
+	Name string `json:"name" example:"block-dangerous-queries"`
+	// Optional description
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names this rule applies to
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Risk evaluation actions per level
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
