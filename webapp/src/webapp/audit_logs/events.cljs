@@ -1,4 +1,4 @@
-(ns webapp.events.audit-logs
+(ns webapp.audit-logs.events
   (:require
    [clojure.string :as string]
    [re-frame.core :as rf]))
@@ -122,7 +122,10 @@
                                operation (:action log)
                                resource-type (:resource_type log)
                                resource-name (or (:resource_name log) "")
-                               outcome (if (:outcome log) "Success" "Failure")
+                               outcome (let [status (:http_status log)]
+                                         (if (and status (>= status 200) (< status 300))
+                                           (str "Success (" status ")")
+                                           (str "Failure (" (or status "ERR") ")")))
                                error-msg (or (:error_message log) "")]
                            (string/join "," [timestamp user email operation resource-type resource-name outcome error-msg])))
                        data)

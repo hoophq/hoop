@@ -39,3 +39,26 @@
 - Use existing UI components when possible before creating new ones
 - Follow existing event/subscription patterns for state management
 - For forms and tables, refer to guardrails and jira_templates implementations
+
+## Module Organization
+- **Feature Modules**: Organize features in their own directories with local `events.cljs` and `subs.cljs`
+- **Structure Pattern**:
+  ```
+  src/webapp/
+  ├── features/
+  │   └── feature_name/
+  │       ├── events.cljs     # re-frame events
+  │       ├── subs.cljs       # re-frame subscriptions
+  │       └── views/          # UI components
+  └── module_name/
+      ├── events.cljs         # Module-specific events
+      ├── subs.cljs           # Module-specific subscriptions
+      ├── main.cljs           # Main component
+      └── *.cljs              # Other module files
+  ```
+- **Global vs Local**:
+  - `/src/webapp/events/` and `/src/webapp/subs.cljs` are for GLOBAL events/subs only
+  - Feature/module-specific events and subs should live within their module directory
+- **Namespacing**: Use namespaced keywords (e.g., `:module-name/event-name`)
+- **Initial State**: Define in `/src/webapp/db.cljs` under the module key
+- **Examples**: See `webapp.features.access_request.*`, `webapp.features.runbooks.*`, `webapp.audit_logs.*`

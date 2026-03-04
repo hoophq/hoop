@@ -120,7 +120,6 @@
    [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
    [webapp.audit-logs.main :as audit-logs]
-   [webapp.events.audit-logs]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]

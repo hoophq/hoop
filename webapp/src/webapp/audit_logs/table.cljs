@@ -1,9 +1,11 @@
 (ns webapp.audit-logs.table
   (:require
    ["@radix-ui/themes" :refer [Badge Box Flex Table Text]]
-   ["lucide-react" :refer [ChevronDown ChevronRight]]
+   ["lucide-react" :refer [ChevronDown ChevronRight Network BadgeCheck CircleAlert]]
    [clojure.string :as string]
    [re-frame.core :as rf]
+   [webapp.audit-logs.events]
+   [webapp.audit-logs.subs]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]))
 
 (defn format-timestamp [timestamp]
@@ -31,34 +33,44 @@
                         :else "Resource")]
     (str action-text " " resource-text)))
 
-(defn outcome-badge [outcome]
-  (if outcome
+(defn outcome-badge [http-status]
+  (if (and http-status (>= http-status 200) (< http-status 300))
     [:> Badge {:color "green" :variant "soft"}
-     "Success"]
+     (str "Success (" http-status ")")]
     [:> Badge {:color "red" :variant "soft"}
-     "Failure"]))
+     (str "Failure (" (or http-status "ERR") ")")]))
 
 (defn expanded-content [log]
-  [:> Box {:class "bg-[--gray-2] p-radix-5 border-t border-[--gray-6]"}
-   [:> Box {:class "space-y-radix-4"}
+  [:> Box {:class "bg-[--gray-2]" :p "4"}
+   [:> Box {:class "space-y-radix-5"}
     [:> Flex {:gap "2" :align "center"}
-     [:> Text {:size "2" :weight "bold" :class "text-[--gray-11]"}
+     [:> Network {:size 20}]
+     [:> Text {:size "2" :class "text-[--gray-11]"}
       "IP Address:"]
-     [:> Text {:size "2" :class "text-[--gray-12]"}
-      (or (:actor_subject log) "N/A")]]
+     [:> Text {:size "2" :weight "medium" :class "text-[--gray-12]"}
+      (or (:client_ip log) "N/A")]]
 
     [:> Flex {:gap "2" :align "center"}
-     [:> Text {:size "2" :weight "bold" :class "text-[--gray-11]"}
+     [:> BadgeCheck {:size 20}]
+     [:> Text {:size "2" :class "text-[--gray-11]"}
       "Result:"]
-     [outcome-badge (:outcome log)]
-     (when (not (:outcome log))
-       [:> Text {:size "2" :class "text-[--red-11] ml-2"}
-        (:error_message log)])]
+     [outcome-badge (:http_status log)]]
+
+    (when (and (or (nil? (:http_status log))
+                   (>= (:http_status log) 400))
+               (:error_message log)
+               (not (string/blank? (:error_message log))))
+      [:> Flex {:gap "2" :align "start"}
+       [:> CircleAlert {:size 20}]
+       [:> Text {:size "2" :class "text-[--gray-11]"}
+        "Error Message:"]
+       [:> Text {:size "2" :weight "medium" :class "text-[--red-11]"}
+        (:error_message log)]])
 
     (when (and (:request_payload_redacted log)
                (not-empty (:request_payload_redacted log)))
-      [:> Box
-       [:> Text {:size "2" :weight "bold" :class "text-[--gray-11] mb-2"}
+      [:> Box {:class "space-y-radix-4"}
+       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
         "Raw Payload"]
        [:> Box {:class "bg-gray-900 text-white rounded-md p-3 overflow-x-auto"}
         [:pre {:class "text-xs"}
@@ -67,7 +79,8 @@
 (defn table-row [log expanded-rows]
   (let [expanded? (contains? expanded-rows (:id log))]
     [:<>
-     [:> Table.Row {:class "hover:bg-[--gray-3] transition-colors cursor-pointer"
+     [:> Table.Row {:align "center"
+                    :class "hover:bg-[--gray-3] transition-colors cursor-pointer"
                     :on-click #(rf/dispatch [:audit-logs/toggle-expand (:id log)])}
       [:> Table.Cell {:p "3"}
        [:> Text {:size "2" :class "text-[--gray-12]"}
@@ -81,7 +94,7 @@
        [:> Text {:size "2" :class "text-[--gray-12]"}
         (format-operation (:action log) (:resource_type log) (:resource_name log))]]
 
-      [:> Table.Cell {:p "2" :width "40px" :align "right"}
+      [:> Table.Cell {:p "2" :width "40px" :align "center" :justify "center"}
        [:button {:class "focus:outline-none text-[--gray-9] hover:text-[--gray-12] transition-colors"
                  :on-click (fn [e]
                              (.stopPropagation e)
@@ -105,13 +118,15 @@
             has-more? (:has-more? @pagination)
             loading? (= status :loading)]
         [:> Box {:class "space-y-radix-4"}
-         [:> Table.Root {:variant "surface"
-                         :class "border rounded-lg overflow-hidden shadow-sm"}
+         [:> Table.Root
           [:> Table.Header
-           [:> Table.Row {:class "bg-[--gray-2]"}
-            [:> Table.ColumnHeaderCell {:p "3"} "Timestamp"]
-            [:> Table.ColumnHeaderCell {:p "3"} "User"]
-            [:> Table.ColumnHeaderCell {:p "3"} "Operation"]
+           [:> Table.Row
+            [:> Table.ColumnHeaderCell {:p "3"}
+             [:> Text {:size "2" :weight "medium"} "Timestamp"]]
+            [:> Table.ColumnHeaderCell {:p "3"}
+             [:> Text {:size "2" :weight "medium"} "User"]]
+            [:> Table.ColumnHeaderCell {:p "3"}
+             [:> Text {:size "2" :weight "medium"} "Operation"]]
             [:> Table.ColumnHeaderCell {:p "2" :width "40px"}]]]
 
           [:> Table.Body
