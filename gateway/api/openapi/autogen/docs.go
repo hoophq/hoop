@@ -7112,8 +7112,7 @@ const docTemplate = `{
                 "access_mode_runbooks",
                 "access_schema",
                 "agent_id",
-                "name",
-                "type"
+                "name"
             ],
             "properties": {
                 "access_max_duration": {
@@ -7277,7 +7276,7 @@ const docTemplate = `{
                     "readOnly": true
                 },
                 "subtype": {
-                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications\nType string ` + "`" + `json:\"type\" binding:\"required\" enums:\"database,application,custom\" example:\"database\"` + "`" + `\nSub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
                     "type": "string",
                     "example": "postgres"
                 },
@@ -7290,16 +7289,6 @@ const docTemplate = `{
                     "example": [
                         "prod"
                     ]
-                },
-                "type": {
-                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
-                    "type": "string",
-                    "enum": [
-                        "database",
-                        "application",
-                        "custom"
-                    ],
-                    "example": "database"
                 }
             }
         },

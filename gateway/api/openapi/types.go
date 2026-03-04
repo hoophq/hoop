@@ -197,7 +197,7 @@ type Connection struct {
 	// * database - Database protocols
 	// * application - Custom applications
 	// * custom - Shell applications
-	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	//Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
 	// Sub Type is the underline implementation of the connection:
 	// * postgres - Implements Postgres protocol
 	// * mysql - Implements MySQL protocol
