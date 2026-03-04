@@ -23,6 +23,7 @@
                min-loading-done (r/atom false)
                initial-load (r/atom true)
                _ (do
+                   (rf/dispatch [:users->get-users])
                    (rf/dispatch [:audit-logs/fetch {:page 1 :page-size 25}])
                    (js/setTimeout #(reset! min-loading-done true) 1500))]
 

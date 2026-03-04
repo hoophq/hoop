@@ -59,12 +59,13 @@
     (fn []
       (let [active-user (:actor-email @filters)
             active? (not (string/blank? active-user))
+            admin-users (filter #(some (fn [g] (= "admin" g)) (:groups %)) @users)
             filtered-users (if (string/blank? @search-term)
-                             @users
+                             admin-users
                              (filter #(string/includes?
                                        (string/lower-case (:email %))
                                        (string/lower-case @search-term))
-                                     @users))]
+                                     admin-users))]
         [:> Popover.Root
          [:> Popover.Trigger {:asChild true}
           [:> Button {:size "3"
