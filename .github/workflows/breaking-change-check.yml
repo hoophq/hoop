@@ -14,8 +14,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: oasdiff/oasdiff-action/breaking@main
+      - uses: oasdiff/oasdiff-action@v0
         with:
           base: 'origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json'
           revision: 'HEAD:gateway/api/openapi/openapiv3.json'
-          fail-on: 'BREAKING'
+          fail-on-diff: 'BREAKING'
+          format: 'githubactions'
