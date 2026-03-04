@@ -16,10 +16,10 @@ jobs:
 
       - name: Export base spec from target branch
         run: |
-          git show origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json > /tmp/base-openapiv3.json
+          git show origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json > base-openapiv3.json
 
       - uses: oasdiff/oasdiff-action/breaking@main
         with:
-          base: '/tmp/base-openapiv3.json'
+          base: 'base-openapiv3.json'
           revision: 'gateway/api/openapi/openapiv3.json'
           fail-on: 'BREAKING'
