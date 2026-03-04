@@ -364,68 +364,67 @@
                    {:target-selector "[data-run-button]"
                     :text "Skip to Run button"}]
 
-                  [:> Box {:class "relative w-full h-full"}
-                   (when show-info-banner?
-                     [mandatory-metadata-callout/main
-                      {:on-dismiss #(rf/dispatch [:primary-connection/dismiss-execution-requirements-callout])}])
+                  (when show-info-banner?
+                    [mandatory-metadata-callout/main
+                     {:on-dismiss #(rf/dispatch [:primary-connection/dismiss-execution-requirements-callout])}])
 
-                   [:div {:class "h-full flex flex-col"}
-                    (when (= "custom" (:type current-connection))
-                      [connection-state-indicator @dark-mode? (:command current-connection)])
-                    [:> Box {:aria-label "Script editor. Press Escape to exit editor"
-                             :aria-describedby "editor-instructions"
-                             :tabIndex "0"
-                             :on-focus (fn [e]
-                                         ;; When wrapper gets focus, move it to CodeMirror
-                                         (when-let [cm-elem (.querySelector (.-target e) ".cm-content")]
-                                           (.focus cm-elem)))}
-                     [codemirror-editor
-                      {:value @script
-                       :theme (if @dark-mode?
-                                materialDark
-                                materialLight)
-                       :extensions codemirror-exts
-                       :on-change optimized-change-handler}]]]]
+                  [:div {:class "h-full flex flex-col"}
+                   (when (= "custom" (:type current-connection))
+                     [connection-state-indicator @dark-mode? (:command current-connection)])
+                   [:> Box {:aria-label "Script editor. Press Escape to exit editor"
+                            :aria-describedby "editor-instructions"
+                            :tabIndex "0"
+                            :on-focus (fn [e]
+                                        ;; When wrapper gets focus, move it to CodeMirror
+                                        (when-let [cm-elem (.querySelector (.-target e) ".cm-content")]
+                                          (.focus cm-elem)))}
+                    [codemirror-editor
+                     {:value @script
+                      :theme (if @dark-mode?
+                               materialDark
+                               materialLight)
+                      :extensions codemirror-exts
+                      :on-change optimized-change-handler}]]]]
 
-                  [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"
-                            :role "region"
-                            :data-output-region true
-                            :tabIndex "-1"
-                            :aria-label "Script output"}
-                   [log-area/main
-                    connection-type
-                    @parallel-mode-active?
-                    @dark-mode?]
+                 [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"
+                           :role "region"
+                           :data-output-region true
+                           :tabIndex "-1"
+                           :aria-label "Script output"}
+                  [log-area/main
+                   connection-type
+                   @parallel-mode-active?
+                   @dark-mode?]
 
-                   [:div {:class "bg-gray-1"}
-                    ;; Screen reader announcements for execution status
-                    [:div {:class "sr-only"
-                           :role "status"
-                           :aria-live "assertive"
-                           :aria-atomic "true"}
-                     (case (:status @script-output)
-                       :loading "Script executing..."
-                       :success (when (:execution_time (:data @script-output))
-                                  (str "Script execution complete. Execution time: "
-                                       (formatters/time-elapsed (:execution_time (:data @script-output)))))
-                       :failure "Script execution failed"
-                       "")]
-                    [:footer {:class "flex justify-between items-center p-2 gap-small"
-                              :aria-label "Editor status"}
-                     [:div {:class "flex items-center gap-small"}
-                      [saved-status-el @code-saved-status]
-                      (when (:execution_time (:data @script-output))
-                        [:div {:class "flex items-center gap-small"}
-                         [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
-                                                        :aria-hidden "true"}]
-                         [:span {:class "text-xs text-gray-11"}
-                          (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
-                     [:div {:class "flex-end items-center gap-regular pr-4 flex"}
-                      [:div {:class "mr-3"}
-                       [keyboard-shortcuts/keyboard-shortcuts-button]]
-                      [language-select/main current-connection]]]]]]]]]
+                  [:div {:class "bg-gray-1"}
+                   ;; Screen reader announcements for execution status
+                   [:div {:class "sr-only"
+                          :role "status"
+                          :aria-live "assertive"
+                          :aria-atomic "true"}
+                    (case (:status @script-output)
+                      :loading "Script executing..."
+                      :success (when (:execution_time (:data @script-output))
+                                 (str "Script execution complete. Execution time: "
+                                      (formatters/time-elapsed (:execution_time (:data @script-output)))))
+                      :failure "Script execution failed"
+                      "")]
+                   [:footer {:class "flex justify-between items-center p-2 gap-small"
+                             :aria-label "Editor status"}
+                    [:div {:class "flex items-center gap-small"}
+                     [saved-status-el @code-saved-status]
+                     (when (:execution_time (:data @script-output))
+                       [:div {:class "flex items-center gap-small"}
+                        [:> hero-solid-icon/ClockIcon {:class "h-4 w-4 shrink-0 text-white"
+                                                       :aria-hidden "true"}]
+                        [:span {:class "text-xs text-gray-11"}
+                         (str "Last execution time " (formatters/time-elapsed (:execution_time (:data @script-output))))]])]
+                    [:div {:class "flex-end items-center gap-regular pr-4 flex"}
+                     [:div {:class "mr-3"}
+                      [keyboard-shortcuts/keyboard-shortcuts-button]]
+                     [language-select/main current-connection]]]]]]]]]
 
-              (panel-content @active-panel)]]]])))))
+             (panel-content @active-panel)]]])))))
 
 (def main
   (r/create-class
