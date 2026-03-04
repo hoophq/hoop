@@ -6007,6 +6007,71 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/result/stream": {
+            "get": {
+                "description": "Returns the decoded output of a session as plain text with chunked transfer encoding",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Stream Session Result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Append a newline after each event (1=yes)",
+                        "name": "newline",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prefix each event with its RFC3339 timestamp (1=yes)",
+                        "name": "event-time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated event types to include: i, o, e (default: o,e)",
+                        "name": "events",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/review": {
             "put": {
                 "description": "Update the status of a review resource by its resource ID or session ID. This endpoint is used to approve, reject, or revoke reviews for session execution requests.\n\n## Overview\n\nWhen a user interacts with a session, a review resource is automatically created containing the configured review groups, each initially set to ` + "`" + `PENDING` + "`" + ` status. **All groups must be approved before the session can be executed.**\n\nThe review status updates affect each review group based on the caller's context. Once all groups are ` + "`" + `APPROVED` + "`" + `, or if any group becomes ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + `, the overall resource status updates accordingly.\n\n## Review Groups\n\nReview groups contain individual review entries that must be completed by authorized users from specific groups. Each entry represents a required approval from a designated reviewer group.\n\n### Initial State\n\nWhen a review is created, each group entry is populated with the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"aaa257be-5cc9-401d-ae7e-18ae806d366a\",\n    \"group\": \"banking\",\n    \"status\": \"PENDING\",\n    \"reviewed_by\": null,\n    \"review_date\": null\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n### Completed Review State\n\nAfter a review is completed, the entry includes the status, review timestamp, and reviewer information:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"a546dfba-d917-4c2b-bc38-7852a7932573\",\n    \"group\": \"banking\",\n    \"status\": \"REJECTED\",\n    \"reviewed_by\": {\n        \"id\": \"17e4ff1a-104c-482c-be68-3c01bfc7028e\",\n        \"name\": \"John Doe\",\n        \"email\": \"john.doe@domain.tld\",\n        \"slack_id\": \"\"\n    },\n    \"review_date\": \"2025-05-27T16:40:05.519754143Z\"\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n## Review States\n\n### User-Controlled States\n\nThese states are set directly by reviewers:\n\n- **` + "`" + `APPROVED` + "`" + `** - The resource has been approved by the reviewer\n- **` + "`" + `REJECTED` + "`" + `** - The resource is rejected and cannot be updated further\n- **` + "`" + `REVOKED` + "`" + `** - The resource is revoked and cannot be updated further\n\n### System-Controlled States\n\nThese states are managed automatically by the gateway:\n\n- **` + "`" + `PENDING` + "`" + `** - Initial state when the review is created\n- **` + "`" + `PROCESSING` + "`" + `** - Session is being executed; review cannot be updated\n- **` + "`" + `EXECUTED` + "`" + `** - Session completed successfully; review cannot be updated\n- **` + "`" + `UNKNOWN` + "`" + `** - Session executed but outcome is indeterminate\n\n## General Rules\n\n### Review Permissions\n\n- Reviews can only be performed when the resource status is ` + "`" + `PENDING` + "`" + ` or ` + "`" + `APPROVED` + "`" + `\n- **Resource owners cannot self-approve** - approval requires another member of the same group\n- Users are only eligible to review if they are **not the resource owner** or are **administrators**\n\n### Multi-Group Reviews\n\n- If a user belongs to multiple groups, separate review entries are updated for each group\n- All group reviews must be completed before session execution\n\n### Status Transitions\n\n- Setting any review to ` + "`" + `REJECTED` + "`" + ` immediately changes the overall resource status and prevents further updates\n- ` + "`" + `APPROVED` + "`" + ` reviews can still be changed to ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + ` at any time by the resource owner or administrators\n- Once a review reaches ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + ` the resource is considered as immutable and it cannot be updated again\n\n### Final States\n\nReviews in ` + "`" + `PROCESSING` + "`" + `, ` + "`" + `EXECUTED` + "`" + `, or ` + "`" + `UNKNOWN` + "`" + ` states are immutable and cannot be modified.",
@@ -7158,6 +7223,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
+                },
                 "min_review_approvals": {
                     "description": "Minimum number of review approvals required to execute this connection",
                     "type": "integer",
@@ -7391,6 +7467,17 @@ const docTemplate = `{
                     "description": "The jira issue templates ids associated to the connection",
                     "type": "string",
                     "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
