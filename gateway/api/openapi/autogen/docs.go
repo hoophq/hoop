@@ -7105,7 +7105,194 @@ const docTemplate = `{
             }
         },
         "openapi.Connection": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "access_mode_exec",
+                "access_mode_runbooks",
+                "access_schema",
+                "agent_id",
+                "name",
+                "type"
+            ],
+            "properties": {
+                "access_max_duration": {
+                    "description": "Maximum duration in seconds for JIT access sessions on this connection",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "access_mode_exec": {
+                    "description": "Toggle Ad Hoc Executions\n* enabled - Enable to run ad-hoc executions for this connection\n* disabled - Disable ad-hoc executions for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_mode_runbooks": {
+                    "description": "Toggle Ad Hoc Runbooks Executions\n* enabled - Enable to run runbooks for this connection\n* disabled - Disable runbooks execution for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "access_schema": {
+                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection\nToggle Introspection Schema\n* enabled - Enable the instrospection schema in the webapp\n* disabled - Disable the instrospection schema in the webapp",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
+                },
+                "agent_id": {
+                    "description": "The agent associated with this connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "command": {
+                    "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "/bin/bash"
+                    ]
+                },
+                "connection_tags": {
+                    "description": "Tags to identify the connection\n* keys must contain between 1 and 64 alphanumeric characters, it may include (-), (_), (/), or (.) characters and it must not end with (-), (/) or (-).\n* values must contain between 1 and 256 alphanumeric characters, it may include space, (-), (_), (/), (+), (@), (:), (=) or (.) characters.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "environment": "prod",
+                        "tier": "frontend"
+                    }
+                },
+                "default_database": {
+                    "description": "Default databases returns the configured value of the attribute secrets-\u003e'DB'",
+                    "type": "string"
+                },
+                "force_approve_groups": {
+                    "description": "Groups that can force approve reviews for this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre-team"
+                    ]
+                },
+                "guardrail_rules": {
+                    "description": "The guard rail association id rules",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "5701046A-7B7A-4A78-ABB0-A24C95E6FE54",
+                        "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                    ]
+                },
+                "id": {
+                    "description": "Unique ID of the resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "jira_issue_template_id": {
+                    "description": "The jira issue templates ids associated to the connection",
+                    "type": "string",
+                    "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "managed_by": {
+                    "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": ""
+                },
+                "min_review_approvals": {
+                    "description": "Minimum number of review approvals required to execute this connection",
+                    "type": "integer",
+                    "example": 2
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "redact_enabled": {
+                    "description": "When this option is enabled it will allow managing the redact types through the attribute ` + "`" + `redact_types` + "`" + `",
+                    "type": "boolean"
+                },
+                "redact_types": {
+                    "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "EMAIL_ADDRESS"
+                    ]
+                },
+                "resource_name": {
+                    "description": "Resource to which this connection belongs to, it'll be created if it doesn't exist",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "reviewers": {
+                    "description": "Reviewers is a list of groups that will review the connection before the user could execute it",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-group"
+                    ]
+                },
+                "secret": {
+                    "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "status": {
+                    "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
+                    "type": "string",
+                    "enum": [
+                        "online",
+                        "offline"
+                    ],
+                    "readOnly": true
+                },
+                "subtype": {
+                    "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
+                    "type": "string",
+                    "example": "postgres"
+                },
+                "tags": {
+                    "description": "DEPRECATED: Tags to classify the connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod"
+                    ]
+                },
+                "type": {
+                    "description": "Type represents the main type of the connection:\n* database - Database protocols\n* application - Custom applications\n* custom - Shell applications",
+                    "type": "string",
+                    "enum": [
+                        "database",
+                        "application",
+                        "custom"
+                    ],
+                    "example": "database"
+                }
+            }
         },
         "openapi.ConnectionColumn": {
             "type": "object",

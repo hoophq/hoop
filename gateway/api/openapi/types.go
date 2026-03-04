@@ -197,7 +197,7 @@ type Connection struct {
 	// * database - Database protocols
 	// * application - Custom applications
 	// * custom - Shell applications
-	Type float64 `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
+	Type string `json:"type" binding:"required" enums:"database,application,custom" example:"database"`
 	// Sub Type is the underline implementation of the connection:
 	// * postgres - Implements Postgres protocol
 	// * mysql - Implements MySQL protocol
@@ -254,7 +254,6 @@ type Connection struct {
 	// Toggle Port Forwarding
 	// * enabled - Enable to perform port forwarding for this connection
 	// * disabled - Disable port forwarding for this connection
-	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
 	// Toggle Introspection Schema
 	// * enabled - Enable the instrospection schema in the webapp
 	// * disabled - Disable the instrospection schema in the webapp
