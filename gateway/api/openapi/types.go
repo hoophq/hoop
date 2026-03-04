@@ -187,7 +187,7 @@ type Connection struct {
 	// Unique ID of the resource
 	ID string `json:"id" readonly:"true" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
 	// Name of the connection. This attribute is immutable when updating it
-	//Name string `json:"name" binding:"required" example:"pgdemo"`
+	Name string `json:"name" binding:"required" example:"pgdemo"`
 	// Is the shell command that is going to be executed when interacting with this connection.
 	// This value is required if the connection is going to be used from the Webapp.
 	Command []string `json:"command" example:"/bin/bash"`
