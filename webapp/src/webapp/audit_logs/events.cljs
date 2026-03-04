@@ -1,6 +1,5 @@
 (ns webapp.audit-logs.events
   (:require
-   [clojure.string :as string]
    [re-frame.core :as rf]))
 
 (rf/reg-event-fx
@@ -109,33 +108,8 @@
                              (conj expanded-rows log-id))]
      (assoc-in db [:audit-logs :expanded-rows] new-expanded-rows))))
 
-(rf/reg-event-fx
- :audit-logs/export
+(rf/reg-event-db
+ :audit-logs/cleanup
  (fn
-   [{:keys [db]} [_]]
-   (let [data (get-in db [:audit-logs :data])
-         csv-header "Timestamp,User,Email,Operation,Resource Type,Resource Name,Outcome,Error Message\n"
-         csv-rows (map (fn [log]
-                         (let [timestamp (:created_at log)
-                               user (or (:actor_name log) "Unknown")
-                               email (or (:actor_email log) "")
-                               operation (:action log)
-                               resource-type (:resource_type log)
-                               resource-name (or (:resource_name log) "")
-                               outcome (let [status (:http_status log)]
-                                         (if (and status (>= status 200) (< status 300))
-                                           (str "Success (" status ")")
-                                           (str "Failure (" (or status "ERR") ")")))
-                               error-msg (or (:error_message log) "")]
-                           (string/join "," [timestamp user email operation resource-type resource-name outcome error-msg])))
-                       data)
-         csv-content (str csv-header (string/join "\n" csv-rows))
-         blob (js/Blob. #js[csv-content] #js{:type "text/csv"})
-         url (js/URL.createObjectURL blob)
-         link (js/document.createElement "a")]
-     (.setAttribute link "href" url)
-     (.setAttribute link "download" "audit-logs.csv")
-     (.click link)
-     (js/URL.revokeObjectURL url)
-     {:fx [[:dispatch [:show-snackbar {:level :success
-                                       :text "Audit logs exported successfully"}]]]})))
+   [db [_]]
+   (assoc-in db [:audit-logs :expanded-rows] #{})))
