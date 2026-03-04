@@ -158,9 +158,6 @@ func (a *Api) StartAPI(sentryInit bool) {
 	}
 	router := apiroutes.New(rg)
 	
-	// Register audit middleware globally to automatically log all write operations
-	rg.Use(a.AuditMiddleware())
-	
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
 
@@ -230,10 +227,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/users",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		userapi.Create)
 	r.PUT("/users/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateUser),
 		userapi.Update)
 	r.PATCH("/users/self/slack",
@@ -243,6 +242,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.DELETE("/users/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		userapi.Delete)
 
 	r.GET("/users/groups",
@@ -252,10 +252,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/users/groups",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		userapi.CreateGroup)
 	r.DELETE("/users/groups/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		userapi.DeleteGroup)
 
 	r.GET("/serviceaccounts",
@@ -265,27 +267,32 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/serviceaccounts",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Create)
 	r.PUT("/serviceaccounts/:subject",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateConnection),
 		apiconnections.Post)
 	r.PUT("/connections/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateConnection),
 		apiconnections.Put)
 	r.PATCH("/connections/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateConnection),
 		apiconnections.Patch)
 	r.GET("/connections",
@@ -297,6 +304,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.DELETE("/connections/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteConnection),
 		apiconnections.Delete)
 	r.GET("/connections/:nameOrID/databases",
@@ -387,6 +395,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/agents",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateAgent),
 		apiagents.Post)
 	r.GET("/agents",
@@ -400,12 +409,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.DELETE("/agents/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteAgent),
 		apiagents.Delete)
 
 	r.POST("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiorgs.CreateAgentKey)
 	r.GET("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,
@@ -414,6 +425,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.DELETE("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiorgs.RevokeAgentKey)
 
 	r.PUT("/orgs/license",
@@ -716,11 +728,13 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateGuardRailRules),
 		apiguardrails.Post)
 	r.PUT("/guardrails/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateGuardRailRules),
 		apiguardrails.Put)
 	r.GET("/guardrails",
@@ -734,16 +748,19 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.DELETE("/guardrails/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteGuardRailRules),
 		apiguardrails.Delete)
 
 	r.POST("/datamasking-rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apidatamasking.Post)
 	r.PUT("/datamasking-rules/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apidatamasking.Put)
 	r.GET("/datamasking-rules",
 		apiroutes.AdminOnlyAccessRole,
@@ -756,6 +773,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.DELETE("/datamasking-rules/:id",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apidatamasking.Delete)
 
 	// server config routes
@@ -777,6 +795,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/serverconfig/auth",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiserverconfig.UpdateAuthConfig,
 	)
 	r.POST("/serverconfig/auth/apikey",
