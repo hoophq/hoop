@@ -7107,6 +7107,7 @@ const docTemplate = `{
         "openapi.Connection": {
             "type": "object",
             "required": [
+                "access_mode_connect",
                 "access_mode_exec",
                 "access_mode_runbooks",
                 "access_schema",
@@ -7119,6 +7120,14 @@ const docTemplate = `{
                     "description": "Maximum duration in seconds for JIT access sessions on this connection",
                     "type": "integer",
                     "example": 3600
+                },
+                "access_mode_connect": {
+                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection",
+                    "type": "string",
+                    "enum": [
+                        "enabled",
+                        "disabled"
+                    ]
                 },
                 "access_mode_exec": {
                     "description": "Toggle Ad Hoc Executions\n* enabled - Enable to run ad-hoc executions for this connection\n* disabled - Disable ad-hoc executions for this connection",
@@ -7137,7 +7146,7 @@ const docTemplate = `{
                     ]
                 },
                 "access_schema": {
-                    "description": "Toggle Port Forwarding\n* enabled - Enable to perform port forwarding for this connection\n* disabled - Disable port forwarding for this connection\nToggle Introspection Schema\n* enabled - Enable the instrospection schema in the webapp\n* disabled - Disable the instrospection schema in the webapp",
+                    "description": "Toggle Introspection Schema\n* enabled - Enable the instrospection schema in the webapp\n* disabled - Disable the instrospection schema in the webapp",
                     "type": "string",
                     "enum": [
                         "enabled",
@@ -7223,6 +7232,10 @@ const docTemplate = `{
                     "description": "Name of the connection. This attribute is immutable when updating it",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "new_field": {
+                    "type": "string",
+                    "example": "new_value"
                 },
                 "redact_enabled": {
                     "description": "When this option is enabled it will allow managing the redact types through the attribute ` + "`" + `redact_types` + "`" + `",

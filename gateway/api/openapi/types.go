@@ -254,6 +254,7 @@ type Connection struct {
 	// Toggle Port Forwarding
 	// * enabled - Enable to perform port forwarding for this connection
 	// * disabled - Disable port forwarding for this connection
+	AccessModeConnect string `json:"access_mode_connect" binding:"required" enums:"enabled,disabled"`
 	// Toggle Introspection Schema
 	// * enabled - Enable the instrospection schema in the webapp
 	// * disabled - Disable the instrospection schema in the webapp
@@ -268,6 +269,8 @@ type Connection struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of review approvals required to execute this connection
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
+
+	NewField string `json:"new_field" example:"new_value"`
 }
 
 type ConnectionPatch struct {
