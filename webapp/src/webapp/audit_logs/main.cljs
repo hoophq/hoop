@@ -4,7 +4,9 @@
    ["lucide-react" :refer [Download]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.audit-logs.events]
    [webapp.audit-logs.filters :as filters]
+   [webapp.audit-logs.subs]
    [webapp.audit-logs.table :as table]
    [webapp.components.loaders :as loaders]))
 

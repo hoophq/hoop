@@ -5,7 +5,9 @@
    ["react-tailwindcss-datepicker" :as Datepicker]
    [clojure.string :as string]
    [re-frame.core :as rf]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.audit-logs.events]
+   [webapp.audit-logs.subs]))
 
 (defn date-filter []
   (let [filters (rf/subscribe [:audit-logs/filters])

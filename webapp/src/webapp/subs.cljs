@@ -291,23 +291,3 @@
  :command-palette->search-results
  (fn [db _]
    (get-in db [:command-palette :search-results])))
-
-(re-frame/reg-sub
- :audit-logs/data
- (fn [db _]
-   (:audit-logs db)))
-
-(re-frame/reg-sub
- :audit-logs/pagination
- (fn [db _]
-   (get-in db [:audit-logs :pagination])))
-
-(re-frame/reg-sub
- :audit-logs/filters
- (fn [db _]
-   (get-in db [:audit-logs :filters])))
-
-(re-frame/reg-sub
- :audit-logs/expanded-rows
- (fn [db _]
-   (get-in db [:audit-logs :expanded-rows])))
