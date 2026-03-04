@@ -10,13 +10,13 @@
    [webapp.components.loaders :as loaders]))
 
 (defn empty-state []
-  [:> Box {:class "flex flex-col h-full items-center justify-center py-16 px-4 bg-white max-w-3xl mx-auto rounded-lg border border-gray-200"}
+  [:> Box {:class "flex flex-col items-center justify-center py-16 px-4"}
    [:> Flex {:direction "column" :align "center"}
     [:> Box {:class "mb-8 w-80"}
      [:img {:src "/images/illustrations/empty-state.png"
             :alt "Empty state illustration"}]]
     [:> Text {:size "3" :class "text-gray-11 max-w-md text-center"}
-     "No Internal Audit Logs found matching your criteria"]]])
+     "No audit logs found"]]])
 
 (defn main []
   (r/with-let [audit-logs-state (rf/subscribe [:audit-logs/data])
@@ -48,13 +48,16 @@
 
         show-empty?
         [:> Box {:class "min-h-screen bg-gray-1"}
-         [:> Box {:class "p-radix-7"}
-          [:> Heading {:as "h2" :size "8" :class "mb-radix-6"} "Internal Audit Logs"]
+         [:> Box {:class "px-radix-7 pb-radix-7"}
+          [:> Box {:class "sticky top-0 z-10 bg-[--gray-1] pb-radix-5 -mx-radix-7 px-radix-7 pt-radix-7"}
+           [:> Heading {:as "h2" :size "8" :class "mb-radix-6"} "Internal Audit Logs"]
 
-          [:> Box {:class "space-y-radix-5"}
            [:> Flex {:justify "between" :align "center"}
-            [filters/main]]
+            [:> Text {:size "3" :class "text-[--gray-11]"}
+             "Showing 0 of 0 logs"]
+            [filters/main]]]
 
+          [:> Box {:class "flex items-center justify-center mt-radix-5"}
            [empty-state]]]]
 
         :else
