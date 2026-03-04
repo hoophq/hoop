@@ -59,7 +59,7 @@
    [webapp.events.editor-plugin]
    [webapp.events.gateway-info]
    [webapp.events.clipboard]
-   [webapp.events.guardrails] 
+   [webapp.events.guardrails]
    [webapp.events.indexer-plugin]
    [webapp.events.jira-integration]
    [webapp.events.jira-templates]
@@ -112,8 +112,6 @@
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
-   [webapp.reviews.panel :as reviews]
-   [webapp.reviews.review-detail :as review-detail]
    [webapp.routes :as routes]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
@@ -470,22 +468,6 @@
   [layout :application-hoop [:div {:class "h-full"}
                              [runbooks-runner/main]]])
 
-(defmethod routes/panels :reviews-plugin-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [:<>
-                              [h/h2 "Reviews" {:class "mb-6"}]
-                              [reviews/panel]]]])
-
-(defmethod routes/panels :review-details-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        review-id (-> current-route :route-params :review-id)]
-    (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:reviews-plugin->get-review-details review-id])
-    [layout :application-hoop [:div {:class "bg-white p-large h-full"}
-                               [review-detail/review-detail]]]))
-
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
@@ -536,14 +518,6 @@
       (rf/dispatch [:audit->get-filtered-sessions-by-id session-id-list]))
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop [session-filtered-by-id/main]]))
-
-(defmethod routes/panels :reviews-plugin-details-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        review-id (-> current-route :route-params :review-id)]
-    (rf/dispatch [:reviews-plugin->get-review-by-id {:id review-id}])
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop [review-detail/review-details-page]]))
 
 (defmethod routes/panels :slack-new-organization-panel []
   [layout :application-hoop [slack-new-organization/main]])

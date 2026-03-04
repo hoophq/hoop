@@ -1,7 +1,7 @@
 (ns webapp.sessions.components.session-details
   (:require
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Flex Text]]
-   ["lucide-react" :refer [BadgeCheck CalendarArrowDown CalendarArrowUp
+   ["lucide-react" :refer [Hash BadgeCheck CalendarArrowDown CalendarArrowUp
                            ChevronDown ChevronUp CircleCheckBig CircleUser
                            Clock2 ExternalLink FastForward OctagonX Package
                            Rotate3d Users ArrowUpRight BookUp2]]
@@ -161,6 +161,11 @@
                            :label "Finished at"
                            :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
                                    (formatters/time-parsed->full-date end-date)]}])
+
+            [detail-row {:label "ID"
+                         :icon [:> Hash {:size 20}]
+                         :value [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
+                                 (:id session)]}]
 
             (when (-> session :labels :runbookFile)
               [detail-row {:icon [:> BookUp2 {:size 20}]

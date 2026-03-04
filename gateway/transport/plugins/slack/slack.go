@@ -231,7 +231,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			return nil, plugintypes.InternalErr("internal error, failed fetching review input", err)
 		}
 		sreq.ID = rev.ID
-		sreq.WebappURL = fmt.Sprintf("%s/reviews/%s", p.apiURL, rev.ID)
+		sreq.WebappURL = fmt.Sprintf("%s/sessions/%s", p.apiURL, rev.SessionID)
 		sreq.ApprovalGroups = parseGroups(rev.ReviewGroups)
 		if rev.AccessDurationSec > 0 {
 			ad := time.Duration(rev.AccessDurationSec) * time.Second
