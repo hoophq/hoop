@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -17,7 +18,9 @@ import (
 	"github.com/hoophq/hoop/common/proto/spectypes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
+	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
@@ -57,7 +60,13 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 
 	// persist session for public gRPC clients
 	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
-		err := models.UpsertSession(models.Session{
+		ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
+		connection, err := models.GetConnectionByNameOrID(ctx, pctx.ConnectionName)
+		if err != nil {
+			return err
+		}
+
+		newSession := models.Session{
 			ID:                   pctx.SID,
 			OrgID:                pctx.OrgID,
 			UserEmail:            pctx.UserEmail,
@@ -75,8 +84,9 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ExitCode:             nil,
 			CreatedAt:            startDate,
 			EndSession:           nil,
-		})
-		if err != nil {
+		}
+
+		if err := services.UpsertSession(context.Background(), newSession, *connection); err != nil {
 			return fmt.Errorf("failed persisting session to store, reason=%v", err)
 		}
 	}
