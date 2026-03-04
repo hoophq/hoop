@@ -1,0 +1,20 @@
+name: API Breaking Change Check
+
+on:
+  pull_request:
+    paths:
+      - 'gateway/api/openapi/**'
+
+jobs:
+  breaking-changes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: oasdiff/oasdiff-action/breaking@main
+        with:
+          base: 'origin/breaking-change-poc-base:gateway/api/openapi/openapiv3.json'
+          revision: 'HEAD:gateway/api/openapi/openapiv3.json'
+          fail-on: 'BREAKING'
