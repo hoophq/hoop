@@ -77,6 +77,7 @@
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
+                  ["/audit-logs" :settings-audit-logs]
                   ["/jira" :settings-jira]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop

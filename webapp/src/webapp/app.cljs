@@ -59,7 +59,7 @@
    [webapp.events.editor-plugin]
    [webapp.events.gateway-info]
    [webapp.events.clipboard]
-   [webapp.events.guardrails] 
+   [webapp.events.guardrails]
    [webapp.events.indexer-plugin]
    [webapp.events.jira-integration]
    [webapp.events.jira-templates]
@@ -119,6 +119,8 @@
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
+   [webapp.audit-logs.main :as audit-logs]
+   [webapp.events.audit-logs]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
@@ -294,6 +296,12 @@
     [routes/wrap-admin-only
      [routes/wrap-selfhosted-only
       [infrastructure/main]]]]])
+
+(defmethod routes/panels :settings-audit-logs-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-screen"}
+    [routes/wrap-admin-only
+     [audit-logs/main]]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
