@@ -83,16 +83,10 @@
  :runbooks/connection-loaded
  (fn [{:keys [db]} [_ connection-name]]
    (let [connection (get-in db [:connections :details connection-name])
-        previous-name (get-in db [:runbooks :selected-connection :name])
-        next-name (:name connection)
-        connection-changed? (not= previous-name next-name)
          enabled? (and connection
                        (not= "disabled" (:access_mode_runbooks connection)))]
      (if enabled?
-      {:db (-> db
-               (assoc-in [:runbooks :selected-connection] connection)
-               (cond-> connection-changed?
-                 (assoc-in [:runbooks :execution-requirements-callout :dismissed?] false)))
+       {:db (assoc-in db [:runbooks :selected-connection] connection)
         :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
        {:db (assoc-in db [:runbooks :selected-connection] nil)
         :fx [[:dispatch [:runbooks/clear-persisted-connection]]
