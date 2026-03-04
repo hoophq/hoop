@@ -31,21 +31,22 @@
                         :placeholder "Period"
                         :separator "-"
                         :displayFormat "DD/MM/YYYY"
-                        :containerClassName "relative w-56 text-gray-700"
+                        :containerClassName "relative w-56 text-gray-11"
                         :toggleClassName (str "absolute rounded-l-lg "
-                                              "text-gray-500 "
+                                              "text-gray-11 "
                                               "left-0 h-full px-3 "
                                               "focus:outline-none disabled:opacity-40 "
                                               "disabled:cursor-not-allowed")
-                        :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
-                                               " border-gray-300 "
-                                               " border-gray-400 ")
-                                             "pl-10 py-2 w-full rounded-lg text-gray-600 "
+                        :inputClassName (str (if (or (.-startDate @date)
+                                                     (.-endDate @date))
+                                               " bg-[--gray-a3] hover:bg-[--gray-a4] "
+                                               " border border-gray-8 ")
+                                             "pl-10 py-2 w-full rounded-lg text-gray-11 "
                                              "font-semibold text-sm focus:ring-0 "
-                                             "border h-[40px] "
+                                             "h-[32px] "
                                              "placeholder:text-gray-500 "
-                                             "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
-                                             "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
+                                             "hover:bg-gray-50 hover:text-gray-11 "
+                                             "focus:bg-gray-50 focus:text-gray-11 focus:border-gray-400")
                         :useRange false
                         :showShortcuts true
                         :onChange (fn [v]
@@ -68,12 +69,15 @@
                                      admin-users))]
         [:> Popover.Root
          [:> Popover.Trigger {:asChild true}
-          [:> Button {:size "3"
-                      :variant (if active? "soft" "surface")
+          [:> Button {:size "2"
+                      :variant (if active? "soft" "outline")
                       :color "gray"
                       :on-click #(reset! search-term "")}
            [:> (.-UserIcon hero-micro-icon) {:class "w-4 h-4"}]
-           [:span {:class "text-sm font-semibold"} "User"]
+           [:span {:class "text-sm font-semibold"}
+            (if active?
+              active-user
+              "User")]
            (when active?
              [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
               [:span {:class "text-white text-xxs font-bold"} "1"]])]]
