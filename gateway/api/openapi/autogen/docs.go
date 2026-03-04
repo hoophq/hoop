@@ -10429,13 +10429,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.RunbookSearch"
                     }
-                },
-                "runbooks": {
-                    "description": "Runbooks found in the search (flat list of runbook name paths, for backward compatibility)",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

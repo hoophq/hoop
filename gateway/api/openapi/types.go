@@ -2027,8 +2027,6 @@ type SearchResponse struct {
 	Errors []string `json:"errors"`
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
-	// Runbooks found in the search (flat list of runbook name paths, for backward compatibility)
-	RunbookNames []string `json:"runbooks"`
 	// Runbooks found in the search (enriched format with repository and name fields)
 	Runbooks []*RunbookSearch `json:"runbook_search"`
 	// Resources found in the search
