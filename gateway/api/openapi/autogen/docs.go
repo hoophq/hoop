@@ -7112,6 +7112,7 @@ const docTemplate = `{
                 "access_mode_runbooks",
                 "access_schema",
                 "agent_id",
+                "name",
                 "type"
             ],
             "properties": {
@@ -7159,7 +7160,7 @@ const docTemplate = `{
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "command": {
-                    "description": "Name of the connection. This attribute is immutable when updating it\nName string ` + "`" + `json:\"name\" binding:\"required\" example:\"pgdemo\"` + "`" + `\nIs the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
+                    "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -7226,6 +7227,11 @@ const docTemplate = `{
                     "description": "Minimum number of review approvals required to execute this connection",
                     "type": "integer",
                     "example": 2
+                },
+                "name": {
+                    "description": "Name of the connection. This attribute is immutable when updating it",
+                    "type": "string",
+                    "example": "pgdemo"
                 },
                 "redact_enabled": {
                     "description": "When this option is enabled it will allow managing the redact types through the attribute ` + "`" + `redact_types` + "`" + `",
