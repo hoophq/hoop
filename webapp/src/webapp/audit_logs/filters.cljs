@@ -7,7 +7,8 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.audit-logs.events]
-   [webapp.audit-logs.subs]))
+   [webapp.audit-logs.subs]
+   [clojure.string :as cs]))
 
 (defn date-filter []
   (let [filters (rf/subscribe [:audit-logs/filters])
@@ -27,6 +28,7 @@
                               (rf/dispatch [:audit-logs/set-filters
                                             {:created-after (iso-date "start_date" start-date)
                                              :created-before (iso-date "end_date" end-date)}])))]
+
         [:> Datepicker {:value @date
                         :placeholder "Period"
                         :separator "-"
@@ -37,8 +39,9 @@
                                               "left-0 h-full px-3 "
                                               "focus:outline-none disabled:opacity-40 "
                                               "disabled:cursor-not-allowed")
-                        :inputClassName (str (if (or (.-startDate @date)
-                                                     (.-endDate @date))
+                        :inputClassName (str (if (not
+                                                  (or (cs/blank? (.-startDate @date))
+                                                      (cs/blank? (.-endDate @date))))
                                                " bg-[--gray-a3] hover:bg-[--gray-a4] "
                                                " border border-gray-8 ")
                                              "pl-10 py-2 w-full rounded-lg text-gray-11 "
