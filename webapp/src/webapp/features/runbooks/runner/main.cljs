@@ -141,12 +141,11 @@
         selected-template (rf/subscribe [:runbooks->selected-runbooks])
         search-term (rf/subscribe [:search/term])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        banner-dismissed? (rf/subscribe [:runbooks/execution-requirements-callout-dismissed?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
-        banner-dismissed? (r/atom false)
-        last-banner-connection (r/atom nil)
         x-panel-sizes (mapv js/parseInt
                             (cs/split
                              (or (.getItem js/localStorage "runbook-x-panel-sizes") "270,950") ","))
@@ -163,10 +162,6 @@
         (rf/dispatch [:search/filter-runbooks @search-term]))
 
       (let [mandatory-metadata-fields (seq (:mandatory_metadata_fields @runbooks-connection))
-            current-connection-name (:name @runbooks-connection)
-            _ (when (not= @last-banner-connection current-connection-name)
-                (reset! last-banner-connection current-connection-name)
-                (reset! banner-dismissed? false))
             show-info-banner? (and @runbooks-connection
                                    (not @banner-dismissed?)
                                    mandatory-metadata-fields)]
@@ -201,7 +196,7 @@
                [:> Box {:class "relative h-full flex-1"}
                 (when show-info-banner?
                   [mandatory-metadata-callout/main
-                   {:on-dismiss #(reset! banner-dismissed? true)}])
+                   {:on-dismiss #(rf/dispatch [:runbooks/dismiss-execution-requirements-callout])}])
 
                 [:> Box {:class "h-full"}
                  [connections-dialog/connections-dialog]

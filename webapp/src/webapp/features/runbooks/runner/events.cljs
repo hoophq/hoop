@@ -41,7 +41,9 @@
 (rf/reg-event-fx
  :runbooks/set-selected-connection
  (fn [{:keys [db]} [_ connection]]
-   {:db (assoc-in db [:runbooks :selected-connection] connection)
+  {:db (-> db
+           (assoc-in [:runbooks :selected-connection] connection)
+           (assoc-in [:runbooks :execution-requirements-callout :dismissed?] false))
     :fx [[:dispatch [:runbooks/persist-selected-connection]]
          [:dispatch [:runbooks/clear-active-runbooks]]
          [:dispatch [:runbooks/update-runbooks-for-connection]]]}))
@@ -81,14 +83,25 @@
  :runbooks/connection-loaded
  (fn [{:keys [db]} [_ connection-name]]
    (let [connection (get-in db [:connections :details connection-name])
+        previous-name (get-in db [:runbooks :selected-connection :name])
+        next-name (:name connection)
+        connection-changed? (not= previous-name next-name)
          enabled? (and connection
                        (not= "disabled" (:access_mode_runbooks connection)))]
      (if enabled?
-       {:db (assoc-in db [:runbooks :selected-connection] connection)
+      {:db (-> db
+               (assoc-in [:runbooks :selected-connection] connection)
+               (cond-> connection-changed?
+                 (assoc-in [:runbooks :execution-requirements-callout :dismissed?] false)))
         :fx [[:dispatch [:runbooks/update-runbooks-for-connection]]]}
        {:db (assoc-in db [:runbooks :selected-connection] nil)
         :fx [[:dispatch [:runbooks/clear-persisted-connection]]
              [:dispatch [:runbooks/list nil]]]}))))
+
+(rf/reg-event-db
+ :runbooks/dismiss-execution-requirements-callout
+ (fn [db _]
+   (assoc-in db [:runbooks :execution-requirements-callout :dismissed?] true)))
 
 (rf/reg-event-fx
  :runbooks/update-runbooks-for-connection

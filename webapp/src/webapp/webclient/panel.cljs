@@ -190,14 +190,13 @@
   (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
+        banner-dismissed? (rf/subscribe [:primary-connection/execution-requirements-callout-dismissed?])
         active-panel (rf/subscribe [:webclient->active-panel])
         parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
-        banner-dismissed? (r/atom false)
-        last-banner-connection (r/atom nil)
         horizontal-pane-sizes (mapv js/parseInt
                                     (cs/split
                                      (or (.getItem js/localStorage "editor-horizontal-pane-sizes") "650,210") ","))
@@ -294,10 +293,6 @@
             mandatory-metadata-fields (seq (:mandatory_metadata_fields current-connection))
             needs-jira-template? (boolean (and current-connection
                                                (not (cs/blank? (:jira_issue_template_id current-connection)))))
-            current-connection-name (:name current-connection)
-            _ (when (not= @last-banner-connection current-connection-name)
-                (reset! last-banner-connection current-connection-name)
-                (reset! banner-dismissed? false))
             show-info-banner? (and current-connection
                                    (not @banner-dismissed?)
                                    (or mandatory-metadata-fields needs-jira-template?))
@@ -372,7 +367,7 @@
                   [:> Box {:class "relative w-full h-full"}
                    (when show-info-banner?
                      [mandatory-metadata-callout/main
-                      {:on-dismiss #(reset! banner-dismissed? true)}])
+                      {:on-dismiss #(rf/dispatch [:primary-connection/dismiss-execution-requirements-callout])}])
 
                    [:div {:class "h-full flex flex-col"}
                     (when (= "custom" (:type current-connection))
