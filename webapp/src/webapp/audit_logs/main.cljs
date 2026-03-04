@@ -25,7 +25,7 @@
                _ (do
                    (rf/dispatch [:audit-logs/fetch {:page 1 :page-size 25}])
                    (js/setTimeout #(reset! min-loading-done true) 1500))]
-    
+
     (let [data (:data @audit-logs-state)
           status (:status @audit-logs-state)
           pagination (:pagination @audit-logs-state)
@@ -33,8 +33,8 @@
           current-count (count data)
           initial-loading? (and (= :loading status) (empty? data))
           show-empty? (and (not (= :loading status))
-                          (empty? data)
-                          (not @initial-load))]
+                           (empty? data)
+                           (not @initial-load))]
 
       (when (and (not (= :loading status)) @initial-load (seq data))
         (reset! initial-load false))
@@ -58,16 +58,17 @@
 
         :else
         [:> Box {:class "min-h-screen bg-gray-1"}
-         [:> Box {:class "p-radix-7"}
-          [:> Heading {:as "h2" :size "8" :class "mb-radix-6"} "Internal Audit Logs"]
+         [:> Box {:class "px-radix-7 pb-radix-7"}
+          [:> Box {:class "sticky top-0 z-10 bg-[--gray-1] pb-radix-5 -mx-radix-7 px-radix-7 pt-radix-7"}
+           [:> Heading {:as "h2" :size "8" :class "mb-radix-6"} "Internal Audit Logs"]
 
-          [:> Box {:class "space-y-radix-5"}
            [:> Flex {:justify "between" :align "center"}
             [:> Text {:size "3" :class "text-[--gray-11]"}
              (str "Showing " current-count " of " total " logs")]
-            [filters/main]]
+            [filters/main]]]
 
+          [:> Box {:class "mt-radix-5"}
            [table/main]]]]))
-    
+
     (finally
       (rf/dispatch [:audit-logs/cleanup]))))
