@@ -16,6 +16,6 @@ jobs:
 
       - uses: oasdiff/oasdiff-action/breaking@main
         with:
-          base: 'origin/breaking-change-poc-base:gateway/api/openapi/openapiv3.json'
+          base: 'origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json'
           revision: 'HEAD:gateway/api/openapi/openapiv3.json'
           fail-on: 'BREAKING'
