@@ -55,7 +55,7 @@ type User struct {
 	// Display name
 	Name string `json:"name" example:"John Wick"`
 	// Email address of the user
-	Email string `json:"email" format:"email" binding:"required"`
+	//Email string `json:"email" format:"email" binding:"required"`
 	// The status of the user. Inactive users cannot access the system
 	Status StatusType `json:"status" default:"active"`
 	// DEPRECATED in flavor of role

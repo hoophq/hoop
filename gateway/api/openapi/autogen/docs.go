@@ -11436,15 +11436,7 @@ const docTemplate = `{
         },
         "openapi.User": {
             "type": "object",
-            "required": [
-                "email"
-            ],
             "properties": {
-                "email": {
-                    "description": "Email address of the user",
-                    "type": "string",
-                    "format": "email"
-                },
                 "groups": {
                     "description": "Groups registered for this user",
                     "type": "array",
@@ -11494,7 +11486,7 @@ const docTemplate = `{
                     "example": "U053ELZHB53"
                 },
                 "status": {
-                    "description": "The status of the user. Inactive users cannot access the system",
+                    "description": "Email address of the user\nEmail string ` + "`" + `json:\"email\" format:\"email\" binding:\"required\"` + "`" + `\nThe status of the user. Inactive users cannot access the system",
                     "default": "active",
                     "allOf": [
                         {
@@ -11524,15 +11516,7 @@ const docTemplate = `{
         },
         "openapi.UserInfo": {
             "type": "object",
-            "required": [
-                "email"
-            ],
             "properties": {
-                "email": {
-                    "description": "Email address of the user",
-                    "type": "string",
-                    "format": "email"
-                },
                 "feature_ask_ai": {
                     "description": "Ask AI feature uses ChatGPT allowing using natural language to construct input based on the context of connections\n* unavailable - the ChatGPT credentials is not available\n* enabled - ChatGPT credentials is available and an administrator has provide consent to send introspection schema to GTP-4\n* disabled - ChatGPT credentials is available and an administrator has not provided consent to send introspection schema to GTP-4",
                     "type": "string",
@@ -11617,7 +11601,7 @@ const docTemplate = `{
                     "example": "U053ELZHB53"
                 },
                 "status": {
-                    "description": "The status of the user. Inactive users cannot access the system",
+                    "description": "Email address of the user\nEmail string ` + "`" + `json:\"email\" format:\"email\" binding:\"required\"` + "`" + `\nThe status of the user. Inactive users cannot access the system",
                     "default": "active",
                     "allOf": [
                         {
