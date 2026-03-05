@@ -2027,8 +2027,8 @@ type SearchResponse struct {
 	Errors []string `json:"errors"`
 	// Connections found in the search
 	Connections []ConnectionSearch `json:"connections"`
-	// Runbooks found in the search (enriched format with repository and name fields)
-	Runbooks []*RunbookSearch `json:"runbook_search"`
+	// Runbooks found in the search
+	Runbooks []*RunbookSearch `json:"runbooks"`
 	// Resources found in the search
 	Resources []ResourceSearch `json:"resources"`
 }

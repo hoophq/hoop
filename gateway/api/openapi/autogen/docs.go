@@ -10423,8 +10423,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.ResourceSearch"
                     }
                 },
-                "runbook_search": {
-                    "description": "Runbooks found in the search (enriched format with repository and name fields)",
+                "runbooks": {
+                    "description": "Runbooks found in the search",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.RunbookSearch"
