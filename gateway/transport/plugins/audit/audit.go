@@ -61,9 +61,15 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	// persist session for public gRPC clients
 	if !strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClientAPI) {
 		ctx := storagev2.NewContext(pctx.UserID, pctx.OrgID)
+		ctx.WithUserInfo(pctx.UserName, pctx.UserEmail, "active", "", pctx.UserGroups)
+
 		connection, err := models.GetConnectionByNameOrID(ctx, pctx.ConnectionName)
 		if err != nil {
 			return err
+		}
+
+		if connection == nil {
+			return fmt.Errorf("connection not found")
 		}
 
 		newSession := models.Session{
