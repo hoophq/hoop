@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	mssqltypes "github.com/hoophq/hoop/common/mssqltypes"
@@ -17,6 +18,7 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
@@ -109,6 +111,40 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 		if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClient) {
 			if err := models.UpdateSessionInput(pctx.OrgID, pctx.SID, string(pkt.Payload)); err != nil {
 				return nil, plugintypes.InternalErr("failed updating session input", err)
+			}
+
+			// Check AI
+			orgID := uuid.MustParse(pctx.OrgID)
+			analyzeRes, err := sessionapi.AIAnalyze(pctx.Context, orgID, pctx.ConnectionName, string(pkt.Payload))
+			if err != nil {
+				log.With("sid", pctx.SID, "org_id", pctx.OrgID).Errorf("failed analyzing session input with AI, err=%v", err)
+				return nil, plugintypes.InternalErr("failed analyzing session input with AI", err)
+			}
+
+			if analyzeRes != nil {
+				session, err := models.GetSessionByID(pctx.OrgID, pctx.SID)
+				if err != nil {
+					return nil, plugintypes.InternalErr("failed getting session by ID", err)
+				}
+
+				session.AIAnalysis = analyzeRes
+
+				shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+				if shouldBlock {
+					session.Status = string(openapi.SessionStatusDone)
+					session.ExitCode = internalExitCode
+					endTime := time.Now().UTC()
+					session.EndSession = &endTime
+				}
+
+				if err := models.UpsertSession(*session); err != nil {
+					log.Errorf("failed updating session, err=%v", err)
+					return nil, plugintypes.InternalErr("failed updating session", err)
+				}
+
+				if shouldBlock {
+					return nil, plugintypes.NewPacketErr("session blocked by AI risk analyzer", nil)
+				}
 			}
 		}
 

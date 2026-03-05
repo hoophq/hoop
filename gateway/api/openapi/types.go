@@ -558,6 +558,19 @@ const (
 	SessionStatusDone  SessionStatusType = "done"
 )
 
+type SessionAIAnalysis struct {
+	// RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:
+	RiskLevel string `json:"risk_level" example:"high"`
+	// Title is a short description of the identified risk in the session
+	Title string `json:"title" example:"Potential Data Leakage"`
+	// Explanation provides a detailed explanation of the identified risk and why the session was flagged
+	Explanation string `json:"explanation" example:"The script contains queries that may expose sensitive data."`
+	// Action taken based on the risk assessment. Possible values are:
+	// * `allow_execution` - allow the session to execute
+	// * `block_execution` - block the session from executing
+	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
+}
+
 type Session struct {
 	// The resource unique identifier
 	ID string `json:"id" format:"uuid" example:"1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
@@ -623,6 +636,8 @@ type Session struct {
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
+	// The AI analysis of the session if it's available
+	AIAnalysis *SessionAIAnalysis `json:"ai_analysis" readonly:"true"`
 }
 
 type ProvisionSession struct {
@@ -2350,8 +2365,6 @@ type AccessRequestRuleRequest struct {
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
 }
 
-// ---- AI Provider ----
-
 type AIProviderRequest struct {
 	// Name for the AI provider
 	Provider string `json:"provider" binding:"required" enums:"openai,anthropic,azure-openai,custom" example:"openai"`
@@ -2377,8 +2390,6 @@ type AIProviderResponse struct {
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
-
-// ---- AI Session Analyzer Rules ----
 
 type AISessionAnalyzerRiskEvaluation struct {
 	// Action for low-risk sessions
