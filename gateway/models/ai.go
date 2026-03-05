@@ -96,10 +96,31 @@ func DeleteAIProvider(orgID uuid.UUID) error {
 	return nil
 }
 
-func ListAISessionAnalyzerRules(orgID uuid.UUID) ([]*AISessionAnalyzerRules, error) {
+func ListAISessionAnalyzerRules(orgID uuid.UUID, connectionNames []string, page, pageSize int) ([]*AISessionAnalyzerRules, int64, error) {
 	var rules []*AISessionAnalyzerRules
-	err := DB.Where("org_id = ?", orgID).Order("name ASC").Find(&rules).Error
-	return rules, err
+	var total int64
+
+	query := DB.Where("org_id = ?", orgID)
+	if len(connectionNames) > 0 {
+		query = query.Where("connection_names && ?", pq.StringArray(connectionNames))
+	}
+
+	// Get total count
+	if err := query.Model(&AISessionAnalyzerRules{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Apply pagination
+	if pageSize > 0 {
+		offset := 0
+		if page > 1 {
+			offset = (page - 1) * pageSize
+		}
+		query = query.Limit(pageSize).Offset(offset)
+	}
+
+	err := query.Order("name ASC").Find(&rules).Error
+	return rules, total, err
 }
 
 func GetAISessionAnalyzerRule(orgID uuid.UUID, name string) (*AISessionAnalyzerRules, error) {

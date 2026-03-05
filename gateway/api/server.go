@@ -313,6 +313,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
 
+	r.GET("/connections/:nameOrID/ai-analyzer-rule",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetConnectionAnalyzerRule)
+
 	r.GET("/connections/:nameOrID/test",
 		r.AuthMiddleware,
 		apiconnections.TestConnection)

@@ -129,10 +129,13 @@ func DeleteProvider(c *gin.Context) {
 // ListAISessionAnalyzerRules
 //
 //	@Summary		List AI Session Analyzer Rules
-//	@Description	List all AI session analyzer rules for the organization
+//	@Description	List all AI session analyzer rules for the organization, optionally filtered by connection names
 //	@Tags			AI
 //	@Produce		json
-//	@Success		200	{array}		openapi.AISessionAnalyzerRuleResponse
+//	@Param			connection_names	query		array	false	"Filter by connection names (can be repeated)"
+//	@Param			page				query		integer	false	"Page number (default 1)"
+//	@Param			page_size			query		integer	false	"Page size (default 0 = all, max 100)"
+//	@Success		200	{object}	openapi.PaginatedResponse[openapi.AISessionAnalyzerRule]
 //	@Failure		500	{object}	openapi.HTTPError
 //	@Router			/ai/session-analyzer/rules [get]
 func ListSessionAnalyzerRules(c *gin.Context) {
@@ -143,7 +146,26 @@ func ListSessionAnalyzerRules(c *gin.Context) {
 		return
 	}
 
-	rules, err := models.ListAISessionAnalyzerRules(orgID)
+	connectionNames := c.QueryArray("connection_names")
+
+	page := 1
+	if p := c.Query("page"); p != "" {
+		if parsed, err := fmt.Sscanf(p, "%d", &page); err != nil || parsed == 0 {
+			page = 1
+		}
+	}
+
+	pageSize := 0
+	if ps := c.Query("page_size"); ps != "" {
+		if parsed, err := fmt.Sscanf(ps, "%d", &pageSize); err != nil || parsed == 0 {
+			pageSize = 0
+		}
+		if pageSize > 100 {
+			pageSize = 100
+		}
+	}
+
+	rules, total, err := models.ListAISessionAnalyzerRules(orgID, connectionNames, page, pageSize)
 	if err != nil {
 		log.Errorf("failed listing AI session analyzer rules, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -154,7 +176,16 @@ func ListSessionAnalyzerRules(c *gin.Context) {
 	for _, r := range rules {
 		resp = append(resp, toSessionAnalyzerRuleResponse(r))
 	}
-	c.JSON(http.StatusOK, resp)
+
+	paginatedResp := openapi.PaginatedResponse[openapi.AISessionAnalyzerRule]{
+		Pages: openapi.Pagination{
+			Total: int(total),
+			Page:  page,
+			Size:  pageSize,
+		},
+		Data: resp,
+	}
+	c.JSON(http.StatusOK, paginatedResp)
 }
 
 // GetAISessionAnalyzerRule
@@ -164,7 +195,7 @@ func ListSessionAnalyzerRules(c *gin.Context) {
 //	@Tags			AI
 //	@Produce		json
 //	@Param			name		path		string	true	"The name of the resource"
-//	@Success		200			{object}	openapi.AISessionAnalyzerRuleResponse
+//	@Success		200			{object}	openapi.AISessionAnalyzerRule
 //	@Failure		404,500		{object}	openapi.HTTPError
 //	@Router			/ai/session-analyzer/rules/{name} [get]
 func GetSessionAnalyzerRule(c *gin.Context) {
@@ -195,7 +226,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			request		body		openapi.AISessionAnalyzerRuleRequest	true	"The request body resource"
-//	@Success		201			{object}	openapi.AISessionAnalyzerRuleResponse
+//	@Success		201			{object}	openapi.AISessionAnalyzerRule
 //	@Failure		400,409,500	{object}	openapi.HTTPError
 //	@Router			/ai/session-analyzer/rules [post]
 func CreateSessionAnalyzerRule(c *gin.Context) {
@@ -261,7 +292,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 //	@Produce		json
 //	@Param			name	path		string									true	"The name of the resource"
 //	@Param			request	body		openapi.AISessionAnalyzerRuleRequest	true	"The request body resource"
-//	@Success		200		{object}	openapi.AISessionAnalyzerRuleResponse
+//	@Success		200		{object}	openapi.AISessionAnalyzerRule
 //	@Failure		400,404,500	{object}	openapi.HTTPError
 //	@Router			/ai/session-analyzer/rules/{name} [put]
 func UpdateSessionAnalyzerRule(c *gin.Context) {
@@ -356,6 +387,38 @@ func toProviderResponse(p *models.AIProvider) openapi.AIProviderResponse {
 		Model:     p.Model,
 		CreatedAt: p.CreatedAt,
 		UpdatedAt: p.UpdatedAt,
+	}
+}
+
+// GetConnectionAnalyzerRule
+//
+//	@Summary		Get AI Analyzer Rule by Connection
+//	@Description	Get the AI analyzer rule configured for a specific connection
+//	@Tags			AI
+//	@Produce		json
+//	@Param			nameOrId	path		string	true	"The name or ID of the connection"
+//	@Success		200			{object}	openapi.AISessionAnalyzerRule
+//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrId}/ai-analyzer-rule [get]
+func GetConnectionAnalyzerRule(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	orgID, err := uuid.Parse(ctx.GetOrgID())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid org id"})
+		return
+	}
+
+	connectionNameOrID := c.Param("nameOrID")
+
+	rule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, connectionNameOrID)
+	switch err {
+	case gorm.ErrRecordNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+	case nil:
+		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
+	default:
+		log.Errorf("failed fetching AI session analyzer rule by connection, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 	}
 }
 
