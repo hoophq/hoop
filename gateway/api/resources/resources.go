@@ -64,6 +64,9 @@ func CreateResource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	if req.SubType == "" {
+		req.SubType = req.Type
+	}
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, req.Name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -239,6 +242,16 @@ func ListResources(c *gin.Context) {
 		resp = append(resp, toOpenApi(&r))
 	}
 
+	// Backwards compatibility: return a bare array when no pagination params are
+	// present, matching the pre-pagination response format used by older clients.
+	if queryParams.Get("page") == "" && queryParams.Get("page_size") == "" {
+		if resp == nil {
+			resp = []*openapi.ResourceResponse{}
+		}
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
 	response := openapi.PaginatedResponse[*openapi.ResourceResponse]{
 		Pages: openapi.Pagination{
 			Total: int(total),
@@ -270,6 +283,9 @@ func UpdateResource(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+	if req.SubType == "" {
+		req.SubType = req.Type
 	}
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
