@@ -3,6 +3,7 @@ package apirunbooks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -270,8 +272,14 @@ func RunExec(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}

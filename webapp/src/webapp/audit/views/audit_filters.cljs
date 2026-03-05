@@ -2,7 +2,7 @@
   (:require
    ["@heroicons/react/16/solid" :as hero-micro-icon]
    ["@radix-ui/themes" :refer [Button Popover TextField]]
-   ["lucide-react" :refer [Search]]
+   ["lucide-react" :refer [Search ListFilter Check]]
    ["react-tailwindcss-datepicker" :as Datepicker]
    [clojure.string :as string]
    [re-frame.core :as rf]
@@ -32,6 +32,10 @@
 
         jira-ticket-search (r/atom (get filters "jira_issue_key" ""))
         jira-ticket-debounce-timer (r/atom nil)
+
+        review-status-options [{:text "Pending" :value "PENDING"}
+                               {:text "Approved" :value "APPROVED"}
+                               {:text "Rejected" :value "REJECTED"}]
 
         date (r/atom #js{"startDate" (if-let [date (get filters "start_date")]
                                        (subs date 0 10) "")
@@ -315,54 +319,89 @@
                       [:span {:class "block truncate"}
                        (:text type)]
                       (when (= (:value type) (get filters "type"))
-                        [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]
+                        [:> hero-micro-icon/CheckIcon {:class "w-4 h-4 text-black"}])]]))]])]]]]
 
-          [:> Datepicker {:value @date
-                          :placeholder "Period"
-                          :separator "-"
-                          :displayFormat "DD/MM/YYYY"
-                          :containerClassName "relative w-56 text-gray-700"
-                          :toggleClassName (str "absolute rounded-l-lg "
-                                                "text-gray-500 "
-                                                "left-0 h-full px-3 "
-                                                "focus:outline-none disabled:opacity-40 "
-                                                "disabled:cursor-not-allowed")
-                          :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
-                                                 " border-gray-300 "
-                                                 " border-gray-400 ")
-                                               "pl-10 py-2 w-full rounded-lg text-gray-600 "
-                                               "font-semibold text-sm focus:ring-0 "
-                                               "border h-[40px] "
-                                               "placeholder:text-gray-500 "
-                                               "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
-                                               "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
-                          :useRange false
-                          :showShortcuts true
-                          :onChange (fn [v]
-                                      (reset! date v)
-                                      (dispatch-date v))}]
+         ;; Status Filter
+         [:> Popover.Root
+          [:> Popover.Trigger {:asChild true}
+           [:> Button {:size "3"
+                       :variant (if (get filters "review.status") "soft" "surface")
+                       :color "gray"}
+            [:> ListFilter {:size 16}]
+            [:span {:class "text-sm font-semibold"}
+             "Access Request"]
+            (when (get filters "review.status")
+              [:div {:class "flex items-center justify-center rounded-full h-4 w-4 bg-gray-800"}
+               [:span {:class "text-white text-xxs font-bold"}
+                "1"]])]]
+          [:> Popover.Content {:size "2" :style {:width "384px" :max-height "384px"}}
+           [:div {:class "w-full max-h-96 overflow-y-auto"}
+            [:div
+             [:div {:class "relative"}
+              [:ul
+               (doall
+                (for [status review-status-options]
+                  ^{:key (:text status)}
+                  [:li {:class (str "flex justify-between cursor-pointer items-center gap-small "
+                                    "text-sm text-gray-700 hover:bg-gray-200 rounded-md px-3 py-2")
+                        :on-click (fn []
+                                    (rf/dispatch [:audit->filter-sessions
+                                                  {"review.status" (if (= (:value status) (get filters "review.status"))
+                                                                     ""
+                                                                     (:value status))}]))}
+                   [:div {:class "w-full flex justify-between items-center gap-regular"}
+                    [:div {:class "flex items-center gap-small"}
+                     [:span {:class "block truncate"}
+                      (:text status)]]
+                    (when (= (:value status) (get filters "review.status"))
+                      [:> Check {:size 16}])]]))]]]]]]
 
-          [:div {:class "relative w-48"}
-           [:div {:class "absolute left-3 top-1/2 transform -translate-y-1/2"}
-            [:img {:src (str config/webapp-url "/icons/icon-jira-gray.svg")
-                   :class "w-4 h-4"}]]
-           [:input {:type "text"
-                    :class (str "pl-10 pr-8 py-2 w-full rounded-lg text-gray-600 "
-                                "font-semibold text-sm focus:ring-0 "
-                                "border h-[40px] "
-                                "placeholder:text-gray-500 "
-                                (if @jira-ticket-search
-                                  "border-gray-300"
-                                  "border-gray-400")
-                                " hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
-                                "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
-                    :placeholder "Jira Ticket ID"
-                    :value @jira-ticket-search
-                    :onChange #(handle-jira-ticket-search (-> % .-target .-value))}]
-           (when (seq @jira-ticket-search)
-             [:button {:class "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                       :on-click #(handle-jira-ticket-search "")}
-              [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]])]]]))))
+         [:> Datepicker {:value @date
+                         :placeholder "Period"
+                         :separator "-"
+                         :displayFormat "DD/MM/YYYY"
+                         :containerClassName "relative w-56 text-gray-700"
+                         :toggleClassName (str "absolute rounded-l-lg "
+                                               "text-gray-500 "
+                                               "left-0 h-full px-3 "
+                                               "focus:outline-none disabled:opacity-40 "
+                                               "disabled:cursor-not-allowed")
+                         :inputClassName (str (if (or (.-startDate @date) (.-endDate @date))
+                                                " border-gray-300 "
+                                                " border-gray-400 ")
+                                              "pl-10 py-2 w-full rounded-lg text-gray-600 "
+                                              "font-semibold text-sm focus:ring-0 "
+                                              "border h-[40px] "
+                                              "placeholder:text-gray-500 "
+                                              "hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
+                                              "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
+                         :useRange false
+                         :showShortcuts true
+                         :onChange (fn [v]
+                                     (reset! date v)
+                                     (dispatch-date v))}]
+
+         [:div {:class "relative w-48"}
+          [:div {:class "absolute left-3 top-1/2 transform -translate-y-1/2"}
+           [:img {:src (str config/webapp-url "/icons/icon-jira-gray.svg")
+                  :class "w-4 h-4"}]]
+          [:input {:type "text"
+                   :class (str "pl-10 pr-8 py-2 w-full rounded-lg text-gray-600 "
+                               "font-semibold text-sm focus:ring-0 "
+                               "border h-[40px] "
+                               "placeholder:text-gray-500 "
+                               (if @jira-ticket-search
+                                 "border-gray-300"
+                                 "border-gray-400")
+                               " hover:bg-gray-50 hover:text-gray-600 hover:border-gray-400 "
+                               "focus:bg-gray-50 focus:text-gray-600 focus:border-gray-400")
+                   :placeholder "Jira Ticket ID"
+                   :value @jira-ticket-search
+                   :onChange #(handle-jira-ticket-search (-> % .-target .-value))}]
+          (when (seq @jira-ticket-search)
+            [:button {:class "absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      :on-click #(handle-jira-ticket-search "")}
+             [:> hero-micro-icon/XMarkIcon {:class "w-4 h-4"}]])]]))))
 
 (defn audit-filters [_]
   (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])

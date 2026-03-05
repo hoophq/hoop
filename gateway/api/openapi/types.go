@@ -269,6 +269,8 @@ type Connection struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of review approvals required to execute this connection
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
+	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
+	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
 }
 
 type ConnectionPatch struct {
@@ -334,6 +336,8 @@ type ConnectionPatch struct {
 	GuardRailRules *[]string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
+	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
 }
 
 type ConnectionTagCreateRequest struct {

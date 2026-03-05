@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -29,6 +30,7 @@ import (
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -71,7 +73,7 @@ func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
 	return false
 }
 
-// RunExec
+// Post Sessions
 //
 //	@Summary				Exec
 //	@Description.markdown	run-exec
@@ -156,7 +158,7 @@ func Post(c *gin.Context) {
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			// persist session to audit this attempt
-			_ = models.UpsertSession(newSession)
+			_ = services.UpsertSession(c, newSession, *conn)
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
@@ -220,8 +222,14 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
@@ -1109,7 +1117,7 @@ func Provision(c *gin.Context) {
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			// persist session to audit this attempt
-			_ = models.UpsertSession(newSession)
+			_ = services.UpsertSession(c, newSession, *conn)
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
@@ -1173,8 +1181,14 @@ func Provision(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
@@ -1190,8 +1204,14 @@ func Provision(c *gin.Context) {
 	if allGroupsApproved {
 		newSession.Status = string(openapi.SessionStatusReady)
 
-		if err := models.UpsertSession(newSession); err != nil {
+		if err := services.UpsertSession(c, newSession, *conn); err != nil {
 			log.Errorf("failed updating session, err=%v", err)
+
+			if errors.Is(err, services.ErrMissingMetadata) {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			}
+
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating session"})
 			return
 		}

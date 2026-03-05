@@ -7223,6 +7223,17 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
+                },
                 "min_review_approvals": {
                     "description": "Minimum number of review approvals required to execute this connection",
                     "type": "integer",
@@ -7456,6 +7467,17 @@ const docTemplate = `{
                     "description": "The jira issue templates ids associated to the connection",
                     "type": "string",
                     "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
