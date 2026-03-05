@@ -48,7 +48,7 @@ func GetProvider(c *gin.Context) {
 
 	p, err := models.GetAIProvider(orgID)
 	switch err {
-	case models.ErrNotFound:
+	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.JSON(http.StatusOK, toProviderResponse(p))
@@ -116,7 +116,7 @@ func DeleteProvider(c *gin.Context) {
 
 	err = models.DeleteAIProvider(orgID)
 	switch err {
-	case models.ErrNotFound:
+	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
@@ -177,7 +177,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 
 	rule, err := models.GetAISessionAnalyzerRule(orgID, c.Param("name"))
 	switch err {
-	case models.ErrNotFound:
+	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
@@ -308,7 +308,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 	err = models.UpdateAISessionAnalyzerRule(rule)
 	switch err {
-	case models.ErrNotFound:
+	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
@@ -338,7 +338,7 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 
 	err = models.DeleteAISessionAnalyzerRule(orgID, c.Param("name"))
 	switch err {
-	case models.ErrNotFound:
+	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)

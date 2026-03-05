@@ -28,4 +28,6 @@ CREATE TABLE ai_session_analyzer_rules (
 
 CREATE UNIQUE INDEX idx_ai_session_analyzer_rules_org_name ON ai_session_analyzer_rules (org_id, name);
 
+ALTER TABLE sessions ADD ai_analysis jsonb NULL;
+
 COMMIT;

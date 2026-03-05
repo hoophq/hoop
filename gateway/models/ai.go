@@ -62,9 +62,6 @@ func GetAIProvider(orgID uuid.UUID) (*AIProvider, error) {
 	var p AIProvider
 	err := DB.Where("org_id = ?", orgID).First(&p).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
 		return nil, err
 	}
 	return &p, nil
@@ -80,8 +77,8 @@ func UpsertAIProvider(orgID uuid.UUID, provider string, apiURL *string, apiKey *
 	}
 	err := DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "org_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"provider", "api_url", "api_key", "model"}),
-	}).Create(&p).Error
+		DoUpdates: clause.AssignmentColumns([]string{"provider", "api_url", "api_key", "model", "updated_at"}),
+	}, clause.Returning{}).Create(&p).Error
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +91,7 @@ func DeleteAIProvider(orgID uuid.UUID) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return ErrNotFound
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }
@@ -110,10 +107,22 @@ func GetAISessionAnalyzerRule(orgID uuid.UUID, name string) (*AISessionAnalyzerR
 	err := DB.Where("org_id = ? AND name = ?", orgID, name).First(&rule).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
+			return nil, gorm.ErrRecordNotFound
 		}
 		return nil, err
 	}
+	return &rule, nil
+}
+
+func GetAISessionAnalyzerRuleByConnection(db *gorm.DB, orgID uuid.UUID, connectionName string) (*AISessionAnalyzerRules, error) {
+	var rule AISessionAnalyzerRules
+	result := db.
+		Where("org_id = ? AND connection_names @> ?", orgID, pq.StringArray{connectionName}).
+		First(&rule)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
 	return &rule, nil
 }
 
@@ -141,7 +150,7 @@ func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return ErrNotFound
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }
@@ -152,7 +161,7 @@ func DeleteAISessionAnalyzerRule(orgID uuid.UUID, name string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return ErrNotFound
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }
