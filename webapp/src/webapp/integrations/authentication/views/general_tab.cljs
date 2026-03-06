@@ -1,7 +1,7 @@
 (ns webapp.integrations.authentication.views.general-tab
   (:require
    ["@radix-ui/themes" :refer [Box Grid Heading Text]]
-   ["lucide-react" :refer [BookLock GlobeLock]]
+   ["lucide-react" :refer [BookLock GlobeLock KeyRound Shield]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.callout-link :as callout-link]
@@ -41,7 +41,8 @@
 
 (defn main []
   (let [auth-method (rf/subscribe [:authentication->auth-method])
-        selected-provider (rf/subscribe [:authentication->selected-provider])]
+        selected-provider (rf/subscribe [:authentication->selected-provider])
+        protocol (rf/subscribe [:authentication->protocol])]
     [:> Box {:class "space-y-radix-9"}
      ;; Authentication Method section
      [:> Grid {:columns "7" :gap "7"}
@@ -74,6 +75,30 @@
      ;; Identity Provider Configuration (shown when selected)
      (when (= @auth-method "identity-provider")
        [:<>
+        ;; Protocol selection
+        [:> Grid {:columns "7" :gap "7"}
+         [:> Box {:grid-column "span 2 / span 2"}
+          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
+           "Protocol"]
+          [:> Text {:size "3" :class "text-[--gray-11]"}
+           "Choose the authentication protocol for your identity provider."]]
+
+         [:> Box {:class "space-y-radix-4" :grid-column "span 5 / span 5"}
+          [selection-card/selection-card
+           {:icon (r/as-element [:> KeyRound {:size 18}])
+            :title "OIDC"
+            :description "OpenID Connect — standard protocol using Client ID and Secret"
+            :selected? (= @protocol "oidc")
+            :on-click #(rf/dispatch [:authentication->set-protocol "oidc"])}]
+
+          [selection-card/selection-card
+           {:icon (r/as-element [:> Shield {:size 18}])
+            :title "SAML 2.0"
+            :description "Enterprise protocol using XML metadata from your identity provider"
+            :selected? (= @protocol "saml")
+            :on-click #(rf/dispatch [:authentication->set-protocol "saml"])}]]]
+
+        ;; Identity Provider grid
         [:> Grid {:columns "7" :gap "7"}
          [:> Box {:grid-column "span 2 / span 2"}
           [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
