@@ -18,13 +18,14 @@
 (rf/reg-event-fx
  :primary-connection/set-selected
  (fn [{:keys [db]} [_ new-primary]]
-   (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
+  (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
          compatible-multiples (filter #(and (= (:type %) (:type new-primary))
                                             (= (:subtype %) (:subtype new-primary))
                                             (not= (:name %) (:name new-primary)))
                                       current-multiples)]
      {:db (-> db
               (assoc-in [:editor :connections :selected] new-primary)
+              (assoc-in [:editor :execution-requirements-callout :dismissed?] false)
               (assoc-in [:editor :multi-connections :selected] compatible-multiples))
       :fx [[:dispatch [:editor-plugin/clear-language]]
            [:dispatch [:primary-connection/persist-selected]]
@@ -58,7 +59,14 @@
  :primary-connection/clear-selected
  (fn [{:keys [db]} _]
    (.removeItem js/localStorage "selected-connection")
-   {:db (assoc-in db [:editor :connections :selected] nil)}))
+  {:db (-> db
+           (assoc-in [:editor :connections :selected] nil)
+           (assoc-in [:editor :execution-requirements-callout :dismissed?] false))}))
+
+(rf/reg-event-db
+ :primary-connection/dismiss-execution-requirements-callout
+ (fn [db _]
+   (assoc-in db [:editor :execution-requirements-callout :dismissed?] true)))
 
 ;; Set primary connection from loaded details
 (rf/reg-event-fx
@@ -90,3 +98,8 @@
  :primary-connection/dialog-open?
  (fn [db]
    (get-in db [:editor :connections :dialog-open?])))
+
+(rf/reg-sub
+ :primary-connection/execution-requirements-callout-dismissed?
+ (fn [db]
+   (get-in db [:editor :execution-requirements-callout :dismissed?] false)))
