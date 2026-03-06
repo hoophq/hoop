@@ -534,19 +534,25 @@
   [signup-callback-panel-hoop])
 
 (defmethod routes/panels :login-hoop-panel [_ gateway-info]
-  (if (= (-> gateway-info :data :auth_method) "local")
-    [layout :auth [local-auth-login/panel]]
-    [layout :auth (rf/dispatch [:auth->get-auth-link])]))
+  (let [auth-method (-> gateway-info :data :auth_method)]
+    (cond
+      (= auth-method "local") [layout :auth [local-auth-login/panel]]
+      (= auth-method "saml")  [layout :auth (rf/dispatch [:auth->get-saml-link])]
+      :else                   [layout :auth (rf/dispatch [:auth->get-auth-link])])))
 
-(defmethod routes/panels :idplogin-hoop-panel []
-  [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])])
+(defmethod routes/panels :idplogin-hoop-panel [_ gateway-info]
+  (if (= (-> gateway-info :data :auth_method) "saml")
+    [layout :auth (rf/dispatch [:auth->get-saml-link])]
+    [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])]))
 
 (defmethod routes/panels :register-hoop-panel [_ gateway-info]
-  (if (= (-> gateway-info :data :auth_method) "local")
-    [layout :auth [local-auth-register/panel]]
-    [layout :auth (fn []
-                    (rf/dispatch [:segment->track "SignUp - start signup"])
-                    (rf/dispatch [:auth->get-signup-link]))]))
+  (let [auth-method (-> gateway-info :data :auth_method)]
+    (cond
+      (= auth-method "local") [layout :auth [local-auth-register/panel]]
+      (= auth-method "saml")  [layout :auth (rf/dispatch [:auth->get-saml-link])]
+      :else                   [layout :auth (fn []
+                                              (rf/dispatch [:segment->track "SignUp - start signup"])
+                                              (rf/dispatch [:auth->get-signup-link]))])))
 
 (defmethod routes/panels :signup-hoop-panel []
   [layout :auth [signup/panel]])
