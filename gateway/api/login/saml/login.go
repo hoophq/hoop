@@ -300,14 +300,19 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {
 		redirectSuccessURL = login.Redirect
 
+		secureCookie := url.Scheme == "https"
+		sameSite := http.SameSiteNoneMode
+		if !secureCookie {
+			sameSite = http.SameSiteLaxMode
+		}
 		http.SetCookie(c.Writer, &http.Cookie{
 			Name:     "hoop_access_token",
 			Value:    sessionToken,
 			Path:     "/",
 			MaxAge:   0,
 			HttpOnly: false,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			Secure:   secureCookie,
+			SameSite: sameSite,
 		})
 	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
