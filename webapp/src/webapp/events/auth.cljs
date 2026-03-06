@@ -57,11 +57,25 @@
                                "&returnTo=" (js/encodeURIComponent
                                              (str (. (. js/window -location) -origin)
                                                   (routes/url-for :login-hoop)))
-                               "&federated")]
+                               "&federated")
 
-     (if (= (get-in db [:users->current-user :data :tenancy_type]) "multitenant")
+         auth-method (get-in db [:gateway->info :data :auth_method])
+         multitenant? (= (get-in db [:users->current-user :data :tenancy_type]) "multitenant")]
+
+     (if (and multitenant? (not= auth-method "saml"))
        (do
          (set! (.. js/window -location -href) auth0-logout-url)
          {:db {}})
 
        {:fx [[:dispatch [:navigate :logout-hoop]]]}))))
+
+(rf/reg-event-fx
+ :auth->get-saml-link
+ (fn [_ _]
+   (let [on-success (fn [response]
+                      (.replace js/window.location (:login_url response)))]
+     {:fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/saml/login?redirect="
+                                         (. (. js/window -location) -origin)
+                                         (routes/url-for :auth-callback-hoop))
+                               :on-success on-success}]]]})))
