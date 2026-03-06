@@ -17,7 +17,7 @@ import (
 
 const instanceName = "swagger"
 
-// Generate v2 spec
+// Handler returns openapi v2 (a.k.a swagger) spec as JSON
 func Handler(c *gin.Context) {
 	if swagger := swag.GetSwagger(instanceName); swagger != nil {
 		if spec, ok := swagger.(*swag.Spec); ok {
@@ -33,24 +33,32 @@ func Handler(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// Convert spec v2 to openapi v3
-func HandlerV3(c *gin.Context) {
+// GenerateV3Spec converts spec v2 to openapi v3
+func GenerateV3Spec() ([]byte, error) {
 	if swagger := swag.GetSwagger(instanceName); swagger != nil {
 		if spec, ok := swagger.(*swag.Spec); ok {
 			spec.Host = appconfig.Get().ApiHost()
 			spec.BasePath = "/api"
 			spec.Version = version.Get().Version
 		}
-		v3Doc, err := toV3([]byte(swagger.ReadDoc()))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-			return
-		}
-		c.Header("Content-Type", "application/json; charset=utf-8")
-		_, _ = c.Writer.Write(v3Doc)
+		return toV3([]byte(swagger.ReadDoc()))
+	}
+	return nil, fmt.Errorf("unable to render openapi spec (v3)")
+}
+
+// HandlerV3 returns openapi v3 spec as JSON
+func HandlerV3(c *gin.Context) {
+	v3Spec, err := GenerateV3Spec()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	log.Warnf("unable to render openapi spec (v3)")
+
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	if _, err := c.Writer.Write(v3Spec); err != nil {
+		log.Errorf("failed to write v3 spec: %v", err)
+		return
+	}
 }
 
 func toV3(v2Spec []byte) ([]byte, error) {
