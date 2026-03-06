@@ -343,15 +343,18 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 			if len(val.Values) > 0 && val.Values[0].Value != "" {
 				uinfo.Email = val.Values[0].Value
 			}
-		case "http://schemas.microsoft.com/identity/claims/displayname":
+		case "http://schemas.microsoft.com/identity/claims/displayname",
+			"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+			"first_name", "name":
 			if len(val.Values) > 0 {
 				firstName = val.Values[0].Value
 			}
-		case "first_name", "name":
+		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname":
 			if len(val.Values) > 0 {
 				firstName = val.Values[0].Value
 			}
-		case "last_name":
+		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname",
+			"last_name":
 			if len(val.Values) > 0 {
 				lastName = val.Values[0].Value
 			}
