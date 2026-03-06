@@ -130,13 +130,22 @@
                                                                          :status)
                                                                      "enabled")
                                         runbooks-enabled? (= "enabled" (:access_mode_runbooks connection))
-                                        mandatory-metadata-fields (seq (:mandatory_metadata_fields connection))]
+                                        mandatory-metadata-fields (seq (:mandatory_metadata_fields connection))
+                                        parallel-mode-active? @(rf/subscribe [:parallel-mode/is-active?])]
                                     (cond
                                       (not runbooks-enabled?)
                                       (rf/dispatch [:dialog->open
                                                     {:title "Runbooks access mode is disabled"
                                                      :action-button? false
                                                      :text "Your connection does not have runbooks access mode enabled. Please enable it in the connection settings."}])
+
+                                      parallel-mode-active?
+                                      (rf/dispatch [:runbooks/exec
+                                                    {:file-name (-> template :data :name)
+                                                     :params @state
+                                                     :connection-name (:name connection)
+                                                     :repository (-> template :data :repository)
+                                                     :ref-hash (-> template :data :ref-hash)}])
 
                                       mandatory-metadata-fields
                                       (rf/dispatch [:runbooks/show-mandatory-metadata-form
