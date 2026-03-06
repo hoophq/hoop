@@ -297,7 +297,7 @@
 
 (rf/reg-event-fx
  :runbooks/show-jira-form
- (fn [_ [_ {:keys [template-id file-name params connection-name repository ref-hash]}]]
+ (fn [_ [_ {:keys [template-id file-name params connection-name repository ref-hash extra-metadata]}]]
    {:fx [[:dispatch [:modal->open
                      {:maxWidth "540px"
                       :custom-on-click-out #(.preventDefault %)
@@ -311,7 +311,8 @@
                        :params params
                        :connection-name connection-name
                        :repository repository
-                       :ref-hash ref-hash}]}]]}))
+                       :ref-hash ref-hash
+                       :extra-metadata extra-metadata}]}]]}))
 
 (defn- needs-form? [template]
   (let [has-prompts? (seq (get-in template [:data :prompt_types :items]))
@@ -324,7 +325,7 @@
 
 (rf/reg-event-fx
  :runbooks/check-jira-template-and-show-form
- (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name repository ref-hash] :as context}]]
+ (fn [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash extra-metadata] :as context}]]
    (let [template (get-in db [:jira-templates->submit-template])]
      (cond
        ;; Still loading
@@ -332,13 +333,7 @@
            (= :loading (:status template)))
        {:fx [[:dispatch-later
               {:ms 500
-               :dispatch [:runbooks/check-jira-template-and-show-form
-                          {:template-id template-id
-                           :file-name file-name
-                           :params params
-                           :connection-name connection-name
-                           :repository repository
-                           :ref-hash ref-hash}]}]]}
+               :dispatch [:runbooks/check-jira-template-and-show-form context]}]]}
 
        ;; Ready but with failed CMDB requests
        (and (= :ready (:status template))
@@ -359,7 +354,8 @@
                                                     :params params
                                                     :connection-name connection-name
                                                     :repository repository
-                                                    :ref-hash ref-hash}])}]}]]]}
+                                                    :ref-hash ref-hash
+                                                    :extra-metadata extra-metadata}])}]}]]]}
 
        ;; Ready and doesn't need form
        :else
@@ -369,24 +365,26 @@
                           :params params
                           :connection-name connection-name
                           :repository repository
-                          :ref-hash ref-hash}]]]}))))
+                          :ref-hash ref-hash
+                          :extra-metadata extra-metadata}]]]}))))
 
 (rf/reg-event-fx
  :runbooks/handle-jira-template-submit
- (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash]}]]
+ (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash extra-metadata]}]]
    {:fx [[:dispatch [:modal->close]]
          [:dispatch [:runbooks/exec
                      (cond-> {:file-name file-name
                               :params params
                               :connection-name connection-name
                               :repository repository
-                              :ref-hash ref-hash}
+                              :ref-hash ref-hash
+                              :extra-metadata extra-metadata}
                        (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                        (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]]}))
 
 (rf/reg-event-fx
  :runbooks/show-mandatory-metadata-form
- (fn [_ [_ {:keys [fields file-name params connection-name repository ref-hash]}]]
+ (fn [_ [_ {:keys [fields file-name params connection-name repository ref-hash needs-jira? jira-template-id]}]]
    {:fx [[:dispatch [:modal->open
                      {:maxWidth "600px"
                       :custom-on-click-out #(.preventDefault %)
@@ -399,16 +397,28 @@
                                                 :params params
                                                 :connection-name connection-name
                                                 :repository repository
-                                                :ref-hash ref-hash}])}]}]]]}))
+                                                :ref-hash ref-hash
+                                                :needs-jira? needs-jira?
+                                                :jira-template-id jira-template-id}])}]}]]]}))
 
 (rf/reg-event-fx
  :runbooks/exec-after-mandatory-metadata
- (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash]}]]
-   {:fx [[:dispatch [:modal->close]]
-         [:dispatch [:runbooks/exec
-                     {:file-name file-name
-                      :params params
-                      :connection-name connection-name
-                      :repository repository
-                      :ref-hash ref-hash
-                      :extra-metadata form-data}]]]}))
+ (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash needs-jira? jira-template-id]}]]
+   (if (and needs-jira? jira-template-id)
+     {:fx [[:dispatch [:modal->close]]
+           [:dispatch [:runbooks/show-jira-form
+                       {:template-id jira-template-id
+                        :file-name file-name
+                        :params params
+                        :connection-name connection-name
+                        :repository repository
+                        :ref-hash ref-hash
+                        :extra-metadata form-data}]]]}
+     {:fx [[:dispatch [:modal->close]]
+           [:dispatch [:runbooks/exec
+                       {:file-name file-name
+                        :params params
+                        :connection-name connection-name
+                        :repository repository
+                        :ref-hash ref-hash
+                        :extra-metadata form-data}]]]})))
