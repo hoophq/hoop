@@ -13,6 +13,7 @@
    [webapp.audit.views.results-container :as results-container]
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
+   [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.time-window-modal :as time-window-modal]
    [webapp.components.button :as button]
@@ -105,8 +106,11 @@
   [_ session]
   (let [event-stream (:event_stream session)
         session-id (:id session)
-        start-date (:start_date session)]
-    [session-data-video/main event-stream session-id start-date]))
+        connection-subtype (:connection_subtype session)
+        metrics (:metrics session)]
+    (if (= connection-subtype "rdp")
+      [session-data-rdp/main event-stream session-id metrics]
+      [session-data-video/main event-stream session-id])))
 
 (defmethod ^:private session-event-stream :default
   [_ session]
@@ -489,7 +493,8 @@
                 [loading-player]
 
                 [:<>
-                 (if has-large-payload?
+                 ;; RDP sessions have large payloads by design (bitmaps), show player anyway
+                 (if (and has-large-payload? (not= connection-subtype "rdp"))
                    [large-payload-warning
                     {:session session}]
 

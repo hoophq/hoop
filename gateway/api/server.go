@@ -456,6 +456,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	r.GET("/sessions/:session_id/download/input", sessionapi.DownloadSessionInput)
+	r.GET("/sessions/:session_id/rdp-frames",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.GetRDPFrames)
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)

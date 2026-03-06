@@ -43,6 +43,14 @@ export class Config {
     }
 }
 
+export class ReplayConfig {
+    replayAddress;
+
+    constructor(replayAddress) {
+        this.replayAddress = replayAddress;
+    }
+}
+
 export class RemoteDesktopService {
 
     resizeObservable = new Observable();
@@ -305,6 +313,47 @@ export class RemoteDesktopService {
         const run = async () => {
             try {
                 console.log('Starting the session.');
+                return await session.run();
+            } finally {
+                this.setVisibility(false);
+            }
+        };
+
+        return {
+            initialDesktopSize: session.desktopSize(),
+            run,
+        };
+    }
+
+    async replay(config) {
+        const sessionBuilder = new this.module.SessionBuilder();
+
+        sessionBuilder.proxyAddress(config.replayAddress);
+        sessionBuilder.destination('');
+        sessionBuilder.serverDomain('');
+        sessionBuilder.password(''); // No password needed for replay
+        sessionBuilder.authToken('');
+        sessionBuilder.username(''); // No username needed for replay
+        sessionBuilder.renderCanvas(this.canvas);
+        sessionBuilder.setCursorStyleCallbackContext(this);
+        sessionBuilder.setCursorStyleCallback(this.setCursorStyleCallback);
+
+        sessionBuilder.desktopSize(
+            new this.module.DesktopSize(this.canvas.width, this.canvas.height),
+        );
+
+        const session = await sessionBuilder.connect();
+        this.initListeners();
+        this.session = session;
+
+        this.resizeObservable.publish({
+            desktopSize: session.desktopSize(),
+            sessionId: 0,
+        });
+
+        const run = async () => {
+            try {
+                console.log('Starting the replay session.');
                 return await session.run();
             } finally {
                 this.setVisibility(false);

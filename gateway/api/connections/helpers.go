@@ -95,7 +95,7 @@ func validatePatchConnectionRequest(req openapi.ConnectionPatch) error {
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf(strings.Join(errors, "; "))
+		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 
 	if req.ConnectionTags != nil && len(*req.ConnectionTags) > 10 {
@@ -117,7 +117,7 @@ func validatePatchConnectionRequest(req openapi.ConnectionPatch) error {
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf(strings.Join(errors, "; "))
+		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 	return nil
 }
@@ -134,7 +134,7 @@ func validateConnectionRequest(req openapi.Connection) error {
 		}
 	}
 	if len(errors) > 0 {
-		return fmt.Errorf(strings.Join(errors, "; "))
+		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 
 	if len(req.ConnectionTags) > 10 {
@@ -162,7 +162,7 @@ func validateConnectionRequest(req openapi.Connection) error {
 		}
 	}
 	if len(errors) > 0 {
-		return fmt.Errorf(strings.Join(errors, "; "))
+		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 	return nil
 }

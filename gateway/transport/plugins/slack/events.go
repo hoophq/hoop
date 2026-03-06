@@ -130,7 +130,7 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 			ev.msg.ID, err)
 		msg = err.Error()
 	}
-	if err = ev.ss.PostEphemeralMessage(ev.msg, msg); err != nil {
+	if err = ev.ss.PostEphemeralMessage(ev.msg, "%s", msg); err != nil {
 		log.With("sid", ev.msg.SessionID).Warnf("failed updating slack review, reason=%v", err)
 	}
 }

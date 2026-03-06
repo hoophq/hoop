@@ -125,8 +125,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.24.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -159,8 +168,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.24.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -193,8 +211,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.24.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -227,8 +254,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.24.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -261,8 +297,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.24.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -299,8 +344,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v3
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.24.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV

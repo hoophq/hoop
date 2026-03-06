@@ -1,0 +1,352 @@
+(ns webapp.audit.views.session-data-rdp
+  (:require
+   [reagent.core :as r]
+   [re-frame.core :as rf]
+   [webapp.audit.views.empty-event-stream :as empty-event-stream]
+   [webapp.components.button :as button]
+   [webapp.http.api :as api]))
+
+(defn- decode-b64 [b64-str]
+  (try
+    (let [binary-string (js/atob b64-str)
+          len (.-length binary-string)
+          bytes (js/Uint8Array. len)]
+      (doseq [i (range len)]
+        (aset bytes i (.charCodeAt binary-string i)))
+      bytes)
+    (catch :default _
+      nil)))
+
+;; Load the RLE decompressor script on first use
+(defonce ^:private rle-loaded (atom false))
+
+(defn- ensure-rle-loaded []
+  (when-not @rle-loaded
+    (let [script (js/document.createElement "script")]
+      (set! (.-src script) "/rdpclient/rle.js")
+      (.appendChild js/document.head script)
+      (reset! rle-loaded true))))
+
+(defn- decompress-rle
+  "Decompress RLE-compressed RDP bitmap data using the rle.js library"
+  [data-bytes width height bpp]
+  (if-let [decompress-fn js/window.rdpRleDecompress]
+    (try
+      (decompress-fn data-bytes width height bpp)
+      (catch :default e
+        (js/console.error "RLE decompression failed:" e)
+        data-bytes))
+    (do
+      (js/console.warn "RLE decompressor not loaded, using raw data")
+      data-bytes)))
+
+(defn- draw-bitmap [canvas-ctx bitmap]
+  (let [{:keys [x y width height bits_per_pixel compressed data]} bitmap
+        data-bytes (if (string? data) (decode-b64 data) data)]
+    (when (and canvas-ctx data-bytes (> width 0) (> height 0))
+      (try
+        (let [bpp (or bits_per_pixel 16)
+              ;; Decompress if needed
+              pixel-data (if compressed
+                           (decompress-rle data-bytes width height bpp)
+                           data-bytes)
+              ;; Use fast JS pixel conversion (handles bottom-up + BGR->RGB)
+              rgba (js/window.rdpBitmapToRGBA pixel-data width height bpp)
+              image-data (js/ImageData. rgba width height)]
+          (.putImageData canvas-ctx image-data x y))
+        (catch :default e
+          (js/console.error "Error drawing bitmap:" e))))))
+
+;; Fetch frames from API
+(defn- fetch-frames [session-id offset limit on-success on-error]
+  (api/request {:method "GET"
+                :uri (str "/sessions/" session-id "/rdp-frames")
+                :query-params {:offset offset :limit limit}
+                :on-success on-success
+                :on-failure on-error}))
+
+;; Format time as MM:SS
+(defn- format-time [seconds]
+  (let [mins (js/Math.floor (/ seconds 60))
+        secs (js/Math.floor (mod seconds 60))]
+    (str (when (< mins 10) "0") mins ":" (when (< secs 10) "0") secs)))
+
+;; Progress bar with seek functionality (timestamp-based)
+(defn- progress-bar [{:keys [current-time total-duration on-seek]}]
+  (let [progress (if (> total-duration 0) (* 100 (/ current-time total-duration)) 0)]
+    [:div {:class "w-full bg-gray-700 rounded-full h-2 cursor-pointer"
+           :on-click (fn [e]
+                       (let [rect (.. e -target getBoundingClientRect)
+                             x (- (.-clientX e) (.-left rect))
+                             width (.-width rect)
+                             percentage (/ x width)
+                             target-time (* percentage total-duration)]
+                         (on-seek (max 0 target-time))))}
+     [:div {:class "bg-blue-500 h-2 rounded-full transition-all duration-100"
+            :style {:width (str progress "%")}}]]))
+
+;; Playback controls
+(defn- playback-controls [{:keys [playing? on-play on-pause on-prev on-next
+                                  current-time total-duration on-seek playback-speed on-speed-change]}]
+  [:div {:class "flex flex-col gap-2 p-3 bg-gray-800 rounded-lg"}
+   [progress-bar {:current-time current-time
+                  :total-duration total-duration
+                  :on-seek on-seek}]
+   [:div {:class "flex items-center justify-between"}
+    [:div {:class "flex items-center gap-2"}
+     [:button {:class "px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
+               :on-click on-prev}
+      "◀◀"]
+     [:button {:class "px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded"
+               :on-click (if playing? on-pause on-play)}
+      (if playing? "⏸ Pause" "▶ Play")]
+     [:button {:class "px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm"
+               :on-click on-next}
+      "▶▶"]]
+    [:div {:class "flex items-center gap-4"}
+     [:div {:class "text-gray-400 text-sm"}
+      (str (format-time current-time) " / " (format-time total-duration))]
+     [:select {:class "bg-gray-700 text-white text-sm rounded px-2 py-1"
+               :value playback-speed
+               :on-change #(on-speed-change (js/parseFloat (.. % -target -value)))}
+      [:option {:value "0.5"} "0.5x"]
+      [:option {:value "1"} "1x"]
+      [:option {:value "2"} "2x"]
+      [:option {:value "4"} "4x"]]]]])
+
+;; Canvas component that renders frames differentially
+(defn- canvas-renderer []
+  (let [canvas-ref (atom nil)
+        ;; Track last rendered frame index to know what's new
+        last-rendered-idx (atom -1)]
+    (r/create-class
+     {:display-name "rdp-canvas-renderer"
+      :component-did-update
+      (fn [this]
+        (let [[_ frames canvas-width canvas-height current-frame-idx] (r/argv this)
+              canvas @canvas-ref]
+          (when (and canvas (seq frames)
+                     ;; Only redraw when frame index actually changed
+                     (not= current-frame-idx @last-rendered-idx))
+            (let [ctx (.getContext canvas "2d")]
+              ;; If seeking backwards or first render, clear and redraw from beginning
+              (if (or (< current-frame-idx @last-rendered-idx)
+                      (= @last-rendered-idx -1))
+                (do
+                  ;; Clear canvas
+                  (set! (.-fillStyle ctx) "black")
+                  (.fillRect ctx 0 0 canvas-width canvas-height)
+                  ;; Draw all frames up to current
+                  (doseq [frame (take (inc current-frame-idx) frames)]
+                    (let [bitmap (:bitmap frame)]
+                      (when bitmap
+                        (draw-bitmap ctx bitmap))))
+                  (reset! last-rendered-idx current-frame-idx))
+                ;; Forward playback - draw only new frames since last rendered
+                (do
+                  (doseq [frame (subvec frames (inc @last-rendered-idx) (inc current-frame-idx))]
+                    (let [bitmap (:bitmap frame)]
+                      (when bitmap
+                        (draw-bitmap ctx bitmap))))
+                  (reset! last-rendered-idx current-frame-idx)))))))
+      :reagent-render
+      (fn [frames canvas-width canvas-height current-frame-idx]
+        [:div {:class "relative bg-gray-900 rounded-lg overflow-hidden"}
+         [:canvas {:ref #(reset! canvas-ref %)
+                   :width canvas-width
+                   :height canvas-height
+                   :class "w-full h-auto"}]])})))
+
+;; Find frame index for a given timestamp
+(defn- find-frame-index-for-time [frames target-time]
+  (loop [idx 0
+         best-idx 0]
+    (if (>= idx (count frames))
+      best-idx
+      (let [frame (nth frames idx)
+            ts (:timestamp frame)]
+        (if (<= ts target-time)
+          (recur (inc idx) idx)
+          best-idx)))))
+
+;; Main RDP player with streaming - timestamp-based playback
+(defn- rdp-streaming-player [session-id canvas-width canvas-height initial-total-frames]
+  (let [state (r/atom {:frames []
+                       :current-frame 0
+                       :playing false
+                       :loading false
+                       :loaded-up-to 0
+                       :total-frames initial-total-frames
+                       :total-duration 0
+                       :playback-speed 1
+                       :fetching false
+                       ;; Track virtual time for playback
+                       :start-time nil      ;; Real time when playback started
+                       :start-offset 0})    ;; Time offset when playback started
+        raf-id (r/atom nil)]
+    (r/create-class
+     {:display-name "rdp-streaming-player"
+      :component-did-mount
+      (fn []
+        ;; Ensure RLE decompressor is loaded
+        (ensure-rle-loaded)
+        ;; Load initial batch of frames
+        (swap! state assoc :loading true)
+        (fetch-frames
+         session-id 0 100
+         (fn [data]
+           (swap! state assoc
+                  :frames (:frames data)
+                  :loaded-up-to (count (:frames data))
+                  :loading false
+                  :total-frames (:total_frames data)
+                  :total-duration (:total_duration data)))
+         (fn [err]
+           (js/console.error "Failed to load frames:" err)
+           (swap! state assoc :loading false))))
+
+      :component-will-unmount
+      (fn []
+        (when @raf-id
+          (js/cancelAnimationFrame @raf-id)))
+
+      :reagent-render
+      (fn []
+        (let [{:keys [frames current-frame playing loading loaded-up-to total-frames total-duration playback-speed start-time start-offset]} @state
+              ;; Calculate current time position
+              current-time (if playing
+                            (+ start-offset (* (- (js/performance.now) start-time) playback-speed 0.001))
+                            (if (seq frames)
+                              (:timestamp (nth frames current-frame 0))
+                              0))]
+          [:div {:class "flex flex-col gap-2"}
+           ;; Canvas - pass current-frame so it knows what to render
+           [canvas-renderer frames canvas-width canvas-height current-frame]
+           ;; Controls
+           [playback-controls
+            {:playing? playing
+             :on-play (fn []
+                        (swap! state assoc
+                               :playing true
+                               :start-time (js/performance.now)
+                               :start-offset (if (seq frames)
+                                              (:timestamp (nth frames current-frame 0))
+                                              0))
+                        ;; Timestamp-based playback loop using requestAnimationFrame
+                        (letfn [(play-tick []
+                                  (when (:playing @state)
+                                    (let [frames (:frames @state)
+                                          speed (:playback-speed @state)
+                                          st (:start-time @state)
+                                          so (:start-offset @state)
+                                          td (:total-duration @state)
+                                          current-time (+ so (* (- (js/performance.now) st) speed 0.001))]
+                                      (if (>= current-time td)
+                                        ;; Reached the end - show last frame and stop
+                                        (swap! state assoc
+                                               :current-frame (max 0 (dec (count frames)))
+                                               :playing false)
+                                        ;; Still playing
+                                        (do
+                                          (let [next-frame-idx (find-frame-index-for-time frames current-time)]
+                                            ;; Only update if frame changed
+                                            (when (not= next-frame-idx (:current-frame @state))
+                                              (swap! state assoc :current-frame next-frame-idx))
+                                            ;; Check if we need to load more frames
+                                            (when (and (>= next-frame-idx (- (:loaded-up-to @state) 10))
+                                                       (< (:loaded-up-to @state) (:total-frames @state))
+                                                       (not (:fetching @state)))
+                                              (swap! state assoc :fetching true)
+                                              (fetch-frames
+                                               session-id (:loaded-up-to @state) 200
+                                               (fn [data]
+                                                 (swap! state #(-> %
+                                                                   (update :frames into (:frames data))
+                                                                   (update :loaded-up-to + (count (:frames data)))
+                                                                   (assoc :fetching false))))
+                                               (fn [err]
+                                                 (js/console.error "Failed to load more frames:" err)
+                                                 (swap! state assoc :fetching false)))))
+                                          ;; Schedule next tick
+                                          (reset! raf-id (js/requestAnimationFrame play-tick)))))))]
+                          (play-tick)))
+             :on-pause (fn []
+                         (swap! state assoc :playing false)
+                         (when @raf-id
+                           (js/cancelAnimationFrame @raf-id)))
+             :on-prev (fn []
+                        (when (> current-frame 0)
+                          (swap! state update :current-frame dec)))
+             :on-next (fn []
+                        (when (< current-frame (dec total-frames))
+                          (swap! state update :current-frame inc)))
+             :current-time current-time
+             :total-duration total-duration
+             :playback-speed playback-speed
+             :on-speed-change (fn [speed]
+                               (swap! state assoc :playback-speed speed))
+             :on-seek (fn [target-time]
+                        ;; Find frame for target time
+                        (let [target-frame (find-frame-index-for-time frames target-time)]
+                          (swap! state assoc
+                                 :current-frame target-frame
+                                 :start-offset target-time
+                                 :start-time (when playing (js/performance.now)))
+                          ;; Load frames if seeking beyond what we have
+                          (when (> target-frame (:loaded-up-to @state))
+                            (fetch-frames
+                             session-id target-frame 100
+                             (fn [data]
+                               (swap! state assoc :frames (:frames data))
+                               (swap! state assoc :loaded-up-to (+ target-frame (count (:frames data)))))
+                             (fn [err]
+                               (js/console.error "Failed to load frames:" err))))))}]
+           ;; Loading indicator
+           (when loading
+              [:div {:class "text-center text-gray-400 text-sm py-2"}
+               "Loading frames..."])]))})))
+
+;; RDP session info display when event_stream is not loaded (large payload)
+(defn- rdp-session-summary [{:keys [session-id bitmap-count event-size canvas-width canvas-height on-play-click]}]
+  [:div {:class "flex flex-col items-center justify-center py-large gap-regular"}
+   [:div {:class "text-center"}
+    [:span {:class "text-gray-700 font-bold text-lg"}
+     "RDP Session Recording"]
+    [:div {:class "text-gray-500 text-sm mt-2"}
+     [:span (str bitmap-count " bitmap frames recorded")]
+     [:span {:class "mx-2"} "•"]
+     [:span (str (.toFixed (/ event-size 1024 1024) 2) " MB data")]
+     [:span {:class "mx-2"} "•"]
+     [:span (str canvas-width "x" canvas-height " resolution")]]]
+   [:div {:class "text-gray-400 text-xs"}
+    "RDP session recordings are stored as bitmap frames for replay."]
+   [:div {:class "mt-4 flex gap-2"}
+    [button/primary {:text "▶ Play Recording"
+                     :on-click on-play-click}]
+    [button/secondary {:text "Download"
+                       :on-click #(rf/dispatch [:audit->session-file-generate session-id "txt"])}]]])
+
+(defn main [event-stream session-id metrics]
+  (let [show-player (r/atom false)]
+    (fn []
+      (let [bitmap-count (get-in metrics [:bitmap_count] 0)
+            event-size (get-in metrics [:event_size] 0)
+            canvas-width (get-in metrics [:canvas_width] 1280)
+            canvas-height (get-in metrics [:canvas_height] 720)]
+        (cond
+          ;; Show streaming player when user clicks play
+          @show-player
+          [rdp-streaming-player session-id canvas-width canvas-height bitmap-count]
+
+          ;; Has bitmap data in metrics
+          (> bitmap-count 0)
+          [rdp-session-summary {:session-id session-id
+                                :bitmap-count bitmap-count
+                                :event-size event-size
+                                :canvas-width canvas-width
+                                :canvas-height canvas-height
+                                :on-play-click #(reset! show-player true)}]
+
+          ;; No data
+          :else
+          [empty-event-stream/main])))))

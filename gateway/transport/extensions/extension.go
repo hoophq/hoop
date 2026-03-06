@@ -52,7 +52,7 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 		err := guardrails.Validate("output", outputRules, pkt.Payload)
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
-			return status.Errorf(codes.FailedPrecondition, err.Error())
+			return status.Errorf(codes.FailedPrecondition, "%s", err.Error())
 		case nil:
 		default:
 			return fmt.Errorf("internal error, failed validating guard rails output rules: %v", err)

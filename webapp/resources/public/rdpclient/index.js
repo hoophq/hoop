@@ -1,4 +1,4 @@
-import { RemoteDesktopService, Config } from './rdp.js';
+import { RemoteDesktopService, Config, ReplayConfig } from './rdp.js';
 import * as wasmModule from "./pkg/ironrdp_web_bg.js";
 import { __wbg_set_wasm } from "./pkg/ironrdp_web_bg.js";
 
@@ -46,27 +46,62 @@ async function initializeApp(rdpCredential) {
     console.log(`Window Size: ${viewportWidth} x ${viewportHeight}`);
     rdpCanvas.width = viewportWidth;
     rdpCanvas.height = viewportHeight;
-    
+
     const RDP = new RemoteDesktopService(rdpCanvas, mod);
     window.RDP = RDP;
-    const proxyAddr = (window.location.protocol === 'https:') ?
-        'wss://' + window.location.host + "/rdpproxy/"
-        :
-        'ws://' + window.location.host + "/rdpproxy/"
-    ;
-    const rdpConfig = new Config(
-        rdpCredential,
-        rdpCredential,
-        proxyAddr,
-    )
 
-    console.log('Connecting...')
-    RDP.clearScreenAndWriteText("Connecting...");
-    try {
-        const result = await RDP.connect(rdpConfig);
-        await result.run();
-    } catch (err) {
-        RDP.reportError(err);
+    // Check if we're in replay mode (session_id in URL params or path)
+    const urlParams = new URLSearchParams(window.location.search);
+    let sessionId = urlParams.get('session_id');
+
+    // Also check if session_id is in the URL path (e.g., /rdpproxy/replay-client/<session_id>)
+    if (!sessionId) {
+        const pathParts = window.location.pathname.split('/');
+        // Check for /rdpproxy/replay-client/<session_id>
+        const replayClientIndex = pathParts.indexOf('replay-client');
+        if (replayClientIndex !== -1 && pathParts.length > replayClientIndex + 1) {
+            sessionId = pathParts[replayClientIndex + 1];
+        }
+    }
+
+    if (sessionId) {
+        // Replay mode - connect to replay endpoint
+        const replayAddr = (window.location.protocol === 'https:') ?
+            'wss://' + window.location.host + "/rdpproxy/replay/" + sessionId
+            :
+            'ws://' + window.location.host + "/rdpproxy/replay/" + sessionId
+        ;
+
+        console.log('Replay mode: connecting to', replayAddr);
+        RDP.clearScreenAndWriteText("Loading replay...");
+
+        try {
+            const result = await RDP.replay(new ReplayConfig(replayAddr));
+            await result.run();
+        } catch (err) {
+            RDP.reportError(err);
+        }
+    } else {
+        // Live connection mode
+        const proxyAddr = (window.location.protocol === 'https:') ?
+            'wss://' + window.location.host + "/rdpproxy/"
+            :
+            'ws://' + window.location.host + "/rdpproxy/"
+        ;
+        const rdpConfig = new Config(
+            rdpCredential,
+            rdpCredential,
+            proxyAddr,
+        )
+
+        console.log('Connecting...')
+        RDP.clearScreenAndWriteText("Connecting...");
+        try {
+            const result = await RDP.connect(rdpConfig);
+            await result.run();
+        } catch (err) {
+            RDP.reportError(err);
+        }
     }
 }
 

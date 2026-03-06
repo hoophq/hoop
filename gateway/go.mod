@@ -1,21 +1,23 @@
 module github.com/hoophq/hoop/gateway
 
-go 1.23.8
+go 1.24.0
 
 replace github.com/hoophq/hoop/common => ../common
 
+replace libhoop => ../libhoop
+
 require (
 	github.com/MicahParks/keyfunc/v2 v2.1.0
-	github.com/aws/aws-sdk-go-v2 v1.36.3
-	github.com/aws/aws-sdk-go-v2/config v1.29.7
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.60
+	github.com/aws/aws-sdk-go-v2 v1.40.0
+	github.com/aws/aws-sdk-go-v2/config v1.32.2
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.2
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.210.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.39.2
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.37.9
 	github.com/aws/aws-sdk-go-v2/service/rds v1.93.14
-	github.com/aws/aws-sdk-go-v2/service/sts v1.33.15
-	github.com/aws/session-manager-plugin v0.0.0-20250205214155-b2b0bcd769d1
-	github.com/aws/smithy-go v1.22.2
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.2
+	github.com/aws/session-manager-plugin v0.0.0-20251119232423-83812b6d1d99
+	github.com/aws/smithy-go v1.23.2
 	github.com/coreos/go-oidc/v3 v3.14.1
 	github.com/getkin/kin-openapi v0.131.0
 	github.com/getsentry/sentry-go v0.18.0
@@ -29,7 +31,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/lib/pq v1.10.7
+	github.com/lib/pq v1.10.9
 	github.com/pkg/errors v0.9.1
 	github.com/russellhaering/gosaml2 v0.10.0
 	github.com/russellhaering/goxmldsig v1.5.0
@@ -38,7 +40,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/svix/svix-webhooks v1.13.0
 	github.com/swaggo/swag v1.16.3
-	github.com/tidwall/wal v1.1.7
+	github.com/tidwall/wal v1.2.1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.49.0
 	go.opentelemetry.io/otel v1.34.0
@@ -58,14 +60,14 @@ require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.29 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.34 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.15 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.24.16 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.15 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.14 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.14 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.14 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.14 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.30.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.10 // indirect
 	github.com/beevik/etree v1.5.0 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/bytedance/sonic v1.10.0 // indirect
@@ -132,6 +134,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.23.8 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
+	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tidwall/gjson v1.10.2 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect
@@ -164,7 +167,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.5.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422 // indirect
@@ -178,6 +181,7 @@ require (
 	k8s.io/apimachinery v0.29.3 // indirect
 	k8s.io/klog/v2 v2.110.1 // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
+	libhoop v0.0.0-00010101000000-000000000000 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
