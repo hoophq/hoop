@@ -12,7 +12,6 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
-	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
@@ -66,14 +65,7 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	evt := audit.NewEvent(audit.ResourceAgent, audit.ActionCreate).
-		Resource(req.Name, req.Name).
-		Set("name", req.Name).
-		Set("mode", req.Mode)
-	defer func() { evt.Log(c) }()
-
 	err = models.CreateAgent(ctx.OrgID, req.Name, req.Mode, secretKeyHash)
-	evt.Err(err)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": models.ErrAlreadyExists.Error()})
@@ -99,12 +91,8 @@ func Post(c *gin.Context) {
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	nameOrID := c.Param("nameOrID")
-	evt := audit.NewEvent(audit.ResourceAgent, audit.ActionDelete).
-		Resource(nameOrID, nameOrID)
-	defer func() { evt.Log(c) }()
 
 	err := models.DeleteAgentByNameOrID(ctx.OrgID, nameOrID)
-	evt.Err(err)
 	switch err {
 	case nil:
 		c.Writer.WriteHeader(204)
