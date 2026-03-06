@@ -103,13 +103,6 @@
     :navigate :sessions
     :free-feature? true
     :admin-only? false}
-   {:name "Reviews"
-    :label "Reviews"
-    :icon (get icons-registry "Reviews")
-    :uri (routes/url-for :reviews-plugin)
-    :free-feature? true
-    :navigate :reviews-plugin
-    :admin-only? false}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")

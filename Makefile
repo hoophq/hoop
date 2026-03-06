@@ -77,6 +77,7 @@ test-enterprise:
 
 generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
+	go run gateway/cmd/openapi-gen/main.go
 
 swag-fmt:
 	swag fmt

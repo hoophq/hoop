@@ -34,6 +34,7 @@
   {:concepts {:agents "https://hoop.dev/docs/concepts/agents"
               :connections "https://hoop.dev/docs/concepts/connections"}
    :features {:runbooks "https://hoop.dev/docs/learn/features/runbooks"
+              :session-recording "https://hoop.dev/docs/learn/features/session-recording"
               :ai-datamasking "https://hoop.dev/docs/learn/features/ai-data-masking"
               :access-control "https://hoop.dev/docs/learn/features/access-control"
               :reviews "https://hoop.dev/docs/learn/features/reviews/overview"
