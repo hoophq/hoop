@@ -44,8 +44,6 @@ type IronRDPGateway struct {
 func (r *IronRDPGateway) AttachHandlers(router gin.IRouter) {
 	router.Handle(http.MethodGet, "/", r.handle)
 	router.Handle(http.MethodPost, "/client", r.handleClient)
-	router.Handle(http.MethodGet, "/replay/:session_id", ReplayHandler)
-	router.Handle(http.MethodGet, "/replay-client/:session_id", r.handleReplayClient)
 }
 
 func (r *IronRDPGateway) handleClient(c *gin.Context) {
@@ -92,19 +90,6 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 	// We don't need to do extended checks now because websocket will do it.
 
 	data := renderWebClientTemplate("RDP Connection", rdpCredential)
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
-}
-
-func (r *IronRDPGateway) handleReplayClient(c *gin.Context) {
-	sessionID := c.Param("session_id")
-	if sessionID == "" {
-		c.String(http.StatusBadRequest, "Missing session_id")
-		return
-	}
-
-	// Just serve the replay web client template
-	// The session_id will be passed via URL params to the JS
-	data := renderReplayWebClientTemplate("RDP Session Replay", sessionID)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
 }
 
@@ -294,7 +279,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		return
 	}
 
-	// Record handshake data for replay
+	// Record handshake data for session recording
 	recorder.RecordHandshake(pkt)
 
 	err = ws.WriteMessage(websocket.BinaryMessage, pkt)
@@ -305,7 +290,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 	// From here on, its standard TCP RDP flow, so we just
 	// pipe all data between WebSocket and TLS connection
-	// We also record all traffic for session replay
+	// We also record all traffic for session recording
 
 	// Use a done channel to signal when the websocket read goroutine exits
 	done := make(chan struct{})
