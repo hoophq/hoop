@@ -335,6 +335,12 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 				uinfo.Groups = append(uinfo.Groups, group)
 			}
 			sort.Strings(uinfo.Groups)
+		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+			"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
+			"email", "emailaddress", "mail":
+			if len(val.Values) > 0 && val.Values[0].Value != "" {
+				uinfo.Email = val.Values[0].Value
+			}
 		case "http://schemas.microsoft.com/identity/claims/displayname":
 			if len(val.Values) > 0 {
 				firstName = val.Values[0].Value
