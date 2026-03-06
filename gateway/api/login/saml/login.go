@@ -73,6 +73,9 @@ func (h *handler) SamlLogin(c *gin.Context) {
 		if idAttr != nil {
 			requestID = idAttr.Value
 		}
+		if c.Query("force_authn") == "true" {
+			root.CreateAttr("ForceAuthn", "true")
+		}
 	}
 
 	if requestID == "" {

@@ -542,7 +542,7 @@
 
 (defmethod routes/panels :idplogin-hoop-panel [_ gateway-info]
   (if (= (-> gateway-info :data :auth_method) "saml")
-    [layout :auth (rf/dispatch [:auth->get-saml-link])]
+    [layout :auth (rf/dispatch [:auth->get-saml-link {:force-authn? true}])]
     [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])]))
 
 (defmethod routes/panels :register-hoop-panel [_ gateway-info]

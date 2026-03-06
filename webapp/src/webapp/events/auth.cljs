@@ -24,11 +24,14 @@
 
 (rf/reg-event-fx
  :auth->get-saml-link
- (fn [_ _]
+ (fn [_ [_ {:keys [force-authn?]}]]
    (let [on-success (fn [response]
-                      (.replace js/window.location (:login_url response)))]
+                      (.replace js/window.location (:login_url response)))
+         base-uri (if force-authn?
+                    "/saml/login?force_authn=true&redirect="
+                    "/saml/login?redirect=")]
      {:fx [[:dispatch [:fetch {:method "GET"
-                               :uri (str "/saml/login?redirect="
+                               :uri (str base-uri
                                          (. (. js/window -location) -origin)
                                          (routes/url-for :auth-callback-hoop))
                                :on-success on-success}]]]})))
