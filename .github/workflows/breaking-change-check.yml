@@ -15,6 +15,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: setup go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'gateway/go.mod'
+
+      - name: generate openapi spec
+        run: make generate-openapi-docs
+
       - name: find base spec
         run: |
           git show origin/${{ github.base_ref }}:gateway/api/openapi/openapiv3.json > base-openapiv3.json
