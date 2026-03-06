@@ -2348,4 +2348,5 @@ type AccessRequestRuleRequest struct {
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+	NewField     string
 }

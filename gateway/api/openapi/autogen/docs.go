@@ -6958,6 +6958,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "default-access-request-rule"
                 },
+                "newField": {
+                    "type": "string"
+                },
                 "reviewers_groups": {
                     "description": "Groups that can review sessions",
                     "type": "array",
