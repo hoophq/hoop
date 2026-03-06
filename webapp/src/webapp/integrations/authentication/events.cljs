@@ -18,7 +18,10 @@
  (fn [db [_ data]]
    (let [mapped-data (-> data
                          ;; Map API fields to UI structure
-                         (assoc :auth-method (if (= (:auth_method data) "oidc") "identity-provider" "local"))
+                         (assoc :auth-method (if (contains? #{"oidc" "saml"} (:auth_method data)) "identity-provider" "local"))
+                         (assoc :protocol (if (contains? #{"oidc" "saml"} (:auth_method data))
+                                            (:auth_method data)
+                                            "oidc"))
                          (assoc :selected-provider (if (not (cs/blank? (:provider_name data)))
                                                      (:provider_name data)
                                                      "other"))
@@ -29,6 +32,8 @@
                                           :audience (:audience (:oidc_config data))
                                           :groups-claim (:groups_claim (:oidc_config data))
                                           :issuer-url (:issuer_url (:oidc_config data))}))
+                         (assoc :saml-config {:idp-metadata-url (:idp_metadata_url (:saml_config data))
+                                              :groups-claim (:groups_claim (:saml_config data))})
                          (assoc :advanced {:admin-role (:admin_role_name data)
                                            :auditor-role (:auditor_role_name data)
                                            :api-key {:secret (:api_key data)
@@ -58,6 +63,18 @@
  (fn [db [_ provider]]
    (-> db
        (assoc-in [:authentication :data :selected-provider] provider))))
+
+;; Update authentication protocol (oidc or saml)
+(rf/reg-event-db
+ :authentication->set-protocol
+ (fn [db [_ protocol]]
+   (assoc-in db [:authentication :data :protocol] protocol)))
+
+;; Update SAML configuration field
+(rf/reg-event-db
+ :authentication->update-saml-config-field
+ (fn [db [_ field value]]
+   (assoc-in db [:authentication :data :saml-config field] value)))
 
 ;; Update provider configuration field
 (rf/reg-event-db
@@ -109,19 +126,23 @@
    (let [ui-config (get-in db [:authentication :data])
          newly-generated? (get-in ui-config [:advanced :api-key :newly-generated?])
          ;; Map UI structure back to API format
-         base-payload {:auth_method (if (= (:auth-method ui-config) "identity-provider") "oidc" "local")
+         is-idp? (= (:auth-method ui-config) "identity-provider")
+         protocol (or (:protocol ui-config) "oidc")
+         base-payload {:auth_method (if is-idp? protocol "local")
                        :admin_role_name (get-in ui-config [:advanced :admin-role])
                        :auditor_role_name (get-in ui-config [:advanced :auditor-role])
                        :webapp_users_management_status (if (get-in ui-config [:advanced :local-auth-enabled]) "active" "inactive")
                        :provider_name (get-in ui-config [:selected-provider])
-                       :oidc_config (when (= (:auth-method ui-config) "identity-provider")
+                       :oidc_config (when (and is-idp? (= protocol "oidc"))
                                       {:client_id (get-in ui-config [:config :client-id])
                                        :client_secret (get-in ui-config [:config :client-secret])
                                        :audience (get-in ui-config [:config :audience])
                                        :groups_claim (or (get-in ui-config [:config :groups-claim]) "groups")
                                        :issuer_url (get-in ui-config [:config :issuer-url])
                                        :scopes (or (get-in ui-config [:config :custom-scopes]) ["openid" "email" "profile"])})
-                       :saml_config nil}
+                       :saml_config (when (and is-idp? (= protocol "saml"))
+                                      {:idp_metadata_url (get-in ui-config [:saml-config :idp-metadata-url])
+                                       :groups_claim (or (get-in ui-config [:saml-config :groups-claim]) "groups")})}
          ;; Only include rollout_api_key if a new one was generated
          api-payload (if newly-generated?
                        (assoc base-payload :rollout_api_key (get-in ui-config [:advanced :api-key :secret]))
