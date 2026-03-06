@@ -140,6 +140,7 @@
         selected-template (rf/subscribe [:runbooks->selected-runbooks])
         search-term (rf/subscribe [:search/term])
         runbooks-connection (rf/subscribe [:runbooks/selected-connection])
+        parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
         collapsed? (r/atom false)
         metadata-open? (r/atom false)
@@ -193,7 +194,7 @@
              [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"}
               [log-area/main
                (discover-connection-type @runbooks-connection)
-               true
+               @parallel-mode-active?
                @dark-mode?]]]]]
           (when @metadata-open?
             [:> (.-Pane Allotment) {:minSize 250 :maxSize 370}
