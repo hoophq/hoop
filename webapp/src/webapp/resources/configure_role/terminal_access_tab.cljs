@@ -55,7 +55,7 @@
         force-approve-groups (rf/subscribe [:connection-setup/force-approve-groups])
         data-masking? (rf/subscribe [:connection-setup/data-masking])
         data-masking-types (rf/subscribe [:connection-setup/data-masking-types])
-        mandatory-metadata-fields (rf/subscribe [:connection-setup/mandatory-metadata-fields])
+        mandatory-metadata-fields (rf/subscribe [:resources/mandatory-metadata-fields])
         is-database? (= (:type connection) "database")]
 
     (rf/dispatch [:users->get-user-groups])
@@ -274,7 +274,7 @@
                 {:placeholder "e.g. Ticket Number"
                  :size "3"
                  :value (get fields i "")
-                 :on-change #(rf/dispatch [:connection-setup/update-mandatory-metadata-field
+                 :on-change #(rf/dispatch [:resources/update-mandatory-metadata-field
                                            i (.. % -target -value)])}
                 (when (> i 0)
                   [:> TextField.Slot {:side "right"}
@@ -283,14 +283,14 @@
                      :color "red"
                      :size "1"
                      :type "button"
-                     :on-click #(rf/dispatch [:connection-setup/remove-mandatory-metadata-field i])}
+                     :on-click #(rf/dispatch [:resources/remove-mandatory-metadata-field i])}
                     [:> Trash2 {:size 14}]]])]))
 
            [:> Button
             {:variant "soft"
              :size "2"
              :type "button"
-             :on-click #(rf/dispatch [:connection-setup/add-mandatory-metadata-field])}
+             :on-click #(rf/dispatch [:resources/add-mandatory-metadata-field])}
             [:> Plus {:size 16}]
             "Add New Field"]]]
 

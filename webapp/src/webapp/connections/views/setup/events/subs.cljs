@@ -141,12 +141,6 @@
  (fn [db]
    (get-in db [:connection-setup :config :guardrails] [])))
 
-;; Mandatory metadata fields
-(rf/reg-sub
- :connection-setup/mandatory-metadata-fields
- (fn [db]
-   (get-in db [:connection-setup :config :mandatory-metadata-fields] [])))
-
 ;; Environment Variables
 (rf/reg-sub
  :connection-setup/env-current-key

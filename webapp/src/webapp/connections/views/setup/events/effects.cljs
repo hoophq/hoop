@@ -63,24 +63,3 @@
               (assoc-in [:connection-setup :tags :data index :value] nil)
               (assoc-in [:connection-setup :tags :available-values-for-index index] (or available-values [])))})))
 
-(rf/reg-event-db
- :connection-setup/add-mandatory-metadata-field
- (fn [db _]
-   (update-in db [:connection-setup :config :mandatory-metadata-fields]
-              (fn [fields] (conj (or fields []) "")))))
-
-(rf/reg-event-db
- :connection-setup/remove-mandatory-metadata-field
- (fn [db [_ idx]]
-   (update-in db [:connection-setup :config :mandatory-metadata-fields]
-              (fn [fields] (vec (concat (subvec fields 0 idx) (subvec fields (inc idx))))))))
-
-(rf/reg-event-db
- :connection-setup/update-mandatory-metadata-field
- (fn [db [_ idx value]]
-   (update-in db [:connection-setup :config :mandatory-metadata-fields]
-              (fn [fields]
-                (let [v (or fields [])]
-                  (if (< idx (count v))
-                    (assoc v idx value)
-                    (conj v value)))))))
