@@ -2083,8 +2083,8 @@ type ResourceRequest struct {
 	Name string `json:"name" binding:"required" example:"my-resource"`
 	// The resource type
 	Type string `json:"type" binding:"required" example:"database"`
-	// The resource subtype
-	SubType string `json:"subtype" binding:"required" example:"mysql"`
+	// The resource subtype (optional; defaults to the value of 'type' when omitted)
+	SubType string `json:"subtype" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource
@@ -2151,9 +2151,9 @@ type RunbookRepository struct {
 
 type RunbookRepositoryResponse struct {
 	// Git repository identifier in the format `host/owner/repo`
-	Repository string `json:"repository" readonly:"true" example:"github.com/myorg/myrepo"`
+	Repository string `json:"repository" binding:"required" readonly:"true" example:"github.com/myorg/myrepo"`
 	// Git repository URL where the runbook is located
-	GitUrl string `json:"git_url" example:"https://github.com/myorg/myrepo"`
+	GitUrl string `json:"git_url" binding:"required" example:"https://github.com/myorg/myrepo"`
 	// Git username for repository authentication
 	GitUser string `json:"git_user" example:"myusername"`
 	// Git password or token for repository authentication
@@ -2222,6 +2222,14 @@ type RunbookListV2 struct {
 	Errors []string `json:"errors"`
 	// List of runbook repositories
 	Repositories []RunbookRepositoryList `json:"repositories"`
+	// DEPRECATED: use repositories[].items instead. Flat list of all runbooks across all repositories.
+	Items []*Runbook `json:"items,omitempty"`
+	// DEPRECATED: use repositories[].commit instead. Commit SHA of the first repository.
+	Commit string `json:"commit,omitempty"`
+	// DEPRECATED: use repositories[].commit_author instead. Commit author of the first repository.
+	CommitAuthor string `json:"commit_author,omitempty"`
+	// DEPRECATED: use repositories[].commit_message instead. Commit message of the first repository.
+	CommitMessage string `json:"commit_message,omitempty"`
 }
 
 type RunbookRuleFile struct {
