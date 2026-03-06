@@ -27,6 +27,7 @@
             "server" "custom"
             "database" "database"
             "custom" "custom"
+            "httpproxy" "httpproxy"
             "application" "application")))
 
 (defn tags-array->map
