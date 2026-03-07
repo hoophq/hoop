@@ -1,0 +1,103 @@
+name: Generate Changelog Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_tag:
+        description: 'Start tag (e.g., 1.47.2)'
+        required: true
+      to_tag:
+        description: 'End tag (e.g., 1.48.0 or HEAD for unreleased)'
+        required: false
+        default: 'HEAD'
+      use_ai:
+        description: 'Use AI-powered summarization'
+        required: false
+        type: boolean
+        default: false
+      fetch_prs:
+        description: 'Fetch PR descriptions'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  generate-changelog:
+    runs-on: ubuntu-latest
+    name: Generate Changelog Preview
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Need full history for git log
+
+      - name: Setup GitHub CLI
+        run: |
+          type -p gh >/dev/null || {
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt update
+            sudo apt install gh -y
+          }
+          gh --version
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Generate Changelog
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Build flags
+          FLAGS=""
+          if [[ "${{ inputs.fetch_prs }}" == "true" ]]; then
+            FLAGS="$FLAGS --fetch-prs"
+          fi
+          if [[ "${{ inputs.use_ai }}" == "true" ]]; then
+            FLAGS="$FLAGS --ai-summary"
+          fi
+
+          # Generate raw commits
+          echo "Generating changelog from ${{ inputs.from_tag }} to ${{ inputs.to_tag }}..."
+          git log ${{ inputs.from_tag }}..${{ inputs.to_tag }} --pretty=format:"%h %s" --no-merges > /tmp/commits.txt
+
+          # Count commits
+          COMMIT_COUNT=$(wc -l < /tmp/commits.txt)
+          echo "Found $COMMIT_COUNT commits"
+
+          if [[ $COMMIT_COUNT -eq 0 ]]; then
+            echo "::error::No commits found between ${{ inputs.from_tag }} and ${{ inputs.to_tag }}"
+            exit 1
+          fi
+
+          # Format changelog
+          ./scripts/format-changelog.sh /tmp/commits.txt $FLAGS > changelog-preview.md
+
+          echo "::group::Generated Changelog"
+          cat changelog-preview.md
+          echo "::endgroup::"
+
+      - name: Upload Changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog-preview-${{ inputs.from_tag }}-to-${{ inputs.to_tag }}
+          path: changelog-preview.md
+          retention-days: 30
+
+      - name: Comment Summary
+        run: |
+          echo "✅ Changelog preview generated successfully!"
+          echo ""
+          echo "**Configuration:**"
+          echo "- From: ${{ inputs.from_tag }}"
+          echo "- To: ${{ inputs.to_tag }}"
+          echo "- Fetch PRs: ${{ inputs.fetch_prs }}"
+          echo "- Use AI: ${{ inputs.use_ai }}"
+          echo ""
+          echo "Download the artifact above to view the full changelog."
