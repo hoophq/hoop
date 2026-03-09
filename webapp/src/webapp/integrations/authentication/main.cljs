@@ -5,8 +5,7 @@
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.integrations.authentication.views.general-tab :as general-tab]
-   [webapp.integrations.authentication.views.advanced-tab :as advanced-tab]
-   [webapp.config :as config]))
+   [webapp.integrations.authentication.views.advanced-tab :as advanced-tab]))
 
 (defn main []
   (let [auth-config (rf/subscribe [:authentication->config])

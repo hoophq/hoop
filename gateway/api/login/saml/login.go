@@ -73,6 +73,9 @@ func (h *handler) SamlLogin(c *gin.Context) {
 		if idAttr != nil {
 			requestID = idAttr.Value
 		}
+		if c.Query("force_authn") == "true" {
+			root.CreateAttr("ForceAuthn", "true")
+		}
 	}
 
 	if requestID == "" {
@@ -252,6 +255,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	}
 
 	// sync attributes
+	usr.Subject = uinfo.Subject
 	usr.Name = uinfo.Profile
 	if uinfo.MustSyncGroups {
 		usr.Groups = uinfo.Groups
@@ -297,14 +301,16 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	if url != nil && url.Host != proto.ClientLoginCallbackAddress && !appconfig.Get().ForceUrlTokenExchange() {
 		redirectSuccessURL = login.Redirect
 
+		isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
+
 		http.SetCookie(c.Writer, &http.Cookie{
 			Name:     "hoop_access_token",
 			Value:    sessionToken,
 			Path:     "/",
 			MaxAge:   0,
 			HttpOnly: false,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
 		})
 	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
@@ -332,15 +338,24 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 				uinfo.Groups = append(uinfo.Groups, group)
 			}
 			sort.Strings(uinfo.Groups)
-		case "http://schemas.microsoft.com/identity/claims/displayname":
+		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+			"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
+			"email", "emailaddress", "mail":
+			if len(val.Values) > 0 && val.Values[0].Value != "" {
+				uinfo.Email = val.Values[0].Value
+			}
+		case "http://schemas.microsoft.com/identity/claims/displayname",
+			"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+			"first_name", "name":
 			if len(val.Values) > 0 {
 				firstName = val.Values[0].Value
 			}
-		case "first_name", "name":
+		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname":
 			if len(val.Values) > 0 {
 				firstName = val.Values[0].Value
 			}
-		case "last_name":
+		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname",
+			"last_name":
 			if len(val.Values) > 0 {
 				lastName = val.Values[0].Value
 			}
