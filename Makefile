@@ -63,16 +63,20 @@ build-dev-client:
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
 
+libhoop-map:
+	rm libhoop || true
+	ln -s _libhoop libhoop
+
 # Generate WASM module for RDP parser
-generate-wasm:
+generate-wasm: libhoop-map
 	cd gateway/rdp/parser && go generate
 
 test: test-oss test-enterprise
 
-test-oss: generate-wasm
+test-oss: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-test-enterprise: generate-wasm
+test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
