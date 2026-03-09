@@ -175,7 +175,7 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		connectResponse, err := accessrequestinterceptor.OnReceive(pctx, pkt)
 		if err != nil {
 			log.With("sid", pctx.SID).Errorf("access request interceptor error: %v", err)
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		}
 		if connectResponse != nil {
 			if connectResponse.Context != nil {
