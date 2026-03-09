@@ -313,7 +313,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
 
-	r.GET("/connections/:nameOrID/ai-analyzer-rule",
+	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiai.GetConnectionAnalyzerRule)
@@ -715,18 +715,18 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		awsintegration.GetDBRoleJobByID,
 	)
 
-	r.GET("/ai/providers",
+	r.GET("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiai.GetProvider)
-	r.POST("/ai/providers",
+		apiai.GetSessionAnalyzerProvider)
+	r.POST("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiai.UpsertProvider)
-	r.DELETE("/ai/providers",
+		apiai.UpsertSessionAnalyzerProvider)
+	r.DELETE("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		apiai.DeleteProvider)
+		apiai.DeleteSessionAnalyzerProvider)
 
 	r.GET("/ai/session-analyzer/rules",
 		apiroutes.AdminOnlyAccessRole,

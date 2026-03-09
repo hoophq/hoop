@@ -87,7 +87,7 @@ var sessionAnalyzerTools = []aiclients.Tool{
 // The model is expected to call exactly one of the three risk tools; the tool
 // name is mapped to RiskLevelLow / RiskLevelMedium / RiskLevelHigh.
 func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string) (*SessionAnalysisResult, error) {
-	provider, err := models.GetAIProvider(orgID)
+	provider, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
 	if err != nil || provider == nil {
 		return nil, fmt.Errorf("session analyzer: failed to load ai provider: %w", err)
 	}

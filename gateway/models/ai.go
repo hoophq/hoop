@@ -10,10 +10,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+type AIProviderFeature string
+
+const (
+	AISessionAnalyzerFeature AIProviderFeature = "session-analyzer"
+)
+
 type AIProvider struct {
 	ID    uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	OrgID uuid.UUID `gorm:"column:org_id;unique"`
+	OrgID uuid.UUID `gorm:"column:org_id;index:idx_ai_session_analyzer_rules_org_feature"`
 
+	Feature  string `gorm:"column:feature;index:idx_ai_session_analyzer_rules_org_feature"`
 	Provider string `gorm:"column:provider"`
 
 	ApiUrl *string `gorm:"column:api_url"`
@@ -58,25 +65,26 @@ func (AISessionAnalyzerRules) TableName() string {
 	return "private.ai_session_analyzer_rules"
 }
 
-func GetAIProvider(orgID uuid.UUID) (*AIProvider, error) {
+func GetAIProvider(orgID uuid.UUID, feature AIProviderFeature) (*AIProvider, error) {
 	var p AIProvider
-	err := DB.Where("org_id = ?", orgID).First(&p).Error
+	err := DB.Where("org_id = ? AND feature = ?", orgID, string(feature)).First(&p).Error
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-func UpsertAIProvider(orgID uuid.UUID, provider string, apiURL *string, apiKey *string, model string) (*AIProvider, error) {
+func UpsertAIProvider(orgID uuid.UUID, feature AIProviderFeature, provider string, apiURL *string, apiKey *string, model string) (*AIProvider, error) {
 	p := AIProvider{
 		OrgID:    orgID,
+		Feature:  string(feature),
 		Provider: provider,
 		ApiUrl:   apiURL,
 		ApiKey:   apiKey,
 		Model:    model,
 	}
 	err := DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "org_id"}},
+		Columns:   []clause.Column{{Name: "org_id"}, {Name: "feature"}},
 		DoUpdates: clause.AssignmentColumns([]string{"provider", "api_url", "api_key", "model", "updated_at"}),
 	}, clause.Returning{}).Create(&p).Error
 	if err != nil {
@@ -85,8 +93,8 @@ func UpsertAIProvider(orgID uuid.UUID, provider string, apiURL *string, apiKey *
 	return &p, nil
 }
 
-func DeleteAIProvider(orgID uuid.UUID) error {
-	result := DB.Where("org_id = ?", orgID).Delete(&AIProvider{})
+func DeleteAIProvider(orgID uuid.UUID, feature AIProviderFeature) error {
+	result := DB.Where("org_id = ? AND feature = ?", orgID, string(feature)).Delete(&AIProvider{})
 	if result.Error != nil {
 		return result.Error
 	}

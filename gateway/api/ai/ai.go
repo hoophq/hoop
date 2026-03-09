@@ -30,16 +30,16 @@ func validateProviderRequest(p openapi.AIProviderRequest) error {
 	}
 }
 
-// GetAIProvider
+// GetSessionAnalyzerProvider
 //
-//	@Summary		Get AI Provider
-//	@Description	Get the AI provider configured for the organization
+//	@Summary		Get AI Session Analyzer Provider
+//	@Description	Get the AI provider configured for the session analyzer feature in the organization
 //	@Tags			AI
 //	@Produce		json
 //	@Success		200		{object}	openapi.AIProviderResponse
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/ai/providers [get]
-func GetProvider(c *gin.Context) {
+//	@Router			/ai/session-analyzer/providers [get]
+func GetSessionAnalyzerProvider(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
@@ -47,7 +47,7 @@ func GetProvider(c *gin.Context) {
 		return
 	}
 
-	p, err := models.GetAIProvider(orgID)
+	p, err := models.GetAIProvider(orgID, models.AISessionAnalyzerFeature)
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -59,18 +59,18 @@ func GetProvider(c *gin.Context) {
 	}
 }
 
-// UpsertAIProvider
+// UpsertSessionAnalyzerProvider
 //
-//	@Summary		Upsert AI Provider
-//	@Description	Create or update the AI provider for the organization (one per org)
+//	@Summary		Upsert AI Session Analyzer Provider
+//	@Description	Create or update the AI provider for the session analyzer feature in the organization (one per org)
 //	@Tags			AI
 //	@Accept			json
 //	@Produce		json
 //	@Param			request	body		openapi.AIProviderRequest	true	"The request body resource"
 //	@Success		200		{object}	openapi.AIProviderResponse
 //	@Failure		400,500	{object}	openapi.HTTPError
-//	@Router			/ai/providers [post]
-func UpsertProvider(c *gin.Context) {
+//	@Router			/ai/session-analyzer/providers [post]
+func UpsertSessionAnalyzerProvider(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
@@ -89,7 +89,7 @@ func UpsertProvider(c *gin.Context) {
 		return
 	}
 
-	p, err := models.UpsertAIProvider(orgID, req.Provider, req.ApiUrl, req.ApiKey, req.Model)
+	p, err := models.UpsertAIProvider(orgID, models.AISessionAnalyzerFeature, req.Provider, req.ApiUrl, req.ApiKey, req.Model)
 	if err != nil {
 		log.Errorf("failed upserting AI provider, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -105,16 +105,16 @@ func UpsertProvider(c *gin.Context) {
 	c.JSON(http.StatusOK, toProviderResponse(*p))
 }
 
-// DeleteAIProvider
+// DeleteSessionAnalyzerProvider
 //
-//	@Summary		Delete AI Provider
-//	@Description	Delete the AI provider configured for the organization
+//	@Summary		Delete AI Session Analyzer Provider
+//	@Description	Delete the AI provider configured for the session analyzer feature in the organization
 //	@Tags			AI
 //	@Produce		json
 //	@Success		204
 //	@Failure		404,500	{object}	openapi.HTTPError
-//	@Router			/ai/providers [delete]
-func DeleteProvider(c *gin.Context) {
+//	@Router			/ai/session-analyzer/providers [delete]
+func DeleteSessionAnalyzerProvider(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
@@ -122,7 +122,7 @@ func DeleteProvider(c *gin.Context) {
 		return
 	}
 
-	err = models.DeleteAIProvider(orgID)
+	err = models.DeleteAIProvider(orgID, models.AISessionAnalyzerFeature)
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -413,14 +413,14 @@ func toProviderResponse(p models.AIProvider) openapi.AIProviderResponse {
 
 // GetConnectionAnalyzerRule
 //
-//	@Summary		Get AI Analyzer Rule by Connection
-//	@Description	Get the AI analyzer rule configured for a specific connection
+//	@Summary		Get AI Session Analyzer Rule by Connection
+//	@Description	Get the AI session analyzer rule configured for a specific connection
 //	@Tags			AI
 //	@Produce		json
 //	@Param			nameOrId	path		string	true	"The name or ID of the connection"
 //	@Success		200			{object}	openapi.AISessionAnalyzerRule
 //	@Failure		404,500		{object}	openapi.HTTPError
-//	@Router			/connections/{nameOrId}/ai-analyzer-rule [get]
+//	@Router			/connections/{nameOrId}/ai-session-analyzer-rule [get]
 func GetConnectionAnalyzerRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	orgID, err := uuid.Parse(ctx.GetOrgID())

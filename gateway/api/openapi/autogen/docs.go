@@ -442,16 +442,16 @@ const docTemplate = `{
                 }
             }
         },
-        "/ai/providers": {
+        "/ai/session-analyzer/providers": {
             "get": {
-                "description": "Get the AI provider configured for the organization",
+                "description": "Get the AI provider configured for the session analyzer feature in the organization",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "AI"
                 ],
-                "summary": "Get AI Provider",
+                "summary": "Get AI Session Analyzer Provider",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -474,7 +474,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Create or update the AI provider for the organization (one per org)",
+                "description": "Create or update the AI provider for the session analyzer feature in the organization (one per org)",
                 "consumes": [
                     "application/json"
                 ],
@@ -484,7 +484,7 @@ const docTemplate = `{
                 "tags": [
                     "AI"
                 ],
-                "summary": "Upsert AI Provider",
+                "summary": "Upsert AI Session Analyzer Provider",
                 "parameters": [
                     {
                         "description": "The request body resource",
@@ -518,14 +518,14 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Delete the AI provider configured for the organization",
+                "description": "Delete the AI provider configured for the session analyzer feature in the organization",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "AI"
                 ],
-                "summary": "Delete AI Provider",
+                "summary": "Delete AI Session Analyzer Provider",
                 "responses": {
                     "204": {
                         "description": "No Content"
@@ -1661,16 +1661,16 @@ const docTemplate = `{
                 }
             }
         },
-        "/connections/{nameOrId}/ai-analyzer-rule": {
+        "/connections/{nameOrId}/ai-session-analyzer-rule": {
             "get": {
-                "description": "Get the AI analyzer rule configured for a specific connection",
+                "description": "Get the AI session analyzer rule configured for a specific connection",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "AI"
                 ],
-                "summary": "Get AI Analyzer Rule by Connection",
+                "summary": "Get AI Session Analyzer Rule by Connection",
                 "parameters": [
                     {
                         "type": "string",
