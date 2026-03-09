@@ -378,10 +378,9 @@
     [users/main]]])
 
 (defmethod routes/panels :resources-panel []
-  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
-                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
-                              "Resources"]
-                             [resources-main/panel]]])
+  [layout :application-hoop
+   [:> Box {:class "bg-gray-1 min-h-full h-screen"}
+    [resources-main/panel]]])
 
 (defmethod routes/panels :configure-resource-panel []
   (let [pathname (.. js/window -location -pathname)

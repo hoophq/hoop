@@ -285,7 +285,6 @@
             resources-loading? (= :loading (:loading resources-state))
             connections-loading? (= :loading (:loading connections-state))
             ;; Conditional logic based on active tab
-            current-state (if (= @active-tab "resources") resources-state connections-state)
             current-loading? (if (= @active-tab "resources") resources-loading? connections-loading?)
             has-filters? (or (seq @selected-tags) @selected-resource)
             current-count (if (= @active-tab "resources")
@@ -307,48 +306,39 @@
                                (rf/dispatch [:resources/get-resources-paginated request])
                                (rf/dispatch [:connections/get-connections-paginated request]))))]
 
-        [infinite-scroll
-         {:on-load-more (fn []
-                          (when-not current-loading?
-                            (if (= @active-tab "resources")
+        [:> Box {:class "flex flex-col px-10 pb-10"}
+         [:> Tabs.Root
+          {:value @active-tab
+           :onValueChange (fn [new-tab]
+                            (reset! active-tab new-tab)
+                            (reset! search-name "")
+                            (reset! selected-tags {})
+                            (reset! selected-resource nil)
+                            (when @search-debounce-timer
+                              (js/clearTimeout @search-debounce-timer))
+                            (reset! search-debounce-timer nil)
+                            ;; Reset pagination state for the new tab
+                            (if (= new-tab "resources")
                               (rf/dispatch [:resources/get-resources-paginated
-                                            {:page (inc (:current-page resources-state 1))
-                                             :force-refresh? false}])
+                                            {:page 1 :force-refresh? true :filters {}}])
                               (rf/dispatch [:connections/get-connections-paginated
-                                            {:page (inc (:current-page connections-state 1))
-                                             :force-refresh? false}]))))
-          :has-more? (:has-more? current-state)
-          :loading? current-loading?}
+                                            {:page 1 :force-refresh? true :filters {}}])))}
 
-         ^{:key "infinite-scroll-children"}
-         [:> Box {:height "100%"}
-          ;; Add button (admin only)
+          ;; Sticky Header with Title, Tabs and Filters
+          [:> Box {:class "sticky top-0 z-10 bg-gray-1 pt-10 pb-4 space-y-4"}
+           ;; Title and Add button row
+           [:> Flex {:justify "between" :align "center"}
+            [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
+             "Resources"]
 
-          (when-not (empty? resources-data)
-            [:> Box {:class "absolute top-10 right-4 sm:right-6 lg:top-12 lg:right-10"}
-             [:> Button {:on-click #(rf/dispatch [:navigate :resource-catalog])}
-              (if (-> @user :data :admin?)
-                "Setup new Resource"
-                "Explore Resource Catalog")]])
+            (when-not (empty? resources-data)
+              [:> Button {:on-click #(rf/dispatch [:navigate :resource-catalog])}
+               (if (-> @user :data :admin?)
+                 "Setup new Resource"
+                 "Explore Resource Catalog")])]
 
-          [:> Tabs.Root
-           {:value @active-tab
-            :onValueChange (fn [new-tab]
-                             (reset! active-tab new-tab)
-                             (reset! search-name "")
-                             (reset! selected-tags {})
-                             (reset! selected-resource nil)
-                             (when @search-debounce-timer
-                               (js/clearTimeout @search-debounce-timer))
-                             (reset! search-debounce-timer nil)
-                             ;; Reset pagination state for the new tab
-                             (if (= new-tab "resources")
-                               (rf/dispatch [:resources/get-resources-paginated
-                                             {:page 1 :force-refresh? true :filters {}}])
-                               (rf/dispatch [:connections/get-connections-paginated
-                                             {:page 1 :force-refresh? true :filters {}}])))}
-
-           [:> Flex {:justify "between" :align "center" :class "mb-4"}
+           ;; Tabs and Filters row
+           [:> Flex {:justify "between" :align "center"}
             [custom-tab-header]
 
             [:> Flex {:gap "2"}
@@ -447,40 +437,60 @@
                     @active-tab
                     " found"
                     (when has-filters?
-                      " with active filters")))]]
+                      " with active filters")))]]]
 
-           [:> Tabs.Content {:value "resources"}
-            (cond
-              ;; Loading state when no data
-              (and resources-loading? (empty? resources-data))
-              [:> Box {:class "flex-1 h-full"}
-               [loading-list-view]]
+          [:> Tabs.Content {:value "resources"}
+           (cond
+             ;; Loading state when no data
+             (and resources-loading? (empty? resources-data))
+             [:> Box {:class "flex-1 min-h-96"}
+              [loading-list-view]]
 
-              ;; Empty state
-              (and (empty? resources-data) (not resources-loading?))
-              [:> Box {:class "flex flex-col h-full"}
-               [empty-list-view (-> @user :data :admin?)]]
+             ;; Empty state
+             (and (empty? resources-data) (not resources-loading?))
+             [:> Box {:class "flex flex-col min-h-96"}
+              [empty-list-view (-> @user :data :admin?)]]
 
-              ;; Content
-              :else
-              [:> Box {:class "flex-1 h-full"}
-               [resources-list-content resources-data @user resource-names]])]
+             ;; Content
+             :else
+             [:> Box {:class "flex-1"}
+              [resources-list-content resources-data @user resource-names]
+              (when (:has-more? resources-state)
+                [infinite-scroll
+                 {:on-load-more (fn []
+                                  (when-not resources-loading?
+                                    (rf/dispatch [:resources/get-resources-paginated
+                                                  {:page (inc (:current-page resources-state 1))
+                                                   :force-refresh? false}])))
+                  :has-more? (:has-more? resources-state)
+                  :loading? resources-loading?}
+                 [:div]])])]
 
-           [:> Tabs.Content {:value "roles"}
-            [test-connection-modal/test-connection-modal
-             (get-in @test-connection-state [:connection-name])]
-            (cond
-              ;; Loading state when no data
-              (and connections-loading? (empty? connections-data))
-              [:> Box {:class "flex-1 h-full"}
-               [loading-list-view]]
+          [:> Tabs.Content {:value "roles"}
+           [test-connection-modal/test-connection-modal
+            (get-in @test-connection-state [:connection-name])]
+           (cond
+             ;; Loading state when no data
+             (and connections-loading? (empty? connections-data))
+             [:> Box {:class "flex-1 min-h-96"}
+              [loading-list-view]]
 
-              ;; Empty state
-              (and (empty? connections-data) (not connections-loading?))
-              [:> Box {:class "flex flex-col h-full"}
-               [empty-list-view (-> @user :data :admin?)]]
+             ;; Empty state
+             (and (empty? connections-data) (not connections-loading?))
+             [:> Box {:class "flex flex-col min-h-96"}
+              [empty-list-view (-> @user :data :admin?)]]
 
-              ;; Content
-              :else
-              [:> Box {:class "flex-1 h-full"}
-               [roles-list-content connections-data @user @test-connection-state resource-names]])]]]]))))
+             ;; Content
+             :else
+             [:> Box {:class "flex-1"}
+              [roles-list-content connections-data @user @test-connection-state resource-names]
+              (when (:has-more? connections-state)
+                [infinite-scroll
+                 {:on-load-more (fn []
+                                  (when-not connections-loading?
+                                    (rf/dispatch [:connections/get-connections-paginated
+                                                  {:page (inc (:current-page connections-state 1))
+                                                   :force-refresh? false}])))
+                  :has-more? (:has-more? connections-state)
+                  :loading? connections-loading?}
+                 [:div]])])]]]))))
