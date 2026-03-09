@@ -332,8 +332,7 @@
                 "Explore Resource Catalog")]])
 
           [:> Tabs.Root
-           {:class "h-full"
-            :value @active-tab
+           {:value @active-tab
             :onValueChange (fn [new-tab]
                              (reset! active-tab new-tab)
                              (reset! search-name "")
@@ -450,8 +449,7 @@
                     (when has-filters?
                       " with active filters")))]]
 
-           [:> Tabs.Content {:class "h-full"
-                             :value "resources"}
+           [:> Tabs.Content {:value "resources"}
             (cond
               ;; Loading state when no data
               (and resources-loading? (empty? resources-data))
@@ -468,8 +466,7 @@
               [:> Box {:class "flex-1 h-full"}
                [resources-list-content resources-data @user resource-names]])]
 
-           [:> Tabs.Content {:class "h-full"
-                             :value "roles"}
+           [:> Tabs.Content {:value "roles"}
             [test-connection-modal/test-connection-modal
              (get-in @test-connection-state [:connection-name])]
             (cond
