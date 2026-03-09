@@ -77,24 +77,52 @@ func (a *Agent) doTerminalWriteAgentStdin(pkt *pb.Packet) {
 		a.sendCloseTerm(sid, msg, strconv.Itoa(exitCode))
 	})
 	a.connStore.Set(sessionIDKey, cmd)
+
+	// Apply any pending window size that arrived before the PTY was created
+	pendingKey := fmt.Sprintf(pendingWinSizeKey, sid)
+	pendingSize, ok := a.connStore.Get(pendingKey).(*pty.Winsize)
+	if !ok {
+		log.With("sid", sid).Infof("tty=true - pending window size not found")
+		return
+	}
+	a.connStore.Del(pendingKey)
+	term, ok := cmd.(libhoop.Terminal)
+	if !ok {
+		log.With("sid", sid).Infof("tty=true - terminal not found")
+		return
+	}
+	if err := term.ResizeTTY(pendingSize); err != nil {
+		log.With("sid", sid).Infof("tty=true - failed applying pending winsize, err=%v", err)
+	} else {
+		log.With("sid", sid).Debugf("tty=true - applied pending winsize %vx%v", pendingSize.Rows, pendingSize.Cols)
+	}
+
 }
 
 func (a *Agent) doTerminalResizeTTY(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+	winSize, err := parsePttyWinSize(pkt.Payload)
+	if err != nil {
+		sentry.CaptureException(err)
+		log.With("sid", sid).Infof("tty=true, winsize=%v - %v", string(pkt.Payload), err)
+		return
+	}
+
 	sessionIDKey := fmt.Sprintf(cmdStoreKey, sid)
 	cmdObj := a.connStore.Get(sessionIDKey)
 	cmd, ok := cmdObj.(libhoop.Terminal)
-	if ok {
-		winSize, err := parsePttyWinSize(pkt.Payload)
-		if err != nil {
-			sentry.CaptureException(err)
-			log.With("sid", sid).Infof("tty=true, winsize=%v - %v", string(pkt.Payload), err)
-			return
-		}
-		if err := cmd.ResizeTTY(winSize); err != nil {
-			sentry.CaptureException(err)
-			log.With("sid", sid).Infof("tty=true - failed resizing tty, err=%v", err)
-		}
+	// the terminal may not be created yet if the client
+	// so when the client opens the terminal size get sent before the terminal is created,
+	// in that case we store the window size in the connStore and apply it when the terminal gets created
+	if !ok {
+		pendingKey := fmt.Sprintf(pendingWinSizeKey, sid)
+		a.connStore.Set(pendingKey, winSize)
+		log.With("sid", sid).Debugf("tty=true - stored pending winsize %vx%v", winSize.Rows, winSize.Cols)
+		return
+	}
+	if err := cmd.ResizeTTY(winSize); err != nil {
+		sentry.CaptureException(err)
+		log.With("sid", sid).Infof("tty=true - failed resizing tty, err=%v", err)
 	}
 }
 

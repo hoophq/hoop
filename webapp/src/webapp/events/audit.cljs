@@ -208,16 +208,20 @@
          base-state {:session session
                      :status :success
                      :has-large-payload? has-large-event?
-                     :has-large-input? has-large-input?}]
+                     :has-large-input? has-large-input?}
+         is-exec? (= "exec" (:verb session))]
      (if (and has-large-event? has-large-input?)
-       {:db (assoc db :audit->session-details base-state)}
+       {:db (assoc db :audit->session-details base-state)
+        :fx (cond-> []
+              is-exec? (conj [:dispatch [:audit->get-session-stream-result (:id session)]]))}
        {:db (assoc db :audit->session-details (assoc base-state :status :loading))
-        :fx [[:dispatch [:fetch
-                         {:method "GET"
-                          :uri (str "/sessions/" (:id session) query-string)
-                          :on-success (fn [session-data]
-                                        (rf/dispatch [:audit->set-session session-data])
-                                        (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]}))))
+        :fx (cond-> [[:dispatch [:fetch
+                                 {:method "GET"
+                                  :uri (str "/sessions/" (:id session) query-string)
+                                  :on-success (fn [session-data]
+                                                (rf/dispatch [:audit->set-session session-data])
+                                                (rf/dispatch [:reports->get-report-by-session-id session-data]))}]]]
+              (and has-large-event? is-exec?) (conj [:dispatch [:audit->get-session-stream-result (:id session)]]))}))))
 
 (rf/reg-event-db
  :audit->clear-session-details-state
@@ -246,6 +250,27 @@
                   :session-logs (:session-logs session-details-state)})})))
 
 (rf/reg-event-fx
+ :audit->get-session-stream-result
+ (fn
+   [{:keys [db]} [_ session-id]]
+   {:db (assoc db :audit->session-stream-result {:status :loading :data nil})
+    :fx [[:dispatch [:fetch
+                     {:method "GET"
+                      :uri (str "/sessions/" session-id "/result/stream")
+                      :on-success (fn [data]
+                                    (rf/dispatch [:audit->set-session-stream-result data nil]))
+                      :on-failure (fn [_]
+                                    (rf/dispatch [:audit->set-session-stream-result nil :error]))}]]]}))
+
+(rf/reg-event-db
+ :audit->set-session-stream-result
+ (fn
+   [db [_ data status]]
+   (assoc db :audit->session-stream-result
+          {:status (or status :success)
+           :data data})))
+
+(rf/reg-event-fx
  :audit->clear-session
  (fn
    [{:keys [db]} [_]]
@@ -253,7 +278,8 @@
             (assoc :audit->session-details {:status :loading
                                             :session nil
                                             :session-logs {:status :loading}})
-            (assoc :audit->session-logs {:status :idle :data nil}))}))
+            (assoc :audit->session-logs {:status :idle :data nil})
+            (assoc :audit->session-stream-result {:status :idle :data nil}))}))
 
 (rf/reg-event-fx
  :audit->get-next-sessions-page

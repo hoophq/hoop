@@ -11,6 +11,7 @@ import (
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -62,6 +63,9 @@ func CreateResource(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+	if req.SubType == "" {
+		req.SubType = req.Type
 	}
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, req.Name, ctx.IsAdmin())
@@ -161,7 +165,16 @@ func CreateResource(c *gin.Context) {
 		return nil
 	})
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionCreate).
+		Resource(resource.ID, resource.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("subtype", req.SubType).
+		Set("agent_id", req.AgentID)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to create resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, reason: " + err.Error()})
 		return
@@ -229,6 +242,16 @@ func ListResources(c *gin.Context) {
 		resp = append(resp, toOpenApi(&r))
 	}
 
+	// Backwards compatibility: return a bare array when no pagination params are
+	// present, matching the pre-pagination response format used by older clients.
+	if queryParams.Get("page") == "" && queryParams.Get("page_size") == "" {
+		if resp == nil {
+			resp = []*openapi.ResourceResponse{}
+		}
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
 	response := openapi.PaginatedResponse[*openapi.ResourceResponse]{
 		Pages: openapi.Pagination{
 			Total: int(total),
@@ -260,6 +283,9 @@ func UpdateResource(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
+	}
+	if req.SubType == "" {
+		req.SubType = req.Type
 	}
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
@@ -294,8 +320,16 @@ func UpdateResource(c *gin.Context) {
 		AgentID: sql.NullString{String: req.AgentID, Valid: req.AgentID != ""},
 	}
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionUpdate).
+		Resource(resource.ID, resource.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("subtype", req.SubType)
+	defer func() { evt.Log(c) }()
+
 	err = models.UpsertResource(models.DB, &resource, true)
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to upsert resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
@@ -340,8 +374,13 @@ func DeleteResource(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceResource, audit.ActionDelete).
+		Resource(name, name)
+	defer func() { evt.Log(c) }()
+
 	err = models.DeleteResource(models.DB, ctx.OrgID, name)
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to delete resource: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
@@ -362,3 +401,4 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 		AgentID:   r.AgentID.String,
 	}
 }
+

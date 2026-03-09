@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -27,7 +28,7 @@ type Review struct {
 	ApprovalGroups []string `json:"groups"`
 }
 
-// CreateConnection
+// Post Connection
 //
 //	@Summary				Create Connection
 //	@description.markdown	api-connection
@@ -70,40 +71,50 @@ func Post(c *gin.Context) {
 	}
 
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
-		ID:                  req.ID,
-		OrgID:               ctx.OrgID,
-		ResourceName:        req.ResourceName,
-		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
-		Name:                req.Name,
-		Command:             req.Command,
-		Type:                req.Type,
-		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                CoerceToMapString(req.Secrets),
-		Status:              req.Status,
-		ManagedBy:           sql.NullString{},
-		Tags:                req.Tags,
-		AccessModeRunbooks:  req.AccessModeRunbooks,
-		AccessModeExec:      req.AccessModeExec,
-		AccessModeConnect:   req.AccessModeConnect,
-		AccessSchema:        req.AccessSchema,
-		Reviewers:           req.Reviewers,
-		RedactTypes:         req.RedactTypes,
-		GuardRailRules:      req.GuardRailRules,
-		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
-		ConnectionTags:      req.ConnectionTags,
-		ForceApproveGroups:  req.ForceApproveGroups,
-		AccessMaxDuration:   req.AccessMaxDuration,
-		MinReviewApprovals:  req.MinReviewApprovals,
+		ID:                      req.ID,
+		OrgID:                   ctx.OrgID,
+		ResourceName:            req.ResourceName,
+		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
+		Name:                    req.Name,
+		Command:                 req.Command,
+		Type:                    req.Type,
+		SubType:                 sql.NullString{String: req.SubType, Valid: true},
+		Envs:                    CoerceToMapString(req.Secrets),
+		Status:                  req.Status,
+		ManagedBy:               sql.NullString{},
+		Tags:                    req.Tags,
+		AccessModeRunbooks:      req.AccessModeRunbooks,
+		AccessModeExec:          req.AccessModeExec,
+		AccessModeConnect:       req.AccessModeConnect,
+		AccessSchema:            req.AccessSchema,
+		Reviewers:               req.Reviewers,
+		RedactTypes:             req.RedactTypes,
+		GuardRailRules:          req.GuardRailRules,
+		JiraIssueTemplateID:     sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:          req.ConnectionTags,
+		ForceApproveGroups:      req.ForceApproveGroups,
+		AccessMaxDuration:       req.AccessMaxDuration,
+		MinReviewApprovals:      req.MinReviewApprovals,
+		MandatoryMetadataFields: req.MandatoryMetadataFields,
 	})
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionCreate).
+		Resource("", req.Name).
+		Set("name", req.Name).
+		Set("type", req.Type).
+		Set("agent_id", req.AgentId)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed creating connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
+	evt.Resource(resp.ID, req.Name)
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
-// UpdateConnection
+// Put Connection
 //
 //	@Summary		Update Connection
 //	@Description	Update a connection resource
@@ -154,32 +165,40 @@ func Put(c *gin.Context) {
 	}
 
 	resp, err := models.UpsertConnection(ctx, &models.Connection{
-		ID:                  conn.ID,
-		OrgID:               conn.OrgID,
-		ResourceName:        req.ResourceName,
-		AgentID:             sql.NullString{String: req.AgentId, Valid: true},
-		Name:                conn.Name,
-		Command:             req.Command,
-		Type:                req.Type,
-		SubType:             sql.NullString{String: req.SubType, Valid: true},
-		Envs:                CoerceToMapString(req.Secrets),
-		Status:              req.Status,
-		ManagedBy:           sql.NullString{},
-		Tags:                req.Tags,
-		AccessModeRunbooks:  req.AccessModeRunbooks,
-		AccessModeExec:      req.AccessModeExec,
-		AccessModeConnect:   req.AccessModeConnect,
-		AccessSchema:        req.AccessSchema,
-		Reviewers:           req.Reviewers,
-		RedactTypes:         req.RedactTypes,
-		GuardRailRules:      req.GuardRailRules,
-		JiraIssueTemplateID: sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
-		ConnectionTags:      req.ConnectionTags,
-		ForceApproveGroups:  req.ForceApproveGroups,
-		AccessMaxDuration:   req.AccessMaxDuration,
-		MinReviewApprovals:  req.MinReviewApprovals,
+		ID:                      conn.ID,
+		OrgID:                   conn.OrgID,
+		ResourceName:            req.ResourceName,
+		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
+		Name:                    conn.Name,
+		Command:                 req.Command,
+		Type:                    req.Type,
+		SubType:                 sql.NullString{String: req.SubType, Valid: true},
+		Envs:                    CoerceToMapString(req.Secrets),
+		Status:                  req.Status,
+		ManagedBy:               sql.NullString{},
+		Tags:                    req.Tags,
+		AccessModeRunbooks:      req.AccessModeRunbooks,
+		AccessModeExec:          req.AccessModeExec,
+		AccessModeConnect:       req.AccessModeConnect,
+		AccessSchema:            req.AccessSchema,
+		Reviewers:               req.Reviewers,
+		RedactTypes:             req.RedactTypes,
+		GuardRailRules:          req.GuardRailRules,
+		JiraIssueTemplateID:     sql.NullString{String: req.JiraIssueTemplateID, Valid: true},
+		ConnectionTags:          req.ConnectionTags,
+		ForceApproveGroups:      req.ForceApproveGroups,
+		AccessMaxDuration:       req.AccessMaxDuration,
+		MinReviewApprovals:      req.MinReviewApprovals,
+		MandatoryMetadataFields: req.MandatoryMetadataFields,
 	})
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
+		Resource(conn.ID, conn.Name).
+		Set("name", conn.Name).
+		Set("type", conn.Type)
+	defer func() { evt.Log(c) }()
+
 	if err != nil {
+		evt.Err(err)
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -192,9 +211,9 @@ func Put(c *gin.Context) {
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
-// PatchConnection
+// Patch Connection
 //
-//	@Summary		Patch Connection
+//	@Summary	    Patch Connection
 //	@Description	Partial update of a connection resource. Only provided fields will be updated.
 //	@Tags			Connections
 //	@Accept			json
@@ -282,14 +301,25 @@ func Patch(c *gin.Context) {
 		conn.JiraIssueTemplateID = sql.NullString{String: *req.JiraIssueTemplateID, Valid: *req.JiraIssueTemplateID != ""}
 	}
 
+	if req.MandatoryMetadataFields != nil {
+		conn.MandatoryMetadataFields = *req.MandatoryMetadataFields
+	}
+
 	// Update status
 	conn.Status = models.ConnectionStatusOffline
 	if streamclient.IsAgentOnline(streamtypes.NewStreamID(conn.AgentID.String, "")) {
 		conn.Status = models.ConnectionStatusOnline
 	}
 
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionUpdate).
+		Resource(conn.ID, conn.Name).
+		Set("name", conn.Name).
+		Set("type", conn.Type)
+	defer func() { evt.Log(c) }()
+
 	resp, err := models.UpsertConnection(ctx, conn)
 	if err != nil {
+		evt.Err(err)
 		switch err.(type) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
@@ -319,7 +349,12 @@ func Delete(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "missing connection name"})
 		return
 	}
+	evt := audit.NewEvent(audit.ResourceConnection, audit.ActionDelete).
+		Resource(connName, connName)
+	defer func() { evt.Log(c) }()
+
 	err := models.DeleteConnection(ctx.OrgID, connName)
+	evt.Err(err)
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
@@ -471,31 +506,32 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 	}
 
 	return openapi.Connection{
-		ID:                  conn.ID,
-		Name:                conn.Name,
-		ResourceName:        conn.ResourceName,
-		Command:             conn.Command,
-		Type:                conn.Type,
-		SubType:             conn.SubType.String,
-		Secrets:             coerceToAnyMap(conn.Envs),
-		DefaultDatabase:     string(defaultDB),
-		AgentId:             conn.AgentID.String,
-		Status:              conn.Status,
-		Reviewers:           conn.Reviewers,
-		RedactEnabled:       conn.RedactEnabled,
-		RedactTypes:         conn.RedactTypes,
-		ManagedBy:           managedBy,
-		Tags:                conn.Tags,
-		ConnectionTags:      conn.ConnectionTags,
-		AccessModeRunbooks:  conn.AccessModeRunbooks,
-		AccessModeExec:      conn.AccessModeExec,
-		AccessModeConnect:   conn.AccessModeConnect,
-		AccessSchema:        conn.AccessSchema,
-		GuardRailRules:      conn.GuardRailRules,
-		JiraIssueTemplateID: conn.JiraIssueTemplateID.String,
-		ForceApproveGroups:  conn.ForceApproveGroups,
-		AccessMaxDuration:   conn.AccessMaxDuration,
-		MinReviewApprovals:  conn.MinReviewApprovals,
+		ID:                      conn.ID,
+		Name:                    conn.Name,
+		ResourceName:            conn.ResourceName,
+		Command:                 conn.Command,
+		Type:                    conn.Type,
+		SubType:                 conn.SubType.String,
+		Secrets:                 coerceToAnyMap(conn.Envs),
+		DefaultDatabase:         string(defaultDB),
+		AgentId:                 conn.AgentID.String,
+		Status:                  conn.Status,
+		Reviewers:               conn.Reviewers,
+		RedactEnabled:           conn.RedactEnabled,
+		RedactTypes:             conn.RedactTypes,
+		ManagedBy:               managedBy,
+		Tags:                    conn.Tags,
+		ConnectionTags:          conn.ConnectionTags,
+		AccessModeRunbooks:      conn.AccessModeRunbooks,
+		AccessModeExec:          conn.AccessModeExec,
+		AccessModeConnect:       conn.AccessModeConnect,
+		AccessSchema:            conn.AccessSchema,
+		GuardRailRules:          conn.GuardRailRules,
+		JiraIssueTemplateID:     conn.JiraIssueTemplateID.String,
+		ForceApproveGroups:      conn.ForceApproveGroups,
+		AccessMaxDuration:       conn.AccessMaxDuration,
+		MinReviewApprovals:      conn.MinReviewApprovals,
+		MandatoryMetadataFields: conn.MandatoryMetadataFields,
 	}
 }
 
@@ -593,3 +629,4 @@ func testConnection(ctx *storagev2.Context, bearerToken string, conn *models.Con
 
 	return nil
 }
+

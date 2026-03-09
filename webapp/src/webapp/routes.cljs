@@ -34,6 +34,9 @@
      "/features" [["/access-control" :access-control]
                   ["/access-control/new" :access-control-new]
                   ["/access-control/edit" :access-control-edit]
+                  ["/access-request" :access-request]
+                  ["/access-request/new" :access-request-new]
+                  [["/access-request/edit/" :rule-name] :access-request-edit]
                   ["/runbooks/setup" :runbooks-setup]
                   ["/runbooks/rules/new" :create-runbooks-rule]
                   [["/runbooks/rules/edit/" :rule-id] :edit-runbooks-rule]
@@ -65,8 +68,6 @@
                     ["/setup/agent" :onboarding-setup-agent]
                     ["/resource-providers" :onboarding-resource-providers]]
      "/register" :register-hoop
-     "/reviews" [["" :reviews-plugin]
-                 [["/" :review-id] :review-details]]
      "/slack" [[["/user" "/new/" :slack-id] :slack-new-user]
                [["/organization" "/new"] :slack-new-organization]]
      "/sessions" [["" :sessions]

@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
@@ -218,6 +219,15 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	evt := audit.NewEvent(audit.ResourceServerConfig, audit.ActionUpdate).
+		Set("product_analytics", ptr.ToString(newState.ProductAnalytics)).
+		Set("grpc_server_url", ptr.ToString(newState.GrpcServerURL)).
+		Set("postgres_server_config", newState.PostgresServerConfig).
+		Set("ssh_server_config", newState.SSHServerConfig).
+		Set("rdp_server_config", newState.RDPServerConfig).
+		Set("http_proxy_server_config", newState.HttpProxyServerConfig)
+	defer func() { evt.Log(c) }()
+
 	updatedConfig, err := models.UpsertServerMiscConfig(&models.ServerMiscConfig{
 		ProductAnalytics:      newState.ProductAnalytics,
 		GrpcServerURL:         newState.GrpcServerURL,
@@ -227,10 +237,13 @@ func UpdateServerMisc(c *gin.Context) {
 		HttpProxyServerConfig: newState.HttpProxyServerConfig,
 	})
 	if err != nil {
+		evt.Err(err)
 		log.Errorf("failed to update server config, reason=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server config"})
 		return
 	}
+
+	updateAnalyticsTracking(newState.ProductAnalytics)
 
 	var pgServerConfig *openapi.PostgresServerConfig
 	if updatedConfig.PostgresServerConfig != nil {
@@ -463,4 +476,8 @@ func newEd25519PrivateKey() (privateKey []byte, err error) {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
 	return sshproxy.EncodePrivateKeyToOpenSSH(privKey)
+}
+
+func updateAnalyticsTracking(newState *string) {
+	appconfig.GetRef().SetAnalyticsTracking(newState == nil || *newState == "active")
 }

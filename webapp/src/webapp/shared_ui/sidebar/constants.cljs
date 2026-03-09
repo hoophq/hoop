@@ -1,7 +1,7 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
-   ["lucide-react" :refer [BookMarked BrainCog GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
    [re-frame.core :as rf]
@@ -31,11 +31,14 @@
                                       24 "w-6 h-6"
                                       "w-6 h-6")]
                        [:img {:src (str config/webapp-url "/icons/icon-jira.svg")
+                              :alt "Jira"
                               :class css-size}]))
    "AIDataMasking" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> VenetianMask {:size size}])
    "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> UserRoundCheck {:size size}])
+   "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
+                     [:> CircleCheckBig {:size size}])
    "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> PackageSearch {:size size}])
    "Agents" (fn [& [{:keys [size] :or {size 24}}]]
@@ -100,13 +103,6 @@
     :navigate :sessions
     :free-feature? true
     :admin-only? false}
-   {:name "Reviews"
-    :label "Reviews"
-    :icon (get icons-registry "Reviews")
-    :uri (routes/url-for :reviews-plugin)
-    :free-feature? true
-    :navigate :reviews-plugin
-    :admin-only? false}
    {:name "Search"
     :label "Search"
     :icon (get icons-registry "Search")
@@ -121,7 +117,14 @@
 
 ;; Seção Discover
 (def discover-routes
-  [{:name "RunbooksSetup"
+  [{:name "AccessRequest"
+    :label "Access Request"
+    :icon (get icons-registry "AccessRequest")
+    :uri (routes/url-for :access-request)
+    :navigate :access-request
+    :free-feature? true
+    :admin-only? true}
+   {:name "RunbooksSetup"
     :label "Runbooks Setup"
     :icon (get icons-registry "RunbooksSetup")
     :uri (routes/url-for :runbooks-setup)

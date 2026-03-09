@@ -17,7 +17,8 @@
    (fn [params]
      (r/as-element
       [:<>
-       [:> (.-Button ui/Disclosure) {:class "w-full group flex justify-between items-center rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
+       [:> (.-Button ui/Disclosure) {:class "w-full group flex justify-between items-center rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"
+                                     :aria-label "Open user menu"}
         [:div {:class "flex gap-3 justify-start items-center"}
          [user-icon/initials-white (:name user-data)]
          (subs (:name user-data) 0 (min (count (:name user-data)) 16))]
@@ -31,26 +32,24 @@
         [:li
          [:a {:target "_blank"
               :href "https://github.com/hoophq/hoop/issues"
+              :rel "noopener noreferrer"
               :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
           [:> MessageSquarePlus {:size 24
                                  :aria-hidden "true"}]
           "Feature request"]]
         [:li
-         [:a {:id "intercom-support-trigger"
-              :href "#"
-              :onClick (fn [e]
-                         (.preventDefault e)
-                         (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
-                           (when-not analytics-tracking
-                             (.open js/window "https://github.com/hoophq/hoop/discussions" "_blank"))))
-              :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
+         [:button {:id "intercom-support-trigger"
+                   :onClick (fn []
+                              (let [analytics-tracking @(rf/subscribe [:gateway->analytics-tracking])]
+                                (when-not analytics-tracking
+                                  (.open js/window "https://github.com/hoophq/hoop/discussions" "_blank"))))
+                   :class "w-full group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
           [:> MessageCircleQuestion {:size 24
                                      :aria-hidden "true"}]
           "Contact support"]]
         [:li
-         [:a {:onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
-              :href "#"
-              :class "group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
+         [:button {:onClick #(rf/dispatch [:auth->logout {:idp? (= auth-method "idp")}])
+                   :class "w-full group -mx-2 flex items-center gap-x-3 rounded-md p-2 text-sm font-semibold leading-6 text-gray-300 hover:bg-white/5 hover:text-white"}
           [:> LogOut {:size 24
                       :aria-hidden "true"}]
           "Log out"]]

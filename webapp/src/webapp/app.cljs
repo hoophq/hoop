@@ -59,7 +59,7 @@
    [webapp.events.editor-plugin]
    [webapp.events.gateway-info]
    [webapp.events.clipboard]
-   [webapp.events.guardrails] 
+   [webapp.events.guardrails]
    [webapp.events.indexer-plugin]
    [webapp.events.jira-integration]
    [webapp.events.jira-templates]
@@ -79,6 +79,10 @@
    [webapp.features.access-control.main :as access-control]
    [webapp.features.access-control.subs]
    [webapp.features.access-control.views.group-form :as group-form]
+   [webapp.features.access-request.events]
+   [webapp.features.access-request.main :as access-request]
+   [webapp.features.access-request.subs]
+   [webapp.features.access-request.views.rule-form :as rule-form]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -108,8 +112,6 @@
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
-   [webapp.reviews.panel :as reviews]
-   [webapp.reviews.review-detail :as review-detail]
    [webapp.routes :as routes]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
@@ -376,10 +378,9 @@
     [users/main]]])
 
 (defmethod routes/panels :resources-panel []
-  [layout :application-hoop [:> Box {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:p-10 h-full space-y-radix-7"}
-                             [:> Heading {:as "h1" :size "8" :weight "bold" :class "text-gray-12"}
-                              "Resources"]
-                             [resources-main/panel]]])
+  [layout :application-hoop
+   [:> Box {:class "bg-gray-1 min-h-full h-screen"}
+    [resources-main/panel]]])
 
 (defmethod routes/panels :configure-resource-panel []
   (let [pathname (.. js/window -location -pathname)
@@ -466,22 +467,6 @@
   [layout :application-hoop [:div {:class "h-full"}
                              [runbooks-runner/main]]])
 
-(defmethod routes/panels :reviews-plugin-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop [:div {:class "flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
-                             [:<>
-                              [h/h2 "Reviews" {:class "mb-6"}]
-                              [reviews/panel]]]])
-
-(defmethod routes/panels :review-details-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        review-id (-> current-route :route-params :review-id)]
-    (rf/dispatch [:destroy-page-loader])
-    (rf/dispatch [:reviews-plugin->get-review-details review-id])
-    [layout :application-hoop [:div {:class "bg-white p-large h-full"}
-                               [review-detail/review-detail]]]))
-
 (defmethod routes/panels :manage-plugin-panel []
   (let [pathname (.. js/window -location -pathname)
         current-route (bidi/match-route @routes/routes pathname)
@@ -533,14 +518,6 @@
     (rf/dispatch [:destroy-page-loader])
     [layout :application-hoop [session-filtered-by-id/main]]))
 
-(defmethod routes/panels :reviews-plugin-details-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        review-id (-> current-route :route-params :review-id)]
-    (rf/dispatch [:reviews-plugin->get-review-by-id {:id review-id}])
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop [review-detail/review-details-page]]))
-
 (defmethod routes/panels :slack-new-organization-panel []
   [layout :application-hoop [slack-new-organization/main]])
 (defmethod routes/panels :slack-new-user-panel []
@@ -556,19 +533,25 @@
   [signup-callback-panel-hoop])
 
 (defmethod routes/panels :login-hoop-panel [_ gateway-info]
-  (if (= (-> gateway-info :data :auth_method) "local")
-    [layout :auth [local-auth-login/panel]]
-    [layout :auth (rf/dispatch [:auth->get-auth-link])]))
+  (let [auth-method (-> gateway-info :data :auth_method)]
+    (cond
+      (= auth-method "local") [layout :auth [local-auth-login/panel]]
+      (= auth-method "saml")  [layout :auth (rf/dispatch [:auth->get-saml-link])]
+      :else                   [layout :auth (rf/dispatch [:auth->get-auth-link])])))
 
-(defmethod routes/panels :idplogin-hoop-panel []
-  [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])])
+(defmethod routes/panels :idplogin-hoop-panel [_ gateway-info]
+  (if (= (-> gateway-info :data :auth_method) "saml")
+    [layout :auth (rf/dispatch [:auth->get-saml-link {:force-authn? true}])]
+    [layout :auth (rf/dispatch [:auth->get-auth-link {:prompt-login? true}])]))
 
 (defmethod routes/panels :register-hoop-panel [_ gateway-info]
-  (if (= (-> gateway-info :data :auth_method) "local")
-    [layout :auth [local-auth-register/panel]]
-    [layout :auth (fn []
-                    (rf/dispatch [:segment->track "SignUp - start signup"])
-                    (rf/dispatch [:auth->get-signup-link]))]))
+  (let [auth-method (-> gateway-info :data :auth_method)]
+    (cond
+      (= auth-method "local") [layout :auth [local-auth-register/panel]]
+      (= auth-method "saml")  [layout :auth (rf/dispatch [:auth->get-saml-link])]
+      :else                   [layout :auth (fn []
+                                              (rf/dispatch [:segment->track "SignUp - start signup"])
+                                              (rf/dispatch [:auth->get-signup-link]))])))
 
 (defmethod routes/panels :signup-hoop-panel []
   [layout :auth [signup/panel]])
@@ -598,6 +581,29 @@
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [group-form/main :edit {:group-id group-id}]]]]))
+
+(defmethod routes/panels :access-request-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [access-request/main]]])
+
+(defmethod routes/panels :access-request-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [rule-form/main :create]]]])
+
+(defmethod routes/panels :access-request-edit-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        rule-name (:rule-name (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [rule-form/main :edit {:rule-name rule-name}]]]]))
 
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])

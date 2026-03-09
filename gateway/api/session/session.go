@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -29,6 +30,7 @@ import (
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -71,7 +73,7 @@ func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
 	return false
 }
 
-// RunExec
+// Post Sessions
 //
 //	@Summary				Exec
 //	@Description.markdown	run-exec
@@ -156,7 +158,7 @@ func Post(c *gin.Context) {
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			// persist session to audit this attempt
-			_ = models.UpsertSession(newSession)
+			_ = services.UpsertSession(c, newSession, *conn)
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
@@ -220,8 +222,14 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
@@ -460,7 +468,10 @@ func Get(c *gin.Context) {
 	}
 
 	// it will only load the blob stream if it's allowed and the client requested to expand the attribute
-	expandEventStream := slices.Contains(strings.Split(c.Query("expand"), ","), "event_stream")
+	expandParam := c.Query("expand")
+	expandedFields := strings.Split(expandParam, ",")
+
+	expandEventStream := slices.Contains(expandedFields, "event_stream")
 	if isAllowed && expandEventStream {
 		session.BlobStream, err = session.GetBlobStream()
 		if err != nil {
@@ -470,9 +481,9 @@ func Get(c *gin.Context) {
 		}
 	}
 
-	// it will only load the input blob stream if client requested to expand the attribute
-	expandInputStream := slices.Contains(strings.Split(c.Query("expand"), ","), "session_input")
-	if expandInputStream {
+	// Load input by default for backward compat (no expand param),
+	// or when explicitly requested via ?expand=session_input
+	if expandParam == "" || slices.Contains(expandedFields, "session_input") {
 		session.BlobInput, err = session.GetBlobInput()
 		if err != nil {
 			log.Errorf("failed fetching input from session, err=%v", err)
@@ -495,7 +506,7 @@ func Get(c *gin.Context) {
 			return
 		}
 	}
-	obj := toOpenApiSession(session, expandInputStream)
+	obj := toOpenApiSession(session, true) // always include script in response (old behavior)
 
 	// encode the object manually to obtain any encoding errors.
 	c.Writer.Header().Set("Content-Type", "application/json")
@@ -713,6 +724,87 @@ func DownloadSessionInput(c *gin.Context) {
 	wrote, err := c.Writer.Write([]byte(output))
 	log.With("sid", sid).Infof("session downloaded, extension=.%v, output-size=%v, wrote=%v, success=%v, err=%v",
 		fileExt, len(output), wrote, err == nil, err)
+}
+
+// StreamSessionResult
+//
+//	@Summary		Stream Session Result
+//	@Description	Returns the decoded output of a session as plain text with chunked transfer encoding
+//	@Tags			Sessions
+//	@Produce		plain
+//	@Param			session_id	path		string	true	"The id of the resource"
+//	@Param			newline		query		string	false	"Append a newline after each event (1=yes)"
+//	@Param			event-time	query		string	false	"Prefix each event with its RFC3339 timestamp (1=yes)"
+//	@Param			events		query		string	false	"Comma-separated event types to include: i, o, e (default: o,e)"
+//	@Success		200			{string}	string
+//	@Failure		403,404,500	{object}	openapi.HTTPError
+//	@Router			/sessions/{session_id}/result/stream [get]
+func StreamSessionResult(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	sessionID := c.Param("session_id")
+	apiroutes.SetSidSpanAttr(c, sessionID)
+
+	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+		return
+	case nil:
+	default:
+		log.Errorf("failed fetching session, err=%v", err)
+		sentry.CaptureException(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		return
+	}
+
+	if !canAccessSession(ctx, session) {
+		c.JSON(http.StatusForbidden, gin.H{"message": "user is not allowed to access this session"})
+		return
+	}
+	if session.UserID != ctx.UserID && !ctx.IsAuditorOrAdminUser() {
+		c.JSON(http.StatusForbidden, gin.H{"message": "user is not allowed to stream this session"})
+		return
+	}
+
+	session.BlobStream, err = session.GetBlobStream()
+	if err != nil {
+		log.Errorf("failed fetching blob stream from session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+		return
+	}
+
+	withLineBreak := c.Query("newline") == "1"
+	withEventTime := c.Query("event-time") == "1"
+
+	var eventTypes []string
+	for _, e := range strings.Split(c.Query("events"), ",") {
+		if e == "i" || e == "o" || e == "e" {
+			eventTypes = append(eventTypes, e)
+		}
+	}
+	if len(eventTypes) == 0 {
+		eventTypes = []string{"o", "e"}
+	}
+
+	output, err := parseBlobStream(session, sessionParseOption{
+		withLineBreak: withLineBreak,
+		withEventTime: withEventTime,
+		events:        eventTypes,
+	})
+	if err != nil {
+		log.Errorf("failed parsing blob stream, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
+		return
+	}
+
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.Header("X-Content-Type-Options", "nosniff")
+	if _, err := c.Writer.WriteString(string(output)); err != nil {
+		log.With("sid", sessionID).Errorf("failed writing stream response, reason=%v", err)
+		return
+	}
+	c.Writer.Flush()
+	log.With("sid", sessionID).Infof("session result streamed, output-size=%v", len(output))
 }
 
 // PatchMetadata
@@ -933,7 +1025,7 @@ func createApprovedReview(ctx *storagev2.Context, session *models.Session, conn 
 //	@Param					request		body		openapi.ProvisionSession		true	"The request body resource"
 //	@Success				200			{object}	openapi.ProvisionSessionResponse	"The session has been created"
 //	@Failure				400,422,500	{object}	openapi.HTTPError
-//	@Router					/sessions/approved [post]
+//	@Router					/sessions/provision [post]
 func Provision(c *gin.Context) {
 	sid := uuid.NewString()
 	apiroutes.SetSidSpanAttr(c, sid)
@@ -1028,7 +1120,7 @@ func Provision(c *gin.Context) {
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			// persist session to audit this attempt
-			_ = models.UpsertSession(newSession)
+			_ = services.UpsertSession(c, newSession, *conn)
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
@@ -1092,8 +1184,14 @@ func Provision(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
@@ -1109,8 +1207,14 @@ func Provision(c *gin.Context) {
 	if allGroupsApproved {
 		newSession.Status = string(openapi.SessionStatusReady)
 
-		if err := models.UpsertSession(newSession); err != nil {
+		if err := services.UpsertSession(c, newSession, *conn); err != nil {
 			log.Errorf("failed updating session, err=%v", err)
+
+			if errors.Is(err, services.ErrMissingMetadata) {
+				c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+				return
+			}
+
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating session"})
 			return
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -33,6 +34,7 @@ import (
 //	@Description	List all Runbooks
 //	@Tags			Runbooks
 //	@Produce		json
+//	@Param			connection		query		string	false	"DEPRECATED: use connection_name instead"
 //	@Param			connection_name	query		string	false	"Filter runbooks by connection name"
 //	@Param			list_connections	query		bool	false	"Show connections allowed for each runbook."
 //	@Param			remove_empty_connections	query		bool	false	"Remove runbooks with no connections."
@@ -62,7 +64,11 @@ func ListRunbooksV2(c *gin.Context) {
 	}
 
 	urlQuery := c.Request.URL.Query()
+	// Accept legacy ?connection= param as an alias for ?connection_name=
 	connectionName := urlQuery.Get("connection_name")
+	if connectionName == "" {
+		connectionName = urlQuery.Get("connection")
+	}
 	listConnections := urlQuery.Get("list_connections") == "true"
 	removeEmptyConnections := urlQuery.Get("remove_empty_connections") != "false"
 
@@ -94,6 +100,16 @@ func ListRunbooksV2(c *gin.Context) {
 			continue
 		}
 		runbookList.Repositories = append(runbookList.Repositories, *repositoryList)
+	}
+
+	// Populate deprecated top-level fields for backward compatibility with older clients.
+	for _, repo := range runbookList.Repositories {
+		runbookList.Items = append(runbookList.Items, repo.Items...)
+		if runbookList.Commit == "" {
+			runbookList.Commit = repo.Commit
+			runbookList.CommitAuthor = repo.CommitAuthor
+			runbookList.CommitMessage = repo.CommitMessage
+		}
 	}
 
 	c.JSON(http.StatusOK, runbookList)
@@ -525,8 +541,14 @@ func RunbookExec(c *gin.Context) {
 		}
 	}
 
-	if err := models.UpsertSession(newSession); err != nil {
+	if err := services.UpsertSession(c, newSession, *connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
 		return
 	}

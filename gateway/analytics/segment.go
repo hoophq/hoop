@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/url"
 
+	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
@@ -46,7 +47,8 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 			Set("user-id", hashedUserID).
 			Set("is-admin", ctx.IsAdminUser()).
 			Set("environment", s.environmentName).
-			Set("status", ctx.UserStatus),
+			Set("status", ctx.UserStatus).
+			Set("client-version", version.Get().Version),
 	})
 
 	_ = s.Client.Enqueue(analytics.Group{
@@ -73,11 +75,43 @@ func (s *Segment) AnonymousTrack(anonymousId, eventName string, properties map[s
 	}
 	properties["environment"] = s.environmentName
 	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["client-version"] = version.Get().Version
 
 	_ = s.Enqueue(analytics.Track{
 		AnonymousId: anonymousId,
 		Event:       eventName,
 		Properties:  properties,
+	})
+}
+
+func (s *Segment) TrackEvent(eventName string, properties map[string]any) {
+	if s.Client == nil || !appconfig.Get().AnalyticsTracking() {
+		return
+	}
+	if properties == nil {
+		properties = map[string]any{}
+	}
+
+	if apiUrl, exists := properties["api-hostname"]; (!exists || apiUrl == "") && appconfig.Get().ApiURL() != "" {
+		url, err := url.Parse(appconfig.Get().ApiURL())
+		if err == nil {
+			properties["api-hostname"] = url.Hostname()
+		}
+	}
+
+	if orgID, exists := properties["org-id"]; exists && orgID != "" {
+		properties["$groups"] = map[string]any{
+			"org-id": orgID,
+		}
+	}
+
+	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["client-version"] = version.Get().Version
+
+	_ = s.Client.Enqueue(analytics.Track{
+		UserId:     "None",
+		Event:      eventName,
+		Properties: properties,
 	})
 }
 
@@ -107,6 +141,8 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 
 	properties["user-id"] = hashedUserID
 	properties["auth-method"] = appconfig.Get().AuthMethod()
+	properties["client-version"] = version.Get().Version
+
 	_ = s.Client.Enqueue(analytics.Track{
 		UserId:     hashedUserID,
 		Event:      eventName,

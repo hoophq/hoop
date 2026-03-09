@@ -40,22 +40,23 @@ const (
 )
 
 type Connection struct {
-	OrgID               string         `gorm:"column:org_id"`
-	ID                  string         `gorm:"column:id"`
-	ResourceName        string         `gorm:"column:resource_name"`
-	AgentID             sql.NullString `gorm:"column:agent_id"`
-	Name                string         `gorm:"column:name"`
-	Command             pq.StringArray `gorm:"column:command;type:text[]"`
-	Type                string         `gorm:"column:type"`
-	SubType             sql.NullString `gorm:"column:subtype"`
-	Status              string         `gorm:"column:status"`
-	ManagedBy           sql.NullString `gorm:"column:managed_by"`
-	Tags                pq.StringArray `gorm:"column:_tags;type:text[]"`
-	AccessModeRunbooks  string         `gorm:"column:access_mode_runbooks"`
-	AccessModeExec      string         `gorm:"column:access_mode_exec"`
-	AccessModeConnect   string         `gorm:"column:access_mode_connect"`
-	AccessSchema        string         `gorm:"column:access_schema"`
-	JiraIssueTemplateID sql.NullString `gorm:"column:jira_issue_template_id"`
+	OrgID                   string         `gorm:"column:org_id"`
+	ID                      string         `gorm:"column:id"`
+	ResourceName            string         `gorm:"column:resource_name"`
+	AgentID                 sql.NullString `gorm:"column:agent_id"`
+	Name                    string         `gorm:"column:name"`
+	Command                 pq.StringArray `gorm:"column:command;type:text[]"`
+	Type                    string         `gorm:"column:type"`
+	SubType                 sql.NullString `gorm:"column:subtype"`
+	Status                  string         `gorm:"column:status"`
+	ManagedBy               sql.NullString `gorm:"column:managed_by"`
+	MandatoryMetadataFields pq.StringArray `gorm:"column:mandatory_metadata_fields;type:text[]"`
+	Tags                    pq.StringArray `gorm:"column:_tags;type:text[]"`
+	AccessModeRunbooks      string         `gorm:"column:access_mode_runbooks"`
+	AccessModeExec          string         `gorm:"column:access_mode_exec"`
+	AccessModeConnect       string         `gorm:"column:access_mode_connect"`
+	AccessSchema            string         `gorm:"column:access_schema"`
+	JiraIssueTemplateID     sql.NullString `gorm:"column:jira_issue_template_id"`
 
 	// Access control
 	ForceApproveGroups pq.StringArray `gorm:"column:force_approve_groups;type:text[]"`
@@ -416,6 +417,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
 		c.jira_issue_template_id, it.issue_transition_name_on_close,
+		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
 			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
@@ -481,7 +483,8 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
-		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals,
+		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals, 
+		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (
 			( SELECT JSONB_OBJECT_AGG(ct.key, ct.value)
@@ -847,6 +850,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.resource_name,
+		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
 		-- legacy tags
 		COALESCE(c._tags, ARRAY[]::TEXT[]) AS _tags,
 		COALESCE (

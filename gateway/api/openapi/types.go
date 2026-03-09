@@ -269,6 +269,8 @@ type Connection struct {
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of review approvals required to execute this connection
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
+	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
+	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
 }
 
 type ConnectionPatch struct {
@@ -334,6 +336,8 @@ type ConnectionPatch struct {
 	GuardRailRules *[]string `json:"guardrail_rules" example:"5701046A-7B7A-4A78-ABB0-A24C95E6FE54,B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// The jira issue templates ids associated to the connection
 	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
+	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
+	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -580,8 +584,12 @@ type Session struct {
 	Type string `json:"type" example:"database"`
 	// The subtype of the connection
 	ConnectionSubtype string `json:"connection_subtype" example:"postgres"`
-	// The connection name of this resource
+	// The connection name of this resource (it will be deprecated in favor of RoleName)
 	Connection string `json:"connection" example:"pgdemo"`
+	// The resource name associated with this connection
+	ResourceName string `json:"resource_name" example:"my-resource"`
+	// The role name (same as connection name)
+	RoleName string `json:"role_name" example:"pgdemo"`
 	// The tags of the connection resource
 	ConnectionTags map[string]string `json:"connection_tags" example:"team:banking;environment:prod"`
 	// Review of this session. In case the review doesn't exist this field will be null
@@ -739,6 +747,12 @@ type SessionReview struct {
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
 	// The time window configuration that can execute the session
 	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
+	// The name of the access request rule that triggered this review, if null means it was triggered by the review plugin
+	AccessRequestRuleName *string `json:"access_request_rule_name" readonly:"true" example:"default-access-request-rule"`
+	// The minimum number of approvals required for this review
+	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
+	// Groups that can force approve sessions for this review
+	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -774,6 +788,12 @@ type Review struct {
 	ReviewGroupsData []ReviewGroup `json:"review_groups_data" readonly:"true"`
 	// The time window configuration that can execute the session
 	TimeWindow *ReviewSessionTimeWindow `json:"time_window" readonly:"true"`
+	// The name of the access request rule that triggered this review, if null means it was triggered by the review plugin
+	AccessRequestRuleName *string `json:"access_request_rule_name" readonly:"true" example:"default-access-request-rule"`
+	// The minimum number of approvals required for this review
+	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
+	// Groups that can force approve sessions for this review
+	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
 }
 
 type ReviewOwner struct {
@@ -1061,8 +1081,8 @@ type ServerInfo struct {
 	// * false - Clipboard copy and cut are enabled and available to users
 	DisableClipboardCopyCut bool `json:"disable_clipboard_copy_cut"`
 	// Indicates if all tracking and analytics should be enabled or disabled
-	// * enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)
-	// * disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)
+	// * enabled - Analytics/tracking are enabled
+	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
 }
 
@@ -1657,6 +1677,23 @@ type SessionMetricsAggregatedResponse struct {
 	AvgSessionDurationSec *int64 `json:"avg_session_duration_sec" example:"285"`
 }
 
+// SecurityAuditLogResponse is a single security audit log entry (admin-only API).
+type SecurityAuditLogResponse struct {
+	ID                     string         `json:"id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	OrgID                  string         `json:"org_id" format:"uuid" example:"0CD7F941-2BB8-4F9F-93B0-11620D4652AB"`
+	ActorSubject           string         `json:"actor_subject" example:"auth0|abc123"`
+	ActorEmail             string         `json:"actor_email" example:"admin@example.com"`
+	ActorName              string         `json:"actor_name" example:"Admin User"`
+	CreatedAt              time.Time      `json:"created_at" example:"2023-08-15T14:30:45Z"`
+	ResourceType           string         `json:"resource_type" example:"connections"`
+	Action                 string         `json:"action" example:"create"`
+	ResourceID             string         `json:"resource_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	ResourceName           string         `json:"resource_name" example:"my-connection"`
+	RequestPayloadRedacted map[string]any `json:"request_payload_redacted" swaggertype:"object,string"`
+	Outcome                bool           `json:"outcome" example:"true"`
+	ErrorMessage           string         `json:"error_message" example:""`
+}
+
 type DataMaskingRule struct {
 	// The unique identifier of the data masking rule
 	ID                     string `json:"id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
@@ -2046,8 +2083,8 @@ type ResourceRequest struct {
 	Name string `json:"name" binding:"required" example:"my-resource"`
 	// The resource type
 	Type string `json:"type" binding:"required" example:"database"`
-	// The resource subtype
-	SubType string `json:"subtype" binding:"required" example:"mysql"`
+	// The resource subtype (optional; defaults to the value of 'type' when omitted)
+	SubType string `json:"subtype" example:"mysql"`
 	// The resource environment variables
 	EnvVars map[string]string `json:"env_vars" binding:"required"`
 	// The agent associated with this resource
@@ -2114,9 +2151,9 @@ type RunbookRepository struct {
 
 type RunbookRepositoryResponse struct {
 	// Git repository identifier in the format `host/owner/repo`
-	Repository string `json:"repository" readonly:"true" example:"github.com/myorg/myrepo"`
+	Repository string `json:"repository" binding:"required" readonly:"true" example:"github.com/myorg/myrepo"`
 	// Git repository URL where the runbook is located
-	GitUrl string `json:"git_url" example:"https://github.com/myorg/myrepo"`
+	GitUrl string `json:"git_url" binding:"required" example:"https://github.com/myorg/myrepo"`
 	// Git username for repository authentication
 	GitUser string `json:"git_user" example:"myusername"`
 	// Git password or token for repository authentication
@@ -2185,6 +2222,14 @@ type RunbookListV2 struct {
 	Errors []string `json:"errors"`
 	// List of runbook repositories
 	Repositories []RunbookRepositoryList `json:"repositories"`
+	// DEPRECATED: use repositories[].items instead. Flat list of all runbooks across all repositories.
+	Items []*Runbook `json:"items,omitempty"`
+	// DEPRECATED: use repositories[].commit instead. Commit SHA of the first repository.
+	Commit string `json:"commit,omitempty"`
+	// DEPRECATED: use repositories[].commit_author instead. Commit author of the first repository.
+	CommitAuthor string `json:"commit_author,omitempty"`
+	// DEPRECATED: use repositories[].commit_message instead. Commit message of the first repository.
+	CommitMessage string `json:"commit_message,omitempty"`
 }
 
 type RunbookRuleFile struct {
@@ -2251,4 +2296,56 @@ type RunbookExec struct {
 	JiraFields map[string]string `json:"jira_fields"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+}
+
+type AccessRequestRule struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The name of the access request rule
+	Name string `json:"name" example:"default-access-request-rule"`
+	// The description of the access request rule
+	Description *string `json:"description" example:"Access control rule for production databases"`
+	// The access type
+	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	// Connection names that this rule applies to
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Groups that require approval
+	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
+	// Whether all groups must approve
+	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
+	// Groups that can review sessions
+	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
+	// Groups that can force approve sessions
+	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	// Maximum access duration in seconds
+	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
+	// Minimum number of approvals required
+	MinApprovals *int `json:"min_approvals" example:"2"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AccessRequestRuleRequest struct {
+	// The name of the access request rule
+	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
+	// The description of the access request rule
+	Description *string `json:"description" example:"Access request rule for production databases"`
+	// The access type
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
+	// Connection names that this rule applies to
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Groups that require approval
+	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
+	// Whether all groups must approve
+	AllGroupsMustApprove bool `json:"all_groups_must_approve" example:"false"`
+	// Groups that can review sessions
+	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
+	// Groups that can force approve sessions
+	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
+	// Maximum access duration in seconds
+	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
+	// Minimum number of approvals required
+	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
 }

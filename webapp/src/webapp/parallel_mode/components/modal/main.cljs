@@ -43,18 +43,32 @@
                                   [:> Flex
                                    {:align "center"
                                     :gap "2"
-                                    :class "bg-success-3 px-2 py-1 rounded-full"}
-                                   [:> FastForward {:size 16 :class "text-success-11"}]
+                                    :class "bg-success-3 px-2 py-1 rounded-full"
+                                    :role "status"
+                                    :aria-label (str @selected-count " resource role" 
+                                                    (when (not= 1 @selected-count) "s") 
+                                                    " selected for parallel execution")}
+                                   [:> FastForward {:size 16 :class "text-success-11" :aria-hidden "true"}]
                                    [:> Text {:size "2" :weight "medium" :class "text-success-11"}
                                     "Parallel Mode"]
                                    [:> Badge {:variant "solid"
                                               :color "green"
                                               :radius "full"
-                                              :size "1"}
+                                              :size "1"
+                                              :aria-hidden "true"}
                                     @selected-count]])
 
           :content
           [:<>
+           ;; Live region for selection changes
+           [:div {:class "sr-only"
+                  :role "status"
+                  :aria-live "polite"
+                  :aria-atomic "true"}
+            (str @selected-count " resource role" 
+                 (when (not= 1 @selected-count) "s") 
+                 " selected")]
+           
            ;; Scrollable list
            [:> Box {:class "flex-1 overflow-y-auto"}
             [connection-list/main]

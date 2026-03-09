@@ -22,12 +22,29 @@ func newFakeContext(id, email string, grp []string) *storagev2.Context {
 	}
 }
 
-func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups) *models.Review {
+func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups, accessRequestRule *models.AccessRequestRule) *models.Review {
+	var minApprovals *int
+	var forceApprovalGroups []string
+	var ruleName *string
+	if accessRequestRule != nil {
+		if accessRequestRule.AllGroupsMustApprove {
+			minApprovals = ptr.Int(len(accessRequestRule.ApprovalRequiredGroups))
+		} else {
+			minApprovals = accessRequestRule.MinApprovals
+		}
+
+		forceApprovalGroups = accessRequestRule.ForceApprovalGroups
+		ruleName = ptr.String("fake-rule")
+	}
+
 	return &models.Review{
-		OwnerID:      ownerID,
-		Status:       models.ReviewStatusType(status),
-		Type:         models.ReviewType(typ),
-		ReviewGroups: groups,
+		OwnerID:               ownerID,
+		Status:                models.ReviewStatusType(status),
+		Type:                  models.ReviewType(typ),
+		ReviewGroups:          groups,
+		MinApprovals:          minApprovals,
+		ForceApprovalGroups:   forceApprovalGroups,
+		AccessRequestRuleName: ruleName,
 	}
 }
 
@@ -46,6 +63,77 @@ func TestDoReview(t *testing.T) {
 		validateFunc func(t *testing.T, rev *models.Review)
 	}{
 		{
+			name: "partial approve with access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}, &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: true,
+				}),
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(1),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal groups from access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}, &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: false,
+				}),
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(3),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
+			name: "approve with minimal groups from access request rule",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
+				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
+					{GroupName: "issuing", Status: models.ReviewStatusPending},
+					{GroupName: "banking", Status: models.ReviewStatusPending},
+					{GroupName: "engineering", Status: models.ReviewStatusPending},
+				}, &models.AccessRequestRule{
+					MinApprovals: ptr.Int(1),
+				}),
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(3),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[2].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
 			name: "partial approve with minimal groups",
 			input: inputData{
 				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
@@ -53,7 +141,7 @@ func TestDoReview(t *testing.T) {
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 					{GroupName: "banking", Status: models.ReviewStatusPending},
 					{GroupName: "engineering", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					MinReviewApprovals: ptr.Int(2),
 				},
@@ -74,7 +162,7 @@ func TestDoReview(t *testing.T) {
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 					{GroupName: "banking", Status: models.ReviewStatusPending},
 					{GroupName: "engineering", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					MinReviewApprovals: ptr.Int(1),
 				},
@@ -95,7 +183,7 @@ func TestDoReview(t *testing.T) {
 					{GroupName: "sre-team", Status: models.ReviewStatusPending},
 					{GroupName: "engineering", Status: models.ReviewStatusPending},
 					{GroupName: "management", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					ForceApproveGroups: []string{"issuing"},
 				},
@@ -116,7 +204,7 @@ func TestDoReview(t *testing.T) {
 					{GroupName: "sre-team", Status: models.ReviewStatusPending},
 					{GroupName: "engineering", Status: models.ReviewStatusPending},
 					{GroupName: "management", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					ForceApproveGroups: []string{"engineering"},
 				},
@@ -135,7 +223,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("user2", "user2@example.com", []string{"engineering"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "engineering", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					ForceApproveGroups: []string{"engineering"},
 				},
@@ -154,7 +242,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("user2", "user2@example.com", []string{"engineering"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					ForceApproveGroups: []string{"engineering"},
 				},
@@ -173,7 +261,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
@@ -189,7 +277,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusRejected,
 			},
@@ -206,7 +294,7 @@ func TestDoReview(t *testing.T) {
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
 					{GroupName: "banking", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
@@ -223,7 +311,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("admin", "admin@example.com", []string{"admin"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusRejected,
 			},
@@ -241,7 +329,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("user1", "user1@example.com", []string{"banking"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusRejected,
 			},
@@ -258,7 +346,7 @@ func TestDoReview(t *testing.T) {
 				ctx: newFakeContext("user2", "user2@example.com", []string{"issuing"}),
 				rev: newFakeReview("user1", "APPROVED", "jit", []models.ReviewGroups{
 					{GroupName: "issuing", Status: models.ReviewStatusApproved},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
@@ -317,7 +405,7 @@ func TestErrDoReview(t *testing.T) {
 					{GroupName: "sre-team", Status: models.ReviewStatusPending},
 					{GroupName: "engineering", Status: models.ReviewStatusPending},
 					{GroupName: "management", Status: models.ReviewStatusPending},
-				}),
+				}, nil),
 				con: &models.Connection{
 					ForceApproveGroups: []string{"admin"},
 				},
@@ -340,7 +428,7 @@ func TestErrDoReview(t *testing.T) {
 			name: "self approval should fail",
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
-				rev:    newFakeReview("user1", "PENDING", "onetime", nil),
+				rev:    newFakeReview("user1", "PENDING", "onetime", nil, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
@@ -350,7 +438,7 @@ func TestErrDoReview(t *testing.T) {
 			name: "it must match wrong review state - not pending or approved",
 			input: inputData{
 				ctx:    newFakeContext("user2", "user2@example.com", []string{"issuing"}),
-				rev:    newFakeReview("user1", string(models.ReviewStatusExecuted), "onetime", nil),
+				rev:    newFakeReview("user1", string(models.ReviewStatusExecuted), "onetime", nil, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},
@@ -360,7 +448,7 @@ func TestErrDoReview(t *testing.T) {
 			name: "revoke without approved status should fail",
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
-				rev:    newFakeReview("user1", "PENDING", "onetime", nil),
+				rev:    newFakeReview("user1", "PENDING", "onetime", nil, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusRevoked,
 			},
@@ -370,7 +458,7 @@ func TestErrDoReview(t *testing.T) {
 			name: "revoke JIT type should fail",
 			input: inputData{
 				ctx:    newFakeContext("user1", "user1@example.com", []string{"issuing"}),
-				rev:    newFakeReview("user1", "APPROVED", "onetime", nil),
+				rev:    newFakeReview("user1", "APPROVED", "onetime", nil, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusRevoked,
 			},
@@ -382,7 +470,7 @@ func TestErrDoReview(t *testing.T) {
 				ctx: newFakeContext("user2", "user2@example.com", []string{"banking"}),
 				rev: newFakeReview("user1", "PENDING", "onetime", []models.ReviewGroups{
 					{GroupName: "issuing", Status: "PENDING"},
-				}),
+				}, nil),
 				con:    &models.Connection{},
 				status: models.ReviewStatusApproved,
 			},

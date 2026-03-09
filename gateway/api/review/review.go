@@ -264,7 +264,15 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 
 func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType) (*models.Review, error) {
 	// check if the user has permissions to force the review
-	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, connection.ForceApproveGroups)
+	var forceApproveGroups []string
+	// Only use ForceApprovalGroups from Review if it's AccessRequestRuleName is set, otherwise fallback to Connection
+	if rev.AccessRequestRuleName != nil && rev.ForceApprovalGroups != nil {
+		forceApproveGroups = rev.ForceApprovalGroups
+	} else if connection.ForceApproveGroups != nil {
+		forceApproveGroups = connection.ForceApproveGroups
+	}
+
+	forceGroupFound := utils.SlicesFindFirstIntersection(ctx.UserGroups, forceApproveGroups)
 	if forceGroupFound == nil {
 		return nil, ErrNotEligible
 	}
@@ -309,7 +317,11 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	if connection.MinReviewApprovals != nil {
+	if rev.AccessRequestRuleName != nil {
+		if rev.MinApprovals != nil {
+			reviewsCountNeeded = min(reviewsCountNeeded, *rev.MinApprovals)
+		}
+	} else if connection.MinReviewApprovals != nil {
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
 
@@ -456,11 +468,14 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		Type:    openapi.ReviewType(r.Type),
 		// this attribute is saved as seconds
 		// but we keep compatibility with clients to show as nano seconds
-		AccessDuration:   time.Duration(r.AccessDurationSec) * time.Second,
-		Status:           openapi.ReviewStatusType(r.Status),
-		RevokeAt:         r.RevokedAt,
-		CreatedAt:        r.CreatedAt,
-		ReviewGroupsData: itemGroups,
-		TimeWindow:       timeWindow,
+		AccessDuration:        time.Duration(r.AccessDurationSec) * time.Second,
+		Status:                openapi.ReviewStatusType(r.Status),
+		RevokeAt:              r.RevokedAt,
+		CreatedAt:             r.CreatedAt,
+		ReviewGroupsData:      itemGroups,
+		TimeWindow:            timeWindow,
+		AccessRequestRuleName: r.AccessRequestRuleName,
+		MinApprovals:          r.MinApprovals,
+		ForceApprovalGroups:   r.ForceApprovalGroups,
 	}
 }

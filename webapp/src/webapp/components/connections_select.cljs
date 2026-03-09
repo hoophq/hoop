@@ -15,26 +15,33 @@
   "Reusable connections selection component with pagination and search.
 
    Parameters:
+   - id: field id for native form validation
+   - name: field name for native form validation
+   - required?: whether at least one connection is required
+   - connection-filter-fn: optional predicate to filter visible connection options
    - connection-ids: vector containing array of connection IDs
    - selected-connections: vector of pre-selected connection objects with :id and :name
    - on-connections-change: function to call when connections are changed"
-  [{:keys [connection-ids selected-connections on-connections-change]}]
+  [props]
   (let [connections (rf/subscribe [:connections->pagination])
         search-term (r/atom "")
         search-debounce-timer (r/atom nil)
         initialized (r/atom false)]
 
     ;; Only load connections if we don't have selected connections already loaded
-    (when (and (not @initialized) (empty? selected-connections))
+    (when (and (not @initialized) (empty? (:selected-connections props)))
       (reset! initialized true)
       (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}]))
 
-    (fn [{:keys [connection-ids selected-connections on-connections-change]}]
+    (fn [{:keys [id name required? connection-filter-fn connection-ids selected-connections on-connections-change]}]
       (let [connections-data (or (:data @connections) [])
+            filtered-connections (if connection-filter-fn
+                                   (filter connection-filter-fn connections-data)
+                                   connections-data)
             connections-loading? (:loading @connections)
             has-more? (:has-more? @connections)
             current-page (:current-page @connections 1)
-            search-options (format-connections-for-select connections-data)
+            search-options (format-connections-for-select filtered-connections)
             selected-options (format-connections-for-select (or selected-connections []))
 
             ;; Merge search results with selected options, avoiding duplicates
@@ -47,6 +54,9 @@
 
         [multiselect/paginated
          {:label "Resource Roles"
+          :id id
+          :name name
+          :required? required?
           :options connections-options
           :default-value (if (empty? selected-values) nil (vec selected-values))
           :loading? connections-loading?

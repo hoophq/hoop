@@ -36,6 +36,20 @@
  (fn [data _]
    (:config data)))
 
+;; Protocol (oidc or saml)
+(rf/reg-sub
+ :authentication->protocol
+ :<- [:authentication->data]
+ (fn [data _]
+   (or (:protocol data) "oidc")))
+
+;; SAML configuration
+(rf/reg-sub
+ :authentication->saml-config
+ :<- [:authentication->data]
+ (fn [data _]
+   (:saml-config data)))
+
 ;; Advanced configuration
 (rf/reg-sub
  :authentication->advanced-config

@@ -24,6 +24,254 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/access-requests/rules": {
+            "get": {
+                "description": "List all access request rules for the organization with pagination",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Access Request Rules"
+                ],
+                "summary": "List Access Request Rules",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default: 0 for all)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_AccessRequestRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new access request rule for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Access Request Rules"
+                ],
+                "summary": "Create Access Request Rule",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AccessRequestRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AccessRequestRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/access-requests/rules/{name}": {
+            "get": {
+                "description": "Get an access request rule by ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Access Request Rules"
+                ],
+                "summary": "Get Access Request Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Access request rule Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AccessRequestRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an access request rule by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Access Request Rules"
+                ],
+                "summary": "Update Access Request Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Access request Rule ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AccessRequestRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AccessRequestRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete an access request rule by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Access Request Rules"
+                ],
+                "summary": "Delete Access Request Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Access request rule name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/agents": {
             "get": {
                 "description": "List all agent keys",
@@ -181,6 +429,114 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/audit/logs": {
+            "get": {
+                "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Audit Logs"
+                ],
+                "summary": "List security audit logs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number (default: 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Page size (1-100, default: 50)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by actor subject (partial match)",
+                        "name": "actor_subject",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by actor email (partial match)",
+                        "name": "actor_email",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource type (e.g. connections, users, resources)",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by action (create, update, delete, revoke)",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource ID (UUID)",
+                        "name": "resource_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by resource name (partial match)",
+                        "name": "resource_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by outcome (true = success, false = failure)",
+                        "name": "outcome",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter entries created on or after this time (RFC3339 or YYYY-MM-DD)",
+                        "name": "created_after",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter entries created on or before this time (RFC3339 or YYYY-MM-DD)",
+                        "name": "created_before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_SecurityAuditLogResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -3959,6 +4315,12 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "description": "DEPRECATED: use connection_name instead",
+                        "name": "connection",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Filter runbooks by connection name",
                         "name": "connection_name",
                         "in": "query"
@@ -5085,6 +5447,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Filter by Jira issue key",
+                        "name": "jira_issue_key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "format": "RFC3339",
                         "description": "Filter starting on this date",
                         "name": "start_date",
@@ -5182,7 +5550,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/sessions/approved": {
+        "/sessions/provision": {
             "post": {
                 "consumes": [
                     "application/json"
@@ -5626,6 +5994,71 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/result/stream": {
+            "get": {
+                "description": "Returns the decoded output of a session as plain text with chunked transfer encoding",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Stream Session Result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the resource",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Append a newline after each event (1=yes)",
+                        "name": "newline",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Prefix each event with its RFC3339 timestamp (1=yes)",
+                        "name": "event-time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated event types to include: i, o, e (default: o,e)",
+                        "name": "events",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -6347,6 +6780,197 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.AccessRequestRule": {
+            "type": "object",
+            "properties": {
+                "access_max_duration": {
+                    "description": "Maximum access duration in seconds",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "access_type": {
+                    "description": "The access type",
+                    "type": "string",
+                    "enum": [
+                        "jit",
+                        "command"
+                    ],
+                    "example": "command"
+                },
+                "all_groups_must_approve": {
+                    "description": "Whether all groups must approve",
+                    "type": "boolean",
+                    "example": false
+                },
+                "approval_required_groups": {
+                    "description": "Groups that require approval",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "developers",
+                        "analysts"
+                    ]
+                },
+                "connection_names": {
+                    "description": "Connection names that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "description": "The description of the access request rule",
+                    "type": "string",
+                    "example": "Access control rule for production databases"
+                },
+                "force_approval_groups": {
+                    "description": "Groups that can force approve sessions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "admin"
+                    ]
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "min_approvals": {
+                    "description": "Minimum number of approvals required",
+                    "type": "integer",
+                    "example": 2
+                },
+                "name": {
+                    "description": "The name of the access request rule",
+                    "type": "string",
+                    "example": "default-access-request-rule"
+                },
+                "reviewers_groups": {
+                    "description": "Groups that can review sessions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre",
+                        "dba"
+                    ]
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.AccessRequestRuleRequest": {
+            "type": "object",
+            "required": [
+                "access_type",
+                "approval_required_groups",
+                "connection_names",
+                "force_approval_groups",
+                "name",
+                "reviewers_groups"
+            ],
+            "properties": {
+                "access_max_duration": {
+                    "description": "Maximum access duration in seconds",
+                    "type": "integer",
+                    "example": 3600
+                },
+                "access_type": {
+                    "description": "The access type",
+                    "type": "string",
+                    "enum": [
+                        "jit",
+                        "command"
+                    ],
+                    "example": "command"
+                },
+                "all_groups_must_approve": {
+                    "description": "Whether all groups must approve",
+                    "type": "boolean",
+                    "example": false
+                },
+                "approval_required_groups": {
+                    "description": "Groups that require approval",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "developers",
+                        "analysts"
+                    ]
+                },
+                "connection_names": {
+                    "description": "Connection names that this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                },
+                "description": {
+                    "description": "The description of the access request rule",
+                    "type": "string",
+                    "example": "Access request rule for production databases"
+                },
+                "force_approval_groups": {
+                    "description": "Groups that can force approve sessions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "admin"
+                    ]
+                },
+                "min_approvals": {
+                    "description": "Minimum number of approvals required",
+                    "type": "integer",
+                    "example": 2
+                },
+                "name": {
+                    "description": "The name of the access request rule",
+                    "type": "string",
+                    "example": "default-access-request-rule"
+                },
+                "reviewers_groups": {
+                    "description": "Groups that can review sessions",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sre",
+                        "dba"
+                    ]
+                }
+            }
+        },
         "openapi.AgentCreateResponse": {
             "type": "object",
             "properties": {
@@ -6605,6 +7229,22 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": ""
                 },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
+                },
+                "min_review_approvals": {
+                    "description": "Minimum number of review approvals required to execute this connection",
+                    "type": "integer",
+                    "example": 2
+                },
                 "name": {
                     "description": "Name of the connection. This attribute is immutable when updating it",
                     "type": "string",
@@ -6715,6 +7355,11 @@ const docTemplate = `{
                     "description": "The name of the connection",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "connection_subtype": {
+                    "description": "The connection subtype",
+                    "type": "string",
+                    "example": "postgres"
                 },
                 "connection_type": {
                     "description": "Connection type",
@@ -6828,6 +7473,17 @@ const docTemplate = `{
                     "description": "The jira issue templates ids associated to the connection",
                     "type": "string",
                     "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
+                },
+                "mandatory_metadata_fields": {
+                    "description": "MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "environment",
+                        "tier"
+                    ]
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
@@ -8226,6 +8882,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_AccessRequestRule": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AccessRequestRule"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_Connection": {
             "type": "object",
             "properties": {
@@ -8247,6 +8917,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.ResourceResponse"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
+        "openapi.PaginatedResponse-openapi_SecurityAuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SecurityAuditLogResponse"
                     }
                 },
                 "pages": {
@@ -8658,7 +9342,6 @@ const docTemplate = `{
             "required": [
                 "env_vars",
                 "name",
-                "subtype",
                 "type"
             ],
             "properties": {
@@ -8688,7 +9371,7 @@ const docTemplate = `{
                     }
                 },
                 "subtype": {
-                    "description": "The resource subtype",
+                    "description": "The resource subtype (optional; defaults to the value of 'type' when omitted)",
                     "type": "string",
                     "example": "mysql"
                 },
@@ -8850,11 +9533,28 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 0
                 },
+                "access_request_rule_name": {
+                    "description": "The name of the access request rule that triggered this review, if null means it was triggered by the review plugin",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "default-access-request-rule"
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "force_approval_groups": {
+                    "description": "Groups that can force approve sessions for this review",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "sre-team"
+                    ]
                 },
                 "id": {
                     "description": "Resource identifier",
@@ -8862,6 +9562,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "min_approvals": {
+                    "description": "The minimum number of approvals required for this review",
+                    "type": "integer",
+                    "readOnly": true,
+                    "example": 2
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
@@ -9120,7 +9826,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "metadata": {
-                    "description": "Metadata contains the attributes parsed from a template.\nPayload Example:\n\n\t\t{\n\t\t\t\"customer_id\" : {\n\t\t\t\t\"description\": \"the id of the customer\",\n\t\t\t\t\"required\": true,\n\t\t\t\t\"type\": \"text\",\n\t\t\t\t\"default\": \"Default value to use\"\n\t\t\t},\n\t\t\t\"country\": {\n\t\t\t\t\"description\": \"the country code US; BR, etc\",\n\t\t\t\t\"required\": false,\n\t\t\t\t\"type\": \"select\",\n\t\t\t\t\"options\": [\"US\", \"BR\"]\n\t\t\t}\n\t\t}\n\nBy default it will have the attributes ` + "`" + `description=\"\"` + "`" + `, ` + "`" + `required=false` + "`" + ` and ` + "`" + `type=\"text\"` + "`" + `.",
+                    "description": "Metadata contains the attributes parsed from a template.\nPayload Example:\n\n\t\t{\n\t\t\t\"customer_id\" : {\n\t\t\t\t\"description\": \"the id of the customer\",\n\t\t\t\t\"required\": true,\n\t\t\t\t\"type\": \"text\",\n\t\t\t\t\"default\": \"Default value to use\",\n\t\t\t\t\"order\": 1\n\t\t\t},\n\t\t\t\"country\": {\n\t\t\t\t\"description\": \"the country code US; BR, etc\",\n\t\t\t\t\"required\": false,\n\t\t\t\t\"type\": \"select\",\n\t\t\t\t\"options\": [\"US\", \"BR\"],\n\t\t\t\t\"order\": 2\n\t\t\t}\n\t\t}\n\nBy default it will have the attributes ` + "`" + `description=\"\"` + "`" + `, ` + "`" + `required=false` + "`" + ` and ` + "`" + `type=\"text\"` + "`" + `.\nOptional attributes include ` + "`" + `order` + "`" + ` (int), ` + "`" + `default` + "`" + `, ` + "`" + `placeholder` + "`" + `, ` + "`" + `options` + "`" + `, and ` + "`" + `asenv` + "`" + `.",
                     "type": "object",
                     "additionalProperties": {}
                 },
@@ -9255,6 +9961,11 @@ const docTemplate = `{
                     "description": "Repository name where the runbook is located",
                     "type": "string",
                     "example": "github.com/myorg/myrepo"
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 }
             }
         },
@@ -9287,11 +9998,30 @@ const docTemplate = `{
         "openapi.RunbookListV2": {
             "type": "object",
             "properties": {
+                "commit": {
+                    "description": "DEPRECATED: use repositories[].commit instead. Commit SHA of the first repository.",
+                    "type": "string"
+                },
+                "commit_author": {
+                    "description": "DEPRECATED: use repositories[].commit_author instead. Commit author of the first repository.",
+                    "type": "string"
+                },
+                "commit_message": {
+                    "description": "DEPRECATED: use repositories[].commit_message instead. Commit message of the first repository.",
+                    "type": "string"
+                },
                 "errors": {
                     "description": "Errors encountered during fetching runbooks",
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                },
+                "items": {
+                    "description": "DEPRECATED: use repositories[].items instead. Flat list of all runbooks across all repositories.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Runbook"
                     }
                 },
                 "repositories": {
@@ -9384,6 +10114,10 @@ const docTemplate = `{
         },
         "openapi.RunbookRepositoryResponse": {
             "type": "object",
+            "required": [
+                "git_url",
+                "repository"
+            ],
             "properties": {
                 "git_hook_ttl": {
                     "description": "Enables runbook hooks when this value is greater than zero",
@@ -9492,6 +10226,11 @@ const docTemplate = `{
                     "description": "The commit sha reference to obtain the file",
                     "type": "string",
                     "example": "20320ebbf9fc612256b67dc9e899bbd6e4745c77"
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 }
             }
         },
@@ -9726,6 +10465,68 @@ const docTemplate = `{
                 "SecretsManagerProviderVault"
             ]
         },
+        "openapi.SecurityAuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "example": "create"
+                },
+                "actor_email": {
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "actor_name": {
+                    "type": "string",
+                    "example": "Admin User"
+                },
+                "actor_subject": {
+                    "type": "string",
+                    "example": "auth0|abc123"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2023-08-15T14:30:45Z"
+                },
+                "error_message": {
+                    "type": "string",
+                    "example": ""
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "org_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
+                },
+                "outcome": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "request_payload_redacted": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "resource_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "5364ec99-653b-41ba-8165-67236e894990"
+                },
+                "resource_name": {
+                    "type": "string",
+                    "example": "my-connection"
+                },
+                "resource_type": {
+                    "type": "string",
+                    "example": "connections"
+                }
+            }
+        },
         "openapi.ServerAuthConfig": {
             "type": "object",
             "required": [
@@ -9863,7 +10664,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "analytics_tracking": {
-                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled (ANALYTICS_TRACKING=enabled)\n* disabled - Analytics/tracking are disabled (ANALYTICS_TRACKING=disabled)",
+                    "description": "Indicates if all tracking and analytics should be enabled or disabled\n* enabled - Analytics/tracking are enabled\n* disabled - Analytics/tracking are disabled",
                     "type": "string",
                     "enum": [
                         "enabled",
@@ -9889,6 +10690,10 @@ const docTemplate = `{
                     "description": "Commit SHA of the version",
                     "type": "string",
                     "example": "e6b94e86352e934b66d9c7ab2821a267dc18dfee"
+                },
+                "disable_clipboard_copy_cut": {
+                    "description": "Indicates if clipboard copy functionality is disabled\n* true - Clipboard copy and cut are disabled and not available to users\n* false - Clipboard copy and cut are enabled and available to users",
+                    "type": "boolean"
                 },
                 "disable_sessions_download": {
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
@@ -10149,7 +10954,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "connection": {
-                    "description": "The connection name of this resource",
+                    "description": "The connection name of this resource (it will be deprecated in favor of RoleName)",
                     "type": "string",
                     "example": "pgdemo"
                 },
@@ -10223,6 +11028,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "resource_name": {
+                    "description": "The resource name associated with this connection",
+                    "type": "string",
+                    "example": "my-resource"
+                },
                 "review": {
                     "description": "Review of this session. In case the review doesn't exist this field will be null",
                     "allOf": [
@@ -10230,6 +11040,11 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.SessionReview"
                         }
                     ]
+                },
+                "role_name": {
+                    "description": "The role name (same as connection name)",
+                    "type": "string",
+                    "example": "pgdemo"
                 },
                 "script": {
                     "description": "The input of the session. This value is only set for the verb ` + "`" + `exec` + "`" + `",
@@ -10246,6 +11061,11 @@ const docTemplate = `{
                     "description": "The input size of the session in bytes",
                     "type": "integer",
                     "example": 12
+                },
+                "session_batch_id": {
+                    "description": "Batch identifier to group sessions that were executed simultaneously",
+                    "type": "string",
+                    "example": "batch-abc-123"
                 },
                 "start_date": {
                     "description": "When the execution started",
@@ -10466,11 +11286,28 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 0
                 },
+                "access_request_rule_name": {
+                    "description": "The name of the access request rule that triggered this review, if null means it was triggered by the review plugin",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "default-access-request-rule"
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "force_approval_groups": {
+                    "description": "Groups that can force approve sessions for this review",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "readOnly": true,
+                    "example": [
+                        "sre-team"
+                    ]
                 },
                 "id": {
                     "description": "Resource identifier",
@@ -10478,6 +11315,12 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "min_approvals": {
+                    "description": "The minimum number of approvals required for this review",
+                    "type": "integer",
+                    "readOnly": true,
+                    "example": 2
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
@@ -10955,6 +11798,10 @@ const docTemplate = `{
         },
         {
             "name": "Reports"
+        },
+        {
+            "description": "Security audit log API. Only users in the **admin** group can access these endpoints.\n\nAudit log entries record security-relevant events (who performed an action, when, on which resource, and whether it succeeded). Use the list endpoint with filters to query by actor, resource type, action, outcome, or date range. Results are paginated and ordered by ` + "`" + `created_at` + "`" + ` descending.\n",
+            "name": "Audit Logs"
         }
     ]
 }`

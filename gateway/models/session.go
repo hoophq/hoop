@@ -65,6 +65,7 @@ type Session struct {
 	ID                   string            `gorm:"column:id"`
 	OrgID                string            `gorm:"column:org_id"`
 	Connection           string            `gorm:"column:connection"`
+	ResourceName         string            `gorm:"column:resource_name;->"`
 	ConnectionType       string            `gorm:"column:connection_type"`
 	ConnectionSubtype    string            `gorm:"column:connection_subtype"`
 	ConnectionTags       map[string]string `gorm:"column:connection_tags;serializer:json"`
@@ -115,15 +116,18 @@ type Blob struct {
 	BlobFormat *string         `gorm:"column:format"`
 }
 type SessionReview struct {
-	ID                string            `json:"id"`
-	SessionID         string            `json:"session_id"`
-	Type              string            `json:"type"`
-	Status            string            `json:"status"`
-	CreatedAt         time.Time         `json:"created_at"`
-	RevokedAt         *time.Time        `json:"revoked_at"`
-	AccessDurationSec int64             `json:"access_duration_sec"`
-	ReviewGroups      []ReviewGroups    `json:"review_groups" gorm:"review_groups;serializer:json"`
-	TimeWindow        *ReviewTimeWindow `json:"time_window" gorm:"time_window;serializer:json;"`
+	ID                    string            `json:"id"`
+	SessionID             string            `json:"session_id"`
+	Type                  string            `json:"type"`
+	Status                string            `json:"status"`
+	CreatedAt             time.Time         `json:"created_at"`
+	RevokedAt             *time.Time        `json:"revoked_at"`
+	AccessDurationSec     int64             `json:"access_duration_sec"`
+	ReviewGroups          []ReviewGroups    `json:"review_groups" gorm:"review_groups;serializer:json"`
+	TimeWindow            *ReviewTimeWindow `json:"time_window" gorm:"time_window;serializer:json;"`
+	AccessRequestRuleName *string           `json:"access_request_rule_name"`
+	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups" gorm:"force_approval_groups;serializer:json;"`
+	MinApprovals          *int              `json:"min_approvals"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -195,6 +199,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
+		c.resource_name,
 		CASE
 			WHEN rv.id IS NULL THEN NULL
 			ELSE jsonb_build_object(
@@ -203,6 +208,9 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'access_duration_sec', rv.access_duration_sec,
 				'status', rv.status,
 				'time_window', rv.time_window,
+				'access_request_rule_name', rv.access_request_rule_name,
+				'min_approvals', rv.min_approvals,
+				'force_approval_groups', rv.force_approval_groups,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (
@@ -226,6 +234,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 		END AS review,
 		s.created_at, s.ended_at
 	FROM private.sessions s
+	LEFT JOIN private.connections c ON c.org_id = s.org_id AND c.name = s.connection
 	LEFT JOIN private.blobs b ON b.id = s.blob_input_id
 	LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 	WHERE s.org_id = ? AND s.id = ?
@@ -317,6 +326,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
+			c.resource_name,
 			CASE
 				WHEN rv.id IS NULL THEN NULL
 				ELSE jsonb_build_object(
@@ -347,6 +357,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			END AS review,
 			s.created_at, s.ended_at
 		FROM private.sessions s
+		LEFT JOIN private.connections c ON c.org_id = s.org_id AND c.name = s.connection
 		LEFT JOIN private.blobs b ON b.id = s.blob_input_id
 		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
 		WHERE s.org_id = @org_id AND

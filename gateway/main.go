@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/monitoring"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/analytics"
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
@@ -70,6 +71,10 @@ func Run() {
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
 
+	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {
+		appconfig.GetRef().SetAnalyticsTracking(enabled)
+	}
+
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
 	if !isOrgMultiTenant {
 		log.Infof("provisioning default organization")
@@ -78,9 +83,13 @@ func Run() {
 			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
 		}
 
-		org, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
+		org, isNewOrg, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		if isNewOrg {
+			analytics.New().TrackEvent(analytics.EventDefaultOrgCreated, map[string]interface{}{"org-id": org.ID})
 		}
 
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)
