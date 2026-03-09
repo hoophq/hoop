@@ -14,7 +14,7 @@ type AIProvider struct {
 	ID    uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	OrgID uuid.UUID `gorm:"column:org_id;unique"`
 
-	Provider *string `gorm:"column:provider"`
+	Provider string `gorm:"column:provider"`
 
 	ApiUrl *string `gorm:"column:api_url"`
 	ApiKey *string `gorm:"column:api_key"`
@@ -70,7 +70,7 @@ func GetAIProvider(orgID uuid.UUID) (*AIProvider, error) {
 func UpsertAIProvider(orgID uuid.UUID, provider string, apiURL *string, apiKey *string, model string) (*AIProvider, error) {
 	p := AIProvider{
 		OrgID:    orgID,
-		Provider: &provider,
+		Provider: provider,
 		ApiUrl:   apiURL,
 		ApiKey:   apiKey,
 		Model:    model,

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -15,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func validateProviderRequest(p *openapi.AIProviderRequest) error {
+func validateProviderRequest(p openapi.AIProviderRequest) error {
 	switch p.Provider {
 	case "openai", "anthropic":
 		return nil
@@ -51,7 +52,7 @@ func GetProvider(c *gin.Context) {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		c.JSON(http.StatusOK, toProviderResponse(p))
+		c.JSON(http.StatusOK, toProviderResponse(*p))
 	default:
 		log.Errorf("failed fetching AI provider, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -83,7 +84,7 @@ func UpsertProvider(c *gin.Context) {
 		return
 	}
 
-	if err := validateProviderRequest(&req); err != nil {
+	if err := validateProviderRequest(req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
@@ -94,7 +95,14 @@ func UpsertProvider(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, toProviderResponse(p))
+
+	analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisProviderUpdated, map[string]interface{}{
+		"org-id":   p.OrgID,
+		"provider": p.Provider,
+		"model":    p.Model,
+	})
+
+	c.JSON(http.StatusOK, toProviderResponse(*p))
 }
 
 // DeleteAIProvider
@@ -276,6 +284,12 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
+		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleCreated, map[string]interface{}{
+			"org-id":             rule.OrgID,
+			"low-risk-action":    rule.RiskEvaluation.LowRiskAction,
+			"medium-risk-action": rule.RiskEvaluation.MediumRiskAction,
+			"high-risk-action":   rule.RiskEvaluation.HighRiskAction,
+		})
 		c.JSON(http.StatusCreated, toSessionAnalyzerRuleResponse(rule))
 	default:
 		log.Errorf("failed creating AI session analyzer rule, err=%v", err)
@@ -342,6 +356,13 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
+		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleUpdated, map[string]interface{}{
+			"org-id":             rule.OrgID,
+			"low-risk-action":    rule.RiskEvaluation.LowRiskAction,
+			"medium-risk-action": rule.RiskEvaluation.MediumRiskAction,
+			"high-risk-action":   rule.RiskEvaluation.HighRiskAction,
+		})
+
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
 	default:
 		log.Errorf("failed updating AI session analyzer rule, err=%v", err)
@@ -379,10 +400,10 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 	}
 }
 
-func toProviderResponse(p *models.AIProvider) openapi.AIProviderResponse {
+func toProviderResponse(p models.AIProvider) openapi.AIProviderResponse {
 	return openapi.AIProviderResponse{
 		ID:        p.ID.String(),
-		Provider:  *p.Provider,
+		Provider:  p.Provider,
 		ApiUrl:    p.ApiUrl,
 		Model:     p.Model,
 		CreatedAt: p.CreatedAt,

@@ -88,11 +88,11 @@ var sessionAnalyzerTools = []aiclients.Tool{
 // name is mapped to RiskLevelLow / RiskLevelMedium / RiskLevelHigh.
 func AnalyzeSession(ctx context.Context, orgID uuid.UUID, content string) (*SessionAnalysisResult, error) {
 	provider, err := models.GetAIProvider(orgID)
-	if err != nil {
+	if err != nil || provider == nil {
 		return nil, fmt.Errorf("session analyzer: failed to load ai provider: %w", err)
 	}
 
-	client, err := aiclients.NewClient(provider)
+	client, err := aiclients.NewClient(*provider)
 	if err != nil {
 		return nil, fmt.Errorf("session analyzer: failed to create ai client: %w", err)
 	}

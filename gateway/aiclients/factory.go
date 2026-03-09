@@ -13,16 +13,13 @@ import (
 //   - "anthropic"                         → Anthropic client
 //
 // Returns [ErrProviderNotConfigured] when provider is nil or has no Provider field set.
-func NewClient(provider *models.AIProvider) (Client, error) {
-	if provider == nil || provider.Provider == nil {
-		return nil, ErrProviderNotConfigured
-	}
-	switch *provider.Provider {
+func NewClient(provider models.AIProvider) (Client, error) {
+	switch provider.Provider {
 	case "openai", "azure-openai", "custom":
-		return newOpenAIClient(provider)
+		return newOpenAIClient(&provider)
 	case "anthropic":
-		return newAnthropicClient(provider)
+		return newAnthropicClient(&provider)
 	default:
-		return nil, fmt.Errorf("unsupported ai provider: %q", *provider.Provider)
+		return nil, fmt.Errorf("unsupported ai provider: %q", provider.Provider)
 	}
 }

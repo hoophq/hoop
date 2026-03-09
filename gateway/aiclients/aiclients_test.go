@@ -12,23 +12,8 @@ import (
 
 func strPtr(s string) *string { return &s }
 
-// -- NewClient factory tests --
-
-func TestNewClient_NilProvider(t *testing.T) {
-	_, err := aiclients.NewClient(nil)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, aiclients.ErrProviderNotConfigured)
-}
-
-func TestNewClient_NilProviderField(t *testing.T) {
-	p := &models.AIProvider{}
-	_, err := aiclients.NewClient(p)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, aiclients.ErrProviderNotConfigured)
-}
-
 func TestNewClient_UnsupportedProvider(t *testing.T) {
-	p := &models.AIProvider{Provider: strPtr("huggingface")}
+	p := models.AIProvider{Provider: "huggingface"}
 	_, err := aiclients.NewClient(p)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported ai provider")
@@ -37,15 +22,15 @@ func TestNewClient_UnsupportedProvider(t *testing.T) {
 // -- OpenAI / Azure / Custom provider construction --
 
 func TestNewClient_OpenAIMissingAPIKey(t *testing.T) {
-	p := &models.AIProvider{Provider: strPtr("openai")}
+	p := models.AIProvider{Provider: "openai"}
 	_, err := aiclients.NewClient(p)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "api_key is required")
 }
 
 func TestNewClient_OpenAIReturnsClient(t *testing.T) {
-	p := &models.AIProvider{
-		Provider: strPtr("openai"),
+	p := models.AIProvider{
+		Provider: "openai",
 		ApiKey:   strPtr("sk-test"),
 		Model:    "gpt-4o",
 	}
@@ -55,8 +40,8 @@ func TestNewClient_OpenAIReturnsClient(t *testing.T) {
 }
 
 func TestNewClient_AzureOpenAIReturnsClient(t *testing.T) {
-	p := &models.AIProvider{
-		Provider: strPtr("azure-openai"),
+	p := models.AIProvider{
+		Provider: "azure-openai",
 		ApiKey:   strPtr("az-key"),
 		ApiUrl:   strPtr("https://my-instance.openai.azure.com"),
 		Model:    "gpt-4o",
@@ -67,8 +52,8 @@ func TestNewClient_AzureOpenAIReturnsClient(t *testing.T) {
 }
 
 func TestNewClient_CustomProviderReturnsClient(t *testing.T) {
-	p := &models.AIProvider{
-		Provider: strPtr("custom"),
+	p := models.AIProvider{
+		Provider: "custom",
 		ApiKey:   strPtr("custom-key"),
 		ApiUrl:   strPtr("https://my-api.example.com"),
 		Model:    "my-model",
@@ -81,15 +66,15 @@ func TestNewClient_CustomProviderReturnsClient(t *testing.T) {
 // -- Anthropic provider construction --
 
 func TestNewClient_AnthropicMissingAPIKey(t *testing.T) {
-	p := &models.AIProvider{Provider: strPtr("anthropic")}
+	p := models.AIProvider{Provider: "anthropic"}
 	_, err := aiclients.NewClient(p)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "api_key is required")
 }
 
 func TestNewClient_AnthropicReturnsClient(t *testing.T) {
-	p := &models.AIProvider{
-		Provider: strPtr("anthropic"),
+	p := models.AIProvider{
+		Provider: "anthropic",
 		ApiKey:   strPtr("ant-key"),
 		Model:    "claude-sonnet-4-6",
 	}
