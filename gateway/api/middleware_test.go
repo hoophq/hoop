@@ -10,15 +10,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAuditResponseWriter_CapturesStatusCode(t *testing.T) {
 	// Setup
 	gin.SetMode(gin.TestMode)
-	
+
 	// Create a mock gin context with ResponseWriter
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	
+
 	arw := &auditResponseWriter{
 		ResponseWriter: c.Writer,
 		statusCode:     0,
@@ -37,9 +38,10 @@ func TestAuditResponseWriter_CapturesStatusCode(t *testing.T) {
 		statusCode:     0,
 		responseBody:   &bytes.Buffer{},
 	}
-	arw2.Write([]byte("test"))
+	_, err := arw2.Write([]byte("test"))
+	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, arw2.Status())
-	
+
 	// Test response body capture
 	c3, _ := gin.CreateTestContext(httptest.NewRecorder())
 	arw3 := &auditResponseWriter{
@@ -48,7 +50,8 @@ func TestAuditResponseWriter_CapturesStatusCode(t *testing.T) {
 		responseBody:   &bytes.Buffer{},
 	}
 	testData := []byte(`{"message": "test error"}`)
-	arw3.Write(testData)
+	_, err = arw3.Write(testData)
+	require.NoError(t, err)
 	assert.Equal(t, testData, arw3.responseBody.Bytes())
 }
 
@@ -125,7 +128,7 @@ func TestAuditMiddleware_Integration(t *testing.T) {
 
 	// Setup
 	gin.SetMode(gin.TestMode)
-	
+
 	// Note: This is a simplified test to verify middleware doesn't break request flow
 	// Full integration tests with database would require test database setup
 	t.Log("Integration test placeholder - would require database setup")
@@ -138,11 +141,11 @@ func TestMin(t *testing.T) {
 
 func TestErrorMessageExtraction(t *testing.T) {
 	tests := []struct {
-		name           string
-		statusCode     int
-		responseBody   string
-		ginErrors      string
-		expectedError  string
+		name          string
+		statusCode    int
+		responseBody  string
+		ginErrors     string
+		expectedError string
 	}{
 		{
 			name:          "Extract message from JSON response",
