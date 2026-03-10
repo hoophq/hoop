@@ -486,6 +486,22 @@ func UpsertSession(sess Session) error {
 	})
 }
 
+// UpdateSessionStatus updates only the status of a session
+func UpdateSessionStatus(orgID, sessionID, status string) error {
+	return DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		UpdateColumn("status", status).Error
+}
+
+// SetSessionCredentialsExpireAt stores the credential expiry time in the session metadata.
+// The frontend reads metadata.credentials_expire_at to display validity and toggle the connect button.
+func SetSessionCredentialsExpireAt(orgID, sessionID string, expireAt time.Time) error {
+	value := fmt.Sprintf(`{"credentials_expire_at":%q}`, expireAt.Format(time.RFC3339))
+	return DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).Error
+}
+
 // UpdateSessionEventStream updates a session partially
 func UpdateSessionEventStream(sess SessionDone) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
