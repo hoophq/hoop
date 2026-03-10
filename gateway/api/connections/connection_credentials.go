@@ -3,6 +3,7 @@ package apiconnections
 import (
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httpproxy", "kubernetes", "claude-code"}
@@ -122,7 +124,6 @@ func CreateConnectionCredentials(c *gin.Context) {
 
 		// Return 202 with session_id and review_id, NO credentials
 		c.JSON(202, &openapi.ConnectionCredentialsResponse{
-			ID:                uuid.NewString(), // Placeholder ID, credentials not created yet
 			ConnectionName:    conn.Name,
 			ConnectionType:    conn.Type,
 			ConnectionSubType: conn.SubType.String,
@@ -318,22 +319,32 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	// Create connection credentials with the session ID from the review
-	// Use the expireAt and createdAt calculated earlier (preserves original timer if credentials already exist)
-	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
-		ID:             uuid.NewString(),
-		OrgID:          ctx.OrgID,
-		UserSubject:    ctx.UserID,
-		ConnectionName: conn.Name,
-		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-		SecretKeyHash:  secretKeyHash,
-		SessionID:      sessionID,
-		CreatedAt:      createdAt,
-		ExpireAt:       expireAt,
-	})
-	if err != nil {
-		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
-		return
+	// If credentials already exist for this session, update the secret key (preserves expiration)
+	// Otherwise create a new record
+	var db *models.ConnectionCredentials
+	if existingCred != nil {
+		if err := models.UpdateConnectionCredentialsSecretKey(existingCred.ID, secretKeyHash); err != nil {
+			c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
+			return
+		}
+		existingCred.SecretKeyHash = secretKeyHash
+		db = existingCred
+	} else {
+		db, err = models.CreateConnectionCredentials(&models.ConnectionCredentials{
+			ID:             uuid.NewString(),
+			OrgID:          ctx.OrgID,
+			UserSubject:    ctx.UserID,
+			ConnectionName: conn.Name,
+			ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+			SecretKeyHash:  secretKeyHash,
+			SessionID:      sessionID,
+			CreatedAt:      createdAt,
+			ExpireAt:       expireAt,
+		})
+		if err != nil {
+			c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
+			return
+		}
 	}
 
 	// Update review status to processing (only if it's the first time - status is APPROVED)
@@ -640,8 +651,7 @@ func checkConnectionRequiresReview(ctx *storagev2.Context, conn *models.Connecti
 
 	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit")
 	if err != nil {
-		// If not found, no access request rule exists
-		if err.Error() == "record not found" {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
 		log.Warnf("failed checking access request rules for connection %s, err=%v", conn.Name, err)
