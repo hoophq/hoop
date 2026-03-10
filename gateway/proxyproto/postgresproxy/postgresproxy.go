@@ -247,8 +247,15 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, err
 	}
 
-	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
-		dba.ID, dba.UserSubject, dba.ConnectionName,
+	// Use session_id from credentials if available, otherwise use the passed sid for backward compat
+	sessionID := sid
+	if dba.SessionID != "" {
+		sessionID = dba.SessionID
+		pgConn.sid = sessionID // Update the sid in pgConn to match
+	}
+
+	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
+		dba.ID, dba.UserSubject, dba.ConnectionName, sessionID,
 		dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
@@ -277,7 +284,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sid),
+		grpc.WithOption("session-id", sessionID),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to grpc server, err=%v", err)

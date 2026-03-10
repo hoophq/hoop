@@ -159,6 +159,12 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		return
 	}
 
+	// Use session_id from credentials if available, otherwise use the generated one for backward compat
+	rdpSessionID := sessionID
+	if dba.SessionID != "" {
+		rdpSessionID = dba.SessionID
+	}
+
 	var serverCertChain [][]byte
 	session, err := broker.CreateRDPSession(
 		nil,
@@ -168,6 +174,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		extractedCreds,
 		dba.ExpireAt,
 		ctxDuration,
+		rdpSessionID,
 	)
 
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/proxyproto/tlstermination"
 	"github.com/hoophq/hoop/gateway/transport"
@@ -184,6 +185,12 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		return
 	}
 
+	// Use session_id from credentials if available, otherwise generate new one for backward compat
+	sessionID := uuid.NewString()
+	if dba.SessionID != "" {
+		sessionID = dba.SessionID
+	}
+
 	session, err := broker.CreateRDPSession(
 		connection,
 		*connectionModel,
@@ -192,6 +199,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		extractedCreds,
 		dba.ExpireAt,
 		ctxDuration,
+		sessionID,
 	)
 
 	if err != nil {
