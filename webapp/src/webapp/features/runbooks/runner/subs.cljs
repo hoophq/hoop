@@ -12,3 +12,8 @@
  :runbooks/selected-connection
  (fn [db]
    (get-in db [:runbooks :selected-connection])))
+
+(rf/reg-sub
+ :runbooks/execution-requirements-callout-dismissed?
+ (fn [db]
+   (get-in db [:runbooks :execution-requirements-callout :dismissed?] false)))

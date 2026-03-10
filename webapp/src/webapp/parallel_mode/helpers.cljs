@@ -48,10 +48,10 @@
   [connection]
   (not (cs/blank? (:jira_issue_template_id connection))))
 
-(defn has-required-metadata?
+(defn has-mandatory-metadata?
   "Check if connection requires metadata"
   [connection]
-  (boolean (seq (:required_metadata connection))))
+  (boolean (seq (:mandatory_metadata_fields connection))))
 
 (defn pre-validate-connection
   "Pre-validate a connection and return error status if invalid for parallel mode"
@@ -60,9 +60,9 @@
     (and (has-jira-template? connection) jira-enabled?)
     :error-jira-template
     
-    (has-required-metadata? connection)
+    (has-mandatory-metadata? connection)
     :error-metadata-required
-    
+
     :else
     nil))
 
