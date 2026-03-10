@@ -153,6 +153,17 @@
                            (not= (:name (:data @connection-details)) connection-name))
                   (rf/dispatch [:connections->get-connection-details connection-name]))
               ready? (= (:status session) "ready")
+              open? (= (:status session) "open")
+              ;; credentials_expire_at is stored in session metadata by the backend
+              ;; when connection credentials are issued (see SetSessionCredentialsExpireAt)
+              credentials-expire-at (get-in session [:metadata :credentials_expire_at])
+              credentials-expired? (when credentials-expire-at
+                                     (<= (.getTime (js/Date. credentials-expire-at))
+                                         (.getTime (js/Date.))))
+              credentials-remaining-min (when (and credentials-expire-at (not credentials-expired?))
+                                          (max 1 (js/Math.ceil (/ (- (.getTime (js/Date. credentials-expire-at))
+                                                                      (.getTime (js/Date.)))
+                                                                 60000))))
               can-review? (let [user-groups (set (:groups user))]
                             (and (some (fn [review-group]
                                          (and (= "PENDING" (:status review-group))
@@ -237,12 +248,12 @@
                     [:span param-value]]))]])
             ;; end runbook params
 
-            ;; metadata
+            ;; metadata (internal fields like credentials_expire_at are excluded from display)
             (when (and metadata
-                       (seq metadata))
+                       (seq (dissoc metadata :credentials_expire_at)))
               [:div
                (doall
-                (for [[metadata-key metadata-value] metadata]
+                (for [[metadata-key metadata-value] (dissoc metadata :credentials_expire_at)]
                   ^{:key metadata-key}
                   [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
                    [:header {:class "w-32 px-small text-sm font-bold"}
@@ -408,8 +419,12 @@
                                        (rf/dispatch [:audit->execute-session session]))}
                 "Execute"]])
 
-            ;; Connect button for approved credential requests (verb = connect)
-            (when (and ready?
+            ;; Connect button for approved credential requests (verb = connect).
+            ;; Visible when session is:
+            ;;   ready  → review approved, credentials not yet issued
+            ;;   open   → credentials were issued (show validity or expired message)
+            (when (and (or ready?
+                           (and open? credentials-expire-at))
                        (= (:verb session) "connect")
                        is-session-owner?)
               (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
@@ -417,22 +432,37 @@
                                                (:connection_credentials existing-session)
                                                (> (.getTime (js/Date. (:expire_at existing-session)))
                                                   (.getTime (js/Date.))))]
-                (if has-valid-credentials?
-                  ;; Already has credentials - show message to use existing connection
+                (cond
+                  ;; Credentials have expired (timestamp passed, backend may not have closed session yet)
+                  credentials-expired?
                   [:> Flex {:align "center" :justify "end" :gap "4"}
                    [:> Text {:size "2" :class "text-[--gray-11]"}
-                    "You already have active credentials for this connection. "]
+                    "Your credentials have expired."]]
+
+                  ;; Credentials exist in local store and are valid — offer to view them
+                  has-valid-credentials?
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    (if credentials-remaining-min
+                      (str "Credentials valid for " credentials-remaining-min
+                           " minute" (when (not= credentials-remaining-min 1) "s") ".")
+                      "You already have active credentials for this connection.")]
                    [:> Button {:size "2"
                                :color "green"
                                :on-click (fn []
                                           (rf/dispatch [:modal->close])
                                           (rf/dispatch [:native-client-access->reopen-connect-modal connection-name]))}
                     "View Credentials"]]
-                  ;; No credentials yet - show Connect button
+
+                  ;; No credentials in local store — allow requesting / rotating
+                  :else
                   [:> Flex {:align "center" :justify "end" :gap "4"}
                    [:> Text {:size "2" :class "text-[--gray-11]"}
-                    "Your access has been approved. Click Connect to obtain credentials."]
-
+                    (if credentials-remaining-min
+                      (str "Credentials valid for " credentials-remaining-min
+                           " minute" (when (not= credentials-remaining-min 1) "s")
+                           ". Click Connect to rotate credentials.")
+                      "Your access has been approved. Click Connect to obtain credentials.")]
                    [:> Button {:size "2"
                                :color "green"
                                :loading (= @connecting-status :connecting)
