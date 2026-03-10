@@ -39,7 +39,7 @@ func GetConnectionCredentialsByID(orgID, id string) (*ConnectionCredentials, err
 // if a user has a valid connection credential, it could be used to connect in the requested resource
 func GetValidConnectionCredentialsBySecretKey(connectionTypes []string, secretKeyHash string) (*ConnectionCredentials, error) {
 	var resp ConnectionCredentials
-	err := DB.Debug().Table("private.connection_credentials").
+	err := DB.Table("private.connection_credentials").
 		Where("connection_type IN ? AND secret_key_hash = ?", connectionTypes, secretKeyHash).
 		First(&resp).
 		Error
@@ -75,33 +75,36 @@ func GetConnectionCredentialsBySessionID(orgID, sessionID string) (*ConnectionCr
 	return &resp, err
 }
 
+// UpdateConnectionCredentialsSecretKey updates the secret key hash of an existing credential
+func UpdateConnectionCredentialsSecretKey(id, secretKeyHash string) error {
+	return DB.Table("private.connection_credentials").
+		Where("id = ?", id).
+		Update("secret_key_hash", secretKeyHash).Error
+}
+
 // CloseExpiredCredentialSessions closes sessions for expired connection credentials
 // This is called lazily when accessing credentials or sessions
 func CloseExpiredCredentialSessions() error {
-	// Find all expired credentials with active sessions
 	var expiredCreds []ConnectionCredentials
 	err := DB.Table("private.connection_credentials").
 		Where("expire_at < NOW() AND session_id IS NOT NULL AND session_id != ''").
 		Find(&expiredCreds).Error
-	
 	if err != nil {
 		return err
 	}
 
 	for _, cred := range expiredCreds {
-		// Close the session
 		endTime := time.Now().UTC()
-		err := UpdateSessionEventStream(SessionDone{
+		_ = UpdateSessionEventStream(SessionDone{
 			ID:         cred.SessionID,
 			OrgID:      cred.OrgID,
 			EndSession: &endTime,
 			Status:     "done",
 		})
-		if err != nil {
-			// Log but continue - don't fail the whole operation
-			// Use fmt.Printf since we don't have log imported here
-			continue
-		}
+		// Clear session_id so this record is not reprocessed on the next lazy call
+		_ = DB.Table("private.connection_credentials").
+			Where("id = ?", cred.ID).
+			Update("session_id", nil).Error
 	}
 
 	return nil
