@@ -140,7 +140,8 @@ func Create(c *gin.Context) {
 		}
 	}
 
-	ctx.Analytics().Identify(&types.APIContext{
+	trackClient := ctx.Analytics()
+	trackClient.Identify(&types.APIContext{
 		OrgID:  ctx.OrgID,
 		UserID: userSubject,
 	})
@@ -153,8 +154,9 @@ func Create(c *gin.Context) {
 			"license-type": ctx.GetLicenseType(),
 			"api-hostname": c.Request.Host,
 		}
-		ctx.Analytics().Track(userSubject, analytics.EventSignup, properties)
-		ctx.Analytics().Track(userSubject, analytics.EventCreateInvitedUser, properties)
+		trackClient.Track(userSubject, analytics.EventSignup, properties)
+		trackClient.Track(userSubject, analytics.EventCreateInvitedUser, properties)
+		trackClient.Close()
 	}()
 
 	c.JSON(http.StatusCreated, newUser)
