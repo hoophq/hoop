@@ -1,8 +1,8 @@
 (ns webapp.resources.configure-role.terminal-access-tab
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Link Switch
-                               Text]]
-   ["lucide-react" :refer [ArrowUpRight Star]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading IconButton Link Switch
+                               Text TextField]]
+   ["lucide-react" :refer [ArrowUpRight Plus Star Trash2]]
    [re-frame.core :as rf]
    [webapp.components.forms :as forms]
    [webapp.components.multiselect :as multi-select]
@@ -55,6 +55,7 @@
         force-approve-groups (rf/subscribe [:connection-setup/force-approve-groups])
         data-masking? (rf/subscribe [:connection-setup/data-masking])
         data-masking-types (rf/subscribe [:connection-setup/data-masking-types])
+        mandatory-metadata-fields (rf/subscribe [:resources/mandatory-metadata-fields])
         is-database? (= (:type connection) "database")]
 
     (rf/dispatch [:users->get-user-groups])
@@ -255,6 +256,43 @@
              [:> ArrowUpRight {:size 16}]]
             [:> Callout.Text
              "Go to JIRA Integration"]]]]
+
+         [:> Box
+          [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-gray-12"}
+           "Require specific metadata"]
+          [:> Text {:as "p" :size "2" :class "text-gray-11"}
+           "Include mandatory metadata to be filled before executing commands on this resource role."]
+
+          [:> Box {:mt "4" :class "space-y-3"}
+           [:> Heading {:as "h4" :size "2" :weight "medium" :class "text-[--gray-12]"}
+            "Field Name"]
+
+           (let [fields (if (seq @mandatory-metadata-fields) @mandatory-metadata-fields [""])]
+             (for [i (range (count fields))]
+               ^{:key i}
+               [:> TextField.Root
+                {:placeholder "e.g. Ticket Number"
+                 :size "3"
+                 :value (get fields i "")
+                 :on-change #(rf/dispatch [:resources/update-mandatory-metadata-field
+                                           i (.. % -target -value)])}
+                (when (> i 0)
+                  [:> TextField.Slot {:side "right"}
+                   [:> IconButton
+                    {:variant "ghost"
+                     :color "red"
+                     :size "1"
+                     :type "button"
+                     :on-click #(rf/dispatch [:resources/remove-mandatory-metadata-field i])}
+                    [:> Trash2 {:size 14}]]])]))
+
+           [:> Button
+            {:variant "soft"
+             :size "2"
+             :type "button"
+             :on-click #(rf/dispatch [:resources/add-mandatory-metadata-field])}
+            [:> Plus {:size 16}]
+            "Add New Field"]]]
 
          (when is-database?
            [:<>
