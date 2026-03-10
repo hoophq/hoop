@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/url"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -28,6 +29,14 @@ func New() *Segment {
 	return &Segment{
 		Client:          analytics.New(segmentApiKey),
 		environmentName: appconfig.Get().ApiHostname(),
+	}
+}
+
+func (s *Segment) Close() {
+	err := s.Client.Close()
+	if err != nil {
+		log.Warnf("failed closing analytics client, err=%v", err)
+		return
 	}
 }
 

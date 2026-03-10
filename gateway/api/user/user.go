@@ -241,7 +241,9 @@ func Update(c *gin.Context) {
 		return
 	}
 
-	analytics.New().Identify(&types.APIContext{
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Identify(&types.APIContext{
 		OrgID:      ctx.OrgID,
 		UserID:     existingUser.ID,
 		UserStatus: existingUser.Status,
