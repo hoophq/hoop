@@ -33,8 +33,15 @@ func New() *Segment {
 }
 
 func (s *Segment) Close() {
-	err := s.Client.Close()
-	if err != nil {
+	if s == nil {
+		return
+	}
+
+	if s.Client == nil {
+		return
+	}
+
+	if err := s.Client.Close(); err != nil {
 		log.Warnf("failed closing analytics client, err=%v", err)
 		return
 	}
