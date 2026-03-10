@@ -166,6 +166,11 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	// Store credential expiry in session metadata so the frontend can display it
+	if err := models.SetSessionCredentialsExpireAt(ctx.OrgID, sid, db.ExpireAt); err != nil {
+		log.Warnf("failed setting session credentials expire_at metadata, err=%v", err)
+	}
+
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey, false, ""))
 }
 
@@ -227,7 +232,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	// Check review status
+	// Gate on review status: only APPROVED reviews may proceed
 	switch review.Status {
 	case models.ReviewStatusPending:
 		c.JSON(202, gin.H{
@@ -240,10 +245,19 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	case models.ReviewStatusRejected:
 		c.AbortWithStatusJSON(403, gin.H{"message": "review was rejected"})
 		return
-	case models.ReviewStatusApproved, models.ReviewStatusProcessing:
-		// Continue to credentials creation/retrieval
+	case models.ReviewStatusApproved:
+		// continue — use session status as the source of truth below
 	default:
 		c.AbortWithStatusJSON(400, gin.H{"message": fmt.Sprintf("invalid review status: %s", review.Status)})
+		return
+	}
+
+	// Use session status as the source of truth for credential state:
+	//   ready → review approved, credentials not yet issued (first call after approval)
+	//   open  → credentials already issued and active (rotate key on repeated calls)
+	//   done  → session closed (credentials expired or review rejected/revoked)
+	if session.Status == string(openapi.SessionStatusDone) {
+		c.AbortWithStatusJSON(410, gin.H{"message": "credentials have expired"})
 		return
 	}
 
@@ -255,16 +269,16 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	// If credentials exist and are expired, return error
-	if existingCred != nil && existingCred.ExpireAt.Before(time.Now().UTC()) {
-		c.AbortWithStatusJSON(410, gin.H{"message": "credentials have expired"})
-		return
-	}
-
-	// Determine ExpireAt: use existing one if credentials already exist (preserves original timer)
+	// Determine ExpireAt:
+	//   first call (session=ready, existingCred=nil) → calculate from review duration
+	//   repeated call (session=open, existingCred!=nil) → preserve original timer
 	var expireAt time.Time
 	var createdAt time.Time
 	if existingCred != nil {
+		if existingCred.ExpireAt.Before(time.Now().UTC()) {
+			c.AbortWithStatusJSON(410, gin.H{"message": "credentials have expired"})
+			return
+		}
 		expireAt = existingCred.ExpireAt
 		createdAt = existingCred.CreatedAt
 		log.With("session_id", sessionID).Infof("reusing existing credential expiration: %v", expireAt.Format(time.RFC3339))
@@ -347,11 +361,16 @@ func ResumeConnectionCredentials(c *gin.Context) {
 		}
 	}
 
-	// Update review status to processing (only if it's the first time - status is APPROVED)
-	if review.Status == models.ReviewStatusApproved {
-		if err := models.UpdateReviewStatus(review.OrgID, review.ID, models.ReviewStatusProcessing); err != nil {
-			log.Warnf("failed updating review status to processing, err=%v", err)
+	// Transition session to "open" the first time credentials are issued (session was "ready")
+	if session.Status == string(openapi.SessionStatusReady) {
+		if err := models.UpdateSessionStatus(ctx.OrgID, sessionID, string(openapi.SessionStatusOpen)); err != nil {
+			log.Warnf("failed updating session status to open, err=%v", err)
 		}
+	}
+
+	// Store credential expiry in session metadata so the frontend can display it
+	if err := models.SetSessionCredentialsExpireAt(ctx.OrgID, sessionID, db.ExpireAt); err != nil {
+		log.Warnf("failed setting session credentials expire_at metadata, err=%v", err)
 	}
 
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey, false, ""))
