@@ -168,6 +168,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 	}()
 
 	cID := strconv.Itoa(int(connId))
+	// Generate session ID, but will be replaced if credential has one
 	sessionID := uuid.NewString()
 
 	log.With("sid", sessionID, "conn", cID).Infof("new websocket connection request for connectionId=%q, target=%q, userAgent=%q",
@@ -230,6 +231,12 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
+
+	// Use session_id from credentials if available, otherwise use the generated one for backward compat
+	if dbConnection.SessionID != "" {
+		sessionID = dbConnection.SessionID
+	}
+
 	log.With("sid", sessionID, "conn", cID).
 		Infof("starting websocket connection for connectionId=%s, target=%s, sessionID=%s", connectionId, target, sessionID)
 

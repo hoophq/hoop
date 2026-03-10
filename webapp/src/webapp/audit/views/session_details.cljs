@@ -139,7 +139,7 @@
       (rf/dispatch [:audit->get-session-by-id session]))
 
     (fn []
-      (r/with-let []
+      (r/with-let [connecting-status (r/atom :ready)]
         (let [session (:session @session-details)
               user (:data @user-details)
               session-user-id (:user_id session)
@@ -412,7 +412,43 @@
                            :on-click (fn []
                                        (reset! executing-status :loading)
                                        (rf/dispatch [:audit->execute-session session]))}
-                "Execute"]])]])
+                "Execute"]])
+
+            ;; Connect button for approved credential requests (verb = connect)
+            (when (and ready?
+                       (= (:verb session) "connect")
+                       is-session-owner?)
+              (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
+                    has-valid-credentials? (and existing-session
+                                               (:connection_credentials existing-session)
+                                               (> (.getTime (js/Date. (:expire_at existing-session)))
+                                                  (.getTime (js/Date.))))]
+                (if has-valid-credentials?
+                  ;; Already has credentials - show message to use existing connection
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "You already have active credentials for this connection. "]
+                   [:> Button {:size "2"
+                               :color "green"
+                               :on-click (fn []
+                                          (rf/dispatch [:modal->close])
+                                          (rf/dispatch [:native-client-access->reopen-connect-modal connection-name]))}
+                    "View Credentials"]]
+                  ;; No credentials yet - show Connect button
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "Your access has been approved. Click Connect to obtain credentials."]
+
+                   [:> Button {:size "2"
+                               :color "green"
+                               :loading (= @connecting-status :connecting)
+                               :disabled (not= @connecting-status :ready)
+                               :on-click (fn []
+                                          (reset! connecting-status :connecting)
+                                          (rf/dispatch [:native-client-access->resume-credentials
+                                                        connection-name
+                                                        (:id session)]))}
+                    "Connect"]])))]])
 
 
         (finally

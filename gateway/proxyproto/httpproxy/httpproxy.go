@@ -349,10 +349,15 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		return nil, err
 	}
 
-	log.Infof("obtained http proxy access, id=%v, subject=%v, connection=%v, expires-at=%v",
-		dba.ID, dba.UserSubject, dba.ConnectionName, dba.ExpireAt.Format(time.RFC3339))
-
+	// Use session_id from credentials if available, otherwise generate new one for backward compat
 	sid := uuid.NewString()
+	if dba.SessionID != "" {
+		sid = dba.SessionID
+	}
+
+	log.Infof("obtained http proxy access, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v",
+		dba.ID, dba.UserSubject, dba.ConnectionName, sid, dba.ExpireAt.Format(time.RFC3339))
+
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
 		fmt.Errorf("http proxy connection access expired"))

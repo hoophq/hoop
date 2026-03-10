@@ -1886,7 +1886,13 @@ type ConnectionCredentialsResponse struct {
 	// The connection subtype
 	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
 	// The connection information
-	ConnectionCredentials any `json:"connection_credentials"`
+	ConnectionCredentials any `json:"connection_credentials,omitempty"`
+	// The session ID associated with this credential access
+	SessionID string `json:"session_id" format:"uuid" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	// Whether this credential request requires review/JIT approval
+	HasReview bool `json:"has_review" example:"false"`
+	// The review ID if review is required
+	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
 	// When the database access connection expires
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
