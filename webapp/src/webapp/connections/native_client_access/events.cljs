@@ -3,7 +3,8 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.connections.native-client-access.constants :as constants]
-   [webapp.connections.native-client-access.main :as native-client-access-main]))
+   [webapp.connections.native-client-access.main :as native-client-access-main]
+   [webapp.audit.views.session-details :as session-details]))
 
 
 (rf/reg-fx
@@ -39,10 +40,13 @@
  :native-client-access->request-success
  (fn [{:keys [db]} [_ connection-name response]]
    (if (:has_review response)
-     ;; Has review - open session modal instead of showing credentials
+     ;; Has review - close current modal and open session details modal
      {:db (update-in db [:native-client-access :requesting-connections] disj connection-name)
       :fx [[:dispatch [:modal->close]]
-           [:dispatch [:audit->get-session-by-id {:id (:session_id response) :verb "connect"}]]
+           [:dispatch-later {:ms 100
+                             :dispatch [:modal->open {:id "session-details"
+                                                     :maxWidth "95vw"
+                                                     :content [session-details/main {:id (:session_id response) :verb "connect"}]}]}]
            [:dispatch [:show-snackbar {:level :info
                                        :text "This connection requires review approval"}]]]}
      ;; No review - existing flow
@@ -97,8 +101,8 @@
          is-admin? (get-in db [:users->current-user :data :admin?])]
      {:db (assoc-in db [:native-client-access :checking-agent?] false)
       :fx [(if is-online?
-             ;; Agent is online - proceed with normal flow
-             [:dispatch [:modal->open {:content [native-client-access-main/main connection-name]
+             ;; Agent is online - proceed with normal flow, passing full response for JIT info
+             [:dispatch [:modal->open {:content [native-client-access-main/main response]
                                        :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)
                                        :maxWidth "1100px"}]]
              ;; Agent is offline - show error dialog

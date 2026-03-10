@@ -271,6 +271,9 @@ type Connection struct {
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
+	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
+	// When set, the user cannot choose a custom duration and must request access for this exact window.
+	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
 }
 
 type ConnectionPatch struct {

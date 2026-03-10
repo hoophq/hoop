@@ -1,7 +1,7 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
-   ["lucide-react" :refer [Info]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text Badge]]
+   ["lucide-react" :refer [Info ShieldCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
@@ -81,32 +81,58 @@
       :on-click #(rf/dispatch [:modal->close])}
      "Close"]]])
 
+(defn- format-duration-sec
+  "Format seconds into a human-readable duration string"
+  [sec]
+  (cond
+    (< sec 3600) (let [min (/ sec 60)]
+                   (str min " minute" (when (not= min 1) "s")))
+    (= sec 3600) "1 hour"
+    (zero? (mod sec 3600)) (let [hrs (/ sec 3600)]
+                             (str hrs " hours"))
+    :else (let [hrs (quot sec 3600)
+                min (quot (mod sec 3600) 60)]
+            (str hrs "h " min "m"))))
+
 (defn- configure-session-view
   "Step 1: Configure session duration"
-  [connection-name selected-duration requesting?]
+  [connection-name selected-duration requesting? jit-duration-sec]
   [:> Flex {:direction "column" :justify "between" :gap "8" :class "h-full"}
    [:> Box {:class "space-y-8"}
     [:header {:class "mb-6"}
      [:> Heading {:size "6" :as "h2" :class "text-[--gray-12] mb-2"}
       "Configure session"]
      [:> Text {:as "p" :size "3" :class "text-[--gray-11]"}
-      "Specify how long you need access to this resource role."]]
+      (if jit-duration-sec
+        "This resource requires just-in-time review approval before access is granted."
+        "Specify how long you need access to this resource role.")]]
 
-    [:> Box {:class "space-y-4"}
-     [:> Box
-      [:> Text {:as "label" :size "2" :weight "bold" :class "text-[--gray-12] mb-2"}
-       "Access duration"]
-      [forms/select
-       {:size "2"
-        :not-margin-bottom? true
-        :placeholder "Select duration"
-        :on-change #(reset! selected-duration (js/parseInt %))
-        :selected @selected-duration
-        :full-width? true
-        :options constants/access-duration-options}]]
+    (if jit-duration-sec
+      ;; JIT mode: show fixed duration notice
+      [:> Callout.Root {:size "2" :color "blue" :class "w-full"}
+       [:> Callout.Icon
+        [:> ShieldCheck {:size 16}]]
+       [:> Callout.Text
+        "This resource has just-in-time access review enabled. "
+        "You can only request a window of "
+        [:strong (format-duration-sec jit-duration-sec)]
+        ". A reviewer must approve before you can connect."]]
+      ;; Normal mode: show duration selector
+      [:> Box {:class "space-y-4"}
+       [:> Box
+        [:> Text {:as "label" :size "2" :weight "bold" :class "text-[--gray-12] mb-2"}
+         "Access duration"]
+        [forms/select
+         {:size "2"
+          :not-margin-bottom? true
+          :placeholder "Select duration"
+          :on-change #(reset! selected-duration (js/parseInt %))
+          :selected @selected-duration
+          :full-width? true
+          :options constants/access-duration-options}]]
 
-     [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-      "Your access will automatically expire after this period"]]]
+       [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
+        "Your access will automatically expire after this period"]])]
 
    [:footer {:class "sticky bottom-0 z-30 bg-white py-10 flex justify-end items-center"}
     [:> Button
@@ -116,8 +142,10 @@
       :disabled @requesting?
       :on-click #(rf/dispatch [:native-client-access->request-access
                                connection-name
-                               @selected-duration])}
-     "Confirm and Connect"]]])
+                               (if jit-duration-sec
+                                 (/ jit-duration-sec 60)
+                                 @selected-duration)])}
+     (if jit-duration-sec "Request Access" "Confirm and Connect")]]])
 
 (defn- postgres-credentials-fields
   "PostgreSQL specific credentials fields"
@@ -509,6 +537,8 @@
   (let [connection-name (if (string? connection-name-or-map)
                           connection-name-or-map
                           (:name connection-name-or-map))
+        jit-duration-sec (when (map? connection-name-or-map)
+                           (:jit_access_duration_sec connection-name-or-map))
         selected-duration (r/atom 30)
         requesting? (rf/subscribe [:native-client-access->requesting? connection-name])
         native-client-access-data (rf/subscribe [:native-client-access->current-session connection-name])
@@ -526,7 +556,7 @@
 
         ;; Step 1: Configure session duration (no session)
         (not @native-client-access-data)
-        [configure-session-view connection-name selected-duration requesting?]
+        [configure-session-view connection-name selected-duration requesting? jit-duration-sec]
 
         ;; Fallback: Session expired
         :else
