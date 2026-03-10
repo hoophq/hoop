@@ -492,7 +492,13 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toOpenApi(conn))
+	apiConn := toOpenApi(conn)
+	if orgID, err := uuid.Parse(ctx.OrgID); err == nil {
+		if rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, conn.Name, "jit"); err == nil && rule != nil {
+			apiConn.JitAccessDurationSec = rule.AccessMaxDuration
+		}
+	}
+	c.JSON(http.StatusOK, apiConn)
 }
 
 func toOpenApi(conn *models.Connection) openapi.Connection {
