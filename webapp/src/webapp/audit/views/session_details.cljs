@@ -362,8 +362,9 @@
                   [:> ChevronDown {:size 16}]]]
                 [:> DropdownMenu.Content
                  (when-not
-                  (and (get-in session [:review :time_window :configuration :start_time])
-                       (get-in session [:review :time_window :configuration :end_time]))
+                  (or (= (:verb session) "connect")
+                      (and (get-in session [:review :time_window :configuration :start_time])
+                           (get-in session [:review :time_window :configuration :end_time])))
                    [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
                                           :on-click open-time-window-modal}
                     "Approve in a Time Window"
@@ -477,7 +478,8 @@
                                            (reset! connecting-status :connecting)
                                            (rf/dispatch [:native-client-access->resume-credentials
                                                          connection-name
-                                                         (:id session)]))}
+                                                         (:id session)
+                                                         #(reset! connecting-status :ready)]))}
                     "Connect"]])))]])
 
 
