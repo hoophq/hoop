@@ -203,7 +203,7 @@
 ;; Resume credentials request after review approval
 (rf/reg-event-fx
  :native-client-access->resume-credentials
- (fn [{:keys [db]} [_ connection-name session-id]]
+ (fn [{:keys [db]} [_ connection-name session-id on-error-cb]]
    ;; Get access duration from the session's review
    (let [session (get-in db [:audit->session-details :session])
          access-duration-sec (get-in session [:review :access_duration_sec])]
@@ -211,7 +211,9 @@
                                :uri (str "/connections/" connection-name "/credentials/" session-id)
                                :body {:access_duration_seconds access-duration-sec}
                                :on-success #(rf/dispatch [:native-client-access->resume-success connection-name %])
-                               :on-failure #(rf/dispatch [:native-client-access->resume-failure %])}]]]})))
+                               :on-failure (fn [error]
+                                             (when on-error-cb (on-error-cb))
+                                             (rf/dispatch [:native-client-access->resume-failure error]))}]]]})))
 
 ;; Handle successful resume of credentials
 (rf/reg-event-fx

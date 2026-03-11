@@ -12,7 +12,7 @@
 (defmulti markup identity)
 (defmethod markup :shown [_ state]
   (js/setTimeout #(rf/dispatch [:hide-snackbar]) 10000)
-  [:div {:class (str "flex align-center z-50 fixed max-w-xs top-8 right-8 p-regular bg-gray-800 "
+  [:div {:class (str "flex align-center z-[9999] fixed max-w-xs top-8 right-8 p-regular bg-gray-800 "
                      "font-light text-gray-100 leading-5 rounded-lg shadow-lg animate-appear-right whitespace-normal")}
    [:figure {:class "flex-shrink-0 w-6 mr-regular"}
     [:img {:src (level-icon (:level state))}]]
