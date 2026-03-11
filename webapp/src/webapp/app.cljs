@@ -690,5 +690,6 @@
         [:<>
          [theme-provider
           [routes/panels @active-panel @gateway-public-info]]
-         [:> Theme {:radius "large" :panelBackground "solid"}
-          [:> Toaster {:position "top-right"}]]]))))
+         [:div {:style {:position "fixed" :top 0 :left 0 :width 0 :height 0}}
+          [:> Theme {:radius "large" :panelBackground "solid"}
+           [:> Toaster {:position "top-right"}]]]]))))
