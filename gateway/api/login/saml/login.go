@@ -312,7 +312,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 			SameSite: http.SameSiteLaxMode,
 		})
 	}
-	c.Redirect(http.StatusTemporaryRedirect, redirectSuccessURL)
+	c.Redirect(http.StatusSeeOther, redirectSuccessURL)
 }
 
 func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (uinfo idptypes.ProviderUserInfo) {
@@ -339,13 +339,15 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 			sort.Strings(uinfo.Groups)
 		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
 			"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn",
-			"email", "emailaddress", "mail":
+			"email", "emailaddress", "mail",
+			"User.email": // OneLogin
 			if len(val.Values) > 0 && val.Values[0].Value != "" {
 				uinfo.Email = val.Values[0].Value
 			}
 		case "http://schemas.microsoft.com/identity/claims/displayname",
 			"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
-			"first_name", "name":
+			"first_name", "name",
+			"User.FirstName": // OneLogin
 			if len(val.Values) > 0 {
 				firstName = val.Values[0].Value
 			}
@@ -354,7 +356,8 @@ func parseToUserInfo(saml idp.SamlVerifier, assertionInfo saml2.AssertionInfo) (
 				firstName = val.Values[0].Value
 			}
 		case "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname",
-			"last_name":
+			"last_name",
+			"User.LastName": // OneLogin
 			if len(val.Values) > 0 {
 				lastName = val.Values[0].Value
 			}
