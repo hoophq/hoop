@@ -33,11 +33,7 @@ func New() *Segment {
 }
 
 func (s *Segment) Close() {
-	if s == nil {
-		return
-	}
-
-	if s.Client == nil {
+	if s == nil || s.Client == nil {
 		return
 	}
 
