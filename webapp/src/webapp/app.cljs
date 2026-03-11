@@ -697,7 +697,6 @@
         [loading-transition]
 
         :else
-        [:<>
-         [theme-provider
-          [routes/panels @active-panel @gateway-public-info]]
+        [theme-provider
+         [routes/panels @active-panel @gateway-public-info]
          [:> toaster-portal]]))))
