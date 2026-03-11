@@ -1,9 +1,11 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Spinner Theme]]
+   ["@radix-ui/themes" :refer [Box Heading Spinner]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
+   ["react-dom" :as react-dom]
    ["sonner" :refer [Toaster]]
+   [reagent.core :as r]
    [bidi.bidi :as bidi]
    [clojure.string :as cs]
    [re-frame.core :as rf]
@@ -128,6 +130,14 @@
    [webapp.webclient.events.search]
    [webapp.webclient.events.metadata]
    [webapp.webclient.panel :as webclient]))
+
+(def ^:private toaster-portal
+  (r/create-class
+   {:display-name "ToasterPortal"
+    :render (fn [_]
+              (react-dom/createPortal
+               (r/as-element [:> Toaster {:position "top-right"}])
+               js/document.body))}))
 
 ;; Tracking initialization is now handled by :tracking->initialize-if-allowed
 ;; which is dispatched after gateway info is loaded and checks do_not_track
@@ -690,6 +700,4 @@
         [:<>
          [theme-provider
           [routes/panels @active-panel @gateway-public-info]]
-         [:div {:style {:position "fixed" :top 0 :left 0 :width 0 :height 0}}
-          [:> Theme {:radius "large" :panelBackground "solid"}
-           [:> Toaster {:position "top-right"}]]]]))))
+         [:> toaster-portal]]))))
