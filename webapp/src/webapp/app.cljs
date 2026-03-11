@@ -253,7 +253,6 @@
             :else
             [:section
              {:class "antialiased min-h-screen"}
-             [:> Toaster {:position "top-right" :toastOptions #js{:style #js{:zIndex 9999}}}]
              [modals/modal]
              [modals/modal-radix]
              [dialog/dialog]
@@ -270,7 +269,6 @@
 
 (defmethod layout :auth [_ panels]
   [:<>
-   [:> Toaster {:position "top-right" :toastOptions #js{:style #js{:zIndex 9999}}}]
    (snackbar/snackbar)
    [modals/modal]
    [modals/modal-radix]
@@ -689,5 +687,7 @@
         [loading-transition]
 
         :else
-        [theme-provider
-         [routes/panels @active-panel @gateway-public-info]]))))
+        [:<>
+         [:> Toaster {:position "top-right"}]
+         [theme-provider
+          [routes/panels @active-panel @gateway-public-info]]]))))
