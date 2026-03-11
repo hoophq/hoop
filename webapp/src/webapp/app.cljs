@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Spinner]]
+   ["@radix-ui/themes" :refer [Box Heading Spinner Theme]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
    ["sonner" :refer [Toaster]]
@@ -688,6 +688,7 @@
 
         :else
         [:<>
-         [:> Toaster {:position "top-right"}]
          [theme-provider
-          [routes/panels @active-panel @gateway-public-info]]]))))
+          [routes/panels @active-panel @gateway-public-info]]
+         [:> Theme {:radius "large" :panelBackground "solid"}
+          [:> Toaster {:position "top-right"}]]]))))
