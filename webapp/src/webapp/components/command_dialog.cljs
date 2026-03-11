@@ -1,7 +1,7 @@
 (ns webapp.components.command-dialog
   (:require
+   ["@radix-ui/themes" :refer [Box Flex ScrollArea Spinner Text]]
    ["cmdk" :refer [CommandDialog CommandInput CommandList CommandLoading]]
-   ["@radix-ui/themes" :refer [Box Flex Text Spinner ScrollArea]]
    ["lucide-react" :refer [Search X]]
    [webapp.components.theme-provider :refer [theme-provider]]))
 
@@ -37,10 +37,11 @@
          should-filter? false}}]
   [:> CommandDialog
    (merge
-    {:shouldFilter should-filter?} ;; Use manual filtering for async search (false) or native filtering (true)
     (when (:on-key-down search-config)
       {:onKeyDown (:on-key-down search-config)})
-    {:open open?
+    {:shouldFilter should-filter? ;; Use manual filtering for async search (false) or native filtering (true)
+     :key (str open? "-" (:current-page breadcrumb-config))
+     :open open?
      :label title
      :onOpenChange on-open-change
      :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"})
@@ -72,11 +73,12 @@
            :class "flex-1"}
           (when (:show-input search-config)
             [:> CommandInput
-             {:key (str open? "-" (:current-page breadcrumb-config))
-              :placeholder (:placeholder search-config "Search...")
-              :value (or (:value search-config) "")
-              :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
-              :onValueChange (:on-value-change search-config)}])
+             (merge
+              {:key (str open? "-" (:current-page breadcrumb-config))
+               :placeholder (:placeholder search-config "Search...")
+               :defaultValue (or (:value search-config) "")
+               :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
+               :onValueChange (:on-value-change search-config)})])
 
           (when breadcrumb-component
             [breadcrumb-component])
