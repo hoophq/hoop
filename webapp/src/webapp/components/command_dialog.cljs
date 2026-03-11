@@ -74,7 +74,7 @@
             [:> CommandInput
              {:key (str open? "-" (:current-page breadcrumb-config))
               :placeholder (:placeholder search-config "Search...")
-              :defaultValue (or (:value search-config) "")
+              :value (or (:value search-config) "")
               :className "flex-1 bg-transparent border-none outline-none text-sm placeholder:text-gray-11"
               :onValueChange (:on-value-change search-config)}])
 

@@ -72,7 +72,7 @@
         "In your favorite IDE"]
        [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
         "Open your IDE and run the Claude Code plugin."]]
-      [callout-link/main {:href "https://www.claude.com/docs/cli/installation"
+      [callout-link/main {:href "https://code.claude.com/docs/en/overview"
                           :text "See supported IDEs at Claude Code documentation."}]]
 
      [block-with-heading-and-text
