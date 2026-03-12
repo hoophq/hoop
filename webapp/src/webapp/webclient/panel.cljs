@@ -23,6 +23,7 @@
    [reagent.core :as r]
    [webapp.components.keyboard-shortcuts :as keyboard-shortcuts]
    [webapp.components.skip-link :as skip-link]
+   [webapp.webclient.components.execution-requirements-callout :as mandatory-metadata-callout]
    [webapp.features.promotion :as promotion]
    [webapp.formatters :as formatters]
    [webapp.parallel-mode.components.execution-summary.main :as execution-summary]
@@ -191,6 +192,7 @@
   (let [clipboard-disabled? (rf/subscribe [:gateway->clipboard-disabled?])
         db-connections (rf/subscribe [:connections])
         primary-connection (rf/subscribe [:primary-connection/selected])
+        banner-dismissed? (rf/subscribe [:primary-connection/execution-requirements-callout-dismissed?])
         active-panel (rf/subscribe [:webclient->active-panel])
         parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
@@ -294,6 +296,12 @@
                                                 editor-debounce-time)))
 
             ai-data (get-in @script-response [:data :ai_analysis])
+            mandatory-metadata-fields (seq (:mandatory_metadata_fields current-connection))
+            needs-jira-template? (boolean (and current-connection
+                                               (not (cs/blank? (:jira_issue_template_id current-connection)))))
+            show-info-banner? (and current-connection
+                                   (not @banner-dismissed?)
+                                   (or mandatory-metadata-fields needs-jira-template?))
             panel-content (fn [active-panel]
                             (case active-panel
                               :metadata {:title "Metadata"
@@ -361,6 +369,10 @@
                   [skip-link/main
                    {:target-selector "[data-run-button]"
                     :text "Skip to Run button"}]
+
+                  (when show-info-banner?
+                    [mandatory-metadata-callout/main
+                     {:on-dismiss #(rf/dispatch [:primary-connection/dismiss-execution-requirements-callout])}])
 
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))

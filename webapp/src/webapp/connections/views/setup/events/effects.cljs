@@ -62,3 +62,4 @@
               (assoc-in [:connection-setup :tags :data index :label] label)
               (assoc-in [:connection-setup :tags :data index :value] nil)
               (assoc-in [:connection-setup :tags :available-values-for-index index] (or available-values [])))})))
+
