@@ -72,6 +72,23 @@ func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
 	return rules, nil
 }
 
+func GetGuardrailsRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributeNames []string) ([]*GuardRailRules, error) {
+	var guardrailsRules []*GuardRailRules
+
+	ruleNamesSubQuery := db.Model(&GuardrailRuleAttribute{}).
+		Distinct("guardrails_rule_name").
+		Where("org_id = ? AND attribute_name IN ?", orgID, attributeNames)
+
+	result := db.Model(&GuardRailRules{}).
+		Where("org_id = ? AND name IN (?)", orgID, ruleNamesSubQuery).
+		Find(&guardrailsRules)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return guardrailsRules, nil
+}
+
 func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 	var rule GuardRailRules
 	if err := DB.Table(tableGuardRails).Where("org_id = ? AND id = ?", orgID, ruleID).

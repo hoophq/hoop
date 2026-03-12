@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -38,7 +39,7 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 	switch pkt.Type {
 	case pbagent.SessionOpen:
 		processEventOpenSessionHook(ctx, pkt)
-		conn, err := models.GetConnectionGuardRailRules(ctx.OrgID, ctx.ConnectionName)
+		conn, err := services.GetGuardrailsRulesForConnection(ctx.OrgID, ctx.ConnectionName)
 		if err != nil || conn == nil {
 			return fmt.Errorf("unable to obtain connection (empty: %v, name=%v): %v",
 				conn == nil, ctx.ConnectionName, err)

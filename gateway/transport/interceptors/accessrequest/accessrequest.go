@@ -21,6 +21,33 @@ import (
 	"gorm.io/gorm"
 )
 
+func getRuleForConnection(pctx plugintypes.Context, accessType string) (*models.AccessRequestRule, error) {
+	orgID := uuid.MustParse(pctx.OrgID)
+
+	connectionAttributes, err := models.GetConnectionAttributes(models.DB, orgID, pctx.ConnectionName)
+	if err != nil {
+		return nil, plugintypes.InternalErr("failed fetching connection attributes", err)
+	}
+
+	if len(connectionAttributes) > 0 {
+		rule, err := models.GetRequestRulesByAttributes(models.DB, orgID, connectionAttributes, accessType)
+		if err != nil {
+			return nil, plugintypes.InternalErr("failed fetching access request rules", err)
+		}
+
+		if rule != nil {
+			return rule, nil
+		}
+	}
+
+	rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, pctx.ConnectionName, accessType)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
+	}
+
+	return rule, nil
+}
+
 func getValidatedJitReview(pctx plugintypes.Context) (*plugintypes.ConnectResponse, error) {
 	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
 	if err != nil && err != models.ErrNotFound {
@@ -179,19 +206,14 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 	}
 
 	// 3. if no existing review, create a new review
-	orgID, err := uuid.Parse(pctx.OrgID)
-	if err != nil {
-		return nil, plugintypes.InvalidArgument("invalid organization id format")
-	}
-
 	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
 	accessType := "command"
 	if isJitReview {
 		accessType = "jit"
 	}
 
-	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, pctx.ConnectionName, accessType)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	accessRule, err := getRuleForConnection(pctx, accessType)
+	if err != nil {
 		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
 	}
 

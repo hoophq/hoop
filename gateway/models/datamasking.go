@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -164,7 +165,7 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 	return &rule, err
 }
 
-func GetDataMaskingEntityTypes(orgID, connID string) (json.RawMessage, error) {
+func GetDataMaskingEntityTypes(orgID, connName string) (json.RawMessage, error) {
 	var jsonStr string
 	err := DB.Raw(`
 		SELECT COALESCE(json_agg(
@@ -177,7 +178,34 @@ func GetDataMaskingEntityTypes(orgID, connID string) (json.RawMessage, error) {
 			)), '[]'::json)
 		FROM private.datamasking_rules r
 		INNER JOIN private.datamasking_rules_connections c ON r.id = c.rule_id
-		WHERE c.org_id = ? AND c.connection_id = ? AND c.status = 'active'`, orgID, connID).
+		INNER JOIN private.connections conn ON c.connection_id = conn.id
+		WHERE conn.org_id = ? AND conn.name = ? AND c.status = 'active'`, orgID, connName).
+		// WHERE c.org_id = ? AND c.connection_id = ? AND c.status = 'active'`, orgID, connName).
+		Row().
+		Scan(&jsonStr)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(jsonStr), nil
+}
+
+func GetDataMaskingEntityTypesByAttributes(db *gorm.DB, orgID uuid.UUID, attributeNames []string) (json.RawMessage, error) {
+	var jsonStr string
+	err := db.Raw(`
+		SELECT COALESCE(json_agg(
+			json_build_object(
+				'id', r.id,
+				'name', r.name,
+				'supported_entity_types', r.supported_entity_types,
+				'score_threshold', r.score_threshold,
+				'custom_entity_types', r.custom_entity_types
+			)), '[]'::json)
+		FROM (
+			SELECT DISTINCT r.id, r.name, r.supported_entity_types, r.score_threshold, r.custom_entity_types
+			FROM private.datamasking_rules r
+			INNER JOIN private.datamasking_rules_attributes ra ON ra.org_id = r.org_id AND ra.datamasking_rule_name = r.name
+			WHERE r.org_id = ? AND ra.attribute_name IN (?)
+		) r`, orgID, attributeNames).
 		Row().
 		Scan(&jsonStr)
 	if err != nil {

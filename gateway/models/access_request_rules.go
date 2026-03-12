@@ -139,3 +139,21 @@ func DeleteAccessRequestRuleByName(db *gorm.DB, name string, orgID uuid.UUID) er
 	}
 	return nil
 }
+
+func GetRequestRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributes []string, accessType string) (*AccessRequestRule, error) {
+	var accessRequestRule AccessRequestRule
+
+	ruleNamesSubQuery := db.Model(&AccessRequestRuleAttribute{}).
+		Distinct("access_rule_name").
+		Where("org_id = ? AND attribute_name IN (?)", orgID, attributes)
+
+	result := db.Model(&AccessRequestRule{}).
+		Where("org_id = ? AND access_type = ?", orgID, accessType).
+		Where("name IN (?)", ruleNamesSubQuery).
+		First(&accessRequestRule)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+
+	return &accessRequestRule, nil
+}

@@ -2440,3 +2440,25 @@ type AISessionAnalyzerRule struct {
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
+
+type Attributes struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this attribute
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// The name of the attribute
+	Name string `json:"name" example:"default-session-attribute"`
+	// Connection names associated with this attribute
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AttributeRequest struct {
+	// The name of the attribute
+	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
+	ConnectionNames        []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames []string `json:"access_request_rule_names" binding:"required" example:"rule1,rule2"`
+	GuardrailRuleNames     []string `json:"guard_rail_rule_names" binding:"required" example:"rule1,rule2"`
+	DatamaskingRuleNames   []string `json:"datamasking_rule_names" binding:"required" example:"rule1,rule2"`
+}

@@ -219,7 +219,7 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
+	connRules, err := services.GetGuardrailsRulesForConnection(ctx.OrgID, conn.Name)
 	if err != nil {
 		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
@@ -1196,7 +1196,7 @@ func Provision(c *gin.Context) {
 		EndSession:           nil,
 	}
 
-	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
+	connRules, err := services.GetGuardrailsRulesForConnection(ctx.OrgID, conn.Name)
 	if err != nil {
 		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
