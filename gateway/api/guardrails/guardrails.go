@@ -50,6 +50,11 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
+		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
+			log.Errorf("Failed upserting guard rail rule attributes: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
 			Name:          rule.Name,
@@ -57,6 +62,7 @@ func Post(c *gin.Context) {
 			Input:         rule.Input,
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
+			Attributes:    req.Attributes,
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -104,6 +110,11 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
+		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
+			log.Errorf("Failed upserting guard rail rule attributes: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
 			ID:            rule.ID,
 			Name:          rule.Name,
@@ -111,6 +122,7 @@ func Put(c *gin.Context) {
 			Input:         rule.Input,
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
+			Attributes:    req.Attributes,
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -148,6 +160,7 @@ func List(c *gin.Context) {
 			Input:         rule.Input,
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
+			Attributes:    rule.Attributes,
 			CreatedAt:     rule.CreatedAt,
 			UpdatedAt:     rule.UpdatedAt,
 		})
@@ -179,9 +192,8 @@ func Get(c *gin.Context) {
 			Description:   rule.Description,
 			Input:         rule.Input,
 			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			ConnectionIDs: rule.ConnectionIDs, Attributes: rule.Attributes, CreatedAt: rule.CreatedAt,
+			UpdatedAt: rule.UpdatedAt,
 		})
 	default:
 		log.Errorf("failed listing guard rail rules, reason=%v", err)
@@ -234,4 +246,9 @@ func filterEmptyIDs(ids []string) []string {
 		}
 	}
 	return result
+}
+
+func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	return models.UpsertGuardrailRuleAttributes(models.DB, orgID, ruleName, attributeNames)
 }

@@ -22,6 +22,7 @@ type GuardRailRules struct {
 	CreatedAt     time.Time      `gorm:"column:created_at"`
 	UpdatedAt     time.Time      `gorm:"column:updated_at"`
 	ConnectionIDs []string       `gorm:"-"` // Not stored in DB, populated from join query
+	Attributes    []string       `gorm:"-"` // Not stored in DB, populated from join query
 }
 
 type GuardRailConnection struct {
@@ -69,6 +70,28 @@ func ListGuardRailRules(orgID string) ([]*GuardRailRules, error) {
 		rule.ConnectionIDs = connectionMap[rule.ID]
 	}
 
+	// Load attributes for all rules in a single query
+	var ruleAttributes []struct {
+		GuardrailRuleName string `gorm:"column:guardrail_rule_name"`
+		AttributeName     string `gorm:"column:attribute_name"`
+	}
+	err = DB.Table("private.guardrail_rules_attributes").
+		Select("guardrail_rule_name, attribute_name").
+		Where("org_id = ? AND guardrail_rule_name IN (?)", orgID, getGuardrailNames(rules)).
+		Scan(&ruleAttributes).Error
+	if err != nil {
+		return nil, err
+	}
+
+	attributeMap := make(map[string][]string)
+	for _, ra := range ruleAttributes {
+		attributeMap[ra.GuardrailRuleName] = append(attributeMap[ra.GuardrailRuleName], ra.AttributeName)
+	}
+
+	for _, rule := range rules {
+		rule.Attributes = attributeMap[rule.Name]
+	}
+
 	return rules, nil
 }
 
@@ -111,6 +134,18 @@ func GetGuardRailRules(orgID, ruleID string) (*GuardRailRules, error) {
 	}
 
 	rule.ConnectionIDs = connectionIDs
+
+	// Load attributes for this rule
+	var attributeNames []string
+	err = DB.Table("private.guardrail_rules_attributes").
+		Select("attribute_name").
+		Where("org_id = ? AND guardrail_rule_name = ?", orgID, rule.Name).
+		Pluck("attribute_name", &attributeNames).Error
+	if err != nil {
+		return nil, err
+	}
+	rule.Attributes = attributeNames
+
 	return &rule, nil
 }
 
@@ -121,6 +156,15 @@ func getGuardrailIDs(rules []*GuardRailRules) []string {
 		ids[i] = rule.ID
 	}
 	return ids
+}
+
+// Helper to extract rule names from a slice of rules
+func getGuardrailNames(rules []*GuardRailRules) []string {
+	names := make([]string, len(rules))
+	for i, rule := range rules {
+		names[i] = rule.Name
+	}
+	return names
 }
 
 func CreateGuardRailRules(rule *GuardRailRules) error {
