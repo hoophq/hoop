@@ -83,7 +83,7 @@
 
 (defn rule-form [form-type rule-data scroll-pos]
   (let [state (create-form-state rule-data)
-        is-submitting (r/atom false)
+        rule-loading? (rf/subscribe [:ai-session-analyzer/rule-loading?])
         connections (rf/subscribe [:connections->pagination])]
     (fn []
       (let [selected-connection-names @(:connection-names state)
@@ -101,7 +101,6 @@
          [:form {:id "ai-session-analyzer-rule-form"
                  :on-submit (fn [e]
                               (.preventDefault e)
-                              (reset! is-submitting true)
                               (let [payload {:name @(:name state)
                                              :description (when (seq @(:description state))
                                                             @(:description state))
@@ -136,7 +135,7 @@
                             :variant "ghost"
                             :color "red"
                             :type "button"
-                            :disabled @is-submitting
+                            :disabled @rule-loading?
                             :on-click (fn []
                                         (rf/dispatch
                                          [:dialog->open
@@ -149,8 +148,8 @@
                                                          (rf/dispatch [:ai-session-analyzer/delete-rule @(:name state)]))}]))}
                  "Delete"])
               [:> Button {:size "3"
-                          :loading @is-submitting
-                          :disabled @is-submitting
+                          :loading @rule-loading?
+                          :disabled @rule-loading?
                           :type "submit"}
                "Save"]]]]]
 

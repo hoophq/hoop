@@ -141,7 +141,7 @@
 (rf/reg-event-fx
  :ai-session-analyzer/create-rule
  (fn [{:keys [db]} [_ rule-data]]
-   {:db db
+   {:db (assoc-in db [:ai-session-analyzer :rule :status] :loading)
     :fx [[:dispatch [:fetch {:method "POST"
                              :uri "/ai/session-analyzer/rules"
                              :body rule-data
@@ -151,7 +151,7 @@
 (rf/reg-event-fx
  :ai-session-analyzer/create-rule-success
  (fn [{:keys [db]} _]
-   {:db db
+   {:db (assoc-in db [:ai-session-analyzer :rule :status] :success)
     :fx [[:dispatch [:navigate :ai-session-analyzer]]
          [:dispatch [:show-snackbar
                      {:level :success
@@ -160,17 +160,16 @@
 (rf/reg-event-fx
  :ai-session-analyzer/create-rule-failure
  (fn [{:keys [db]} [_ error]]
-   (let [error-message (or (:message error) (str error))]
-     {:db db
-      :fx [[:dispatch [:show-snackbar
-                       {:level :error
-                        :text "Failed to create rule"
-                        :details error-message}]]]})))
+   {:db (assoc-in db [:ai-session-analyzer :rule :status] :error)
+    :fx [[:dispatch [:show-snackbar
+                     {:level :error
+                      :text "Failed to create rule"
+                      :details error}]]]}))
 
 (rf/reg-event-fx
  :ai-session-analyzer/update-rule
  (fn [{:keys [db]} [_ rule-name rule-data]]
-   {:db db
+   {:db (assoc-in db [:ai-session-analyzer :rule :status] :loading)
     :fx [[:dispatch [:fetch {:method "PUT"
                              :uri (str "/ai/session-analyzer/rules/" rule-name)
                              :body rule-data
@@ -180,7 +179,7 @@
 (rf/reg-event-fx
  :ai-session-analyzer/update-rule-success
  (fn [{:keys [db]} _]
-   {:db db
+   {:db (assoc-in db [:ai-session-analyzer :rule :status] :success)
     :fx [[:dispatch [:navigate :ai-session-analyzer]]
          [:dispatch [:show-snackbar
                      {:level :success
@@ -190,7 +189,7 @@
  :ai-session-analyzer/update-rule-failure
  (fn [{:keys [db]} [_ error]]
    (let [error-message (or (:message error) (str error))]
-     {:db db
+     {:db (assoc-in db [:ai-session-analyzer :rule :status] :error)
       :fx [[:dispatch [:show-snackbar
                        {:level :error
                         :text "Failed to update rule"

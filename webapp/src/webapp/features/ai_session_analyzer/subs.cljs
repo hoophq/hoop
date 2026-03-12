@@ -20,6 +20,11 @@
  (fn [provider]
    (and (= (:status provider) :success) (some? (:data provider)))))
 
+(rf/reg-sub
+ :ai-session-analyzer/rule-loading?
+ (fn [db]
+   (= (get-in db [:ai-session-analyzer :rule :status]) :loading)))
+
 ;; Rules Subscriptions
 (rf/reg-sub
  :ai-session-analyzer/rules
