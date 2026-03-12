@@ -112,7 +112,7 @@
                                   (rf/dispatch [:ai-session-analyzer/update-rule @(:name state) payload])
                                   (rf/dispatch [:ai-session-analyzer/create-rule payload]))))}
 
-          [:> Box
+          [:<>
            [:> Flex {:p "5" :gap "2"}
             [:> Button {:variant "ghost"
                         :size "2"
