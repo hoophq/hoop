@@ -8,6 +8,8 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
 )
@@ -40,6 +42,41 @@ func (s *Segment) Close() {
 	if err := s.Client.Close(); err != nil {
 		log.Warnf("failed closing analytics client, err=%v", err)
 		return
+	}
+}
+
+func SessionProperties(
+	ctx storagev2.Context,
+	s models.Session,
+) map[string]any {
+	var finishedAt string
+	if s.EndSession != nil {
+		finishedAt = s.EndSession.String()
+	}
+
+	return map[string]any{
+		"org-id":           s.OrgID,
+		"session-id":       s.ID,
+		"is-admin":         ctx.IsAdminUser(),
+		"resource-type":    s.ConnectionType,
+		"resource-subtype": s.ConnectionSubtype,
+		"status":           s.Status,
+		"session-type":     s.Verb,
+		"gateway-version":  version.Get().Version,
+		"agent-version":    "",
+		"created-at":       s.CreatedAt.String(),
+		"finished-at":      finishedAt,
+
+		"access-request-activated":                "",
+		"access-request-force-approval-activated": "",
+		"access-request-minimum-approval":         "",
+		"access-request-action-date":              "",
+
+		"guardrails-activated":                "",
+		"data-masking-activated":              "",
+		"ai-session-analyzer-activated":       "",
+		"ai-session-analyzer-identified-risk": "",
+		"ai-session-analyzer-action":          "",
 	}
 }
 
