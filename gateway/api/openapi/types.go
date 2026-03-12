@@ -2383,6 +2383,8 @@ type AIProviderResponse struct {
 	Provider string `json:"provider" example:"openai"`
 	// Base URL of the AI API
 	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// API key for authentication
+	ApiKey *string `json:"api_key" example:"sk-..."`
 	// Model to use
 	Model string `json:"model" example:"gpt-4o"`
 	// The time the resource was created

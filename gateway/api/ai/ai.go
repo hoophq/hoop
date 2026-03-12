@@ -405,6 +405,7 @@ func toProviderResponse(p models.AIProvider) openapi.AIProviderResponse {
 		ID:        p.ID.String(),
 		Provider:  p.Provider,
 		ApiUrl:    p.ApiUrl,
+		ApiKey:    p.ApiKey,
 		Model:     p.Model,
 		CreatedAt: p.CreatedAt,
 		UpdatedAt: p.UpdatedAt,
