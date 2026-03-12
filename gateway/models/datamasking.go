@@ -22,6 +22,7 @@ type DataMaskingRule struct {
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
 	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
+	Attributes           pq.StringArray           `gorm:"column:attributes;type:text[];->"`
 	UpdatedAt            time.Time                `gorm:"column:updated_at"`
 }
 
@@ -137,10 +138,15 @@ func ListDataMaskingRules(orgID string) ([]DataMaskingRule, error) {
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
-		) AS connection_ids, r.updated_at
+		) AS connection_ids,
+		COALESCE((
+			SELECT ARRAY_AGG(attribute_name) FROM private.datamasking_rules_attributes
+			WHERE org_id = ?::uuid AND datamasking_rule_name = r.name
+		), ARRAY[]::TEXT[]) AS attributes,
+		r.updated_at
 	FROM private.datamasking_rules r
 	WHERE org_id = ?
-	`, orgID, orgID).
+	`, orgID, orgID, orgID).
 		Find(&rules).
 		Error
 }
@@ -153,10 +159,15 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
-		) AS connection_ids, r.updated_at
+		) AS connection_ids,
+		COALESCE((
+			SELECT ARRAY_AGG(attribute_name) FROM private.datamasking_rules_attributes
+			WHERE org_id = ?::uuid AND datamasking_rule_name = r.name
+		), ARRAY[]::TEXT[]) AS attributes,
+		r.updated_at
 	FROM private.datamasking_rules r
 	WHERE org_id = ? AND r.id = ?
-	`, orgID, orgID, ruleID).
+	`, orgID, orgID, orgID, ruleID).
 		First(&rule).
 		Error
 	if err == gorm.ErrRecordNotFound {

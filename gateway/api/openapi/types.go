@@ -1734,6 +1734,8 @@ type DataMaskingRuleRequest struct {
 	Description string `json:"description" example:"Mask email addresses in the data"`
 	// The connections that this rule applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
+	// Attributes associated with this data masking rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// The registered entity types that this rule applies to
 	SupportedEntityTypes []SupportedEntityTypesEntry `json:"supported_entity_types"`
 	// The minimal detection score threshold for the entities to be masked.

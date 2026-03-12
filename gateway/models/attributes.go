@@ -256,6 +256,34 @@ func UpsertConnectionAttributes(db *gorm.DB, orgID uuid.UUID, connectionName str
 	})
 }
 
+// UpsertDatamaskingRuleAttributes replaces all attribute associations for the given datamasking rule.
+// If an attribute name does not exist in the attributes table, it is created automatically.
+func UpsertDatamaskingRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string, attributeNames []string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("org_id = ? AND datamasking_rule_name = ?", orgID, ruleName).
+			Delete(&DatamaskingRuleAttribute{}).Error; err != nil {
+			return err
+		}
+		if len(attributeNames) == 0 {
+			return nil
+		}
+
+		attributes := make([]Attribute, len(attributeNames))
+		for i, name := range attributeNames {
+			attributes[i] = Attribute{OrgID: orgID, Name: name}
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attributes).Error; err != nil {
+			return err
+		}
+
+		assocs := make([]DatamaskingRuleAttribute, len(attributeNames))
+		for i, name := range attributeNames {
+			assocs[i] = DatamaskingRuleAttribute{OrgID: orgID, AttributeName: name, DatamaskingRuleName: ruleName}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
+	})
+}
+
 // UpsertGuardrailRuleAttributes replaces all attribute associations for the given guardrail rule.
 // If an attribute name does not exist in the attributes table, it is created automatically.
 func UpsertGuardrailRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string, attributeNames []string) error {
