@@ -213,6 +213,7 @@ func Post(c *gin.Context) {
 				OutputStatus:      "blocked",
 				ExitCode:          internalExitCode,
 				ExecutionTimeMili: 0,
+				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
 			})
 			return
 		}
@@ -248,6 +249,7 @@ func Post(c *gin.Context) {
 				OutputStatus:      "failed",
 				ExitCode:          internalExitCode,
 				ExecutionTimeMili: 0,
+				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
 			})
 			return
 		case nil:
@@ -334,6 +336,7 @@ func Post(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		log.Infof("runexec response, %v", outcome)
+		outcome.AIAnalysis = toOpenApiSessionAIAnalysis(analyzeRes)
 		c.JSON(http.StatusOK, outcome)
 	case <-timeoutCtx.Done():
 		client.Close()

@@ -72,6 +72,7 @@ func toOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIA
 	if a == nil {
 		return nil
 	}
+
 	return &openapi.SessionAIAnalysis{
 		RiskLevel:   a.RiskLevel,
 		Title:       a.Title,
