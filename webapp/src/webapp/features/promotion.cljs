@@ -4,7 +4,8 @@
                                Text]]
    ["lucide-react" :refer [Combine FileLock2 FolderLock ListCheck ListTodo
                            Settings2 ShieldCheck SlidersHorizontal TextSearch
-                           UserRoundCheck ArrowUpRight MonitorCheck FastForward]]
+                           UserRoundCheck ArrowUpRight MonitorCheck FastForward
+                           SearchCode Sparkles]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -307,3 +308,26 @@
                           (on-promotion-seen))
                         (rf/dispatch [:navigate :access-request-new]))
     :primary-text "Create new Access Request rule"}])
+
+(defn ai-session-analyzer-promotion
+  "Specific component for AI Session Analyzer"
+  [{:keys [mode on-promotion-seen]}]
+  [feature-promotion
+   {:feature-name "AI Session Analyzer"
+    :mode mode
+    :image "ai-session-analyzer-promotion.png"
+    :description "Monitor terminal sessions and resource usage in real time."
+    :feature-items [{:icon [:> SearchCode {:size 20}]
+                     :title "Real-Time Risk Analysis"
+                     :description "Analyze commands before execution to prevent security and reliability risks."}
+                    {:icon [:> ShieldCheck {:size 20}]
+                     :title "Configurable Rules"
+                     :description "Admins define alert or block policies per resource."}
+                    {:icon [:> Sparkles {:size 20}]
+                     :title "Context-Aware AI Decisions"
+                     :description "Use schema, indexes, and resource context to deliver accurate, trustworthy risk assessments."}]
+    :on-primary-click (fn []
+                        (when on-promotion-seen
+                          (on-promotion-seen))
+                        (rf/dispatch [:navigate :ai-session-analyzer]))
+    :primary-text "Configure AI Session Analyzer"}])

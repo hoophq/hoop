@@ -36,6 +36,7 @@
    :features {:runbooks "https://hoop.dev/docs/learn/features/runbooks"
               :session-recording "https://hoop.dev/docs/learn/features/session-recording"
               :ai-datamasking "https://hoop.dev/docs/learn/features/ai-data-masking"
+              :ai-session-analyzer "https://hoop.dev/docs/learn/features/ai-session-analyzer"
               :access-control "https://hoop.dev/docs/learn/features/access-control"
               :reviews "https://hoop.dev/docs/learn/features/reviews/overview"
               :jit-reviews "https://hoop.dev/docs/learn/features/reviews/jit-reviews"
