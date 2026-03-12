@@ -41,8 +41,9 @@
            [:> Badge {:variant "soft" :color badge-color}
             (str (cs/upper-case risk_level) " RISK")]]
           [:> Text {:size "1" :class "text-[--gray-12]"} explanation]
+          
           (when action
-            [:> Box {:class "mt-3"}
+            [:> Box {:class "pt-3 border-t border-[--gray-3]"}
              (case action
                "block_execution" [:> Badge {:color "red"} "ACTION BLOCKED"]
                "allow_execution" [:> Badge {:color "green"} "ACTION ALLOWED"]
