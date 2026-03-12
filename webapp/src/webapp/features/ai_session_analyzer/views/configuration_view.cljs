@@ -53,6 +53,7 @@
   (let [config-data (rf/subscribe [:ai-session-analyzer/provider])
         config-loaded (r/atom false)
         is-submitting (r/atom false)
+        provider-states (r/atom {})
 
         form-state (r/atom {:provider "openai"
                             :model ""
@@ -60,10 +61,14 @@
                             :api-url ""})
 
         handle-provider-change (fn [provider-id]
-                                 (swap! form-state assoc
-                                        :provider provider-id
-                                        :model ""
-                                        :api-key ""))
+                                 (let [{:keys [provider model api-key api-url]} @form-state]
+                                   (swap! provider-states assoc provider {:model model :api-key api-key :api-url api-url}))
+                                 (let [saved (get @provider-states provider-id {})]
+                                   (swap! form-state assoc
+                                          :provider provider-id
+                                          :model    (or (:model saved) "")
+                                          :api-key  (or (:api-key saved) "")
+                                          :api-url  (or (:api-url saved) ""))))
 
         handle-save (fn []
                       (let [{:keys [provider model api-key api-url]} @form-state]
@@ -96,22 +101,23 @@
 
     (fn []
       (let [config-status (:status @config-data)
-            config-response (:data @config-data)]
+            config-response (:data @config-data)
+            loaded {:provider (or (:provider config-response) "openai")
+                    :model    (or (:model config-response) "")
+                    :api-key  (or (:api_key config-response) "")
+                    :api-url  (or (:api_url config-response) "")}]
 
         (when (and (not @config-loaded)
                    (or (= config-status :success)
                        (= config-status :error)))
           (reset! config-loaded true)
           (when (and (= config-status :success) config-response)
-            (reset! form-state
-                    {:provider (or (:provider config-response) "openai")
-                     :model (or (:model config-response) "")
-                     :api-key ""
-                     :api-url (or (:api_url config-response) "")})))
+            (reset! form-state loaded)
+            (swap! provider-states assoc (:provider loaded) (dissoc loaded :provider))))
 
         (let [{:keys [provider model api-key api-url]} @form-state]
           [:> Box {:pb "7" :class "space-y-radix-7"}
-           
+
            [:> Grid {:columns "7" :gap "7"}
             [:> Box {:grid-column "span 2 / span 2"}
              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
