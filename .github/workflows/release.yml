@@ -21,6 +21,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
@@ -147,6 +148,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -183,6 +185,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -219,6 +222,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -255,6 +259,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -291,6 +296,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -331,6 +337,7 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
