@@ -73,7 +73,7 @@ type Response struct {
 	Truncated         bool                       `json:"truncated"`
 	ExecutionTimeMili int64                      `json:"execution_time"`
 	ExitCode          int                        `json:"exit_code"`
-	AIAnalysis        *openapi.SessionAIAnalysis `json:"ai_analysis,omitempty"`
+	AIAnalysis        *openapi.SessionAIAnalysis `json:"ai_analysis"`
 
 	err error
 }
