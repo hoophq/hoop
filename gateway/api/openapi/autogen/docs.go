@@ -7066,6 +7066,11 @@ const docTemplate = `{
         "openapi.AIProviderResponse": {
             "type": "object",
             "properties": {
+                "api_key": {
+                    "description": "API key for authentication",
+                    "type": "string",
+                    "example": "sk-..."
+                },
                 "api_url": {
                     "description": "Base URL of the AI API",
                     "type": "string",
