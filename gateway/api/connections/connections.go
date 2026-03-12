@@ -103,6 +103,13 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	if err := upsertConnectionAttributes(ctx, resp.Name, req.Attributes); err != nil {
+		log.Errorf("failed upserting connection attributes, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	resp.Attributes = req.Attributes
+
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
@@ -194,6 +201,14 @@ func Put(c *gin.Context) {
 		}
 		return
 	}
+
+	if err := upsertConnectionAttributes(ctx, resp.Name, req.Attributes); err != nil {
+		log.Errorf("failed upserting connection attributes, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	resp.Attributes = req.Attributes
+
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
@@ -308,6 +323,16 @@ func Patch(c *gin.Context) {
 		}
 		return
 	}
+
+	if req.Attributes != nil {
+		if err := upsertConnectionAttributes(ctx, resp.Name, *req.Attributes); err != nil {
+			log.Errorf("failed upserting connection attributes, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+		resp.Attributes = *req.Attributes
+	}
+
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
@@ -513,6 +538,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		AccessMaxDuration:       conn.AccessMaxDuration,
 		MinReviewApprovals:      conn.MinReviewApprovals,
 		MandatoryMetadataFields: conn.MandatoryMetadataFields,
+		Attributes:              conn.Attributes,
 	}
 }
 

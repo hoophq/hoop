@@ -73,6 +73,7 @@ type Connection struct {
 	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
 	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
+	Attributes                pq.StringArray    `gorm:"column:attributes;type:text[];->"`
 }
 
 func (c Connection) AsSecrets() map[string]any {
@@ -433,7 +434,11 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -501,7 +506,11 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.resource_name
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
@@ -659,7 +668,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -868,6 +881,10 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes,
 		COUNT(*) OVER() AS total
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?

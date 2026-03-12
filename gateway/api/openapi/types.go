@@ -274,6 +274,8 @@ type Connection struct {
 	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
 	// When set, the user cannot choose a custom duration and must request access for this exact window.
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ConnectionPatch struct {
@@ -341,6 +343,8 @@ type ConnectionPatch struct {
 	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
+	// Attributes associated with this connection
+	Attributes *[]string `json:"attributes" example:"production,pii"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -2450,6 +2454,12 @@ type Attributes struct {
 	Name string `json:"name" example:"default-session-attribute"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Access request rule names associated with this attribute
+	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	// Guardrail rule names associated with this attribute
+	GuardrailRuleNames []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	// Datamasking rule names associated with this attribute
+	DatamaskingRuleNames []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
@@ -2459,6 +2469,6 @@ type AttributeRequest struct {
 	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
 	ConnectionNames        []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames []string `json:"access_request_rule_names" binding:"required" example:"rule1,rule2"`
-	GuardrailRuleNames     []string `json:"guard_rail_rule_names" binding:"required" example:"rule1,rule2"`
+	GuardrailRuleNames     []string `json:"guardrail_rule_names" binding:"required" example:"rule1,rule2"`
 	DatamaskingRuleNames   []string `json:"datamasking_rule_names" binding:"required" example:"rule1,rule2"`
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
@@ -651,4 +652,9 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 		}
 	}
 	return cmd
+}
+
+func upsertConnectionAttributes(ctx *storagev2.Context, connectionName string, attributeNames []string) error {
+	orgID := uuid.MustParse(ctx.OrgID)
+	return models.UpsertConnectionAttributes(models.DB, orgID, connectionName, attributeNames)
 }
