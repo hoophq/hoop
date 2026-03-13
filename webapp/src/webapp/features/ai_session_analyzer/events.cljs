@@ -91,12 +91,18 @@
 
 (rf/reg-event-fx
  :ai-session-analyzer/get-rules
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:ai-session-analyzer :rules :status] :loading)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri "/ai/session-analyzer/rules"
-                             :on-success #(rf/dispatch [:ai-session-analyzer/get-rules-success %])
-                             :on-failure #(rf/dispatch [:ai-session-analyzer/get-rules-failure %])}]]]}))
+ (fn [{:keys [db]} [_ {:keys [connection-names]}]]
+   (let [query-params (cond-> {}
+                        (seq connection-names) (assoc :connection_names connection-names))
+         status (get-in db [:ai-session-analyzer :rules :status])]
+     {:db (if (= status :success)
+            db
+            (assoc-in db [:ai-session-analyzer :rules :status] :loading))
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri "/ai/session-analyzer/rules"
+                               :query-params query-params
+                               :on-success #(rf/dispatch [:ai-session-analyzer/get-rules-success %])
+                               :on-failure #(rf/dispatch [:ai-session-analyzer/get-rules-failure %])}]]]})))
 
 (rf/reg-event-db
  :ai-session-analyzer/get-rules-success
