@@ -10,7 +10,7 @@
         selected-connection (r/atom nil)
         on-select (fn [conn-name]
                     (reset! selected-connection conn-name)
-                    (rf/dispatch [:ai-session-analyzer/get-rules {:connection_names [conn-name]}]))
+                    (rf/dispatch [:ai-session-analyzer/get-rules {:connection-names [conn-name]}]))
         on-clear (fn []
                    (reset! selected-connection nil)
                    (rf/dispatch [:ai-session-analyzer/get-rules {}]))]
