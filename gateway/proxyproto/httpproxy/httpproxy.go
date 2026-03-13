@@ -222,6 +222,15 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		proxyToken = r.Header.Get(proxyTokenHeader)
 	}
 
+	// Check DD-API-KEY header (for Datadog agent forward proxy)
+	var proxyTokenHeaderUsed string
+	if proxyToken == "" {
+		proxyToken = r.Header.Get("DD-API-KEY")
+		if proxyToken != "" {
+			proxyTokenHeaderUsed = "Dd-Api-Key"
+		}
+	}
+
 	if proxyToken == "" {
 		http.Error(w, "missing Authorization header", http.StatusUnauthorized)
 		return
@@ -271,6 +280,13 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		http.Error(w, "Invalid Cookie/Authorization", http.StatusUnauthorized)
 		return
+	}
+
+	// Strip the header that carried the proxy token so it doesn't leak
+	// to the agent/upstream. The agent will set the real credential from
+	// the connection config.
+	if proxyTokenHeaderUsed != "" {
+		r.Header.Del(proxyTokenHeaderUsed)
 	}
 
 	session.handleRequest(w, r)
@@ -479,7 +495,6 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	connectionID := strconv.FormatInt(sess.connCounter.Add(1), 10)
 	log := log.With("sid", sess.sid, "conn", connectionID)
 	log.Infof("handling request: %s %s", r.Method, r.URL.Path)
-
 	// Create response channel for this request
 	// TODO: chico increase buffer size to prevent blocking.
 	responseChan := make(chan []byte, 10) // changed for buffering
