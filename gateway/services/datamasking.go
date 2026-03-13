@@ -18,14 +18,5 @@ func GetDataMaskingRulesForConnection(orgID, connectionName string) (json.RawMes
 		return models.GetDataMaskingEntityTypesByAttributes(models.DB, parsedOrgID, attributes)
 	}
 
-	// var connID string
-	// err = models.DB.Raw(`
-	// 	SELECT id FROM private.connections
-	// 	WHERE org_id = ? AND name = ?`, orgID, connectionName).
-	// 	First(&connID).Error
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	return models.GetDataMaskingEntityTypes(orgID, connectionName)
 }

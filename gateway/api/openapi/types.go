@@ -2344,6 +2344,8 @@ type AccessRequestRule struct {
 	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Attributes associated with this access request rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -2371,6 +2373,8 @@ type AccessRequestRuleRequest struct {
 	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Attributes associated with this access request rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve

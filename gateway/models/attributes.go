@@ -284,6 +284,34 @@ func UpsertDatamaskingRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName stri
 	})
 }
 
+// UpsertAccessRequestRuleAttributes replaces all attribute associations for the given access request rule.
+// If an attribute name does not exist in the attributes table, it is created automatically.
+func UpsertAccessRequestRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string, attributeNames []string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("org_id = ? AND access_rule_name = ?", orgID, ruleName).
+			Delete(&AccessRequestRuleAttribute{}).Error; err != nil {
+			return err
+		}
+		if len(attributeNames) == 0 {
+			return nil
+		}
+
+		attributes := make([]Attribute, len(attributeNames))
+		for i, name := range attributeNames {
+			attributes[i] = Attribute{OrgID: orgID, Name: name}
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attributes).Error; err != nil {
+			return err
+		}
+
+		assocs := make([]AccessRequestRuleAttribute, len(attributeNames))
+		for i, name := range attributeNames {
+			assocs[i] = AccessRequestRuleAttribute{OrgID: orgID, AttributeName: name, AccessRuleName: ruleName}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
+	})
+}
+
 // UpsertGuardrailRuleAttributes replaces all attribute associations for the given guardrail rule.
 // If an attribute name does not exist in the attributes table, it is created automatically.
 func UpsertGuardrailRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string, attributeNames []string) error {
