@@ -4,9 +4,22 @@
    ["lucide-react" :refer [PencilRuler]]
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [reagent.core :as r]
-   [webapp.features.ai-session-analyzer.constants :as constants]
+   [reagent.core :as r] 
    [webapp.components.forms :as forms]))
+
+(def providers
+  [{:id "azure-openai"
+    :label "Azure Open AI"
+    :logo "/images/azure-logo.svg"}
+   {:id "anthropic"
+    :label "Anthropic"
+    :logo "/images/anthropic-logo.svg"}
+   {:id "openai"
+    :label "OpenAI"
+    :logo "/images/openai-logo.svg"}
+   {:id "custom"
+    :label "Custom"
+    :logo nil}])
 
 (defn- provider-icon [logo selected?]
   (if logo
@@ -32,22 +45,6 @@
                 :fallback (provider-icon (:logo provider) selected?)}]
     [:> Text {:size "3" :weight "medium" :color "gray-12"} (:label provider)]]])
 
-(defn- model-select
-  [{:keys [provider model on-change]}]
-  (let [predefined (get constants/models-by-provider provider [])]
-    (if (seq predefined)
-      [forms/select
-       {:label "Model"
-        :placeholder "Select a model"
-        :selected model
-        :full-width? true
-        :options (mapv (fn [m] {:value m :text m}) predefined)
-        :on-change on-change}]
-      [forms/input
-       {:label "Model"
-        :placeholder "Enter model name (e.g. gpt-4o)"
-        :value model
-        :on-change #(on-change (-> % .-target .-value))}])))
 
 (defn main [active-tab]
   (let [config-data (rf/subscribe [:ai-session-analyzer/provider])
@@ -59,7 +56,7 @@
                             :model ""
                             :api-key ""
                             :api-url ""})
-
+        
         handle-provider-change (fn [provider-id]
                                  (let [{:keys [provider model api-key api-url]} @form-state]
                                    (swap! provider-states assoc provider {:model model :api-key api-key :api-url api-url}))
@@ -126,8 +123,8 @@
               "Select between a market or custom model. Custom models need to follow the OpenAI API pattern."]]
 
             [:> Box {:grid-column "span 5 / span 5" :class "max-w-[600px]"}
-             [:div {:class "grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]"}
-              (for [p constants/providers]
+             [:> Grid {:class "grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3"}
+              (for [p providers]
                 ^{:key (:id p)}
                 [provider-card {:provider p
                                 :selected? (= provider (:id p))
@@ -136,7 +133,7 @@
            [:> Grid {:columns "7" :gap "7"}
             [:> Box {:grid-column "span 2 / span 2"}
              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
-              (str (-> (filter #(= (:id %) provider) constants/providers) first :label) " configuration")]
+              (str (-> (filter #(= (:id %) provider) providers) first :label) " configuration")]
              [:> Text {:size "3" :class "text-[--gray-11]"}
               "Choose between models and provide your API key."]]
 
@@ -148,10 +145,11 @@
                  :value api-url
                  :on-change #(swap! form-state assoc :api-url (-> % .-target .-value))}])
 
-             [model-select {:provider provider
-                            :model model
-                            :on-change (fn [v]
-                                         (swap! form-state assoc :model v))}]
+             [forms/input
+              {:label "Model"
+               :placeholder "Enter model name (e.g. gpt-4o)"
+               :value model
+               :on-change #(swap! form-state assoc :model (-> % .-target .-value))}]
 
              [forms/input
               {:label "API Key"
