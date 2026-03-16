@@ -9,7 +9,6 @@ import (
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
 )
@@ -45,38 +44,55 @@ func (s *Segment) Close() {
 	}
 }
 
-func SessionProperties(
-	ctx storagev2.Context,
-	s models.Session,
-) map[string]any {
-	var finishedAt string
+func SessionProperties(ctx *types.APIContext, s models.Session, conn models.Connection, guardRailRules *models.ConnectionGuardRailRules, accessRequestRules *models.AccessRequestRule) map[string]any {
+	var (
+		finishedAt                          string
+		jiraTemplateActivated               bool
+		guardrailsActivated                 bool
+		accessRequestActivated              bool
+		accessRequestForceApprovalActivated bool
+		accessRequestMinimumApproval        *int
+	)
 	if s.EndSession != nil {
 		finishedAt = s.EndSession.String()
 	}
 
+	if conn.JiraIssueTemplateID.String != "" {
+		jiraTemplateActivated = true
+	}
+
+	if guardRailRules != nil {
+		guardrailsActivated = true
+	}
+
+	if accessRequestRules != nil {
+		accessRequestActivated = true
+		accessRequestForceApprovalActivated = accessRequestRules.ForceApprovalGroups != nil && len(accessRequestRules.ForceApprovalGroups) > 0
+		accessRequestMinimumApproval = accessRequestRules.MinApprovals
+	}
+
 	return map[string]any{
-		"org-id":           s.OrgID,
-		"session-id":       s.ID,
-		"is-admin":         ctx.IsAdminUser(),
-		"resource-type":    s.ConnectionType,
-		"resource-subtype": s.ConnectionSubtype,
-		"status":           s.Status,
-		"session-type":     s.Verb,
-		"gateway-version":  version.Get().Version,
-		"agent-version":    "",
-		"created-at":       s.CreatedAt.String(),
-		"finished-at":      finishedAt,
-
-		"access-request-activated":                "",
-		"access-request-force-approval-activated": "",
-		"access-request-minimum-approval":         "",
+		"org-id":                   s.OrgID,
+		"session-id":               s.ID,
+		"is-admin":                 ctx.IsAdminUser(),
+		"resource-type":            s.ConnectionType,
+		"resource-subtype":         s.ConnectionSubtype,
+		"status":                   s.Status,
+		"session-type":             s.Verb,
+		"gateway-version":          version.Get().Version,
+		"agent-version":            "",
+		"created-at":               s.CreatedAt.String(),
+		"finished-at":              finishedAt,
+		"access-request-activated": accessRequestActivated,
+		"access-request-force-approval-activated": accessRequestForceApprovalActivated,
+		"access-request-minimum-approval":         accessRequestMinimumApproval,
 		"access-request-action-date":              "",
-
-		"guardrails-activated":                "",
-		"data-masking-activated":              "",
-		"ai-session-analyzer-activated":       "",
-		"ai-session-analyzer-identified-risk": "",
-		"ai-session-analyzer-action":          "",
+		"jira-template-activated":                 jiraTemplateActivated,
+		"guardrails-activated":                    guardrailsActivated,
+		"data-masking-activated":                  "",
+		"ai-session-analyzer-activated":           "",
+		"ai-session-analyzer-identified-risk":     "",
+		"ai-session-analyzer-action":              "",
 	}
 }
 
