@@ -1,15 +1,17 @@
 (ns webapp.features.ai-session-analyzer.views.configuration-view
   (:require
-   ["@radix-ui/themes" :refer [Avatar Box Button Card Flex Grid Heading Text]]
+   ["@radix-ui/themes" :refer [Box Button Flex Grid Heading Text]]
    ["lucide-react" :refer [PencilRuler]]
    [clojure.string :as str]
    [re-frame.core :as rf]
-   [reagent.core :as r] 
-   [webapp.components.forms :as forms]))
+   [reagent.core :as r]
+   [webapp.components.callout-link :as callout-link]
+   [webapp.components.forms :as forms]
+   [webapp.components.selection-card :as selection-card]))
 
 (def providers
   [{:id "azure-openai"
-    :label "Azure Open AI"
+    :label "Azure OpenAI"
     :logo "/images/azure-logo.svg"}
    {:id "anthropic"
     :label "Anthropic"
@@ -21,7 +23,15 @@
     :label "Custom"
     :logo nil}])
 
-(defn- provider-icon [logo selected?]
+(def provider-model-docs
+  {"anthropic" {:href "https://platform.claude.com/docs/en/about-claude/models/overview"
+                :text "See supported models in Anthropic documentation."}
+   "azure-openai" {:href "https://ai.azure.com/catalog/models"
+                   :text "See supported models in Azure OpenAI documentation."}
+   "openai" {:href "https://developers.openai.com/api/docs/models"
+             :text "See supported models in OpenAI documentation."}})
+
+(defn- icon-component [logo selected?]
   (if logo
     (r/as-element
      [:figure {:class "w-5 h-5 flex items-center justify-center"}
@@ -29,21 +39,6 @@
                          (when selected? " brightness-0 invert"))
              :src logo}]])
     (r/as-element [:> PencilRuler {:size 16}])))
-
-(defn- provider-card
-  [{:keys [provider selected? on-select]}]
-  [:> Card {:size "1"
-            :variant "surface"
-            :class (str "cursor-pointer "
-                        (when selected? "before:bg-primary-12"))
-            :on-click on-select}
-   [:> Flex {:align "center" :gap "3" :class (when selected? "text-[--gray-1]")}
-    [:> Avatar {:size "4"
-                :class (when selected? "dark")
-                :variant "soft"
-                :color "gray"
-                :fallback (provider-icon (:logo provider) selected?)}]
-    [:> Text {:size "3" :weight "medium" :color "gray-12"} (:label provider)]]])
 
 
 (defn main [active-tab]
@@ -126,16 +121,21 @@
              [:> Grid {:class "grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3"}
               (for [p providers]
                 ^{:key (:id p)}
-                [provider-card {:provider p
-                                :selected? (= provider (:id p))
-                                :on-select #(handle-provider-change (:id p))}])]]]
+                [selection-card/selection-card
+                 {:icon (icon-component (:logo p) (= provider (:id p)))
+                  :title (:label p)
+                  :selected? (= provider (:id p))
+                  :on-click #(handle-provider-change (:id p))}])]]]
 
            [:> Grid {:columns "7" :gap "7"}
             [:> Box {:grid-column "span 2 / span 2"}
              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
               (str (-> (filter #(= (:id %) provider) providers) first :label) " configuration")]
              [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Choose between models and provide your API key."]]
+              "Choose between models and provide your API key."]
+             (when-let [{:keys [href text]} (get provider-model-docs provider)]
+               [callout-link/main {:href href
+                                   :text text}])]
 
             [:> Box {:grid-column "span 5 / span 5" :class "space-y-radix-4 max-w-[600px]"}
              (when (or (= provider "azure-openai") (= provider "custom"))
