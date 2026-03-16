@@ -19,7 +19,10 @@
   2 - when the status is 399 or below, it executes a on-failure function, that is provided by upperscope."
   [{:keys [status on-failure]}]
   (when (= status 401)
-    (rf/dispatch [:navigate :logout-hoop]))
+    ;; In React shell mode, let React handle the auth redirect
+    (if (.getItem js/localStorage "react-shell")
+      (set! js/window.location.href "/login")
+      (rf/dispatch [:navigate :logout-hoop])))
   (when (> status 399) (on-failure)))
 
 (defn parse-response
