@@ -233,8 +233,10 @@
         [loading-transition])
 
       (do
-        (rf/dispatch [:users->get-user])
-        (rf/dispatch [:gateway->get-info])
+        ;; In shell mode skip refetch if user data already exists (avoids loading flash on remount)
+        (when-not (and react-shell? (-> @user :data some?))
+          (rf/dispatch [:users->get-user])
+          (rf/dispatch [:gateway->get-info]))
 
         (fn [panels]
           (rf/dispatch [:routes->get-route])
@@ -794,8 +796,11 @@
 
 (defn main-panel []
   (let [active-panel (rf/subscribe [::subs/active-panel])
-        gateway-public-info (rf/subscribe [:gateway->public-info])]
-    (rf/dispatch [:gateway->get-public-info])
+        gateway-public-info (rf/subscribe [:gateway->public-info])
+        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
+    ;; In shell mode skip refetch if public info already loaded (avoids loading flash on remount)
+    (when-not (and react-shell? (-> @gateway-public-info :data some?))
+      (rf/dispatch [:gateway->get-public-info]))
     (.registerPlugin gsap Draggable)
     (.registerModules ModuleRegistry #js[AllCommunityModule])
 
