@@ -33,6 +33,10 @@ export default defineConfig({
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
         changeOrigin: true,
       },
+      '/icons': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true,
+      },
     },
   },
 });
