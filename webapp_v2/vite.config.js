@@ -29,6 +29,10 @@ export default defineConfig({
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
         changeOrigin: true,
       },
+      '/data': {
+        target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
+        changeOrigin: true,
+      },
     },
   },
 });
