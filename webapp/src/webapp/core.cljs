@@ -23,4 +23,6 @@
   (routes/start!)
   (re-frame/dispatch-sync [::events/initialize-db])
   (dev-setup)
-  (mount-root))
+  (mount-root)
+  ;; Expose remount function for the React shell (microfrontend)
+  (set! (.-hoopRemount js/window) mount-root))
