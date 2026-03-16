@@ -1,9 +1,6 @@
-import { useEffect, useRef } from 'react'
-import { Center, Loader } from '@mantine/core'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Center, Loader, Stack, Text, Code } from '@mantine/core'
 
-/**
- * Loads a CSS file once. Marks it with data-cljs to avoid duplicates.
- */
 function loadCSS(href) {
   if (document.querySelector(`link[data-cljs-css]`)) return
   const link = document.createElement('link')
@@ -13,11 +10,6 @@ function loadCSS(href) {
   document.head.appendChild(link)
 }
 
-/**
- * Loads the ClojureScript bundle once.
- * On first call: appends <script> and resolves after load (auto-calls webapp.core/init).
- * On subsequent calls: resolves immediately (bundle already loaded).
- */
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[data-cljs-bundle]`)) {
@@ -36,20 +28,16 @@ function loadScript(src) {
 /**
  * ClojureApp — mounts the ClojureScript/Reagent app inside the React shell.
  *
- * Strategy:
- * - Sets `react-shell` in localStorage so the Clojure app skips its own sidebar/cmdk
- * - First mount: loads the bundle (auto-calls webapp.core/init)
- * - Subsequent mounts (user navigated to a React page and came back): calls
- *   window.hoopRemount() which was set by core.cljs during init
- * - Unmount: cleans up the DOM and removes the react-shell flag
+ * Requires the shadow-cljs dev server running on port 8280 (or VITE_CLJS_URL).
+ * Start it with: cd webapp && npm run shadow:watch:hoop-ui
  */
 function ClojureApp() {
   const mountRef = useRef(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     localStorage.setItem('react-shell', 'true')
 
-    // Ensure the Reagent mount point has id="app"
     if (mountRef.current) {
       mountRef.current.id = 'app'
     }
@@ -58,13 +46,12 @@ function ClojureApp() {
 
     loadScript('/js/app.js')
       .then(() => {
-        // Bundle already loaded and init already ran — just remount Reagent
         if (window.hoopRemount) {
           window.hoopRemount()
         }
       })
-      .catch((err) => {
-        console.error('[ClojureApp] Failed to load ClojureScript bundle:', err)
+      .catch(() => {
+        setError(true)
       })
 
     return () => {
@@ -75,6 +62,25 @@ function ClojureApp() {
       }
     }
   }, [])
+
+  if (error) {
+    return (
+      <Center style={{ height: '60vh' }}>
+        <Stack align="center" maw={480}>
+          <Alert color="red" title="ClojureScript bundle not available" style={{ width: '100%' }}>
+            <Text size="sm" mb="xs">
+              The ClojureScript dev server is not running. Start it with:
+            </Text>
+            <Code block>
+              cd webapp{'\n'}
+              npm run shadow:watch:hoop-ui{'\n'}
+              npm run postcss:watch
+            </Code>
+          </Alert>
+        </Stack>
+      </Center>
+    )
+  }
 
   return <div ref={mountRef} />
 }
