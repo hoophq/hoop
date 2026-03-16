@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Center, Loader, Stack, Text, Code } from '@mantine/core'
+import { Alert, Center, Stack, Text, Code } from '@mantine/core'
 
 function loadCSS(href) {
   if (document.querySelector(`link[data-cljs-css]`)) return
@@ -10,16 +10,21 @@ function loadCSS(href) {
   document.head.appendChild(link)
 }
 
+/**
+ * Loads the ClojureScript bundle.
+ * Returns true if this is the first load (init() runs automatically via :init-fn).
+ * Returns false if the bundle was already loaded (caller must trigger remount manually).
+ */
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[data-cljs-bundle]`)) {
-      resolve()
+      resolve(false) // already loaded — needs manual remount
       return
     }
     const script = document.createElement('script')
     script.src = src
     script.setAttribute('data-cljs-bundle', 'true')
-    script.onload = resolve
+    script.onload = () => resolve(true) // first load — init() fires automatically
     script.onerror = reject
     document.body.appendChild(script)
   })
@@ -45,7 +50,13 @@ function ClojureApp() {
     loadCSS('/css/site.css')
 
     loadScript('/js/app.js')
-      .then(() => {
+      .then((isFirstLoad) => {
+        if (isFirstLoad) {
+          // init() was already called by shadow-cljs :init-fn — nothing to do
+          return
+        }
+        // Bundle was already loaded (user navigated away and came back)
+        // Re-mount Reagent without reinitializing routes or re-frame DB
         if (window.hoopRemount) {
           window.hoopRemount()
         }
