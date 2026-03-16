@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 set -eo pipefail
 
 : "${HOOP_SESSION_ID:?Required environment variable}"
@@ -18,4 +18,4 @@ if [ "$HOOP_EXEC_MONGOSH_RUNTIME" == "1" ]; then
     MONGO_BIN=/usr/bin/mongosh
 fi
 
-$MONGO_BIN $@
+$MONGO_BIN "$@"
