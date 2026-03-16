@@ -22,7 +22,8 @@
 (rf/reg-event-fx
  ::set-active-panel
  (fn [{:keys [db]} [_ active-panel]]
-   (js/window.Intercom "update")
+   (when (.-Intercom js/window)
+     (js/window.Intercom "update"))
    {:db (-> db
             (assoc :active-panel active-panel)
             (assoc :navigation-status :completed))}))
