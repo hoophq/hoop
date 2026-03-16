@@ -24,5 +24,11 @@
   (re-frame/dispatch-sync [::events/initialize-db])
   (dev-setup)
   (mount-root)
-  ;; Expose remount function for the React shell (microfrontend)
-  (set! (.-hoopRemount js/window) mount-root))
+  ;; Expose functions for the React shell (microfrontend)
+  (set! (.-hoopRemount js/window) mount-root)
+  ;; Set active panel directly from a URL path (no pushState side-effect)
+  (set! (.-hoopSetRoute js/window)
+        (fn [path]
+          (let [route (routes/parse path)
+                panel (keyword (str (name (:handler route)) "-panel"))]
+            (re-frame/dispatch-sync [::events/set-active-panel panel])))))

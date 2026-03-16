@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Alert, Center, Stack, Text, Code } from '@mantine/core'
 
 function loadCSS(href) {
@@ -37,8 +38,11 @@ function loadScript(src) {
  * Start it with: cd webapp && npm run shadow:watch:hoop-ui
  */
 function ClojureApp() {
+  const location = useLocation()
   const mountRef = useRef(null)
   const [error, setError] = useState(null)
+  // Track whether the CLJS app is ready to receive route updates
+  const cljsReadyRef = useRef(false)
 
   useEffect(() => {
     localStorage.setItem('react-shell', 'true')
@@ -52,14 +56,23 @@ function ClojureApp() {
     loadScript('/js/app.js')
       .then((isFirstLoad) => {
         if (isFirstLoad) {
-          // init() was already called by shadow-cljs :init-fn — nothing to do
+          // init() was already called by shadow-cljs :init-fn — nothing to do.
+          // Pushy already parsed the current URL on startup.
+          cljsReadyRef.current = true
           return
         }
-        // Bundle was already loaded (user navigated away and came back)
-        // Re-mount Reagent without reinitializing routes or re-frame DB
+        // Bundle was already loaded (user navigated away and came back).
+        // Sync the active panel BEFORE remounting so Reagent renders the
+        // correct page immediately (no wrong-panel flash).
+        if (window.hoopSetRoute) {
+          window.hoopSetRoute(window.location.pathname)
+        }
+        // Re-mount Reagent. Guards in app.cljs skip user/gateway refetches
+        // when data already exists in the re-frame db.
         if (window.hoopRemount) {
           window.hoopRemount()
         }
+        cljsReadyRef.current = true
       })
       .catch(() => {
         setError(true)
@@ -67,12 +80,23 @@ function ClojureApp() {
 
     return () => {
       localStorage.removeItem('react-shell')
+      cljsReadyRef.current = false
       if (mountRef.current) {
         mountRef.current.innerHTML = ''
         mountRef.current.id = ''
       }
     }
   }, [])
+
+  // Sync the CLJS active panel whenever React Router changes the pathname.
+  // This handles sidebar navigation between ClojureScript routes without a
+  // full remount — React Router pushes state but pushy only hears popstate,
+  // so we bridge the gap by calling hoopSetRoute directly.
+  useEffect(() => {
+    if (cljsReadyRef.current && window.hoopSetRoute) {
+      window.hoopSetRoute(location.pathname)
+    }
+  }, [location.pathname])
 
   if (error) {
     return (
@@ -83,8 +107,8 @@ function ClojureApp() {
               The ClojureScript dev server is not running. Start it with:
             </Text>
             <Code block>
-              cd webapp{'\n'}
-              npm run shadow:watch:hoop-ui{'\n'}
+              cd webapp{'\\n'}
+              npm run shadow:watch:hoop-ui{'\\n'}
               npm run postcss:watch
             </Code>
           </Alert>
