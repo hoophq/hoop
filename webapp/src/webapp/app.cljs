@@ -221,12 +221,15 @@
       [:> Spinner {:size "3"}]]]]])
 
 (defn- hoop-layout [_]
-  (let [user (rf/subscribe [:users->current-user])]
+  (let [user (rf/subscribe [:users->current-user])
+        react-shell? (boolean (.getItem js/localStorage "react-shell"))]
     (if (nil? (.getItem js/localStorage "jwt-token"))
       (do
-        (let [current-url (.. js/window -location -href)]
-          (.setItem js/localStorage "redirect-after-auth" current-url)
-          (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
+        ;; React shell handles auth redirect — skip if in shell mode
+        (when-not react-shell?
+          (let [current-url (.. js/window -location -href)]
+            (.setItem js/localStorage "redirect-after-auth" current-url)
+            (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000)))
         [loading-transition])
 
       (do
@@ -246,26 +249,41 @@
             (and (not (:loading @user))
                  (empty? (:data @user)))
             (do
-              (let [current-url (.. js/window -location -href)]
-                (.setItem js/localStorage "redirect-after-auth" current-url)
-                (.removeItem js/localStorage "jwt-token")
-                (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000))
+              ;; React shell handles invalid token via API interceptor
+              (when-not react-shell?
+                (let [current-url (.. js/window -location -href)]
+                  (.setItem js/localStorage "redirect-after-auth" current-url)
+                  (.removeItem js/localStorage "jwt-token")
+                  (js/setTimeout #(rf/dispatch [:navigate :login-hoop]) 2000)))
 
               [loading-transition])
 
             :else
-            [:section
-             {:class "antialiased min-h-screen"}
-             [:> Toaster {:position "top-right"}]
-             [modals/modal]
-             [modals/modal-radix]
-             [dialog/dialog]
-             [dialog/new-dialog]
-             [snackbar/snackbar]
-             [draggable-card/main]
-             [command-palette/command-palette]
-             [command-palette/keyboard-listener]
-             [sidebar/main panels]]))))))
+            (if react-shell?
+              ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
+              [:section
+               {:class "antialiased min-h-screen"}
+               [:> Toaster {:position "top-right"}]
+               [modals/modal]
+               [modals/modal-radix]
+               [dialog/dialog]
+               [dialog/new-dialog]
+               [snackbar/snackbar]
+               [draggable-card/main]
+               panels]
+              ;; Normal mode: full layout with sidebar and cmdk
+              [:section
+               {:class "antialiased min-h-screen"}
+               [:> Toaster {:position "top-right"}]
+               [modals/modal]
+               [modals/modal-radix]
+               [dialog/dialog]
+               [dialog/new-dialog]
+               [snackbar/snackbar]
+               [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
+               [sidebar/main panels]])))))))
 
 (defmulti layout identity)
 (defmethod layout :application-hoop [_ panels]
