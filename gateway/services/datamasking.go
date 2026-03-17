@@ -14,9 +14,5 @@ func GetDataMaskingRulesForConnection(orgID, connectionName string) (json.RawMes
 		return nil, err
 	}
 
-	if len(attributes) > 0 {
-		return models.GetDataMaskingEntityTypesByAttributes(models.DB, parsedOrgID, attributes)
-	}
-
-	return models.GetDataMaskingEntityTypes(orgID, connectionName)
+	return models.GetDataMaskingEntityTypesByConnectionAndAttributes(models.DB, parsedOrgID, connectionName, attributes)
 }

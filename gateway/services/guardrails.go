@@ -12,11 +12,7 @@ func GetGuardrailsRulesForConnection(orgID, connectionName string) (*models.Conn
 		return nil, err
 	}
 
-	if len(attributes) == 0 {
-		return models.GetConnectionGuardRailRules(orgID, connectionName)
-	}
-
-	rules, err := models.GetConnectionGuardRailRulesByAttribute(models.DB, parsedOrgID, attributes)
+	rules, err := models.GetConnectionGuardRailRulesByConnectionAndAttribute(models.DB, parsedOrgID, connectionName, attributes)
 	if err != nil {
 		return nil, err
 	}

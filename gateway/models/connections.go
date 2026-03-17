@@ -979,6 +979,37 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	return items, total, nil
 }
 
+func GetConnectionGuardRailRulesByConnectionAndAttribute(db *gorm.DB, orgID uuid.UUID, connectionName string, attributes []string) (*ConnectionGuardRailRules, error) {
+	var conn ConnectionGuardRailRules
+	err := db.Raw(`
+	SELECT
+		''::text AS id,
+		?::text AS org_id,
+		''::text AS name,
+		(
+			SELECT json_agg(r.input) FROM private.guardrail_rules r
+			LEFT JOIN private.guardrail_rules_connections grc ON grc.rule_id = r.id
+			LEFT JOIN private.connections c ON c.id = grc.connection_id AND c.org_id = r.org_id
+			LEFT JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND (c.name = ? OR gra.attribute_name = ANY(?))
+		) AS guardrail_input_rules,
+		(
+			SELECT json_agg(r.output) FROM private.guardrail_rules r
+			LEFT JOIN private.guardrail_rules_connections grc ON grc.rule_id = r.id
+			LEFT JOIN private.connections c ON c.id = grc.connection_id AND c.org_id = r.org_id
+			LEFT JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND (c.name = ? OR gra.attribute_name = ANY(?))
+		) AS guardrail_output_rules
+	`, orgID, orgID, orgID, connectionName, pq.StringArray(attributes), orgID, orgID, connectionName, pq.StringArray(attributes)).Scan(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+	if conn.GuardRailInputRules == nil && conn.GuardRailOutputRules == nil {
+		return nil, nil
+	}
+	return &conn, nil
+}
+
 func GetConnectionGuardRailRulesByAttribute(db *gorm.DB, orgID uuid.UUID, attributes []string) (*ConnectionGuardRailRules, error) {
 	var conn ConnectionGuardRailRules
 	err := db.Raw(`

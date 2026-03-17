@@ -200,6 +200,33 @@ func GetDataMaskingEntityTypes(orgID, connName string) (json.RawMessage, error) 
 	return json.RawMessage(jsonStr), nil
 }
 
+func GetDataMaskingEntityTypesByConnectionAndAttributes(db *gorm.DB, orgID uuid.UUID, connectionName string, attributeNames []string) (json.RawMessage, error) {
+	var jsonStr string
+	err := db.Raw(`
+		SELECT COALESCE(json_agg(
+			json_build_object(
+				'id', r.id,
+				'name', r.name,
+				'supported_entity_types', r.supported_entity_types,
+				'score_threshold', r.score_threshold,
+				'custom_entity_types', r.custom_entity_types
+			)), '[]'::json)
+		FROM (
+			SELECT DISTINCT r.id, r.name, r.supported_entity_types, r.score_threshold, r.custom_entity_types
+			FROM private.datamasking_rules r
+			LEFT JOIN private.datamasking_rules_connections c ON r.id = c.rule_id AND c.status = 'active'
+			LEFT JOIN private.connections conn ON c.connection_id = conn.id AND conn.org_id = r.org_id
+			LEFT JOIN private.datamasking_rules_attributes ra ON ra.org_id = r.org_id AND ra.datamasking_rule_name = r.name
+			WHERE r.org_id = ? AND (conn.name = ? OR ra.attribute_name IN (?))
+		) r`, orgID, connectionName, attributeNames).
+		Row().
+		Scan(&jsonStr)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(jsonStr), nil
+}
+
 func GetDataMaskingEntityTypesByAttributes(db *gorm.DB, orgID uuid.UUID, attributeNames []string) (json.RawMessage, error) {
 	var jsonStr string
 	err := db.Raw(`
