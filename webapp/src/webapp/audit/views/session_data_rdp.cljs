@@ -1,6 +1,6 @@
 (ns webapp.audit.views.session-data-rdp
   (:require
-   ["@radix-ui/themes" :refer [Box Button Flex Text Heading Badge Select]]
+   ["@radix-ui/themes" :refer [Box Button Flex Text Heading Badge]]
    ["lucide-react" :refer [Play Pause SkipBack SkipForward Maximize Minimize]]
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
@@ -15,18 +15,17 @@
     (let [style-el (js/document.createElement "style")]
       (set! (.-innerHTML style-el)
         ".rdp-player-container:fullscreen {
-           height: 100vh !important;
-           width: 100vw !important;
-           background-color: black;
-         }
-         .rdp-player-container:fullscreen .rdp-canvas-container {
-           height: calc(100vh - 150px) !important;
-           max-height: none !important;
-         }
-         .rdp-player-container:fullscreen canvas {
-           max-height: 100% !important;
-           max-width: 100% !important;
-         }")
+          height: 100vh;
+          width: 100vw;
+          background-color: black;
+        }
+        .rdp-player-container:fullscreen .rdp-canvas-container {
+          height: calc(100vh - 100px);
+        }
+        .rdp-player-container:fullscreen canvas {
+          max-height: 100%;
+          max-width: 100%;
+        }")
       (.appendChild js/document.head style-el)
       (reset! fullscreen-styles-added true))))
 
@@ -144,15 +143,27 @@
     [:> Flex {:gap "4" :align "center"}
      [:> Text {:size "2" :class "text-[--gray-11]"}
       (str (format-time current-time) " / " (format-time total-duration))]
-     [:> Select.Root {:size "2"
-                      :value (str playback-speed)
-                      :on-value-change #(on-speed-change (js/parseFloat %))}
-      [:> Select.Trigger {:variant "soft" :color "gray"}]
-      [:> Select.Content
-       [:> Select.Item {:value "0.5"} "0.5x"]
-       [:> Select.Item {:value "1"} "1x"]
-       [:> Select.Item {:value "2"} "2x"]
-       [:> Select.Item {:value "4"} "4x"]]]
+     [:> Flex {:gap "1" :align "center"}
+      [:> Button {:variant (if (= playback-speed 0.5) "solid" "soft")
+                  :size "1"
+                  :color "gray"
+                  :on-click #(on-speed-change 0.5)}
+       "0.5x"]
+      [:> Button {:variant (if (= playback-speed 1) "solid" "soft")
+                  :size "1"
+                  :color "gray"
+                  :on-click #(on-speed-change 1)}
+       "1x"]
+      [:> Button {:variant (if (= playback-speed 2) "solid" "soft")
+                  :size "1"
+                  :color "gray"
+                  :on-click #(on-speed-change 2)}
+       "2x"]
+      [:> Button {:variant (if (= playback-speed 4) "solid" "soft")
+                  :size "1"
+                  :color "gray"
+                  :on-click #(on-speed-change 4)}
+       "4x"]]
      [:> Button {:variant "soft"
                  :size "2"
                  :color "gray"
@@ -306,7 +317,7 @@
                [:> Badge {:color "blue" :variant "soft"}
                 "Loading more frames..."]])]
            ;; Controls
-           [:> Box {:class "flex-shrink-0"}
+           [:> Box {:class "playback-controls-container flex-shrink-0"}
             [playback-controls
              {:playing? playing
               :fullscreen? fullscreen
