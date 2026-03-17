@@ -12,6 +12,7 @@
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
+   [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
 
    [webapp.components.loaders :as loaders]
@@ -236,7 +237,7 @@
                      param-key ": "]
                     [:span param-value]]))]])
             ;; end runbook params
-
+            
             ;; metadata
             (when (and metadata
                        (seq metadata))
@@ -255,7 +256,7 @@
                        metadata-value]
                       [:span metadata-value])]]))])
             ;; end metadata
-
+           
             ;; script area
             (when (or script-data has-large-input?)
               [:section {:id "session-script"}
@@ -269,7 +270,8 @@
                                   "text-xs text-gray-800 font-mono")}
                      [:article script-data]]]))])
             ;; end script area
-
+            
+            [session-analysis/main {:ai-analysis (:ai_analysis session)}]
 
             [data-masking-analytics/main {:session session}]
 

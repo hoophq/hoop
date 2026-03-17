@@ -19,6 +19,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -65,13 +66,14 @@ type Options struct {
 }
 
 type Response struct {
-	HasReview         bool   `json:"has_review"`
-	SessionID         string `json:"session_id"`
-	Output            string `json:"output"`
-	OutputStatus      string `json:"output_status"`
-	Truncated         bool   `json:"truncated"`
-	ExecutionTimeMili int64  `json:"execution_time"`
-	ExitCode          int    `json:"exit_code"`
+	HasReview         bool                       `json:"has_review"`
+	SessionID         string                     `json:"session_id"`
+	Output            string                     `json:"output"`
+	OutputStatus      string                     `json:"output_status"`
+	Truncated         bool                       `json:"truncated"`
+	ExecutionTimeMili int64                      `json:"execution_time"`
+	ExitCode          int                        `json:"exit_code"`
+	AIAnalysis        *openapi.SessionAIAnalysis `json:"ai_analysis"`
 
 	err error
 }

@@ -83,6 +83,10 @@
    [webapp.features.access-request.main :as access-request]
    [webapp.features.access-request.subs]
    [webapp.features.access-request.views.rule-form :as rule-form]
+   [webapp.features.ai-session-analyzer.events]
+   [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
+   [webapp.features.ai-session-analyzer.subs]
+   [webapp.features.ai-session-analyzer.views.rule-form :as ai-session-analyzer-rule-form]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -661,6 +665,30 @@
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
       [routes/wrap-admin-only
        [ai-data-masking-create-update/main :edit]]]]))
+
+(defmethod routes/panels :ai-session-analyzer-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [ai-session-analyzer/main]]])
+
+(defmethod routes/panels :create-ai-session-analyzer-rule-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:ai-session-analyzer/clear-active-rule])
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-max relative"}
+    [routes/wrap-admin-only
+     [ai-session-analyzer-rule-form/main :create]]]])
+
+(defmethod routes/panels :edit-ai-session-analyzer-rule-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        rule-name (:rule-name (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [routes/wrap-admin-only
+       [ai-session-analyzer-rule-form/main :edit {:rule-name rule-name}]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

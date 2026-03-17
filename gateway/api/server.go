@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
+	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
@@ -323,6 +324,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
+
+	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetConnectionAnalyzerRule)
 
 	r.GET("/connections/:nameOrID/test",
 		r.AuthMiddleware,
@@ -724,6 +730,40 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		awsintegration.GetDBRoleJobByID,
 	)
+
+	r.GET("/ai/session-analyzer/providers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerProvider)
+	r.POST("/ai/session-analyzer/providers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.UpsertSessionAnalyzerProvider)
+	r.DELETE("/ai/session-analyzer/providers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.DeleteSessionAnalyzerProvider)
+
+	r.GET("/ai/session-analyzer/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.ListSessionAnalyzerRules)
+	r.POST("/ai/session-analyzer/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.CreateSessionAnalyzerRule)
+	r.GET("/ai/session-analyzer/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerRule)
+	r.PUT("/ai/session-analyzer/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.UpdateSessionAnalyzerRule)
+	r.DELETE("/ai/session-analyzer/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.DeleteSessionAnalyzerRule)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,
