@@ -17,15 +17,21 @@ UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_S),Darwin)
   ifeq ($(UNAME_M),x86_64)
     RUST_TARGET := x86_64-apple-darwin
+    DEV_RUST_TARGET := x86_64-unknown-linux-gnu
   else ifeq ($(UNAME_M),arm64)
     RUST_TARGET := aarch64-apple-darwin
+    DEV_RUST_TARGET := aarch64-unknown-linux-gnu
   endif
+  RUST_BUILD_CMD := cross build
 else ifeq ($(UNAME_S),Linux)
   ifeq ($(UNAME_M),x86_64)
     RUST_TARGET := x86_64-unknown-linux-gnu
+    DEV_RUST_TARGET := x86_64-unknown-linux-gnu
   else ifeq ($(UNAME_M),aarch64)
     RUST_TARGET := aarch64-unknown-linux-gnu
+    DEV_RUST_TARGET := aarch64-unknown-linux-gnu
   endif
+  RUST_BUILD_CMD := cargo build
 endif
 
 LDFLAGS := "-s -w \
@@ -38,11 +44,12 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
 build-dev-rust:
-	# since we are in osx machine cross needs to be used to build linux binary because some crypto libs does not have cross compilation
-	echo "Building hoop_rs for dev"
-	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
+	# On macOS, cross is used to build a Linux binary since some crypto libs don't support direct cross-compilation.
+	# On Linux, cargo builds natively for the host architecture.
+	echo "Building hoop_rs for dev (target: ${DEV_RUST_TARGET})"
+	cd agentrs && $(RUST_BUILD_CMD) --release --target $(DEV_RUST_TARGET)
 	mkdir -p ${HOME}/.hoop/bin
-	cp agentrs/target/aarch64-unknown-linux-gnu/release/agentrs ${HOME}/.hoop/bin/hoop_rs
+	cp agentrs/target/$(DEV_RUST_TARGET)/release/agentrs ${HOME}/.hoop/bin/hoop_rs
 	chmod +x ${HOME}/.hoop/bin/hoop_rs
 
 install-rust:
