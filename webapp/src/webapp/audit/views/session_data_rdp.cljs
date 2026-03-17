@@ -7,19 +7,6 @@
    [webapp.components.loaders :as loaders]
    [webapp.http.api :as api]))
 
-;; Add fullscreen styles
-(defonce ^:private fullscreen-styles-added (atom false))
-
-(defn- ensure-fullscreen-styles []
-  (when-not @fullscreen-styles-added
-    (let [style-el (js/document.createElement "style")]
-      (set! (.-innerHTML style-el)
-            ".rdp-player-container:fullscreen .rdp-canvas-container {
-          height: calc(100vh - 90px) !important;
-        }")
-      (.appendChild js/document.head style-el)
-      (reset! fullscreen-styles-added true))))
-
 (defn- decode-b64 [b64-str]
   (try
     (let [binary-string (js/atob b64-str)
@@ -173,7 +160,7 @@
      {:display-name "rdp-canvas-renderer"
       :component-did-update
       (fn [this]
-        (let [[_ frames canvas-width canvas-height current-frame-idx] (r/argv this)
+        (let [[_ frames canvas-width canvas-height current-frame-idx _fullscreen?] (r/argv this)
               canvas @canvas-ref]
           (when (and canvas (seq frames)
                      ;; Only redraw when frame index actually changed
@@ -204,9 +191,11 @@
                         (draw-bitmap ctx bitmap))))
                   (reset! last-rendered-idx current-frame-idx)))))))
       :reagent-render
-      (fn [_ canvas-width canvas-height _]
+      (fn [_ canvas-width canvas-height _ fullscreen?]
         [:> Box {:class "rdp-canvas-container relative bg-[--gray-9] rounded-t-lg flex items-center justify-center"
-                 :style {:height "600px" :width "100%"}}
+                 :style (if fullscreen?
+                          {:height "calc(100vh - 90px)" :width "100%"}
+                          {:height "600px" :width "100%"})}
          [:canvas {:ref #(reset! canvas-ref %)
                    :width canvas-width
                    :height canvas-height
@@ -250,8 +239,6 @@
       (fn []
         ;; Ensure RLE decompressor is loaded
         (ensure-rle-loaded)
-        ;; Add fullscreen styles
-        (ensure-fullscreen-styles)
         ;; Listen to fullscreen changes
         (let [listener (fn []
                          (swap! state assoc :fullscreen (boolean (.-fullscreenElement js/document))))]
@@ -301,7 +288,7 @@
                    :class "rdp-player-container flex flex-col"}
            ;; Canvas - pass current-frame so it knows what to render
            [:> Box {:class "flex-1 relative"}
-            [canvas-renderer frames canvas-width canvas-height current-frame]
+            [canvas-renderer frames canvas-width canvas-height current-frame fullscreen]
             ;; Fetching more frames indicator
             (when fetching
               [:> Box {:class "absolute top-2 right-2"}
