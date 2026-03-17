@@ -15,16 +15,22 @@
     (let [style-el (js/document.createElement "style")]
       (set! (.-innerHTML style-el)
         ".rdp-player-container:fullscreen {
-          height: 100vh;
-          width: 100vw;
+          height: 100vh !important;
+          width: 100vw !important;
           background-color: black;
+          display: flex !important;
+          flex-direction: column !important;
+          padding: 1rem;
+          box-sizing: border-box;
         }
         .rdp-player-container:fullscreen .rdp-canvas-container {
-          height: calc(100vh - 100px);
+          flex: 1 !important;
+          height: auto !important;
+          min-height: 0 !important;
         }
         .rdp-player-container:fullscreen canvas {
-          max-height: 100%;
-          max-width: 100%;
+          max-height: 100% !important;
+          max-width: 100% !important;
         }")
       (.appendChild js/document.head style-el)
       (reset! fullscreen-styles-added true))))
@@ -306,10 +312,9 @@
                                         (.requestFullscreen container))))
                                   (swap! state update :fullscreen not))]
           [:> Box {:ref #(reset! container-ref %)
-                   :class "rdp-player-container flex flex-col space-y-radix-4"
-                   :style {:height "660px"}}
+                   :class "rdp-player-container flex flex-col space-y-radix-4"}
            ;; Canvas - pass current-frame so it knows what to render
-           [:> Box {:class "flex-1 overflow-hidden relative"}
+           [:> Box {:class "flex-1 relative"}
             [canvas-renderer frames canvas-width canvas-height current-frame]
             ;; Fetching more frames indicator
             (when fetching
