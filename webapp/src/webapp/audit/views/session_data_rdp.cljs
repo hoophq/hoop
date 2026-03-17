@@ -14,18 +14,8 @@
   (when-not @fullscreen-styles-added
     (let [style-el (js/document.createElement "style")]
       (set! (.-innerHTML style-el)
-            ".rdp-player-container:fullscreen {
-          height: 100vh !important;
-          width: 100vw !important;
-          background-color: black;
-          gap: 0 !important;
-        }
-        .rdp-player-container:fullscreen .rdp-canvas-container {
+            ".rdp-player-container:fullscreen .rdp-canvas-container {
           height: calc(100vh - 90px) !important;
-        }
-        .rdp-player-container:fullscreen canvas {
-          max-height: 100% !important;
-          max-width: 100% !important;
         }")
       (.appendChild js/document.head style-el)
       (reset! fullscreen-styles-added true))))
