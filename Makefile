@@ -18,9 +18,15 @@ ifeq ($(UNAME_S),Darwin)
   ifeq ($(UNAME_M),x86_64)
     RUST_TARGET := x86_64-apple-darwin
     DEV_RUST_TARGET := x86_64-unknown-linux-gnu
+    CROSS_RUSTUP_TOOLCHAIN :=
   else ifeq ($(UNAME_M),arm64)
     RUST_TARGET := aarch64-apple-darwin
     DEV_RUST_TARGET := aarch64-unknown-linux-gnu
+    # Force cross to use the aarch64 Linux toolchain inside its Docker container.
+    # Without this, cross may pick up a x86_64-unknown-linux-gnu toolchain from
+    # RUSTUP_HOME and try to run it inside the aarch64 container, causing SIGSEGV.
+    # Run "make install-rust" to install this toolchain.
+    CROSS_RUSTUP_TOOLCHAIN := RUSTUP_TOOLCHAIN=stable-aarch64-unknown-linux-gnu
   endif
   RUST_BUILD_CMD := cross build
 else ifeq ($(UNAME_S),Linux)
@@ -32,6 +38,7 @@ else ifeq ($(UNAME_S),Linux)
     DEV_RUST_TARGET := aarch64-unknown-linux-gnu
   endif
   RUST_BUILD_CMD := cargo build
+  CROSS_RUSTUP_TOOLCHAIN :=
 endif
 
 LDFLAGS := "-s -w \
@@ -47,7 +54,7 @@ build-dev-rust:
 	# On macOS, cross is used to build a Linux binary since some crypto libs don't support direct cross-compilation.
 	# On Linux, cargo builds natively for the host architecture.
 	echo "Building hoop_rs for dev (target: ${DEV_RUST_TARGET})"
-	cd agentrs && $(RUST_BUILD_CMD) --release --target $(DEV_RUST_TARGET)
+	cd agentrs && $(CROSS_RUSTUP_TOOLCHAIN) $(RUST_BUILD_CMD) --release --target $(DEV_RUST_TARGET)
 	mkdir -p ${HOME}/.hoop/bin
 	cp agentrs/target/$(DEV_RUST_TARGET)/release/agentrs ${HOME}/.hoop/bin/hoop_rs
 	chmod +x ${HOME}/.hoop/bin/hoop_rs

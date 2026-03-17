@@ -45,6 +45,22 @@ else
 fi
 
 echo ""
+echo "Checking if aarch64-unknown-linux-gnu target is installed..."
+rustup target add aarch64-unknown-linux-gnu
+
+# On macOS ARM (M1/M2/M3), cross mounts ~/.rustup into an aarch64 Linux Docker
+# container. The macOS native toolchain (aarch64-apple-darwin) is a Mach-O binary
+# that cannot run inside a Linux container. We install the aarch64-unknown-linux-gnu
+# toolchain so cross can find and use a compatible rustc inside the container.
+if [[ "$(uname -s)" == "Darwin" ]] && [[ "$(uname -m)" == "arm64" ]]; then
+    echo ""
+    echo "macOS ARM detected. Installing aarch64-unknown-linux-gnu toolchain for cross..."
+    rustup toolchain install stable-aarch64-unknown-linux-gnu
+    rustup target add aarch64-unknown-linux-gnu --toolchain stable-aarch64-unknown-linux-gnu
+    echo "> aarch64-unknown-linux-gnu toolchain installed."
+fi
+
+echo ""
 echo ">  Rust setup complete!"
 echo "   You can now run 'make build' or 'make build-rust'"
 echo ""
