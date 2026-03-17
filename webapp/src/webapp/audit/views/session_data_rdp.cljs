@@ -1,7 +1,7 @@
 (ns webapp.audit.views.session-data-rdp
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Text Heading Badge]]
-   ["lucide-react" :refer [Play Pause SkipBack SkipForward Maximize Minimize]]
+   ["lucide-react" :refer [Play Pause FastForward Rewind Maximize Minimize]]
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.components.loaders :as loaders]
@@ -103,7 +103,7 @@
                  :size "2"
                  :color "gray"
                  :on-click on-prev}
-      [:> SkipBack {:size 16}]]
+      [:> Rewind {:size 16}]]
      [:> Button {:variant "solid"
                  :size "3"
                  :on-click (if playing? on-pause on-play)}
@@ -118,7 +118,7 @@
                  :size "2"
                  :color "gray"
                  :on-click on-next}
-      [:> SkipForward {:size 16}]]]
+      [:> FastForward {:size 16}]]]
     [:> Flex {:gap "4" :align "center"}
      [:> Text {:size "2" :class "text-[--gray-11]"}
       (str (format-time current-time) " / " (format-time total-duration))]
