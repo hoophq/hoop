@@ -14,19 +14,14 @@
   (when-not @fullscreen-styles-added
     (let [style-el (js/document.createElement "style")]
       (set! (.-innerHTML style-el)
-        ".rdp-player-container:fullscreen {
+            ".rdp-player-container:fullscreen {
           height: 100vh !important;
           width: 100vw !important;
           background-color: black;
-          display: flex !important;
-          flex-direction: column !important;
-          padding: 1rem;
-          box-sizing: border-box;
+          gap: 0 !important;
         }
         .rdp-player-container:fullscreen .rdp-canvas-container {
-          flex: 1 !important;
-          height: auto !important;
-          min-height: 0 !important;
+          height: calc(100vh - 90px) !important;
         }
         .rdp-player-container:fullscreen canvas {
           max-height: 100% !important;
@@ -120,7 +115,8 @@
 (defn- playback-controls [{:keys [playing? on-play on-pause on-prev on-next
                                   current-time total-duration on-seek playback-speed on-speed-change
                                   on-fullscreen fullscreen?]}]
-  [:> Box {:class "space-y-radix-2 p-radix-4 bg-[--gray-2] rounded-lg"}
+  [:> Box {:class "rdp-controls space-y-radix-2 p-radix-4 rounded-b-lg bg-[--gray-2]"
+           :style {:height "90px"}}
    [progress-bar {:current-time current-time
                   :total-duration total-duration
                   :on-seek on-seek}]
@@ -219,7 +215,7 @@
                   (reset! last-rendered-idx current-frame-idx)))))))
       :reagent-render
       (fn [_ canvas-width canvas-height _]
-        [:> Box {:class "rdp-canvas-container relative bg-[--gray-9] rounded-lg flex items-center justify-center"
+        [:> Box {:class "rdp-canvas-container relative bg-[--gray-9] rounded-t-lg flex items-center justify-center"
                  :style {:height "600px" :width "100%"}}
          [:canvas {:ref #(reset! canvas-ref %)
                    :width canvas-width
@@ -312,7 +308,7 @@
                                         (.requestFullscreen container))))
                                   (swap! state update :fullscreen not))]
           [:> Box {:ref #(reset! container-ref %)
-                   :class "rdp-player-container flex flex-col space-y-radix-4"}
+                   :class "rdp-player-container flex flex-col"}
            ;; Canvas - pass current-frame so it knows what to render
            [:> Box {:class "flex-1 relative"}
             [canvas-renderer frames canvas-width canvas-height current-frame]
