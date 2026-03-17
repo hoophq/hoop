@@ -1,12 +1,34 @@
 (ns webapp.audit.views.session-data-rdp
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Text Heading Badge Select]]
-   ["lucide-react" :refer [Play Pause SkipBack SkipForward]]
+   ["lucide-react" :refer [Play Pause SkipBack SkipForward Maximize Minimize]]
    [reagent.core :as r]
-   [re-frame.core :as rf]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.components.loaders :as loaders]
    [webapp.http.api :as api]))
+
+;; Add fullscreen styles
+(defonce ^:private fullscreen-styles-added (atom false))
+
+(defn- ensure-fullscreen-styles []
+  (when-not @fullscreen-styles-added
+    (let [style-el (js/document.createElement "style")]
+      (set! (.-innerHTML style-el)
+        ".rdp-player-container:fullscreen {
+           height: 100vh !important;
+           width: 100vw !important;
+           background-color: black;
+         }
+         .rdp-player-container:fullscreen .rdp-canvas-container {
+           height: calc(100vh - 150px) !important;
+           max-height: none !important;
+         }
+         .rdp-player-container:fullscreen canvas {
+           max-height: 100% !important;
+           max-width: 100% !important;
+         }")
+      (.appendChild js/document.head style-el)
+      (reset! fullscreen-styles-added true))))
 
 (defn- decode-b64 [b64-str]
   (try
@@ -47,6 +69,7 @@
         data-bytes (if (string? data) (decode-b64 data) data)]
     (when (and canvas-ctx data-bytes (> width 0) (> height 0))
       (try
+        (js/console.time "draw-bitmap")  ;; ← adiciona
         (let [bpp (or bits_per_pixel 16)
               ;; Decompress if needed
               pixel-data (if compressed
@@ -56,6 +79,7 @@
               rgba (js/window.rdpBitmapToRGBA pixel-data width height bpp)
               image-data (js/ImageData. rgba width height)]
           (.putImageData canvas-ctx image-data x y))
+        (js/console.timeEnd "draw-bitmap")  ;; ← e esse
         (catch :default e
           (js/console.error "Error drawing bitmap:" e))))))
 
@@ -89,8 +113,9 @@
 
 ;; Playback controls
 (defn- playback-controls [{:keys [playing? on-play on-pause on-prev on-next
-                                  current-time total-duration on-seek playback-speed on-speed-change]}]
-  [:> Box {:class "space-y-radix-2 p-radix-4 bg-[--gray-8] rounded-lg"}
+                                  current-time total-duration on-seek playback-speed on-speed-change
+                                  on-fullscreen fullscreen?]}]
+  [:> Box {:class "space-y-radix-2 p-radix-4 bg-[--gray-2] rounded-lg"}
    [progress-bar {:current-time current-time
                   :total-duration total-duration
                   :on-seek on-seek}]
@@ -127,7 +152,14 @@
        [:> Select.Item {:value "0.5"} "0.5x"]
        [:> Select.Item {:value "1"} "1x"]
        [:> Select.Item {:value "2"} "2x"]
-       [:> Select.Item {:value "4"} "4x"]]]]]])
+       [:> Select.Item {:value "4"} "4x"]]]
+     [:> Button {:variant "soft"
+                 :size "2"
+                 :color "gray"
+                 :on-click on-fullscreen}
+      (if fullscreen?
+        [:> Minimize {:size 16}]
+        [:> Maximize {:size 16}])]]]])
 
 ;; Canvas component that renders frames differentially
 (defn- canvas-renderer []
@@ -143,7 +175,11 @@
           (when (and canvas (seq frames)
                      ;; Only redraw when frame index actually changed
                      (not= current-frame-idx @last-rendered-idx))
-            (let [ctx (.getContext canvas "2d")]
+            (let [ctx (.getContext canvas "2d" (clj->js {:alpha false
+                                                         :desynchronized true
+                                                         :willReadFrequently false}))]
+              ;; Disable image smoothing for better performance
+              (set! (.-imageSmoothingEnabled ctx) false)
               ;; If seeking backwards or first render, clear and redraw from beginning
               (if (or (< current-frame-idx @last-rendered-idx)
                       (= @last-rendered-idx -1))
@@ -166,12 +202,14 @@
                   (reset! last-rendered-idx current-frame-idx)))))))
       :reagent-render
       (fn [_ canvas-width canvas-height _]
-        [:> Box {:class "relative bg-[--gray-9] rounded-lg overflow-hidden"
-                 :style {:maxHeight "500px"}}
+        [:> Box {:class "rdp-canvas-container relative bg-[--gray-9] rounded-lg flex items-center justify-center"
+                 :style {:height "600px" :width "100%"}}
          [:canvas {:ref #(reset! canvas-ref %)
                    :width canvas-width
                    :height canvas-height
-                   :class "w-full h-auto"}]])})))
+                   :style {:maxWidth "100%"
+                           :maxHeight "100%"
+                           :objectFit "contain"}}]])})))
 
 ;; Find frame index for a given timestamp
 (defn- find-frame-index-for-time [frames target-time]
@@ -196,16 +234,26 @@
                        :total-duration 0
                        :playback-speed 1
                        :fetching false
+                       :fullscreen false
                        ;; Track virtual time for playback
                        :start-time nil      ;; Real time when playback started
                        :start-offset 0})    ;; Time offset when playback started
-        raf-id (r/atom nil)]
+        raf-id (r/atom nil)
+        container-ref (r/atom nil)
+        fullscreen-listener (r/atom nil)]
     (r/create-class
      {:display-name "rdp-streaming-player"
       :component-did-mount
       (fn []
         ;; Ensure RLE decompressor is loaded
         (ensure-rle-loaded)
+        ;; Add fullscreen styles
+        (ensure-fullscreen-styles)
+        ;; Listen to fullscreen changes
+        (let [listener (fn []
+                         (swap! state assoc :fullscreen (boolean (.-fullscreenElement js/document))))]
+          (reset! fullscreen-listener listener)
+          (.addEventListener js/document "fullscreenchange" listener))
         ;; Load initial batch of frames
         (swap! state assoc :loading true)
         (fetch-frames
@@ -224,18 +272,31 @@
       :component-will-unmount
       (fn []
         (when @raf-id
-          (js/cancelAnimationFrame @raf-id)))
+          (js/cancelAnimationFrame @raf-id))
+        ;; Remove fullscreen listener
+        (when @fullscreen-listener
+          (.removeEventListener js/document "fullscreenchange" @fullscreen-listener)))
 
       :reagent-render
       (fn []
-        (let [{:keys [frames current-frame playing loading _loaded-up-to total-frames total-duration playback-speed start-time start-offset fetching]} @state
+        (let [{:keys [frames current-frame playing loading _loaded-up-to total-frames total-duration playback-speed start-time start-offset fetching fullscreen]} @state
               ;; Calculate current time position
               current-time (if playing
-                            (+ start-offset (* (- (js/performance.now) start-time) playback-speed 0.001))
-                            (if (seq frames)
-                              (:timestamp (nth frames current-frame 0))
-                              0))]
-          [:> Box {:class "flex flex-col space-y-radix-4" :style {:height "660px"}}
+                             (+ start-offset (* (- (js/performance.now) start-time) playback-speed 0.001))
+                             (if (seq frames)
+                               (:timestamp (nth frames current-frame 0))
+                               0))
+              toggle-fullscreen (fn []
+                                  (if fullscreen
+                                    (when (.-exitFullscreen js/document)
+                                      (.exitFullscreen js/document))
+                                    (when-let [container @container-ref]
+                                      (when (.-requestFullscreen container)
+                                        (.requestFullscreen container))))
+                                  (swap! state update :fullscreen not))]
+          [:> Box {:ref #(reset! container-ref %)
+                   :class "rdp-player-container flex flex-col space-y-radix-4"
+                   :style {:height "660px"}}
            ;; Canvas - pass current-frame so it knows what to render
            [:> Box {:class "flex-1 overflow-hidden relative"}
             [canvas-renderer frames canvas-width canvas-height current-frame]
@@ -248,13 +309,15 @@
            [:> Box {:class "flex-shrink-0"}
             [playback-controls
              {:playing? playing
+              :fullscreen? fullscreen
+              :on-fullscreen toggle-fullscreen
               :on-play (fn []
                          (swap! state assoc
                                 :playing true
                                 :start-time (js/performance.now)
                                 :start-offset (if (seq frames)
-                                               (:timestamp (nth frames current-frame 0))
-                                               0))
+                                                (:timestamp (nth frames current-frame 0))
+                                                0))
                          ;; Timestamp-based playback loop using requestAnimationFrame
                          (letfn [(play-tick []
                                    (when (:playing @state)
@@ -307,7 +370,7 @@
               :total-duration total-duration
               :playback-speed playback-speed
               :on-speed-change (fn [speed]
-                                (swap! state assoc :playback-speed speed))
+                                 (swap! state assoc :playback-speed speed))
               :on-seek (fn [target-time]
                          ;; Find frame for target time
                          (let [target-frame (find-frame-index-for-time frames target-time)]
@@ -332,7 +395,7 @@
                "Loading frames..."]])]))})))
 
 ;; RDP session info display when event_stream is not loaded (large payload)
-(defn- rdp-session-summary [{:keys [session-id bitmap-count event-size canvas-width canvas-height on-play-click]}]
+(defn- rdp-session-summary [{:keys [_session-id bitmap-count event-size canvas-width canvas-height on-play-click]}]
   [:> Flex {:direction "column"
             :align "center"
             :justify "center"
@@ -352,16 +415,11 @@
       (str canvas-width "x" canvas-height " resolution")]]]
    [:> Text {:size "2" :class "text-[--gray-11]"}
     "RDP session recordings are stored as bitmap frames for replay."]
-   [:> Flex {:gap "2" :class "mt-4"}
+   [:> Box {:class "mt-4"}
     [:> Button {:size "3"
                 :on-click on-play-click}
      [:> Play {:size 16}]
-     "Play Recording"]
-    [:> Button {:size "3"
-                :variant "soft"
-                :color "gray"
-                :on-click #(rf/dispatch [:audit->session-file-generate session-id "txt"])}
-     "Download"]]])
+     "Play Recording"]]])
 
 (defn main [_event-stream session-id metrics]
   (let [show-player (r/atom false)]
