@@ -65,4 +65,9 @@ const (
 	// connect
 	EventGrpcConnect            = "hoop-grpc-connect"
 	EventApiProxymanagerConnect = "hoop-api-proxymanager-connect"
+
+	// sessions
+	EventSessionCreated  = "hoop-session-created"
+	EventSessionReviewed = "hoop-session-reviewed"
+	EventSessionFinished = "hoop-session-finished"
 )
