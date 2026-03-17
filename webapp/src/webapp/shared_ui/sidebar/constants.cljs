@@ -236,6 +236,13 @@
     :free-feature? true
     :admin-only? true
     :selfhosted-only? false}
+   {:name "audit-logs"
+    :label "Internal Audit Logs"
+    :uri (routes/url-for :settings-audit-logs)
+    :navigate :settings-audit-logs
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false}
    {:name "users"
     :label "Users"
     :uri (routes/url-for :users)
