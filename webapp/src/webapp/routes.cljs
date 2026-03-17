@@ -43,7 +43,10 @@
                   [["/runbooks/edit/" :connection-id] :runbooks-edit]
                   ["/data-masking" :ai-data-masking]
                   ["/data-masking/new" :create-ai-data-masking]
-                  [["/data-masking/edit/" :ai-data-masking-id] :edit-ai-data-masking]]
+                  [["/data-masking/edit/" :ai-data-masking-id] :edit-ai-data-masking]
+                  ["/ai-session-analyzer" :ai-session-analyzer]
+                  ["/ai-session-analyzer/rules/new" :create-ai-session-analyzer-rule]
+                  [["/ai-session-analyzer/rules/edit/" :rule-name] :edit-ai-session-analyzer-rule]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]
                     [["/edit/" :guardrail-id] :edit-guardrail]]
@@ -75,6 +78,7 @@
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
+                  ["/audit-logs" :settings-audit-logs]
                   ["/jira" :settings-jira]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop

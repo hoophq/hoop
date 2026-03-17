@@ -15,17 +15,19 @@ import (
 // List
 //
 //	@Summary		List security audit logs
-//	@Description	Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.
+//	@Description	Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, HTTP method, HTTP status, client IP, path, outcome, and date range. Results are ordered by created_at descending.
 //	@Tags			Audit Logs
 //	@Produce		json
 //	@Param			page				query		int		false	"Page number (default: 1)"		default(1)
 //	@Param			page_size			query		int		false	"Page size (1-100, default: 50)"	default(50)
 //	@Param			actor_subject		query		string	false	"Filter by actor subject (partial match)"
-//	@Param			actor_email		query		string	false	"Filter by actor email (partial match)"
+//	@Param			actor_email			query		string	false	"Filter by actor email (partial match)"
 //	@Param			resource_type		query		string	false	"Filter by resource type (e.g. connections, users, resources)"
 //	@Param			action				query		string	false	"Filter by action (create, update, delete, revoke)"
-//	@Param			resource_id		query		string	false	"Filter by resource ID (UUID)"
-//	@Param			resource_name		query		string	false	"Filter by resource name (partial match)"
+//	@Param			http_method			query		string	false	"Filter by HTTP method (GET, POST, PUT, PATCH, DELETE)"
+//	@Param			http_status			query		int		false	"Filter by HTTP status code (e.g. 200, 400, 500)"
+//	@Param			http_path			query		string	false	"Filter by HTTP path (partial match)"
+//	@Param			client_ip			query		string	false	"Filter by client IP address (partial match)"
 //	@Param			outcome				query		bool	false	"Filter by outcome (true = success, false = failure)"
 //	@Param			created_after		query		string	false	"Filter entries created on or after this time (RFC3339 or YYYY-MM-DD)"
 //	@Param			created_before		query		string	false	"Filter entries created on or before this time (RFC3339 or YYYY-MM-DD)"
@@ -44,16 +46,27 @@ func List(c *gin.Context) {
 	}
 
 	f := models.SecurityAuditLogFilter{
-		Page:         page,
-		PageSize:     pageSize,
-		ActorSubject: c.Query("actor_subject"),
-		ActorEmail:   c.Query("actor_email"),
-		ResourceType: c.Query("resource_type"),
-		Action:       c.Query("action"),
-		ResourceID:   c.Query("resource_id"),
-		ResourceName: c.Query("resource_name"),
+		Page:          page,
+		PageSize:      pageSize,
+		ActorSubject:  c.Query("actor_subject"),
+		ActorEmail:    c.Query("actor_email"),
+		ResourceType:  c.Query("resource_type"),
+		Action:        c.Query("action"),
+		HttpMethod:    c.Query("http_method"),
+		HttpPath:      c.Query("http_path"),
+		ClientIP:      c.Query("client_ip"),
 		CreatedAfter:  c.Query("created_after"),
 		CreatedBefore: c.Query("created_before"),
+	}
+
+	// Parse http_status if provided
+	if httpStatusStr := c.Query("http_status"); httpStatusStr != "" {
+		httpStatus, err := strconv.Atoi(httpStatusStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "http_status must be a valid integer"})
+			return
+		}
+		f.HttpStatus = httpStatus
 	}
 
 	if outcomeStr := c.Query("outcome"); outcomeStr != "" {
@@ -88,22 +101,21 @@ func List(c *gin.Context) {
 }
 
 func toResponse(r *models.SecurityAuditLog) openapi.SecurityAuditLogResponse {
-	res := openapi.SecurityAuditLogResponse{
+	return openapi.SecurityAuditLogResponse{
 		ID:                     r.ID.String(),
 		OrgID:                  r.OrgID,
 		ActorSubject:           r.ActorSubject,
 		ActorEmail:             r.ActorEmail,
 		ActorName:              r.ActorName,
 		CreatedAt:              r.CreatedAt,
-		ResourceType:            r.ResourceType,
+		ResourceType:           r.ResourceType,
 		Action:                 r.Action,
-		ResourceName:           r.ResourceName,
+		HttpMethod:             r.HttpMethod,
+		HttpStatus:             r.HttpStatus,
+		HttpPath:               r.HttpPath,
+		ClientIP:               r.ClientIP,
 		RequestPayloadRedacted: r.RequestPayloadRedacted,
 		Outcome:                r.Outcome,
 		ErrorMessage:           r.ErrorMessage,
 	}
-	if r.ResourceID != nil {
-		res.ResourceID = r.ResourceID.String()
-	}
-	return res
 }

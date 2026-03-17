@@ -207,3 +207,24 @@
                                                   :text error-message
                                                   :details error}])))}]]]}))
 
+(rf/reg-event-db
+ :resources/add-mandatory-metadata-field
+ (fn [db _]
+   (update-in db [:connection-setup :config :mandatory-metadata-fields]
+              (fn [fields] (conj (or fields []) "")))))
+
+(rf/reg-event-db
+ :resources/remove-mandatory-metadata-field
+ (fn [db [_ idx]]
+   (update-in db [:connection-setup :config :mandatory-metadata-fields]
+              (fn [fields] (vec (concat (subvec fields 0 idx) (subvec fields (inc idx))))))))
+
+(rf/reg-event-db
+ :resources/update-mandatory-metadata-field
+ (fn [db [_ idx value]]
+   (update-in db [:connection-setup :config :mandatory-metadata-fields]
+              (fn [fields]
+                (let [v (or fields [])]
+                  (if (< idx (count v))
+                    (assoc v idx value)
+                    (conj v value)))))))

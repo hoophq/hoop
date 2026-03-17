@@ -4,7 +4,8 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
-   [webapp.jira-templates.prompt-form :as prompt-form]))
+   [webapp.jira-templates.prompt-form :as prompt-form]
+   [webapp.webclient.components.mandatory-metadata-form :as mandatory-metadata-form]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -127,6 +128,8 @@
                     {"envvar:LOG_GROUP_NAME" (js/btoa selected-db)}
 
                     :else nil)
+         
+         mandatory-metadata-fields (seq (:mandatory_metadata_fields fresh-primary-connection))
          keep-metadata? (get-in db [:editor-plugin :keep-metadata?])
          current-metadatas (get-in db [:editor-plugin :metadata])
          current-metadata-key (get-in db [:editor-plugin :metadata-key])
@@ -155,6 +158,25 @@
                          {:level :error
                           :text "Connection not found"}]]]}
 
+       ;; Mandatory metadata collection
+       mandatory-metadata-fields
+       {:fx [[:dispatch [:modal->open
+                         {:maxWidth "600px"
+                          :custom-on-click-out #(.preventDefault %)
+                          :content [mandatory-metadata-form/main
+                                    {:fields (vec mandatory-metadata-fields)
+                                     :on-submit #(rf/dispatch
+                                                  [:editor-plugin/submit-after-mandatory-data
+                                                   {:form-data %
+                                                    :script final-script
+                                                    :metadata metadata
+                                                    :env_vars env-vars
+                                                    :keep-metadata? keep-metadata?
+                                                    :connection-name (:name fresh-primary-connection)
+                                                    :change-to-tabular? change-to-tabular?
+                                                    :needs-jira? (and needs-template? jira-integration-enabled?)
+                                                    :jira-template-id (:jira_issue_template_id fresh-primary-connection)}])}]}]]]}
+
        ;; Single connection with JIRA template
        (and needs-template? jira-integration-enabled?)
        {:fx [[:dispatch [:modal->open
@@ -170,7 +192,9 @@
                            :script final-script
                            :metadata metadata
                            :env_vars env-vars
-                           :keep-metadata? keep-metadata?}]}]]}
+                           :keep-metadata? keep-metadata?
+                           :change-to-tabular? change-to-tabular?
+                           :connection-name (:name fresh-primary-connection)}]}]]}
 
        ;; Single connection direct execution
        :else
@@ -207,7 +231,8 @@
 ;; Helper event for template checking
 (rf/reg-event-fx
  :editor-plugin/check-template-and-show-form
- (fn [{:keys [db]} [_ {:keys [template-id script metadata env_vars keep-metadata?] :as context}]]
+ (fn [{:keys [db]} [_ {:keys [script metadata env_vars keep-metadata?
+                              change-to-tabular? connection-name] :as context}]]
    (let [template (get-in db [:jira-templates->submit-template])]
      (cond
        ;; Still loading
@@ -215,12 +240,7 @@
            (= :loading (:status template)))
        {:fx [[:dispatch-later
               {:ms 500
-               :dispatch [:editor-plugin/check-template-and-show-form
-                          {:template-id template-id
-                           :script script
-                           :metadata metadata
-                           :env_vars env_vars
-                           :keep-metadata? keep-metadata?}]}]]}
+               :dispatch [:editor-plugin/check-template-and-show-form context]}]]}
 
        ;; Ready but with failed CMDB requests
        (and (= :ready (:status template))
@@ -240,7 +260,9 @@
                                                     :script script
                                                     :metadata metadata
                                                     :env_vars env_vars
-                                                    :keep-metadata? keep-metadata?}])}]}]]]}
+                                                    :keep-metadata? keep-metadata?
+                                                    :change-to-tabular? change-to-tabular?
+                                                    :connection-name connection-name}])}]}]]]}
 
        ;; Ready and doesn't need form
        :else
@@ -249,17 +271,23 @@
                           :script script
                           :metadata metadata
                           :env_vars env_vars
-                          :keep-metadata? keep-metadata?}]]]}))))
+                          :keep-metadata? keep-metadata?
+                          :change-to-tabular? change-to-tabular?
+                          :connection-name connection-name}]]]}))))
 
 ;; Helper event for template submission
 (rf/reg-event-fx
  :editor-plugin/handle-template-submit
- (fn [{:keys [db]} [_ {:keys [form-data script metadata env_vars keep-metadata?]}]]
-   (let [connection (get-in db [:editor :connections :selected])]
-     {:fx [[:dispatch [:modal->close]]
+ (fn [{:keys [db]} [_ {:keys [form-data script metadata env_vars keep-metadata?
+                              change-to-tabular? connection-name]}]]
+   (let [connection (get-in db [:editor :connections :selected])
+         resolved-connection-name (or connection-name (:name connection))]
+     {:fx [(when change-to-tabular?
+             [:dispatch [:set-tab-tabular]])
+           [:dispatch [:modal->close]]
            [:dispatch [:editor-plugin->exec-script
                        (cond-> {:script script
-                                :connection-name (:name connection)
+                                :connection-name resolved-connection-name
                                 :metadata (metadata->json-stringify metadata)
                                 :env_vars env_vars}
                          (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
@@ -274,3 +302,40 @@
    (update db :editor-plugin merge {:metadata []
                                     :metadata-key ""
                                     :metadata-value ""})))
+
+(rf/reg-event-fx
+ :editor-plugin/submit-after-mandatory-data
+ (fn [{:keys [db]} [_ {:keys [form-data script metadata env_vars keep-metadata?
+                              connection-name change-to-tabular?
+                              needs-jira? jira-template-id]}]]
+   (let [mandatory-metadata (mapv (fn [[k v]] {:key k :value v}) form-data)
+         merged-metadata (concat metadata mandatory-metadata)]
+     (if (and needs-jira? jira-template-id)
+       {:fx [[:dispatch [:modal->open
+                         {:maxWidth "540px"
+                          :custom-on-click-out #(.preventDefault %)
+                          :content [loading-jira-templates/main]}]]
+             [:dispatch [:jira-templates->get-submit-template jira-template-id]]
+             [:dispatch-later
+              {:ms 1000
+               :dispatch [:editor-plugin/check-template-and-show-form
+                          {:template-id jira-template-id
+                           :script script
+                           :metadata merged-metadata
+                           :env_vars env_vars
+                           :keep-metadata? keep-metadata?
+                           :change-to-tabular? change-to-tabular?
+                           :connection-name connection-name}]}]]}
+       (merge
+        {:fx [(when change-to-tabular?
+                [:dispatch [:set-tab-tabular]])
+              [:dispatch [:modal->close]]
+              [:dispatch [:editor-plugin->exec-script
+                          {:script script
+                           :connection-name connection-name
+                           :metadata (metadata->json-stringify merged-metadata)
+                           :env_vars env_vars}]]]}
+        (when-not keep-metadata?
+          {:db (update db :editor-plugin merge {:metadata []
+                                                :metadata-key ""
+                                                :metadata-value ""})}))))))

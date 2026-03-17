@@ -61,31 +61,39 @@ func NewSessionOption() SessionOption {
 	}
 }
 
+type SessionAIAnalysis struct {
+	RiskLevel   string `json:"risk_level"`
+	Title       string `json:"title"`
+	Explanation string `json:"explanation"`
+	Action      string `json:"action"`
+}
+
 type Session struct {
-	ID                   string            `gorm:"column:id"`
-	OrgID                string            `gorm:"column:org_id"`
-	Connection           string            `gorm:"column:connection"`
-	ResourceName         string            `gorm:"column:resource_name;->"`
-	ConnectionType       string            `gorm:"column:connection_type"`
-	ConnectionSubtype    string            `gorm:"column:connection_subtype"`
-	ConnectionTags       map[string]string `gorm:"column:connection_tags;serializer:json"`
-	Verb                 string            `gorm:"column:verb"`
-	Labels               map[string]string `gorm:"column:labels;serializer:json"`
-	Metadata             map[string]any    `gorm:"column:metadata;serializer:json"`
-	IntegrationsMetadata map[string]any    `gorm:"column:integrations_metadata;serializer:json"`
-	Metrics              map[string]any    `gorm:"column:metrics;serializer:json"`
-	BlobInputID          sql.NullString    `gorm:"column:blob_input_id"`
-	BlobInput            BlobInputType     `gorm:"-"`
-	BlobInputSize        int64             `gorm:"column:blob_input_size;->"`
-	BlobStream           *Blob             `gorm:"-"`
-	BlobStreamSize       int64             `gorm:"column:blob_stream_size;->"`
-	UserID               string            `gorm:"column:user_id"`
-	UserName             string            `gorm:"column:user_name"`
-	UserEmail            string            `gorm:"column:user_email"`
-	Status               string            `gorm:"column:status"`
-	ExitCode             *int              `gorm:"column:exit_code"`
-	Review               *SessionReview    `gorm:"column:review;->"`
-	SessionBatchID       *string           `gorm:"column:session_batch_id"`
+	ID                   string             `gorm:"column:id"`
+	OrgID                string             `gorm:"column:org_id"`
+	Connection           string             `gorm:"column:connection"`
+	ResourceName         string             `gorm:"column:resource_name;->"`
+	ConnectionType       string             `gorm:"column:connection_type"`
+	ConnectionSubtype    string             `gorm:"column:connection_subtype"`
+	ConnectionTags       map[string]string  `gorm:"column:connection_tags;serializer:json"`
+	Verb                 string             `gorm:"column:verb"`
+	Labels               map[string]string  `gorm:"column:labels;serializer:json"`
+	Metadata             map[string]any     `gorm:"column:metadata;serializer:json"`
+	IntegrationsMetadata map[string]any     `gorm:"column:integrations_metadata;serializer:json"`
+	Metrics              map[string]any     `gorm:"column:metrics;serializer:json"`
+	AIAnalysis           *SessionAIAnalysis `gorm:"column:ai_analysis;serializer:json"`
+	BlobInputID          sql.NullString     `gorm:"column:blob_input_id"`
+	BlobInput            BlobInputType      `gorm:"-"`
+	BlobInputSize        int64              `gorm:"column:blob_input_size;->"`
+	BlobStream           *Blob              `gorm:"-"`
+	BlobStreamSize       int64              `gorm:"column:blob_stream_size;->"`
+	UserID               string             `gorm:"column:user_id"`
+	UserName             string             `gorm:"column:user_name"`
+	UserEmail            string             `gorm:"column:user_email"`
+	Status               string             `gorm:"column:status"`
+	ExitCode             *int               `gorm:"column:exit_code"`
+	Review               *SessionReview     `gorm:"column:review;->"`
+	SessionBatchID       *string            `gorm:"column:session_batch_id"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -197,7 +205,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
-		metrics->>'event_size' AS blob_stream_size, s.blob_input_id,
+		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		c.resource_name,
 		CASE
@@ -473,6 +481,7 @@ func UpsertSession(sess Session) error {
 				SessionBatchID:       sess.SessionBatchID,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
+				AIAnalysis:           sess.AIAnalysis,
 			}).Error
 	})
 }

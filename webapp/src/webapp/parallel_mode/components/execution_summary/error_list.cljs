@@ -13,6 +13,12 @@
       [:> AlertTriangle {:size 14}]
       [:> Text {:size "1"} "Jira Template not allowed in Parallel Mode"]]]
 
+    :error-metadata-required
+    [:> Badge {:variant "soft" :color "yellow"}
+     [:> Flex {:align "center" :gap "1"}
+      [:> AlertTriangle {:size 14}]
+      [:> Text {:size "1"} "Mandatory Metadata not allowed in Parallel Mode"]]]
+
     :cancelled
     [:> Badge {:variant "soft" :color "gray"}
      [:> Flex {:align "center" :gap "1"}

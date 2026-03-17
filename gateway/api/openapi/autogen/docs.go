@@ -442,6 +442,339 @@ const docTemplate = `{
                 }
             }
         },
+        "/ai/session-analyzer/providers": {
+            "get": {
+                "description": "Get the AI provider configured for the session analyzer feature in the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Get AI Session Analyzer Provider",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIProviderResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create or update the AI provider for the session analyzer feature in the organization (one per org)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Upsert AI Session Analyzer Provider",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AIProviderResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete the AI provider configured for the session analyzer feature in the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Delete AI Session Analyzer Provider",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai/session-analyzer/rules": {
+            "get": {
+                "description": "List all AI session analyzer rules for the organization, optionally filtered by connection names",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "List AI Session Analyzer Rules",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "description": "Filter by connection names (can be repeated)",
+                        "name": "connection_names",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 0 = all, max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_AISessionAnalyzerRule"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new AI session analyzer rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Create AI Session Analyzer Rule",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/ai/session-analyzer/rules/{name}": {
+            "get": {
+                "description": "Get an AI session analyzer rule by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Get AI Session Analyzer Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the resource",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing AI session analyzer rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Update AI Session Analyzer Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the resource",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete an AI session analyzer rule",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Delete AI Session Analyzer Rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name of the resource",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/audit/logs": {
             "get": {
                 "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.",
@@ -1311,6 +1644,47 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.ConnectionTestResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrId}/ai-session-analyzer-rule": {
+            "get": {
+                "description": "Get the AI session analyzer rule configured for a specific connection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AI"
+                ],
+                "summary": "Get AI Session Analyzer Rule by Connection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The name or ID of the connection",
+                        "name": "nameOrId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
                         }
                     },
                     "404": {
@@ -6654,6 +7028,209 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "openapi.AIProviderRequest": {
+            "type": "object",
+            "required": [
+                "model",
+                "provider"
+            ],
+            "properties": {
+                "api_key": {
+                    "description": "API key for authentication",
+                    "type": "string",
+                    "example": "sk-..."
+                },
+                "api_url": {
+                    "description": "Base URL of the AI API",
+                    "type": "string",
+                    "example": "https://api.openai.com/v1"
+                },
+                "model": {
+                    "description": "Model to use",
+                    "type": "string",
+                    "example": "gpt-4o"
+                },
+                "provider": {
+                    "description": "Name for the AI provider",
+                    "type": "string",
+                    "enum": [
+                        "openai",
+                        "anthropic",
+                        "azure-openai",
+                        "custom"
+                    ],
+                    "example": "openai"
+                }
+            }
+        },
+        "openapi.AIProviderResponse": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "API key for authentication",
+                    "type": "string",
+                    "example": "sk-..."
+                },
+                "api_url": {
+                    "description": "Base URL of the AI API",
+                    "type": "string",
+                    "example": "https://api.openai.com/v1"
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "model": {
+                    "description": "Model to use",
+                    "type": "string",
+                    "example": "gpt-4o"
+                },
+                "provider": {
+                    "description": "Name for the AI provider",
+                    "type": "string",
+                    "example": "openai"
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerRiskEvaluation": {
+            "type": "object",
+            "properties": {
+                "high_risk_action": {
+                    "description": "Action for high-risk sessions",
+                    "type": "string",
+                    "enum": [
+                        "allow_execution",
+                        "block_execution"
+                    ],
+                    "example": "block_execution"
+                },
+                "low_risk_action": {
+                    "description": "Action for low-risk sessions",
+                    "type": "string",
+                    "enum": [
+                        "allow_execution",
+                        "block_execution"
+                    ],
+                    "example": "allow_execution"
+                },
+                "medium_risk_action": {
+                    "description": "Action for medium-risk sessions",
+                    "type": "string",
+                    "enum": [
+                        "allow_execution",
+                        "block_execution"
+                    ],
+                    "example": "allow_execution"
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerRule": {
+            "type": "object",
+            "properties": {
+                "connection_names": {
+                    "description": "Connection names this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "description": "Optional description",
+                    "type": "string",
+                    "example": "Blocks high-risk SQL commands"
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "description": "Unique name for the rule",
+                    "type": "string",
+                    "example": "block-dangerous-queries"
+                },
+                "risk_evaluation": {
+                    "description": "Risk evaluation actions per level",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
+                        }
+                    ]
+                },
+                "updated_at": {
+                    "description": "The time the resource was updated",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.AISessionAnalyzerRuleRequest": {
+            "type": "object",
+            "required": [
+                "connection_names",
+                "name",
+                "risk_evaluation"
+            ],
+            "properties": {
+                "connection_names": {
+                    "description": "Connection names this rule applies to",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                },
+                "description": {
+                    "description": "Optional description",
+                    "type": "string",
+                    "example": "Blocks high-risk SQL commands"
+                },
+                "name": {
+                    "description": "Unique name for the rule",
+                    "type": "string",
+                    "example": "block-dangerous-queries"
+                },
+                "risk_evaluation": {
+                    "description": "Risk evaluation actions per level",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
+                        }
+                    ]
+                }
+            }
+        },
         "openapi.AWSAccount": {
             "type": "object",
             "properties": {
@@ -8882,6 +9459,20 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.PaginatedResponse-openapi_AISessionAnalyzerRule": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.AISessionAnalyzerRule"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
         "openapi.PaginatedResponse-openapi_AccessRequestRule": {
             "type": "object",
             "properties": {
@@ -10953,6 +11544,15 @@ const docTemplate = `{
         "openapi.Session": {
             "type": "object",
             "properties": {
+                "ai_analysis": {
+                    "description": "The AI analysis of the session if it's available",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionAIAnalysis"
+                        }
+                    ],
+                    "readOnly": true
+                },
                 "connection": {
                     "description": "The connection name of this resource (it will be deprecated in favor of RoleName)",
                     "type": "string",
@@ -11106,6 +11706,35 @@ const docTemplate = `{
                         "connect",
                         "exec"
                     ]
+                }
+            }
+        },
+        "openapi.SessionAIAnalysis": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action taken based on the risk assessment. Possible values are:\n* ` + "`" + `allow_execution` + "`" + ` - allow the session to execute\n* ` + "`" + `block_execution` + "`" + ` - block the session from executing",
+                    "type": "string",
+                    "enum": [
+                        "allow_execution",
+                        "block_execution"
+                    ],
+                    "example": "allow_execution"
+                },
+                "explanation": {
+                    "description": "Explanation provides a detailed explanation of the identified risk and why the session was flagged",
+                    "type": "string",
+                    "example": "The script contains queries that may expose sensitive data."
+                },
+                "risk_level": {
+                    "description": "RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:",
+                    "type": "string",
+                    "example": "high"
+                },
+                "title": {
+                    "description": "Title is a short description of the identified risk in the session",
+                    "type": "string",
+                    "example": "Potential Data Leakage"
                 }
             }
         },

@@ -2,6 +2,7 @@
   (:require
    [clojure.string :as cs]
    [re-frame.core :as rf]
+   [webapp.webclient.components.mandatory-metadata-form :as mandatory-metadata-form]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.prompt-form :as prompt-form]))
 
@@ -40,7 +41,9 @@
 (rf/reg-event-fx
  :runbooks/set-selected-connection
  (fn [{:keys [db]} [_ connection]]
-   {:db (assoc-in db [:runbooks :selected-connection] connection)
+  {:db (-> db
+           (assoc-in [:runbooks :selected-connection] connection)
+           (assoc-in [:runbooks :execution-requirements-callout :dismissed?] false))
     :fx [[:dispatch [:runbooks/persist-selected-connection]]
          [:dispatch [:runbooks/clear-active-runbooks]]
          [:dispatch [:runbooks/update-runbooks-for-connection]]]}))
@@ -89,6 +92,11 @@
         :fx [[:dispatch [:runbooks/clear-persisted-connection]]
              [:dispatch [:runbooks/list nil]]]}))))
 
+(rf/reg-event-db
+ :runbooks/dismiss-execution-requirements-callout
+ (fn [db _]
+   (assoc-in db [:runbooks :execution-requirements-callout :dismissed?] true)))
+
 (rf/reg-event-fx
  :runbooks/update-runbooks-for-connection
  (fn [{:keys [db]} _]
@@ -114,7 +122,7 @@
 (rf/reg-event-fx
  :runbooks/exec
  (fn
-   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields on-success on-failure] :as context}]]
+   [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash jira_fields cmdb_fields extra-metadata on-success on-failure] :as context}]]
    ;; Check if parallel mode is active
    (let [parallel-connections (get-in db [:parallel-mode :selection :connections])
          parallel-mode? (>= (count parallel-connections) 2)]
@@ -134,7 +142,10 @@
              current-metadatas (get-in db [:runbooks :metadata])
              current-metadata-key (get-in db [:runbooks :metadata-key])
              current-metadata-value (get-in db [:runbooks :metadata-value])
-             metadata (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
+             extra-metadata-pairs (when extra-metadata
+                                    (map (fn [[k v]] {:key k :value v}) extra-metadata))
+             metadata (concat (conj current-metadatas {:key current-metadata-key :value current-metadata-value})
+                               extra-metadata-pairs)
              repository (or repository
                             (let [list-data (get-in db [:runbooks :list])
                                   repositories (or (:data list-data) [])
@@ -286,7 +297,7 @@
 
 (rf/reg-event-fx
  :runbooks/show-jira-form
- (fn [_ [_ {:keys [template-id file-name params connection-name repository ref-hash]}]]
+ (fn [_ [_ {:keys [template-id file-name params connection-name repository ref-hash extra-metadata]}]]
    {:fx [[:dispatch [:modal->open
                      {:maxWidth "540px"
                       :custom-on-click-out #(.preventDefault %)
@@ -300,7 +311,8 @@
                        :params params
                        :connection-name connection-name
                        :repository repository
-                       :ref-hash ref-hash}]}]]}))
+                       :ref-hash ref-hash
+                       :extra-metadata extra-metadata}]}]]}))
 
 (defn- needs-form? [template]
   (let [has-prompts? (seq (get-in template [:data :prompt_types :items]))
@@ -313,7 +325,7 @@
 
 (rf/reg-event-fx
  :runbooks/check-jira-template-and-show-form
- (fn [{:keys [db]} [_ {:keys [template-id file-name params connection-name repository ref-hash] :as context}]]
+ (fn [{:keys [db]} [_ {:keys [file-name params connection-name repository ref-hash extra-metadata] :as context}]]
    (let [template (get-in db [:jira-templates->submit-template])]
      (cond
        ;; Still loading
@@ -321,13 +333,7 @@
            (= :loading (:status template)))
        {:fx [[:dispatch-later
               {:ms 500
-               :dispatch [:runbooks/check-jira-template-and-show-form
-                          {:template-id template-id
-                           :file-name file-name
-                           :params params
-                           :connection-name connection-name
-                           :repository repository
-                           :ref-hash ref-hash}]}]]}
+               :dispatch [:runbooks/check-jira-template-and-show-form context]}]]}
 
        ;; Ready but with failed CMDB requests
        (and (= :ready (:status template))
@@ -348,7 +354,8 @@
                                                     :params params
                                                     :connection-name connection-name
                                                     :repository repository
-                                                    :ref-hash ref-hash}])}]}]]]}
+                                                    :ref-hash ref-hash
+                                                    :extra-metadata extra-metadata}])}]}]]]}
 
        ;; Ready and doesn't need form
        :else
@@ -358,17 +365,60 @@
                           :params params
                           :connection-name connection-name
                           :repository repository
-                          :ref-hash ref-hash}]]]}))))
+                          :ref-hash ref-hash
+                          :extra-metadata extra-metadata}]]]}))))
 
 (rf/reg-event-fx
  :runbooks/handle-jira-template-submit
- (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash]}]]
+ (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash extra-metadata]}]]
    {:fx [[:dispatch [:modal->close]]
          [:dispatch [:runbooks/exec
                      (cond-> {:file-name file-name
                               :params params
                               :connection-name connection-name
                               :repository repository
-                              :ref-hash ref-hash}
+                              :ref-hash ref-hash
+                              :extra-metadata extra-metadata}
                        (:jira_fields form-data) (assoc :jira_fields (:jira_fields form-data))
                        (:cmdb_fields form-data) (assoc :cmdb_fields (:cmdb_fields form-data)))]]]}))
+
+(rf/reg-event-fx
+ :runbooks/show-mandatory-metadata-form
+ (fn [_ [_ {:keys [fields file-name params connection-name repository ref-hash needs-jira? jira-template-id]}]]
+   {:fx [[:dispatch [:modal->open
+                     {:maxWidth "600px"
+                      :custom-on-click-out #(.preventDefault %)
+                      :content [mandatory-metadata-form/main
+                                {:fields fields
+                                 :on-submit #(rf/dispatch
+                                              [:runbooks/exec-after-mandatory-metadata
+                                               {:form-data %
+                                                :file-name file-name
+                                                :params params
+                                                :connection-name connection-name
+                                                :repository repository
+                                                :ref-hash ref-hash
+                                                :needs-jira? needs-jira?
+                                                :jira-template-id jira-template-id}])}]}]]]}))
+
+(rf/reg-event-fx
+ :runbooks/exec-after-mandatory-metadata
+ (fn [_ [_ {:keys [form-data file-name params connection-name repository ref-hash needs-jira? jira-template-id]}]]
+   (if (and needs-jira? jira-template-id)
+     {:fx [[:dispatch [:modal->close]]
+           [:dispatch [:runbooks/show-jira-form
+                       {:template-id jira-template-id
+                        :file-name file-name
+                        :params params
+                        :connection-name connection-name
+                        :repository repository
+                        :ref-hash ref-hash
+                        :extra-metadata form-data}]]]}
+     {:fx [[:dispatch [:modal->close]]
+           [:dispatch [:runbooks/exec
+                       {:file-name file-name
+                        :params params
+                        :connection-name connection-name
+                        :repository repository
+                        :ref-hash ref-hash
+                        :extra-metadata form-data}]]]})))

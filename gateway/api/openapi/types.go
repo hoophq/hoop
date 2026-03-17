@@ -558,6 +558,19 @@ const (
 	SessionStatusDone  SessionStatusType = "done"
 )
 
+type SessionAIAnalysis struct {
+	// RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:
+	RiskLevel string `json:"risk_level" example:"high"`
+	// Title is a short description of the identified risk in the session
+	Title string `json:"title" example:"Potential Data Leakage"`
+	// Explanation provides a detailed explanation of the identified risk and why the session was flagged
+	Explanation string `json:"explanation" example:"The script contains queries that may expose sensitive data."`
+	// Action taken based on the risk assessment. Possible values are:
+	// * `allow_execution` - allow the session to execute
+	// * `block_execution` - block the session from executing
+	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
+}
+
 type Session struct {
 	// The resource unique identifier
 	ID string `json:"id" format:"uuid" example:"1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
@@ -623,6 +636,8 @@ type Session struct {
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
+	// The AI analysis of the session if it's available
+	AIAnalysis *SessionAIAnalysis `json:"ai_analysis" readonly:"true"`
 }
 
 type ProvisionSession struct {
@@ -1687,8 +1702,10 @@ type SecurityAuditLogResponse struct {
 	CreatedAt              time.Time      `json:"created_at" example:"2023-08-15T14:30:45Z"`
 	ResourceType           string         `json:"resource_type" example:"connections"`
 	Action                 string         `json:"action" example:"create"`
-	ResourceID             string         `json:"resource_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
-	ResourceName           string         `json:"resource_name" example:"my-connection"`
+	HttpMethod             string         `json:"http_method" example:"POST"`
+	HttpStatus             int            `json:"http_status" example:"201"`
+	HttpPath               string         `json:"http_path" example:"/api/connections"`
+	ClientIP               string         `json:"client_ip" example:"192.168.1.100"`
 	RequestPayloadRedacted map[string]any `json:"request_payload_redacted" swaggertype:"object,string"`
 	Outcome                bool           `json:"outcome" example:"true"`
 	ErrorMessage           string         `json:"error_message" example:""`
@@ -2348,4 +2365,69 @@ type AccessRequestRuleRequest struct {
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+}
+
+type AIProviderRequest struct {
+	// Name for the AI provider
+	Provider string `json:"provider" binding:"required" enums:"openai,anthropic,azure-openai,custom" example:"openai"`
+	// Base URL of the AI API
+	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// API key for authentication
+	ApiKey *string `json:"api_key" example:"sk-..."`
+	// Model to use
+	Model string `json:"model" binding:"required" example:"gpt-4o"`
+}
+
+type AIProviderResponse struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Name for the AI provider
+	Provider string `json:"provider" example:"openai"`
+	// Base URL of the AI API
+	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// API key for authentication
+	ApiKey *string `json:"api_key" example:"sk-..."`
+	// Model to use
+	Model string `json:"model" example:"gpt-4o"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AISessionAnalyzerRiskEvaluation struct {
+	// Action for low-risk sessions
+	LowRiskAction string `json:"low_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Action for medium-risk sessions
+	MediumRiskAction string `json:"medium_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Action for high-risk sessions
+	HighRiskAction string `json:"high_risk_action" enums:"allow_execution,block_execution" example:"block_execution"`
+}
+
+type AISessionAnalyzerRuleRequest struct {
+	// Unique name for the rule
+	Name string `json:"name" binding:"required" example:"block-dangerous-queries"`
+	// Optional description
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names this rule applies to
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Risk evaluation actions per level
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
+}
+
+type AISessionAnalyzerRule struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique name for the rule
+	Name string `json:"name" example:"block-dangerous-queries"`
+	// Optional description
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names this rule applies to
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Risk evaluation actions per level
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }

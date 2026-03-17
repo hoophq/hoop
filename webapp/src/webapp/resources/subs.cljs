@@ -26,3 +26,8 @@
  (fn [db _]
    (get-in db [:resources->resource-details :updating?] false)))
 
+(rf/reg-sub
+ :resources/mandatory-metadata-fields
+ (fn [db]
+   (get-in db [:connection-setup :config :mandatory-metadata-fields] [])))
+
