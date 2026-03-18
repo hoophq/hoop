@@ -5,7 +5,8 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
-   [webapp.components.connection-filter :refer [connection-filter]]))
+   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn- get-group-connections [group-name groups-with-permissions]
   (get groups-with-permissions group-name []))
@@ -117,11 +118,9 @@
 
          [:> Box
           (if (empty? processed-groups)
-            [:> Flex {:direction "column" :justify "center" :align "center" :class "h-40"}
-             [:> Text {:size "3" :class "text-[--gray-11] text-center"}
-              (if (nil? @selected-connection)
-                "No groups found"
-                (str "No groups have access to \"" @selected-connection "\""))]]
+            [filtered-empty-state {:entity-name "group"
+                                   :entity-name-plural "groups"
+                                   :filter-value @selected-connection}]
 
             (doall
              (for [group processed-groups]

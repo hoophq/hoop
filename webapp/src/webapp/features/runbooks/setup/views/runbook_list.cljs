@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Box Button Flex Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.connection-filter :refer [connection-filter]]))
+   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn main []
   (let [runbooks-rules-list (rf/subscribe [:runbooks-rules/list])
@@ -23,11 +24,8 @@
          [:> Box {:class "w-full h-full"}
           [:> Box {:class "min-h-full h-max"}
            (if (empty? filtered-rules)
-             [:> Flex {:justify "center" :align "center" :class "h-40"}
-              [:> Text {:size "3" :class "text-[--gray-11]"}
-               (if @selected-connection
-                 (str "No runbook rules found for \"" @selected-connection "\"")
-                 "No runbook rules found")]]
+             [filtered-empty-state {:entity-name "runbook rule"
+                                    :filter-value @selected-connection}]
              (doall
               (for [rule filtered-rules]
                 ^{:key (:id rule)}

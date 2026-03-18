@@ -4,7 +4,8 @@
    ["lucide-react" :refer [ChevronRight]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.connection-filter :refer [connection-filter]]))
+   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn rule-item [{:keys [name description]}]
   [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 "
@@ -43,11 +44,8 @@
 
          [:> Box
           (if (empty? processed-rules)
-            [:> Flex {:direction "column" :justify "center" :align "center" :class "h-40"}
-             [:> Text {:size "3" :class "text-[--gray-11] text-center"}
-              (if @selected-connection
-                (str "No rules found for \"" @selected-connection "\"")
-                "No rules found")]]
+            [filtered-empty-state {:entity-name "Access Request rule"
+                                   :filter-value @selected-connection}]
 
             (doall
              (for [rule processed-rules]

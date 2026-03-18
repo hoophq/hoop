@@ -5,7 +5,8 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
-   [webapp.components.connection-filter :refer [connection-filter]]))
+   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn- get-template-connections
   [connections template-id]
@@ -91,11 +92,8 @@
 
          [:> Box
           (if (empty? filtered-templates)
-            [:> Flex {:justify "center" :align "center" :class "h-40"}
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              (if @selected-connection
-                (str "No Jira templates found for \"" @selected-connection "\"")
-                "No Jira templates found")]]
+            [filtered-empty-state {:entity-name "Jira template"
+                                   :filter-value @selected-connection}]
             (doall
              (for [template filtered-templates]
                ^{:key (:id template)}

@@ -5,7 +5,8 @@
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.features.promotion :as promotion]
-   [webapp.components.connection-filter :refer [connection-filter]]))
+   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn panel []
   (let [guardrails-rules-list (rf/subscribe [:guardrails->list])
@@ -64,11 +65,8 @@
 
            [:> Box
             (if (empty? filtered-rules)
-              [:> Flex {:justify "center" :align "center" :class "h-40"}
-               [:> Text {:size "3" :class "text-[--gray-11]"}
-                (if @selected-connection
-                  (str "No guardrails found for \"" @selected-connection "\"")
-                  "No guardrails found")]]
+              [filtered-empty-state {:entity-name "guardrail"
+                                     :filter-value @selected-connection}]
               (for [rules filtered-rules]
                 ^{:key (:id rules)}
                 [:> Box {:class (str "first:rounded-t-lg border-x border-t "

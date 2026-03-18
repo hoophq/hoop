@@ -3,31 +3,27 @@
    ["@radix-ui/themes" :refer [Box Button Flex Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.connection-filter :refer [connection-filter]]))
+   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn main []
   (let [rules-data (rf/subscribe [:ai-session-analyzer/rules])
-        selected-connection (r/atom nil)
-        on-select (fn [conn-name]
-                    (reset! selected-connection conn-name)
-                    (rf/dispatch [:ai-session-analyzer/get-rules {:connection-names [conn-name]}]))
-        on-clear (fn []
-                   (reset! selected-connection nil)
-                   (rf/dispatch [:ai-session-analyzer/get-rules {}]))]
+        selected-connection (r/atom nil)]
     (fn []
-      (let [rules (or (:data @rules-data) [])]
+      (let [rules (or (:data @rules-data) [])
+            filtered-rules (if (nil? @selected-connection)
+                             rules
+                             (filter #(some #{@selected-connection} (:connection_names %))
+                                     rules))]
         [:> Box {:class "w-full h-full space-y-radix-3"}
          [:> Flex {:pb "3"}
           [connection-filter {:selected @selected-connection
-                              :on-select on-select
-                              :on-clear on-clear}]]
+                              :on-select #(reset! selected-connection %)
+                              :on-clear #(reset! selected-connection nil)}]]
          [:> Box {:class "min-h-full h-max"}
-          (if (empty? rules)
-            [:> Flex {:justify "center" :align "center" :class "h-40"}
-             [:> Text {:size "3" :class "text-[--gray-11]"}
-              (if @selected-connection
-                "No rules found for this resource role"
-                "No rules found")]]
+          (if (empty? filtered-rules)
+            [filtered-empty-state {:entity-name "AI Session Analyzer rule"
+                                   :filter-value @selected-connection}]
             (doall
              (for [rule rules]
                ^{:key (:id rule)}
