@@ -19,17 +19,18 @@
  :primary-connection/set-selected
  (fn [{:keys [db]} [_ new-primary]]
   (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
-         compatible-multiples (filter #(and (= (:type %) (:type new-primary))
-                                            (= (:subtype %) (:subtype new-primary))
-                                            (not= (:name %) (:name new-primary)))
-                                      current-multiples)]
-     {:db (-> db
-              (assoc-in [:editor :connections :selected] new-primary)
-              (assoc-in [:editor :execution-requirements-callout :dismissed?] false)
-              (assoc-in [:editor :multi-connections :selected] compatible-multiples))
-      :fx [[:dispatch [:editor-plugin/clear-language]]
-           [:dispatch [:primary-connection/persist-selected]]
-           [:dispatch [:database-schema->clear-schema]]]})))
+        compatible-multiples (filter #(and (= (:type %) (:type new-primary))
+                                           (= (:subtype %) (:subtype new-primary))
+                                           (not= (:name %) (:name new-primary)))
+                                     current-multiples)]
+    {:db (-> db
+             (assoc-in [:editor :connections :selected] new-primary)
+             (assoc-in [:editor :execution-requirements-callout :dismissed?] false)
+             (assoc-in [:editor :multi-connections :selected] compatible-multiples))
+     :fx [[:dispatch [:editor-plugin/clear-language]]
+          [:dispatch [:primary-connection/persist-selected]]
+          [:dispatch [:database-schema->clear-schema]]
+          [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]]})))
 
 (rf/reg-event-fx
  :primary-connection/persist-selected
@@ -59,9 +60,10 @@
  :primary-connection/clear-selected
  (fn [{:keys [db]} _]
    (.removeItem js/localStorage "selected-connection")
-  {:db (-> db
-           (assoc-in [:editor :connections :selected] nil)
-           (assoc-in [:editor :execution-requirements-callout :dismissed?] false))}))
+   {:db (-> db
+            (assoc-in [:editor :connections :selected] nil)
+            (assoc-in [:editor :execution-requirements-callout :dismissed?] false))
+    :fx [[:dispatch [:ai-session-analyzer/clear-role-rule]]]}))
 
 (rf/reg-event-db
  :primary-connection/dismiss-execution-requirements-callout
@@ -76,7 +78,8 @@
          enabled? (and connection
                        (not= "disabled" (:access_mode_exec connection)))]
      (if enabled?
-       {:db (assoc-in db [:editor :connections :selected] connection)}
+       {:db (assoc-in db [:editor :connections :selected] connection)
+        :fx [[:dispatch [:ai-session-analyzer/get-role-rule (or (:name connection) (:id connection))]]]}
        {:db (assoc-in db [:editor :connections :selected] nil)
         :fx [[:dispatch [:primary-connection/clear-selected]]]}))))
 
