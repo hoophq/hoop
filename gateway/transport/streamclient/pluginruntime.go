@@ -48,7 +48,7 @@ func loadRuntimePlugins(ctx plugintypes.Context) ([]runtimePlugin, error) {
 
 				if err = p.OnConnect(ctx); err != nil {
 					log.Warnf("plugin %q refused to accept connection %q, err=%v", p1.Name, ctx.SID, err)
-					return pluginsConfig, status.Errorf(codes.FailedPrecondition, err.Error())
+					return pluginsConfig, status.Errorf(codes.FailedPrecondition, "%s", err.Error())
 				}
 
 				pluginsConfig = append(pluginsConfig, ep)

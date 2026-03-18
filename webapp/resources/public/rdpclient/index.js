@@ -46,9 +46,11 @@ async function initializeApp(rdpCredential) {
     console.log(`Window Size: ${viewportWidth} x ${viewportHeight}`);
     rdpCanvas.width = viewportWidth;
     rdpCanvas.height = viewportHeight;
-    
+
     const RDP = new RemoteDesktopService(rdpCanvas, mod);
     window.RDP = RDP;
+
+    // Live connection mode
     const proxyAddr = (window.location.protocol === 'https:') ?
         'wss://' + window.location.host + "/rdpproxy/"
         :

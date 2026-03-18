@@ -238,7 +238,7 @@ func (c *clientExec) run(inputPayload []byte, openSessionSpec map[string][]byte)
 
 		pkt, err := dstream.Recv()
 		if err != nil {
-			return newErr(err.Error())
+			return newErr("%s", err.Error())
 		}
 		if pkt == nil {
 			continue

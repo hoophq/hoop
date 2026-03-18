@@ -157,7 +157,7 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	span.SetAttributes(attribute.Float64("hoop.gateway.client-duration", time.Now().UTC().Sub(ssw.startTime).Seconds()))
 	var disconnectErr error
 	if streamErr != nil && len(streamErr.Error()) > 250 {
-		disconnectErr = fmt.Errorf(streamErr.Error()[0:250])
+		disconnectErr = fmt.Errorf("%s", streamErr.Error()[0:250])
 	}
 	span.SetAttributes(attribute.String("hoop.gateway.disconnect-err", fmt.Sprintf("%v", disconnectErr)))
 	span.End()

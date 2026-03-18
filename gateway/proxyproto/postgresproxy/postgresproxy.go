@@ -306,7 +306,7 @@ func (c *postgresConn) handleTcpConnection() {
 
 	// propagate any errors to the underline client connection
 	if ctxErr != nil {
-		_, _ = c.Write(pgtypes.NewFatalError(ctxErr.Error()).Encode())
+		_, _ = c.Write(pgtypes.NewFatalError("%s", ctxErr.Error()).Encode())
 	}
 
 	// wait 2 seconds for cleaning up session gracefully
