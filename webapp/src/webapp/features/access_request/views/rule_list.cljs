@@ -2,7 +2,9 @@
   (:require
    ["@radix-ui/themes" :refer [Box Flex Heading IconButton Text]]
    ["lucide-react" :refer [ChevronRight]]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.connection-filter :refer [connection-filter]]))
 
 (defn rule-item [{:keys [name description]}]
   [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 "
@@ -22,18 +24,32 @@
      [:> ChevronRight {:size 24}]]]])
 
 (defn main []
-  (let [rules (rf/subscribe [:access-request/rules])]
+  (let [rules (rf/subscribe [:access-request/rules])
+        selected-connection (r/atom nil)]
     (fn []
       (let [all-rules (or @rules [])
-            processed-rules (sort-by :name all-rules)]
+            filtered-rules (if (nil? @selected-connection)
+                             all-rules
+                             (filter #(some #{@selected-connection} (:connection_names %))
+                                     all-rules))
+            processed-rules (sort-by :name filtered-rules)]
 
-        [:> Box
-         (if (empty? processed-rules)
-           [:> Flex {:direction "column" :justify "center" :align "center" :class "h-40"}
-            [:> Text {:size "3" :class "text-gray-500 text-center"}
-             "No rules found"]]
+        [:<>
+         [:> Box {:mb "6"}
+          [connection-filter {:selected @selected-connection
+                              :on-select #(reset! selected-connection %)
+                              :on-clear #(reset! selected-connection nil)
+                              :label "Resource Role"}]]
 
-           (doall
-            (for [rule processed-rules]
-              ^{:key (:name rule)}
-              [rule-item rule])))]))))
+         [:> Box
+          (if (empty? processed-rules)
+            [:> Flex {:direction "column" :justify "center" :align "center" :class "h-40"}
+             [:> Text {:size "3" :class "text-[--gray-11] text-center"}
+              (if @selected-connection
+                (str "No rules found for \"" @selected-connection "\"")
+                "No rules found")]]
+
+            (doall
+             (for [rule processed-rules]
+               ^{:key (:name rule)}
+               [rule-item rule])))]]))))

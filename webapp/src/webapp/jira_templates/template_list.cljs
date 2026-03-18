@@ -4,7 +4,8 @@
    ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.connections.constants :as connection-constants]))
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.connection-filter :refer [connection-filter]]))
 
 (defn- get-template-connections
   [connections template-id]
@@ -69,16 +70,39 @@
          [connections-panel {:connections connections}])])))
 
 (defn main [{:keys [templates on-configure]}]
-  (let [connections (rf/subscribe [:connections])]
+  (let [connections (rf/subscribe [:connections])
+        selected-connection (r/atom nil)]
     (fn []
-      [:> Box
-       (doall
-        (for [template templates]
-          ^{:key (:id template)}
-          [template-item
-           (assoc template
-                  :total-items (count templates)
-                  :on-configure on-configure
-                  :connections (get-template-connections
-                                (:results @connections)
-                                (:id template)))]))])))
+      (let [connections-results (:results @connections)
+            filtered-templates (if (nil? @selected-connection)
+                                 templates
+                                 (filter (fn [template]
+                                           (let [template-connections (get-template-connections
+                                                                       connections-results
+                                                                       (:id template))]
+                                             (some #(= (:name %) @selected-connection) template-connections)))
+                                         templates))]
+        [:<>
+         [:> Box {:mb "6"}
+          [connection-filter {:selected @selected-connection
+                              :on-select #(reset! selected-connection %)
+                              :on-clear #(reset! selected-connection nil)
+                              :label "Resource Role"}]]
+
+         [:> Box
+          (if (empty? filtered-templates)
+            [:> Flex {:justify "center" :align "center" :class "h-40"}
+             [:> Text {:size "3" :class "text-[--gray-11]"}
+              (if @selected-connection
+                (str "No Jira templates found for \"" @selected-connection "\"")
+                "No Jira templates found")]]
+            (doall
+             (for [template filtered-templates]
+               ^{:key (:id template)}
+               [template-item
+                (assoc template
+                       :total-items (count filtered-templates)
+                       :on-configure on-configure
+                       :connections (get-template-connections
+                                     connections-results
+                                     (:id template)))])))]]))))

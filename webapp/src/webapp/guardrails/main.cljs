@@ -4,26 +4,39 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.loaders :as loaders]
-   [webapp.features.promotion :as promotion]))
+   [webapp.features.promotion :as promotion]
+   [webapp.components.connection-filter :refer [connection-filter]]))
 
 (defn panel []
   (let [guardrails-rules-list (rf/subscribe [:guardrails->list])
-        min-loading-done (r/atom false)]
+        min-loading-done (r/atom false)
+        selected-connection (r/atom nil)
+        connections (rf/subscribe [:connections])]
     (rf/dispatch [:guardrails->get-all])
 
-    ;; Set timer for minimum loading time
     (js/setTimeout #(reset! min-loading-done true) 1500)
 
     (fn []
       (let [loading? (or (= :loading (:status @guardrails-rules-list))
-                         (not @min-loading-done))]
+                         (not @min-loading-done))
+            all-rules (:data @guardrails-rules-list)
+            connections-data @connections
+            connections-results (:results connections-data)
+            filtered-rules (if (nil? @selected-connection)
+                             all-rules
+                             (filter #(some #{@selected-connection}
+                                            (map :name
+                                                 (filter (fn [conn]
+                                                           (some #{(:id conn)} (:connection_ids %)))
+                                                         (or connections-results []))))
+                                     all-rules))]
         (cond
           loading?
           [:> Flex {:height "100%" :direction "column" :gap "5"
                     :class "bg-gray-1" :align "center" :justify "center"}
            [loaders/simple-loader]]
 
-          (empty? (:data @guardrails-rules-list))
+          (empty? all-rules)
           [:> Box {:class "bg-gray-1 h-full"}
            [promotion/guardrails-promotion {:mode :empty-state}]]
 
@@ -37,24 +50,36 @@
               [:> Text {:size "5" :class "text-[--gray-11]"}
                "Create custom rules to guide and protect usage within your resource roles"]]
 
-             (when (seq (:data @guardrails-rules-list))
+             (when (seq all-rules)
                [:> Button {:size "3"
                            :variant "solid"
                            :on-click #(rf/dispatch [:navigate :create-guardrail])}
                 "Create a new Guardrail"])]]
 
+           [:> Box {:mb "6"}
+            [connection-filter {:selected @selected-connection
+                                :on-select #(reset! selected-connection %)
+                                :on-clear #(reset! selected-connection nil)
+                                :label "Resource Role"}]]
+
            [:> Box
-            (for [rules (:data @guardrails-rules-list)]
-              ^{:key (:id rules)}
-              [:> Box {:class (str "first:rounded-t-lg border-x border-t "
-                                   "last:rounded-b-lg bg-white last:border-b border-gray-200 "
-                                   "p-[--space-5]")}
-               [:> Flex {:justify "between" :align "center"}
-                [:> Box
-                 [:> Text {:size "4" :weight "bold"} (:name rules)]
-                 [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rules)]]
-                [:> Button {:variant "soft"
-                            :color "gray"
-                            :size "3"
-                            :on-click #(rf/dispatch [:navigate :edit-guardrail {} :guardrail-id (:id rules)])}
-                 "Configure"]]])]])))))
+            (if (empty? filtered-rules)
+              [:> Flex {:justify "center" :align "center" :class "h-40"}
+               [:> Text {:size "3" :class "text-[--gray-11]"}
+                (if @selected-connection
+                  (str "No guardrails found for \"" @selected-connection "\"")
+                  "No guardrails found")]]
+              (for [rules filtered-rules]
+                ^{:key (:id rules)}
+                [:> Box {:class (str "first:rounded-t-lg border-x border-t "
+                                     "last:rounded-b-lg bg-white last:border-b border-gray-200 "
+                                     "p-[--space-5]")}
+                 [:> Flex {:justify "between" :align "center"}
+                  [:> Box
+                   [:> Text {:size "4" :weight "bold"} (:name rules)]
+                   [:> Text {:as "p" :size "3" :class "text-[--gray-11]"} (:description rules)]]
+                  [:> Button {:variant "soft"
+                              :color "gray"
+                              :size "3"
+                              :on-click #(rf/dispatch [:navigate :edit-guardrail {} :guardrail-id (:id rules)])}
+                   "Configure"]]]))]])))))
