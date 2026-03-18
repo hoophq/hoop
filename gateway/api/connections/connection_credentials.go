@@ -100,6 +100,7 @@ func CreateConnectionCredentials(c *gin.Context) {
 		ConnectionTags:    conn.ConnectionTags,
 		Verb:              proto.ClientVerbConnect,
 		Status:            string(openapi.SessionStatusOpen),
+		Metadata:          map[string]any{},
 		CreatedAt:         time.Now().UTC(),
 	}
 
@@ -109,6 +110,12 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// Persist session
 	if err := services.UpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
+
+		if errors.Is(err, services.ErrMissingMetadata) {
+			c.AbortWithStatusJSON(422, gin.H{"message": err.Error()})
+			return
+		}
+
 		c.AbortWithStatusJSON(500, gin.H{"message": "failed creating session"})
 		return
 	}
