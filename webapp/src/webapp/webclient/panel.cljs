@@ -377,7 +377,8 @@
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))
                      [connection-state-indicator @dark-mode? (:command current-connection)])
-                   [:> Box {:aria-label "Script editor. Press Escape to exit editor"
+                   [:> Box {:class "flex-1 min-h-0 overflow-hidden"
+                            :aria-label "Script editor. Press Escape to exit editor"
                             :aria-describedby "editor-instructions"
                             :tabIndex "0"
                             :on-focus (fn [e]
