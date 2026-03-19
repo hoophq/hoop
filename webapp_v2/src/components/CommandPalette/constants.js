@@ -12,8 +12,7 @@ import {
   UserRoundCheck,
   PackageSearch,
   BrainCog,
-  Puzzle,
-  Settings,
+  ExternalLink,
   Users,
 } from 'lucide-react'
 
@@ -33,9 +32,9 @@ export const NAVIGATION_ACTIONS = [
   { id: 'resource-discovery', label: 'Resource Discovery', description: 'Discover resources automatically', group: 'Discover',    icon: PackageSearch,      path: '/integrations/aws-connect' },
 
   { id: 'agents',             label: 'Agents',             description: 'Manage agents',                   group: 'Organization', icon: BrainCog,           path: '/agents' },
-  { id: 'authentication',     label: 'Authentication',     description: 'Configure authentication',        group: 'Organization', icon: Puzzle,             path: '/integrations/authentication' },
-  { id: 'jira',               label: 'Jira',               description: 'Configure Jira integration',      group: 'Organization', icon: Puzzle,             path: '/settings/jira' },
-  { id: 'settings-infra',     label: 'Infrastructure',     description: 'Infrastructure settings',         group: 'Organization', icon: Settings,           path: '/settings/infrastructure' },
-  { id: 'license',            label: 'License',            description: 'License management',              group: 'Organization', icon: Settings,           path: '/settings/license' },
+  { id: 'authentication',     label: 'Authentication',     description: 'Configure authentication',        group: 'Organization', icon: ShieldCheck,        path: '/integrations/authentication' },
+  { id: 'jira',               label: 'Jira',               description: 'Configure Jira integration',      group: 'Organization', icon: ExternalLink,       path: '/settings/jira' },
+  { id: 'settings-infra',     label: 'Infrastructure',     description: 'Infrastructure settings',         group: 'Organization', icon: LayoutDashboard,    path: '/settings/infrastructure' },
+  { id: 'license',            label: 'License',            description: 'License management',              group: 'Organization', icon: ShieldCheck,        path: '/settings/license' },
   { id: 'users',              label: 'Users',              description: 'Manage organization users',       group: 'Organization', icon: Users,              path: '/organization/users' },
 ]
