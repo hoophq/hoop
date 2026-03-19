@@ -94,7 +94,11 @@ function ClojureApp() {
   // so we bridge the gap by calling hoopSetRoute directly.
   useEffect(() => {
     if (cljsReadyRef.current && window.hoopSetRoute) {
-      window.hoopSetRoute(location.pathname)
+      try {
+        window.hoopSetRoute(location.pathname)
+      } catch (e) {
+        console.warn('[ClojureApp] hoopSetRoute failed for', location.pathname, e)
+      }
     }
   }, [location.pathname])
 
