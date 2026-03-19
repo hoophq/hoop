@@ -87,6 +87,46 @@
                         :text "Failed to delete provider configuration"
                         :details error-message}]]]})))
 
+(rf/reg-event-fx
+ :ai-session-analyzer/get-role-rule
+ (fn [{:keys [db]} [_ role-name-or-id]]
+   (let [provider (get-in db [:ai-session-analyzer :provider])
+         provider-configured? (and (= (:status provider) :success)
+                                   (some? (:data provider)))]
+     (if (and provider-configured? (some? role-name-or-id))
+       {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :loading :data nil :error nil})
+        :fx [[:dispatch [:fetch {:method "GET"
+                                 :uri (str "/connections/" role-name-or-id "/ai-session-analyzer-rule")
+                                 :on-success #(rf/dispatch [:ai-session-analyzer/get-role-rule-success %])
+                                 :on-failure #(rf/dispatch [:ai-session-analyzer/get-role-rule-failure %])}]]]}
+       {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :idle :data nil :error nil})}))))
+
+(rf/reg-event-db
+ :ai-session-analyzer/get-role-rule-success
+ (fn [db [_ data]]
+   (assoc-in db [:ai-session-analyzer :role-rule] {:status :success :data data :error nil})))
+
+(rf/reg-event-fx
+ :ai-session-analyzer/get-role-rule-failure
+ (fn [{:keys [db]} [_ error]]
+   (let [status-code (or (:status error)
+                         (:status-code error)
+                         (get-in error [:response :status])
+                         (get-in error [:response :status-code]))]
+     (if (= status-code 404)
+       {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :idle :data nil :error nil})}
+       (let [error-message (or (:message error) (str error))]
+         {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :error :data nil :error error})
+          :fx [[:dispatch [:show-snackbar
+                           {:level :error
+                            :text "Failed to load AI Session Analyzer role rule"
+                            :details error-message}]]]})))))
+
+(rf/reg-event-db
+ :ai-session-analyzer/clear-role-rule
+ (fn [db _]
+   (assoc-in db [:ai-session-analyzer :role-rule] {:status :idle :data nil :error nil})))
+
 ;; Rules Events
 
 (rf/reg-event-fx

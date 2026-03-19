@@ -198,6 +198,7 @@
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
         script-response (rf/subscribe [:editor-plugin->script])
         provider-configured? (rf/subscribe [:ai-session-analyzer/provider-configured?])
+        role-has-rule? (rf/subscribe [:ai-session-analyzer/role-has-rule?])
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
@@ -208,6 +209,7 @@
         metadata (r/atom [])
         metadata-key (r/atom "")
         metadata-value (r/atom "")]
+
     (rf/dispatch [:gateway->get-info])
     (rf/dispatch [:ai-session-analyzer/get-provider])
 
@@ -392,15 +394,15 @@
                                materialLight)
                       :extensions codemirror-exts
                       :on-change optimized-change-handler}]]
-                   (when @provider-configured?
-                    (cond
-                      (= :loading (:status @script-response))
-                      [ai-analyzer-card]
+                   (when (and @provider-configured? @role-has-rule?)
+                     (cond
+                       (= :loading (:status @script-response))
+                       [ai-analyzer-card]
 
-                      (= "block_execution" (:action ai-data))
-                      [ai-block-card {:title (:title ai-data)
-                                      :explanation (:explanation ai-data)}]))]]
-                 
+                       (= "block_execution" (:action ai-data))
+                       [ai-block-card {:title (:title ai-data)
+                                       :explanation (:explanation ai-data)}]))]]
+
 
                  [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"
                            :role "region"
