@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { SpotlightRoot, SpotlightSearch, SpotlightActionsList, spotlight } from '@mantine/spotlight'
 import { useDebouncedValue } from '@mantine/hooks'
-import { Search } from 'lucide-react'
+import { Badge, ActionIcon } from '@mantine/core'
+import { Search, X } from 'lucide-react'
 import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore'
 import { searchAll } from '@/services/search'
 import MainPage from './pages/MainPage'
@@ -15,7 +16,7 @@ export const openCommandPalette = () => spotlight.open()
 function CommandPalette() {
   const [query, setQuery] = useState('')
   const [debouncedQuery] = useDebouncedValue(query, 300)
-  const { currentPage, setSearchResults, reset } = useCommandPaletteStore()
+  const { currentPage, context, setSearchResults, reset, back } = useCommandPaletteStore()
 
   useEffect(() => {
     if (debouncedQuery.length >= 2) {
@@ -30,7 +31,7 @@ function CommandPalette() {
 
   const handleKeyDown = (event) => {
     if (event.key === 'Backspace' && query === '' && currentPage !== 'main') {
-      useCommandPaletteStore.getState().back()
+      back()
     }
   }
 
@@ -38,6 +39,29 @@ function CommandPalette() {
     setQuery('')
     reset()
   }
+
+  const badgeLabel =
+    currentPage === 'resource-roles' ? context.resource?.name :
+    currentPage === 'connection-actions' ? context.connection?.name :
+    null
+
+  const placeholder =
+    currentPage === 'resource-roles' ? 'Select a connection...' :
+    currentPage === 'connection-actions' ? 'Choose an action...' :
+    'Search for resources, connections, runbooks...'
+
+  const rightSection = badgeLabel ? (
+    <Badge
+      variant="light"
+      rightSection={
+        <ActionIcon size={12} variant="transparent" onClick={back}>
+          <X size={12} />
+        </ActionIcon>
+      }
+    >
+      {badgeLabel}
+    </Badge>
+  ) : null
 
   return (
     <SpotlightRoot
@@ -51,8 +75,9 @@ function CommandPalette() {
     >
       <SpotlightSearch
         leftSection={<Search size={16} />}
-        placeholder="Search for resources, connections, runbooks..."
+        placeholder={placeholder}
         onKeyDown={handleKeyDown}
+        rightSection={rightSection}
       />
       <SpotlightActionsList>
         {currentPage === 'main' && <MainPage query={debouncedQuery} />}

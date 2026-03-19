@@ -2,7 +2,7 @@ import { SpotlightAction, SpotlightActionsGroup, SpotlightEmpty } from '@mantine
 import { Loader, Text } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
 import { spotlight } from '@mantine/spotlight'
-import { Package, Plug, BookUp2 } from 'lucide-react'
+import { Package, Rotate3d, File } from 'lucide-react'
 import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore'
 import { NAVIGATION_ACTIONS } from '../constants'
 
@@ -65,7 +65,7 @@ export default function MainPage({ query, navigate: _navigate }) {
                 key={c.name}
                 label={c.name}
                 description={c.resource_name}
-                leftSection={<Plug size={16} />}
+                leftSection={<Rotate3d size={16} />}
                 closeSpotlightOnTrigger={false}
                 onClick={() => navigateToPage('connection-actions', { connection: c })}
               />
@@ -79,10 +79,10 @@ export default function MainPage({ query, navigate: _navigate }) {
                 key={rb.name}
                 label={rb.name}
                 description={rb.description}
-                leftSection={<BookUp2 size={16} />}
+                leftSection={<File size={16} />}
                 onClick={() => {
                   spotlight.close()
-                  navigate(`/runbooks/${rb.name}`)
+                  navigate('/runbooks')
                 }}
               />
             ))}

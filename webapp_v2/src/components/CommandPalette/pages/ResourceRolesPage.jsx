@@ -1,9 +1,9 @@
 import { SpotlightAction, SpotlightActionsGroup, SpotlightEmpty } from '@mantine/spotlight'
-import { Plug, ArrowLeft } from 'lucide-react'
+import { Plug } from 'lucide-react'
 import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore'
 
 export default function ResourceRolesPage() {
-  const { context, searchResults, navigateToPage, back } = useCommandPaletteStore()
+  const { context, searchResults, navigateToPage } = useCommandPaletteStore()
   const resource = context.resource
 
   const connections = (searchResults.connections || []).filter(
@@ -12,12 +12,6 @@ export default function ResourceRolesPage() {
 
   return (
     <SpotlightActionsGroup label={`Connections for ${resource?.name || 'resource'}`}>
-      <SpotlightAction
-        label="← Back"
-        leftSection={<ArrowLeft size={16} />}
-        closeSpotlightOnTrigger={false}
-        onClick={back}
-      />
       {connections.length === 0
         ? <SpotlightEmpty>No connections found for this resource.</SpotlightEmpty>
         : connections.map((c) => (

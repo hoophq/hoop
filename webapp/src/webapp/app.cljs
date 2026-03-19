@@ -275,7 +275,7 @@
             (if react-shell?
               ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
               [:section
-               {:class "antialiased min-h-screen"}
+               {:class "antialiased h-screen"}
                [:> Toaster {:position "top-right"}]
                [modals/modal]
                [modals/modal-radix]
@@ -286,7 +286,7 @@
                panels]
               ;; Normal mode: full layout with sidebar and cmdk
               [:section
-               {:class "antialiased min-h-screen"}
+               {:class "antialiased h-screen"}
                [:> Toaster {:position "top-right"}]
                [modals/modal]
                [modals/modal-radix]
