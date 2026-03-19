@@ -44,9 +44,9 @@ function CommandPalette() {
   };
 
   const badgeLabel =
-    currentPage === 'resource-roles'
-      ? context.resource && context.resource.name
-      : currentPage === 'connection-actions' ? context.connection && context.connection.name : null;
+    currentPage === 'resource-roles' ? context.resource?.name :
+    currentPage === 'connection-actions' ? context.connection?.name :
+    null
 
   const placeholder =
     currentPage === 'resource-roles'
