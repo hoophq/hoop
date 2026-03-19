@@ -16,6 +16,7 @@ import {
   BrainCog,
   Puzzle,
   Settings,
+  Search,
   ChevronsLeft,
   ChevronsRight,
   ChevronRight,
@@ -24,6 +25,7 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { openCommandPalette } from '@/components/CommandPalette';
 
 // ─── Navigation structure (mirrors legacy sidebar constants.cljs) ──────────
 
@@ -34,6 +36,7 @@ const MAIN_ITEMS = [
   { label: 'Runbooks',   path: '/runbooks',    icon: BookUp2 },
   { label: 'Sessions',   path: '/sessions',    icon: GalleryVerticalEnd },
   { label: 'Reviews',    path: '/reviews',     icon: Inbox },
+  { label: 'Search',     icon: Search,         action: () => openCommandPalette() },
 ];
 
 const DISCOVER_ITEMS = [
@@ -114,7 +117,7 @@ function getUserInitials(user) {
 
 // ─── Collapsed icon button ─────────────────────────────────────────────────
 
-function CollapsedItem({ icon: Icon, label, path, onClick }) {
+function CollapsedItem({ icon: Icon, label, path, action, onClick }) {
   const location = useLocation();
   const navigate = useNavigate();
   const active = path ? isActive(path, location.pathname) : false;
@@ -122,7 +125,7 @@ function CollapsedItem({ icon: Icon, label, path, onClick }) {
   return (
     <Tooltip label={label} position="right" withArrow>
       <UnstyledButton
-        onClick={() => { if (onClick) onClick(); else if (path) navigate(path); }}
+        onClick={() => { if (onClick) onClick(); else if (action) action(); else if (path) navigate(path); }}
         style={{
           ...collapsedBtnBase,
           backgroundColor: active ? 'rgba(255,255,255,0.07)' : 'transparent',
@@ -190,7 +193,7 @@ function Sidebar() {
         <Divider style={{ width: 40, borderColor: 'rgba(255,255,255,0.1)' }} />
 
         <Stack gap={2} align="center" mt={4}>
-          {MAIN_ITEMS.map((item) => <CollapsedItem key={item.path} {...item} />)}
+          {MAIN_ITEMS.map((item) => <CollapsedItem key={item.path || item.label} {...item} />)}
         </Stack>
 
         <Divider style={{ width: 40, borderColor: 'rgba(255,255,255,0.1)' }} my={4} />
@@ -250,11 +253,11 @@ function Sidebar() {
         <Stack gap={2} mb={4}>
           {MAIN_ITEMS.map((item) => (
             <NavLink
-              key={item.path}
+              key={item.path || item.label}
               label={item.label}
               leftSection={<item.icon size={16} />}
-              active={isActive(item.path, location.pathname)}
-              onClick={() => navigate(item.path)}
+              active={item.path ? isActive(item.path, location.pathname) : false}
+              onClick={() => item.action ? item.action() : navigate(item.path)}
               styles={navLinkStyles}
             />
           ))}
