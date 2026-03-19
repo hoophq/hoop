@@ -167,6 +167,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		peerAddr,
 		broker.ProtocolRDP,
 		extractedCreds,
+		dba.ID,
 		dba.ExpireAt,
 		ctxDuration,
 	)

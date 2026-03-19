@@ -12,14 +12,14 @@
    [webapp.connections.native-client-access.custom-credential-views :as custom-views]))
 
 (defn disconnect-session
-  "Handle disconnect with confirmation"
-  [connection-name]
+  "Handle disconnect with confirmation. Calls revoke API to invalidate credential and disconnect active sessions."
+  [connection-name credential-id]
   (let [dialog-text (str "Are you sure you want to disconnect the native client session for \"" connection-name "\"?")
         open-dialog #(rf/dispatch [:dialog->open {:text dialog-text
                                                   :type :danger
                                                   :action-button? true
                                                   :on-success (fn []
-                                                                (rf/dispatch [:native-client-access->clear-session connection-name])
+                                                                (rf/dispatch [:native-client-access->revoke-credential connection-name credential-id])
                                                                 (rf/dispatch [:modal->close]))
                                                   :text-action-button "Disconnect"}])]
     (open-dialog)))
@@ -366,11 +366,9 @@
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
-  (let [active-tab (r/atom "credentials")
+    (let [active-tab (r/atom "credentials")
         subtype (:connection_subtype native-client-access-data)
         has-command? (contains? #{"ssh" "rdp"} subtype)]
-
-    (println native-client-access-data)
 
     (fn []
       [:> Flex {:direction "column" :class "h-full"}
@@ -515,7 +513,7 @@
      {:variant "solid"
       :size "1"
       :color "red"
-      :on-click #(disconnect-session connection-name)}
+      :on-click #(disconnect-session connection-name (:id native-client-access-data))}
      "Disconnect"]]])
 
 (defn minimize-modal
@@ -552,7 +550,7 @@
         (and @session-valid? @native-client-access-data)
         [connection-established-view connection-name @native-client-access-data
          #(minimize-modal connection-name)
-         #(disconnect-session connection-name)]
+         #(disconnect-session connection-name (:id @native-client-access-data))]
 
         ;; Step 1: Configure session duration (no session)
         (not @native-client-access-data)
