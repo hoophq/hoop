@@ -1,14 +1,14 @@
 import { SpotlightAction, SpotlightActionsGroup } from '@mantine/spotlight'
 import { spotlight } from '@mantine/spotlight'
 import { useNavigate } from 'react-router-dom'
-import { SquareCode, Terminal, FlaskConical, Settings, ArrowLeft, Copy } from 'lucide-react'
+import { SquareCode, Terminal, FlaskConical, Settings, Copy } from 'lucide-react'
 import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { notifications } from '@mantine/notifications'
 
 export default function ConnectionActionsPage() {
   const navigate = useNavigate()
-  const { context, back } = useCommandPaletteStore()
+  const { context } = useCommandPaletteStore()
   const { user } = useUserStore()
   const connection = context.connection
 
@@ -22,12 +22,6 @@ export default function ConnectionActionsPage() {
 
   return (
     <SpotlightActionsGroup label={`Actions for ${connection?.name || 'connection'}`}>
-      <SpotlightAction
-        label="← Back"
-        leftSection={<ArrowLeft size={16} />}
-        closeSpotlightOnTrigger={false}
-        onClick={back}
-      />
       <SpotlightAction
         label="Web Terminal"
         description="Open in browser terminal"
