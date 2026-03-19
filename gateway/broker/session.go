@@ -27,6 +27,7 @@ type Session struct {
 	Protocol           string
 
 	Connection          models.Connection
+	CredentialID        string
 	clientAddr          string
 	dataChannel         chan []byte
 	credentialsReceived chan bool
@@ -209,6 +210,16 @@ func GetSessions() map[uuid.UUID]*Session {
 		return true
 	})
 	return sessions
+}
+
+// RevokeByCredentialID closes all sessions using the given credential ID.
+// This triggers the same cleanup flow as when a credential expires.
+func RevokeByCredentialID(credentialID string) {
+	for _, session := range GetSessions() {
+		if session != nil && session.CredentialID == credentialID {
+			session.Close()
+		}
+	}
 }
 
 var _ net.Conn = (*sessionConnWrapper)(nil)

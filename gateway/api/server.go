@@ -337,6 +337,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.CreateConnectionCredentials,
 	)
+	r.POST("/connections/:nameOrID/credentials/:credentialID/revoke",
+		r.AuthMiddleware,
+		apiconnections.RevokeConnectionCredentials,
+	)
 
 	r.GET("/connection-tags",
 		apiroutes.ReadOnlyAccessRole,

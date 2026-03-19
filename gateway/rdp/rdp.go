@@ -190,6 +190,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 		peerAddr.String(),
 		broker.ProtocolRDP,
 		extractedCreds,
+		dba.ID,
 		dba.ExpireAt,
 		ctxDuration,
 	)

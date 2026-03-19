@@ -163,6 +163,16 @@ func (s *HttpProxyServer) Stop() error {
 
 func (s *HttpProxyServer) ListenAddr() string { return s.listenAddr }
 
+// RevokeBySecretKeyHash cancels the session for the given secret key hash, if one exists.
+// This triggers the same cleanup flow as when a credential expires.
+func (s *HttpProxyServer) RevokeBySecretKeyHash(secretKeyHash string) {
+	if session, ok := s.sessionStore.Load(secretKeyHash); ok {
+		if sess, ok := session.(*httpProxySession); ok {
+			sess.cancelFn("credential revoked")
+		}
+	}
+}
+
 // ServeHTTP implements http.Handler
 func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var proxyToken string

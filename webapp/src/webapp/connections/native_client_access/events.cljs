@@ -114,6 +114,27 @@
                                                 :user-is-admin? is-admin?}]
                                      :maxWidth "446px"}]]]})))
 
+;; Revoke credential via API and clear session
+(rf/reg-event-fx
+ :native-client-access->revoke-credential
+ (fn [_ [_ connection-name credential-id]]
+   (if (or (nil? credential-id) (str/blank? credential-id))
+     ;; No credential ID (e.g. legacy session) - just clear locally
+     {:fx [[:dispatch [:native-client-access->clear-session connection-name]]
+           [:dispatch [:modal->close]]]}
+     {:fx [[:dispatch [:fetch {:method "POST"
+                              :uri (str "/connections/" connection-name "/credentials/" credential-id "/revoke")
+                              :on-success (fn []
+                                            (rf/dispatch [:native-client-access->clear-session connection-name])
+                                            (rf/dispatch [:modal->close])
+                                            (rf/dispatch [:show-snackbar {:level :success
+                                                                         :text "Connection disconnected successfully."}]))
+                              :on-failure (fn [err]
+                                            (let [msg (or (:message err)
+                                                          (get-in err [:response :message])
+                                                          "Failed to disconnect")]
+                                              (rf/dispatch [:show-snackbar {:level :error :text msg}])))}]]]})))
+
 ;; Clear specific native client access session
 (rf/reg-event-fx
  :native-client-access->clear-session
