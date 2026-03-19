@@ -65,7 +65,27 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
 		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),
+		GuardRailsInfo:       toOpenApiSessionGuardRailsInfo(s.GuardRailsInfo),
 	}
+}
+
+func toOpenApiSessionGuardRailsInfo(items []models.SessionGuardRailsInfo) []openapi.SessionGuardRailsInfo {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]openapi.SessionGuardRailsInfo, len(items))
+	for i, item := range items {
+		out[i] = openapi.SessionGuardRailsInfo{
+			RuleName: item.RuleName,
+			Rule: openapi.SessionGuardRailMatchedRule{
+				Type:         item.Rule.Type,
+				Words:        item.Rule.Words,
+				PatternRegex: item.Rule.PatternRegex,
+			},
+			Direction: item.Direction,
+		}
+	}
+	return out
 }
 
 func toOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIAnalysis {

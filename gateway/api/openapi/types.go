@@ -558,6 +558,24 @@ const (
 	SessionStatusDone  SessionStatusType = "done"
 )
 
+type SessionGuardRailMatchedRule struct {
+	// Type is the internal rule type
+	Type string `json:"type" enums:"deny_words_list,pattern_match" example:"deny_words_list"`
+	// Words matched (only set when type is deny_words_list)
+	Words []string `json:"words,omitempty" example:"password,secret"`
+	// PatternRegex that matched (only set when type is pattern_match)
+	PatternRegex string `json:"pattern_regex,omitempty" example:"^[A-Z0-9]+"`
+}
+
+type SessionGuardRailsInfo struct {
+	// RuleName is the name of the guardrail rule that matched
+	RuleName string `json:"rule_name" example:"block-sensitive-data"`
+	// Rule is the specific internal rule entry that triggered the match
+	Rule SessionGuardRailMatchedRule `json:"rule"`
+	// Direction indicates whether the match happened on input or output data
+	Direction string `json:"direction" enums:"input,output" example:"input"`
+}
+
 type SessionAIAnalysis struct {
 	// RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:
 	RiskLevel string `json:"risk_level" example:"high"`
@@ -638,6 +656,9 @@ type Session struct {
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
 	// The AI analysis of the session if it's available
 	AIAnalysis *SessionAIAnalysis `json:"ai_analysis" readonly:"true"`
+	// GuardRailsInfo contains information about guardrail rules that matched during the session.
+	// A non-empty list indicates the session was blocked by at least one guardrail rule.
+	GuardRailsInfo []SessionGuardRailsInfo `json:"guardrails_info" readonly:"true"`
 }
 
 type ProvisionSession struct {
