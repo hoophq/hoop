@@ -1,7 +1,13 @@
 import Router from './Router'
+import CommandPalette from '@/components/CommandPalette'
 
 function App() {
-  return <Router />
+  return (
+    <>
+      <Router />
+      <CommandPalette />
+    </>
+  )
 }
 
 export default App
