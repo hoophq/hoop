@@ -25,7 +25,7 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { openCommandPalette } from '@/components/CommandPalette';
+import { openCommandPalette } from '@/components/CommandPalette/spotlight';
 
 // ─── Navigation structure (mirrors legacy sidebar constants.cljs) ──────────
 
