@@ -18,19 +18,20 @@
 (rf/reg-event-fx
  :primary-connection/set-selected
  (fn [{:keys [db]} [_ new-primary]]
-  (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
-        compatible-multiples (filter #(and (= (:type %) (:type new-primary))
-                                           (= (:subtype %) (:subtype new-primary))
-                                           (not= (:name %) (:name new-primary)))
-                                     current-multiples)]
-    {:db (-> db
-             (assoc-in [:editor :connections :selected] new-primary)
-             (assoc-in [:editor :execution-requirements-callout :dismissed?] false)
-             (assoc-in [:editor :multi-connections :selected] compatible-multiples))
-     :fx [[:dispatch [:editor-plugin/clear-language]]
-          [:dispatch [:primary-connection/persist-selected]]
-          [:dispatch [:database-schema->clear-schema]]
-          [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]]})))
+   (let [current-multiples (get-in db [:editor :multi-connections :selected] [])
+         compatible-multiples (filter #(and (= (:type %) (:type new-primary))
+                                            (= (:subtype %) (:subtype new-primary))
+                                            (not= (:name %) (:name new-primary)))
+                                      current-multiples)]
+     {:db (update-in db [:editor]
+                     merge
+                     {:connections {:selected new-primary}
+                      :execution-requirements-callout {:dismissed? false}
+                      :multi-connections {:selected compatible-multiples}})
+      :fx [[:dispatch [:editor-plugin/clear-language]]
+           [:dispatch [:primary-connection/persist-selected]]
+           [:dispatch [:database-schema->clear-schema]]
+           [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]]})))
 
 (rf/reg-event-fx
  :primary-connection/persist-selected
