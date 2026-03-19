@@ -20,7 +20,7 @@
                                                              :login-hoop)))
      1500)
 
-    [:section {:class "antialiased min-h-screen bg-gray-100 flex items-center justify-center"}
+    [:section {:class "antialiased h-screen bg-gray-100 flex items-center justify-center"}
      [:div {:class "w-full max-w-md p-8 bg-white rounded-lg shadow-md"}
       [:div {:class "p-regular mb-6 flex justify-center"}
        [:figure {:class "w-36 px-small"}
