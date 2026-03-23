@@ -19,7 +19,6 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
-	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -40,10 +39,10 @@ var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httppr
 //	@Router			/connections/{nameOrID}/credentials [post]
 func CreateConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	
+
 	// Lazy cleanup of expired credential sessions
 	_ = models.CloseExpiredCredentialSessions()
-	
+
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
@@ -100,21 +99,15 @@ func CreateConnectionCredentials(c *gin.Context) {
 		ConnectionTags:    conn.ConnectionTags,
 		Verb:              proto.ClientVerbConnect,
 		Status:            string(openapi.SessionStatusOpen),
-		Metadata:          map[string]any{},
 		CreatedAt:         time.Now().UTC(),
 	}
 
 	// Check if connection requires review/JIT approval
 	requiresReview, accessRule := checkConnectionRequiresReview(ctx, conn)
-	
-	// Persist session
-	if err := services.UpsertSession(c, newSession, *conn); err != nil {
-		log.Errorf("failed creating session, err=%v", err)
 
-		if errors.Is(err, services.ErrMissingMetadata) {
-			c.AbortWithStatusJSON(422, gin.H{"message": err.Error()})
-			return
-		}
+	// Persist session
+	if err := models.UpsertSession(newSession); err != nil {
+		log.Errorf("failed creating session, err=%v", err)
 
 		c.AbortWithStatusJSON(500, gin.H{"message": "failed creating session"})
 		return
@@ -196,10 +189,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 //	@Router			/connections/{nameOrID}/credentials/{sessionID} [post]
 func ResumeConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	
+
 	// Lazy cleanup of expired credential sessions
 	_ = models.CloseExpiredCredentialSessions()
-	
+
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
@@ -627,7 +620,7 @@ func createConnectionCredentialsReview(ctx *storagev2.Context, conn *models.Conn
 	// Create review record - always JIT type for credentials
 	accessDuration := time.Duration(accessDurationSec) * time.Second
 	reviewID := uuid.NewString()
-	
+
 	newRev := &models.Review{
 		ID:                reviewID,
 		OrgID:             ctx.OrgID,
