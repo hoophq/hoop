@@ -5,7 +5,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.connections.constants :as connection-constants]
-   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.resource-role-filter :as resource-role-filter]
    [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn- get-rule-connections
@@ -123,10 +123,10 @@
                                      rules))]
         [:<>
          [:> Box {:mb "6"}
-          [connection-filter {:selected @selected-connection
-                              :on-select #(reset! selected-connection %)
-                              :on-clear #(reset! selected-connection nil)
-                              :label "Resource Role"}]]
+          [resource-role-filter/main {:selected @selected-connection
+                                      :on-select #(reset! selected-connection %)
+                                      :on-clear #(reset! selected-connection nil)
+                                      :label "Resource Role"}]]
 
          [:> Box
           (if (empty? filtered-rules)

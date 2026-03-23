@@ -3,7 +3,7 @@
    ["@radix-ui/themes" :refer [Box Button Flex Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.components.connection-filter :refer [connection-filter]]
+   [webapp.components.resource-role-filter :as resource-role-filter]
    [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn main []
@@ -17,9 +17,9 @@
                                      rules))]
         [:> Box {:class "w-full h-full space-y-radix-3"}
          [:> Flex {:pb "3"}
-          [connection-filter {:selected @selected-connection
-                              :on-select #(reset! selected-connection %)
-                              :on-clear #(reset! selected-connection nil)}]]
+          [resource-role-filter/main {:selected @selected-connection
+                                      :on-select #(reset! selected-connection %)
+                                      :on-clear #(reset! selected-connection nil)}]]
          [:> Box {:class "min-h-full h-max"}
           (if (empty? filtered-rules)
             [filtered-empty-state {:entity-name "AI Session Analyzer rule"
