@@ -16,6 +16,17 @@ func GetGuardrailsRulesForConnection(orgID, connectionName string) (*models.Conn
 	if err != nil {
 		return nil, err
 	}
+
+	if rules == nil {
+		emptyRules := []byte("[]")
+
+		rules = &models.ConnectionGuardRailRules{
+			OrgID:                orgID,
+			GuardRailInputRules:  emptyRules,
+			GuardRailOutputRules: emptyRules,
+		}
+	}
+
 	rules.Name = connectionName
 
 	return rules, nil
