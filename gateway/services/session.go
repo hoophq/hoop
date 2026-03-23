@@ -24,7 +24,7 @@ func validateMandatoryMetadata(connection models.Connection, session models.Sess
 	return nil
 }
 
-func UpsertSession(_ context.Context, session models.Session, connection models.Connection) error {
+func ValidateAndUpsertSession(_ context.Context, session models.Session, connection models.Connection) error {
 	if err := validateMandatoryMetadata(connection, session); err != nil {
 		return err
 	}

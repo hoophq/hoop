@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/analytics"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -231,7 +232,7 @@ func Post(c *gin.Context) {
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			// persist session to audit this attempt
-			_ = services.UpsertSession(c, newSession, *conn)
+			_ = services.ValidateAndUpsertSession(c, newSession, *conn)
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
@@ -296,7 +297,7 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	if err := services.UpsertSession(c, newSession, *conn); err != nil {
+	if err := services.ValidateAndUpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {
@@ -307,6 +308,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
+	analytics.TrackSessionUsage(analytics.EventSessionCreated)
 
 	// TODO: refactor to use response from openapi package
 	client, err := clientexec.New(&clientexec.Options{
@@ -1195,7 +1197,10 @@ func Provision(c *gin.Context) {
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
 			// persist session to audit this attempt
-			_ = services.UpsertSession(c, newSession, *conn)
+			if err = services.ValidateAndUpsertSession(c, newSession, *conn); err == nil {
+				analytics.TrackSessionUsage(analytics.EventSessionCreated)
+			}
+
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
@@ -1259,7 +1264,7 @@ func Provision(c *gin.Context) {
 		}
 	}
 
-	if err := services.UpsertSession(c, newSession, *conn); err != nil {
+	if err := services.ValidateAndUpsertSession(c, newSession, *conn); err != nil {
 		log.Errorf("failed creating session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {
@@ -1270,6 +1275,7 @@ func Provision(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
+	analytics.TrackSessionUsage(analytics.EventSessionCreated)
 
 	allGroupsApproved, err := createApprovedReview(ctx, &newSession, conn, user, &req)
 	if err != nil {
@@ -1282,7 +1288,7 @@ func Provision(c *gin.Context) {
 	if allGroupsApproved {
 		newSession.Status = string(openapi.SessionStatusReady)
 
-		if err := services.UpsertSession(c, newSession, *conn); err != nil {
+		if err := services.ValidateAndUpsertSession(c, newSession, *conn); err != nil {
 			log.Errorf("failed updating session, err=%v", err)
 
 			if errors.Is(err, services.ErrMissingMetadata) {
@@ -1293,6 +1299,7 @@ func Provision(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating session"})
 			return
 		}
+		analytics.TrackSessionUsage(analytics.EventSessionReviewed)
 	}
 
 	c.JSON(http.StatusAccepted, openapi.ProvisionSessionResponse{

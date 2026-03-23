@@ -266,3 +266,8 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 		Properties: properties,
 	})
 }
+
+// TODO: sample structure
+func TrackSessionUsage(sessionType string) {
+
+}
