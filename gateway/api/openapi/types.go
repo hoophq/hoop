@@ -574,6 +574,8 @@ type SessionGuardRailsInfo struct {
 	Rule SessionGuardRailMatchedRule `json:"rule"`
 	// Direction indicates whether the match happened on input or output data
 	Direction string `json:"direction" enums:"input,output" example:"input"`
+	// MatchedWords are the words that matched the rule
+	MatchedWords []string `json:"matched_words,omitempty" example:"password,secret"`
 }
 
 type SessionAIAnalysis struct {

@@ -77,9 +77,10 @@ type SessionGuardRailMatchedRule struct {
 }
 
 type SessionGuardRailsInfo struct {
-	RuleName  string                      `json:"rule_name"`
-	Rule      SessionGuardRailMatchedRule `json:"rule"`
-	Direction string                      `json:"direction"`
+	RuleName     string                      `json:"rule_name"`
+	Rule         SessionGuardRailMatchedRule `json:"rule"`
+	Direction    string                      `json:"direction"`
+	MatchedWords []string                    `json:"matched_words"`
 }
 
 type Session struct {

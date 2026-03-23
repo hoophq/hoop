@@ -82,7 +82,8 @@ func toOpenApiSessionGuardRailsInfo(items []models.SessionGuardRailsInfo) []open
 				Words:        item.Rule.Words,
 				PatternRegex: item.Rule.PatternRegex,
 			},
-			Direction: item.Direction,
+			Direction:    item.Direction,
+			MatchedWords: item.MatchedWords,
 		}
 	}
 	return out
