@@ -191,6 +191,10 @@ func Run() {
 
 		rdpc := serverConfig.RDPServerConfig
 		if rdpc != nil && rdpc.ListenAddress != "" {
+			// Initialize RDP bitmap parser for session recording
+			if err := rdp.InitParser(); err != nil {
+				log.Warnf("failed to initialize RDP bitmap parser, recording will store raw data: %v", err)
+			}
 			err = rdp.GetServerInstance().Start(
 				serverConfig.RDPServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext(),
 			)

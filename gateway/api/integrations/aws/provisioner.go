@@ -135,7 +135,7 @@ func (p *provisioner) Run(jobID string) error {
 				ptr.ToInt32(db.Endpoint.Port),
 			)
 			if err != nil {
-				p.updateJob(pbsystem.NewError(jobID, err.Error()))
+				p.updateJob(pbsystem.NewError(jobID, "%s", err.Error()))
 				return
 			}
 		}
@@ -352,11 +352,11 @@ func parseEnvVars(cred *pbsystem.DBCredentials) map[string]string {
 	switch cred.SecretsManagerProvider {
 	case pbsystem.SecretsManagerProviderDatabase:
 		return map[string]string{
-			"envvar:HOST": b64enc(cred.Host),
-			"envvar:PORT": b64enc(cred.Port),
-			"envvar:USER": b64enc(cred.User),
-			"envvar:PASS": b64enc(cred.Password),
-			"envvar:DB":   b64enc(cred.DefaultDatabase),
+			"envvar:HOST": b64enc("%s", cred.Host),
+			"envvar:PORT": b64enc("%s", cred.Port),
+			"envvar:USER": b64enc("%s", cred.User),
+			"envvar:PASS": b64enc("%s", cred.Password),
+			"envvar:DB":   b64enc("%s", cred.DefaultDatabase),
 		}
 	case pbsystem.SecretsManagerProviderVault:
 		return map[string]string{

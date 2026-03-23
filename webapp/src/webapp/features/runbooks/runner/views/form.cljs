@@ -124,7 +124,7 @@
                                 (when (or (nil? @form-ref) (.reportValidity @form-ref))
                                   (let [connection selected-connection
                                         has-jira-template? (and connection
-                                                                (seq (:jira_issue_template_id connection)))
+                                                                (not (cs/blank? (:jira_issue_template_id connection))))
                                         jira-integration-enabled? (= (-> @(rf/subscribe [:jira-integration->details])
                                                                          :data
                                                                          :status)

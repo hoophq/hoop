@@ -66,6 +66,11 @@ const (
 	EventGrpcConnect            = "hoop-grpc-connect"
 	EventApiProxymanagerConnect = "hoop-api-proxymanager-connect"
 
+	// ai
+	EventSessionAIAnalysisProviderUpdated = "hoop-session-ai-analysis-provider-updated"
+	EventSessionAIAnalysisRuleCreated     = "hoop-session-ai-analysis-rule-created"
+	EventSessionAIAnalysisRuleUpdated     = "hoop-session-ai-analysis-rule-updated"
+
 	// sessions
 	EventSessionCreated  = "hoop-session-created"
 	EventSessionReviewed = "hoop-session-reviewed"

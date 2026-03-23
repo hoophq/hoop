@@ -4,7 +4,7 @@
    ["lucide-react" :refer [Hash BadgeCheck CalendarArrowDown CalendarArrowUp
                            ChevronDown ChevronUp CircleCheckBig CircleUser
                            Clock2 ExternalLink FastForward OctagonX Package
-                           Rotate3d Users ArrowUpRight BookUp2]]
+                           Rotate3d Users ArrowUpRight BookUp2 Sparkles]]
    [clojure.string :as cs]
    [reagent.core :as r]
    [webapp.components.tooltip :as tooltip]
@@ -87,6 +87,7 @@
             session-batch-id (:session_batch_id session)
             review-status (-> session :review :status)
             jira-url (get-in session [:integrations_metadata :jira_issue_url])
+            ai-action (get-in session [:ai_analysis :action])
             has-review? (boolean (seq review-groups))
             user-name-split (cs/split user-name #" ")
             user-name-initials (str (first (take 1 (first user-name-split)))
@@ -197,8 +198,17 @@
                                                                 "?batch_id=" session-batch-id)
                                                            "_blank")}
                                     "Open Parallel Summary"
-                                    [:> ArrowUpRight {:size 16}]]]}])]]]
+                                    [:> ArrowUpRight {:size 16}]]]}])
 
+            (when ai-action
+              [detail-row {:label "AI Session Analyzer"
+                           :icon [:> Sparkles {:size 20}]
+                           :show-gradient? (not @expanded?)
+                           :value (case ai-action
+                                    "block_execution" [:> Badge {:color "red" :size "1"} "ACTION BLOCKED"]
+                                    "allow_execution" [:> Badge {:color "green" :size "1"} "ACTION ALLOWED"]
+                                    [:> Badge {:color "gray" :size "1"} ai-action])}])]]]
+         
          ;; See more / See less button - left aligned
          [:> Box {:class "mt-4"}
           [:> Flex {:justify "start"}

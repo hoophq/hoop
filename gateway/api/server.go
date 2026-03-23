@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
+	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
@@ -324,6 +325,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.UpdateDataMaskingRuleConnection)
 
+	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetConnectionAnalyzerRule)
+
 	r.GET("/connections/:nameOrID/test",
 		r.AuthMiddleware,
 		apiconnections.TestConnection)
@@ -503,10 +509,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	r.GET("/sessions/:session_id/download/input", sessionapi.DownloadSessionInput)
+ 
+	r.GET("/sessions/:session_id/rdp-frames",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		sessionapi.GetRDPFrames)
+ 
 	r.GET("/sessions/:session_id/result/stream",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		sessionapi.StreamSessionResult)
+
 	r.POST("/sessions/:session_id/kill",
 		r.AuthMiddleware,
 		sessionapi.Kill)
@@ -724,6 +737,40 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		awsintegration.GetDBRoleJobByID,
 	)
+
+	r.GET("/ai/session-analyzer/providers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerProvider)
+	r.POST("/ai/session-analyzer/providers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.UpsertSessionAnalyzerProvider)
+	r.DELETE("/ai/session-analyzer/providers",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.DeleteSessionAnalyzerProvider)
+
+	r.GET("/ai/session-analyzer/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.ListSessionAnalyzerRules)
+	r.POST("/ai/session-analyzer/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.CreateSessionAnalyzerRule)
+	r.GET("/ai/session-analyzer/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.GetSessionAnalyzerRule)
+	r.PUT("/ai/session-analyzer/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.UpdateSessionAnalyzerRule)
+	r.DELETE("/ai/session-analyzer/rules/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiai.DeleteSessionAnalyzerRule)
 
 	r.POST("/guardrails",
 		apiroutes.AdminOnlyAccessRole,

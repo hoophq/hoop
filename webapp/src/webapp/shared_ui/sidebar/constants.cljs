@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Badge Flex Text]]
    ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
-                           ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
+                           ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
+                           Sparkles]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -35,6 +36,8 @@
                               :class css-size}]))
    "AIDataMasking" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> VenetianMask {:size size}])
+   "AISessionAnalyzer" (fn [& [{:keys [size] :or {size 24}}]]
+                         [:> Sparkles {:size size}])
    "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> UserRoundCheck {:size size}])
    "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
@@ -145,6 +148,13 @@
     :navigate :jira-templates
     :free-feature? false
     :upgrade-plan-route :jira-templates
+    :admin-only? true}
+   {:name "AISessionAnalyzer"
+    :label "AI Session Analyzer"
+    :icon (get icons-registry "AISessionAnalyzer")
+    :uri (routes/url-for :ai-session-analyzer)
+    :navigate :ai-session-analyzer
+    :free-feature? true
     :admin-only? true}
    {:name "AIDataMasking"
     :label "AI Data Masking"

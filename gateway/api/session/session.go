@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
+	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
@@ -36,6 +37,7 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	transportsystem "github.com/hoophq/hoop/gateway/transport/system"
 	"github.com/hoophq/hoop/gateway/utils"
+	"gorm.io/gorm"
 )
 
 var (
@@ -54,6 +56,39 @@ type SessionPostBody struct {
 	ClientArgs     []string                  `json:"client_args"`
 	JiraFields     map[string]string         `json:"jira_fields"`
 	SessionBatchID *string                   `json:"session_batch_id"`
+}
+
+func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*models.SessionAIAnalysis, error) {
+	aiAnalyzerRule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, connName)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
+	}
+
+	if aiAnalyzerRule != nil {
+		analyzerRes, err := apiai.AnalyzeSession(ctx, orgID, script)
+		if err != nil {
+			return nil, fmt.Errorf("failed analyzing session, reason: %w", err)
+		}
+
+		var action models.RiskEvaluationAction
+		switch analyzerRes.RiskLevel {
+		case apiai.RiskLevelHigh:
+			action = aiAnalyzerRule.RiskEvaluation.HighRiskAction
+		case apiai.RiskLevelMedium:
+			action = aiAnalyzerRule.RiskEvaluation.MediumRiskAction
+		case apiai.RiskLevelLow:
+			action = aiAnalyzerRule.RiskEvaluation.LowRiskAction
+		}
+
+		return &models.SessionAIAnalysis{
+			RiskLevel:   string(analyzerRes.RiskLevel),
+			Title:       analyzerRes.Title,
+			Explanation: analyzerRes.Explanation,
+			Action:      string(action),
+		}, nil
+	}
+
+	return nil, nil
 }
 
 func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
@@ -146,6 +181,44 @@ func Post(c *gin.Context) {
 		EndSession:           nil,
 	}
 
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	analyzeRes, err := AIAnalyze(c, orgID, conn.Name, req.Script)
+	if err != nil {
+		log.Errorf("failed analyzing session, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed analyzing session"})
+		return
+	}
+
+	if analyzeRes != nil {
+		newSession.AIAnalysis = analyzeRes
+
+		shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+		if shouldBlock {
+			newSession.Status = string(openapi.SessionStatusDone)
+			newSession.ExitCode = &internalExitCode
+			endTime := time.Now().UTC()
+			newSession.EndSession = &endTime
+		}
+
+		if err := models.UpsertSession(newSession); err != nil {
+			log.Errorf("failed creating session, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+			return
+		}
+
+		if shouldBlock {
+			c.JSON(http.StatusOK, clientexec.Response{
+				SessionID:         sid,
+				Output:            "Session blocked by AI risk analyzer",
+				OutputStatus:      "blocked",
+				ExitCode:          internalExitCode,
+				ExecutionTimeMili: 0,
+				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
+			})
+			return
+		}
+	}
+
 	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
 	if err != nil {
 		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
@@ -176,6 +249,7 @@ func Post(c *gin.Context) {
 				OutputStatus:      "failed",
 				ExitCode:          internalExitCode,
 				ExecutionTimeMili: 0,
+				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
 			})
 			return
 		case nil:
@@ -262,6 +336,7 @@ func Post(c *gin.Context) {
 	select {
 	case outcome := <-respCh:
 		log.Infof("runexec response, %v", outcome)
+		outcome.AIAnalysis = toOpenApiSessionAIAnalysis(analyzeRes)
 		c.JSON(http.StatusOK, outcome)
 	case <-timeoutCtx.Done():
 		client.Close()

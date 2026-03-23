@@ -64,6 +64,20 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		SessionBatchID:       s.SessionBatchID,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
+		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),
+	}
+}
+
+func toOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIAnalysis {
+	if a == nil {
+		return nil
+	}
+
+	return &openapi.SessionAIAnalysis{
+		RiskLevel:   a.RiskLevel,
+		Title:       a.Title,
+		Explanation: a.Explanation,
+		Action:      a.Action,
 	}
 }
 

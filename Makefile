@@ -63,16 +63,20 @@ build-dev-client:
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
 
-test: test-oss test-enterprise
-
-test-oss:
+libhoop-map:
 	rm libhoop || true
 	ln -s _libhoop libhoop
+
+# Generate WASM module for RDP parser
+generate-wasm: libhoop-map
+	cd gateway/rdp/parser && go generate
+
+test: test-oss test-enterprise
+
+test-oss: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-test-enterprise:
-	rm libhoop || true
-	ln -s ../libhoop libhoop
+test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 generate-openapi-docs:
@@ -92,7 +96,7 @@ merge-artifacts:
 build-rust-darwin-all:
 	GOOS=darwin GOARCH=amd64 $(MAKE) build-rust-single
 	GOOS=darwin GOARCH=arm64 $(MAKE) build-rust-single
-# Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH  
+# Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH
 build-rust-linux-all:
 	GOOS=linux GOARCH=amd64 $(MAKE) build-rust-single
 	GOOS=linux GOARCH=arm64 $(MAKE) build-rust-single
@@ -180,4 +184,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm

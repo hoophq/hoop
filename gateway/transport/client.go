@@ -56,7 +56,7 @@ func requestProxyConnection(stream *streamclient.ProxyStream) error {
 		default:
 			log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).
 				Warnf("failed to establish connection with agent, reason=%v", err)
-			return status.Errorf(codes.Aborted, err.Error())
+			return status.Errorf(codes.Aborted, "%s", err.Error())
 		}
 	}
 	return nil
@@ -177,7 +177,7 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		connectResponse, err := accessrequestinterceptor.OnReceive(pctx, pkt)
 		if err != nil {
 			log.With("sid", pctx.SID).Errorf("access request interceptor error: %v", err)
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		}
 		if connectResponse != nil {
 			if connectResponse.Context != nil {
@@ -195,10 +195,10 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 			if v.HasInternalErr() {
 				log.With("sid", pctx.SID).Errorf("plugin rejected packet, %v", v.FullErr())
 			}
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		case nil: // noop
 		default:
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		}
 
 		// this function must deperecate the plugin system above
@@ -220,7 +220,7 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 			err = s.processClientPacket(stream, pkt, pctx)
 			if err != nil {
 				log.With("sid", pctx.SID, "agent-id", pctx.AgentID).Warnf("failed processing client packet, err=%v", err)
-				return status.Errorf(codes.FailedPrecondition, err.Error())
+				return status.Errorf(codes.FailedPrecondition, "%s", err.Error())
 			}
 		}
 	}
@@ -488,7 +488,7 @@ func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
 		switch connType {
 		case pb.ConnectionTypeTCP, pb.ConnectionTypeSSH:
 			return status.Errorf(codes.InvalidArgument,
-				fmt.Sprintf("exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName))
+				"exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName)
 		}
 	}
 	return nil
