@@ -5,7 +5,7 @@ metadata:
   name: presidio-analyzer-config
 data:
   gunicorn_config.py: |
-    {{- .Values.analyzer.gunicornConfigFile | nindent 4 }}
+    {{- .Values.dataMasking.analyzer.gunicornConfigFile | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
