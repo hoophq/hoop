@@ -445,12 +445,6 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		session.closed.Store(true)
 		log.Infof("http proxy session cleanup: closed flag set, sid=%s", sid)
 
-		// Invalidate the token so subsequent requests fail fast
-		negativeAuthCache.Store(secretKeyHash, &negativeAuthEntry{
-			err:       fmt.Errorf("http proxy session expired"),
-			timestamp: time.Now(),
-		})
-
 		if session.streamClient != nil {
 			err := session.streamClient.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
