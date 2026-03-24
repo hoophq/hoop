@@ -50,6 +50,7 @@ dataMasking:
     replicas: 1
     imageRepository: mcr.microsoft.com/presidio-analyzer
     imagePullPolicy: Always
+    imageTag: latest
 
     # Presidio WSGI HTTP Server configuration
     gunicornConfigFile: |
@@ -74,6 +75,7 @@ dataMasking:
     replicas: 1
     imageRepository: mcr.microsoft.com/presidio-anonymizer
     imagePullPolicy: Always
+    imageTag: latest
 
     # Presidio WSGI HTTP Server configuration
     gunicornConfigFile: |
@@ -96,8 +98,10 @@ dataMasking:
 
   envoyProxy:
     replicas: 1
-    image: envoyproxy/envoy
+    imageRepository: envoyproxy/envoy
+    imagePullPolicy: Always
     imageTag: v1.33-latest
+
     resources:
       limits:
         cpu: 500m
