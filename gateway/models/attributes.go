@@ -9,10 +9,11 @@ import (
 )
 
 type Attribute struct {
-	ID        uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
-	OrgID     uuid.UUID `gorm:"column:org_id;index:idx_attributes_org_name,unique"`
-	Name      string    `gorm:"column:name;index:idx_attributes_org_name,unique"`
-	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID       uuid.UUID `gorm:"column:org_id;index:idx_attributes_org_name,unique"`
+	Name        string    `gorm:"column:name;index:idx_attributes_org_name,unique"`
+	Description *string   `gorm:"column:description"`
+	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
 
 	Connections        []ConnectionAttribute        `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 	AccessRequestRules []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`

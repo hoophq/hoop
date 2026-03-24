@@ -53,6 +53,7 @@ func buildAttributeModel(orgID uuid.UUID, req openapi.AttributeRequest) *models.
 	return &models.Attribute{
 		OrgID:              orgID,
 		Name:               req.Name,
+		Description:        req.Description,
 		Connections:        connAttrs,
 		AccessRequestRules: arrAttrs,
 		GuardrailRules:     grAttrs,
@@ -296,6 +297,7 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		ID:                     a.ID.String(),
 		OrgID:                  a.OrgID.String(),
 		Name:                   a.Name,
+		Description:            a.Description,
 		ConnectionNames:        connections,
 		AccessRequestRuleNames: accessRequest,
 		GuardrailRuleNames:     guardrail,

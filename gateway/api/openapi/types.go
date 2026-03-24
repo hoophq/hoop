@@ -2461,6 +2461,8 @@ type Attributes struct {
 	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
 	// The name of the attribute
 	Name string `json:"name" example:"default-session-attribute"`
+	// The description of the attribute
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
 	// Connection names associated with this attribute
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Access request rule names associated with this attribute
@@ -2476,6 +2478,7 @@ type Attributes struct {
 type AttributeRequest struct {
 	// The name of the attribute
 	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Description            *string  `json:"description" example:"Blocks high-risk SQL commands"`
 	ConnectionNames        []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	AccessRequestRuleNames []string `json:"access_request_rule_names" binding:"required" example:"rule1,rule2"`
 	GuardrailRuleNames     []string `json:"guardrail_rule_names" binding:"required" example:"rule1,rule2"`
