@@ -15,7 +15,7 @@ spec:
       labels:
         app: presidio-envoy-proxy
       annotations:
-        checksum/envoy-config: {{ include (print $.Template.BasePath "/envoy-proxy-config.yaml") . | sha256sum }}
+        checksum/envoy-config: {{ include (print $.Template.BasePath "/presidio-envoy-config.yaml") . | sha256sum }}
     spec:
       containers:
       - name: envoy
