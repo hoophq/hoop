@@ -94,6 +94,18 @@ dataMasking:
         cpu: 256m
         memory: 512Mi
 
+  envoyProxy:
+    replicas: 1
+    image: envoyproxy/envoy
+    imageTag: v1.33-latest
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
+
 ## Set pod annotations
 ##
 podAnnotations: {}
