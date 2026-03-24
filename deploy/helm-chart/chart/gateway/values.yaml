@@ -72,7 +72,7 @@ dataMasking:
 
   anonymizer:
     replicas: 1
-    imageRepository: mcr.microsoft.com/presidio-analyzer
+    imageRepository: mcr.microsoft.com/presidio-anonymizer
     imagePullPolicy: Always
 
     # Presidio WSGI HTTP Server configuration
