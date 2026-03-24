@@ -175,8 +175,8 @@ func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([
 	if err := query.
 		Preload("Connections").
 		Preload("AccessRequestRules").
-		Preload("GuardrailsRules").
-		Preload("DataMaskingRules").
+		Preload("GuardrailRules").
+		Preload("DatamaskingRules").
 		Find(&attrs).Error; err != nil {
 		return nil, 0, err
 	}
