@@ -1,0 +1,120 @@
+{{- if and .Values.dataMasking.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: presidio-analyzer-config
+data:
+  gunicorn_config.py: |
+    {{- .Values.analyzer.gunicornConfigFile | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidio-analyzer
+spec:
+  replicas: {{ .Values.dataMasking.analyzer.replicas | default 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0 
+  selector:
+    matchLabels:
+      app: presidio-analyzer
+  template:
+    metadata:
+      labels:
+        app: presidio-analyzer
+      annotations:
+        checksum/gunicorn-config: {{ .Values.dataMasking.analyzer.gunicornConfigFile | sha256sum }}
+    spec:
+      containers:
+      - image: '{{ .Values.dataMasking.analyzer.imageRepository | default "mcr.microsoft.com/presidio-analyzer" }}:{{ .Values.dataMasking.analyzer.imageTag | default "latest" }}'
+        name: presidio-analyzer
+        imagePullPolicy: '{{ .Values.dataMasking.analyzer.imagePullPolicy | default "Always" }}'
+        command: ["gunicorn", "--config", "/opt/presidio/gunicorn_config.py", "app:create_app()"]
+        resources:
+          {{- toYaml .Values.dataMasking.analyzer.resources | nindent 10 }}
+        ports:
+        - containerPort: 3000
+          name: api
+        env:
+        - name: GUNICORN_CMD_ARGS
+          value: '--config /opt/presidio/gunicorn_config.py'
+        volumeMounts:
+        - name: presidio-config
+          mountPath: /opt/presidio/gunicorn_config.py
+          subPath: gunicorn_config.py
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30   # give preload_app time to load models
+          periodSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 4
+      volumes:
+      - name: presidio-config
+        configMap:
+          name: presidio-analyzer-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: presidio-anonymizer-config
+data:
+  gunicorn_config.py: |
+    {{- .Values.dataMasking.anonymizer.gunicornConfigFile | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidio-anonymizer
+spec:
+  replicas: {{ .Values.dataMasking.anonymizer.replicas | default 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0 
+  selector:
+    matchLabels:
+      app: presidio-anonymizer
+  template:
+    metadata:
+      labels:
+        app: presidio-anonymizer
+      annotations:
+        checksum/gunicorn-config: {{ .Values.dataMasking.anonymizer.gunicornConfigFile | sha256sum }}
+    spec:
+      containers:
+      - image: '{{ .Values.dataMasking.anonymizer.imageRepository | default "mcr.microsoft.com/presidio-anonymizer" }}:{{ .Values.dataMasking.anonymizer.imageTag | default "latest" }}'
+        name: presidio-anonymizer
+        imagePullPolicy: {{ .Values.dataMasking.anonymizer.imagePullPolicy | default "Always" }}
+        command: ["gunicorn", "--config", "/opt/presidio/gunicorn_config.py", "app:create_app()"]
+        resources:
+          {{- toYaml .Values.dataMasking.anonymizer.resources | nindent 10 }}
+        ports:
+        - containerPort: 3000
+          name: api
+        env:
+        - name: GUNICORN_CMD_ARGS
+          value: '--config /opt/presidio/gunicorn_config.py'
+        volumeMounts:
+        - name: presidio-config
+          mountPath: /opt/presidio/gunicorn_config.py
+          subPath: gunicorn_config.py
+          readOnly: true
+      volumes:
+      - name: presidio-config
+        configMap:
+          name: presidio-anonymizer-config
+{{ end -}}
