@@ -853,6 +853,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	searchPattern := opts.GetSearchPattern()
 	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
+	attributes := pq.StringArray(opts.Attributes)
 
 	offset := 0
 	if opts.Page > 1 {
@@ -896,6 +897,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		), ARRAY[]::TEXT[]) AS attributes,
 		COUNT(*) OVER() AS total
 	FROM private.connections c
+	LEFT JOIN private.connections_attributes ca ON ca.connection_name = c.name AND ca.org_id = c.org_id
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
@@ -924,6 +926,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		-- attributes filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN ca.attribute_name = ANY((?)::text[])
 			ELSE true
 		END AND
 		(
@@ -968,6 +975,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		attributes, attributes,
 		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
