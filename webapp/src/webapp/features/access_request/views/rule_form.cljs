@@ -68,6 +68,7 @@
      :access-type (r/atom (or (:access_type rule-data) "command"))
      :access-duration (r/atom (:access_max_duration rule-data))
      :connection-names (r/atom (or (:connection_names rule-data) []))
+     :attribute-names (r/atom (or (:attributes rule-data) []))
      :approval-required-groups (r/atom (or (array->select-options (:approval_required_groups rule-data)) []))
      :all-groups-must-approve (r/atom (if (some? (:all_groups_must_approve rule-data))
                                         (:all_groups_must_approve rule-data)
@@ -94,6 +95,7 @@
         user-groups (rf/subscribe [:user-groups])
         current-user (rf/subscribe [:users->current-user])
         existing-rules (rf/subscribe [:access-request/rules])
+        attributes-data (rf/subscribe [:attributes/list-data])
         switch-access-type! (fn [all-resource-roles target-type]
                               (when (not= target-type @(:access-type state))
                                 (let [selected-resource-names @(:connection-names state)
@@ -126,7 +128,8 @@
             free-license? (get-in @current-user [:data :free-license?])
             can-create? (or (not free-license?) (< (count (or @existing-rules [])) 1))
             rule-name @(:rule-name state)
-            all-resource-roles (or (:data @resource-roles) [])]
+            all-resource-roles (or (:data @resource-roles) [])
+            all-attributes (or @attributes-data [])]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
@@ -135,6 +138,7 @@
                                 (let [rule-data (cond-> {:name @(:rule-name state)
                                                          :access_type @(:access-type state)
                                                          :connection_names @(:connection-names state)
+                                                         :attributes @(:attribute-names state)
                                                          :approval_required_groups (mapv :value @(:approval-required-groups state))
                                                          :all_groups_must_approve @(:all-groups-must-approve state)
                                                          :reviewers_groups (mapv :value @(:reviewers-groups state))
@@ -270,6 +274,19 @@
                                                selected-resource-role-names (mapv #(:label %) selected-js-options)]
                                            (reset! (:connection-names state) selected-resource-role-names)))}])]
 
+           [form-section {:title "Attribute configuration"
+                          :description "Select which Attributes to apply this configuration."}
+            [multiselect/main
+             {:label "Attributes"
+              :id "attribute-names-input"
+              :name "attribute-names-input"
+              :options (mapv #(hash-map :value (:name %) :label (:name %)) all-attributes)
+              :default-value (mapv #(hash-map :value % :label %) @(:attribute-names state))
+              :placeholder "Select attributes..."
+              :on-change (fn [selected-options]
+                           (let [names (mapv :value (js->clj selected-options :keywordize-keys true))]
+                             (reset! (:attribute-names state) names)))}]]
+
            [form-section {:title "Required user groups"
                           :description "Select which user groups are required to request access with this rule."}
             [multiselect/main
@@ -335,6 +352,7 @@
 
     (rf/dispatch [:users->get-user-groups])
     (rf/dispatch [:connections/get-connections-paginated {:force-refresh? true}])
+    (rf/dispatch [:attributes/list])
 
     (when (= :edit mode)
       (rf/dispatch [:access-request/get-rule (:rule-name params)]))

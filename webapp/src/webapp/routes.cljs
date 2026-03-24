@@ -79,6 +79,9 @@
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
                   ["/audit-logs" :settings-audit-logs]
+                  ["/attributes" :settings-attributes]
+                  ["/attributes/new" :settings-attributes-new]
+                  [["/attributes/edit/" :name] :settings-attributes-edit]
                   ["/jira" :settings-jira]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop

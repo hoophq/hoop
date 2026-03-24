@@ -80,32 +80,34 @@
          :ref #(reset! container-ref %)
          :styles styles}]])))
 
-(defn creatable-select [{:keys [default-value disabled? required? on-change options label id name]}]
+(defn creatable-select [{:keys [default-value disabled? required? on-change on-create-option options label id name placeholder]}]
   [:div {:class "mb-regular text-sm"}
    [:div {:class "flex items-center gap-2 mb-1"}
     (when label
       [form-label label])]
    [:> CreatableSelect
-    {:value default-value
-     :id id
-     :name name
-     :isMulti true
-     :isDisabled disabled?
-     :required required?
-     :onChange on-change
-     :options options
-     :isClearable false
-     :theme (fn [theme]
-              (clj->js
-               (-> (js->clj theme :keywordize-keys true)
-                   (update :colors merge {:primary "#3358d4"
-                                          :primary25 "#d2deff"
-                                          :primary50 "#abbdf9"
-                                          :primary75 "#3e63dd"}))))
-     :menuPortalTarget (.-body js/document)
-     :className "react-select-container"
-     :classNamePrefix "react-select"
-     :styles styles}]])
+    (merge {:value default-value
+            :id id
+            :name name
+            :isMulti true
+            :isDisabled disabled?
+            :required required?
+            :onChange on-change
+            :options options
+            :isClearable false
+            :theme (fn [theme]
+                     (clj->js
+                      (-> (js->clj theme :keywordize-keys true)
+                          (update :colors merge {:primary "#3358d4"
+                                                 :primary25 "#d2deff"
+                                                 :primary50 "#abbdf9"
+                                                 :primary75 "#3e63dd"}))))
+            :menuPortalTarget (.-body js/document)
+            :className "react-select-container"
+            :classNamePrefix "react-select"
+            :styles styles}
+           (when placeholder {:placeholder placeholder})
+           (when on-create-option {:onCreateOption on-create-option}))]])
 
 (defn text-input
   "Renders a text input that supports multiple values.

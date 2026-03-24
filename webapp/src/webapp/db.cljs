@@ -101,4 +101,7 @@
               :keep-metadata? false}
    :runbooks->exec {:status :idle :data nil}
    :runbooks-rules {:list {:status :idle :data [] :error nil}
-                    :active-rule {:status :idle :data nil :error nil}}})
+                    :active-rule {:status :idle :data nil :error nil}}
+   :attributes {:list {:status :idle :data []}
+                :active {:status :idle :data nil}
+                :submitting? false}})

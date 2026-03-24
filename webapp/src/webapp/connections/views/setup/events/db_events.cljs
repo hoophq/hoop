@@ -532,3 +532,23 @@
  :connection-setup/update-claude-code-insecure
  (fn [db [_ enabled?]]
    (assoc-in db [:connection-setup :claude-code-credentials :insecure] (boolean enabled?))))
+
+;; Attribute events
+(rf/reg-event-db
+ :connection-setup/set-selected-attributes
+ (fn [db [_ attr-names]]
+   (assoc-in db [:connection-setup :attributes :selected] attr-names)))
+
+(rf/reg-event-db
+ :connection-setup/initialize-attributes
+ (fn [db [_ initial-names]]
+   (update-in db [:connection-setup :attributes]
+              merge
+              {:selected initial-names
+               :initial initial-names
+               :initialized? true})))
+
+(rf/reg-event-db
+ :connection-setup/clear-attributes
+ (fn [db _]
+   (assoc-in db [:connection-setup :attributes] {:selected [] :initial [] :initialized? false})))

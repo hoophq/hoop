@@ -1,6 +1,7 @@
 (ns webapp.shared-ui.sidebar.navigation
   (:require
    ["@headlessui/react" :as ui]
+   ["@radix-ui/themes" :refer [Badge]]
    ["lucide-react" :refer [ChevronDown ChevronRight Puzzle Settings]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -191,7 +192,11 @@
                                                     "block rounded-md py-2 pr-2 pl-9 text-sm leading-6 "
                                                     (when blocked? " text-opacity-30"))
                                         :aria-label (:label route)}
-                               (:label route)
+                               [:span {:class "flex items-center gap-6"}
+                                (:label route)
+                                (when (string? (:badge route))
+                                  [:> Badge {:variant "solid" :color "green"}
+                                   (:badge route)])]
                                (when blocked?
                                  [:div {:class styles/badge-upgrade}
                                   "Upgrade"])]])))]]))])]])

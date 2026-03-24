@@ -287,3 +287,25 @@
  :connection-setup/claude-code-credentials
  (fn [db]
    (get-in db [:connection-setup :claude-code-credentials])))
+
+;; Connection name
+(rf/reg-sub
+ :connection-setup/connection-name
+ (fn [db]
+   (get-in db [:connection-setup :name])))
+
+;; Attributes
+(rf/reg-sub
+ :connection-setup/selected-attributes
+ (fn [db]
+   (get-in db [:connection-setup :attributes :selected] [])))
+
+(rf/reg-sub
+ :connection-setup/initial-attributes
+ (fn [db]
+   (get-in db [:connection-setup :attributes :initial] [])))
+
+(rf/reg-sub
+ :connection-setup/attributes-initialized?
+ (fn [db]
+   (get-in db [:connection-setup :attributes :initialized?] false)))
