@@ -8002,10 +8002,6 @@ const docTemplate = `{
         "openapi.AttributeRequest": {
             "type": "object",
             "required": [
-                "access_request_rule_names",
-                "connection_names",
-                "datamasking_rule_names",
-                "guardrail_rule_names",
                 "name"
             ],
             "properties": {
@@ -8038,6 +8034,10 @@ const docTemplate = `{
                         "rule1",
                         "rule2"
                     ]
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Blocks high-risk SQL commands"
                 },
                 "guardrail_rule_names": {
                     "type": "array",
@@ -8097,6 +8097,11 @@ const docTemplate = `{
                         "rule1",
                         "rule2"
                     ]
+                },
+                "description": {
+                    "description": "The description of the attribute",
+                    "type": "string",
+                    "example": "Blocks high-risk SQL commands"
                 },
                 "guardrail_rule_names": {
                     "description": "Guardrail rule names associated with this attribute",

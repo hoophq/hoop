@@ -2479,8 +2479,8 @@ type AttributeRequest struct {
 	// The name of the attribute
 	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
 	Description            *string  `json:"description" example:"Blocks high-risk SQL commands"`
-	ConnectionNames        []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
-	AccessRequestRuleNames []string `json:"access_request_rule_names" binding:"required" example:"rule1,rule2"`
-	GuardrailRuleNames     []string `json:"guardrail_rule_names" binding:"required" example:"rule1,rule2"`
-	DatamaskingRuleNames   []string `json:"datamasking_rule_names" binding:"required" example:"rule1,rule2"`
+	ConnectionNames        []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	GuardrailRuleNames     []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	DatamaskingRuleNames   []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 }
