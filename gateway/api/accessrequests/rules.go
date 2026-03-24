@@ -108,7 +108,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 
 	if req.Attributes != nil {
 		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, req.Attributes, req.AccessType)
-		if err != nil {
+		if err != nil && err != gorm.ErrRecordNotFound {
 			log.Errorf("failed to get request rules by attributes: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get request rules by attributes"})
 			return
@@ -330,7 +330,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 
 	if req.Attributes != nil {
 		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, req.Attributes, req.AccessType)
-		if err != nil {
+		if err != nil && err != gorm.ErrRecordNotFound {
 			log.Errorf("failed to get request rules by attributes: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get request rules by attributes"})
 			return
