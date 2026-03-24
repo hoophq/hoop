@@ -542,7 +542,7 @@ func RunbookExec(c *gin.Context) {
 		}
 	}
 
-	if err := services.ValidateAndUpsertSession(c, newSession, *connection); err != nil {
+	if err := services.ValidateAndUpsertSession(c, newSession, connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {
@@ -554,7 +554,9 @@ func RunbookExec(c *gin.Context) {
 		return
 	}
 
-	analytics.TrackSessionUsage(analytics.EventSessionCreated)
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(ctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(ctx.APIContext, newSession, connection))
 
 	var params string
 	for key, val := range req.Parameters {

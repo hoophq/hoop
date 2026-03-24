@@ -44,110 +44,6 @@ func (s *Segment) Close() {
 	}
 }
 
-// Go to DB and get everything we need to track a session
-
-// TODO: refactor data masking, guardrails, access control
-// TODO: check access request from connections table too
-// TODO: we could check reviews table to find reviewed-at property and min-approvals, force groups
-func sessionPropertiesFromDB(ctx *types.APIContext, sessionID string, sessionType string) (map[string]any, error) {
-	sessionProps, err := models.GetSessionPropertiesByID(ctx.OrgID, sessionID)
-	if err != nil {
-		log.Errorf("failed to fetch session properties for session %s in org %s: %v", sessionID, ctx.OrgID, err)
-		return nil, err
-	}
-
-	var finishedAt string
-	if sessionProps.EndSession != nil {
-		finishedAt = sessionProps.EndSession.String()
-	}
-
-	return map[string]any{
-		"org-id":                   sessionProps.OrgID,
-		"session-id":               sessionProps.ID,
-		"is-admin":                 ctx.IsAdminUser(),
-		"resource-type":            sessionProps.ConnectionType,
-		"resource-subtype":         sessionProps.ConnectionSubtype,
-		"status":                   sessionProps.Status,
-		"session-type":             "TODO: cli, webapp, etc",
-		"gateway-version":          version.Get().Version,
-		"agent-version":            sessionProps.AgentVersion,
-		"created-at":               sessionProps.CreatedAt.String(),
-		"finished-at":              finishedAt,
-		"access-request-activated": sessionProps.AccessRequestActivated,
-		"access-request-force-approval-activated": sessionProps.AccessRequestForceApprovals != nil && len(sessionProps.AccessRequestForceApprovals) > 0,
-		"access-request-minimum-approval":         sessionProps.AccessRequestMinApprovals,
-		"access-request-action-date":              "reviews table",
-		"jira-template-activated":                 sessionProps.JiraIssueTemplateID.String != "",
-		"guardrails-activated":                    sessionProps.GuardrailsActivated,
-		"data-masking-activated":                  "datamasking_rules_connections checking status active",
-		"ai-session-analyzer-activated":           "sessions table -> ai_analysis column",
-		"ai-session-analyzer-identified-risk":     "sessions table -> ai_analysis column",
-		"ai-session-analyzer-action":              "sessions table -> ai_analysis column",
-	}, err
-}
-
-// Not checking the DB, it just receives all dependencies through input
-func sessionProperties(ctx *types.APIContext, s models.Session, conn models.Connection, guardRailRules *models.ConnectionGuardRailRules, accessRequestRules *models.AccessRequestRule) map[string]any {
-	var (
-		finishedAt                          string
-		jiraTemplateActivated               bool
-		guardrailsActivated                 bool
-		accessRequestActivated              bool
-		accessRequestForceApprovalActivated bool
-		accessRequestMinimumApproval        *int
-	)
-	if s.EndSession != nil {
-		finishedAt = s.EndSession.String()
-	}
-
-	if conn.JiraIssueTemplateID.String != "" {
-		jiraTemplateActivated = true
-	}
-
-	if guardRailRules != nil {
-		guardrailsActivated = true
-	}
-
-	if accessRequestRules != nil {
-		accessRequestActivated = true
-		accessRequestForceApprovalActivated = accessRequestRules.ForceApprovalGroups != nil && len(accessRequestRules.ForceApprovalGroups) > 0
-		accessRequestMinimumApproval = accessRequestRules.MinApprovals
-	}
-
-	return map[string]any{
-		"org-id":                   s.OrgID,
-		"session-id":               s.ID,
-		"is-admin":                 ctx.IsAdminUser(),
-		"resource-type":            s.ConnectionType,
-		"resource-subtype":         s.ConnectionSubtype,
-		"status":                   s.Status,
-		"session-type":             s.Verb, //TODO: cli, webapp, etc
-		"gateway-version":          version.Get().Version,
-		"agent-version":            "",
-		"created-at":               s.CreatedAt.String(),
-		"finished-at":              finishedAt,
-		"access-request-activated": accessRequestActivated,
-		"access-request-force-approval-activated": accessRequestForceApprovalActivated,
-		"access-request-minimum-approval":         accessRequestMinimumApproval,
-		"access-request-action-date":              "",
-		"jira-template-activated":                 jiraTemplateActivated,
-		"guardrails-activated":                    guardrailsActivated,
-		"data-masking-activated":                  "",
-		"ai-session-analyzer-activated":           "",
-		"ai-session-analyzer-identified-risk":     "",
-		"ai-session-analyzer-action":              "",
-	}
-}
-
-func (s *Segment) TrackSession(ctx *types.APIContext, eventName string, sessionID string) {
-	sessionProps, err := sessionPropertiesFromDB(ctx, sessionID, "cli")
-	if err != nil {
-		return
-	}
-
-	s.Track(ctx.UserID, eventName, sessionProps)
-}
-
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" ||
 		!appconfig.Get().AnalyticsTracking() {
@@ -267,7 +163,34 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	})
 }
 
-// TODO: sample structure
-func TrackSessionUsage(sessionType string) {
+func SessionProperties(ctx *types.APIContext, s models.Session, c *models.Connection) map[string]any {
+	props := map[string]any{
+		"org-id":                        s.OrgID,
+		"session-id":                    s.ID,
+		"resource-type":                 s.ConnectionType,
+		"resource-subtype":              s.ConnectionSubtype,
+		"status":                        s.Status,
+		"created-at":                    s.CreatedAt.String(),
+		"ai-session-analyzer-activated": false,
+		"is-admin":                      ctx.IsAdminUser(),
+		"agent-version":                 "", // TODO: get from connection table
+		"access-request-activated":      "", // TODO: get from db
+		"access-request-force-approval-activated": "", // TODO: get from db
+		"access-request-minimum-approval":         "", // TODO: get from db
+		"jira-template-activated":                 c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
+		"guardrails-activated":                    "", // TODO: get from db
+		"data-masking-activated":                  "", // TODO: get from db
+	}
 
+	if s.EndSession != nil {
+		props["finished-at"] = s.EndSession.String()
+	}
+
+	if s.AIAnalysis != nil {
+		props["ai-session-analyzer-activated"] = true
+		props["ai-session-analyzer-identified-risk"] = s.AIAnalysis.RiskLevel
+		props["ai-session-analyzer-action"] = s.AIAnalysis.Action
+	}
+
+	return props
 }

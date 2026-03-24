@@ -11,13 +11,13 @@ import (
 func TestValidateMandatoryMetadata(t *testing.T) {
 	tests := []struct {
 		name        string
-		connection  models.Connection
+		connection  *models.Connection
 		session     models.Session
 		expectedErr error
 	}{
 		{
 			name: "All mandatory fields satisfied",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{"field1", "field2"},
 			},
 			session: models.Session{
@@ -30,7 +30,7 @@ func TestValidateMandatoryMetadata(t *testing.T) {
 		},
 		{
 			name: "Missing mandatory field",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{"field1", "field2"},
 			},
 			session: models.Session{
@@ -42,7 +42,7 @@ func TestValidateMandatoryMetadata(t *testing.T) {
 		},
 		{
 			name: "Mandatory field is nil",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{"field1"},
 			},
 			session: models.Session{
@@ -54,7 +54,7 @@ func TestValidateMandatoryMetadata(t *testing.T) {
 		},
 		{
 			name: "Mandatory field is empty string",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{"field1"},
 			},
 			session: models.Session{
@@ -66,7 +66,7 @@ func TestValidateMandatoryMetadata(t *testing.T) {
 		},
 		{
 			name: "No mandatory fields in connection",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{},
 			},
 			session: models.Session{
@@ -78,7 +78,7 @@ func TestValidateMandatoryMetadata(t *testing.T) {
 		},
 		{
 			name: "Mandatory field not found in metadata",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{"field1"},
 			},
 			session: models.Session{
@@ -88,7 +88,7 @@ func TestValidateMandatoryMetadata(t *testing.T) {
 		},
 		{
 			name: "Multiple missing mandatory fields",
-			connection: models.Connection{
+			connection: &models.Connection{
 				MandatoryMetadataFields: []string{"field1", "field2", "field3"},
 			},
 			session: models.Session{

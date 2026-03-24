@@ -237,8 +237,13 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	}
 
 	if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
-		analytics.TrackSessionUsage(analytics.EventSessionReviewed)
-		// TODO: build review props and Track
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		session, _ := models.GetSessionByID(ctx.OrgID, rev.SessionID)
+		if session != nil {
+			trackClient.Track(ctx.UserID, analytics.EventSessionReviewed, analytics.SessionProperties(ctx.APIContext, *session, connection))
+		}
 	}
 
 	return rev, nil

@@ -97,7 +97,12 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			return fmt.Errorf("failed persisting session to store, reason=%v", err)
 		}
 
-		analytics.TrackSessionUsage(analytics.EventSessionCreated)
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		// TODO: fix this context issue
+		trackClient.Track(pctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(nil, newSession, connection))
+
 	}
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
@@ -243,9 +248,7 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 				Warnf("failed closing session, reason=%v", err)
 		}
 
-		if err = models.SetSessionMetricsEndedAt(models.DB, pctx.SID); err == nil {
-			analytics.TrackSessionUsage(analytics.EventSessionFinished)
-		}
+		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
 	}()
 }
 

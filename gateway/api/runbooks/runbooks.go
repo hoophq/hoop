@@ -237,6 +237,8 @@ func RunExec(c *gin.Context) {
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
+	trackClient := analytics.New()
+	defer trackClient.Close()
 
 	if connection.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(connection.OrgID, connection.JiraIssueTemplateID.String)
@@ -273,7 +275,7 @@ func RunExec(c *gin.Context) {
 		}
 	}
 
-	if err := services.ValidateAndUpsertSession(c, newSession, *connection); err != nil {
+	if err := services.ValidateAndUpsertSession(c, newSession, connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {
@@ -285,7 +287,7 @@ func RunExec(c *gin.Context) {
 		return
 	}
 
-	analytics.TrackSessionUsage(analytics.EventSessionCreated)
+	trackClient.Track(ctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(ctx.APIContext, newSession, connection))
 
 	var params string
 	for key, val := range req.Parameters {
