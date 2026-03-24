@@ -203,6 +203,16 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 		case "resource_name":
 			o.ResourceName = values[0]
 			continue
+		case "attribute":
+			if len(values[0]) > 0 {
+				for _, attr := range strings.Split(values[0], ",") {
+					if !reSanitize.MatchString(attr) {
+						return o, errInvalidOptionVal
+					}
+					o.Attributes = append(o.Attributes, attr)
+				}
+			}
+			continue
 		case "name":
 			o.Name = strings.TrimLeft(values[0], " ")
 			continue

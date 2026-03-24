@@ -556,6 +556,7 @@ type ConnectionFilterOption struct {
 	Search        string
 	ConnectionIDs []string
 	ResourceName  string
+	Attributes    []string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -641,6 +642,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	searchPattern := opts.GetSearchPattern()
 	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
+	attributes := pq.StringArray(opts.Attributes)
 
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -674,6 +676,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
 		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
+	LEFT JOIN private.connections_attributes ca ON ca.connection_name = c.name AND ca.org_id = c.org_id
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
@@ -702,6 +705,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		-- attributes filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN ca.attribute_name = ANY((?)::text[])
 			ELSE true
 		END AND
 		(
@@ -745,6 +753,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		attributes, attributes,
 		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {

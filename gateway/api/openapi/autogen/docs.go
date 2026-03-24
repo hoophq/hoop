@@ -1269,6 +1269,13 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "string",
+                        "description": "Filter by attributes, separated by comma",
+                        "name": "attribute",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
                         "description": "Filter by specific connection IDs, separated by comma",
                         "name": "connection_ids",
                         "in": "query"
