@@ -25,7 +25,7 @@
     (rf/dispatch [:ai-session-analyzer/get-provider])
 
     (fn []
-      (let [has-rules? (seq (or (:data @rules-data) []))
+      (let [has-rules? (and (:data @rules-data) (seq (:data @rules-data)))
             provider-configured? (= :success (:status @provider-data))]
 
         (if (not @promotion-seen?)
