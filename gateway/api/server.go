@@ -158,7 +158,7 @@ func (a *Api) StartAPI(sentryInit bool) {
 		}))
 	}
 	router := apiroutes.New(rg)
-	
+
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
 
@@ -509,12 +509,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		sessionapi.Get)
 	r.GET("/sessions/:session_id/download", sessionapi.DownloadSession)
 	r.GET("/sessions/:session_id/download/input", sessionapi.DownloadSessionInput)
- 
+
 	r.GET("/sessions/:session_id/rdp-frames",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		sessionapi.GetRDPFrames)
- 
+
 	r.GET("/sessions/:session_id/result/stream",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,

@@ -173,4 +173,3 @@ func toOpenID(svc models.ServiceAccount) openapi.ServiceAccount {
 		Groups:  svc.Groups,
 	}
 }
-

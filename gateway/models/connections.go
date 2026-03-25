@@ -379,22 +379,45 @@ func DeleteConnection(orgID, name string) error {
 
 // GetConnectionGuardRailRules retrieves the guard rail rules associated with a connection.
 // It does not enforce access control rules
-func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules, error) {
-	var conn ConnectionGuardRailRules
+// func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules, error) {
+// 	var conn ConnectionGuardRailRules
+// 	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
+// 	SELECT
+// 		c.id, c.org_id, c.name,
+// 		(
+// 			SELECT json_agg(r.input) FROM private.guardrail_rules r
+// 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+// 		) AS guardrail_input_rules,
+// 		(
+// 			SELECT json_agg(r.output) FROM private.guardrail_rules r
+// 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+// 		) AS guardrail_output_rules
+// 	FROM private.connections c
+// 	WHERE c.org_id = ? AND c.name = ?
+// 	`, orgID, name).First(&conn).Error
+// 	if err != nil {
+// 		if errors.Is(err, gorm.ErrRecordNotFound) {
+// 			return nil, nil
+// 		}
+// 		return nil, err
+// 	}
+// 	return &conn, nil
+// }
+
+func GetConnectionGuardRailRules(orgID, name string) (*[]ConnectionGuardRailRules, error) {
+	var conn []ConnectionGuardRailRules
 	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
 	SELECT
-		c.id, c.org_id, c.name,
-		(
-			SELECT json_agg(r.input) FROM private.guardrail_rules r
-			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
-		) AS guardrail_input_rules,
-		(
-			SELECT json_agg(r.output) FROM private.guardrail_rules r
-			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
-		) AS guardrail_output_rules
-	FROM private.connections c
+		rule.org_id,
+		rule.id,
+		rule.name,
+		rule.input AS guardrail_input_rules,
+		rule.output AS guardrail_output_rules
+	FROM private.guardrail_rules rule
+		INNER JOIN private.guardrail_rules_connections rc ON rc.rule_id = rule.id
+		INNER JOIN private.connections c ON c.id = rc.connection_id
 	WHERE c.org_id = ? AND c.name = ?
-	`, orgID, name).First(&conn).Error
+	`, orgID, name).Scan(&conn).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

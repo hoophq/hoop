@@ -59,7 +59,6 @@ deploy/docker-compose/hoopdata/zitadel-admin-sa.json
 # rust build
 target/
 webapp/resources/public/data/connections-metadata.json
-.claude/settings.local.json
-
+.claude
 # WASM build output
 gateway/rdp/wasm/target/

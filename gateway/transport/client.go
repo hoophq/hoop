@@ -248,39 +248,66 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
 
-	if connGuardRailRules == nil {
+	if connGuardRailRules == nil || len(*connGuardRailRules) == 0 {
 		return nil, nil
 	}
 
-	var inputRules, outputRules []guardrails.DataRules
-
-	// decode input rules
-	if connGuardRailRules.GuardRailInputRules != nil {
-		if inputRules, err = guardrails.Decode(connGuardRailRules.GuardRailInputRules); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed decoding guard rail input rules, err=%v", err)
-		}
+	type guardRailRule struct {
+		ID          string                 `json:"id"`
+		Name        string                 `json:"name"`
+		InputRules  []guardrails.DataRules `json:"input_rules"`
+		OutputRules []guardrails.DataRules `json:"output_rules"`
 	}
 
-	// decode output rules
-	if connGuardRailRules.GuardRailOutputRules != nil {
-		if outputRules, err = guardrails.Decode(connGuardRailRules.GuardRailOutputRules); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed decoding guard rail output rules, err=%v", err)
+	decodeRules := func(raw []byte) ([]guardrails.DataRules, error) {
+		if len(raw) == 0 {
+			return nil, nil
 		}
+
+		var rules []guardrails.DataRules
+		if err := json.Unmarshal(raw, &rules); err == nil {
+			return rules, nil
+		}
+
+		var oneRule guardrails.DataRules
+		if err := json.Unmarshal(raw, &oneRule); err != nil {
+			return nil, err
+		}
+		return []guardrails.DataRules{oneRule}, nil
 	}
 
-	// check if there are no rules
-	if inputRules == nil && outputRules == nil {
+	var rules []guardRailRule
+	hasRules := false
+
+	for _, rule := range *connGuardRailRules {
+		inputRules, err := decodeRules(rule.GuardRailInputRules)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed decoding guard rail input rules for rule %s, err=%v", rule.ID, err)
+		}
+
+		outputRules, err := decodeRules(rule.GuardRailOutputRules)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed decoding guard rail output rules for rule %s, err=%v", rule.ID, err)
+		}
+
+		if len(inputRules) > 0 || len(outputRules) > 0 {
+			hasRules = true
+		}
+
+		rules = append(rules, guardRailRule{
+			ID:          rule.ID,
+			Name:        rule.Name,
+			InputRules:  inputRules,
+			OutputRules: outputRules,
+		})
+	}
+
+	if !hasRules {
 		return nil, nil
 	}
 
 	// marshal rules to json
-	guardRailRulesJsonData, err := json.Marshal(struct {
-		InputRules  []guardrails.DataRules `json:"input_rules"`
-		OutputRules []guardrails.DataRules `json:"output_rules"`
-	}{
-		InputRules:  inputRules,
-		OutputRules: outputRules,
-	})
+	guardRailRulesJsonData, err := json.Marshal(rules)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed marshaling guard rail rules, err=%v", err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,7 +27,6 @@ import (
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
-	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -215,48 +213,6 @@ func Post(c *gin.Context) {
 				ExecutionTimeMili: 0,
 				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
 			})
-			return
-		}
-	}
-
-	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
-	if err != nil {
-		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
-		return
-	}
-
-	if connRules != nil {
-		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
-		switch err.(type) {
-		case *guardrails.ErrRuleMatch:
-			// persist session to audit this attempt
-			_ = services.UpsertSession(c, newSession, *conn)
-			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
-			if err := models.UpdateSessionEventStream(models.SessionDone{
-				ID:         sid,
-				OrgID:      ctx.OrgID,
-				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
-				BlobStream: fmt.Appendf(nil, `[[0, "e", %q]]`, encErr),
-				ExitCode:   func() *int { v := internalExitCode; return &v }(),
-				Status:     string(openapi.SessionStatusDone),
-			}); err != nil {
-				log.Errorf("unable to update session, err=%v", err)
-			}
-			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sid,
-				Output:            err.Error(),
-				OutputStatus:      "failed",
-				ExitCode:          internalExitCode,
-				ExecutionTimeMili: 0,
-				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
-			})
-			return
-		case nil:
-		default:
-			errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
-			log.Error(errMsg)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
 			return
 		}
 	}
@@ -1181,47 +1137,6 @@ func Provision(c *gin.Context) {
 		ExitCode:             nil,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
-	}
-
-	connRules, err := models.GetConnectionGuardRailRules(ctx.OrgID, conn.Name)
-	if err != nil {
-		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
-		return
-	}
-
-	if connRules != nil {
-		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
-		switch err.(type) {
-		case *guardrails.ErrRuleMatch:
-			// persist session to audit this attempt
-			_ = services.UpsertSession(c, newSession, *conn)
-			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
-			if err := models.UpdateSessionEventStream(models.SessionDone{
-				ID:         sid,
-				OrgID:      ctx.OrgID,
-				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
-				BlobStream: fmt.Appendf(nil, `[[0, "e", %q]]`, encErr),
-				ExitCode:   func() *int { v := internalExitCode; return &v }(),
-				Status:     string(openapi.SessionStatusDone),
-			}); err != nil {
-				log.Errorf("unable to update session, err=%v", err)
-			}
-			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sid,
-				Output:            err.Error(),
-				OutputStatus:      "failed",
-				ExitCode:          internalExitCode,
-				ExecutionTimeMili: 0,
-			})
-			return
-		case nil:
-		default:
-			errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
-			log.Error(errMsg)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
-			return
-		}
 	}
 
 	if conn.JiraIssueTemplateID.String != "" {

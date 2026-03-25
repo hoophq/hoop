@@ -375,4 +375,3 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 		AuditorRoleName:             ptr.ToString(cfg.AuditorRoleName),
 	}
 }
-
