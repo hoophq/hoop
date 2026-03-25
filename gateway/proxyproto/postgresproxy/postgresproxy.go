@@ -242,10 +242,10 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, err
 	}
 
-	// if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-	// 	log.Errorf("Error verifying the user token: %v", err)
-	// 	return nil, err
-	// }
+	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+		log.Errorf("Error verifying the user token: %v", err)
+		return nil, err
+	}
 
 	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
 		dba.ID, dba.UserSubject, dba.ConnectionName,
