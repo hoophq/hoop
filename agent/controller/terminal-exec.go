@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"libhoop"
+	redactortypes "libhoop/redactor/types"
 	"strconv"
 	"strings"
 
@@ -36,6 +38,11 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
 	}
 
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
+
 	opts := map[string]string{
 		"sid":                       sid,
 		"dlp_provider":              connParams.DlpProvider,
@@ -46,14 +53,21 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
 		"analyzer_metrics_rules":    analyzerMetricsRules,
+		"guard_rail_rules":          guardRailRules,
 	}
 
 	args := append(connParams.CmdList, connParams.ClientArgs...)
 	cmd, err := libhoop.NewAdHocExec(connParams.EnvVars, args, pkt.Payload, stdoutw, stderrw, opts)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed configuring command, reason=%v", err)
-		log.With("sid", sid).Infof(errMsg)
-		a.sendClientSessionClose(sid, errMsg)
+		log.With("sid", sid).Infof("failed configuring command, reason=%v", err)
+		// Write error to stderr so it's visible in the web UI output
+		errMsg := err.Error()
+		var guardrailErr *redactortypes.ErrGuardrailsValidation
+		if errors.As(err, &guardrailErr) {
+			errMsg = guardrailErr.FormattedMessage()
+		}
+		_, _ = stderrw.Write([]byte(errMsg))
+		a.sendClientSessionCloseFromError(sid, err)
 		return
 	}
 	log.With("sid", sid).Infof("tty=false, stdinsize=%v - executing command:%v", len(pkt.Payload), args)
@@ -66,6 +80,15 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		}
 		a.connStore.Del(sessionIDKey)
 		log.With("sid", sid).Infof("exitcode=%v - err=%v", exitCode, errMsg)
+
+		// Check for guardrails errors (stored on cmd during output validation)
+		if cmdGuardrail, ok := cmd.(interface{ GuardrailErr() error }); ok {
+			if gErr := cmdGuardrail.GuardrailErr(); gErr != nil {
+				a.sendClientSessionCloseFromError(sid, gErr)
+				cmd.FlushMetrics(newIoMetricFlush(a.client, sid))
+				return
+			}
+		}
 		a.sendClientSessionCloseWithExitCode(sid, errMsg, strconv.Itoa(exitCode))
 
 		// since the doExec kill the connection after the commnad runs we can flush
