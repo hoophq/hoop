@@ -676,7 +676,6 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
 		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
-	LEFT JOIN private.connections_attributes ca ON ca.connection_name = c.name AND ca.org_id = c.org_id
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
@@ -709,7 +708,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		END AND
 		-- attributes filter
 		CASE WHEN (?)::text[] IS NOT NULL
-			THEN ca.attribute_name = ANY((?)::text[])
+			THEN EXISTS (
+				SELECT 1 FROM private.connections_attributes ca
+				WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+				AND ca.attribute_name = ANY((?)::text[])
+			)
 			ELSE true
 		END AND
 		(
@@ -897,7 +900,6 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		), ARRAY[]::TEXT[]) AS attributes,
 		COUNT(*) OVER() AS total
 	FROM private.connections c
-	LEFT JOIN private.connections_attributes ca ON ca.connection_name = c.name AND ca.org_id = c.org_id
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
 	LEFT JOIN private.plugins review ON review.name = 'review' AND review.org_id = ?
@@ -930,7 +932,11 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		END AND
 		-- attributes filter
 		CASE WHEN (?)::text[] IS NOT NULL
-			THEN ca.attribute_name = ANY((?)::text[])
+			THEN EXISTS (
+				SELECT 1 FROM private.connections_attributes ca
+				WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+				AND ca.attribute_name = ANY((?)::text[])
+			)
 			ELSE true
 		END AND
 		(
