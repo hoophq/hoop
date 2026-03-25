@@ -163,7 +163,7 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	})
 }
 
-func SessionProperties(ctx *types.APIContext, s models.Session, c *models.Connection) map[string]any {
+func sessionUsageProperties(s models.Session, c *models.Connection) map[string]any {
 	props := map[string]any{
 		"org-id":                        s.OrgID,
 		"session-id":                    s.ID,
@@ -172,7 +172,6 @@ func SessionProperties(ctx *types.APIContext, s models.Session, c *models.Connec
 		"status":                        s.Status,
 		"created-at":                    s.CreatedAt.String(),
 		"ai-session-analyzer-activated": false,
-		"is-admin":                      ctx.IsAdminUser(),
 		"agent-version":                 "", // TODO: get from connection table
 		"access-request-activated":      "", // TODO: get from db
 		"access-request-force-approval-activated": "", // TODO: get from db
@@ -193,4 +192,31 @@ func SessionProperties(ctx *types.APIContext, s models.Session, c *models.Connec
 	}
 
 	return props
+}
+
+func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID string, sessionID string) {
+	session, err := models.GetSessionByID(orgID, sessionID)
+	if err != nil {
+		log.Warnf("failed getting session by ID, reason=%v", err)
+		return
+	}
+
+	if session == nil {
+		log.Warnf("session not found for ID=%s", sessionID)
+		return
+	}
+
+	connection, err := models.GetConnectionFeaturesByName(models.DB, session.Connection)
+	if err != nil {
+		log.Warnf("failed getting connection features by name, reason=%v", err)
+		return
+	}
+
+	if connection == nil {
+		log.Warnf("connection not found for name=%s", session.Connection)
+		return
+	}
+
+	props := sessionUsageProperties(*session, connection)
+	s.Track(userID, eventName, props)
 }

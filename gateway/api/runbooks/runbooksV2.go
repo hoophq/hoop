@@ -556,7 +556,7 @@ func RunbookExec(c *gin.Context) {
 
 	trackClient := analytics.New()
 	defer trackClient.Close()
-	trackClient.Track(ctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(ctx.APIContext, newSession, connection))
+	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sessionID)
 
 	var params string
 	for key, val := range req.Parameters {

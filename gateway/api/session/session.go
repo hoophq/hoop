@@ -210,7 +210,7 @@ func Post(c *gin.Context) {
 		}
 
 		if shouldBlock {
-			trackClient.Track(ctx.UserID, analytics.EventSessionFinished, analytics.SessionProperties(ctx.APIContext, newSession, conn))
+			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
 
 			c.JSON(http.StatusOK, clientexec.Response{
 				SessionID:         sid,
@@ -249,7 +249,7 @@ func Post(c *gin.Context) {
 				log.Errorf("unable to update session, err=%v", err)
 			}
 
-			trackClient.Track(ctx.UserID, analytics.EventSessionFinished, analytics.SessionProperties(ctx.APIContext, newSession, conn))
+			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
 
 			c.JSON(http.StatusOK, clientexec.Response{
 				SessionID:         sid,
@@ -315,7 +315,7 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
-	trackClient.Track(ctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(ctx.APIContext, newSession, conn))
+	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
 
 	// TODO: refactor to use response from openapi package
 	client, err := clientexec.New(&clientexec.Options{
@@ -1221,7 +1221,7 @@ func Provision(c *gin.Context) {
 				log.Errorf("unable to update session, err=%v", err)
 			}
 
-			trackClient.Track(ctx.UserID, analytics.EventSessionFinished, analytics.SessionProperties(ctx.APIContext, newSession, conn))
+			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
 			c.JSON(http.StatusOK, clientexec.Response{
 				SessionID:         sid,
 				Output:            err.Error(),
@@ -1285,7 +1285,7 @@ func Provision(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
 		return
 	}
-	trackClient.Track(ctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(ctx.APIContext, newSession, conn))
+	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
 
 	allGroupsApproved, err := createApprovedReview(ctx, &newSession, conn, user, &req)
 	if err != nil {
@@ -1309,7 +1309,7 @@ func Provision(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating session"})
 			return
 		}
-		trackClient.Track(ctx.UserID, analytics.EventSessionReviewed, analytics.SessionProperties(ctx.APIContext, newSession, conn))
+		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, sid)
 	}
 
 	c.JSON(http.StatusAccepted, openapi.ProvisionSessionResponse{

@@ -240,10 +240,7 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		trackClient := analytics.New()
 		defer trackClient.Close()
 
-		session, _ := models.GetSessionByID(ctx.OrgID, rev.SessionID)
-		if session != nil {
-			trackClient.Track(ctx.UserID, analytics.EventSessionReviewed, analytics.SessionProperties(ctx.APIContext, *session, connection))
-		}
+		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, rev.SessionID)
 	}
 
 	return rev, nil

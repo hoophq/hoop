@@ -100,9 +100,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 		trackClient := analytics.New()
 		defer trackClient.Close()
 
-		// TODO: fix this context issue
-		trackClient.Track(pctx.UserID, analytics.EventSessionCreated, analytics.SessionProperties(nil, newSession, connection))
-
+		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
@@ -147,6 +145,10 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 					log.Errorf("failed updating session, err=%v", err)
 					return nil, plugintypes.InternalErr("failed updating session", err)
 				}
+				trackClient := analytics.New()
+				defer trackClient.Close()
+
+				trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 
 				if shouldBlock {
 					return nil, plugintypes.NewPacketErr("session blocked by AI risk analyzer", nil)
