@@ -212,24 +212,19 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 			// Session duration remaining based on the expiration time
 			ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
 
-			// Use session_id from credentials if available, otherwise use the passed sid for backward compat
-			sessionID := sid
-			if dba.SessionID != "" {
-				sessionID = dba.SessionID
-			}
-
 			log.Infof("obtained access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
-				dba.ID, dba.UserSubject, dba.ConnectionName, sessionID,
+				dba.ID, dba.UserSubject, dba.ConnectionName, sid,
 				dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
-			return &ssh.Permissions{
-				Extensions: map[string]string{
-					"hoop-user-subject":     dba.UserSubject,
-					"hoop-connection-name":  dba.ConnectionName,
-					"hoop-context-duration": ctxDuration.String(),
-					"hoop-session-id":       sessionID,
-				},
-			}, nil
+			extensions := map[string]string{
+				"hoop-user-subject":     dba.UserSubject,
+				"hoop-connection-name":  dba.ConnectionName,
+				"hoop-context-duration": ctxDuration.String(),
+			}
+			if dba.SessionID != "" {
+				extensions["hoop-credential-session-id"] = dba.SessionID
+			}
+			return &ssh.Permissions{Extensions: extensions}, nil
 		},
 	}
 
@@ -256,16 +251,10 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	connectionName := sshConn.Permissions.Extensions["hoop-connection-name"]
 	userSubject := sshConn.Permissions.Extensions["hoop-user-subject"]
 	ctxDurationStr := sshConn.Permissions.Extensions["hoop-context-duration"]
-	credentialSessionID := sshConn.Permissions.Extensions["hoop-session-id"]
+	credentialSessionID := sshConn.Permissions.Extensions["hoop-credential-session-id"]
 
 	if connectionName == "" || userSubject == "" {
 		return nil, fmt.Errorf("missing required SSH connection attributes")
-	}
-
-	// Use session_id from credentials if available, otherwise use the passed sid for backward compat
-	sessionID := sid
-	if credentialSessionID != "" {
-		sessionID = credentialSessionID
 	}
 
 	ctxDuration, err := time.ParseDuration(ctxDurationStr)
@@ -284,8 +273,20 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	}
 
 	log.
-		With("sid", sessionID, "remote-addr", conn.RemoteAddr()).
+		With("sid", sid, "remote-addr", conn.RemoteAddr()).
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
+
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, connectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, userSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", sid),
+	}
+	if credentialSessionID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", credentialSessionID))
+	}
 
 	// connect to the gateway gRPC server
 	client, err := grpc.Connect(grpc.ClientConfig{
@@ -296,14 +297,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
 		// it should be safe to skip verify here as we are connecting to localhost
 		TLSSkipVerify: true,
-	},
-		grpc.WithOption(grpc.OptionConnectionName, connectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, userSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sessionID),
-	)
+	}, grpcOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to grpc server, err=%v", err)
 	}
@@ -312,7 +306,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
 	sessionConn := &sshConnection{
 		id:  connID,
-		sid: sessionID,
+		sid: sid,
 		ctx: ctx,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))

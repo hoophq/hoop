@@ -35,14 +35,9 @@ func CreateRDPSession(
 	extractedCreds string,
 	expireAt time.Time,
 	ctxDuration time.Duration,
-	sessionID string,
 ) (*Session, error) {
 
-	// Parse sessionID string to uuid.UUID
-	sessionUUID, err := uuid.Parse(sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid session ID: %w", err)
-	}
+	sessionID := uuid.New()
 
 	ctx, timeoutCancelFn := context.WithTimeoutCause(context.Background(), ctxDuration,
 		fmt.Errorf("connection access expired (%v)",
@@ -59,7 +54,7 @@ func CreateRDPSession(
 	credentialsReceived := make(chan bool, 1)
 
 	session := &Session{
-		ID:                  sessionUUID,
+		ID:                  sessionID,
 		ClientCommunicator:  connTcp,
 		AgentCommunicator:   client,
 		clientAddr:          clientAddr,
@@ -71,7 +66,7 @@ func CreateRDPSession(
 	}
 
 	// Store session immediately so it can be found by WebSocket handler
-	BrokerInstance.sessions.Store(sessionUUID, session)
+	BrokerInstance.sessions.Store(sessionID, session)
 
 	// Decode base64 env variables for RDP
 	secrets := map[string]string{}
@@ -98,14 +93,14 @@ func CreateRDPSession(
 		Payload: []byte{}, // Empty payload since session ID is in header
 	}
 
-	framedData, err := EncodeWebSocketMessage(sessionUUID, msg)
+	framedData, err := EncodeWebSocketMessage(sessionID, msg)
 	if err != nil {
-		BrokerInstance.sessions.Delete(sessionUUID)
+		BrokerInstance.sessions.Delete(sessionID)
 		return nil, err
 	}
 
 	if err := session.SendToAgent(framedData); err != nil {
-		BrokerInstance.sessions.Delete(sessionUUID)
+		BrokerInstance.sessions.Delete(sessionID)
 		return nil, err
 	}
 
@@ -120,7 +115,7 @@ func CreateRDPSession(
 		return session, nil
 	case <-timeoutCtx.Done():
 		// Clean up session on timeout
-		BrokerInstance.sessions.Delete(sessionUUID)
+		BrokerInstance.sessions.Delete(sessionID)
 		return nil, fmt.Errorf("timeout waiting for %s started response", protocol)
 	}
 }

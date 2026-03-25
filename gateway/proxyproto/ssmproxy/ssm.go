@@ -232,13 +232,20 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		return
 	}
 
-	// Use session_id from credentials if available, otherwise use the generated one for backward compat
-	if dbConnection.SessionID != "" {
-		sessionID = dbConnection.SessionID
-	}
-
 	log.With("sid", sessionID, "conn", cID).
 		Infof("starting websocket connection for connectionId=%s, target=%s, sessionID=%s", connectionId, target, sessionID)
+
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, dbConnection.ConnectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dbConnection.UserSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", sessionID),
+	}
+	if dbConnection.SessionID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dbConnection.SessionID))
+	}
 
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
@@ -248,14 +255,7 @@ func (r *SSMProxy) handleWebsocket(c *gin.Context) {
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
 		// it should be safe to skip verify here as we are connecting to localhost
 		TLSSkipVerify: true,
-	},
-		grpc.WithOption(grpc.OptionConnectionName, dbConnection.ConnectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dbConnection.UserSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sessionID),
-	)
+	}, grpcOpts...)
 	if err != nil {
 		log.With("sid", sessionID, "conn", cID).Errorf("failed connecting to hoop server, reason=%v", err)
 		c.String(http.StatusInternalServerError, "Failed to connect to hoop server")

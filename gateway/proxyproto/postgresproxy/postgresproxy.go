@@ -247,15 +247,8 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, err
 	}
 
-	// Use session_id from credentials if available, otherwise use the passed sid for backward compat
-	sessionID := sid
-	if dba.SessionID != "" {
-		sessionID = dba.SessionID
-		pgConn.sid = sessionID // Update the sid in pgConn to match
-	}
-
 	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
-		dba.ID, dba.UserSubject, dba.ConnectionName, sessionID,
+		dba.ID, dba.UserSubject, dba.ConnectionName, sid,
 		dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
@@ -270,6 +263,18 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		pgConn.cancelFn(cause.Error())
 	}, tokenVerifier, dba.UserSubject)
 
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", sid),
+	}
+	if dba.SessionID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
+	}
+
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
 		Token:         "", // it will use impersonate-auth-key as authentication
@@ -278,14 +283,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
 		// it should be safe to skip verify here as we are connecting to localhost
 		TLSSkipVerify: true,
-	},
-		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sessionID),
-	)
+	}, grpcOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to grpc server, err=%v", err)
 	}

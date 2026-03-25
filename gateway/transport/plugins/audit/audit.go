@@ -74,6 +74,11 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			return fmt.Errorf("connection not found")
 		}
 
+		var sessionMetadata map[string]any
+		if pctx.CredentialSessionID != "" {
+			sessionMetadata = map[string]any{"credential-session": pctx.CredentialSessionID}
+		}
+
 		newSession := models.Session{
 			ID:                   pctx.SID,
 			OrgID:                pctx.OrgID,
@@ -86,7 +91,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ConnectionTags:       pctx.ConnectionTags,
 			Verb:                 pctx.ClientVerb,
 			Labels:               nil,
-			Metadata:             nil,
+			Metadata:             sessionMetadata,
 			IntegrationsMetadata: nil,
 			Status:               string(openapi.SessionStatusOpen),
 			ExitCode:             nil,
@@ -233,17 +238,6 @@ func (p *auditPlugin) OnDisconnect(pctx plugintypes.Context, err error) error {
 }
 
 func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
-	// Check if this session is owned by a connection credential
-	// If so, don't close it - the session lifecycle is managed by credential expiry
-	isCredentialSession := p.isCredentialOwnedSession(pctx.SID, pctx.OrgID)
-	
-	if isCredentialSession {
-		log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
-			Infof("skipping session close - session is owned by connection credentials")
-		memorySessionStore.Del(pctx.SID)
-		return
-	}
-
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 		Infof("closing session, reason=%v", err)
 	go func() {
@@ -254,22 +248,6 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 		}
 		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
 	}()
-}
-
-// isCredentialOwnedSession checks if a session is owned by a connection credential
-func (p *auditPlugin) isCredentialOwnedSession(sessionID, orgID string) bool {
-	// Check if there's an active connection credential with this session_id
-	var count int64
-	err := models.DB.Table("private.connection_credentials").
-		Where("session_id = ? AND org_id = ? AND expire_at > NOW()", sessionID, orgID).
-		Count(&count).Error
-	
-	if err != nil {
-		log.With("sid", sessionID).Warnf("failed checking if session is credential-owned, err=%v", err)
-		return false
-	}
-	
-	return count > 0
 }
 
 func (p *auditPlugin) OnShutdown() {}
