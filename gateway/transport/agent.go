@@ -116,7 +116,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		}
 
 		switch pb.PacketType(pkt.Type) {
-		case pbclient.SessionClose:
+		case pbclient.SessionGuardRailsInfo:
 			if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
 				var guardRailsData []models.SessionGuardRailsInfo
 				if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
@@ -126,6 +126,7 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 					log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
 				}
 			}
+		case pbclient.SessionClose:
 			// it will make sure to run the disconnect plugin phase for both clients
 			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
 		case pbclient.SessionOpenOK:
