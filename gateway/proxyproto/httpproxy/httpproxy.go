@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -46,6 +47,19 @@ var instanceStore sync.Map
 type negativeAuthEntry struct {
 	err       error
 	timestamp time.Time
+}
+
+// credentialError wraps errors related to invalid or expired credentials.
+// Only these errors should be stored in the negative auth cache.
+type credentialError struct {
+	err error
+}
+
+func (e *credentialError) Error() string { return e.err.Error() }
+func (e *credentialError) Unwrap() error { return e.err }
+
+func newCredentialError(format string, a ...any) error {
+	return &credentialError{err: fmt.Errorf(format, a...)}
 }
 
 // negativeAuthCache caches failed authentication attempts to avoid repeated database queries
@@ -256,13 +270,14 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	session, err := s.getOrCreateSession(secretKeyHash)
 	if err != nil {
-		negativeAuthCache.Store(secretKeyHash, &negativeAuthEntry{
-			err:       err,
-			timestamp: time.Now(),
-		})
-		// this log might happen a lot if there are many invalid requests
+		var credErr *credentialError
+		if errors.As(err, &credErr) {
+			negativeAuthCache.Store(secretKeyHash, &negativeAuthEntry{
+				err:       err,
+				timestamp: time.Now(),
+			})
+		}
 		log.Warnf("failed to get/create session: %v", err)
-		// Clear invalid cookie
 		http.SetCookie(w, &http.Cookie{
 			Name:   proxyTokenCookie,
 			Value:  "",
@@ -286,16 +301,13 @@ func getValidConnectionCredentials(secretKeyHash string) (*models.ConnectionCred
 
 	if err != nil {
 		if err == models.ErrNotFound {
-			cErr := fmt.Errorf("http proxy invalid proxy token credentials")
-			return nil, cErr
+			return nil, newCredentialError("http proxy invalid proxy token credentials")
 		}
-		cErr := fmt.Errorf("http proxy failed obtaining credentials: %v", err)
-		return nil, cErr
+		return nil, fmt.Errorf("http proxy failed obtaining credentials: %v", err)
 	}
 
 	if dba.ExpireAt.Before(time.Now().UTC()) {
-		cErr := fmt.Errorf("http proxy token credentials expired")
-		return nil, cErr
+		return nil, newCredentialError("http proxy token credentials expired")
 	}
 
 	return dba, nil
@@ -434,8 +446,6 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		log.Infof("http proxy session cleanup: closed flag set, sid=%s", sid)
 
 		if session.streamClient != nil {
-			// send session close to agent before closing the stream
-			//  this gives agent time to cancel in-flight requests
 			err := session.streamClient.Send(&pb.Packet{
 				Type:    pbclient.SessionClose,
 				Payload: []byte("session expired"),
