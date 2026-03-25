@@ -259,21 +259,39 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 		OutputRules []guardrails.DataRules `json:"output_rules"`
 	}
 
-	var rules []guardRailRule
-
-	for _, rule := range *connGuardRailRules {
-		inputRules := []guardrails.DataRules{}
-		if rule.GuardRailInputRules != nil {
-			if err = json.Unmarshal(rule.GuardRailInputRules, &inputRules); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed decoding guard rail input rules for rule %s, err=%v", rule.ID, err)
-			}
+	decodeRules := func(raw []byte) ([]guardrails.DataRules, error) {
+		if len(raw) == 0 {
+			return nil, nil
 		}
 
-		outputRules := []guardrails.DataRules{}
-		if rule.GuardRailOutputRules != nil {
-			if err = json.Unmarshal(rule.GuardRailOutputRules, &outputRules); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed decoding guard rail output rules for rule %s, err=%v", rule.ID, err)
-			}
+		var rules []guardrails.DataRules
+		if err := json.Unmarshal(raw, &rules); err == nil {
+			return rules, nil
+		}
+
+		var oneRule guardrails.DataRules
+		if err := json.Unmarshal(raw, &oneRule); err != nil {
+			return nil, err
+		}
+		return []guardrails.DataRules{oneRule}, nil
+	}
+
+	var rules []guardRailRule
+	hasRules := false
+
+	for _, rule := range *connGuardRailRules {
+		inputRules, err := decodeRules(rule.GuardRailInputRules)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed decoding guard rail input rules for rule %s, err=%v", rule.ID, err)
+		}
+
+		outputRules, err := decodeRules(rule.GuardRailOutputRules)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed decoding guard rail output rules for rule %s, err=%v", rule.ID, err)
+		}
+
+		if len(inputRules) > 0 || len(outputRules) > 0 {
+			hasRules = true
 		}
 
 		rules = append(rules, guardRailRule{
@@ -282,6 +300,10 @@ func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage
 			InputRules:  inputRules,
 			OutputRules: outputRules,
 		})
+	}
+
+	if !hasRules {
+		return nil, nil
 	}
 
 	// marshal rules to json

@@ -379,4 +379,3 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 	}
 	return &req
 }
-

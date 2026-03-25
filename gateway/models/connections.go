@@ -408,8 +408,12 @@ func GetConnectionGuardRailRules(orgID, name string) (*[]ConnectionGuardRailRule
 	var conn []ConnectionGuardRailRules
 	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
 	SELECT
-		rule.*
-		FROM private.guardrail_rules rule
+		rule.org_id,
+		rule.id,
+		rule.name,
+		rule.input AS guardrail_input_rules,
+		rule.output AS guardrail_output_rules
+	FROM private.guardrail_rules rule
 		INNER JOIN private.guardrail_rules_connections rc ON rc.rule_id = rule.id
 		INNER JOIN private.connections c ON c.id = rc.connection_id
 	WHERE c.org_id = ? AND c.name = ?

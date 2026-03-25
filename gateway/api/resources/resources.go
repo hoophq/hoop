@@ -401,4 +401,3 @@ func toOpenApi(r *models.Resources) *openapi.ResourceResponse {
 		AgentID:   r.AgentID.String,
 	}
 }
-

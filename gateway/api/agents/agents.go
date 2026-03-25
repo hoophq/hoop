@@ -211,4 +211,3 @@ func List(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, result)
 }
-
