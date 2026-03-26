@@ -30,8 +30,8 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 		return err
 	}
 
-	if len(req.ConnectionNames) == 0 {
-		return fmt.Errorf("connection_names must have at least 1 entry")
+	if len(req.ConnectionNames) == 0 && len(req.Attributes) == 0 {
+		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
 
 	if req.AccessType != "jit" && req.AccessType != "command" {
