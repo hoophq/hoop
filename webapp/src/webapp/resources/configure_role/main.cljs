@@ -110,8 +110,8 @@
                                         "key" (rf/dispatch [:connection-setup/update-ssh-credentials "pass" ""])
                                         nil)))
 
-                                    (let [selected-attrs @(rf/subscribe [:connection-setup/selected-attributes])
-                                          initial-attrs  @(rf/subscribe [:connection-setup/initial-attributes])]
+                                    (let [selected-attrs @(rf/subscribe [:resources/selected-attributes])
+                                          initial-attrs  @(rf/subscribe [:resources/initial-attributes])]
                                       (when (not= (set selected-attrs) (set initial-attrs))
                                         (rf/dispatch [:attributes/update-for-connection
                                                       connection-name
@@ -207,5 +207,5 @@
 
     (finally
       (rf/dispatch [:connection-setup/initialize-state nil])
-      (rf/dispatch [:connection-setup/clear-attributes])
+      (rf/dispatch [:resources/clear-attributes])
       (rf/dispatch [:connections->clear-connection-details]))))

@@ -2,7 +2,7 @@
   (:require
    ["@radix-ui/themes" :refer [Box]]
    [webapp.components.forms :as forms]
-   [webapp.connections.views.setup.attributes-inputs :as attributes-inputs]
+   [webapp.resources.configure-role.attributes-inputs :as attributes-inputs]
    [webapp.connections.views.setup.tags-inputs :as tags-inputs]))
 
 (defn main [connection]

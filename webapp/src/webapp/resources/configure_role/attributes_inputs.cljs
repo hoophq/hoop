@@ -1,14 +1,14 @@
-(ns webapp.connections.views.setup.attributes-inputs
+(ns webapp.resources.configure-role.attributes-inputs
   (:require
-  ["@radix-ui/themes" :refer [Badge Box Flex Heading Text]]
+   ["@radix-ui/themes" :refer [Badge Box Flex Heading Text]]
    [re-frame.core :as rf]
    [webapp.components.multiselect :as multiselect]))
 
 (defn main []
   (let [all-attributes (rf/subscribe [:attributes/list-data])
         connection-name (rf/subscribe [:connection-setup/connection-name])
-        selected-names (rf/subscribe [:connection-setup/selected-attributes])
-        initialized? (rf/subscribe [:connection-setup/attributes-initialized?])]
+        selected-names (rf/subscribe [:resources/selected-attributes])
+        initialized? (rf/subscribe [:resources/attributes-initialized?])]
     (rf/dispatch [:attributes/list])
 
     (fn []
@@ -19,7 +19,7 @@
 
         (when (and (not initialized) (seq attributes-data) current-connection)
           (let [initial (mapv :name (filter #(some #{current-connection} (:connection_names %)) attributes-data))]
-            (rf/dispatch [:connection-setup/initialize-attributes initial])))
+            (rf/dispatch [:resources/initialize-attributes initial])))
 
         [:> Box {:class "space-y-6"}
          [:> Box
@@ -39,8 +39,8 @@
            :placeholder "Select or type to create"
            :on-change (fn [selected-options]
                         (let [names (mapv :value (js->clj selected-options :keywordize-keys true))]
-                          (rf/dispatch [:connection-setup/set-selected-attributes names])))
+                          (rf/dispatch [:resources/set-selected-attributes names])))
            :on-create-option (fn [input-value]
                                (rf/dispatch [:attributes/create-inline {:name input-value}])
-                               (rf/dispatch [:connection-setup/set-selected-attributes
+                               (rf/dispatch [:resources/set-selected-attributes
                                              (conj selected input-value)]))}]]))))
