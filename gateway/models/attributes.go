@@ -86,7 +86,7 @@ func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error)
 
 func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Clauses(clause.Returning{}).Save(attr).Error
+		err := tx.Clauses(clause.Returning{}).Omit("CreatedAt").Save(attr).Error
 		if err != nil {
 			return err
 		}
