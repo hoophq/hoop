@@ -265,7 +265,7 @@
               [connections-select/main
                {:id "connections-required-input"
                 :name "connections-required-input"
-                :required? true
+                :required? (empty? @(:attribute-names state))
                 :connection-ids resource-role-ids
                 :selected-connections selected-resource-roles-data
                 :connection-filter-fn #(eligible-for-type? @(:access-type state) %)
@@ -281,6 +281,7 @@
               :id "attribute-names-input"
               :name "attribute-names-input"
               :options (mapv #(hash-map :value (:name %) :label (:name %)) all-attributes)
+              :required? (empty? @(:connection-names state))
               :default-value (mapv #(hash-map :value % :label %) @(:attribute-names state))
               :placeholder "Select attributes..."
               :on-change (fn [selected-options]
