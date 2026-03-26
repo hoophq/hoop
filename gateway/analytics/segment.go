@@ -163,7 +163,7 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	})
 }
 
-func sessionUsageProperties(s models.Session, c *models.Connection) map[string]any {
+func sessionUsageProperties(s *models.Session, c *models.Connection) map[string]any {
 	props := map[string]any{
 		"org-id":                        s.OrgID,
 		"session-id":                    s.ID,
@@ -217,6 +217,6 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 		return
 	}
 
-	props := sessionUsageProperties(*session, connection)
+	props := sessionUsageProperties(session, connection)
 	s.Track(userID, eventName, props)
 }
