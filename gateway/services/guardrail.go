@@ -5,7 +5,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 )
 
-func GetGuardrailsRulesForConnection(orgID, connectionName string) (*models.ConnectionGuardRailRules, error) {
+func GetGuardRailRulesForConnection(orgID, connectionName string) (*models.ConnectionGuardRailRules, error) {
 	parsedOrgID := uuid.MustParse(orgID)
 	attributes, err := models.GetConnectionAttributes(models.DB, parsedOrgID, connectionName)
 	if err != nil {

@@ -243,7 +243,7 @@ func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 }
 
 func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage, error) {
-	connGuardRailRules, err := services.GetGuardrailsRulesForConnection(pctx.OrgID, pctx.ConnectionName)
+	connGuardRailRules, err := services.GetGuardRailRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}

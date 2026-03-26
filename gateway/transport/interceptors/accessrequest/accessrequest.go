@@ -16,37 +16,10 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/utils"
-	"gorm.io/gorm"
 )
-
-func getRuleForConnection(pctx plugintypes.Context, accessType string) (*models.AccessRequestRule, error) {
-	orgID := uuid.MustParse(pctx.OrgID)
-
-	connectionAttributes, err := models.GetConnectionAttributes(models.DB, orgID, pctx.ConnectionName)
-	if err != nil {
-		return nil, plugintypes.InternalErr("failed fetching connection attributes", err)
-	}
-
-	if len(connectionAttributes) > 0 {
-		rule, err := models.GetRequestRulesByAttributes(models.DB, orgID, connectionAttributes, accessType)
-		if err != nil {
-			return nil, plugintypes.InternalErr("failed fetching access request rules", err)
-		}
-
-		if rule != nil {
-			return rule, nil
-		}
-	}
-
-	rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, pctx.ConnectionName, accessType)
-	if err != nil && err != gorm.ErrRecordNotFound {
-		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
-	}
-
-	return rule, nil
-}
 
 func getValidatedJitReview(pctx plugintypes.Context) (*plugintypes.ConnectResponse, error) {
 	jitr, err := models.GetApprovedReviewJit(pctx.OrgID, pctx.UserID, pctx.ConnectionID)
@@ -212,7 +185,8 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 		accessType = "jit"
 	}
 
-	accessRule, err := getRuleForConnection(pctx, accessType)
+	orgID := uuid.MustParse(pctx.OrgID)
+	accessRule, err := services.GetRuleForConnection(orgID, pctx.ConnectionName, accessType)
 	if err != nil {
 		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
 	}

@@ -39,7 +39,7 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 	switch pkt.Type {
 	case pbagent.SessionOpen:
 		processEventOpenSessionHook(ctx, pkt)
-		conn, err := services.GetGuardrailsRulesForConnection(ctx.OrgID, ctx.ConnectionName)
+		conn, err := services.GetGuardRailRulesForConnection(ctx.OrgID, ctx.ConnectionName)
 		if err != nil || conn == nil {
 			return fmt.Errorf("unable to obtain connection (empty: %v, name=%v): %v",
 				conn == nil, ctx.ConnectionName, err)
