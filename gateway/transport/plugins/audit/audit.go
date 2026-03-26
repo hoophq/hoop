@@ -76,7 +76,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 
 		var sessionMetadata map[string]any
 		if pctx.CredentialSessionID != "" {
-			sessionMetadata = map[string]any{"credential-session": pctx.CredentialSessionID}
+			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
 		}
 
 		newSession := models.Session{

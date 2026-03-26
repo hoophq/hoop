@@ -253,12 +253,12 @@
                     [:span param-value]]))]])
             ;; end runbook params
 
-            ;; metadata (internal fields like credentials_expire_at are excluded from display)
+            ;; metadata (internal fields like credentials_expire_at and credentials_session are excluded from display)
             (when (and metadata
-                       (seq (dissoc metadata :credentials_expire_at)))
+                       (seq (dissoc metadata :credentials_expire_at :credential_session)))
               [:div
                (doall
-                (for [[metadata-key metadata-value] (dissoc metadata :credentials_expire_at)]
+                (for [[metadata-key metadata-value] (dissoc metadata :credentials_expire_at :credential_session)]
                   ^{:key metadata-key}
                   [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
                    [:header {:class "w-32 px-small text-sm font-bold"}
@@ -291,7 +291,8 @@
             [data-masking-analytics/main {:session session}]
 
             ;; response logs area
-            (when-not (or ready?
+            (when-not (or credentials-expire-at
+                          ready?
                           (and (some #(= "PENDING" (:status %))
                                      review-groups)
                                (= "PENDING" review-status)))
@@ -365,21 +366,21 @@
                   (or (= (:verb session) "connect")
                       (and (get-in session [:review :time_window :configuration :start_time])
                            (get-in session [:review :time_window :configuration :end_time])))
-                   [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                   [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
                                           :on-click open-time-window-modal}
                     "Approve in a Time Window"
-                    [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]])
-                 [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                    [:> CalendarClock {:size 16 :class "text-gray-10"}]])
+                 [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
                                         :on-click handle-approve}
                   "Approve"
-                  [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                  [:> Check {:size 16 :class "text-gray-10"}]]
                  (when can-force-approve?
                    [:<>
                     [:> DropdownMenu.Separator]
-                    [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                    [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
                                            :on-click handle-force-approve}
                      "Force Approve"
-                     [:> CheckCheck {:size 16 :class "text-gray-10 group-hover:text-white"}]]])]]])
+                     [:> CheckCheck {:size 16 :class "text-gray-10"}]]])]]])
 
             ;; execution schedule information (time window)
             (when (and ready?
