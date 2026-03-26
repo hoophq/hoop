@@ -27,6 +27,7 @@ import (
 )
 
 var noBrowser bool
+var loginToken string
 
 type serverInfo struct {
 	GrpcURL string `json:"grpc_url"`
@@ -42,6 +43,41 @@ var loginCmd = &cobra.Command{
 	Short: "Authenticate at Hoop",
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Non-interactive login with --token flag
+		if loginToken != "" {
+			if err := validateLoginToken(loginToken); err != nil {
+				printErrorAndExit(err.Error())
+			}
+			conf, err := proxyconfig.Load()
+			switch err {
+			case proxyconfig.ErrEmpty:
+				configureHostsPrompt(conf)
+			case nil:
+				if !conf.IsValid() {
+					configureHostsPrompt(conf)
+				}
+			default:
+				printErrorAndExit(err.Error())
+			}
+			conf.Token = loginToken
+			if conf.GrpcURL == "" {
+				si, err := fetchServerInfo(conf.ApiURL, conf.Token, conf.TlsCA())
+				if err != nil {
+					printErrorAndExit(err.Error())
+				}
+				conf.GrpcURL = si.GrpcURL
+			}
+			saved, err := conf.Save()
+			if err != nil {
+				printErrorAndExit(err.Error())
+			}
+			if saved {
+				fmt.Println("Login succeeded")
+			} else {
+				fmt.Println(conf.Token)
+			}
+			return
+		}
 		conf, err := proxyconfig.Load()
 		switch err {
 		case proxyconfig.ErrEmpty:
@@ -89,6 +125,7 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	loginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Print the login url to stdout instead of opening the browser")
+	loginCmd.Flags().StringVar(&loginToken, "token", "", "Provide a pre-existing API key or access token (skips interactive login)")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -330,4 +367,11 @@ func openBrowser(url string) (err error) {
 func isValidURL(addr string) bool {
 	u, err := url.Parse(addr)
 	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+func validateLoginToken(token string) error {
+	if token == "" {
+		return fmt.Errorf("token cannot be empty")
+	}
+	return nil
 }
