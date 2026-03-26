@@ -71,14 +71,33 @@ tagLibhoop(){
     LIBHOOP_PATH=$(readlink -f "$LIBHOOP_PATH")
   fi
 
-  if [ -d "$LIBHOOP_PATH/.git" ]; then
-    echo "=> Tagging libhoop with ${GIT_TAG}..."
-    (cd "$LIBHOOP_PATH" && git tag "$GIT_TAG" 2>/dev/null || true && git push origin "$GIT_TAG")
-    echo "=> libhoop tagged successfully"
-  else
+  if [ ! -d "$LIBHOOP_PATH/.git" ]; then
     echo "WARNING: libhoop directory not found or not a git repository at $LIBHOOP_PATH"
     echo "Skipping libhoop tagging"
+    return
   fi
+
+  echo "=> Fetching latest state of libhoop from remote..."
+  (cd "$LIBHOOP_PATH" && git fetch origin)
+
+  LIBHOOP_BRANCH=$(cd "$LIBHOOP_PATH" && git rev-parse --abbrev-ref HEAD)
+  if [ "$LIBHOOP_BRANCH" != "main" ]; then
+    echo "ERROR: libhoop is on branch '${LIBHOOP_BRANCH}', but must be on 'main' before tagging."
+    echo "Please switch to main: cd ${LIBHOOP_PATH} && git checkout main"
+    exit 1
+  fi
+
+  LOCAL_SHA=$(cd "$LIBHOOP_PATH" && git rev-parse HEAD)
+  REMOTE_SHA=$(cd "$LIBHOOP_PATH" && git rev-parse origin/main)
+  if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+    echo "ERROR: libhoop/main is not up to date with origin/main."
+    echo "Please pull the latest changes: cd ${LIBHOOP_PATH} && git pull origin main"
+    exit 1
+  fi
+
+  echo "=> Tagging libhoop with ${GIT_TAG}..."
+  (cd "$LIBHOOP_PATH" && git tag "$GIT_TAG" 2>/dev/null || true && git push origin "$GIT_TAG")
+  echo "=> libhoop tagged successfully"
 }
 
 ghRelease(){
