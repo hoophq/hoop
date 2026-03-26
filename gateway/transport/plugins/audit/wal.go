@@ -85,7 +85,7 @@ func (p *auditPlugin) dropWalLog(sid string) {
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
 	walFolder := fmt.Sprintf(walFolderTmpl, plugintypes.AuditPath, pctx.OrgID, pctx.SID)
-	if exists := wal.FileExists(walFolder); exists {
+	if wal.FileNotExists(walFolder) {
 		// if the wal file does not exist we neet to update the session event stream
 		blobStream := fmt.Sprintf(`[ [0, "%s", "%s"] ]`, "e", base64.StdEncoding.EncodeToString([]byte("no log found on disk")))
 		emptyMetrics := make(map[string]any, 0)

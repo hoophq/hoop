@@ -47,8 +47,7 @@ func OpenWriteHeader(filepPath string, h *Header) (*WalLog, error) {
 	return wlog, wlog.WriteHeader(h)
 }
 
-// Check if file exists
-func FileExists(filePath string) bool {
+func FileNotExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return os.IsNotExist(err)
 }

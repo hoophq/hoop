@@ -112,8 +112,16 @@ func (a *Agent) processHttpProxyWriteServer(pkt *pb.Packet) {
 		_ = httpProxy.Close()
 		// Check if this is a guardrails error - send the actual error message
 		if isGuardrailsError(err) {
-			log.Infof("guardrails validation failed on first request, closing session: %v", err)
-			a.sendClientSessionClose(sessionID, err.Error())
+			log.Infof("guardrails validation failed, sending 403 to client: %v", err)
+			// Build a proper HTTP 403 response with the guardrails error message
+			guardrailsResponse := fmt.Sprintf(
+				"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nX-Hoop-Guardrails: blocked\r\n\r\n%s",
+				len(err.Error()), err.Error(),
+			)
+			// Send it back through the normal response stream
+			httpStreamClient.Write([]byte(guardrailsResponse))
+			// Then close just this connection
+			a.sendClientTCPConnectionClose(sessionID, clientConnectionID)
 			return
 		}
 		a.sendClientTCPConnectionClose(sessionID, clientConnectionID)
