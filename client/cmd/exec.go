@@ -59,6 +59,7 @@ func init() {
 	execCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	execCmd.Flags().BoolVar(&autoExec, "auto-approve", false, "Automatically run after a command is approved")
 	execCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
+	execCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -114,19 +115,26 @@ func parseExecInput(c *connect) (bool, []byte) {
 }
 
 func runExec(args []string, clientEnvVars map[string]string) {
+	jsonMode := outputFlag == "json"
+	if jsonMode {
+		autoExec = true
+	}
+
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
 		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
 	loader.Color("green")
 	loader.Suffix = " running ..."
-	loader.Start()
+	if !jsonMode {
+		loader.Start()
+	}
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		for {
 			switch <-done {
 			case syscall.SIGTERM, syscall.SIGINT:
-				loader.Stop() // this fixes terminal restore
+				loader.Stop()
 				os.Exit(143)
 			}
 		}
@@ -143,13 +151,33 @@ func runExec(args []string, clientEnvVars map[string]string) {
 			Payload: execInputPayload,
 		}); err != nil {
 			_, _ = c.client.Close()
+			if jsonMode {
+				exitCode := 1
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status:   "error",
+					Message:  fmt.Sprintf("failed opening session with gateway, err=%v", err),
+					ExitCode: &exitCode,
+				})
+				os.Exit(1)
+			}
 			c.printErrorAndExit("failed opening session with gateway, err=%v", err)
 		}
 	}
 	sendOpenSessionPktFn()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
+		if err != nil && jsonMode {
+			exitCode := 1
+			emitJSONEvent(os.Stdout, JSONEvent{
+				Status:   "error",
+				Message:  err.Error(),
+				ExitCode: &exitCode,
+			})
+			os.Exit(1)
+		}
 		c.processGracefulExit(err)
 		if pkt == nil {
 			continue
@@ -161,12 +189,25 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				msg := "require use of --auto-approve option. It's a review command with an invalid device to prompt for execution"
 				c.processGracefulExit(errors.New(msg))
 			}
-			loader.Color("yellow")
-			if !loader.Active() {
-				loader.Start()
+			if jsonMode {
+				reviewURL := string(pkt.Payload)
+				sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status:  "waiting_approval",
+					Message: "waiting command to be approved",
+					Data: map[string]string{
+						"review_url": reviewURL,
+						"session_id": sessionID,
+					},
+				})
+			} else {
+				loader.Color("yellow")
+				if !loader.Active() {
+					loader.Start()
+				}
+				loader.Suffix = " waiting command to be approved at " +
+					styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 			}
-			loader.Suffix = " waiting command to be approved at " +
-				styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 		case pbclient.SessionOpenApproveOK:
 			if !autoExec {
 				loader.Stop()
@@ -177,15 +218,41 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				}
 				loader.Start()
 			}
-			loader.Color("green")
-			loader.Suffix = " command approved, running ... "
+			if jsonMode {
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status:  "approved",
+					Message: "command approved, running",
+				})
+			} else {
+				loader.Color("green")
+				loader.Suffix = " command approved, running ... "
+			}
 			sendOpenSessionPktFn()
 		case pbclient.SessionOpenAgentOffline:
 			if agentOfflineRetryCounter > 60 {
+				if jsonMode {
+					exitCode := 1
+					emitJSONEvent(os.Stdout, JSONEvent{
+						Status:   "error",
+						Message:  "agent is offline, max retry reached",
+						ExitCode: &exitCode,
+					})
+					os.Exit(1)
+				}
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
-			loader.Color("red")
-			loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
+			if jsonMode {
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status:  "agent_offline",
+					Message: fmt.Sprintf("agent is offline, retrying in 30s (%v/60)", agentOfflineRetryCounter),
+					Data: map[string]string{
+						"retry": fmt.Sprintf("%v/60", agentOfflineRetryCounter),
+					},
+				})
+			} else {
+				loader.Color("red")
+				loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
+			}
 			time.Sleep(time.Second * 30)
 			agentOfflineRetryCounter++
 			sendOpenSessionPktFn()
@@ -196,7 +263,17 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				Payload: execInputPayload,
 				Spec:    execSpec,
 			}
-			if !silentMode {
+			if jsonMode {
+				sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+				cmd := string(pkt.Spec[pb.SpecClientExecCommandKey])
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status: "running",
+					Data: map[string]string{
+						"session_id": sid,
+						"command":    cmd,
+					},
+				})
+			} else if !silentMode {
 				c.loader.Stop()
 				cmd := string(pkt.Spec[pb.SpecClientExecCommandKey])
 				sid := string(pkt.Spec[pb.SpecGatewaySessionID])
@@ -204,7 +281,6 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				if debugFlag {
 					out = styles.Fainted("<stdin-input> | %s (the input is piped to this command) | session: %s", cmd, sid)
 				}
-				// if it is not set, fallback to previous version
 				if cmd == "" {
 					out = styles.Fainted("session: %s", sid)
 				}
@@ -212,22 +288,58 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				c.loader.Start()
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
+				if jsonMode {
+					exitCode := 1
+					emitJSONEvent(os.Stdout, JSONEvent{
+						Status:   "error",
+						Message:  fmt.Sprintf("failed executing command, err=%v", err),
+						ExitCode: &exitCode,
+					})
+					os.Exit(1)
+				}
 				c.printErrorAndExit("failed executing command, err=%v", err)
 			}
 		case pbclient.WriteStdout:
 			loader.Stop()
-			os.Stdout.Write(pkt.Payload)
+			if jsonMode {
+				stdoutBuf.Write(pkt.Payload)
+			} else {
+				os.Stdout.Write(pkt.Payload)
+			}
 		case pbclient.WriteStderr:
 			loader.Stop()
-			os.Stderr.Write(pkt.Payload)
+			if jsonMode {
+				stderrBuf.Write(pkt.Payload)
+			} else {
+				os.Stderr.Write(pkt.Payload)
+			}
 		case pbclient.SessionClose:
 			loader.Stop()
-			if len(pkt.Payload) > 0 {
-				_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
-			}
 			exitCode, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExitCodeKey]))
 			if err != nil {
-				os.Exit(254)
+				exitCode = 254
+			}
+			if jsonMode {
+				data := map[string]string{}
+				if stdoutBuf.Len() > 0 {
+					data["stdout"] = stdoutBuf.String()
+				}
+				if stderrBuf.Len() > 0 {
+					data["stderr"] = stderrBuf.String()
+				}
+				if len(pkt.Payload) > 0 {
+					data["error"] = string(pkt.Payload)
+				}
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status:   "completed",
+					Message:  "session closed",
+					ExitCode: &exitCode,
+					Data:     data,
+				})
+				os.Exit(exitCode)
+			}
+			if len(pkt.Payload) > 0 {
+				_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
 			}
 			os.Exit(exitCode)
 		}
