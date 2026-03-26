@@ -9,7 +9,6 @@ const (
 	SessionOpenAgentOffline    = "ClientSessionOpenAgentOffline"
 	SessionClose               = "ClientSessionClose"
 	SessionAnalyzerMetrics     = "ClientSessionAnalyzerMetrics"
-	SessionGuardRailsInfo      = "ClientSessionGuardRailsInfo"
 
 	ProxyManagerConnectOK = "ClientProxyManagerConnectOK"
 

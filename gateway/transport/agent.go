@@ -116,17 +116,8 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 		}
 
 		switch pb.PacketType(pkt.Type) {
-		case pbclient.SessionGuardRailsInfo:
-			if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
-				var guardRailsData []models.SessionGuardRailsInfo
-				if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
-					log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from session close, reason=%v", err)
-				}
-				if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, guardRailsData); err != nil {
-					log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
-				}
-			}
 		case pbclient.SessionClose:
+			updateGuardRailsInfoFromPacket(pctx, pkt)
 			// it will make sure to run the disconnect plugin phase for both clients
 			_ = proxyStream.Close(buildErrorFromPacket(pctx.SID, pkt))
 		case pbclient.SessionOpenOK:
@@ -135,18 +126,22 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			}
 		case pbclient.PGConnectionWrite:
 			rewritePGGuardRailsErrorPacket(pkt)
-			if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
-				var guardRailsData []models.SessionGuardRailsInfo
-				if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
-					log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from PG packet, reason=%v", err)
-				} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, guardRailsData); err != nil {
-					log.With("sid", pctx.SID).Errorf("unable to save guardrails info from PG packet, reason=%v", err)
-				}
-			}
+			updateGuardRailsInfoFromPacket(pctx, pkt)
 		}
 
 		if err = proxyStream.Send(pkt); err != nil {
 			log.With("sid", pctx.SID).Debugf("failed to send packet to proxy stream, type=%v, err=%v", pkt.Type, err)
+		}
+	}
+}
+
+func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) {
+	if rawInfo := pkt.Spec[pb.SpecClientGuardRailsInfoKey]; len(rawInfo) > 0 {
+		var guardRailsData []models.SessionGuardRailsInfo
+		if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
+			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from session close, reason=%v", err)
+		} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, guardRailsData); err != nil {
+			log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
 		}
 	}
 }
