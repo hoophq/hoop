@@ -178,6 +178,7 @@ type sshConnection struct {
 	sshConn             *ssh.ServerConn
 	sshChannels         sync.Map
 	pendingRequests     sync.Map // maps channelID (uint16) to *pendingReplyQueue
+	channelWg           sync.WaitGroup
 }
 
 func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*sshConnection, error) {
@@ -325,6 +326,20 @@ func (c *sshConnection) handleConnection() {
 	// wait for the connection to be closed
 	// either by the client, server, or context cancellation
 	<-c.ctx.Done()
+
+	// Wait for all channel data-forwarding goroutines to flush remaining writes
+	// to the gRPC stream. Without this, SessionClose can be sent before trailing
+	// data packets, causing the agent to tear down the session prematurely.
+	flushDone := make(chan struct{})
+	go func() {
+		c.channelWg.Wait()
+		close(flushDone)
+	}()
+	select {
+	case <-flushDone:
+	case <-time.After(5 * time.Second):
+		log.With("sid", c.sid, "conn", c.id).Warnf("timed out waiting for channel goroutines to finish")
+	}
 
 	ctxErr := context.Cause(c.ctx)
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
@@ -547,6 +562,12 @@ func (c *sshConnection) handleServerWrite() {
 		channelID++
 		go c.handleChannel(newCh, channelID)
 	}
+	// The SSH client disconnected (clientNewSshChannel was closed).
+	// Cancel the context so handleConnection proceeds to close the gRPC stream
+	// and the SSH TCP connection. Without this, handleConnection blocks forever
+	// at <-c.ctx.Done() and c.sshConn.Close() is never called, causing the
+	// client-side ProxyCommand to hang waiting for the TCP FIN.
+	c.cancelFn("ssh client disconnected")
 }
 
 func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
@@ -580,7 +601,9 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	// the client may still be waiting to receive data (e.g., git clone sends a command
 	// then waits for the response). The channel will be closed when we receive
 	// a CloseChannel message from the agent.
+	c.channelWg.Add(1)
 	go func() {
+		defer c.channelWg.Done()
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := clientCh.Read(buf)
@@ -613,7 +636,9 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	}()
 
 	// handle incoming requests from the client
+	c.channelWg.Add(1)
 	go func() {
+		defer c.channelWg.Done()
 		for req := range clientRequests {
 			log.With("sid", c.sid, "conn", c.id, "ch", channelID, "type", req.Type).Debug("received client ssh request")
 
