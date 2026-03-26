@@ -1,0 +1,182 @@
+{{- if and .Values.dataMasking.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: presidio-envoy-config
+  labels:
+    app: presidio-envoy-proxy
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9901
+
+    static_resources:
+      listeners:
+        - name: presidio_listener
+          address:
+            socket_address:
+              address: 0.0.0.0
+              port_value: 3010
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.http_connection_manager
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                    stat_prefix: presidio
+                    codec_type: AUTO
+
+                    # Downstream connection management
+                    common_http_protocol_options:
+                      idle_timeout: 300s
+                      headers_with_underscores_action: REJECT_REQUEST
+
+                    access_log:
+                      - name: envoy.access_loggers.stdout
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                          log_format:
+                            text_format: "%DOWNSTREAM_REMOTE_ADDRESS% - - [%START_TIME(%d/%b/%Y:%H:%M:%S %z)%] \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%\" %RESPONSE_CODE% %BYTES_SENT% \"%REQ(REFERER)%\" \"%REQ(USER-AGENT)%\" rt=%DURATION%ms urt=%RESPONSE_DURATION%ms flags=%RESPONSE_FLAGS% upstream=%UPSTREAM_HOST% cluster=%UPSTREAM_CLUSTER% content_length=%REQ(CONTENT-LENGTH)% attempts=%UPSTREAM_REQUEST_ATTEMPT_COUNT%\n"
+
+                    route_config:
+                      name: presidio_routes
+                      virtual_hosts:
+                        - name: presidio
+                          domains: ["*"]
+                          routes:
+                            - match:
+                                prefix: "/analyze"
+                              route:
+                                cluster: presidio_analyzer
+                                timeout: 120s
+                                retry_policy:
+                                  retry_on: "reset,connect-failure"
+                                  num_retries: 1
+                                  per_try_timeout: 30s
+                            - match:
+                                prefix: "/anonymize"
+                              route:
+                                cluster: presidio_anonymizer
+                                timeout: 120s
+                                retry_policy:
+                                  retry_on: "reset,connect-failure"
+                                  num_retries: 1
+                                  per_try_timeout: 60s
+                            - match:
+                                prefix: "/health"
+                              route:
+                                cluster: presidio_analyzer
+                                timeout: 10s
+
+                    http_filters:
+                      - name: envoy.filters.http.router
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+      - name: presidio_analyzer
+        type: STRICT_DNS
+        dns_lookup_family: V4_ONLY
+        connect_timeout: 5s
+        lb_policy: LEAST_REQUEST
+        least_request_lb_config:
+          choice_count: 2
+
+        max_requests_per_connection: 0
+
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http_protocol_options: {}
+            common_http_protocol_options:
+              idle_timeout: 60s
+
+        load_assignment:
+          cluster_name: presidio_analyzer
+          endpoints:
+            - lb_endpoints:
+                - endpoint:
+                    address:
+                      socket_address:
+                        address: presidio-analyzer-envoy
+                        port_value: 3000
+
+        health_checks:
+          - timeout: 5s
+            interval: 10s
+            unhealthy_threshold: 3
+            healthy_threshold: 2
+            http_health_check:
+              path: "/health"
+
+        circuit_breakers:
+          thresholds:
+            - priority: DEFAULT
+              max_connections: 48
+              max_pending_requests: 50
+              max_requests: 200
+              max_retries: 4
+
+        outlier_detection:
+          consecutive_5xx: 3
+          consecutive_gateway_failure: 3
+          interval: 10s
+          base_ejection_time: 30s
+          max_ejection_percent: 50
+          success_rate_minimum_hosts: 3
+          success_rate_request_volume: 5
+      - name: presidio_anonymizer
+        type: STRICT_DNS
+        dns_lookup_family: V4_ONLY
+        connect_timeout: 5s
+        lb_policy: LEAST_REQUEST
+        least_request_lb_config:
+          choice_count: 2
+
+        max_requests_per_connection: 0
+
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http_protocol_options: {}
+            common_http_protocol_options:
+              idle_timeout: 60s
+
+        load_assignment:
+          cluster_name: presidio_anonymizer
+          endpoints:
+            - lb_endpoints:
+                - endpoint:
+                    address:
+                      socket_address:
+                        address: presidio-anonymizer-envoy
+                        port_value: 3000
+
+        health_checks:
+          - timeout: 5s
+            interval: 10s
+            unhealthy_threshold: 3
+            healthy_threshold: 2
+            http_health_check:
+              path: "/health"
+
+        circuit_breakers:
+          thresholds:
+            - priority: DEFAULT
+              max_connections: 48
+              max_pending_requests: 50
+              max_requests: 200
+              max_retries: 4
+
+        outlier_detection:
+          consecutive_5xx: 3
+          consecutive_gateway_failure: 3
+          interval: 10s
+          base_ejection_time: 30s
+          max_ejection_percent: 50
+          success_rate_minimum_hosts: 3
+          success_rate_request_volume: 5
+{{ end -}}
