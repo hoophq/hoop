@@ -105,7 +105,6 @@ func IncrementSessionAnalyzedMetrics(db *gorm.DB, sessionID string, analyzedMetr
 	return nil
 }
 
-// TODO: check for usage and track session
 func SetSessionMetricsEndedAt(db *gorm.DB, sessionID string) error {
 	session := &Session{}
 	if err := db.Table("private.sessions").Where("id = ?", sessionID).First(session).Error; err != nil {

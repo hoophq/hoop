@@ -144,10 +144,18 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 		}
 	}
 
+	groups := make(map[string]any)
+
 	if orgID, exists := properties["org-id"]; exists && orgID != "" {
-		properties["$groups"] = map[string]any{
-			"org-id": orgID,
-		}
+		groups["org-id"] = orgID
+	}
+
+	if sessionID, exists := properties["session-id"]; exists && sessionID != "" {
+		groups["session-id"] = sessionID
+	}
+
+	if len(groups) > 0 {
+		properties["$groups"] = groups
 	}
 
 	hashedUserID := getUserIDHash(userID)
@@ -215,13 +223,14 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 		return
 	}
 
-	agent, err := models.GetAgentByNameOrID(orgID, connection.AgentName)
+	agent, err := models.GetAgentByNameOrID(orgID, connection.AgentID.String)
 	if err != nil {
 		log.Warnf("failed getting agent by name, reason=%v", err)
 		return
 	}
 
 	props := sessionUsageProperties(session, connection, agent)
+	log.With("sid", sessionID).Infof("tracking session usage data, event=%s, orgID=%s, userID=%s, props=%+v", eventName, orgID, userID, props)
 
 	s.Track(userID, eventName, props)
 }
