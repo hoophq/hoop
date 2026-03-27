@@ -145,11 +145,13 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 		case pbclient.SessionOpenWaitingApproval:
 			if jsonMode {
 				reviewURL := string(pkt.Payload)
+				sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 				emitJSONEvent(os.Stdout, JSONEvent{
 					Status:  "waiting_approval",
-					Message: "poll status with: hoop admin get reviews " + string(pkt.Spec[pb.SpecGatewaySessionID]) + " -o json",
+					Message: "poll status with: hoop admin get sessions " + sessionID + " -o json | check review.status field",
 					Data: map[string]string{
-						"review_url": reviewURL,
+						"review_url":  reviewURL,
+						"session_id":  sessionID,
 					},
 				})
 				os.Exit(0)
