@@ -37,9 +37,10 @@
                                                     :details error}])
                       (rf/dispatch [::editor-plugin->set-script-failure error]))
          on-success (fn [res]
-                      (rf/dispatch
-                       [:show-snackbar {:level :success
-                                        :text "Script was executed!"}])
+                      (when-not (= "block_execution" (get-in res [:ai_analysis :action]))
+                        (rf/dispatch
+                         [:show-snackbar {:level :success
+                                          :text "Script was executed!"}]))
                       (rf/dispatch [::editor-plugin->set-script-success res script]))]
      {:db (assoc-in db [:editor-plugin->script] {:status :loading})
       :fx [[:dispatch [:fetch {:method "POST"
