@@ -112,7 +112,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.SessionOpen:
 		// update session input when executing ad-hoc executions via cli
-		if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClient) {
+		if pctx.ClientOrigin == pb.ConnectionOriginClient && pctx.ClientVerb == "exec" {
 			if err := models.UpdateSessionInput(pctx.OrgID, pctx.SID, string(pkt.Payload)); err != nil {
 				return nil, plugintypes.InternalErr("failed updating session input", err)
 			}
