@@ -466,7 +466,9 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	return &conn, nil
 }
 
-func GetConnectionFeaturesByName(db *gorm.DB, name string) (*Connection, error) {
+// GetConnectionByName retrieves a connection by name only.
+// It doesn't validate user access through access control, if you need it then use GetConnectionByNameOrID
+func GetConnectionByName(db *gorm.DB, name string) (*Connection, error) {
 	var conn Connection
 	err := db.Table(tableConnections).
 		Where("name = ?", name).

@@ -163,7 +163,7 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	})
 }
 
-func sessionUsageProperties(s *models.Session, c *models.Connection) map[string]any {
+func sessionUsageProperties(s *models.Session, c *models.Connection, agent *models.Agent) map[string]any {
 	props := map[string]any{
 		"org-id":                        s.OrgID,
 		"session-id":                    s.ID,
@@ -172,13 +172,9 @@ func sessionUsageProperties(s *models.Session, c *models.Connection) map[string]
 		"status":                        s.Status,
 		"created-at":                    s.CreatedAt.String(),
 		"ai-session-analyzer-activated": false,
-		"agent-version":                 "", // TODO: get from connection table
-		"access-request-activated":      "", // TODO: get from db
-		"access-request-force-approval-activated": "", // TODO: get from db
-		"access-request-minimum-approval":         "", // TODO: get from db
-		"jira-template-activated":                 c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
-		"guardrails-activated":                    "", // TODO: get from db
-		"data-masking-activated":                  "", // TODO: get from db
+		"agent-version":                 agent.GetMeta("version"),
+		"agent-platform":                agent.GetMeta("platform"),
+		"jira-template-activated":       c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
 	}
 
 	if s.EndSession != nil {
@@ -206,7 +202,7 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 		return
 	}
 
-	connection, err := models.GetConnectionFeaturesByName(models.DB, session.Connection)
+	connection, err := models.GetConnectionByName(models.DB, session.Connection)
 	if err != nil {
 		log.Warnf("failed getting connection features by name, reason=%v", err)
 		return
@@ -217,6 +213,13 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 		return
 	}
 
-	props := sessionUsageProperties(session, connection)
+	agent, err := models.GetAgentByNameOrID(orgID, connection.AgentName)
+	if err != nil {
+		log.Warnf("failed getting agent by name, reason=%v", err)
+		return
+	}
+
+	props := sessionUsageProperties(session, connection, agent)
+
 	s.Track(userID, eventName, props)
 }
