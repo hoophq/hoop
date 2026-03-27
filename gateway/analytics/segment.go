@@ -156,11 +156,13 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	properties["auth-method"] = appconfig.Get().AuthMethod()
 	properties["client-version"] = version.Get().Version
 
-	_ = s.Client.Enqueue(analytics.Track{
+	if err := s.Client.Enqueue(analytics.Track{
 		UserId:     hashedUserID,
 		Event:      eventName,
 		Properties: properties,
-	})
+	}); err != nil {
+		log.Warnf("failed to enqueue analytics event=%s, reason=%v", eventName, err)
+	}
 }
 
 func sessionUsageProperties(s *models.Session, c *models.Connection, agent *models.Agent) map[string]any {

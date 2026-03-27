@@ -555,8 +555,7 @@ type SessionStatusType string
 const (
 	SessionStatusOpen  SessionStatusType = "open"
 	SessionStatusReady SessionStatusType = "ready"
-	// TODO: check where it is used to send the SessionDone event
-	SessionStatusDone SessionStatusType = "done"
+	SessionStatusDone  SessionStatusType = "done"
 )
 
 type SessionAIAnalysis struct {
