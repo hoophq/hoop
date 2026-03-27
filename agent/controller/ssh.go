@@ -13,6 +13,10 @@ import (
 
 func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+	if _, closed := a.closedSessions.Load(sid); closed {
+		log.With("sid", sid).Debugf("session already closed, dropping late SSH packet")
+		return
+	}
 	streamClient := pb.NewStreamWriter(a.client, pbclient.SSHConnectionWrite, pkt.Spec)
 	connParams := a.connectionParams(sid)
 	if connParams == nil {
@@ -35,6 +39,16 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 			a.sendClientSessionClose(sid, fmt.Sprintf("unable to write packet: %v", err))
 			_ = serverWriter.Close()
 		}
+		return
+	}
+
+	// SessionClose runs on a different mutex and may have already cleaned up
+	// this session. The closedSessions flag is set atomically before cleanup,
+	// so checking it here prevents creating a spurious SSH connection from a
+	// late-arriving packet.
+	if _, closed := a.closedSessions.Load(sid); closed {
+		log.With("sid", sid, "conn", clientConnectionID).
+			Debugf("session already closed, dropping late SSH packet")
 		return
 	}
 
