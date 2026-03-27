@@ -194,12 +194,13 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
 				emitJSONEvent(os.Stdout, JSONEvent{
 					Status:  "waiting_approval",
-					Message: "waiting command to be approved",
+					Message: "waiting command to be approved, poll GET /api/reviews/{session_id} for status, then POST /api/sessions/{session_id}/exec to run",
 					Data: map[string]string{
 						"review_url": reviewURL,
 						"session_id": sessionID,
 					},
 				})
+				os.Exit(0)
 			} else {
 				loader.Color("yellow")
 				if !loader.Active() {
