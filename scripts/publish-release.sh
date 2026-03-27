@@ -14,13 +14,48 @@ echo "=> Here are the last 10 releases from github"
 gh release list -L 10
 
 read -rep $'\nWhich version do you like to release?\n=> ' GIT_TAG
-NOTE_FILE="$(mktemp).md"
-GIT_COMMIT=$(git log $LATEST_TAG..HEAD --pretty=format:"%h %s%n%n%b")
-cat - >$NOTE_FILE <<EOF
-# Changelog
 
-$GIT_COMMIT
+# Ask if user wants to fetch PR descriptions
+read -rep $'\nFetch detailed PR descriptions from GitHub?\n(y/n) => ' fetch_prs_choice
+FETCH_PRS_FLAG=""
+case "$fetch_prs_choice" in
+  y|Y ) FETCH_PRS_FLAG="--fetch-prs";;
+  * ) FETCH_PRS_FLAG="";;
+esac
+
+# Ask if user wants AI-powered summarization
+read -rep $'\nUse AI-powered changelog summarization? (requires ANTHROPIC_API_KEY)\n(y/n) => ' use_ai_choice
+AI_FLAG=""
+MODEL_FLAG=""
+case "$use_ai_choice" in
+  y|Y )
+    AI_FLAG="--ai-summary"
+    read -rep $'\nWhich Claude model? (default: auto-detect, or specify like "claude-sonnet-4-0-20250514")\n=> ' model_name
+    if [[ -n "$model_name" ]]; then
+      MODEL_FLAG="--model $model_name"
+    fi
+    ;;
+  * ) AI_FLAG="";;
+esac
+
+# Generate raw changelog
+RAW_CHANGELOG_FILE="$(mktemp)"
+git log $LATEST_TAG..HEAD --pretty=format:"%h %s" --no-merges > $RAW_CHANGELOG_FILE
+
+# Format changelog using the helper script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FORMATTED_CHANGELOG=$("$SCRIPT_DIR/format-changelog.sh" "$RAW_CHANGELOG_FILE" $FETCH_PRS_FLAG $AI_FLAG $MODEL_FLAG)
+
+# Create final note file
+NOTE_FILE="$(mktemp).md"
+cat - >$NOTE_FILE <<EOF
+$FORMATTED_CHANGELOG
 EOF
+
+# Clean up raw changelog
+rm -f "$RAW_CHANGELOG_FILE"
+
+# Open in editor for final review/edits
 ${VISUAL:-${EDITOR:-vi}} $NOTE_FILE
 
 
