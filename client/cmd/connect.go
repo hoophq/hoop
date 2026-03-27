@@ -147,11 +147,12 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				reviewURL := string(pkt.Payload)
 				emitJSONEvent(os.Stdout, JSONEvent{
 					Status:  "waiting_approval",
-					Message: "waiting task to be approved",
+					Message: "waiting task to be approved, poll GET /api/reviews/{session_id} for status",
 					Data: map[string]string{
 						"review_url": reviewURL,
 					},
 				})
+				os.Exit(0)
 			} else {
 				loader.Color("yellow")
 				if !loader.Active() {
