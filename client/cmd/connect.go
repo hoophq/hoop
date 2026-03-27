@@ -73,7 +73,7 @@ var (
 				fmt.Println(err)
 				os.Exit(1)
 			}
-			runConnect(args, clientEnvVars)
+			runConnect(args, clientEnvVars, cmd.Flags().Changed("duration"))
 		},
 	}
 )
@@ -96,7 +96,7 @@ type connect struct {
 	loader         *spinner.Spinner
 }
 
-func runConnect(args []string, clientEnvVars map[string]string) {
+func runConnect(args []string, clientEnvVars map[string]string, durationFlagChanged bool) {
 	jsonMode := outputFlag == "json"
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond)
@@ -112,7 +112,9 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
 	sendOpenSessionPktFn := func() {
 		spec := newClientArgsSpec(c.clientArgs, clientEnvVars)
-		spec[pb.SpecJitTimeout] = []byte(connectFlags.duration)
+		if durationFlagChanged {
+			spec[pb.SpecJitTimeout] = []byte(connectFlags.duration)
+		}
 		if err := c.client.Send(&pb.Packet{
 			Type: pbagent.SessionOpen,
 			Spec: spec,
@@ -126,6 +128,15 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
+		if err != nil && jsonMode {
+			exitCode := 1
+			emitJSONEvent(os.Stdout, JSONEvent{
+				Status:   "error",
+				Message:  err.Error(),
+				ExitCode: &exitCode,
+			})
+			os.Exit(1)
+		}
 		c.processGracefulExit(err)
 		if pkt == nil {
 			continue
