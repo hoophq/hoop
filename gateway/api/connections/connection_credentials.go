@@ -41,7 +41,10 @@ func CreateConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	// Lazy cleanup of expired credential sessions
-	_ = models.CloseExpiredCredentialSessions()
+	err := models.CloseExpiredCredentialSessions()
+	if err != nil {
+		log.Errorf("failed to close expired credential sessions, err=%v", err)
+	}
 
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -191,7 +194,10 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	// Lazy cleanup of expired credential sessions
-	_ = models.CloseExpiredCredentialSessions()
+	err := models.CloseExpiredCredentialSessions()
+	if err != nil {
+		log.Errorf("failed to close expired credential sessions, err=%v", err)
+	}
 
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
