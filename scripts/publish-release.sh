@@ -64,25 +64,7 @@ $(cat $NOTE_FILE)
 
 EOF
 
-tagLibhoop(){
-  # Resolve libhoop path (it may be a symlink)
-  LIBHOOP_PATH="libhoop"
-  if [ -L "$LIBHOOP_PATH" ]; then
-    LIBHOOP_PATH=$(readlink -f "$LIBHOOP_PATH")
-  fi
-
-  if [ -d "$LIBHOOP_PATH/.git" ]; then
-    echo "=> Tagging libhoop with ${GIT_TAG}..."
-    (cd "$LIBHOOP_PATH" && git tag "$GIT_TAG" 2>/dev/null || true && git push origin "$GIT_TAG")
-    echo "=> libhoop tagged successfully"
-  else
-    echo "WARNING: libhoop directory not found or not a git repository at $LIBHOOP_PATH"
-    echo "Skipping libhoop tagging"
-  fi
-}
-
 ghRelease(){
-  tagLibhoop
   gh release create $GIT_TAG -F $NOTE_FILE --title $GIT_TAG
 }
 
