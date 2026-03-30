@@ -1,183 +1,258 @@
-![hero](github.png)
+<p align="center">
+  <a href="https://hoop.dev">
+    <img src="https://hoopartifacts.s3.amazonaws.com/hoop-logo.png" alt="hoop.dev" width="200" />
+  </a>
+</p>
 
-<h1 align="center">
-<b>hoop.dev</b>
-</h1>
-<p align="center"> 🔒 Access any database or server. Customer data automatically hidden. Everything recorded.
-  
-<br /> <br />
- <a target="_blank" href="https://hoop.dev">Website</a> · <a target="_blank" href="https://hoop.dev/docs">Docs</a> · <a href="https://github.com/hoophq/hoop/discussions">Discussions</a> </p> </p>
- <p align="center"><a href="https://github.com/hoophq/hoop/actions/workflows/release.yml"><img src="https://img.shields.io/github/v/release/hoophq/hoop.svg?style=flat" /> </a><img src="https://img.shields.io/badge/Setup-4.3_min-success" /></p>
+<h3 align="center">The gateway between your team and your infrastructure.</h3>
 
-The only access proxy that blocks dangerous linux commands and scrubs sensitive database outputs
+<p align="center">
+  Hoop parses wire protocols in real time. It masks sensitive data before it reaches the client, blocks dangerous commands before they execute, and records every session. One gateway covers databases, Kubernetes, SSH, AI agents, and MCP servers.
+</p>
 
-## Without Hoop
+<p align="center">
+  <a href="https://hoop.dev">Website</a> · <a href="https://hoop.dev/docs">Docs</a> · <a href="https://github.com/hoophq/hoop/discussions">Discussions</a> · <a href="https://hoop.dev/open-source">Open Source</a>
+</p>
 
-*Debugging production issue...*
-![Debugging Without Hoop](assets/readme-1.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+  <img src="https://img.shields.io/badge/CNCF-Member-blue" alt="CNCF Member" />
+  <img src="https://img.shields.io/badge/SOC_2-Type_II-green" alt="SOC 2 Type II" />
+</p>
 
-*You screenshot the result for Slack...*
-SSNs, credit cards, and phone numbers now in your team chat 💀
+---
 
-One query, one screenshot, **one data breach**.
+## What is Hoop?
 
-## With Hoop
+Hoop is an open-source gateway that sits between users (engineers, AI agents, service accounts) and infrastructure (databases, Kubernetes clusters, servers, APIs). Every query and command passes through the gateway at the wire protocol level, where you can:
 
-Same query through Hoop
+- **Mask sensitive data** in responses before it reaches the client (ML-powered, not regex)
+- **Block dangerous commands** before they execute (`DROP TABLE`, `rm -rf`, `DELETE` without `WHERE`)
+- **Require human approval** for risky operations via Slack or Teams
+- **Record every session** with full replay for compliance and incident review
+- **Govern AI agent access** to production infrastructure with the same controls
 
-*You see:*
+No agents on endpoints. No schema discovery. No code changes. Deploy the gateway, connect your identity provider, define your rules.
 
+## Who is this for?
 
-![Debugging With Hoop](assets/readme-5.png)
+Teams where engineers or AI agents access production infrastructure that contains sensitive data. If your developers run queries against databases with customer PII, execute commands on production Kubernetes clusters, or use Claude Code / Cursor against real systems, Hoop gives you visibility and control over what happens inside those sessions.
 
-It's safe to share 🔒
+Used by NYSE-listed companies in production. 5,000+ databases protected through a single deployment.
 
-## Without Hoop
+## The problem, concretely
 
-*Fixing bug at 3AM...*
+### Without Hoop
 
-![Fixing Bug Without Hoop](assets/readme-3.png)
+Debugging a production issue...
 
-1000000 rows updated 💀
+```
+SELECT * FROM users WHERE id = 42;
 
-## With Hoop
+| id | name          | email              | ssn         | card_number      |
+|----|---------------|--------------------|-------------|------------------|
+| 42 | Jane Thompson | jane@example.com   | 123-45-6789 | 4532-XXXX-XXXX   |
+```
 
-*Fixing bug at 3AM...*
+You screenshot the result for Slack. SSNs, emails, and card numbers are now in your team chat.
 
-![Fixing Bug Without Hoop](assets/readme-6.png)
+### With Hoop
 
-Query blocked by Guardrails: "Prevent UPDATE without WHERE" 🚫
+Same query through Hoop:
 
-**That's it.** Hoop sits between you and your infrastructure. Sensitive data gets masked automatically. Dangerous operations blocked. Everything gets recorded.
+```
+SELECT * FROM users WHERE id = 42;
 
-## 30-Second Demo
+| id | name | email          | ssn         | card_number      |
+|----|------|----------------|-------------|------------------|
+| 42 | J*** | j***@*****.com | ***-**-6789 | ****-****-****   |
+```
+
+Safe to share. No configuration required. The ML model detected the sensitive fields automatically.
+
+### Without Hoop
+
+AI agent fixing a bug at 3AM:
+
+```
+> claude-code: DROP TABLE orders;
+> 
+> Query OK, 47,291,834 rows affected 💀
+```
+
+### With Hoop
+
+Same agent, same intent, through the gateway:
+
+```
+> claude-code: DROP TABLE orders;
+> 
+> ⛔ Blocked by guardrail: "Prevent destructive DDL in production"
+> Event logged. Security team notified.
+```
+
+The command never reached the database.
+
+## Quick Start
 
 ```bash
 # create a jwt secret for auth
 echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
 
 # download and run
-curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml
-docker compose up
+curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml && \
+  docker compose up
 ```
 
-[View full installation options](https://hoop.dev/docs/setup/deployment/overview)
+Gateway running on `:8009`. OIDC connected. Masking and guardrails active.
+
+[Full installation options →](#installation)
 
 ## How It Works
 
 ```
-You → Hoop → Your Infrastructure
-       ↓
-   • Masks sensitive data (ML-powered)
-   • Blocks dangerous commands
-   • Records everything (for compliance)  
-   • Controls access (who, what, when)
+Engineers / AI Agents / Service Accounts
+              │
+              ▼
+     ┌────────────────┐
+     │   Hoop Gateway  │  ← Parses wire protocols in real time
+     │                  │
+     │  • Masks PII     │  (ML-powered, <5ms latency)
+     │  • Blocks cmds   │  (DROP, DELETE, rm -rf)
+     │  • Approvals     │  (Slack / Teams)
+     │  • Records all   │  (full session replay)
+     │  • AI controls   │  (per-action governance)
+     └────────────────┘
+              │
+              ▼
+    Your Infrastructure
+    (Databases, K8s, SSH, APIs, MCP servers)
 ```
 
-Works with:
-- **Databases**: PostgreSQL, MySQL, MongoDB, Redis
-- **Servers**: SSH, Kubernetes, Docker
-- **Tools**: HTTP APIs, internal services
+The gateway parses wire protocols natively: PostgreSQL, MySQL, MSSQL, MongoDB, Kubernetes, SSH, HTTP/gRPC, RDP, and more. Your tools connect through the gateway without knowing it's there. No SDKs, no plugins, no browser extensions.
 
-## Why Teams Love Hoop
+## Key Capabilities
 
-### 🧠 Smart Masking
-Not regex. Machine learning that understands context.
-- Knows "555-1234" is a phone number in user data
-- Knows "BUILD-555-1234" is a build number
-- Works in any language
+### Data Masking
 
-### ⚡ Actually Fast
-- <5ms latency
-- No performance impact
-- Works with existing tools
+ML-powered detection of PII, PHI, PCI data, and credentials inside database responses, API payloads, and terminal output. Not regex. The model understands context: `555-1234` in a `phone` column is a phone number, `BUILD-555-1234` in a CI log is a build ID. One rule covers thousands of resources. No schema mapping required.
 
-### 🔐 Real Security
-- Nothing to configure
-- Full audit trail
-- SOC2/HIPAA/GDPR compliant
+### Guardrails
 
-## 📚 Popular Guides
+Define dangerous operations and block them at the protocol layer before they reach the target system. `DROP TABLE`, `DELETE` without `WHERE`, `kubectl delete namespace`, `rm -rf`, and any custom pattern. Prevention, not detection.
 
-### Databases
+### Command Approval
 
--   [MySQL](https://hoop.dev/docs/quickstart/databases/mysql)
--   [PostgreSQL](https://hoop.dev/docs/quickstart/databases/postgres)
--   [MongoDB](https://hoop.dev/docs/quickstart/databases/mongodb)
--   [MSSQL](https://hoop.dev/docs/quickstart/databases/mssql)
+Route risky operations (production writes, schema changes, config mutations) for human approval via Slack or Teams. One command, one decision. The operation waits until approved, denied, or scheduled for a maintenance window.
 
-### Cloud & Infrastructure
+### AI Agent Governance
 
--   [Kubernetes](https://hoop.dev/docs/quickstart/cloud-services/kubernetes)
--   [AWS](https://hoop.dev/docs/quickstart/cloud-services/aws/aws-cli)
--   [SSH Jump Hosts](https://hoop.dev/docs/quickstart/web-applications/jump-hosts)
+Claude Code, Cursor, and autonomous agents connect to your infrastructure through the gateway. Agents read freely (with masked responses). Agents write with approval. Destructive operations are blocked outright. Every agent action is logged, risk-scored, and replayable.
 
-[View all guides](https://hoop.dev/docs/quickstart)
+### MCP Gateway
+
+Not just a proxy. Hoop inspects MCP payloads, masks PII in JSON responses before they reach the agent, blocks dangerous operations, and federates identity so developers never touch real credentials. Auto-generates a sensitive data catalog from MCP traffic.
+
+### Session Recording
+
+Full session capture with replay. Every command, every response, every approval and denial. Generates compliance evidence for SOC 2, GDPR, PCI DSS, and HIPAA automatically.
+
+### Runbooks
+
+Parameterized templates stored in Git. Your team executes common operations with validated inputs. Guardrails, masking, and approval workflows apply automatically to every run.
+
+## No SSO Tax
+
+SSO is included in the open-source license. Connect Okta, JumpCloud, Azure AD, Google Workspace, or any OIDC/SAML provider. For free. Identity is a security primitive, not a revenue lever.
 
 ## Installation
 
-### Docker
-
-bash
+### Docker (Recommended)
 
 ```bash
-# create a jwt secret for auth
 echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
-
-# download and run
-curl  -sL https://hoop.dev/docker-compose.yml > docker-compose.yml &&  docker compose up
+curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml && \
+  docker compose up
 ```
 
-[See Docker Compose installation documentation](https://hoop.dev/docs/setup/deployment/docker-compose)
+[See Docker Compose documentation →](https://hoop.dev/docs)
 
 ### Kubernetes
 
-[See Kubernetes Deployment Documentation](https://hoop.dev/docs/setup/deployment/kubernetes)
+[See Kubernetes deployment documentation →](https://hoop.dev/docs)
 
 ### AWS
 
-[See AWS Deploy & Host Documentation](https://hoop.dev/docs/setup/deployment/AWS)
+[See AWS deploy & host documentation →](https://hoop.dev/docs)
 
 | Region | Launch Stack |
-|--------|--------------|
-| N. Virginia (us-east-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-us-east-1.s3.us-east-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| Ohio (us-east-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-us-east-2.s3.us-east-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| N. California (us-west-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://us-west-1.console.aws.amazon.com/cloudformation/home?region=us-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-us-west-1.s3.us-west-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| Oregon (us-west-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-us-west-2.s3.us-west-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| Ireland (eu-west-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-eu-west-1.s3.eu-west-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| London (eu-west-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://eu-west-2.console.aws.amazon.com/cloudformation/home?region=eu-west-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-eu-west-2.s3.eu-west-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| Frankfurt (eu-central-1) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://eu-central-1.console.aws.amazon.com/cloudformation/home?region=eu-central-1#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-eu-central-1.s3.eu-central-1.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
-| Sydney (ap-southeast-2) | [![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/quickcreate?templateURL=https%3A%2F%2Fhoopdev-platform-cf-ap-southeast-2.s3.ap-southeast-2.amazonaws.com%2Flatest%2Fhoopdev-platform.template.yaml) |
+|--------|-------------|
+| N. Virginia (us-east-1) | [Launch](https://hoop.dev/docs) |
+| Ohio (us-east-2) | [Launch](https://hoop.dev/docs) |
+| N. California (us-west-1) | [Launch](https://hoop.dev/docs) |
+| Oregon (us-west-2) | [Launch](https://hoop.dev/docs) |
+| Ireland (eu-west-1) | [Launch](https://hoop.dev/docs) |
+| London (eu-west-2) | [Launch](https://hoop.dev/docs) |
+| Frankfurt (eu-central-1) | [Launch](https://hoop.dev/docs) |
+| Sydney (ap-southeast-2) | [Launch](https://hoop.dev/docs) |
 
-[View all regions](https://hoop.dev/docs/deploy/AWS)
+[View all regions →](https://hoop.dev/docs)
 
-## Advanced Features
+## Architecture: Open Source vs. Commercial
 
-What makes Hoop unique is its ability to not only inspect but also modify connections between users and infrastructure:
+The gateway (everything on the data path) is open source under MIT. The commercial layer adds AI capabilities, the web UI, and enterprise integrations.
 
--   [**AI Data Masking**](https://hoop.dev/docs/learn/features/ai-data-masking)  - Automatically hide sensitive data like emails, SSNs, and credit cards
--   [**Just-in-Time Reviews**](https://hoop.dev/docs/learn/features/reviews/overview)  - Approve risky commands in real-time through Slack or MS Teams
--   [**Runbooks**](https://hoop.dev/docs/learn/features/runbooks)  - Create pre-approved workflows for common tasks
--   [**Web & Native Modes**](https://hoop.dev/docs/clients)  - Use the web interface or connect through your native database tools
+**Open source (MIT)**
+- Wire protocol parsing (PostgreSQL, MySQL, MongoDB, SSH, Kubernetes, HTTP)
+- Connection routing, session management, TLS termination
+- SSO/IdP integration (OIDC, SAML)
+- Plugin system (masking, guardrails, runbooks, webhooks)
+- CLI (`hoop connect`, `hoop exec`, `hoop admin`)
+- Session recording and audit logging
 
-[See all features](https://hoop.dev/docs/learn/features)
+**Commercial (built on the open source core)**
+- AI-powered masking (ML models for context-aware PII detection)
+- AI session analysis (LLM-based risk scoring, anomaly detection)
+- Web UI (developer portal, admin console, session browser)
+- IdP group sync (OAuth 2.0)
+- Managed hosting
+- Enterprise support and SLA
 
-## You'll be in Good Company
+## Supported Protocols
 
--   **200+ successful deployments**  from companies around the world
--   **4.3 minute average setup time**  across all deployments
--   **Trusted by teams**  from startups to enterprises
+| Category | Protocols |
+|----------|-----------|
+| Databases | PostgreSQL, MySQL, MSSQL, MongoDB |
+| Infrastructure | Kubernetes (exec, port-forward), SSH, RDP |
+| APIs | HTTP, gRPC |
+| AI | Claude Code, Cursor, MCP servers |
+| Runtimes | Rails, Django, Elixir IEx, PHP |
+| Cloud | AWS SSM, custom CLIs |
 
-## 🤝 Contributing
+## Guides
 
-We welcome contributions! Check out our [Development Documentation](/DEV.md) to get started.
+**Databases:** [PostgreSQL](https://hoop.dev/docs) · [MySQL](https://hoop.dev/docs) · [MongoDB](https://hoop.dev/docs) · [MSSQL](https://hoop.dev/docs)
 
-## 📣 Community
+**Infrastructure:** [Kubernetes](https://hoop.dev/docs) · [SSH](https://hoop.dev/docs) · [AWS](https://hoop.dev/docs)
+
+**AI Agents:** [Claude Code](https://hoop.dev/docs) · [Cursor](https://hoop.dev/docs) · [MCP Gateway](https://hoop.dev/docs)
+
+[View all guides →](https://hoop.dev/docs)
+
+## Contributing
+
+We welcome contributions. Protocol parsers, masking patterns, guardrail rules, runbook templates, integrations, and documentation improvements. Check out our [Development Documentation](https://hoop.dev/docs) to get started.
+
+## Community
 
 Join our [Discussions](https://github.com/hoophq/hoop/discussions) to ask questions, share ideas, and connect with other users.
 
-⭐ Star this if you've ever worried about screenshots in Slack
+## License
 
-## Backed by
+MIT. The code that touches your data is code you can read.
 
-![Backed By YC, Valor, GFC, Quiet and L2 Ventures](backedby.png)
+---
+
+<p align="center">
+  <a href="https://hoop.dev">hoop.dev</a> · Data security in transit. One gateway, every protocol.
+</p>
