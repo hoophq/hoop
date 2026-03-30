@@ -108,7 +108,9 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	userAgent := apiutils.NormalizeUserAgent(func(key string) []string {
 		return []string{stream.GetMeta("user-agent")}
 	})
-	analytics.New().Track(pctx.UserID, eventName, map[string]any{
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(pctx.UserID, eventName, map[string]any{
 		"org-id":                pctx.OrgID,
 		"license-type":          pctx.OrgLicenseType,
 		"connection-name":       pctx.ConnectionName,

@@ -56,6 +56,7 @@ Fixes #
 
 <!-- Please check off the following items by replacing [ ] with [x] -->
 
+- [ ] I have run `make generate-openapi-docs` to update the OpenAPI docs
 - [ ] My code follows the style guidelines of this project
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented my code, particularly in hard-to-understand areas
