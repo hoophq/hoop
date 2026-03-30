@@ -36,6 +36,11 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		analyzerMetricsRules = string(connParams.AnalyzerMetricsRules)
 	}
 
+	var guardRailRules string
+	if connParams.GuardRailRules != nil {
+		guardRailRules = string(connParams.GuardRailRules)
+	}
+
 	opts := map[string]string{
 		"sid":                       sid,
 		"dlp_provider":              connParams.DlpProvider,
@@ -46,6 +51,7 @@ func (a *Agent) doExec(pkt *pb.Packet) {
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"data_masking_entity_data":  dataMaskingEntityTypesData,
 		"analyzer_metrics_rules":    analyzerMetricsRules,
+		"guard_rail_rules":          guardRailRules,
 	}
 
 	args := append(connParams.CmdList, connParams.ClientArgs...)
