@@ -19,7 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
-	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	accessrequestinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/accessrequest"
@@ -243,7 +243,7 @@ func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 }
 
 func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage, error) {
-	connGuardRailRules, err := models.GetConnectionGuardRailRules(pctx.OrgID, pctx.ConnectionName)
+	connGuardRailRules, err := services.GetGuardRailRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
@@ -346,7 +346,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		var entityTypesJsonData json.RawMessage
 		if s.AppConfig.DlpProvider() == "mspresidio" {
 			var err error
-			entityTypesJsonData, err = models.GetDataMaskingEntityTypes(pctx.OrgID, pctx.ConnectionID)
+			entityTypesJsonData, err = services.GetDataMaskingRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 			if err != nil {
 				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).Errorf("failed getting data masking entity types, err=%v", err)
 				return status.Errorf(codes.Internal, "failed obtaining data masking entity types, err=%v", err)

@@ -103,6 +103,13 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	if err := upsertConnectionAttributes(ctx, resp.Name, req.Attributes); err != nil {
+		log.Errorf("failed upserting connection attributes, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	resp.Attributes = req.Attributes
+
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
 
@@ -194,6 +201,14 @@ func Put(c *gin.Context) {
 		}
 		return
 	}
+
+	if err := upsertConnectionAttributes(ctx, resp.Name, req.Attributes); err != nil {
+		log.Errorf("failed upserting connection attributes, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	resp.Attributes = req.Attributes
+
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
@@ -308,6 +323,16 @@ func Patch(c *gin.Context) {
 		}
 		return
 	}
+
+	if req.Attributes != nil {
+		if err := upsertConnectionAttributes(ctx, resp.Name, *req.Attributes); err != nil {
+			log.Errorf("failed upserting connection attributes, err=%v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+		resp.Attributes = *req.Attributes
+	}
+
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
 
@@ -357,6 +382,7 @@ func Delete(c *gin.Context) {
 //	@Param			subtype			query		string											false	"Filter by subtype"																		Format(string)
 //	@Param			managed_by		query		string											false	"Filter by managed by"																	Format(string)
 //	@Param			resource_name	query		string											false	"Filter by resource name"																Format(string)
+//	@Param			attribute		query		string											false	"Filter by attributes, separated by comma"										Format(string)
 //	@Param			connection_ids	query		string											false	"Filter by specific connection IDs, separated by comma"									Format(string)
 //	@Param			page_size		query		int												false	"Maximum number of items to return (1-100). When provided, enables pagination"			Format(int)
 //	@Param			page			query		int												false	"Page number (1-based). When provided, enables pagination"								Format(int)
@@ -513,6 +539,7 @@ func toOpenApi(conn *models.Connection) openapi.Connection {
 		AccessMaxDuration:       conn.AccessMaxDuration,
 		MinReviewApprovals:      conn.MinReviewApprovals,
 		MandatoryMetadataFields: conn.MandatoryMetadataFields,
+		Attributes:              conn.Attributes,
 	}
 }
 

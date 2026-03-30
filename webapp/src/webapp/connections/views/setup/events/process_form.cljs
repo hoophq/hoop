@@ -60,6 +60,7 @@
         is-http-proxy-subtype? (contains? http-proxy-subtypes connection-subtype)
         api-type (get-api-connection-type ui-type connection-subtype)
         connection-name (get-in db [:connection-setup :name])
+        selected-attributes (get-in db [:connection-setup :attributes :selected] [])
         agent-id (get-in db [:connection-setup :agent-id])
         old-tags (get-in db [:connection-setup :old-tags] [])
         tags-array (get-in db [:connection-setup :tags :data] [])
@@ -245,6 +246,7 @@
                  :name connection-name
                  :resource_name resource-name
                  :agent_id agent-id
+                 :attributes selected-attributes
                  :connection_tags tags
                  :tags old-tags
                  :secret secret

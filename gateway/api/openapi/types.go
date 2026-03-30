@@ -274,6 +274,8 @@ type Connection struct {
 	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
 	// When set, the user cannot choose a custom duration and must request access for this exact window.
 	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ConnectionPatch struct {
@@ -341,6 +343,8 @@ type ConnectionPatch struct {
 	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
+	// Attributes associated with this connection
+	Attributes *[]string `json:"attributes" example:"production,pii"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -1306,6 +1310,8 @@ type GuardRailRuleRequest struct {
 
 	// List of connection IDs that this guardrail applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
+	// Attributes associated with this guardrail rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type GuardRailRuleResponse struct {
@@ -1355,7 +1361,8 @@ type GuardRailRuleResponse struct {
 
 	// List of connection IDs that this guardrail applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
-
+	// Attributes associated with this guardrail rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -1727,6 +1734,8 @@ type DataMaskingRuleRequest struct {
 	Description string `json:"description" example:"Mask email addresses in the data"`
 	// The connections that this rule applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
+	// Attributes associated with this data masking rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// The registered entity types that this rule applies to
 	SupportedEntityTypes []SupportedEntityTypesEntry `json:"supported_entity_types"`
 	// The minimal detection score threshold for the entities to be masked.
@@ -2335,6 +2344,8 @@ type AccessRequestRule struct {
 	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Attributes associated with this access request rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -2362,6 +2373,8 @@ type AccessRequestRuleRequest struct {
 	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Attributes associated with this access request rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -2439,4 +2452,35 @@ type AISessionAnalyzerRule struct {
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type Attributes struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this attribute
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// The name of the attribute
+	Name string `json:"name" example:"default-session-attribute"`
+	// The description of the attribute
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names associated with this attribute
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Access request rule names associated with this attribute
+	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	// Guardrail rule names associated with this attribute
+	GuardrailRuleNames []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	// Datamasking rule names associated with this attribute
+	DatamaskingRuleNames []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AttributeRequest struct {
+	// The name of the attribute
+	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Description            *string  `json:"description" example:"Blocks high-risk SQL commands"`
+	ConnectionNames        []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	GuardrailRuleNames     []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	DatamaskingRuleNames   []string `json:"datamasking_rule_names" example:"rule1,rule2"`
 }

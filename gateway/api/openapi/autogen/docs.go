@@ -775,9 +775,245 @@ const docTemplate = `{
                 }
             }
         },
+        "/attributes": {
+            "get": {
+                "description": "List attributes for the organization with optional pagination and search.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attributes"
+                ],
+                "summary": "List Attributes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by name",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (1-based)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Items per page (1-100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.PaginatedResponse-openapi_Attributes"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new attribute for the organization.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attributes"
+                ],
+                "summary": "Create Attribute",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AttributeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Attributes"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/attributes/{name}": {
+            "get": {
+                "description": "Get an attribute by name or ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attributes"
+                ],
+                "summary": "Get Attribute",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the attribute",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Attributes"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Rename an existing attribute.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attributes"
+                ],
+                "summary": "Update Attribute",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the attribute",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AttributeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Attributes"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete an attribute by name or ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attributes"
+                ],
+                "summary": "Delete Attribute",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name of the attribute",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/audit/logs": {
             "get": {
-                "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, outcome, and date range. Results are ordered by created_at descending.",
+                "description": "Lists security audit log entries for the organization. Only admins can access this API. Supports filtering by actor, resource type, action, HTTP method, HTTP status, client IP, path, outcome, and date range. Results are ordered by created_at descending.",
                 "produces": [
                     "application/json"
                 ],
@@ -826,14 +1062,26 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by resource ID (UUID)",
-                        "name": "resource_id",
+                        "description": "Filter by HTTP method (GET, POST, PUT, PATCH, DELETE)",
+                        "name": "http_method",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by HTTP status code (e.g. 200, 400, 500)",
+                        "name": "http_status",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter by resource name (partial match)",
-                        "name": "resource_name",
+                        "description": "Filter by HTTP path (partial match)",
+                        "name": "http_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by client IP address (partial match)",
+                        "name": "client_ip",
                         "in": "query"
                     },
                     {
@@ -1016,6 +1264,13 @@ const docTemplate = `{
                         "format": "string",
                         "description": "Filter by resource name",
                         "name": "resource_name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "string",
+                        "description": "Filter by attributes, separated by comma",
+                        "name": "attribute",
                         "in": "query"
                     },
                     {
@@ -6387,6 +6642,73 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/rdp-frames": {
+            "get": {
+                "description": "Returns paginated bitmap frames from an RDP session recording",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Get RDP session frames",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The id of the session",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Limit number of frames",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/sessionapi.RDPFramesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/result/stream": {
             "get": {
                 "description": "Returns the decoded output of a session as plain text with chunked transfer encoding",
@@ -7390,6 +7712,17 @@ const docTemplate = `{
                         "analysts"
                     ]
                 },
+                "attributes": {
+                    "description": "Attributes associated with this access request rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
+                },
                 "connection_names": {
                     "description": "Connection names that this rule applies to",
                     "type": "array",
@@ -7497,6 +7830,17 @@ const docTemplate = `{
                     "example": [
                         "developers",
                         "analysts"
+                    ]
+                },
+                "attributes": {
+                    "description": "Attributes associated with this access request rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
                     ]
                 },
                 "connection_names": {
@@ -7662,6 +8006,142 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.AttributeRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "access_request_rule_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rule1",
+                        "rule2"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                },
+                "datamasking_rule_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rule1",
+                        "rule2"
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Blocks high-risk SQL commands"
+                },
+                "guardrail_rule_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rule1",
+                        "rule2"
+                    ]
+                },
+                "name": {
+                    "description": "The name of the attribute",
+                    "type": "string",
+                    "example": "default-session-attribute"
+                }
+            }
+        },
+        "openapi.Attributes": {
+            "type": "object",
+            "properties": {
+                "access_request_rule_names": {
+                    "description": "Access request rule names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rule1",
+                        "rule2"
+                    ]
+                },
+                "connection_names": {
+                    "description": "Connection names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pgdemo",
+                        "mysql-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "The time the resource was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "datamasking_rule_names": {
+                    "description": "Datamasking rule names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rule1",
+                        "rule2"
+                    ]
+                },
+                "description": {
+                    "description": "The description of the attribute",
+                    "type": "string",
+                    "example": "Blocks high-risk SQL commands"
+                },
+                "guardrail_rule_names": {
+                    "description": "Guardrail rule names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "rule1",
+                        "rule2"
+                    ]
+                },
+                "id": {
+                    "description": "The resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "name": {
+                    "description": "The name of the attribute",
+                    "type": "string",
+                    "example": "default-session-attribute"
+                },
+                "org_id": {
+                    "description": "Organization ID that owns this attribute",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "37EEBC20-D8DF-416B-8AC2-01B6EB456318"
+                }
+            }
+        },
         "openapi.ClientStatusType": {
             "type": "string",
             "enum": [
@@ -7741,6 +8221,17 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "attributes": {
+                    "description": "Attributes associated with this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
                 },
                 "command": {
                     "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
@@ -8013,6 +8504,17 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
+                "attributes": {
+                    "description": "Attributes associated with this connection",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
                 },
                 "command": {
                     "description": "Is the shell command that is going to be executed when interacting with this connection.\nThis value is required if the connection is going to be used from the Webapp.",
@@ -8628,6 +9130,17 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "attributes": {
+                    "description": "Attributes associated with this data masking rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
+                },
                 "connection_ids": {
                     "description": "The connections that this rule applies to",
                     "type": "array",
@@ -8739,6 +9252,17 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "attributes": {
+                    "description": "Attributes associated with this data masking rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
+                },
                 "connection_ids": {
                     "description": "The connections that this rule applies to",
                     "type": "array",
@@ -8920,6 +9444,17 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "attributes": {
+                    "description": "Attributes associated with this guardrail rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
+                },
                 "connection_ids": {
                     "description": "List of connection IDs that this guardrail applies to",
                     "type": "array",
@@ -8956,6 +9491,17 @@ const docTemplate = `{
         "openapi.GuardRailRuleResponse": {
             "type": "object",
             "properties": {
+                "attributes": {
+                    "description": "Attributes associated with this guardrail rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "production",
+                        "pii"
+                    ]
+                },
                 "connection_ids": {
                     "description": "List of connection IDs that this guardrail applies to",
                     "type": "array",
@@ -9480,6 +10026,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.AccessRequestRule"
+                    }
+                },
+                "pages": {
+                    "$ref": "#/definitions/openapi.Pagination"
+                }
+            }
+        },
+        "openapi.PaginatedResponse-openapi_Attributes": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.Attributes"
                     }
                 },
                 "pages": {
@@ -11075,6 +11635,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "auth0|abc123"
                 },
+                "client_ip": {
+                    "type": "string",
+                    "example": "192.168.1.100"
+                },
                 "created_at": {
                     "type": "string",
                     "example": "2023-08-15T14:30:45Z"
@@ -11082,6 +11646,18 @@ const docTemplate = `{
                 "error_message": {
                     "type": "string",
                     "example": ""
+                },
+                "http_method": {
+                    "type": "string",
+                    "example": "POST"
+                },
+                "http_path": {
+                    "type": "string",
+                    "example": "/api/connections"
+                },
+                "http_status": {
+                    "type": "integer",
+                    "example": 201
                 },
                 "id": {
                     "type": "string",
@@ -11102,15 +11678,6 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
-                },
-                "resource_id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "5364ec99-653b-41ba-8165-67236e894990"
-                },
-                "resource_name": {
-                    "type": "string",
-                    "example": "my-connection"
                 },
                 "resource_type": {
                     "type": "string",
@@ -12342,6 +12909,49 @@ const docTemplate = `{
                 "url": {
                     "type": "string",
                     "example": "https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"
+                }
+            }
+        },
+        "sessionapi.RDPFrame": {
+            "type": "object",
+            "properties": {
+                "bitmap": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "timestamp": {
+                    "type": "number"
+                }
+            }
+        },
+        "sessionapi.RDPFramesResponse": {
+            "type": "object",
+            "properties": {
+                "frames": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sessionapi.RDPFrame"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total_duration": {
+                    "type": "number"
+                },
+                "total_frames": {
+                    "type": "integer"
                 }
             }
         },

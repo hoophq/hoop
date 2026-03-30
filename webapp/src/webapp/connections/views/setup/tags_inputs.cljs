@@ -151,7 +151,7 @@
         [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
          "Tags"]
         [:> Text {:as "p" :size "2" :class "text-[--gray-11]"}
-         "Add custom labels to manage and track resource roles."]]
+         "Labels for filtering, searching, and grouping resource roles in your catalog."]]
 
        [:> Box
         [existing-tags]

@@ -130,7 +130,8 @@ func Post(c *gin.Context) {
 		Set("supported_entity_types", supportedEntityTypes).
 		Set("custom_entity_types", customEntityTypes).
 		Set("score_threshold", req.ScoreThreshold).
-		Set("connection_ids", req.ConnectionIDs)
+		Set("connection_ids", req.ConnectionIDs).
+		Set("attributes", req.Attributes)
 	defer func() { evt.Log(c) }()
 
 	if rule != nil {
@@ -143,6 +144,12 @@ func Post(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
 	case nil:
+		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
+			log.Errorf("Failed upserting data masking rule attributes: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+		rule.Attributes = req.Attributes
 		c.JSON(http.StatusCreated, toOpenApi(rule))
 	default:
 		log.Errorf("Failed creating data masking rule: %v", err)
@@ -201,7 +208,8 @@ func Put(c *gin.Context) {
 		Set("supported_entity_types", supportedEntityTypes).
 		Set("custom_entity_types", customEntityTypes).
 		Set("score_threshold", req.ScoreThreshold).
-		Set("connection_ids", req.ConnectionIDs)
+		Set("connection_ids", req.ConnectionIDs).
+		Set("attributes", req.Attributes)
 	defer func() { evt.Log(c) }()
 
 	rule, err := models.UpdateDataMaskingRule(&models.DataMaskingRule{
@@ -220,6 +228,12 @@ func Put(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 	case nil:
+		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
+			log.Errorf("Failed upserting data masking rule attributes: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			return
+		}
+		rule.Attributes = req.Attributes
 		c.JSON(http.StatusOK, toOpenApi(rule))
 	default:
 		log.Errorf("Failed updating data masking rule: %v", err)
@@ -335,9 +349,15 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 			CustomEntityTypesEntrys: customEntityTypes,
 			ScoreThreshold:          obj.ScoreThreshold,
 			ConnectionIDs:           obj.ConnectionIDs,
+			Attributes:              obj.Attributes,
 			UpdatedAt:               obj.UpdatedAt,
 		},
 	}
+}
+
+func upsertDatamaskingRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	return models.UpsertDatamaskingRuleAttributes(models.DB, orgID, ruleName, attributeNames)
 }
 
 func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
@@ -379,4 +399,3 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 	}
 	return &req
 }
-
