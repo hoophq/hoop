@@ -271,6 +271,9 @@ type Connection struct {
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
+	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
+	// When set, the user cannot choose a custom duration and must request access for this exact window.
+	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
 }
 
 type ConnectionPatch struct {
@@ -1886,7 +1889,13 @@ type ConnectionCredentialsResponse struct {
 	// The connection subtype
 	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
 	// The connection information
-	ConnectionCredentials any `json:"connection_credentials"`
+	ConnectionCredentials any `json:"connection_credentials,omitempty"`
+	// The session ID associated with this credential access
+	SessionID string `json:"session_id" format:"uuid" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	// Whether this credential request requires review/JIT approval
+	HasReview bool `json:"has_review" example:"false"`
+	// The review ID if review is required
+	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
 	// When the database access connection expires
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created

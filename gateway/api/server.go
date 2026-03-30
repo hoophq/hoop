@@ -337,6 +337,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.CreateConnectionCredentials,
 	)
+	r.POST("/connections/:nameOrID/credentials/:sessionID",
+		r.AuthMiddleware,
+		apiconnections.ResumeConnectionCredentials,
+	)
 
 	r.GET("/connection-tags",
 		apiroutes.ReadOnlyAccessRole,
