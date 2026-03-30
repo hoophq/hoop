@@ -115,13 +115,13 @@ Engineers / AI Agents / Service Accounts
               │
               ▼
      ┌────────────────┐
-     │   Hoop Gateway  │  ← Parses wire protocols in real time
-     │                  │
-     │  • Masks PII     │  (ML-powered, <5ms latency)
-     │  • Blocks cmds   │  (DROP, DELETE, rm -rf)
-     │  • Approvals     │  (Slack / Teams)
-     │  • Records all   │  (full session replay)
-     │  • AI controls   │  (per-action governance)
+     │   Hoop Gateway │  ← Parses wire protocols in real time
+     │                │
+     │  • Masks PII   │  (ML-powered, <5ms latency)
+     │  • Blocks cmds │  (DROP, DELETE, rm -rf)
+     │  • Approvals   │  (Slack / Teams)
+     │  • Records all │  (full session replay)
+     │  • AI controls │  (per-action governance)
      └────────────────┘
               │
               ▼
