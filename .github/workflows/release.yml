@@ -6,10 +6,31 @@ on:
       - "*.*.*"
 
 jobs:
+  tag-libhoop:
+    name: Tag libhoop
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+          ref: main
+      - name: Tag libhoop with release tag
+        working-directory: ./libhoop
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          git tag "$GIT_TAG" 2>/dev/null || true
+          git push origin "$GIT_TAG"
+
   test:
     name: Test
     runs-on: ubuntu-latest
     environment: production
+    needs: [tag-libhoop]
 
     steps:
       - name: Checkout Hoop
