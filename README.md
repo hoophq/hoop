@@ -20,6 +20,10 @@
   <img src="https://img.shields.io/badge/SOC_2-Type_II-green" alt="SOC 2 Type II" />
 </p>
 
+<p align="center">
+  <img src="assets/hero.gif" alt="Hoop Live Data Masking" width="720" />
+</p>
+
 ---
 
 ## What is Hoop?
@@ -170,53 +174,16 @@ SSO is included in the open-source license. Connect Okta, JumpCloud, Azure AD, G
 ### Docker (Recommended)
 
 ```bash
-echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
+touch .env && \
 curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml && \
-  docker compose up
+docker compose up
 ```
 
-[See Docker Compose documentation →](https://hoop.dev/docs)
+[See Docker Compose documentation →](https://hoop.dev/docs/setup/deployment/docker-compose)
 
-### Kubernetes
+[See Kubernetes deployment documentation →](https://hoop.dev/docs/setup/deployment/kubernetes)
 
-[See Kubernetes deployment documentation →](https://hoop.dev/docs)
-
-### AWS
-
-[See AWS deploy & host documentation →](https://hoop.dev/docs)
-
-| Region | Launch Stack |
-|--------|-------------|
-| N. Virginia (us-east-1) | [Launch](https://hoop.dev/docs) |
-| Ohio (us-east-2) | [Launch](https://hoop.dev/docs) |
-| N. California (us-west-1) | [Launch](https://hoop.dev/docs) |
-| Oregon (us-west-2) | [Launch](https://hoop.dev/docs) |
-| Ireland (eu-west-1) | [Launch](https://hoop.dev/docs) |
-| London (eu-west-2) | [Launch](https://hoop.dev/docs) |
-| Frankfurt (eu-central-1) | [Launch](https://hoop.dev/docs) |
-| Sydney (ap-southeast-2) | [Launch](https://hoop.dev/docs) |
-
-[View all regions →](https://hoop.dev/docs)
-
-## Architecture: Open Source vs. Commercial
-
-The gateway (everything on the data path) is open source under MIT. The commercial layer adds AI capabilities, the web UI, and enterprise integrations.
-
-**Open source (MIT)**
-- Wire protocol parsing (PostgreSQL, MySQL, MongoDB, SSH, Kubernetes, HTTP)
-- Connection routing, session management, TLS termination
-- SSO/IdP integration (OIDC, SAML)
-- Plugin system (masking, guardrails, runbooks, webhooks)
-- CLI (`hoop connect`, `hoop exec`, `hoop admin`)
-- Session recording and audit logging
-
-**Commercial (built on the open source core)**
-- AI-powered masking (ML models for context-aware PII detection)
-- AI session analysis (LLM-based risk scoring, anomaly detection)
-- Web UI (developer portal, admin console, session browser)
-- IdP group sync (OAuth 2.0)
-- Managed hosting
-- Enterprise support and SLA
+[See AWS deploy & host documentation →](https://hoop.dev/docs/setup/deployment/AWS)
 
 ## Supported Protocols
 
@@ -228,16 +195,6 @@ The gateway (everything on the data path) is open source under MIT. The commerci
 | AI | Claude Code, Cursor, MCP servers |
 | Runtimes | Rails, Django, Elixir IEx, PHP |
 | Cloud | AWS SSM, custom CLIs |
-
-## Guides
-
-**Databases:** [PostgreSQL](https://hoop.dev/docs) · [MySQL](https://hoop.dev/docs) · [MongoDB](https://hoop.dev/docs) · [MSSQL](https://hoop.dev/docs)
-
-**Infrastructure:** [Kubernetes](https://hoop.dev/docs) · [SSH](https://hoop.dev/docs) · [AWS](https://hoop.dev/docs)
-
-**AI Agents:** [Claude Code](https://hoop.dev/docs) · [Cursor](https://hoop.dev/docs) · [MCP Gateway](https://hoop.dev/docs)
-
-[View all guides →](https://hoop.dev/docs)
 
 ## Contributing
 
