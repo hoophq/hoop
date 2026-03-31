@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/proto/spectypes"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
@@ -96,6 +97,10 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		}
 
 		endDate := time.Now().UTC()
+
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
 		err := models.UpdateSessionEventStream(models.SessionDone{
 			ID:         pctx.SID,
 			OrgID:      pctx.OrgID,
@@ -106,6 +111,8 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 			ExitCode:   parseExitCodeFromErr(errMsg),
 			EndSession: &endDate,
 		})
+
+		trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 		log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 			Infof("finished persisting session to store (empty log), update-session-err=%v, context-err=%v", err, errMsg)
 
