@@ -168,8 +168,10 @@
 (rf/reg-event-fx
  :machine-identities/get-identity
  (fn [{:keys [db]} [_ identity-id]]
-   (let [identity (first (filter #(= (:id %) identity-id)
-                                 (get-in db [:machine-identities :data])))]
+   (let [from-list (first (filter #(= (:id %) identity-id)
+                                  (or (get-in db [:machine-identities :data]) [])))
+         identity (or from-list
+                      (first (filter #(= (:id %) identity-id) mock-identities)))]
      {:db (assoc-in db [:machine-identities :current-identity] identity)})))
 
 (rf/reg-event-fx

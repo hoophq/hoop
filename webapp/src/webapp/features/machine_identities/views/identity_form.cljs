@@ -45,14 +45,9 @@
    (into [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}]
          children)])
 
-(defn identity-form [form-type identity-data scroll-pos]
+(defn identity-form [form-type identity-data]
   (let [state (create-form-state identity-data)
-        connections (rf/subscribe [:connections->pagination])
-        current-identity (rf/subscribe [:machine-identities/current-identity])]
-
-    (when (and (= form-type :edit) (nil? @current-identity))
-      (rf/dispatch [:machine-identities/get-identity (:id identity-data)]))
-
+        connections (rf/subscribe [:connections->pagination])]
     (fn []
       (let [identity-id (when (= form-type :edit) (:id identity-data))
             all-resource-roles (or (:data @connections) [])]
@@ -73,9 +68,7 @@
            [:> Flex {:p "5" :gap "2"}
             [button/HeaderBack]]
 
-           [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
-                                (when (>= @scroll-pos 30)
-                                  "border-b border-[--gray-a6]"))}
+           [:> Box {:class "sticky top-0 z-50 bg-gray-1 px-7 py-7"}
             [:> Flex {:justify "between" :align "center"}
              [:> Heading {:as "h2" :size "8"}
               (if (= form-type :create)
@@ -162,26 +155,19 @@
                             (reset! (:attributes state) (vec (js->clj selected :keywordize-keys true))))}]]]]]]))))
 
 (defn main [mode & [params]]
-  (let [scroll-pos (r/atom 0)
-        handle-scroll (fn []
-                        (reset! scroll-pos (.-scrollY js/window)))]
+  (when (= :edit mode)
+    (rf/dispatch [:machine-identities/get-identity (:identity-id params)]))
 
-    (when (= :edit mode)
-      (rf/dispatch [:machine-identities/get-identity (:identity-id params)]))
+  (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
 
-    (rf/dispatch [:connections/get-connections-paginated {:page 1 :force-refresh? true}])
-
-    (.addEventListener js/window "scroll" handle-scroll)
-
-    (fn []
-      (try
-        (let [current-identity @(rf/subscribe [:machine-identities/current-identity])
-              loading? (and (= :edit mode) (nil? current-identity))]
-          (if loading?
-            [:> Box {:class "bg-gray-1 h-screen"}
-             [:> Flex {:direction "column" :justify "center" :align "center" :height "100%"}
-              [loaders/simple-loader]]]
-            [identity-form mode (if (= :edit mode) current-identity nil) scroll-pos]))
-        (finally
-          (.removeEventListener js/window "scroll" handle-scroll)
-          (rf/dispatch [:machine-identities/clear-current-identity]))))))
+  (fn []
+    (r/with-let []
+      (let [current-identity @(rf/subscribe [:machine-identities/current-identity])
+            loading? (and (= :edit mode) (nil? current-identity))]
+        (if loading?
+          [:> Box {:class "bg-gray-1 h-screen"}
+           [:> Flex {:direction "column" :justify "center" :align "center" :height "100%"}
+            [loaders/simple-loader]]]
+          [identity-form mode (if (= :edit mode) current-identity nil)]))
+      (finally
+        (rf/dispatch [:machine-identities/clear-current-identity])))))
