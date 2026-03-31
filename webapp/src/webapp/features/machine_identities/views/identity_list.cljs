@@ -47,8 +47,14 @@
           "Configure"]
          [:> DropdownMenu.Separator]
          [:> DropdownMenu.Item {:color "red"
-                                :on-click #(when (js/confirm (str "Are you sure you want to delete '" name "'?"))
-                                             (rf/dispatch [:machine-identities/delete id]))}
+                                :on-click #(rf/dispatch [:dialog->open
+                                                        {:title "Delete Machine Identity"
+                                                         :text (str "Are you sure you want to delete '" name "'? This action cannot be undone.")
+                                                         :text-action-button "Delete"
+                                                         :action-button? true
+                                                         :type :danger
+                                                         :on-success (fn []
+                                                                       (rf/dispatch [:machine-identities/delete id]))}])}
           "Delete"]]]]]]))
 
 (defn main []
@@ -76,7 +82,7 @@
                                 (sort))]
 
         [:<>
-         [:> Flex {:gap "2" :mb "6" :wrap "wrap"}
+         [:> Flex {:gap "2" :wrap "wrap"}
           [resource-role-filter/main {:selected @selected-connection
                                       :on-select #(reset! selected-connection %)
                                       :on-clear #(reset! selected-connection nil)

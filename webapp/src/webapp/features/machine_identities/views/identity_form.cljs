@@ -79,9 +79,16 @@
                             :variant "ghost"
                             :color "red"
                             :type "button"
-                            :on-click #(when (js/confirm (str "Are you sure you want to delete '" @(:identity-name state) "'? This action cannot be undone."))
-                                         (rf/dispatch [:machine-identities/delete identity-id])
-                                         (rf/dispatch [:navigate :machine-identities]))}
+                            :on-click #(rf/dispatch [:dialog->open
+                                                     {:title "Delete Machine Identity"
+                                                      :text (str "Are you sure you want to delete '" @(:identity-name state) "'? This action cannot be undone.")
+                                                      :text-action-button "Delete"
+                                                      :action-button? true
+                                                      :type :danger
+                                                      :on-success (fn []
+                                                                    (rf/dispatch [:machine-identities/delete identity-id])
+                                                                    (let [redirect-fn (fn [] (rf/dispatch [:navigate :machine-identities]))]
+                                                                      (js/setTimeout redirect-fn 500)))}])}
                  "Delete"])
               [:> Button {:size "3"
                           :type "submit"}
