@@ -1,9 +1,3 @@
-<p align="center">
-  <a href="https://hoop.dev">
-    <img src="https://hoopartifacts.s3.amazonaws.com/hoop-logo.png" alt="hoop.dev" width="200" />
-  </a>
-</p>
-
 <h3 align="center">The gateway between your team and your infrastructure.</h3>
 
 <p align="center">
