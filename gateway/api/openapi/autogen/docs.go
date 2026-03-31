@@ -1704,6 +1704,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials/{sessionID}": {
+            "post": {
+                "description": "Resume a connection credentials request after review approval",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Resume Connection Credentials Request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID from the initial request",
+                        "name": "sessionID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ConnectionCredentialsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/databases": {
             "get": {
                 "description": "List all available databases for a database connection",
@@ -5224,6 +5296,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/runbooks/configurations/{id}/files": {
+            "post": {
+                "description": "Commit a new file (or overwrite an existing one) to the git repository associated with the given configuration ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runbooks"
+                ],
+                "summary": "Create Runbook File",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Repository configuration ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "File to create",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookFileCreate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.RunbookFileCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/runbooks/exec": {
             "post": {
                 "description": "Start a execution using a Runbook as input. If the connection has a JIRA issue template configured, it will create a JIRA issue.",
@@ -8291,6 +8434,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"
                 },
+                "jit_access_duration_sec": {
+                    "description": "JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.\nWhen set, the user cannot choose a custom duration and must request access for this exact window.",
+                    "type": "integer",
+                    "example": 1800
+                },
                 "managed_by": {
                     "description": "Managed By is a read only field that indicates who is managing this resource.\nWhen this attribute is set, this resource is considered immutable",
                     "type": "string",
@@ -8444,12 +8592,29 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2025-08-25T13:00:00Z"
                 },
+                "has_review": {
+                    "description": "Whether this credential request requires review/JIT approval",
+                    "type": "boolean",
+                    "example": false
+                },
                 "id": {
                     "description": "The unique identifier of the connection database access",
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true,
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                },
+                "review_id": {
+                    "description": "The review ID if review is required",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
+                },
+                "session_id": {
+                    "description": "The session ID associated with this credential access",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 }
             }
         },
@@ -11117,6 +11282,48 @@ const docTemplate = `{
                     "description": "Batch identifier to group sessions that were executed simultaneously",
                     "type": "string",
                     "example": "batch-abc-123"
+                }
+            }
+        },
+        "openapi.RunbookFileCreate": {
+            "type": "object",
+            "required": [
+                "content",
+                "path"
+            ],
+            "properties": {
+                "commit_message": {
+                    "description": "Optional commit message. Defaults to \"feat: add \u003cpath\u003e\" when empty.",
+                    "type": "string",
+                    "example": "feat: add restart service runbook"
+                },
+                "content": {
+                    "description": "Content of the runbook file",
+                    "type": "string"
+                },
+                "overwrite": {
+                    "description": "If true, overwrite the file if it already exists in the repository",
+                    "type": "boolean"
+                },
+                "path": {
+                    "description": "Path of the file to create relative to the repository root, e.g. \"ops/restart.runbook.sh\"",
+                    "type": "string",
+                    "example": "ops/restart.runbook.sh"
+                }
+            }
+        },
+        "openapi.RunbookFileCreateResponse": {
+            "type": "object",
+            "properties": {
+                "commit_sha": {
+                    "description": "SHA of the resulting git commit",
+                    "type": "string",
+                    "example": "abc123def456abc123def456abc123def456abc1"
+                },
+                "path": {
+                    "description": "Path of the created file relative to the repository root",
+                    "type": "string",
+                    "example": "ops/restart.runbook.sh"
                 }
             }
         },
