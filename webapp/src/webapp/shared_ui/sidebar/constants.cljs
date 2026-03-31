@@ -4,7 +4,7 @@
    ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
                            ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
-                           Sparkles]]
+                           Sparkles KeyRound]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -42,6 +42,8 @@
                      [:> UserRoundCheck {:size size}])
    "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> CircleCheckBig {:size size}])
+   "MachineIdentities" (fn [& [{:keys [size] :or {size 24}}]]
+                         [:> KeyRound {:size size}])
    "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> PackageSearch {:size size}])
    "Agents" (fn [& [{:keys [size] :or {size 24}}]]
@@ -187,7 +189,14 @@
     :free-feature? false
     :upgrade-plan-route :upgrade-plan
     :admin-only? true
-    :badge "BETA"}])
+    :badge "BETA"}
+   {:name "MachineIdentities"
+    :label "Machine Identities"
+    :icon (get icons-registry "MachineIdentities")
+    :uri (routes/url-for :machine-identities)
+    :navigate :machine-identities
+    :free-feature? true
+    :admin-only? true}])
 
 ;; Seção Settings
 (def organization-routes
