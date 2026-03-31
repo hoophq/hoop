@@ -14,10 +14,6 @@
   <img src="https://img.shields.io/badge/SOC_2-Type_II-green" alt="SOC 2 Type II" />
 </p>
 
-<p align="center">
-  <img src="assets/hero.gif" alt="Hoop Live Data Masking" width="720" />
-</p>
-
 ---
 
 ## What is Hoop?
