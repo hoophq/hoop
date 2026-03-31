@@ -83,6 +83,11 @@
    [webapp.features.access-request.main :as access-request]
    [webapp.features.access-request.subs]
    [webapp.features.access-request.views.rule-form :as rule-form]
+   [webapp.features.machine-identities.events]
+   [webapp.features.machine-identities.main :as machine-identities]
+   [webapp.features.machine-identities.subs]
+   [webapp.features.machine-identities.views.identity-form :as identity-form]
+   [webapp.features.machine-identities.views.identity-roles :as identity-roles]
    [webapp.features.ai-session-analyzer.events]
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
@@ -615,6 +620,40 @@
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [rule-form/main :edit {:rule-name rule-name}]]]]))
+
+(defmethod routes/panels :machine-identities-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [machine-identities/main]]])
+
+(defmethod routes/panels :machine-identities-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [identity-form/main :create]]]])
+
+(defmethod routes/panels :machine-identities-edit-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        identity-id (:identity-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [identity-form/main :edit {:identity-id identity-id}]]]]))
+
+(defmethod routes/panels :machine-identities-roles-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        identity-id (:identity-id (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:machine-identities/list])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [identity-roles/main {:identity-id identity-id}]]]]))
 
 (defmethod routes/panels :runbooks-setup-panel []
   (rf/dispatch [:destroy-page-loader])

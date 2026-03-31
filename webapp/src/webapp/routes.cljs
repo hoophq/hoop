@@ -37,6 +37,10 @@
                   ["/access-request" :access-request]
                   ["/access-request/new" :access-request-new]
                   [["/access-request/edit/" :rule-name] :access-request-edit]
+                  ["/machine-identities" :machine-identities]
+                  ["/machine-identities/new" :machine-identities-new]
+                  [["/machine-identities/edit/" :identity-id] :machine-identities-edit]
+                  [["/machine-identities/" :identity-id "/roles"] :machine-identities-roles]
                   ["/runbooks/setup" :runbooks-setup]
                   ["/runbooks/rules/new" :create-runbooks-rule]
                   [["/runbooks/rules/edit/" :rule-id] :edit-runbooks-rule]
@@ -95,7 +99,7 @@
   [url]
   (try
     (bidi/match-route @routes url)
-    (catch js/Error e
+    (catch js/Error _
       {:handler :home})))
 
 (defn url-for
