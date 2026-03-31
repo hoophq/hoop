@@ -125,7 +125,7 @@ func TestSessionUsageProperties(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sessionUsageProperties(tt.session, tt.connection, tt.agent)
+			result := sessionUsageProperties(tt.session, tt.connection, tt.agent, nil, nil, nil)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

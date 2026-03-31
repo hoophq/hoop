@@ -4,15 +4,20 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"net/url"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
 	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 )
 
 type Segment struct {
@@ -175,7 +180,7 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	}
 }
 
-func sessionUsageProperties(s *models.Session, c *models.Connection, agent *models.Agent) map[string]any {
+func sessionUsageProperties(s *models.Session, c *models.Connection, agent *models.Agent, guardrails *models.ConnectionGuardRailRules, dataMasking json.RawMessage, rules []*models.AccessRequestRule) map[string]any {
 	props := map[string]any{
 		"org-id":                        s.OrgID,
 		"session-id":                    s.ID,
@@ -203,29 +208,69 @@ func sessionUsageProperties(s *models.Session, c *models.Connection, agent *mode
 }
 
 func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID string, sessionID string) {
-	session, err := models.GetSessionByID(orgID, sessionID)
-	if err != nil {
+	var (
+		err                  error
+		session              *models.Session
+		connection           *models.Connection
+		agent                *models.Agent
+		guardrails           *models.ConnectionGuardRailRules
+		jitAccessRequest     *models.AccessRequestRule
+		commandAccessRequest *models.AccessRequestRule
+		dataMasking          json.RawMessage
+	)
+
+	if session, err = models.GetSessionByID(orgID, sessionID); err != nil {
 		log.Warnf("failed getting session by ID, reason=%v", err)
 		return
 	}
 
-	connection, err := models.GetConnectionByName(models.DB, session.Connection)
-	if err != nil {
+	if connection, err = models.GetConnectionByName(models.DB, session.Connection); err != nil {
 		log.Warnf("failed getting connection features by name, reason=%v", err)
 		return
 	}
 
 	group, _ := errgroup.WithContext(context.Background())
-	var (
-		agent *models.Agent
-	)
-
 	group.Go(func() error {
-		agent, err = models.GetAgentByNameOrID(orgID, connection.AgentID.String)
-		if err != nil {
+		if agent, err = models.GetAgentByNameOrID(orgID, connection.AgentID.String); err != nil {
 			log.Warnf("failed getting agent by name, reason=%v", err)
 			return err
 		}
+		return nil
+	})
+
+	group.Go(func() error {
+		if guardrails, err = services.GetGuardRailRulesForConnection(orgID, session.Connection); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting guardrails for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	group.Go(func() error {
+		if dataMasking, err = services.GetDataMaskingRulesForConnection(orgID, session.Connection); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting data masking rules for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	group.Go(func() error {
+		if jitAccessRequest, err = services.GetRuleForConnection(uuid.MustParse(orgID), session.Connection, "jit"); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting jit rule for connection, reason=%v", err)
+			return err
+		}
+
+		return nil
+	})
+
+	group.Go(func() error {
+		if commandAccessRequest, err = services.GetRuleForConnection(uuid.MustParse(orgID), session.Connection, "command"); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warnf("failed getting command rule for connection, reason=%v", err)
+			return err
+		}
+
 		return nil
 	})
 
@@ -233,7 +278,7 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 		return
 	}
 
-	props := sessionUsageProperties(session, connection, agent)
+	props := sessionUsageProperties(session, connection, agent, guardrails, dataMasking, []*models.AccessRequestRule{jitAccessRequest, commandAccessRequest})
 	log.With("sid", sessionID).Infof("tracking session usage data, event=%s, orgID=%s, userID=%s, props=%+v", eventName, orgID, userID, props)
 
 	s.Track(userID, eventName, props)
