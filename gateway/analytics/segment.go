@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 type Segment struct {
@@ -207,25 +209,27 @@ func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID s
 		return
 	}
 
-	if session == nil {
-		log.Warnf("session not found for ID=%s", sessionID)
-		return
-	}
-
 	connection, err := models.GetConnectionByName(models.DB, session.Connection)
 	if err != nil {
 		log.Warnf("failed getting connection features by name, reason=%v", err)
 		return
 	}
 
-	if connection == nil {
-		log.Warnf("connection not found for name=%s", session.Connection)
-		return
-	}
+	group, _ := errgroup.WithContext(context.Background())
+	var (
+		agent *models.Agent
+	)
 
-	agent, err := models.GetAgentByNameOrID(orgID, connection.AgentID.String)
-	if err != nil {
-		log.Warnf("failed getting agent by name, reason=%v", err)
+	group.Go(func() error {
+		agent, err = models.GetAgentByNameOrID(orgID, connection.AgentID.String)
+		if err != nil {
+			log.Warnf("failed getting agent by name, reason=%v", err)
+			return err
+		}
+		return nil
+	})
+
+	if err := group.Wait(); err != nil {
 		return
 	}
 
