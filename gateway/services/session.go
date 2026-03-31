@@ -28,10 +28,3 @@ func ValidateAndUpsertSession(_ context.Context, session models.Session, connect
 
 	return models.UpsertSession(session)
 }
-
-type SessionAnalyticsInput struct {
-	session            *models.Session
-	connection         *models.Connection
-	guardRailRules     *models.ConnectionGuardRailRules
-	accessRequestRules *models.AccessRequestRule
-}
