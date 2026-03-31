@@ -9,7 +9,8 @@
    [webapp.features.machine-identities.views.empty-state :as empty-state]))
 
 (defn- identity-matches-connection? [identity connection-name]
-  (let [names (or (:connection-names identity)
+  (let [names (or (:resource-role-names identity)
+                  (:connection-names identity)
                   (when-let [n (:connection-name identity)]
                     [n]))]
     (boolean (some #(= % connection-name) names))))

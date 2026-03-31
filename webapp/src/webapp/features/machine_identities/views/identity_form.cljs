@@ -21,8 +21,9 @@
           {:value item :label item})
         items))
 
-(defn- connection-names-from [identity-data]
-  (vec (or (:connection-names identity-data)
+(defn- resource-role-names-from [identity-data]
+  (vec (or (:resource-role-names identity-data)
+           (:connection-names identity-data)
            (when-let [n (:connection-name identity-data)]
              [n])
            [])))
@@ -31,8 +32,7 @@
   (let [identity-data (or initial-data {})]
     {:identity-name (r/atom (or (:name identity-data) ""))
      :description (r/atom (or (:description identity-data) ""))
-     :type (r/atom (or (:type identity-data) "generic"))
-     :connection-names (r/atom (connection-names-from identity-data))
+     :resource-role-names (r/atom (resource-role-names-from identity-data))
      :attributes (r/atom (or (array->select-options (:attributes identity-data)) []))}))
 
 (defn- form-section [{:keys [title description]} & children]
@@ -57,8 +57,7 @@
                               (.preventDefault e)
                               (let [identity-form-data {:name @(:identity-name state)
                                                         :description @(:description state)
-                                                        :type @(:type state)
-                                                        :connection-names @(:connection-names state)
+                                                        :resource-role-names @(:resource-role-names state)
                                                         :attributes (mapv :value @(:attributes state))}]
                                 (if (= form-type :create)
                                   (rf/dispatch [:machine-identities/create identity-form-data])
@@ -120,7 +119,7 @@
                [:> Callout.Text "Roles requiring review aren't available."]]]
              [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
               (let [resource-role-by-name (into {} (map (juxt :name identity)) all-resource-roles)
-                    selected-names @(:connection-names state)
+                    selected-names @(:resource-role-names state)
                     selected-resource-roles-data
                     (mapv (fn [name]
                             (let [resource-role (get resource-role-by-name name)]
@@ -143,7 +142,7 @@
                   (fn [selected-options]
                     (let [selected-js-options (js->clj selected-options :keywordize-keys true)
                           names (mapv :label selected-js-options)]
-                      (reset! (:connection-names state) names)))}])]]
+                      (reset! (:resource-role-names state) names)))}])]]
 
             [form-section {:title "Attributes configuration"
                            :description "Select which Attributes to apply this configuration."}

@@ -59,7 +59,7 @@
         [credential-field "Password" (:password c)]
         [credential-field "Port" (:port c)]]]
       [:> Tabs.Content {:value "connection-uri"}
-       [credential-field "URI" (:connection-uri role)]]]]))
+       [credential-field "URI" (:connection-uri c)]]]]))
 
 (defn- role-row []
   (let [expanded? (r/atom false)
@@ -71,7 +71,7 @@
        [:> Box {:p "5" :class "flex justify-between items-center gap-4"}
         [:> Flex {:align "center" :gap "4" :class "min-w-0 flex-1"}
          [:figure {:class "shrink-0 w-9"}
-          [:img {:src (or (connection-constants/get-connection-icon (:connection-stub role) "rounded")
+          [:img {:src (or (connection-constants/get-connection-icon role "rounded")
                           "/icons/database.svg")
                  :class "w-9 h-9"
                  :alt (str "Connection type for " (:name role))}]]
