@@ -22,6 +22,7 @@ import (
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
@@ -336,6 +337,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/connections/:nameOrID/credentials",
 		r.AuthMiddleware,
 		apiconnections.CreateConnectionCredentials,
+	)
+	r.POST("/connections/:nameOrID/credentials/:sessionID",
+		r.AuthMiddleware,
+		apiconnections.ResumeConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",
@@ -944,4 +949,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		auditlogapi.List)
+
+	r.GET("/attributes",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiattributes.List)
+	r.GET("/attributes/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiattributes.Get)
+	r.POST("/attributes",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiattributes.Post)
+	r.PUT("/attributes/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiattributes.Put)
+	r.DELETE("/attributes/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiattributes.Delete)
 }

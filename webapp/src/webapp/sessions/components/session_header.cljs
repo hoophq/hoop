@@ -1,6 +1,6 @@
 (ns webapp.sessions.components.session-header
   (:require
-   ["@radix-ui/themes" :refer [Box Button IconButton Flex Heading Tooltip]]
+   ["@radix-ui/themes" :refer [Box Button IconButton Flex Heading]]
    ["lucide-react" :refer [Link2 Square RotateCw X Download]]
    [clojure.string :as cs]
    [re-frame.core :as rf]

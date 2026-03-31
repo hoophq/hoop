@@ -73,6 +73,7 @@ type Connection struct {
 	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
 	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
+	Attributes                pq.StringArray    `gorm:"column:attributes;type:text[];->"`
 }
 
 func (c Connection) AsSecrets() map[string]any {
@@ -433,7 +434,11 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -515,7 +520,11 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.resource_name
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
@@ -561,6 +570,7 @@ type ConnectionFilterOption struct {
 	Search        string
 	ConnectionIDs []string
 	ResourceName  string
+	Attributes    []string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -646,6 +656,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	searchPattern := opts.GetSearchPattern()
 	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
+	attributes := pq.StringArray(opts.Attributes)
 
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -673,7 +684,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -703,6 +718,15 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		-- attributes filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN EXISTS (
+				SELECT 1 FROM private.connections_attributes ca
+				WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+				AND ca.attribute_name = ANY((?)::text[])
+			)
 			ELSE true
 		END AND
 		(
@@ -746,6 +770,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		attributes, attributes,
 		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {
@@ -845,6 +870,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	searchPattern := opts.GetSearchPattern()
 	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
+	attributes := pq.StringArray(opts.Attributes)
 
 	offset := 0
 	if opts.Page > 1 {
@@ -882,6 +908,10 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes,
 		COUNT(*) OVER() AS total
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
@@ -912,6 +942,15 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		-- attributes filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN EXISTS (
+				SELECT 1 FROM private.connections_attributes ca
+				WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+				AND ca.attribute_name = ANY((?)::text[])
+			)
 			ELSE true
 		END AND
 		(
@@ -956,6 +995,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		attributes, attributes,
 		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
@@ -974,4 +1014,62 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	}
 
 	return items, total, nil
+}
+
+func GetConnectionGuardRailRulesByConnectionAndAttribute(db *gorm.DB, orgID uuid.UUID, connectionName string, attributes []string) (*ConnectionGuardRailRules, error) {
+	var conn ConnectionGuardRailRules
+	err := db.Raw(`
+	SELECT
+		''::text AS id,
+		?::text AS org_id,
+		''::text AS name,
+		(
+			SELECT json_agg(r.input) FROM private.guardrail_rules r
+			LEFT JOIN private.guardrail_rules_connections grc ON grc.rule_id = r.id
+			LEFT JOIN private.connections c ON c.id = grc.connection_id AND c.org_id = r.org_id
+			LEFT JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND (c.name = ? OR gra.attribute_name = ANY(?))
+		) AS guardrail_input_rules,
+		(
+			SELECT json_agg(r.output) FROM private.guardrail_rules r
+			LEFT JOIN private.guardrail_rules_connections grc ON grc.rule_id = r.id
+			LEFT JOIN private.connections c ON c.id = grc.connection_id AND c.org_id = r.org_id
+			LEFT JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND (c.name = ? OR gra.attribute_name = ANY(?))
+		) AS guardrail_output_rules
+	`, orgID, orgID, orgID, connectionName, pq.StringArray(attributes), orgID, orgID, connectionName, pq.StringArray(attributes)).Scan(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+	if conn.GuardRailInputRules == nil && conn.GuardRailOutputRules == nil {
+		return nil, nil
+	}
+	return &conn, nil
+}
+
+func GetConnectionGuardRailRulesByAttribute(db *gorm.DB, orgID uuid.UUID, attributes []string) (*ConnectionGuardRailRules, error) {
+	var conn ConnectionGuardRailRules
+	err := db.Raw(`
+	SELECT
+		''::text AS id,
+		?::text AS org_id,
+		''::text AS name,
+		(
+			SELECT json_agg(r.input) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND gra.attribute_name = ANY(?)
+		) AS guardrail_input_rules,
+		(
+			SELECT json_agg(r.output) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND gra.attribute_name = ANY(?)
+		) AS guardrail_output_rules
+	`, orgID, orgID, orgID, pq.StringArray(attributes), orgID, orgID, pq.StringArray(attributes)).Scan(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+	if conn.GuardRailInputRules == nil && conn.GuardRailOutputRules == nil {
+		return nil, nil
+	}
+	return &conn, nil
 }

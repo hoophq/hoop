@@ -24,12 +24,9 @@
     :logo nil}])
 
 (def provider-model-docs
-  {"anthropic" {:href "https://platform.claude.com/docs/en/about-claude/models/overview"
-                :text "See supported models in Anthropic documentation."}
-   "azure-openai" {:href "https://ai.azure.com/catalog/models"
-                   :text "See supported models in Azure OpenAI documentation."}
-   "openai" {:href "https://developers.openai.com/api/docs/models"
-             :text "See supported models in OpenAI documentation."}})
+  {"anthropic" "https://platform.claude.com/docs/en/about-claude/models/overview"
+   "azure-openai" "https://ai.azure.com/catalog/models"
+   "openai" "https://developers.openai.com/api/docs/models"})
 
 (defn- icon-component [logo selected?]
   (if logo
@@ -132,10 +129,10 @@
              [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
               (str (-> (filter #(= (:id %) provider) providers) first :label) " configuration")]
              [:> Text {:size "3" :class "text-[--gray-11]"}
-              "Choose between models and provide your API key."]
-             (when-let [{:keys [href text]} (get provider-model-docs provider)]
+              "Set your provider model and API key to enable AI features."]
+             (when-let [href (get provider-model-docs provider)]
                [callout-link/main {:href href
-                                   :text text}])]
+                                   :text "See supported AI models"}])]
 
             [:> Box {:grid-column "span 5 / span 5" :class "space-y-radix-4 max-w-[600px]"}
              (when (or (= provider "azure-openai") (= provider "custom"))

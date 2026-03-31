@@ -3,7 +3,7 @@
    ["@radix-ui/themes" :refer [Avatar Badge Box Button Flex Text]]
    ["lucide-react" :refer [Hash BadgeCheck CalendarArrowDown CalendarArrowUp
                            ChevronDown ChevronUp CircleCheckBig CircleUser
-                           Clock2 ExternalLink FastForward OctagonX Package
+                           Clock2 ExternalLink FastForward KeyRound OctagonX Package
                            Rotate3d Users ArrowUpRight BookUp2 Sparkles]]
    [clojure.string :as cs]
    [reagent.core :as r]
@@ -37,8 +37,8 @@
 
 ;; Review group item with icon and badge
 (defn- review-group-item [group]
-  [:> Flex {:gap "2" :align "center"}
-   [:> Flex {:gap "2" :align "center" :class "w-[124px]"}
+  [:> Flex {:gap "6" :align "center"}
+   [:> Flex {:gap "2" :align "center" :class "w-[128px]"}
     [:> Box
      [:> Users {:size 20 :class "text-gray-11"}]]
     [:> Text {:size "2" :class "text-gray-11 flex block truncate"}
@@ -65,7 +65,7 @@
 (defn- detail-row [{:keys [icon label value show-gradient?]}]
   [:> Box {:class (str "relative " (when show-gradient? "after:content-[''] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-8 after:bg-gradient-to-b after:from-transparent after:via-transparent after:to-white after:pointer-events-none"))}
    [:> Flex {:align "center"}
-    [:> Flex {:gap "2" :align "center" :class "w-40"}
+    [:> Flex {:gap "2" :align "center" :class "w-48"}
      (when icon
        [:> Box {:class "text-gray-11"}
         icon])
@@ -88,6 +88,7 @@
             review-status (-> session :review :status)
             jira-url (get-in session [:integrations_metadata :jira_issue_url])
             ai-action (get-in session [:ai_analysis :action])
+            credentials-session-id (get-in session [:metadata :credential_session])
             has-review? (boolean (seq review-groups))
             user-name-split (cs/split user-name #" ")
             user-name-initials (str (first (take 1 (first user-name-split)))
@@ -126,7 +127,7 @@
 
              ;; Indented list of individual review groups
              (when (seq review-groups)
-               [:> Box {:class "ml-[28px] space-y-radix-4"}
+               [:> Box {:class "ml-[32px] space-y-radix-4"}
                 (for [group review-groups]
                   ^{:key (:id group)}
                   [review-group-item group])])])
@@ -207,8 +208,24 @@
                            :value (case ai-action
                                     "block_execution" [:> Badge {:color "red" :size "1"} "ACTION BLOCKED"]
                                     "allow_execution" [:> Badge {:color "green" :size "1"} "ACTION ALLOWED"]
-                                    [:> Badge {:color "gray" :size "1"} ai-action])}])]]]
-         
+                                    [:> Badge {:color "gray" :size "1"} ai-action])}])
+
+
+            ;; Credentials session row - shown when this session was created using JIT credentials
+            (when credentials-session-id
+              [detail-row {:icon [:> KeyRound {:size 20}]
+                           :label "Credentials Session"
+                           :value [:> Flex {:gap "2" :align "center"}
+                                   [:> Button {:size "1"
+                                               :variant "soft"
+                                               :on-click #(js/open
+                                                           (str (-> js/document .-location .-origin)
+                                                                (routes/url-for :sessions)
+                                                                "/" credentials-session-id)
+                                                           "_blank")}
+                                    "Open Session"
+                                    [:> ArrowUpRight {:size 14}]]]}])]]]
+
          ;; See more / See less button - left aligned
          [:> Box {:class "mt-4"}
           [:> Flex {:justify "start"}

@@ -361,10 +361,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		return nil, err
 	}
 
-	log.Infof("obtained http proxy access, id=%v, subject=%v, connection=%v, expires-at=%v",
-		dba.ID, dba.UserSubject, dba.ConnectionName, dba.ExpireAt.Format(time.RFC3339))
-
 	sid := uuid.NewString()
+
+	log.Infof("obtained http proxy access, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v",
+		dba.ID, dba.UserSubject, dba.ConnectionName, sid, dba.ExpireAt.Format(time.RFC3339))
+
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration,
 		fmt.Errorf("http proxy connection access expired"))
@@ -382,6 +383,18 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		session.cancelFn(cause.Error())
 	}, tokenVerifier, dba.UserSubject)
 
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", sid),
+	}
+	if dba.SessionID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
+	}
+
 	// Do gRPC connection setup outside lock (this can take time)
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
@@ -390,14 +403,7 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		Insecure:      !appconfig.Get().GatewayUseTLS(),
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
 		TLSSkipVerify: true,
-	},
-		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sid),
-	)
+	}, grpcOpts...)
 	if err != nil {
 		session.cancelFn("failed connecting to grpc server")
 		return nil, fmt.Errorf("failed connecting to grpc server: %v", err)

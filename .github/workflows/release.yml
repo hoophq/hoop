@@ -21,7 +21,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
@@ -153,7 +152,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -199,7 +197,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -245,7 +242,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -291,7 +287,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -337,7 +332,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -387,7 +381,6 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
         uses: actions/setup-go@v3
@@ -801,3 +794,17 @@ jobs:
         run: make publish-sentry-sourcemaps
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - name: Tag libhoop with release tag
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Push tag
+        working-directory: ./libhoop
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          git tag "$GIT_TAG" 2>/dev/null || true
+          git push origin "$GIT_TAG"

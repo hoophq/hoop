@@ -287,3 +287,10 @@
  :connection-setup/claude-code-credentials
  (fn [db]
    (get-in db [:connection-setup :claude-code-credentials])))
+
+;; Connection name
+(rf/reg-sub
+ :connection-setup/connection-name
+ (fn [db]
+   (get-in db [:connection-setup :name])))
+
