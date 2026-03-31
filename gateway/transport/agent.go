@@ -140,7 +140,7 @@ func updateGuardRailsInfoFromPacket(pctx *plugintypes.Context, pkt *pb.Packet) {
 		var guardRailsData []models.SessionGuardRailsInfo
 		if err := json.Unmarshal(rawInfo, &guardRailsData); err != nil {
 			log.With("sid", pctx.SID).Errorf("unable to unmarshal guardrails info from session close, reason=%v", err)
-		} else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, guardRailsData); err != nil {
+			}	 else if err := models.UpdateSessionGuardRailsInfo(pctx.OrgID, pctx.SID, rawInfo); err != nil {
 			log.With("sid", pctx.SID).Errorf("unable to save guardrails info from session close, reason=%v", err)
 		}
 	}

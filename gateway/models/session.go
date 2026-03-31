@@ -582,7 +582,7 @@ func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int64) e
 	return res.Error
 }
 
-func UpdateSessionGuardRailsInfo(orgID, sid string, info []SessionGuardRailsInfo) error {
+func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
 	res := DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sid).
 		Update("guardrails_info", gorm.Expr("COALESCE(guardrails_info, '[]'::jsonb) || ?::jsonb", info))
