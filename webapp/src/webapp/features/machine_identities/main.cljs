@@ -2,13 +2,16 @@
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
    [re-frame.core :as rf]
+   [reagent.core :as r]
    [webapp.components.loaders :as loaders]
    [webapp.features.machine-identities.views.empty-state :as empty-state]
-   [webapp.features.machine-identities.views.identity-list :as identity-list]))
+   [webapp.features.machine-identities.views.identity-list :as identity-list]
+   [webapp.features.promotion :as promotion]))
 
 (defn main []
   (let [identities (rf/subscribe [:machine-identities/identities])
-        status (rf/subscribe [:machine-identities/status])]
+        status (rf/subscribe [:machine-identities/status])
+        promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "machine-identities-promotion-seen")))]
 
     (rf/dispatch [:machine-identities/list])
 
@@ -21,6 +24,14 @@
           [:> Box {:class "bg-gray-1 h-full"}
            [:> Flex {:direction "column" :justify "center" :align "center" :height "100%"}
             [loaders/simple-loader]]]
+
+          (not @promotion-seen?)
+          [:> Box {:class "h-full bg-gray-1"}
+           [promotion/machine-identities-promotion
+            {:mode :empty-state
+             :on-promotion-seen (fn []
+                                  (.setItem (.-localStorage js/window) "machine-identities-promotion-seen" "true")
+                                  (reset! promotion-seen? true))}]]
 
           :else
           [:> Box {:class "bg-gray-1 p-radix-7 min-h-full h-max"}

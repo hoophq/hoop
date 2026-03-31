@@ -7,12 +7,8 @@
   [:> Box {:class "flex flex-col h-full items-center justify-between py-16 px-4 max-w-3xl mx-auto"}
    [:> Flex {:direction "column" :align "center"}
     [:> Box {:class "mb-8 w-80"}
-     ;; TODO: Adicionar imagem em /public/images/illustrations/machine-identities-empty.png
-     ;; Por enquanto, placeholder visual com ícone
-     [:div {:class "flex items-center justify-center h-64 bg-gray-100 rounded-lg"}
-      [:div {:class "text-center text-gray-400"}
-       [:div {:class "text-6xl mb-4"} "🔐"]
-       [:div {:class "text-sm"} "Image placeholder"]]]]
+     [:img {:src "/images/illustrations/empty-state.png"
+            :alt "Empty state illustration"}]]
 
     [:> Flex {:direction "column" :align "center" :gap "3" :class "mb-8 text-center"}
      [:> Text {:size "3" :class "text-gray-11 max-w-md text-center"}
