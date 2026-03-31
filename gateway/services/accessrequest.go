@@ -16,7 +16,7 @@ func GetRuleForConnection(orgID uuid.UUID, connectionName, accessType string) (*
 
 	if len(connectionAttributes) > 0 {
 		rule, err := models.GetRequestRulesByAttributes(models.DB, orgID, connectionAttributes, accessType)
-		if err != nil {
+		if err != nil && err != gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("failed fetching access request rules: %s", err)
 		}
 
