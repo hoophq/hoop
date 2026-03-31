@@ -9,8 +9,6 @@
     :type "aws-iam"
     :connection-names ["aws-prod-postgres"]
     :attributes ["production" "api" "backend"]
-    :created-at "2026-03-15T10:00:00Z"
-    :status "active"
     :roles
     [{:id "id-1-r1"
       :name "postgres-logistica-stg-postgresontimesqmrpprdbrs909-ontimesqmrpprd-rw"
@@ -54,8 +52,6 @@
     :type "gcp-service-account"
     :connection-names ["gcp-bigquery"]
     :attributes ["analytics" "readonly"]
-    :created-at "2026-03-20T14:30:00Z"
-    :status "active"
     :roles
     [{:id "id-2-r1"
       :name "bq-payments-curated-dataset-rw"
@@ -75,8 +71,6 @@
     :type "azure-managed-identity"
     :connection-names ["azure-storage"]
     :attributes ["storage" "production"]
-    :created-at "2026-03-25T09:15:00Z"
-    :status "active"
     :roles
     [{:id "id-3-r1"
       :name "blob-archive-west-readwrite"
@@ -96,8 +90,6 @@
     :type "generic"
     :connection-names ["github-api"]
     :attributes ["ci-cd" "automation"]
-    :created-at "2026-03-28T16:45:00Z"
-    :status "active"
     :roles []}
    {:id "id-5"
     :name "k8s-service-account"
@@ -105,8 +97,6 @@
     :type "kubernetes-sa"
     :connection-names ["k8s-prod-cluster"]
     :attributes ["kubernetes" "production" "microservices"]
-    :created-at "2026-03-29T11:20:00Z"
-    :status "active"
     :roles
     [{:id "id-5-r1"
       :name "mysql-orders-prod-rw"
@@ -126,8 +116,6 @@
     :type "generic"
     :connection-names ["datadog-api"]
     :attributes ["monitoring" "observability"]
-    :created-at "2026-03-30T08:30:00Z"
-    :status "active"
     :roles []}
    {:id "id-7"
     :name "expired-dev-token"
@@ -135,8 +123,6 @@
     :type "generic"
     :connection-names ["dev-api"]
     :attributes ["development" "deprecated"]
-    :created-at "2026-02-01T10:00:00Z"
-    :status "expired"
     :roles
     [{:id "id-7-r1"
       :name "dev-api-legacy-readonly"
@@ -179,10 +165,8 @@
  (fn [{:keys [db]} [_ identity-data]]
    (let [new-identity (assoc identity-data
                              :id (str "id-" (random-uuid))
-                             :created-at (.toISOString (js/Date.))
-                             :status "active"
                              :roles [])
-         current-identities (get-in db [:machine-identities :data])]
+         current-identities (or (get-in db [:machine-identities :data]) [])]
      {:db (assoc-in db [:machine-identities :data] (conj current-identities new-identity))
       :fx [[:dispatch [:show-snackbar {:level :success
                                        :text "Machine identity created successfully"}]]
@@ -191,7 +175,7 @@
 (rf/reg-event-fx
  :machine-identities/update
  (fn [{:keys [db]} [_ identity-id identity-data]]
-   (let [current-identities (get-in db [:machine-identities :data])
+   (let [current-identities (or (get-in db [:machine-identities :data]) [])
          updated-identities (mapv #(if (= (:id %) identity-id)
                                      (merge % identity-data)
                                      %)
@@ -204,7 +188,7 @@
 (rf/reg-event-fx
  :machine-identities/delete
  (fn [{:keys [db]} [_ identity-id]]
-   (let [current-identities (get-in db [:machine-identities :data])
+   (let [current-identities (or (get-in db [:machine-identities :data]) [])
          filtered-identities (filterv #(not= (:id %) identity-id) current-identities)]
      {:db (assoc-in db [:machine-identities :data] filtered-identities)
       :fx [[:dispatch [:show-snackbar {:level :success
@@ -214,8 +198,3 @@
  :machine-identities/clear-current-identity
  (fn [db [_]]
    (assoc-in db [:machine-identities :current-identity] nil)))
-
-(rf/reg-event-db
- :machine-identities/set-status
- (fn [db [_ status]]
-   (assoc-in db [:machine-identities :status] status)))

@@ -5,7 +5,7 @@
 (rf/reg-sub
  :machine-identities/identities
  (fn [db]
-   (get-in db [:machine-identities :data])))
+   (or (get-in db [:machine-identities :data]) [])))
 
 (rf/reg-sub
  :machine-identities/status
