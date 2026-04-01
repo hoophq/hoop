@@ -34,6 +34,13 @@
 - **Styling**: Use Radix's built-in props (`:size`, `:variant`, `:color`) and Tailwind for custom styling
 - **Reference Components**: See `webapp.guardrails.*` and `webapp.jira_templates.*` for examples
 
+## Accessibility
+- **Baseline**: Ship basic accessibility on every UI change—keyboard navigation and screen-reader support are not optional extras.
+- **Keyboard**: Interactive controls must be reachable and operable with Tab / Shift+Tab; preserve a sensible focus order; visible focus states; avoid trapping focus except in modals (then follow the modal pattern and restore focus on close).
+- **Screen readers**: Use semantic HTML and Radix primitives where they provide roles/labels; associate labels with inputs; use `aria-*` when semantics alone are insufficient.
+- **Images and icons**: Meaningful images need descriptive `alt` text; decorative images/icons should use empty `alt=""` (or equivalent `aria-hidden` when appropriate) so assistive tech can skip them. Do not leave `img` without an intentional alt decision.
+- **Mindset**: When implementing UI, default to asking whether keyboard and screen-reader users can complete the same tasks; fix gaps in the same change when feasible.
+
 ## Common Patterns
 - New features should follow existing patterns in similar components
 - Use existing UI components when possible before creating new ones

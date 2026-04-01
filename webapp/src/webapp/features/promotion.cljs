@@ -340,6 +340,7 @@
   [feature-promotion
    {:feature-name "Machine Identities"
     :mode mode
+    :image "machine-identities-promotion.png"
     :description "Enable services and other non-human entities."
     :feature-items [{:icon [:> Laptop {:size 20}]
                      :title "Service Identity Management"
