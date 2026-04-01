@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 
 	"github.com/google/uuid"
@@ -180,18 +181,31 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	}
 }
 
-func sessionUsageProperties(s *models.Session, c *models.Connection, agent *models.Agent, guardrails *models.ConnectionGuardRailRules, dataMasking json.RawMessage, rules []*models.AccessRequestRule) map[string]any {
+func sessionUsageProperties(
+	s *models.Session,
+	c *models.Connection,
+	agent *models.Agent,
+	guardrails *models.ConnectionGuardRailRules,
+	dataMasking json.RawMessage,
+	accessRequestList []*models.AccessRequestRule,
+) map[string]any {
+
 	props := map[string]any{
-		"org-id":                        s.OrgID,
-		"session-id":                    s.ID,
-		"resource-type":                 s.ConnectionType,
-		"resource-subtype":              s.ConnectionSubtype,
-		"status":                        s.Status,
-		"created-at":                    s.CreatedAt.String(),
-		"ai-session-analyzer-activated": false,
-		"agent-version":                 agent.GetMeta("version"),
-		"agent-platform":                agent.GetMeta("platform"),
-		"jira-template-activated":       c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
+		"org-id":                           s.OrgID,
+		"session-id":                       s.ID,
+		"resource-type":                    s.ConnectionType,
+		"resource-subtype":                 s.ConnectionSubtype,
+		"status":                           s.Status,
+		"created-at":                       s.CreatedAt.String(),
+		"ai-session-analyzer-activated":    false,
+		"agent-version":                    agent.GetMeta("version"),
+		"agent-platform":                   agent.GetMeta("platform"),
+		"mandatory-metadata-activated":     c.MandatoryMetadataFields != nil && len(c.MandatoryMetadataFields) > 0,
+		"jira-template-activated":          c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
+		"jit-access-request-activated":     false,
+		"command-access-request-activated": false,
+		"guardrails-activated":             guardrails != nil && !guardrails.HasEmptyRules(),
+		"data-masking-activated":           string(dataMasking) != "[]",
 	}
 
 	if s.EndSession != nil {
@@ -202,6 +216,18 @@ func sessionUsageProperties(s *models.Session, c *models.Connection, agent *mode
 		props["ai-session-analyzer-activated"] = true
 		props["ai-session-analyzer-identified-risk"] = s.AIAnalysis.RiskLevel
 		props["ai-session-analyzer-action"] = s.AIAnalysis.Action
+	}
+
+	for _, rule := range accessRequestList {
+		if rule != nil {
+			props[fmt.Sprintf("%s-access-request-activated", rule.AccessType)] = true
+			props[fmt.Sprintf("%s-access-request-force-approval", rule.AccessType)] = len(rule.ForceApprovalGroups) > 0
+			props[fmt.Sprintf("%s-access-request-all-groups-must-approve", rule.AccessType)] = rule.AllGroupsMustApprove
+
+			if rule.MinApprovals != nil {
+				props[fmt.Sprintf("%s-access-request-minimum-approval", rule.AccessType)] = *rule.MinApprovals
+			}
+		}
 	}
 
 	return props
