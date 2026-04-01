@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -58,8 +59,7 @@ func Login(c *gin.Context) {
 
 	tokenString, err := generateNewAccessToken(dbUser.Email, dbUser.Email)
 	if err != nil {
-		log.Errorf("failed signing token for %s, reason=%v", user.Email, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to generate token"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to generate token")
 		return
 	}
 

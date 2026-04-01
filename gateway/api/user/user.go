@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
@@ -54,9 +54,7 @@ func Create(c *gin.Context) {
 
 	existingUser, err := models.GetUserByEmailAndOrg(newUser.Email, ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed fetching existing user, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching existing user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing user")
 		return
 	}
 
@@ -84,8 +82,7 @@ func Create(c *gin.Context) {
 		newUser.Status = openapi.StatusActive
 		hashedPwdBytes, err := bcrypt.GenerateFromPassword([]byte(newUser.Password), bcrypt.DefaultCost)
 		if err != nil {
-			log.Errorf("failed hashing password, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed to hash password")
 			return
 		}
 		hashedPassword = string(hashedPwdBytes)
@@ -106,9 +103,7 @@ func Create(c *gin.Context) {
 	}
 
 	if err := models.CreateUser(modelsUser); err != nil {
-		log.Errorf("failed persisting user, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed persisting user: %v", err)
 		return
 	}
 
@@ -122,9 +117,7 @@ func Create(c *gin.Context) {
 			})
 		}
 		if err := models.InsertUserGroups(userGroups); err != nil {
-			log.Errorf("failed persisting user groups, err=%v", err)
-			sentry.CaptureException(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed persisting user groups: %v", err)
 			return
 		}
 	}
@@ -168,9 +161,7 @@ func Update(c *gin.Context) {
 	existingUser, err := models.GetUserBySubjectAndOrg(userID, ctx.OrgID)
 
 	if err != nil {
-		log.Errorf("failed getting user %s, err=%v", userID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", userID)
 		return
 	}
 
@@ -214,9 +205,7 @@ func Update(c *gin.Context) {
 	}
 
 	if err := models.UpdateUserAndUserGroups(existingUser, newUserGroups); err != nil {
-		log.Errorf("failed updating user and user groups, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating user and user groups"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating user and user groups")
 		return
 	}
 
@@ -253,17 +242,13 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	users, err := models.ListUsers(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed listing users, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing users"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing users")
 		return
 	}
 
 	orgsGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed getting org groups, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting org groups"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting org groups")
 		return
 	}
 
@@ -314,9 +299,7 @@ func Delete(c *gin.Context) {
 	}
 	user, err := getUserFn(subject, ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed getting user %s, err=%v", subject, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", subject)
 		return
 	}
 	if user == nil {
@@ -329,9 +312,7 @@ func Delete(c *gin.Context) {
 	}
 
 	if err := models.DeleteUser(ctx.OrgID, subject); err != nil {
-		log.Errorf("failed removing user %s, err=%v", subject, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting user")
 		return
 	}
 	c.Writer.WriteHeader(204)
@@ -358,9 +339,7 @@ func GetUserByEmailOrID(c *gin.Context) {
 		user, err = models.GetUserBySubjectAndOrg(emailOrID, ctx.OrgID)
 	}
 	if err != nil {
-		log.Errorf("failed getting user %s, err=%v", emailOrID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user %s", emailOrID)
 		return
 	}
 	if user == nil {
@@ -370,9 +349,7 @@ func GetUserByEmailOrID(c *gin.Context) {
 
 	userGroups, err := models.GetUserGroupsByUserID(user.ID)
 	if err != nil {
-		log.Errorf("failed getting user groups for user %s, err=%v", user.ID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user groups for user %s", user.ID)
 		return
 	}
 
@@ -421,15 +398,13 @@ func GetUserInfo(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	askAIFeatureStatus, err := getAskAIFeatureStatus(ctx.OrgID)
 	if err != nil {
-		log.Errorf("unable to obtain ask-ai feature status, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to obtain ask-ai feature status"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to obtain ask-ai feature status")
 		return
 	}
 
 	serverAuthConfig, _, err := idp.LoadServerAuthConfig()
 	if err != nil {
-		log.Errorf("failed to load server auth config: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to load server auth config"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to load server auth config")
 		return
 	}
 
@@ -514,9 +489,7 @@ func PatchSlackID(c *gin.Context) {
 	u, err := models.GetUserBySubjectAndOrg(ctx.UserID, ctx.OrgID)
 
 	if err != nil || u == nil {
-		errMsg := fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", errors.Is(err, gorm.ErrRecordNotFound), err)
-		sentry.CaptureException(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, fmt.Errorf("failed obtaining user from store, notfound=%v, err=%v", errors.Is(err, gorm.ErrRecordNotFound), err), "failed obtaining user")
 		return
 	}
 	var req openapi.UserPatchSlackID
@@ -530,17 +503,13 @@ func PatchSlackID(c *gin.Context) {
 	}
 	u.SlackID = req.SlackID
 	if err := models.UpdateUser(u); err != nil {
-		log.Errorf("failed updating slack id of user, reason=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating slack id"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating slack id")
 		return
 	}
 
 	userGroups, err := models.GetUserGroupsByUserID(u.ID)
 	if err != nil {
-		log.Errorf("failed getting user groups for user %s, err=%v", u.ID, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed getting user groups"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting user groups for user %s", u.ID)
 		return
 	}
 	var userGroupsList []string
@@ -573,9 +542,7 @@ func ListAllGroups(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	userGroups, err := models.GetUserGroupsByOrgID(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed listing groups, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing groups"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing groups")
 		return
 	}
 	dedupeGroups := map[string]string{}
@@ -617,9 +584,7 @@ func CreateGroup(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
 		}
-		log.Errorf("failed creating group, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating group"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating group")
 		return
 	}
 
@@ -653,9 +618,7 @@ func DeleteGroup(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
 			return
 		}
-		log.Errorf("failed deleting group, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed deleting group"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting group")
 		return
 	}
 

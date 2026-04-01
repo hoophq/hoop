@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
@@ -46,8 +47,7 @@ func CreateAgentKey(c *gin.Context) {
 		return
 	case nil: // noop
 	default:
-		log.Errorf("failed provisioning org agent key, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating dsn")
 		return
 	}
 	c.JSON(http.StatusCreated, openapi.OrgKeyResponse{
@@ -74,14 +74,12 @@ func GetAgentKey(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed fetching for existing organization token, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching organization token")
 		return
 	}
 	dsn, err := dsnkeys.New(ctx.GrpcURL, agentKeyDefaultName, ag.Key)
 	if err != nil {
-		log.Errorf("failed generating agent key, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating dsn")
 		return
 	}
 	c.JSON(http.StatusOK, openapi.OrgKeyResponse{
@@ -114,8 +112,7 @@ func RevokeAgentKey(c *gin.Context) {
 		delErr := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
 		evt.Err(delErr)
 		if delErr != nil {
-			log.Errorf("failed removing organization token for %v, err=%v", agentKeyDefaultName, delErr)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": delErr.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, delErr, "failed removing organization token")
 			return
 		}
 	default:
@@ -123,8 +120,7 @@ func RevokeAgentKey(c *gin.Context) {
 			Resource(agentKeyDefaultName, agentKeyDefaultName).
 			Err(err).
 			Log(c)
-		log.Errorf("failed fetching for existing organization token, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching organization token")
 		return
 	}
 	c.Writer.WriteHeader(204)

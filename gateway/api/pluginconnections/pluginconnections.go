@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -44,8 +44,7 @@ func UpsertPluginConnection(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(pluginConn))
 	default:
-		log.Errorf("failed updating plugin connection, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating plugin connection")
 	}
 }
 
@@ -70,8 +69,7 @@ func GetPluginConnection(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(resource))
 	default:
-		log.Errorf("failed fetching plugin connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching plugin connection")
 		return
 	}
 }
@@ -96,8 +94,7 @@ func DeletePluginConnection(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusNoContent, nil)
 	default:
-		log.Errorf("failed removing plugin connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing plugin connection")
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -80,8 +80,7 @@ func List(c *gin.Context) {
 
 	rows, total, err := models.ListSecurityAuditLogs(models.DB, ctx.OrgID, f)
 	if err != nil {
-		log.Errorf("failed to list security audit logs: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
 		return
 	}
 

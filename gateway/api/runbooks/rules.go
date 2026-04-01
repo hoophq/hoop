@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -29,8 +29,7 @@ func ListRunbookRules(c *gin.Context) {
 
 	rules, err := models.GetRunbookRules(models.DB, ctx.GetOrgID(), 0, 0)
 	if err != nil {
-		log.Errorf("failed fetching runbook rules, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rules, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rules")
 		return
 	}
 
@@ -64,8 +63,7 @@ func GetRunbookRule(c *gin.Context) {
 			return
 		}
 
-		log.Errorf("failed fetching runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rule, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule")
 		return
 	}
 
@@ -98,8 +96,7 @@ func CreateRunbookRule(c *gin.Context) {
 	rule.OrgID = ctx.GetOrgID()
 
 	if err := models.UpsertRunbookRule(models.DB, &rule); err != nil {
-		log.Errorf("failed creating runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed creating runbook rule, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook rule")
 		return
 	}
 
@@ -138,8 +135,7 @@ func UpdateRunbookRule(c *gin.Context) {
 			return
 		}
 
-		log.Errorf("failed fetching runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rule, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule")
 		return
 	}
 
@@ -148,8 +144,7 @@ func UpdateRunbookRule(c *gin.Context) {
 	rule.OrgID = ctx.GetOrgID()
 
 	if err := models.UpsertRunbookRule(models.DB, &rule); err != nil {
-		log.Errorf("failed updating runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed updating runbook rule, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating runbook rule")
 		return
 	}
 
@@ -180,14 +175,12 @@ func DeleteRunbookRule(c *gin.Context) {
 			return
 		}
 
-		log.Errorf("failed fetching runbook rule for delete, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed fetching runbook rule for delete, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule for delete")
 		return
 	}
 
 	if err := models.DeleteRunbookRule(models.DB, ctx.GetOrgID(), ruleID); err != nil {
-		log.Errorf("failed deleting runbook rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed deleting runbook rule, reason=%v", err)})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting runbook rule")
 		return
 	}
 

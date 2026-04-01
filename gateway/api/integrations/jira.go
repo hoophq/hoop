@@ -3,10 +3,9 @@ package apijiraintegration
 import (
 	"net/http"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -25,9 +24,7 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	dbJiraIntegration, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed fetching Jira integration, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching Jira integration")
 		return
 	}
 	if dbJiraIntegration == nil {
@@ -74,9 +71,7 @@ func Post(c *gin.Context) {
 
 	dbExistingJiraIntegration, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed checking existing Jira integration, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking existing Jira integration")
 		return
 	}
 	if dbExistingJiraIntegration != nil {
@@ -95,9 +90,7 @@ func Post(c *gin.Context) {
 
 	createdIntegration, err := models.CreateJiraIntegration(ctx.OrgID, &newIntegration)
 	if err != nil {
-		log.Errorf("failed creating Jira integration, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating Jira integration")
 		return
 	}
 
@@ -125,9 +118,7 @@ func Put(c *gin.Context) {
 
 	existingIntegration, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed fetching existing Jira integration, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing Jira integration")
 		return
 	}
 	if existingIntegration == nil {
@@ -142,9 +133,7 @@ func Put(c *gin.Context) {
 		Status:   models.JiraIntegrationStatus(req.Status),
 	})
 	if err != nil {
-		log.Errorf("failed updating Jira integration, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating Jira integration")
 		return
 	}
 

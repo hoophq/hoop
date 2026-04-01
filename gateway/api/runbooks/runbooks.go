@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/runbooks"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/clientexec"
@@ -45,8 +46,7 @@ func List(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving runbook plugin")
 		return
 	}
 	var configEnvVars map[string]string
@@ -88,8 +88,7 @@ func ListByConnection(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed retrieving runbook plugin, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving runbook plugin")
 		return
 	}
 	var configEnvVars map[string]string
@@ -210,8 +209,7 @@ func RunExec(c *gin.Context) {
 		Origin:         proto.ConnectionOriginClientAPIRunbooks,
 	})
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution")
 		return
 	}
 
@@ -240,8 +238,7 @@ func RunExec(c *gin.Context) {
 	if connection.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(connection.OrgID, connection.JiraIssueTemplateID.String)
 		if err != nil {
-			log.Errorf("failed obtaining jira issue template for %v, reason=%v", connection.Name, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira issue template for connection %v", connection.Name)
 			return
 		}
 		if jiraConfig != nil && jiraConfig.IsActive() {
@@ -255,14 +252,12 @@ func RunExec(c *gin.Context) {
 				return
 			case nil:
 			default:
-				log.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields")
 				return
 			}
 			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
 			if err != nil {
-				log.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request")
 				return
 			}
 			newSession.IntegrationsMetadata = map[string]any{
@@ -280,7 +275,7 @@ func RunExec(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "The session couldn't be created"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the session couldn't be created")
 		return
 	}
 
@@ -317,7 +312,7 @@ func RunExec(c *gin.Context) {
 func getConnection(ctx models.UserContext, c *gin.Context, connectionName string) (*models.Connection, error) {
 	conn, err := models.GetConnectionByNameOrID(ctx, connectionName)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving connection"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving connection")
 		return nil, err
 	}
 	if conn == nil {
@@ -335,8 +330,8 @@ func getRunbookConfig(ctx models.UserContext, c *gin.Context, connection *models
 		return nil, "", fmt.Errorf("plugin not found")
 	case nil:
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed retrieving runbook plugin"})
-		return nil, "", fmt.Errorf("failed retrieving runbooks plugin, err=%v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving runbook plugin")
+		return nil, "", err
 	}
 	var repoPrefix string
 	hasConnection := false

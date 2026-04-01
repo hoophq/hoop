@@ -180,7 +180,6 @@ func sentryCatchAll5xxMiddleware(c *gin.Context) {
 	// Enrich scope with whatever context you need
 	hub.WithScope(func(scope *sentry.Scope) {
 		scope.SetContext("response", map[string]any{"status": status})
-
 		// Capture the first handler error if present
 		if len(c.Errors) > 0 {
 			hub.CaptureMessage(fmt.Sprintf("5xx HTTP Response: %v", c.Errors[0].Err))

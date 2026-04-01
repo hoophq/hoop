@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
@@ -79,8 +80,7 @@ func (h *handler) Login(c *gin.Context) {
 		UpdatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		log.Errorf("internal error storing the login, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error storing the login"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal error storing the login")
 		return
 	}
 

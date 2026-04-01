@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -54,8 +54,7 @@ func GetSessionAnalyzerProvider(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toProviderResponse(*p))
 	default:
-		log.Errorf("failed fetching AI provider, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI provider")
 	}
 }
 
@@ -91,8 +90,7 @@ func UpsertSessionAnalyzerProvider(c *gin.Context) {
 
 	p, err := models.UpsertAIProvider(orgID, models.AISessionAnalyzerFeature, req.Provider, req.ApiUrl, req.ApiKey, req.Model)
 	if err != nil {
-		log.Errorf("failed upserting AI provider, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting AI provider")
 		return
 	}
 
@@ -129,8 +127,7 @@ func DeleteSessionAnalyzerProvider(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		log.Errorf("failed deleting AI provider, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting AI provider")
 	}
 }
 
@@ -175,8 +172,7 @@ func ListSessionAnalyzerRules(c *gin.Context) {
 
 	rules, total, err := models.ListAISessionAnalyzerRules(orgID, connectionNames, page, pageSize)
 	if err != nil {
-		log.Errorf("failed listing AI session analyzer rules, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing AI session analyzer rules")
 		return
 	}
 
@@ -221,8 +217,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
 	default:
-		log.Errorf("failed fetching AI session analyzer rule, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule")
 	}
 }
 
@@ -258,7 +253,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 
 	foundRule, err := models.GetAIAnalyzerRulesByConnections(models.DB, orgID, req.ConnectionNames)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI analyzer rules by connections")
 		return
 	}
 
@@ -292,8 +287,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		})
 		c.JSON(http.StatusCreated, toSessionAnalyzerRuleResponse(rule))
 	default:
-		log.Errorf("failed creating AI session analyzer rule, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule")
 	}
 }
 
@@ -330,7 +324,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 	foundRule, err := models.GetAIAnalyzerRulesByConnections(models.DB, orgID, req.ConnectionNames)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI analyzer rules by connections")
 		return
 	}
 
@@ -365,8 +359,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
 	default:
-		log.Errorf("failed updating AI session analyzer rule, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule")
 	}
 }
 
@@ -395,8 +388,7 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		log.Errorf("failed deleting AI session analyzer rule, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting AI session analyzer rule")
 	}
 }
 
@@ -439,8 +431,7 @@ func GetConnectionAnalyzerRule(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
 	default:
-		log.Errorf("failed fetching AI session analyzer rule by connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule by connection")
 	}
 }
 
