@@ -90,16 +90,13 @@
 (rf/reg-event-fx
  :ai-session-analyzer/get-role-rule
  (fn [{:keys [db]} [_ role-name-or-id]]
-   (let [provider (get-in db [:ai-session-analyzer :provider])
-         provider-configured? (and (= (:status provider) :success)
-                                   (some? (:data provider)))]
-     (if (and provider-configured? (some? role-name-or-id))
-       {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :loading :data nil :error nil})
-        :fx [[:dispatch [:fetch {:method "GET"
-                                 :uri (str "/connections/" role-name-or-id "/ai-session-analyzer-rule")
-                                 :on-success #(rf/dispatch [:ai-session-analyzer/get-role-rule-success %])
-                                 :on-failure #(rf/dispatch [:ai-session-analyzer/get-role-rule-failure %])}]]]}
-       {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :idle :data nil :error nil})}))))
+   (if (some? role-name-or-id)
+     {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :loading :data nil :error nil})
+      :fx [[:dispatch [:fetch {:method "GET"
+                               :uri (str "/connections/" role-name-or-id "/ai-session-analyzer-rule")
+                               :on-success #(rf/dispatch [:ai-session-analyzer/get-role-rule-success %])
+                               :on-failure #(rf/dispatch [:ai-session-analyzer/get-role-rule-failure %])}]]]}
+     {:db (assoc-in db [:ai-session-analyzer :role-rule] {:status :idle :data nil :error nil})})))
 
 (rf/reg-event-db
  :ai-session-analyzer/get-role-rule-success

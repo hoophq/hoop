@@ -15,12 +15,6 @@
    (= (:status provider) :loading)))
 
 (rf/reg-sub
- :ai-session-analyzer/provider-configured?
- :<- [:ai-session-analyzer/provider]
- (fn [provider]
-   (and (= (:status provider) :success) (some? (:data provider)))))
-
-(rf/reg-sub
  :ai-session-analyzer/role-rule
  (fn [db]
    (get-in db [:ai-session-analyzer :role-rule])))
