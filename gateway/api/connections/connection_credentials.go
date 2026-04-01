@@ -210,7 +210,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	}
 
 	connNameOrID := c.Param("nameOrID")
-	sessionID := c.Param("sessionID")
+	sessionID := c.Param("ID")
 
 	// Look up the session
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
@@ -400,7 +400,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 func RevokeConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	connNameOrID := c.Param("nameOrID")
-	credentialID := c.Param("credentialID")
+	credentialID := c.Param("ID")
 
 	if credentialID == "" {
 		c.AbortWithStatusJSON(400, gin.H{"message": "credential ID is required"})
