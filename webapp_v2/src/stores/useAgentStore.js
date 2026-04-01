@@ -5,6 +5,8 @@ export const useAgentStore = create((set) => ({
   agents: [],
   loading: false,
   error: null,
+  // { status: 'loading' | 'ready' | 'error', token: string | null }
+  agentKey: null,
 
   fetchAgents: async () => {
     set({ loading: true, error: null })
@@ -17,16 +19,17 @@ export const useAgentStore = create((set) => ({
   },
 
   createAgent: async (agentData) => {
-    set({ loading: true, error: null })
+    set({ loading: true, error: null, agentKey: { status: 'loading', token: null } })
     try {
       const { data } = await agentsService.create(agentData)
       set((state) => ({
         agents: [...state.agents, data],
         loading: false,
+        agentKey: { status: 'ready', token: data.token ?? null },
       }))
       return data
     } catch (error) {
-      set({ error: error.message, loading: false })
+      set({ error: error.message, loading: false, agentKey: { status: 'error', token: null } })
       throw error
     }
   },
@@ -42,4 +45,6 @@ export const useAgentStore = create((set) => ({
       throw error
     }
   },
+
+  clearAgentKey: () => set({ agentKey: null }),
 }))

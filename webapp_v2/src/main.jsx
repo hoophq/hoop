@@ -9,10 +9,29 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import '@mantine/spotlight/styles.css';
 
+// Radix UI Indigo scale mapped to Mantine's 10-step array (steps 1–10)
+// primaryShade: 8 → indigo-9 (#3e63dd) as the primary action color
+const indigoScale = [
+  '#fdfdfe', // indigo-1
+  '#f7f9ff', // indigo-2
+  '#edf2fe', // indigo-3
+  '#e1e9ff', // indigo-4
+  '#d2deff', // indigo-5
+  '#c1d0ff', // indigo-6
+  '#abbdf9', // indigo-7
+  '#8da4ef', // indigo-8
+  '#3e63dd', // indigo-9  ← primary
+  '#3358d4', // indigo-10
+];
+
 const theme = createTheme({
   primaryColor: 'indigo',
+  primaryShade: 8,
   defaultRadius: 'md',
-  fontFamily: 'Inter, system-ui, -apple-system, sans-serif'
+  fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+  colors: {
+    indigo: indigoScale,
+  },
 });
 
 createRoot(document.getElementById('root')).render(
