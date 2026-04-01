@@ -17,7 +17,7 @@ import { authService } from '@/services/auth'
 function ProtectedRoute({ children }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, loading, setUser, setLoading } = useUserStore()
+  const { user, loading, setUser, setLoading, setServerInfo } = useUserStore()
   const [shouldRedirect, setShouldRedirect] = useState(false)
 
   useEffect(() => {
@@ -37,7 +37,10 @@ function ProtectedRoute({ children }) {
     const fetchUser = async () => {
       setLoading(true)
       try {
-        const userData = await authService.getCurrentUser()
+        const [userData, serverInfo] = await Promise.all([
+          authService.getCurrentUser(),
+          authService.getServerInfo().catch(() => null),
+        ])
 
         if (!userData || Object.keys(userData).length === 0) {
           // User data is empty, token is invalid
@@ -48,6 +51,7 @@ function ProtectedRoute({ children }) {
         }
 
         setUser(userData)
+        if (serverInfo) setServerInfo(serverInfo)
       } catch (error) {
         console.error('Failed to fetch user:', error)
         // On error, logout and redirect
