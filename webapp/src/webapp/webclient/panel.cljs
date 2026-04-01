@@ -197,7 +197,6 @@
         parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
         script-response (rf/subscribe [:editor-plugin->script])
-        provider-configured? (rf/subscribe [:ai-session-analyzer/provider-configured?])
         role-has-rule? (rf/subscribe [:ai-session-analyzer/role-has-rule?])
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
@@ -211,7 +210,6 @@
         metadata-value (r/atom "")]
 
     (rf/dispatch [:gateway->get-info])
-    (rf/dispatch [:ai-session-analyzer/get-provider])
 
     (fn [{:keys [script-output]}]
       (let [current-connection @primary-connection
@@ -394,7 +392,7 @@
                                materialLight)
                       :extensions codemirror-exts
                       :on-change optimized-change-handler}]]
-                   (when (and @provider-configured? @role-has-rule?)
+                   (when @role-has-rule?
                      (cond
                        (= :loading (:status @script-response))
                        [ai-analyzer-card]
