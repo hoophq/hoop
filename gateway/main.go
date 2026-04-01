@@ -144,7 +144,8 @@ func Run() {
 			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
 		}
 	}
-	sentryStarted, _ := monitoring.StartSentry()
+
+	_, _ = monitoring.StartSentry()
 	if isOrgMultiTenant {
 		// grpc url from env is used for multi tenant setups
 		if err := agentcontroller.Run(os.Getenv("GRPC_URL")); err != nil {
@@ -213,5 +214,5 @@ func Run() {
 	log.Infof("starting api servers, env-authmethod=%v, env-api-key-set=%v",
 		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
 	go g.StartRPCServer()
-	a.StartAPI(sentryStarted)
+	a.StartAPI()
 }

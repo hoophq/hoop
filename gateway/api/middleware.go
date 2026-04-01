@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
@@ -137,6 +139,55 @@ func SecurityHeaderMiddleware() gin.HandlerFunc {
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Next()
 	}
+}
+
+type catchAll5xxResponseBodyWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (r *catchAll5xxResponseBodyWriter) Write(b []byte) (int, error) {
+	const maxCapture = 2 * 1024 // 2KB
+	if r.body.Len() < maxCapture {
+		r.body.Write(b)
+	}
+	return r.ResponseWriter.Write(b)
+}
+
+func sentryCatchAll5xxMiddleware(c *gin.Context) {
+	if enabled := appconfig.Get().AnalyticsTracking(); !enabled {
+		c.Next()
+		return
+	}
+
+	rbw := &catchAll5xxResponseBodyWriter{
+		body:           &bytes.Buffer{},
+		ResponseWriter: c.Writer,
+	}
+	c.Writer = rbw
+
+	c.Next()
+	status := c.Writer.Status()
+	if status < 500 {
+		return
+	}
+
+	hub := sentrygin.GetHubFromContext(c)
+	if hub == nil {
+		return
+	}
+
+	// Enrich scope with whatever context you need
+	hub.WithScope(func(scope *sentry.Scope) {
+		scope.SetContext("response", map[string]any{"status": status})
+
+		// Capture the first handler error if present
+		if len(c.Errors) > 0 {
+			hub.CaptureMessage(fmt.Sprintf("5xx HTTP Response: %v", c.Errors[0].Err))
+			return
+		}
+	})
+	c.Next()
 }
 
 // auditResponseWriter wraps gin.ResponseWriter to capture the HTTP status code and response body
