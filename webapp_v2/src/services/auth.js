@@ -6,6 +6,7 @@ const AUTH_ENDPOINTS = {
   IDPS_LOGIN: '/login',
   SIGNUP: '/signup',
   USER: '/userinfo',
+  SERVER_INFO: '/serverinfo',
   PUBLIC_SERVER_INFO: '/publicserverinfo'
 };
 
@@ -75,6 +76,12 @@ export const authService = {
   // Get current user
   async getCurrentUser() {
     const response = await api.get(AUTH_ENDPOINTS.USER);
+    return response.data;
+  },
+
+  // Get server info (license, features)
+  async getServerInfo() {
+    const response = await api.get(AUTH_ENDPOINTS.SERVER_INFO);
     return response.data;
   },
 

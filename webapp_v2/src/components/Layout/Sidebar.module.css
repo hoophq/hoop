@@ -1,19 +1,63 @@
-/* Override Mantine NavLink hover for dark sidebar background */
+/* NavLink overrides for dark sidebar background.
+   !important is needed because Mantine sets colors on sub-elements
+   with its own CSS class specificity. */
+
+.navLink {
+  border-radius: 6px;
+}
+
 .navLink:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #fff !important;
+}
+
+/* Propagate text color to label / icons when hovered */
+.navLink:hover * {
+  color: inherit !important;
+}
+
+.navLink[data-active] {
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  color: #fff !important;
+}
+
+.navLink[data-active] * {
+  color: inherit !important;
+}
+
+.navLink[data-active]:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Blocked/free-license item — dimmed, no interaction */
+.navLinkBlocked {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ── Collapsed icon button ─────────────────────────────── */
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.iconBtn:hover {
   background-color: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
 
-.navLink:where([data-active]) {
+.iconBtnActive {
   background-color: rgba(255, 255, 255, 0.07);
   color: #fff;
-}
-
-.navLink:where([data-active]):hover {
-  background-color: rgba(255, 255, 255, 0.1);
-}
-
-.navLinkDisabled {
-  opacity: 0.35;
-  pointer-events: none;
 }
