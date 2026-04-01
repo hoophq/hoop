@@ -11,7 +11,7 @@
         modal-size (if (= size :large)
                      "w-full max-w-xs lg:max-w-4xl" "max-w-xs lg:max-w-lg w-full")]
     [:div {:id "modal"
-           :class "fixed z-50 inset-0 overflow-y-auto"
+           :class "fixed z-[201] inset-0 overflow-y-auto"
            "aria-modal" true}
      [:div
       {"aria-hidden" "true"
@@ -45,8 +45,7 @@
           ;; Let the app-level Theme provider handle the appearance
           [:> Box {:id (:id @modal)}
            [:> Dialog.Root {:open (:open? @modal)
-                            :on-open-change #(rf/dispatch [:modal->set-status %])
-                            :class "pb-6"}
+                            :on-open-change #(rf/dispatch [:modal->set-status %])}
             [:> Dialog.Content {:maxWidth (or (:maxWidth @modal) "916px")
                                 :maxHeight "calc(100vh - 56px)"
                                 :on-escape-key-down on-click-out
