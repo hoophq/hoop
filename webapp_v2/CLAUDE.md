@@ -19,17 +19,18 @@
 ```
 src/
 ├── components/          # Presentational components (receive props, no business logic)
-│   └── Layout/          # App shell: Sidebar, Header
+├── layout/              # App shell: Sidebar, Header, EmptyState
+├── features/            # Complex features (e.g., CommandPalette)
 ├── stores/              # Zustand global stores (cross-route state)
 ├── services/            # Axios API calls (one file per domain)
 ├── hooks/               # Reusable custom hooks
 ├── utils/               # Pure utility functions
-├── routes/              # Route-based pages (each route = folder)
-│   ├── [Route]/
+├── pages/               # Route-based pages (each route = folder)
+│   ├── [Page]/
 │   │   ├── index.jsx        # Page component
-│   │   ├── components/      # Components scoped to this route
-│   │   ├── store.js         # Local store (only if state is route-specific)
-│   │   └── [SubRoute]/
+│   │   ├── components/      # Components scoped to this page
+│   │   ├── store.js         # Local store (only if state is page-specific)
+│   │   └── [SubPage]/
 │   │       └── index.jsx
 ├── App.jsx              # Root component + providers
 ├── Router.jsx           # Route definitions
@@ -39,8 +40,8 @@ src/
 ## Architecture Rules
 
 ### Stores (Zustand)
-- **Global stores** (`src/stores/`): State consumed by multiple routes (auth, user, resources, connections, agents, UI)
-- **Local stores** (`src/routes/[Route]/store.js`): State that only exists in that specific page (form wizard steps, local filters)
+- **Global stores** (`src/stores/`): State consumed by multiple pages (auth, user, resources, connections, agents, UI)
+- **Local stores** (`src/pages/[Page]/store.js`): State that only exists in that specific page (form wizard steps, local filters)
 - Stores access services for API calls. Components access stores for state.
 - Access store state outside React with `useStore.getState()`
 
@@ -51,11 +52,19 @@ src/
 
 ### Components
 - `src/components/` = Reusable across the whole app. Receive props, no direct store access preferred.
-- `src/routes/[Route]/components/` = Scoped to that route/domain only.
+- `src/pages/[Page]/components/` = Scoped to that page/domain only.
 
-### Routes
-- Each route is a folder. Sub-routes are sub-folders.
-- Shared files for a route and its sub-routes live at the route's root folder.
+### Layout
+- `src/layout/` = Shared layout infrastructure (Sidebar, Header, EmptyState, Layout container)
+- These are not generic reusable components, but structural elements that define the app shell
+
+### Features
+- `src/features/` = Complex features with multiple interconnected components (e.g., CommandPalette)
+- Features can have their own internal structure with pages, components, and utilities
+
+### Pages
+- Each page is a folder. Sub-pages are sub-folders.
+- Shared files for a page and its sub-pages live at the page's root folder.
 - Entry point is always `index.jsx`.
 
 ### Imports
@@ -87,8 +96,8 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - `services/auth.js` - Login/logout API calls
 - `services/api.js` - Axios interceptor for auth header and 401 handling
 - `components/ProtectedRoute.jsx` - Route protection wrapper
-- `routes/Auth/Login/` - Login page (detects auth method from gateway)
-- `routes/Auth/Callback/` - OAuth callback handler
+- `pages/Auth/Login/` - Login page (detects auth method from gateway)
+- `pages/Auth/Callback/` - OAuth callback handler
 
 ### Auth Flow
 1. **Check token**: If no token in localStorage, redirect to `/login` (saves current URL)
@@ -101,4 +110,4 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - `VITE_API_URL` (optional): Custom API endpoint. Defaults to `/api` (relative to current domain)
 
 ## Reference Implementation
-- `routes/Agents/` is the reference route showing the full pattern: store + service + list page + create page
+- `pages/Agents/` is the reference page showing the full pattern: store + service + list page + create page

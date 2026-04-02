@@ -1,15 +1,7 @@
 import { SpotlightAction, SpotlightActionsGroup, SpotlightEmpty } from '@mantine/spotlight'
-import { Plug } from 'lucide-react'
-import { useCommandPaletteStore } from '@/stores/useCommandPaletteStore'
+import { Rotate3d, ChevronRight } from 'lucide-react'
 
-export default function ResourceRolesPage() {
-  const { context, searchResults, navigateToPage } = useCommandPaletteStore()
-  const resource = context.resource
-
-  const connections = (searchResults.connections || []).filter(
-    (c) => c.resource_name === resource?.name
-  )
-
+export default function ResourceRolesPage({ resource, connections, onSelect }) {
   return (
     <SpotlightActionsGroup label={`Connections for ${resource?.name || 'resource'}`}>
       {connections.length === 0
@@ -19,9 +11,10 @@ export default function ResourceRolesPage() {
             key={c.name}
             label={c.name}
             description={c.type || c.subtype}
-            leftSection={<Plug size={16} />}
+            leftSection={<Rotate3d size={16} />}
+            rightSection={<ChevronRight size={16} />}
             closeSpotlightOnTrigger={false}
-            onClick={() => navigateToPage('connection-actions', { connection: c, resource })}
+            onClick={() => onSelect(c)}
           />
         ))
       }

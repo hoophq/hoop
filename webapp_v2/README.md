@@ -78,11 +78,13 @@ See [CLAUDE.md](./CLAUDE.md) for detailed architecture guidelines.
 ```
 src/
 ├── components/       # Reusable components
-├── routes/          # Page components
-├── stores/          # Zustand state stores
-├── services/        # API services
-├── hooks/           # Custom hooks
-└── utils/           # Utility functions
+├── layout/           # Layout infrastructure (Sidebar, Header, EmptyState)
+├── features/         # Complex features (CommandPalette)
+├── pages/            # Page components
+├── stores/           # Zustand state stores
+├── services/         # API services
+├── hooks/            # Custom hooks
+└── utils/            # Utility functions
 ```
 
 ## Development Guidelines

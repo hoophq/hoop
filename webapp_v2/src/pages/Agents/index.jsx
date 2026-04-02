@@ -19,7 +19,7 @@ import { useNavigate } from 'react-router-dom'
 import { Trash2, Zap } from 'lucide-react'
 import { useAgentStore } from '@/stores/useAgentStore'
 import { useUserStore } from '@/stores/useUserStore'
-import EmptyState from '@/components/EmptyState'
+import EmptyState from '@/layout/EmptyState'
 
 const AGENTS_DOCS_URL = 'https://hoop.dev/docs/setup/agents'
 
