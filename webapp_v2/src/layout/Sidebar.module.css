@@ -1,32 +1,28 @@
-/* NavLink overrides for dark sidebar background.
-   !important is needed because Mantine sets colors on sub-elements
-   with its own CSS class specificity. */
-
 .navLink {
   border-radius: 6px;
 }
 
 .navLink:hover {
-  background-color: rgba(255, 255, 255, 0.05) !important;
-  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #fff;
 }
 
 /* Propagate text color to label / icons when hovered */
 .navLink:hover * {
-  color: inherit !important;
+  color: inherit;
 }
 
 .navLink[data-active] {
-  background-color: rgba(255, 255, 255, 0.07) !important;
-  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #fff;
 }
 
 .navLink[data-active] * {
-  color: inherit !important;
+  color: inherit;
 }
 
 .navLink[data-active]:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Blocked/free-license item — dimmed, no interaction */
