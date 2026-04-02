@@ -69,6 +69,8 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 		"username":               connenv.user,
 		"password":               connenv.pass,
 		"authorized_server_keys": connenv.authorizedSSHKeys,
+		"ssh_certificate":        connenv.sshCertificate,
+		"ssh_private_key":        connenv.sshPrivateKey,
 		"connection_id":          clientConnectionID,
 	}
 	serverWriter, err := libhoop.NewSSHProxy(context.Background(), streamClient, opts)
