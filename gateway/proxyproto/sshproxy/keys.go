@@ -17,7 +17,7 @@ func EncodePrivateKeyToOpenSSH(privateKey ed25519.PrivateKey) ([]byte, error) {
 	return pem.EncodeToMemory(block), nil
 }
 
-func decodeOpenSSHPrivateKey(pemBytes []byte) (ed25519.PrivateKey, error) {
+func DecodeOpenSSHPrivateKey(pemBytes []byte) (ed25519.PrivateKey, error) {
 	privateKey, err := ssh.ParseRawPrivateKey(pemBytes)
 	if err != nil {
 		return nil, err

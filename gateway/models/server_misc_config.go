@@ -29,6 +29,7 @@ type PostgresServerConfig struct {
 type SSHServerConfig struct {
 	ListenAddress string `json:"listen_address"`
 	HostsKey      string `json:"hosts_key"`
+	CAKey         string `json:"ca_key"`
 }
 
 func GetServerMiscConfig() (*ServerMiscConfig, error) {

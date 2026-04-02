@@ -36,7 +36,7 @@ func TestEd25519KeyEncodeDecode(t *testing.T) {
 	t.Logf("PEM block type: %s", block.Type)
 
 	// Step 3: Decode the OpenSSH formatted key back to Ed25519 private key
-	decodedKey, err := decodeOpenSSHPrivateKey(encodedKey)
+	decodedKey, err := DecodeOpenSSHPrivateKey(encodedKey)
 	if err != nil {
 		t.Fatalf("Failed to decode OpenSSH private key: %v", err)
 	}
