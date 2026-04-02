@@ -87,6 +87,10 @@
    [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
    [webapp.features.ai-session-analyzer.views.rule-form :as ai-session-analyzer-rule-form]
+   [webapp.features.attributes.events]
+   [webapp.features.attributes.main :as attributes-main]
+   [webapp.features.attributes.subs]
+   [webapp.features.attributes.views.form :as attributes-form]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -689,6 +693,31 @@
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
       [routes/wrap-admin-only
        [ai-session-analyzer-rule-form/main :edit {:rule-name rule-name}]]]]))
+
+(defmethod routes/panels :settings-attributes-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [attributes-main/main]]])
+
+(defmethod routes/panels :settings-attributes-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:attributes/clear-active])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [attributes-form/main :create]]]])
+
+(defmethod routes/panels :settings-attributes-edit-panel []
+  (let [attr-name (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
+                      :route-params
+                      :name)]
+    (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:attributes/get attr-name])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [attributes-form/main :edit]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

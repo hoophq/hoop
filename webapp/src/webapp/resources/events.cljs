@@ -228,3 +228,23 @@
                   (if (< idx (count v))
                     (assoc v idx value)
                     (conj v value)))))))
+
+;; Attributes
+(rf/reg-event-db
+ :resources/set-selected-attributes
+ (fn [db [_ attr-names]]
+   (assoc-in db [:connection-setup :attributes :selected] attr-names)))
+
+(rf/reg-event-db
+ :resources/initialize-attributes
+ (fn [db [_ initial-names]]
+   (update-in db [:connection-setup :attributes]
+              merge
+              {:selected initial-names
+               :initial initial-names
+               :initialized? true})))
+
+(rf/reg-event-db
+ :resources/clear-attributes
+ (fn [db _]
+   (assoc-in db [:connection-setup :attributes] {:selected [] :initial [] :initialized? false})))

@@ -39,27 +39,76 @@ postgres:
 # -- Enable data masking with Presidio
 dataMasking:
   enabled: false
+
+  # Presidio version information: https://github.com/microsoft/presidio/releases
   version: latest
+
   # best-effort | strict
   mode: best-effort
 
   analyzer:
+    replicas: 1
+    imageRepository: mcr.microsoft.com/presidio-analyzer
+    imagePullPolicy: Always
+    imageTag: latest
+
+    # Presidio WSGI HTTP Server configuration
+    gunicornConfigFile: |
+      bind = '0.0.0.0:3000'
+      workers = 2
+      threads = 4
+      timeout = 120
+      keep_alive = 65
+      preload_app = True
+      loglevel = 'debug'
+      worker_class = 'gthread'
+
     resources:
       limits:
-        cpu: 512m
-        memory: 1024Mi
+        cpu: 2200m
+        memory: 2048Mi
       requests:
-        cpu: 256m
+        cpu: 1024m
         memory: 1024Mi
 
   anonymizer:
+    replicas: 1
+    imageRepository: mcr.microsoft.com/presidio-anonymizer
+    imagePullPolicy: Always
+    imageTag: latest
+
+    # Presidio WSGI HTTP Server configuration
+    gunicornConfigFile: |
+      bind = '0.0.0.0:3000'
+      workers = 2
+      threads = 4
+      timeout = 120
+      keep_alive = 65
+      preload_app = True
+      loglevel = 'debug'
+      worker_class = 'gthread'
+
     resources:
       limits:
-        cpu: 512m
-        memory: 512Mi
+        cpu: 2048m
+        memory: 1024Mi
       requests:
         cpu: 256m
         memory: 512Mi
+
+  envoyProxy:
+    replicas: 1
+    imageRepository: envoyproxy/envoy
+    imagePullPolicy: Always
+    imageTag: v1.33-latest
+
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
 
 ## Set pod annotations
 ##

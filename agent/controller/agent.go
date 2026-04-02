@@ -45,6 +45,7 @@ type (
 		// Using sync.Map is more complex here due untyped nature, so we use a mutex + typed map
 		connMtx         map[string]*sync.Mutex
 		connMtxStoreMtx sync.Mutex
+		closedSessions  sync.Map
 	}
 	connEnv struct {
 		scheme             string
@@ -231,8 +232,16 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// We don't need to wait here for the result, so we just spawn a goroutine to process it.
-		go a.processPacket(pkt)
+		// SSH data packets are processed synchronously so that gRPC flow
+		// control propagates backpressure from the destination SSH server
+		// all the way back to the SCP/SSH client. Without this, Recv()
+		// keeps draining packets into goroutines that pile up in memory
+		// while blocked on the SSH channel's flow control window.
+		if pkt.Type == pbagent.SSHConnectionWrite {
+			a.processPacket(pkt)
+		} else {
+			go a.processPacket(pkt)
+		}
 	}
 }
 
@@ -339,6 +348,7 @@ func (a *Agent) processSessionClose(pkt *pb.Packet) {
 
 func (a *Agent) sessionCleanup(sessionID string) {
 	log.With("sid", sessionID).Infof("cleaning up session")
+	a.closedSessions.Store(sessionID, true)
 	filterFn := func(k string) bool { return strings.Contains(k, sessionID) }
 	for key, obj := range a.connStore.Filter(filterFn) {
 		if p, ok := obj.(libhoop.Proxy); ok {
@@ -354,8 +364,8 @@ func (a *Agent) sessionCleanup(sessionID string) {
 					log.With("sid", sessionID).Warnf("failed closing connection, err=%v", err)
 				}
 			}()
-			a.connStore.Del(key)
 		}
+		a.connStore.Del(key)
 	}
 }
 

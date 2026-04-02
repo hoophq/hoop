@@ -25,6 +25,8 @@ type AccessRequestRule struct {
 	AccessMaxDuration *int `gorm:"column:access_max_duration"`
 	MinApprovals      *int `gorm:"column:min_approvals"`
 
+	RuleAttributes []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AccessRuleName;references:OrgID,Name"`
+
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
@@ -59,22 +61,16 @@ func GetAccessRequestRuleByResourceNamesAndAccessType(db *gorm.DB, orgID uuid.UU
 
 func GetAccessRequestRuleByName(db *gorm.DB, name string, orgID uuid.UUID) (*AccessRequestRule, error) {
 	var accessRequestRule AccessRequestRule
-	result := db.Where("name = ? AND org_id = ?", name, orgID).First(&accessRequestRule)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &accessRequestRule, nil
+	err := db.Preload("RuleAttributes").Where("name = ? AND org_id = ?", name, orgID).First(&accessRequestRule).Error
+	return &accessRequestRule, err
 }
 
 func CreateAccessRequestRule(db *gorm.DB, accessRequestRules *AccessRequestRule) error {
-	result := db.Create(accessRequestRules)
-	return result.Error
+	return db.Omit("RuleAttributes").Create(accessRequestRules).Error
 }
 
 func UpdateAccessRequestRule(db *gorm.DB, accessRequestRules *AccessRequestRule) error {
-	result := db.Save(accessRequestRules)
-	return result.Error
+	return db.Omit("RuleAttributes").Save(accessRequestRules).Error
 }
 
 type AccessRequestRulesFilterOption struct {
@@ -97,10 +93,8 @@ func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRule
 		return nil, 0, err
 	}
 
-	// Build query with pagination
-	query := db.Where("org_id = ?", orgID).Order("created_at DESC")
+	query := db.Preload("RuleAttributes").Where("org_id = ?", orgID).Order("created_at DESC")
 
-	// Apply pagination if specified
 	if opts.PageSize > 0 {
 		offset := 0
 		if opts.Page > 1 {
@@ -109,9 +103,8 @@ func ListAccessRequestRules(db *gorm.DB, orgID uuid.UUID, opts AccessRequestRule
 		query = query.Limit(opts.PageSize).Offset(offset)
 	}
 
-	result := query.Find(&accessRequestRules)
-	if result.Error != nil {
-		return nil, 0, result.Error
+	if err := query.Find(&accessRequestRules).Error; err != nil {
+		return nil, 0, err
 	}
 
 	return accessRequestRules, total, nil
@@ -138,4 +131,26 @@ func DeleteAccessRequestRuleByName(db *gorm.DB, name string, orgID uuid.UUID) er
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func GetRequestRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributes []string, accessType string) (*AccessRequestRule, error) {
+	var accessRequestRule AccessRequestRule
+
+	ruleNamesSubQuery := db.Model(&AccessRequestRuleAttribute{}).
+		Distinct("access_rule_name").
+		Where("org_id = ? AND attribute_name IN (?)", orgID, attributes)
+
+	result := db.Model(&AccessRequestRule{}).
+		Where("org_id = ? AND access_type = ?", orgID, accessType).
+		Where("name IN (?)", ruleNamesSubQuery).
+		First(&accessRequestRule)
+	if result.Error != nil {
+		if result.Error == gorm.ErrRecordNotFound {
+			return nil, result.Error
+		}
+
+		return nil, result.Error
+	}
+
+	return &accessRequestRule, nil
 }

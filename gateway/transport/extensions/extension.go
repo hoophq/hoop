@@ -35,7 +35,6 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 	switch pkt.Type {
 	case pbagent.SessionOpen:
 		processEventOpenSessionHook(ctx, pkt)
-
 	case pbclient.SessionClose:
 		processEventCloseSessiontHook(ctx, pkt)
 		jiraConf, err := models.GetJiraIntegration(ctx.OrgID)

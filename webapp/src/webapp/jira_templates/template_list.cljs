@@ -4,7 +4,9 @@
    ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.connections.constants :as connection-constants]))
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.resource-role-filter :as resource-role-filter]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn- get-template-connections
   [connections template-id]
@@ -69,16 +71,36 @@
          [connections-panel {:connections connections}])])))
 
 (defn main [{:keys [templates on-configure]}]
-  (let [connections (rf/subscribe [:connections])]
+  (let [connections (rf/subscribe [:connections])
+        selected-connection (r/atom nil)]
     (fn []
-      [:> Box
-       (doall
-        (for [template templates]
-          ^{:key (:id template)}
-          [template-item
-           (assoc template
-                  :total-items (count templates)
-                  :on-configure on-configure
-                  :connections (get-template-connections
-                                (:results @connections)
-                                (:id template)))]))])))
+      (let [connections-results (:results @connections)
+            filtered-templates (if (nil? @selected-connection)
+                                 templates
+                                 (filter (fn [template]
+                                           (let [template-connections (get-template-connections
+                                                                       connections-results
+                                                                       (:id template))]
+                                             (some #(= (:name %) @selected-connection) template-connections)))
+                                         templates))]
+        [:<>
+         [:> Box {:mb "6"}
+          [resource-role-filter/main {:selected @selected-connection
+                                      :on-select #(reset! selected-connection %)
+                                      :on-clear #(reset! selected-connection nil)
+                                      :label "Resource Role"}]]
+
+         [:> Box
+          (if (empty? filtered-templates)
+            [filtered-empty-state {:entity-name "Jira template"
+                                   :filter-value @selected-connection}]
+            (doall
+             (for [template filtered-templates]
+               ^{:key (:id template)}
+               [template-item
+                (assoc template
+                       :total-items (count filtered-templates)
+                       :on-configure on-configure
+                       :connections (get-template-connections
+                                     connections-results
+                                     (:id template)))])))]]))))

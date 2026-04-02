@@ -16,9 +16,9 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/gateway/utils"
-	"gorm.io/gorm"
 )
 
 func getValidatedJitReview(pctx plugintypes.Context) (*plugintypes.ConnectResponse, error) {
@@ -179,19 +179,15 @@ func OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectRe
 	}
 
 	// 3. if no existing review, create a new review
-	orgID, err := uuid.Parse(pctx.OrgID)
-	if err != nil {
-		return nil, plugintypes.InvalidArgument("invalid organization id format")
-	}
-
 	durationStr, isJitReview := pkt.Spec[pb.SpecJitTimeout]
 	accessType := "command"
 	if isJitReview {
 		accessType = "jit"
 	}
 
-	accessRule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, pctx.ConnectionName, accessType)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	orgID := uuid.MustParse(pctx.OrgID)
+	accessRule, err := services.GetRuleForConnection(orgID, pctx.ConnectionName, accessType)
+	if err != nil {
 		return nil, plugintypes.InternalErr("failed fetching access request rule", err)
 	}
 

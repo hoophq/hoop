@@ -21,6 +21,24 @@
    (and (= (:status provider) :success) (some? (:data provider)))))
 
 (rf/reg-sub
+ :ai-session-analyzer/role-rule
+ (fn [db]
+   (get-in db [:ai-session-analyzer :role-rule])))
+
+(rf/reg-sub
+ :ai-session-analyzer/role-rule-loading?
+ :<- [:ai-session-analyzer/role-rule]
+ (fn [role-rule]
+   (= (:status role-rule) :loading)))
+
+(rf/reg-sub
+ :ai-session-analyzer/role-has-rule?
+ :<- [:ai-session-analyzer/role-rule]
+ (fn [role-rule]
+   (and (= (:status role-rule) :success)
+        (some? (:data role-rule)))))
+
+(rf/reg-sub
  :ai-session-analyzer/rule-loading?
  (fn [db]
    (= (get-in db [:ai-session-analyzer :rule :status]) :loading)))

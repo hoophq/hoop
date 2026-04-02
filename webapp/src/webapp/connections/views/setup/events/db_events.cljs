@@ -532,3 +532,4 @@
  :connection-setup/update-claude-code-insecure
  (fn [db [_ enabled?]]
    (assoc-in db [:connection-setup :claude-code-credentials :insecure] (boolean enabled?))))
+

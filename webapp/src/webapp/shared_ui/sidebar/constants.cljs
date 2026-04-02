@@ -232,7 +232,15 @@
 
 ;; Settings
 (def settings-management
-  [{:name "infrastructure"
+  [{:name "attributes"
+    :label "Attributes"
+    :uri (routes/url-for :settings-attributes)
+    :navigate :settings-attributes
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false
+    :badge "NEW"}
+   {:name "infrastructure"
     :label "Infrastructure"
     :uri (routes/url-for :settings-infrastructure)
     :navigate :settings-infrastructure

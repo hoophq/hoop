@@ -3,7 +3,8 @@
    [clojure.string :as str]
    [re-frame.core :as rf]
    [webapp.connections.native-client-access.constants :as constants]
-   [webapp.connections.native-client-access.main :as native-client-access-main]))
+   [webapp.connections.native-client-access.main :as native-client-access-main]
+   [webapp.audit.views.session-details :as session-details]))
 
 
 (rf/reg-fx
@@ -38,15 +39,26 @@
 (rf/reg-event-fx
  :native-client-access->request-success
  (fn [{:keys [db]} [_ connection-name response]]
-   (let [connection-name-key (:connection_name response)]
-     ;; Save to localStorage (add to sessions map)
-     (constants/save-session connection-name-key response)
+   (if (:has_review response)
+     ;; Has review - close current modal and open session details modal
+     {:db (update-in db [:native-client-access :requesting-connections] disj connection-name)
+      :fx [[:dispatch [:modal->close]]
+           [:dispatch-later {:ms 100
+                             :dispatch [:modal->open {:id "session-details"
+                                                     :maxWidth "95vw"
+                                                     :content [session-details/main {:id (:session_id response) :verb "connect"}]}]}]
+           [:dispatch [:show-snackbar {:level :info
+                                       :text "This connection requires review approval"}]]]}
+     ;; No review - existing flow
+     (let [connection-name-key (:connection_name response)]
+       ;; Save to localStorage (add to sessions map)
+       (constants/save-session connection-name-key response)
 
-     {:db (-> db
-              (update-in [:native-client-access :requesting-connections] disj connection-name)
-              (assoc-in [:native-client-access :sessions connection-name-key] response))
-      :fx [[:dispatch [:show-snackbar {:level :success
-                                       :text "Native client access granted successfully!"}]]]})))
+       {:db (-> db
+                (update-in [:native-client-access :requesting-connections] disj connection-name)
+                (assoc-in [:native-client-access :sessions connection-name-key] response))
+        :fx [[:dispatch [:show-snackbar {:level :success
+                                         :text "Native client access granted successfully!"}]]]}))))
 
 ;; Handle failed native client access response
 (rf/reg-event-fx
@@ -89,8 +101,8 @@
          is-admin? (get-in db [:users->current-user :data :admin?])]
      {:db (assoc-in db [:native-client-access :checking-agent?] false)
       :fx [(if is-online?
-             ;; Agent is online - proceed with normal flow
-             [:dispatch [:modal->open {:content [native-client-access-main/main connection-name]
+             ;; Agent is online - proceed with normal flow, passing full response for JIT info
+             [:dispatch [:modal->open {:content [native-client-access-main/main response]
                                        :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)
                                        :maxWidth "1100px"}]]
              ;; Agent is offline - show error dialog
@@ -187,4 +199,43 @@
  :native-client-access->open-rdp-web-client
  (fn [_ [_ username]]
    {:open-rdp-web-client {:username username}}))
+
+;; Resume credentials request after review approval
+(rf/reg-event-fx
+ :native-client-access->resume-credentials
+ (fn [{:keys [db]} [_ connection-name session-id on-error-cb]]
+   ;; Get access duration from the session's review
+   (let [session (get-in db [:audit->session-details :session])
+         access-duration-sec (get-in session [:review :access_duration_sec])]
+     {:fx [[:dispatch [:fetch {:method "POST"
+                               :uri (str "/connections/" connection-name "/credentials/" session-id)
+                               :body {:access_duration_seconds access-duration-sec}
+                               :on-success #(rf/dispatch [:native-client-access->resume-success connection-name %])
+                               :on-failure (fn [error]
+                                             (when on-error-cb (on-error-cb))
+                                             (rf/dispatch [:native-client-access->resume-failure error]))}]]]})))
+
+;; Handle successful resume of credentials
+(rf/reg-event-fx
+ :native-client-access->resume-success
+ (fn [{:keys [db]} [_ connection-name response]]
+   (let [connection-name-key (:connection_name response)]
+     ;; Save credentials to localStorage and db
+     (constants/save-session connection-name-key response)
+     
+     {:db (assoc-in db [:native-client-access :sessions connection-name-key] response)
+      :fx [[:dispatch [:modal->close]]
+           [:dispatch [:native-client-access->reopen-connect-modal connection-name]]
+           [:dispatch [:show-snackbar {:level :success
+                                       :text "Credentials obtained successfully!"}]]]})))
+
+;; Handle failed resume of credentials
+(rf/reg-event-fx
+ :native-client-access->resume-failure
+ (fn [_ [_ error]]
+   (let [error-message (or (:message error)
+                          (get-in error [:response :message])
+                          "Failed to obtain credentials")]
+     {:fx [[:dispatch [:show-snackbar {:level :error
+                                       :text error-message}]]]})))
 

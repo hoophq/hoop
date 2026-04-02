@@ -19,7 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
-	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	accessrequestinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/accessrequest"
@@ -243,71 +243,44 @@ func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 }
 
 func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage, error) {
-	connGuardRailRules, err := models.GetConnectionGuardRailRules(pctx.OrgID, pctx.ConnectionName)
+	connGuardRailRules, err := services.GetGuardRailRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
 
-	if connGuardRailRules == nil || len(*connGuardRailRules) == 0 {
+	if connGuardRailRules == nil {
 		return nil, nil
 	}
 
-	type guardRailRule struct {
-		ID          string                 `json:"id"`
-		Name        string                 `json:"name"`
-		InputRules  []guardrails.DataRules `json:"input_rules"`
-		OutputRules []guardrails.DataRules `json:"output_rules"`
+	var inputRules, outputRules []guardrails.DataRules
+
+	// decode input rules
+	if connGuardRailRules.GuardRailInputRules != nil {
+		if inputRules, err = guardrails.Decode(connGuardRailRules.GuardRailInputRules); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed decoding guard rail input rules, err=%v", err)
+		}
 	}
 
-	decodeRules := func(raw []byte) ([]guardrails.DataRules, error) {
-		if len(raw) == 0 {
-			return nil, nil
+	// decode output rules
+	if connGuardRailRules.GuardRailOutputRules != nil {
+		if outputRules, err = guardrails.Decode(connGuardRailRules.GuardRailOutputRules); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed decoding guard rail output rules, err=%v", err)
 		}
-
-		var rules []guardrails.DataRules
-		if err := json.Unmarshal(raw, &rules); err == nil {
-			return rules, nil
-		}
-
-		var oneRule guardrails.DataRules
-		if err := json.Unmarshal(raw, &oneRule); err != nil {
-			return nil, err
-		}
-		return []guardrails.DataRules{oneRule}, nil
 	}
 
-	var rules []guardRailRule
-	hasRules := false
-
-	for _, rule := range *connGuardRailRules {
-		inputRules, err := decodeRules(rule.GuardRailInputRules)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed decoding guard rail input rules for rule %s, err=%v", rule.ID, err)
-		}
-
-		outputRules, err := decodeRules(rule.GuardRailOutputRules)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed decoding guard rail output rules for rule %s, err=%v", rule.ID, err)
-		}
-
-		if len(inputRules) > 0 || len(outputRules) > 0 {
-			hasRules = true
-		}
-
-		rules = append(rules, guardRailRule{
-			ID:          rule.ID,
-			Name:        rule.Name,
-			InputRules:  inputRules,
-			OutputRules: outputRules,
-		})
-	}
-
-	if !hasRules {
+	// check if there are no rules
+	if inputRules == nil && outputRules == nil {
 		return nil, nil
 	}
 
 	// marshal rules to json
-	guardRailRulesJsonData, err := json.Marshal(rules)
+	guardRailRulesJsonData, err := json.Marshal(struct {
+		InputRules  []guardrails.DataRules `json:"input_rules"`
+		OutputRules []guardrails.DataRules `json:"output_rules"`
+	}{
+		InputRules:  inputRules,
+		OutputRules: outputRules,
+	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed marshaling guard rail rules, err=%v", err)
 	}
@@ -373,7 +346,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		var entityTypesJsonData json.RawMessage
 		if s.AppConfig.DlpProvider() == "mspresidio" {
 			var err error
-			entityTypesJsonData, err = models.GetDataMaskingEntityTypes(pctx.OrgID, pctx.ConnectionID)
+			entityTypesJsonData, err = services.GetDataMaskingRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 			if err != nil {
 				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).Errorf("failed getting data masking entity types, err=%v", err)
 				return status.Errorf(codes.Internal, "failed obtaining data masking entity types, err=%v", err)

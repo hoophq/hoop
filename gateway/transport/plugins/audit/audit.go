@@ -74,6 +74,11 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			return fmt.Errorf("connection not found")
 		}
 
+		var sessionMetadata map[string]any
+		if pctx.CredentialSessionID != "" {
+			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
+		}
+
 		newSession := models.Session{
 			ID:                   pctx.SID,
 			OrgID:                pctx.OrgID,
@@ -86,7 +91,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ConnectionTags:       pctx.ConnectionTags,
 			Verb:                 pctx.ClientVerb,
 			Labels:               nil,
-			Metadata:             nil,
+			Metadata:             sessionMetadata,
 			IntegrationsMetadata: nil,
 			Status:               string(openapi.SessionStatusOpen),
 			ExitCode:             nil,
@@ -108,7 +113,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.SessionOpen:
 		// update session input when executing ad-hoc executions via cli
-		if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClient) {
+		if pctx.ClientOrigin == pb.ConnectionOriginClient && pctx.ClientVerb == "exec" {
 			if err := models.UpdateSessionInput(pctx.OrgID, pctx.SID, string(pkt.Payload)); err != nil {
 				return nil, plugintypes.InternalErr("failed updating session input", err)
 			}

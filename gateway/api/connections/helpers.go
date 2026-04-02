@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
@@ -201,6 +202,16 @@ func validateListOptions(urlValues url.Values) (o models.ConnectionFilterOption,
 			continue
 		case "resource_name":
 			o.ResourceName = values[0]
+			continue
+		case "attribute":
+			if len(values[0]) > 0 {
+				for _, attr := range strings.Split(values[0], ",") {
+					if !reSanitize.MatchString(attr) {
+						return o, errInvalidOptionVal
+					}
+					o.Attributes = append(o.Attributes, attr)
+				}
+			}
 			continue
 		case "name":
 			o.Name = strings.TrimLeft(values[0], " ")
@@ -651,4 +662,9 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 		}
 	}
 	return cmd
+}
+
+func upsertConnectionAttributes(ctx *storagev2.Context, connectionName string, attributeNames []string) error {
+	orgID := uuid.MustParse(ctx.OrgID)
+	return models.UpsertConnectionAttributes(models.DB, orgID, connectionName, attributeNames)
 }
