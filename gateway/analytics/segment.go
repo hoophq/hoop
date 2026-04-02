@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"net/url"
 
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/segmentio/analytics-go/v3"
 )
@@ -28,6 +30,17 @@ func New() *Segment {
 	return &Segment{
 		Client:          analytics.New(segmentApiKey),
 		environmentName: appconfig.Get().ApiHostname(),
+	}
+}
+
+func (s *Segment) Close() {
+	if s == nil || s.Client == nil {
+		return
+	}
+
+	if err := s.Client.Close(); err != nil {
+		log.Warnf("failed closing analytics client, err=%v", err)
+		return
 	}
 }
 
@@ -131,10 +144,18 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 		}
 	}
 
+	groups := make(map[string]any)
+
 	if orgID, exists := properties["org-id"]; exists && orgID != "" {
-		properties["$groups"] = map[string]any{
-			"org-id": orgID,
-		}
+		groups["org-id"] = orgID
+	}
+
+	if sessionID, exists := properties["session-id"]; exists && sessionID != "" {
+		groups["session-id"] = sessionID
+	}
+
+	if len(groups) > 0 {
+		properties["$groups"] = groups
 	}
 
 	hashedUserID := getUserIDHash(userID)
@@ -143,9 +164,73 @@ func (s *Segment) Track(userID, eventName string, properties map[string]any) {
 	properties["auth-method"] = appconfig.Get().AuthMethod()
 	properties["client-version"] = version.Get().Version
 
-	_ = s.Client.Enqueue(analytics.Track{
+	if err := s.Client.Enqueue(analytics.Track{
 		UserId:     hashedUserID,
 		Event:      eventName,
 		Properties: properties,
-	})
+	}); err != nil {
+		log.Warnf("failed to enqueue analytics event=%s, reason=%v", eventName, err)
+	}
+}
+
+func sessionUsageProperties(s *models.Session, c *models.Connection, agent *models.Agent) map[string]any {
+	props := map[string]any{
+		"org-id":                        s.OrgID,
+		"session-id":                    s.ID,
+		"resource-type":                 s.ConnectionType,
+		"resource-subtype":              s.ConnectionSubtype,
+		"status":                        s.Status,
+		"created-at":                    s.CreatedAt.String(),
+		"ai-session-analyzer-activated": false,
+		"agent-version":                 agent.GetMeta("version"),
+		"agent-platform":                agent.GetMeta("platform"),
+		"jira-template-activated":       c.JiraIssueTemplateID.Valid && c.JiraIssueTemplateID.String != "",
+	}
+
+	if s.EndSession != nil {
+		props["finished-at"] = s.EndSession.String()
+	}
+
+	if s.AIAnalysis != nil {
+		props["ai-session-analyzer-activated"] = true
+		props["ai-session-analyzer-identified-risk"] = s.AIAnalysis.RiskLevel
+		props["ai-session-analyzer-action"] = s.AIAnalysis.Action
+	}
+
+	return props
+}
+
+func (s *Segment) TrackSessionUsageData(eventName string, orgID string, userID string, sessionID string) {
+	session, err := models.GetSessionByID(orgID, sessionID)
+	if err != nil {
+		log.Warnf("failed getting session by ID, reason=%v", err)
+		return
+	}
+
+	if session == nil {
+		log.Warnf("session not found for ID=%s", sessionID)
+		return
+	}
+
+	connection, err := models.GetConnectionByName(models.DB, session.Connection)
+	if err != nil {
+		log.Warnf("failed getting connection features by name, reason=%v", err)
+		return
+	}
+
+	if connection == nil {
+		log.Warnf("connection not found for name=%s", session.Connection)
+		return
+	}
+
+	agent, err := models.GetAgentByNameOrID(orgID, connection.AgentID.String)
+	if err != nil {
+		log.Warnf("failed getting agent by name, reason=%v", err)
+		return
+	}
+
+	props := sessionUsageProperties(session, connection, agent)
+	log.With("sid", sessionID).Infof("tracking session usage data, event=%s, orgID=%s, userID=%s, props=%+v", eventName, orgID, userID, props)
+
+	s.Track(userID, eventName, props)
 }

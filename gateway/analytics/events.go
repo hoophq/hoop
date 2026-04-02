@@ -70,4 +70,9 @@ const (
 	EventSessionAIAnalysisProviderUpdated = "hoop-session-ai-analysis-provider-updated"
 	EventSessionAIAnalysisRuleCreated     = "hoop-session-ai-analysis-rule-created"
 	EventSessionAIAnalysisRuleUpdated     = "hoop-session-ai-analysis-rule-updated"
+
+	// sessions
+	EventSessionCreated  = "hoop-session-created"
+	EventSessionReviewed = "hoop-session-reviewed"
+	EventSessionFinished = "hoop-session-finished"
 )
