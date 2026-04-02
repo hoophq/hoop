@@ -1,11 +1,11 @@
 package httputils
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	pkgerrors "github.com/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -16,13 +16,14 @@ import (
 // The internal error and user message are combined into a single log entry,
 // with the caller's location preserved in the log output.
 func AbortWithErr(c *gin.Context, status int, err error, friendlyErrMsg string, friendlyErrMsgArgs ...any) {
-	errMsg := fmt.Sprintf("%v, user-msg=%v", err, fmt.Sprintf(friendlyErrMsg, friendlyErrMsgArgs...))
+	friendlyErrMsg = fmt.Sprintf(friendlyErrMsg, friendlyErrMsgArgs...)
+	errMsg := fmt.Sprintf("%v, user-msg=%v", err, friendlyErrMsg)
 
 	// preserve the caller when logging the error
 	log.GetLogger().WithOptions(zap.AddCallerSkip(1)).Sugar().Error(errMsg)
 
 	// append the error to the gin context, so that it can be captured by sentry middleware if needed
-	c.Error(errors.New(errMsg))
+	c.Error(pkgerrors.WithStack(err))
 
 	// respond with a friendly error message
 	c.AbortWithStatusJSON(status, gin.H{"message": friendlyErrMsg})
