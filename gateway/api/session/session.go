@@ -230,12 +230,8 @@ func Post(c *gin.Context) {
 		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
 		switch err.(type) {
 		case *guardrails.ErrRuleMatch:
-<<<<<<< HEAD
-			_ = services.UpsertSession(c, newSession, *conn)
-=======
 			// persist session to audit this attempt
 			_ = services.ValidateAndUpsertSession(c, newSession, conn)
->>>>>>> main
 			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
 			if err := models.UpdateSessionEventStream(models.SessionDone{
 				ID:         sid,
