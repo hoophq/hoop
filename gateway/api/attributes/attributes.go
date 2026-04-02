@@ -95,7 +95,7 @@ func Post(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusCreated, toResponse(attr))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating attribute")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating attribute: %v", err)
 	}
 }
 
@@ -133,7 +133,7 @@ func Put(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching attribute")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching attribute: %v", err)
 		return
 	}
 
@@ -148,7 +148,7 @@ func Put(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toResponse(attr))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating attribute")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating attribute: %v", err)
 	}
 }
 
@@ -178,7 +178,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting attribute")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting attribute: %v", err)
 	}
 }
 
@@ -218,7 +218,7 @@ func List(c *gin.Context) {
 
 	attrs, total, err := models.ListAttributes(models.DB, orgID, opts)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing attributes")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing attributes: %v", err)
 		return
 	}
 
@@ -263,7 +263,7 @@ func Get(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toResponse(attr))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching attribute")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching attribute: %v", err)
 	}
 }
 

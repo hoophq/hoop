@@ -91,7 +91,7 @@ func ListTags(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	items, err := models.ListConnectionTags(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connection tags")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connection tags: %v", err)
 		return
 	}
 	var result openapi.ConnectionTagList

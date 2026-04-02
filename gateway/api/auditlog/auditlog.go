@@ -80,7 +80,7 @@ func List(c *gin.Context) {
 
 	rows, total, err := models.ListSecurityAuditLogs(models.DB, ctx.OrgID, f)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing security audit logs")
 		return
 	}
 

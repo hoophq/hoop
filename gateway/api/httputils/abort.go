@@ -15,8 +15,8 @@ import (
 //
 // The internal error and user message are combined into a single log entry,
 // with the caller's location preserved in the log output.
-func AbortWithErr(c *gin.Context, status int, err error, friendlyErrMsg string, errMsgArgs ...any) {
-	errMsg := fmt.Sprintf("%v, user-msg=%v", err, fmt.Sprintf(friendlyErrMsg, errMsgArgs...))
+func AbortWithErr(c *gin.Context, status int, err error, friendlyErrMsg string, friendlyErrMsgArgs ...any) {
+	errMsg := fmt.Sprintf("%v, user-msg=%v", err, fmt.Sprintf(friendlyErrMsg, friendlyErrMsgArgs...))
 
 	// preserve the caller when logging the error
 	log.GetLogger().WithOptions(zap.AddCallerSkip(1)).Sugar().Error(errMsg)

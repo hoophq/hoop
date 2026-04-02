@@ -29,7 +29,7 @@ func ListRunbookRules(c *gin.Context) {
 
 	rules, err := models.GetRunbookRules(models.DB, ctx.GetOrgID(), 0, 0)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rules: %v", err)
 		return
 	}
 
@@ -63,7 +63,7 @@ func GetRunbookRule(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule: %v", err)
 		return
 	}
 
@@ -96,7 +96,7 @@ func CreateRunbookRule(c *gin.Context) {
 	rule.OrgID = ctx.GetOrgID()
 
 	if err := models.UpsertRunbookRule(models.DB, &rule); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook rule: %v", err)
 		return
 	}
 
@@ -135,7 +135,7 @@ func UpdateRunbookRule(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule: %v", err)
 		return
 	}
 
@@ -144,7 +144,7 @@ func UpdateRunbookRule(c *gin.Context) {
 	rule.OrgID = ctx.GetOrgID()
 
 	if err := models.UpsertRunbookRule(models.DB, &rule); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating runbook rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating runbook rule: %v", err)
 		return
 	}
 
@@ -175,12 +175,12 @@ func DeleteRunbookRule(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule for delete")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rule for delete: %v", err)
 		return
 	}
 
 	if err := models.DeleteRunbookRule(models.DB, ctx.GetOrgID(), ruleID); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting runbook rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting runbook rule: %v", err)
 		return
 	}
 

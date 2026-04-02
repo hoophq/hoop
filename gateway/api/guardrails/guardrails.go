@@ -52,7 +52,7 @@ func Post(c *gin.Context) {
 		return
 	case nil:
 		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
 			return
 		}
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
@@ -67,7 +67,7 @@ func Post(c *gin.Context) {
 			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating guard rail rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating guard rail rule: %v", err)
 	}
 }
 
@@ -110,7 +110,7 @@ func Put(c *gin.Context) {
 		return
 	case nil:
 		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
 			return
 		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
@@ -125,7 +125,7 @@ func Put(c *gin.Context) {
 			UpdatedAt:     rule.UpdatedAt,
 		})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating guard rail rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating guard rail rule: %v", err)
 	}
 }
 
@@ -143,7 +143,7 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleList, err := models.ListGuardRailRules(ctx.GetOrgID())
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
 		return
 	}
 
@@ -192,7 +192,7 @@ func Get(c *gin.Context) {
 			UpdatedAt: rule.UpdatedAt,
 		})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
 	}
 }
 
@@ -217,7 +217,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing guard rail rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing guard rail rules: %v", err)
 	}
 }
 

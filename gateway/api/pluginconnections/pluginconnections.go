@@ -44,7 +44,7 @@ func UpsertPluginConnection(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(pluginConn))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating plugin connection")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating plugin connection: %v", err)
 	}
 }
 
@@ -69,7 +69,7 @@ func GetPluginConnection(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(resource))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching plugin connection")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching plugin connection: %v", err)
 		return
 	}
 }
@@ -94,7 +94,7 @@ func DeletePluginConnection(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusNoContent, nil)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing plugin connection")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing plugin connection: %v", err)
 	}
 }
 

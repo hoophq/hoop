@@ -112,7 +112,7 @@ func RevokeAgentKey(c *gin.Context) {
 		delErr := models.DeleteAgentByNameOrID(ctx.OrgID, agentKeyDefaultName)
 		evt.Err(delErr)
 		if delErr != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, delErr, "failed removing organization token")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, delErr, "failed removing organization token: %v", delErr)
 			return
 		}
 	default:
@@ -120,7 +120,7 @@ func RevokeAgentKey(c *gin.Context) {
 			Resource(agentKeyDefaultName, agentKeyDefaultName).
 			Err(err).
 			Log(c)
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching organization token")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching organization token: %v", err)
 		return
 	}
 	c.Writer.WriteHeader(204)

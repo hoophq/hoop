@@ -29,7 +29,7 @@ func ListIssueTemplates(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	issueList, err := models.ListJiraIssueTemplates(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing issue templates")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing issue templates: %v", err)
 		return
 	}
 
@@ -85,7 +85,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 			UpdatedAt:                  issue.UpdatedAt,
 		})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing issue templates")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing issue templates: %v", err)
 	}
 }
 
@@ -110,7 +110,7 @@ func GetAssetObjects(c *gin.Context) {
 	}
 	config, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
 		return
 	}
 	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, c.Query("name"))
@@ -121,7 +121,7 @@ func GetAssetObjects(c *gin.Context) {
 
 	resp, err := jira.FetchObjectsByAQL(config, limit, offset, query)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching object type values from Jira")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching object type values from Jira: %v", err)
 		return
 	}
 	log.Infof("jira assets api response, query=%q, islast=%v, total=%v/%v",
@@ -211,7 +211,7 @@ func CreateIssueTemplates(c *gin.Context) {
 			ConnectionIDs:              issue.ConnectionIDs,
 		})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating issue templates")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating issue templates: %v", err)
 	}
 }
 
@@ -267,7 +267,7 @@ func UpdateIssueTemplates(c *gin.Context) {
 			ConnectionIDs:              issue.ConnectionIDs,
 		})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating jira issue templates")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating jira issue templates: %v", err)
 	}
 }
 
@@ -291,7 +291,7 @@ func DeleteIssueTemplates(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing Jira issue templates")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing Jira issue templates: %v", err)
 	}
 }
 

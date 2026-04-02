@@ -39,7 +39,7 @@ func Register(c *gin.Context) {
 	// fetch user by email
 	existingUser, err := models.GetUserByEmail(user.Email)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching user by email")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching user by email: %v", err)
 		return
 	}
 	if existingUser != nil {
@@ -52,7 +52,7 @@ func Register(c *gin.Context) {
 	// limitation comes to make sure things are working as expected.
 	org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch default organization")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch default organization: %v", err)
 		return
 	}
 	// if there is one user already, do not allow new users to be created

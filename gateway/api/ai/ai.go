@@ -54,7 +54,7 @@ func GetSessionAnalyzerProvider(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toProviderResponse(*p))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI provider")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI provider: %v", err)
 	}
 }
 
@@ -90,7 +90,7 @@ func UpsertSessionAnalyzerProvider(c *gin.Context) {
 
 	p, err := models.UpsertAIProvider(orgID, models.AISessionAnalyzerFeature, req.Provider, req.ApiUrl, req.ApiKey, req.Model)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting AI provider")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting AI provider: %v", err)
 		return
 	}
 
@@ -127,7 +127,7 @@ func DeleteSessionAnalyzerProvider(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting AI provider")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting AI provider: %v", err)
 	}
 }
 
@@ -172,7 +172,7 @@ func ListSessionAnalyzerRules(c *gin.Context) {
 
 	rules, total, err := models.ListAISessionAnalyzerRules(orgID, connectionNames, page, pageSize)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing AI session analyzer rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing AI session analyzer rules: %v", err)
 		return
 	}
 
@@ -217,7 +217,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule: %v", err)
 	}
 }
 
@@ -287,7 +287,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		})
 		c.JSON(http.StatusCreated, toSessionAnalyzerRuleResponse(rule))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
 	}
 }
 
@@ -324,7 +324,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 	foundRule, err := models.GetAIAnalyzerRulesByConnections(models.DB, orgID, req.ConnectionNames)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI analyzer rules by connections")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI analyzer rules by connections: %v", err)
 		return
 	}
 
@@ -359,7 +359,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
 	}
 }
 

@@ -44,7 +44,7 @@ func GetAuthConfig(c *gin.Context) {
 	}
 	config, err := models.GetServerAuthConfig()
 	if err != nil && err != models.ErrNotFound {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server auth config: %v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server auth config")
 		return
 	}
 

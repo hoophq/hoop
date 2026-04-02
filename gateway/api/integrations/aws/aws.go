@@ -174,7 +174,7 @@ func DescribeRDSDBInstances(c *gin.Context) {
 
 	getProvisionedConnectionsFn, err := listConnections(ctx)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connection resources")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connection resources: %v", err)
 		return
 	}
 
@@ -257,7 +257,8 @@ func CreateRDSRootPassword(c *gin.Context) {
 		}
 		randomPwd, err := generateRandomPassword()
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating random password for instance %s", instanceArn)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+				"failed generating random password for instance %s: %v", instanceArn, err)
 			return
 		}
 
@@ -301,7 +302,7 @@ func CreateDBRoleJob(c *gin.Context) {
 		return
 	case nil:
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to validate agent")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to validate agent: %v", err)
 		return
 	}
 	resourceAWSAccountID := parseDatabaseArnAccountID(dbArn)
@@ -382,7 +383,7 @@ func GetDBRoleJobByID(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toDBRoleOpenAPI(dbRole))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting db role job by id")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting db role job by id: %v", err)
 	}
 }
 
@@ -399,7 +400,7 @@ func ListDBRoleJobs(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	dbRoleItems, err := models.ListDBRoleJobs(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing db role jobs")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing db role jobs: %v", err)
 		return
 	}
 	var obj openapi.DBRoleJobList

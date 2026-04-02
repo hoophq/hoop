@@ -42,7 +42,7 @@ func UpdateOrgLicense(c *gin.Context) {
 
 	licenseData, _ := json.Marshal(&req)
 	if err := models.UpdateOrgLicense(ctx.OrgID, licenseData); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating license")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating license: %v", err)
 		return
 	}
 	c.JSON(http.StatusNoContent, nil)
@@ -94,11 +94,11 @@ func SignLicense(c *gin.Context) {
 		req.LicenseType, req.AllowedHosts, req.Description, req.ExpireAt)
 	l, err := license.Sign(signingKey, req.LicenseType, req.Description, req.AllowedHosts, expireAt)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed sign license")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed sign license: %v", err)
 		return
 	}
 	if err := l.Verify(); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed verifying license")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed verifying license: %v", err)
 		return
 	}
 	c.JSON(http.StatusOK, l)

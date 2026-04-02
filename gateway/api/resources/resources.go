@@ -36,7 +36,7 @@ func GetResource(c *gin.Context) {
 
 	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
 		return
 	}
 	if resource == nil {
@@ -70,7 +70,7 @@ func CreateResource(c *gin.Context) {
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, req.Name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
 		return
 	}
 	if existing != nil {
@@ -174,7 +174,7 @@ func CreateResource(c *gin.Context) {
 
 	if err != nil {
 		evt.Err(err)
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error: %v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating resource: %v", err)
 		return
 	}
 
@@ -230,7 +230,7 @@ func ListResources(c *gin.Context) {
 
 	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin(), opts)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing resources: %v", err)
 		return
 	}
 
@@ -287,7 +287,7 @@ func UpdateResource(c *gin.Context) {
 
 	existing, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
 		return
 	}
 	if existing == nil {
@@ -297,7 +297,7 @@ func UpdateResource(c *gin.Context) {
 
 	connections, err := models.GetResourceConnections(models.DB, ctx.OrgID, name)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource connections: %v", err)
 		return
 	}
 	if len(connections) > 0 && (existing.Type != req.Type || existing.SubType.String != req.SubType) {
@@ -325,7 +325,7 @@ func UpdateResource(c *gin.Context) {
 	err = models.UpsertResource(models.DB, &resource, true)
 	if err != nil {
 		evt.Err(err)
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating resource: %v", err)
 		return
 	}
 
@@ -348,7 +348,7 @@ func DeleteResource(c *gin.Context) {
 
 	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
 		return
 	}
 	if resource == nil {
@@ -358,7 +358,7 @@ func DeleteResource(c *gin.Context) {
 
 	connections, err := models.GetResourceConnections(models.DB, ctx.OrgID, name)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource connections: %v", err)
 		return
 	}
 	if len(connections) > 0 {
@@ -373,7 +373,7 @@ func DeleteResource(c *gin.Context) {
 	err = models.DeleteResource(models.DB, ctx.OrgID, name)
 	if err != nil {
 		evt.Err(err)
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting resource: %v", err)
 		return
 	}
 

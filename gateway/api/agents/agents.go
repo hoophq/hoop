@@ -71,7 +71,7 @@ func Post(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating agent resource")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating agent resource: %v", err)
 		return
 	}
 }
@@ -95,7 +95,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(204)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing agent resource")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing agent resource: %v", err)
 		return
 	}
 }
@@ -121,7 +121,7 @@ func Get(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting agent")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting agent: %v", err)
 		return
 	}
 

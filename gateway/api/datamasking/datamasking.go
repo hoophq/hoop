@@ -80,7 +80,7 @@ func Post(c *gin.Context) {
 	if licenseType == license.OSSType {
 		rules, err := models.ListDataMaskingRules(ctx.GetOrgID())
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules: %v", err)
 			return
 		}
 
@@ -145,13 +145,13 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
 	case nil:
 		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
 			return
 		}
 		rule.Attributes = req.Attributes
 		c.JSON(http.StatusCreated, toOpenApi(rule))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating data masking rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating data masking rule: %v", err)
 	}
 }
 
@@ -227,13 +227,13 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 	case nil:
 		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
 			return
 		}
 		rule.Attributes = req.Attributes
 		c.JSON(http.StatusOK, toOpenApi(rule))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating data masking rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating data masking rule: %v", err)
 	}
 }
 
@@ -251,7 +251,7 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleList, err := models.ListDataMaskingRules(ctx.GetOrgID())
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules: %v", err)
 		return
 	}
 
@@ -282,7 +282,7 @@ func Get(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(rule))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
 	}
 }
 
@@ -311,7 +311,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing data masking rule")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing data masking rule: %v", err)
 	}
 }
 

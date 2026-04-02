@@ -52,13 +52,13 @@ func ListRunbooksV2(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook configuration: %v", err)
 		return
 	}
 
 	runbookRules, err := models.GetRunbookRules(models.DB, ctx.OrgID, 0, 0)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rules")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook rules: %v", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func ListRunbooksV2(c *gin.Context) {
 	if connectionName == "" {
 		connectionNames, err = models.ListConnectionsNameForRunbooks(models.DB, ctx.GetOrgID())
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection names")
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection names: %v", err)
 			return
 		}
 	}
@@ -133,7 +133,7 @@ func GetRunbookConfiguration(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook configuration: %v", err)
 		return
 	}
 
@@ -186,7 +186,7 @@ func UpdateRunbookConfiguration(c *gin.Context) {
 
 	err := models.UpsertRunbookConfiguration(models.DB, &runbooks)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting runbook configuration: %v", err)
 		return
 	}
 
@@ -228,7 +228,7 @@ func CreateRunbookConfigurationEntry(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusCreated, buildRunbookRepositoryResponse(config.GetNormalizedGitURL(), &dbConfig))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook configuration: %v", err)
 	}
 }
 
@@ -273,7 +273,7 @@ func UpdateRunbookConfigurationEntry(c *gin.Context) {
 		deleteRunbookCache(ctx.GetOrgID(), "") // clear all cache for this org
 		c.JSON(http.StatusOK, buildRunbookRepositoryResponse(config.GetNormalizedGitURL(), &dbConfig))
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating runbook configuration: %v", err)
 	}
 }
 
@@ -299,7 +299,7 @@ func DeleteRunbookConfiguration(c *gin.Context) {
 		deleteRunbookCache(ctx.GetOrgID(), "") // clear all cache for this org
 		c.Status(http.StatusNoContent)
 	default:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting runbook configuration: %v", err)
 	}
 }
 
@@ -368,7 +368,8 @@ func RunbookExec(c *gin.Context) {
 
 	allowed, err := models.IsUserAllowedToRunRunbook(ctx.OrgID, req.ConnectionName, req.Repository, req.FileName, ctx.UserGroups)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking user permissions for runbook exec")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+			"failed checking user permissions for runbook exec: %v", err)
 		return
 	}
 
@@ -396,7 +397,7 @@ func RunbookExec(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching runbook configuration: %v", err)
 		return
 	}
 
@@ -408,13 +409,13 @@ func RunbookExec(c *gin.Context) {
 
 	config, err := models.BuildCommonConfig(&repoConfig)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook config")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating runbook config: %v", err)
 		return
 	}
 
 	commit, err := GetRunbooks(ctx.GetOrgID(), config)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed cloning runbook repository")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed cloning runbook repository: %v", err)
 		return
 	}
 
@@ -465,7 +466,7 @@ func RunbookExec(c *gin.Context) {
 		Origin:         proto.ConnectionOriginClientAPIRunbooks,
 	})
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client for runbook execution: %v", err)
 		return
 	}
 
@@ -494,7 +495,8 @@ func RunbookExec(c *gin.Context) {
 	if connection.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(connection.OrgID, connection.JiraIssueTemplateID.String)
 		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira issue template for connection %v", connection.Name)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+				"failed obtaining jira issue template for connection %v: %v", connection.Name, err)
 			return
 		}
 		if jiraConfig != nil && jiraConfig.IsActive() {
@@ -508,12 +510,12 @@ func RunbookExec(c *gin.Context) {
 				return
 			case nil:
 			default:
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields")
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields: %v", err)
 				return
 			}
 			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
 			if err != nil {
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request")
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request: %v", err)
 				return
 			}
 			newSession.IntegrationsMetadata = map[string]any{
@@ -531,7 +533,7 @@ func RunbookExec(c *gin.Context) {
 			return
 		}
 
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the session couldn't be created")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the session couldn't be created: %v", err)
 		return
 	}
 

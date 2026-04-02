@@ -35,7 +35,7 @@ func ListDatabases(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection: %v", err)
 		return
 	}
 
@@ -92,7 +92,7 @@ print(JSON.stringify(result));`
 		Verb: pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 		return
 	}
 
@@ -110,7 +110,8 @@ print(JSON.stringify(result));`
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, fmt.Errorf("command failed: %s", outcome.Output), "command failed")
+			errMsg := fmt.Errorf("command failed: %s", outcome.Output)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, errMsg, "%v", errMsg)
 			return
 		}
 
@@ -166,7 +167,7 @@ func ListTables(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection: %v", err)
 		return
 	}
 
@@ -235,7 +236,7 @@ func ListTables(c *gin.Context) {
 		Verb:                      pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 		return
 	}
 
@@ -326,7 +327,7 @@ func GetTableColumns(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection: %v", err)
 		return
 	}
 
@@ -402,7 +403,7 @@ func GetTableColumns(c *gin.Context) {
 		Verb:           pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 		return
 	}
 

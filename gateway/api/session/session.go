@@ -138,7 +138,7 @@ func Post(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec: %v", req.Connection, err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec, err=%v", req.Connection, err)
 		return
 	}
 	if conn == nil {
@@ -1106,7 +1106,7 @@ func Provision(c *gin.Context) {
 	// Get connection information
 	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec: %v", req.Connection, err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec, err=%v", req.Connection, err)
 		return
 	}
 	if conn == nil {

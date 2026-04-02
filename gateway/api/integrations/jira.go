@@ -24,7 +24,7 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	dbJiraIntegration, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching Jira integration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching Jira integration: %v", err)
 		return
 	}
 	if dbJiraIntegration == nil {
@@ -71,7 +71,7 @@ func Post(c *gin.Context) {
 
 	dbExistingJiraIntegration, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking existing Jira integration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking existing Jira integration: %v", err)
 		return
 	}
 	if dbExistingJiraIntegration != nil {
@@ -90,7 +90,7 @@ func Post(c *gin.Context) {
 
 	createdIntegration, err := models.CreateJiraIntegration(ctx.OrgID, &newIntegration)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating Jira integration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating Jira integration: %v", err)
 		return
 	}
 
@@ -118,7 +118,7 @@ func Put(c *gin.Context) {
 
 	existingIntegration, err := models.GetJiraIntegration(ctx.OrgID)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing Jira integration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing Jira integration: %v", err)
 		return
 	}
 	if existingIntegration == nil {
@@ -133,7 +133,7 @@ func Put(c *gin.Context) {
 		Status:   models.JiraIntegrationStatus(req.Status),
 	})
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating Jira integration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating Jira integration: %v", err)
 		return
 	}
 
