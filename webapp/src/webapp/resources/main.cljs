@@ -191,7 +191,7 @@
                                      (fn []
                                        (js/localStorage.setItem "selected-connection" connection)
                                        (rf/dispatch [:database-schema->clear-schema])
-                                       (rf/dispatch [:navigate :editor-plugin-panel]))}
+                                       (rf/dispatch [:navigate :editor-plugin-panel {:role (:name connection)}]))}
                "Open in Web Terminal"])
 
             (when (and (can-hoop-cli? connection)

@@ -1,14 +1,14 @@
 import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
-import Layout from '@/components/Layout'
+import Layout from '@/layout/Layout'
 import ClojureApp from '@/components/ClojureApp'
 
 // React pages (migrated from ClojureScript)
-import Login from '@/routes/Auth/Login'
-import Signup from '@/routes/Auth/Signup'
-import AuthCallback from '@/routes/Auth/Callback'
-import Agents from '@/routes/Agents'
-import AgentsCreate from '@/routes/Agents/Create'
+import Login from '@/pages/Auth/Login'
+import Signup from '@/pages/Auth/Signup'
+import AuthCallback from '@/pages/Auth/Callback'
+import Agents from '@/pages/Agents'
+import AgentsCreate from '@/pages/Agents/Create'
 
 /**
  * Routing strategy:

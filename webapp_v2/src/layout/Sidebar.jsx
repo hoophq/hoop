@@ -25,7 +25,7 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { openCommandPalette } from '@/components/CommandPalette/spotlight';
+import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 import classes from './Sidebar.module.css';
 
 // ─── Navigation constants (mirrors webapp's constants.cljs) ────────────────
