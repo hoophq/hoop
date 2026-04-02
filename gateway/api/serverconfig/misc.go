@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/sshca"
 )
 
 const defaultGrpcServerURL = "grpc://127.0.0.1:8010"
@@ -173,6 +174,11 @@ func UpdateServerMisc(c *gin.Context) {
 		return
 	}
 
+	// Preserve the CA key from the current config since it's not exposed via the API
+	if newState.SSHServerConfig != nil && currentSrvConf != nil && currentSrvConf.SSHServerConfig != nil {
+		newState.SSHServerConfig.CAKey = currentSrvConf.SSHServerConfig.CAKey
+	}
+
 	sshInstance := sshproxy.GetServerInstance()
 	sshConf, state := parseSSHConfigState(currentSrvConf, newState)
 	switch state {
@@ -187,6 +193,18 @@ func UpdateServerMisc(c *gin.Context) {
 			}
 			sshConf.HostsKey = base64.StdEncoding.EncodeToString(privateKeyPemBytes)
 			newState.SSHServerConfig.HostsKey = sshConf.HostsKey
+		}
+
+		if sshConf.CAKey == "" {
+			log.Infof("generating a new ed25519 SSH CA key")
+			caKeyPemBytes, err := newEd25519PrivateKey()
+			if err != nil {
+				log.Errorf("failed to generate SSH CA key: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to generate SSH CA key: %v", err)})
+				return
+			}
+			sshConf.CAKey = base64.StdEncoding.EncodeToString(caKeyPemBytes)
+			newState.SSHServerConfig.CAKey = sshConf.CAKey
 		}
 
 		_ = sshInstance.Stop()
@@ -476,6 +494,29 @@ func newEd25519PrivateKey() (privateKey []byte, err error) {
 		return nil, fmt.Errorf("failed to generate private key: %v", err)
 	}
 	return sshproxy.EncodePrivateKeyToOpenSSH(privKey)
+}
+
+// GetSSHCAPublicKey
+//
+//	@Summary		Get SSH CA Public Key
+//	@Description	Returns the SSH Certificate Authority public key in authorized_keys format. Admins can use this to configure TrustedUserCAKeys on remote SSH servers.
+//	@Tags			Server Management
+//	@Produce		text/plain
+//	@Success		200			{string}	string
+//	@Failure		403,404,500	{object}	openapi.HTTPError
+//	@Router			/serverconfig/ssh-ca-public-key [get]
+func GetSSHCAPublicKey(c *gin.Context) {
+	if forbidden := forbiddenOnMultiTenantSetups(c); forbidden {
+		return
+	}
+
+	pubKeyBytes, err := sshca.CAPublicKeyFromConfig()
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "SSH CA is not configured"})
+		return
+	}
+
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", pubKeyBytes)
 }
 
 func updateAnalyticsTracking(newState *string) {

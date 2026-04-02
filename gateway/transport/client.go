@@ -392,6 +392,15 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		}
 
 		clientArgs := clientArgsDecode(pkt.Spec)
+
+		// For SSH connections, issue an ephemeral certificate signed by the gateway CA.
+		// The certificate and ephemeral private key are injected in-memory into the
+		// connection secrets (never persisted to the database). The agent uses them
+		// once to authenticate with the remote SSH server.
+		if pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType) == pb.ConnectionTypeSSH {
+			injectSSHCertificate(&pctx)
+		}
+
 		connParams, err := pb.GobEncode(&pb.AgentConnectionParams{
 			ConnectionName:             pctx.ConnectionName,
 			ConnectionType:             pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).String(),

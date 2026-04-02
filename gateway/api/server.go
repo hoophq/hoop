@@ -838,6 +838,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiserverconfig.UpdateServerMisc,
 	)
+	r.GET("/serverconfig/ssh-ca-public-key",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.GetSSHCAPublicKey,
+	)
 	r.GET("/serverconfig/auth",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

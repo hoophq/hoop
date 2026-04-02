@@ -53,6 +53,8 @@ type (
 		pass               string
 		port               string
 		authorizedSSHKeys  string
+		sshCertificate     string
+		sshPrivateKey      string
 		dbname             string
 		insecure           bool
 		options            string
@@ -619,6 +621,8 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		pass:              envVarS.Getenv("PASS"),
 		port:              envVarS.Getenv("PORT"),
 		authorizedSSHKeys: envVarS.Getenv("AUTHORIZED_SERVER_KEYS"),
+		sshCertificate:    envVarS.Getenv("SSH_CERTIFICATE"),
+		sshPrivateKey:     envVarS.Getenv("SSH_PRIVATE_KEY"),
 		dbname:            envVarS.Getenv("DB"),
 		insecure:          envVarS.Getenv("INSECURE") == "true",
 		postgresSSLMode:   envVarS.Getenv("SSLMODE"),
@@ -691,8 +695,8 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		if env.port == "" {
 			env.port = "22"
 		}
-		if env.host == "" || (env.pass == "" && env.authorizedSSHKeys == "") || env.user == "" {
-			return nil, errors.New("missing required secrets for ssh connection [HOST, USER, PASS or AUTHORIZED_SERVER_KEYS]")
+		if env.host == "" || (env.pass == "" && env.authorizedSSHKeys == "" && env.sshCertificate == "") || env.user == "" {
+			return nil, errors.New("missing required secrets for ssh connection [HOST, USER, PASS or AUTHORIZED_SERVER_KEYS or SSH_CERTIFICATE]")
 		}
 	case pb.ConnectionTypeTCP:
 		if env.host == "" || env.port == "" {

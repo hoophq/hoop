@@ -711,7 +711,7 @@ func parseHostsKey(privateKeyB64Enc string) (hostsKey ssh.Signer, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
 	}
-	privateKey, err := decodeOpenSSHPrivateKey(privateKeyPemBytes)
+	privateKey, err := DecodeOpenSSHPrivateKey(privateKeyPemBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode hosts key: %v", err)
 	}
