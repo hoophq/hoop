@@ -1,52 +1,94 @@
 # Hoop Quarterly Update — Q2 2025 (April - June)
 
-*Versions: v1.34.12 → v1.37.9*
+*Versions: v1.34.24 → v1.37.14*
+*81 releases*
 
-This quarter was about data protection, architecture cleanup, and developer experience. PostgreSQL got native data redaction, we removed a major dependency (PostgREST), the terminal editor got significantly faster, and HTTP proxy became a real connection type.
+This quarter was about data protection, architecture cleanup, new data sources, and developer experience. PostgreSQL got native wire-protocol redaction, we removed PostgREST entirely, DynamoDB and AWS CloudWatch became connection types, the Data Masking feature got a full management UI, and the terminal editor got significantly faster.
 
 ---
 
 ## PostgreSQL Native Redaction with MSPresidio
 
-Hoop can now redact sensitive data directly in PostgreSQL query results using MSPresidio. This is native, wire-protocol-level redaction — it parses the PostgreSQL wire protocol and masks PII before results reach the user.
+Hoop can now redact sensitive data directly in PostgreSQL query results at the wire protocol level. Instead of pattern-matching output text, this parses the PostgreSQL extended query protocol and masks PII before results reach the user.
 
-We also introduced redaction modes: **best-effort** (mask what you can, return the rest) and **strict** (block the entire result if redaction can't be applied cleanly). Choose based on your risk tolerance.
+We also introduced **redaction modes**:
+- **Best-effort** — mask what you can, return the rest
+- **Strict** — block the entire result if redaction can't be applied cleanly
 
-**What this means for you:** Data masking for PostgreSQL went from "pattern matching on output text" to "structured, column-aware redaction at the protocol level." Strict mode gives compliance teams confidence that no PII leaks through, even in edge cases.
+Includes statistics collection (how many fields were redacted, which entity types were found), structured content redaction via YAML encoder, and timeout control for large result sets.
 
----
-
-## PostgREST Removal — Direct Database Driver
-
-We removed PostgREST, a major external dependency that handled database access for plugins and connections. In its place, we built a direct database driver using GORM.
-
-This was a multi-week refactoring effort that touched user auth, organization logic, agent models, reviews, connections, access control, and more. Every area that previously called PostgREST now goes directly to the database.
-
-**What this means for you:** One fewer component to deploy and maintain. Faster API responses (no more routing through an intermediary). Simpler troubleshooting when something goes wrong. If you're self-hosted, your deployment just got simpler.
+**What this means for you:** Data masking for PostgreSQL went from "pattern matching on text output" to "structured, protocol-aware redaction." Strict mode gives compliance teams confidence that no PII leaks through, even in edge cases. Stats let you understand your data exposure.
 
 ---
 
-## HTTP Proxy: From Workaround to Connection Type
+## PostgREST Removal — Simpler Architecture
 
-HTTP proxy was promoted from an internal feature to a first-class connection type with proper validation, header configuration, and environment variable support. You can now create HTTP proxy connections through the same UI as databases and SSH.
+We removed PostgREST, a major external dependency that handled all database access for plugins, connections, users, auth, and more. Over several weeks, we migrated every subsystem to use a direct database driver (GORM):
 
-**What this means for you:** Internal web tools, REST APIs, and HTTP-based services can be accessed through Hoop with the same audit trail and access controls as your databases. No more workarounds.
+- User authentication and organization logic
+- Agent models and connection status
+- Reviews and access control
+- Session storage and reporting
+- Plugins and service accounts
+- Login, logout, and Ask AI routes
+- Proxy manager
+
+This culminated in v1.36.0 where PostgREST was fully removed from the codebase.
+
+**What this means for you:** One fewer component to deploy and maintain. Faster API responses (no intermediary). Simpler troubleshooting. If you're self-hosted, your deployment just got meaningfully simpler — one less container to manage, monitor, and update.
+
+---
+
+## Data Masking: Full Feature with Management UI
+
+Data masking graduated from a configuration flag to a full-featured system:
+
+- **Complete management UI** — create, edit, delete masking rules from the Settings page
+- **Per-connection control** — enable or disable masking on individual connections
+- **Ad-hoc recognizers** — define custom entity detection using regex patterns or deny word lists
+- **Entity type configuration** — choose which PII types to detect (names, emails, SSN, credit cards, plus custom "ORGANIZATION" type)
+- **Score threshold** — tune the confidence level for AI-powered detection
+- **Default enabled** — new connections have redaction enabled by default
+
+The backend uses MSPresidio with support for loading recognizers from different data sources.
+
+**What this means for you:** Data masking is now fully self-service for admins. Create rules, assign them to connections, tune the sensitivity. No more editing config files or asking engineering to set up masking. Custom recognizers mean you can mask domain-specific data (internal IDs, project codes) not just standard PII.
+
+---
+
+## DynamoDB Support
+
+DynamoDB is now a first-class connection type with schema browsing and query execution. The Schema Explorer shows tables and columns, and queries can be run directly from the terminal.
+
+**What this means for you:** Teams using DynamoDB can now access it through Hoop with the same audit trail, access controls, and data masking as relational databases.
+
+---
+
+## AWS CloudWatch Connection
+
+CloudWatch is now a connection type with log group schema browsing. Browse log groups directly from the Hoop UI and query logs.
+
+**What this means for you:** Centralized access to CloudWatch logs through Hoop. Useful for teams that want to audit who's looking at logs and ensure consistent access controls across observability tools.
 
 ---
 
 ## AG Grid: Better Data Display
 
-We replaced DataGridXL2 with AG Grid for displaying SQL query results. AG Grid handles large result sets better, supports proper pagination, and deals correctly with edge cases (like tab characters in cell values that were breaking the old grid).
+Replaced DataGridXL2 with AG Grid for SQL query results. AG Grid handles large result sets better, supports pagination, and handles edge cases (like tab characters in cell values that broke the old grid).
 
-**What this means for you:** Query results are displayed more reliably, especially for large datasets. Pagination works properly. No more broken rendering from unexpected characters in data.
+Migration involved a couple of reverts and re-implementations (the first attempt caused rendering issues), but the end result is significantly more robust.
+
+**What this means for you:** Query results display more reliably, especially with large datasets or data containing special characters. Pagination works properly.
 
 ---
 
-## Database Schema Visualization
+## Database Protocol Visualization
 
-Hoop now parses the native database wire protocol and displays a visual schema browser alongside the terminal. You can browse tables, columns, and data types without running `\dt` or `SHOW TABLES`.
+Hoop now parses the native PostgreSQL wire protocol and displays a visual schema browser alongside the terminal. Browse tables, columns, and data types without running `\dt` or schema queries. Also added an `event_stream` option for raw query auditing at the wire protocol level.
 
-**What this means for you:** Context while writing queries. See your schema without switching windows or running info commands. Especially useful for developers who don't have the schema memorized.
+MySQL also got schema API support this quarter.
+
+**What this means for you:** Context while writing queries — see your schema without switching windows. Works for both PostgreSQL and MySQL. The wire protocol auditing gives security teams visibility into exactly what queries were sent.
 
 ---
 
@@ -55,67 +97,69 @@ Hoop now parses the native database wire protocol and displays a visual schema b
 The CodeMirror editor got significant performance work:
 - Optimized extensions and onChange handlers
 - Debounced autocomplete with caching
-- Improved auto-save based on typing intensity (saves when you pause, not on every keystroke)
-- Schema processing moved from Web Workers to synchronous (turned out to be faster for our use case)
+- Auto-save based on typing intensity (saves when you pause, not on every keystroke)
+- Schema processing optimized with memoization
 - Lazy loading for large schemas
+- Removed Web Worker for schema processing (synchronous turned out faster for this use case)
 
-**What this means for you:** The terminal editor is noticeably more responsive, especially when connected to databases with large schemas. Autocomplete suggestions appear faster. Auto-save doesn't interfere with typing.
+**What this means for you:** The terminal editor is noticeably more responsive, especially with databases that have large schemas. Autocomplete is faster. Auto-save doesn't interfere with typing.
 
 ---
 
 ## Runbooks Improvements
 
-- **Jira integration** — Jira support in runbooks, linking executions to tickets
-- **Runbook hooks** — Execute actions when sessions open or close
-- **Connection and configuration tabs** — Separate views for runbook config vs. connection assignment
-- **Default values** — Propagate API defaults to runbook form fields
+- **Jira support in runbooks** — link runbook executions to Jira tickets
+- **Runbook hooks** — execute actions when sessions open or close (e.g., notify a channel, run cleanup)
+- **Connection and configuration tabs** — separate views for runbook config vs. connection assignment
+- **Default values** — API defaults propagate to form fields
+- **Lint CLI subcommand** — validate runbook templates from the CLI
 
-**What this means for you:** Runbooks are more tightly integrated with your ticketing workflow. Hooks enable automation on session lifecycle events (e.g., notify a channel when a runbook starts, clean up when it finishes).
-
----
-
-## User Groups Management
-
-Full user groups management — create, update, delete groups and assign users to them. Groups are the building block for access control policies, review requirements, and feature restrictions.
-
-**What this means for you:** Admin teams can manage group membership directly in the Hoop UI instead of relying solely on IDP groups or manual configuration.
+**What this means for you:** Runbooks are tightly integrated with Jira. Hooks enable automation on session lifecycle. The lint command catches template errors before deployment.
 
 ---
 
-## MySQL Database Schema API
+## User Management
 
-MySQL connections now have schema browsing — same database schema panel as PostgreSQL, with table and column listing.
+A complete Users feature with sidebar navigation, user profile views, and group management:
+- Create, update, delete user groups
+- Assign users to groups
+- Case-insensitive sorting
+- Connection filter and search in group list
+- GSuite Groups sync via Cloud Identity API
 
-**What this means for you:** MySQL users get the same schema context while writing queries as PostgreSQL users.
-
----
-
-## MongoDB Wrapper CLI
-
-Added `mongosh` as an optional wrapper for the MongoDB CLI, plus the `mongosh` command for exec CLI and Web Console. SSH key handling for MongoDB connections was also fixed.
-
-**What this means for you:** MongoDB connections work with the modern `mongosh` shell, not just the legacy `mongo` CLI.
+**What this means for you:** Admin teams can manage users and groups directly in the Hoop UI. Group membership is the building block for access control — easier group management means easier policy management.
 
 ---
 
-## Billing: Profitwell → Paddle
+## Review System Improvements
 
-Migrated billing integration from Profitwell to Paddle.
-
-**What this means for you:** If you're on a paid plan, billing infrastructure is more reliable. No action needed on your part.
+- **Rejection after approval** — Resource owners and admins can now reject a review even after it was approved (useful for revoking access when circumstances change)
+- **Connection filtering** in review lists
+- Enhanced review detail layouts
+- Jira icon integration on review details
 
 ---
 
 ## Other Improvements
 
-- GCP integration — Helm chart customization for GCP ingress, gRPC healthcheck
-- Jira template enhancements with connection tags mapping
-- AWS Connect: increased timeouts, improved error handling
-- Go updated to 1.23.8, npm audit fixes
-- Removed unused auth0-lock package
-- Authentication flow improvements with better redirect handling
-- Improved logout experience
+- **SSH setup improvements** — Auth method selection (password vs. private key), new connection icons, credential management
+- **Billing: Profitwell → Paddle** — More reliable billing infrastructure
+- **GCP integration** — Helm chart customization for GCP ingress, gRPC healthcheck endpoint
+- **AWS Connect enhancements** — Webhooks for provisioning, Vault Secrets Provider in setup, resource tagging
+- **Expandable toast notifications** for better error visibility
+- **mongosh compatibility** — Modern MongoDB shell works alongside legacy client
+- **MongoDB wrapper CLI** as optional configuration
+- **Connection permission checks** for web terminal and native client access
+- **Dependency updates** — Go 1.23.8, npm audit fixes, removed unused auth0-lock
+- **Helm improvements** — Deployment annotations, gRPC port defaults, service account annotations
 
 ---
 
-**Upgrade to v1.37.9** to get everything in this quarter.
+## Breaking Changes
+
+- **Jira CMDB pagination** (v1.36.20): Removed `GET objecttype-values` route, replaced with paginated Jira Assets API endpoint. Update any integrations using the old route.
+- **Reviews API** (v1.35.17): Removed `/api/reviews` list endpoint and metadata fields from `GET /api/reviews/{id}`. Reviews are now accessed through sessions.
+
+---
+
+**Upgrade to v1.37.14** to get everything in this quarter.
