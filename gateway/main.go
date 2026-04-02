@@ -147,7 +147,7 @@ func Run() {
 		}
 	}
 
-	_, _ = monitoring.StartSentry()
+	_, _ = monitoring.StartSentry(appconfig.Get().ApiHostname())
 	if isOrgMultiTenant {
 		// grpc url from env is used for multi tenant setups
 		if err := agentcontroller.Run(os.Getenv("GRPC_URL")); err != nil {
