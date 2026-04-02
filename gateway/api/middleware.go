@@ -78,7 +78,10 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 				properties["plugin-name"] = resourceName
 			}
 		}
-		analytics.New().Track(ctx.UserID, eventName, properties)
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		trackClient.Track(ctx.UserID, eventName, properties)
 		c.Next()
 	}
 }

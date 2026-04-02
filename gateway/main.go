@@ -89,7 +89,9 @@ func Run() {
 		}
 
 		if isNewOrg {
-			analytics.New().TrackEvent(analytics.EventDefaultOrgCreated, map[string]interface{}{"org-id": org.ID})
+			trackClient := analytics.New()
+			defer trackClient.Close()
+			trackClient.TrackEvent(analytics.EventDefaultOrgCreated, map[string]interface{}{"org-id": org.ID})
 		}
 
 		_, err = models.CreateDefaultRunbookConfiguration(models.DB, org.ID)

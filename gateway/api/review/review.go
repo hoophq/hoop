@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -233,6 +234,14 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	if err := models.UpdateReview(rev); err != nil {
 		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
 	}
+
+	if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, rev.SessionID)
+	}
+
 	return rev, nil
 }
 

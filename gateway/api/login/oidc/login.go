@@ -452,6 +452,7 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 
 	if isFirstUserInOrg {
 		trackClient := analytics.New()
+		defer trackClient.Close()
 		// When the first user is created, there's already an
 		// anonymous event tracked with his org id. We need to
 		// merge this anonymous event with the identified user
@@ -491,9 +492,10 @@ func updateLoginState(login *models.Login) {
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
 	licenseType := ctx.GetLicenseType()
-	client := analytics.New()
+	trackClient := analytics.New()
+	defer trackClient.Close()
 	if !isNewUser {
-		client.Track(ctx.UserID, analytics.EventLogin, map[string]any{
+		trackClient.Track(ctx.UserID, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
@@ -501,14 +503,14 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		})
 		return
 	}
-	client.Identify(&types.APIContext{
+	trackClient.Identify(&types.APIContext{
 		OrgID:  ctx.OrgID,
 		UserID: ctx.UserID,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(ctx.UserID, analytics.EventSignup, map[string]any{
+		trackClient.Track(ctx.UserID, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,

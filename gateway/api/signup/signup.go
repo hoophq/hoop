@@ -124,19 +124,20 @@ func Post(c *gin.Context) {
 }
 
 func identifySignup(u models.User, userAgent, host, licenseType string) {
-	client := analytics.New()
-	client.Identify(&types.APIContext{
+	trackClient := analytics.New()
+	trackClient.Identify(&types.APIContext{
 		OrgID:  u.OrgID,
 		UserID: u.Subject,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(u.Subject, analytics.EventSignup, map[string]any{
+		trackClient.Track(u.Subject, analytics.EventSignup, map[string]any{
 			"user-agent":   userAgent,
 			"org-id":       u.OrgID,
 			"api-hostname": host,
 			"license-type": licenseType,
 		})
+		trackClient.Close()
 	}()
 }

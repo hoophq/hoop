@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/runbooks"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -525,7 +526,7 @@ func RunbookExec(c *gin.Context) {
 		}
 	}
 
-	if err := services.UpsertSession(c, newSession, *connection); err != nil {
+	if err := services.ValidateAndUpsertSession(c, newSession, connection); err != nil {
 		log.Errorf("failed persisting session, err=%v", err)
 
 		if errors.Is(err, services.ErrMissingMetadata) {
@@ -536,6 +537,10 @@ func RunbookExec(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the session couldn't be created: %v", err)
 		return
 	}
+
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sessionID)
 
 	var params string
 	for key, val := range req.Parameters {

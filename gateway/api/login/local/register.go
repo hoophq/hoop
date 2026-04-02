@@ -102,6 +102,8 @@ func Register(c *gin.Context) {
 		Name:   adminGroupName,
 	}
 	trackClient := analytics.New()
+	defer trackClient.Close()
+
 	trackClient.Identify(&types.APIContext{
 		OrgID:           org.ID,
 		UserID:          userSubject,

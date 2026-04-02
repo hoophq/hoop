@@ -324,7 +324,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiconnections.UpdateDataMaskingRuleConnection)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiai.GetConnectionAnalyzerRule)
 
@@ -948,7 +947,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		auditlogapi.List)
 
 	r.GET("/attributes",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.List)
 	r.GET("/attributes/:name",
