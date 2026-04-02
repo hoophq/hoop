@@ -1,11 +1,11 @@
 import Router from './Router'
-import CommandPalette from '@/components/CommandPalette'
+import ConnectedCommandPalette from '@/features/CommandPalette'
 
 function App() {
   return (
     <>
       <Router />
-      <CommandPalette />
+      <ConnectedCommandPalette />
     </>
   )
 }

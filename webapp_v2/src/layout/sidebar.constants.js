@@ -16,7 +16,7 @@ import {
   Settings,
   Search,
 } from 'lucide-react';
-import { openCommandPalette } from '@/components/CommandPalette/spotlight';
+import { openCommandPalette } from '@/features/CommandPalette/spotlight';
 
 export const MAIN_ITEMS = [
   { label: 'Resources',  path: '/resources',  icon: Package },
