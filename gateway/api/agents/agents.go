@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -49,8 +50,7 @@ func Post(c *gin.Context) {
 
 	secretKey, secretKeyHash, err := keys.GenerateSecureRandomKey("", 32)
 	if err != nil {
-		log.Errorf("failed generating agent token, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating agent token"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating agent token")
 		return
 	}
 
@@ -60,8 +60,7 @@ func Post(c *gin.Context) {
 	}
 	dsn, err := dsnkeys.NewString(storagev2.ParseContext(c).GrpcURL, req.Name, secretKey, req.Mode)
 	if err != nil {
-		log.Errorf("failed generating dsn, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating dsn"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating dsn")
 		return
 	}
 
@@ -72,8 +71,7 @@ func Post(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusCreated, openapi.AgentCreateResponse{Token: dsn})
 	default:
-		log.Errorf("failed creating agent resource, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating agent resource: %v", err)
 		return
 	}
 }
@@ -97,8 +95,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(204)
 	default:
-		log.Errorf("failed removing agent resource %v, err=%#v", nameOrID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing agent resource: %v", err)
 		return
 	}
 }
@@ -124,8 +121,7 @@ func Get(c *gin.Context) {
 			return
 		}
 
-		log.Errorf("failed getting agent %v, err=%#v", nameOrID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting agent: %v", err)
 		return
 	}
 
@@ -176,8 +172,7 @@ func List(c *gin.Context) {
 	status := c.Query("status")
 	items, err := models.ListAgents(ctx.OrgID, status)
 	if err != nil {
-		log.Errorf("failed listing agents, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing agents"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing agents")
 		return
 	}
 	result := []openapi.AgentResponse{}

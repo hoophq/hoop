@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/clientexec"
@@ -51,9 +51,7 @@ func Post(c *gin.Context) {
 	}
 	existingConn, err := models.GetConnectionByNameOrID(ctx, req.Name)
 	if err != nil {
-		log.Errorf("failed fetching existing connection, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing connection: %v", err)
 		return
 	}
 	if existingConn != nil {
@@ -98,14 +96,12 @@ func Post(c *gin.Context) {
 	})
 
 	if err != nil {
-		log.Errorf("failed creating connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating connection: %v", err)
 		return
 	}
 
 	if err := upsertConnectionAttributes(ctx, resp.Name, req.Attributes); err != nil {
-		log.Errorf("failed upserting connection attributes, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting connection attributes: %v", err)
 		return
 	}
 	resp.Attributes = req.Attributes
@@ -130,8 +126,7 @@ func Put(c *gin.Context) {
 	connNameOrID := c.Param("nameOrID")
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
 		return
 	}
 	if conn == nil {
@@ -196,15 +191,13 @@ func Put(c *gin.Context) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		default:
-			log.Errorf("failed updating connection, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating connection: %v", err)
 		}
 		return
 	}
 
 	if err := upsertConnectionAttributes(ctx, resp.Name, req.Attributes); err != nil {
-		log.Errorf("failed upserting connection attributes, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting connection attributes: %v", err)
 		return
 	}
 	resp.Attributes = req.Attributes
@@ -229,8 +222,7 @@ func Patch(c *gin.Context) {
 	connNameOrID := c.Param("nameOrID")
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
 		return
 	}
 	if conn == nil {
@@ -318,16 +310,14 @@ func Patch(c *gin.Context) {
 		case *models.ErrNotFoundGuardRailRules:
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		default:
-			log.Errorf("failed patching connection, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching connection: %v", err)
 		}
 		return
 	}
 
 	if req.Attributes != nil {
 		if err := upsertConnectionAttributes(ctx, resp.Name, *req.Attributes); err != nil {
-			log.Errorf("failed upserting connection attributes, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed upserting connection attributes: %v", err)
 			return
 		}
 		resp.Attributes = *req.Attributes
@@ -362,9 +352,7 @@ func Delete(c *gin.Context) {
 		connectionrequests.InvalidateSyncCache(ctx.OrgID, connName)
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		log.Errorf("failed removing connection %v, err=%v", connName, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed removing connection"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing connection")
 	}
 }
 
@@ -426,8 +414,7 @@ func List(c *gin.Context) {
 
 		connList, total, err := models.ListConnectionsPaginated(ctx.GetOrgID(), ctx.GetUserGroups(), paginationOpts)
 		if err != nil {
-			log.Errorf("failed listing connections with pagination, reason=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connections with pagination: %v", err)
 			return
 		}
 
@@ -455,8 +442,7 @@ func List(c *gin.Context) {
 	// Use traditional non-paginated response
 	connList, err := models.ListConnections(ctx, filterOpts)
 	if err != nil {
-		log.Errorf("failed listing connections, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connections: %v", err)
 		return
 	}
 	responseConnList := []openapi.Connection{}
@@ -484,8 +470,7 @@ func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	conn, err := models.GetBareConnectionByNameOrID(ctx, c.Param("nameOrID"), models.DB)
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
 		return
 	}
 	if conn == nil {
@@ -557,8 +542,7 @@ func TestConnection(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
 		return
 	}
 	if conn == nil {

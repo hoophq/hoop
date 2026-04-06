@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/keys"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
@@ -43,9 +44,7 @@ func GetAuthConfig(c *gin.Context) {
 	}
 	config, err := models.GetServerAuthConfig()
 	if err != nil && err != models.ErrNotFound {
-		errMsg := fmt.Sprintf("failed to get server auth config, reason=%v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server auth config")
 		return
 	}
 
@@ -71,8 +70,7 @@ func GetAuthConfig(c *gin.Context) {
 
 		opts, err := idp.NewOidcProviderOptions(nil)
 		if err != nil {
-			log.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating OIDC provider options: %v", err)
 			return
 		}
 		var oidcConfig *models.ServerAuthOidcConfig
@@ -133,7 +131,7 @@ func UpdateAuthConfig(c *gin.Context) {
 
 	existentConfig, err := models.GetServerAuthConfig()
 	if err != nil && err != models.ErrNotFound {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server auth config")
 		return
 	}
 
@@ -229,8 +227,7 @@ func UpdateAuthConfig(c *gin.Context) {
 	resp, err := models.UpdateServerAuthConfig(existentConfig)
 	if err != nil {
 		evt.Err(err)
-		log.Errorf("failed to update server auth config, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update server auth config"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update server auth config")
 		return
 	}
 
@@ -256,16 +253,13 @@ func GenerateApiKey(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	rolloutKey, _, err := keys.GenerateSecureRandomKey("xapi", 64)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed generating API key, err=%v", err)
-		log.Error(errMsg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating API key: %v", err)
 		return
 	}
 
 	existentConfig, err := models.GetServerAuthConfig()
 	if err != nil && err != models.ErrNotFound {
-		log.Errorf("failed to get server auth config, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get server auth config"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get server auth config")
 		return
 	}
 	if existentConfig == nil {
@@ -275,8 +269,7 @@ func GenerateApiKey(c *gin.Context) {
 	existentConfig.OrgID = ctx.OrgID
 	existentConfig.RolloutApiKey = ptr.String(rolloutKey)
 	if _, err := models.UpdateServerAuthConfig(existentConfig); err != nil {
-		log.Errorf("failed updating rollout api key , reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating rollout api key"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating rollout api key")
 		return
 	}
 	c.JSON(http.StatusCreated, openapi.GenerateApiKeyResponse{RolloutApiKey: rolloutKey})

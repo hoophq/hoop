@@ -145,6 +145,8 @@ func parseToAtomicLevel(level string) zap.AtomicLevel {
 	return logLevel
 }
 
+func GetLogger() *zap.Logger { return zlog }
+
 // SetGrpcLogger sets logger that is used in grpc.
 // Not mutex-protected, should be called before any gRPC functions.
 func SetGrpcLogger() {

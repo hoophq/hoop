@@ -1,13 +1,14 @@
 package apiproxymanager
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -36,15 +37,13 @@ func Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	default:
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining client entity")
 		return
 	}
 
 	conn, err := models.GetConnectionByNameOrID(ctx, obj.RequestConnectionName)
 	if err != nil {
-		log.Errorf("failed retrieving connection %v, reason=%v", obj.RequestConnectionName, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving connection")
 		return
 	}
 
@@ -94,8 +93,7 @@ func Post(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, req.ConnectionName)
 	if err != nil {
-		log.Errorf("failed retrieving connection %v, reason=%v", req.ConnectionName, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to obtaining connection"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving connection")
 		return
 	}
 
@@ -140,8 +138,7 @@ func Post(c *gin.Context) {
 		case pbclient.SessionOpenWaitingApproval:
 			obj, err := clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
 			if err != nil {
-				errMsg := fmt.Sprintf("failed updating status, err=%v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating status")
 				return
 			}
 			// disconnect grpc-client
@@ -160,8 +157,7 @@ func Post(c *gin.Context) {
 				ConnectedAt:              obj.ConnectedAt.Format(time.RFC3339),
 			})
 		default:
-			errMsg := fmt.Sprintf("internal error, packet %v condition not implemented", pkt.Type)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("packet condition not implemented"), "internal error, packet %v condition not implemented", pkt.Type)
 		}
 		return
 	}
@@ -172,8 +168,7 @@ func Post(c *gin.Context) {
 	obj, err := clientstate.Update(ctx, models.ProxyManagerStatusConnected,
 		clientstate.WithRequestAttributes(req.ConnectionName, req.Port, req.AccessDuration.String())...)
 	if err != nil {
-		log.Errorf("fail to update status, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "connected but it fail to update the status"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "connected but it fail to update the status")
 		return
 	}
 
@@ -209,8 +204,7 @@ func Disconnect(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": "entity not found"})
 		return
 	default:
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining client entity"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining client entity")
 		return
 	}
 
@@ -220,8 +214,7 @@ func Disconnect(c *gin.Context) {
 	}
 	obj, err = clientstate.Update(ctx, models.ProxyManagerStatusDisconnected)
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "disconnected grpc client, but it fail to update the status"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "disconnected grpc client, but it fail to update the status")
 		return
 	}
 	c.JSON(http.StatusAccepted, &openapi.ProxyManagerResponse{

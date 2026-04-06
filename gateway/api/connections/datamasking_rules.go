@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -32,8 +32,7 @@ func UpdateDataMaskingRuleConnection(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, c.Param("nameOrID"))
 	if err != nil {
-		log.Errorf("failed fetching connection, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching connection: %v", err)
 		return
 	}
 
@@ -62,8 +61,7 @@ func UpdateDataMaskingRuleConnection(c *gin.Context) {
 	}
 	_, err = models.UpdateDataMaskingRuleConnection(ctx.GetOrgID(), conn.ID, dbItems)
 	if err != nil {
-		log.Errorf("failed updating data masking rule connection, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating data masking rule connection: %v", err)
 		return
 	}
 

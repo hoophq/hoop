@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -82,7 +82,7 @@ func Post(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid org id"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
 	}
 
@@ -95,8 +95,7 @@ func Post(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusCreated, toResponse(attr))
 	default:
-		log.Errorf("failed creating attribute, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating attribute: %v", err)
 	}
 }
 
@@ -122,7 +121,7 @@ func Put(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid org id"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
 	}
 
@@ -134,7 +133,7 @@ func Put(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching attribute: %v", err)
 		return
 	}
 
@@ -149,8 +148,7 @@ func Put(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toResponse(attr))
 	default:
-		log.Errorf("failed updating attribute, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating attribute: %v", err)
 	}
 }
 
@@ -169,7 +167,7 @@ func Delete(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid org id"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
 	}
 
@@ -180,8 +178,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		log.Errorf("failed deleting attribute, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting attribute: %v", err)
 	}
 }
 
@@ -202,7 +199,7 @@ func List(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid org id"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
 	}
 
@@ -221,8 +218,7 @@ func List(c *gin.Context) {
 
 	attrs, total, err := models.ListAttributes(models.DB, orgID, opts)
 	if err != nil {
-		log.Errorf("failed listing attributes, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing attributes: %v", err)
 		return
 	}
 
@@ -256,7 +252,7 @@ func Get(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid org id"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid org id")
 		return
 	}
 
@@ -267,8 +263,7 @@ func Get(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toResponse(attr))
 	default:
-		log.Errorf("failed fetching attribute, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching attribute: %v", err)
 	}
 }
 

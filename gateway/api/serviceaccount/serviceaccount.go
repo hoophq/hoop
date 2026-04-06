@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
@@ -26,8 +26,7 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	saItems, err := models.ListServiceAccounts(ctx.OrgID)
 	if err != nil {
-		log.Errorf("failed listing service accounts, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing service accounts: %v", err)
 		return
 	}
 	var items []openapi.ServiceAccount
@@ -95,8 +94,7 @@ func Create(c *gin.Context) {
 			Status:  openapi.ServiceAccountStatusType(sa.Status),
 		})
 	default:
-		log.Errorf("failed creating service account with subject %s, err=%v", req.Subject, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating service account with subject %s: %v", req.Subject, err)
 	}
 }
 
@@ -154,8 +152,7 @@ func Update(c *gin.Context) {
 			Status:  openapi.ServiceAccountStatusType(sa.Status),
 		})
 	default:
-		log.Errorf("failed updating service account with subject %s, err=%v", req.Subject, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating service account with subject %s: %v", req.Subject, err)
 	}
 }
 
