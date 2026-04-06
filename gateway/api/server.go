@@ -116,7 +116,7 @@ type Api struct {
 // @scope.profile
 // @scope.email
 // @scope.openid
-func (a *Api) StartAPI(sentryInit bool) {
+func (a *Api) StartAPI() {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
 	}
@@ -153,13 +153,10 @@ func (a *Api) StartAPI(sentryInit bool) {
 	ironRdpInstance.AttachHandlers(ironRdpGroup)
 
 	rg := route.Group(baseURL + "/api")
-	if sentryInit {
-		rg.Use(sentrygin.New(sentrygin.Options{
-			Repanic: true,
-		}))
-	}
-	router := apiroutes.New(rg)
+	rg.Use(sentrygin.New(sentrygin.Options{Repanic: true}))
+	rg.Use(sentryCatchAll5xxMiddleware)
 
+	router := apiroutes.New(rg)
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
 

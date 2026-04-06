@@ -48,6 +48,7 @@ libhoop
 client/cmd/auth
 client/cmd/custom.go
 gateway/cmd/gateway/.env
+rest-client/
 
 deploy/docker-compose/hoopdata/terraform/outputs/
 deploy/docker-compose/hoopdata/sessions

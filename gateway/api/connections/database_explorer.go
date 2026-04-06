@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
@@ -34,8 +35,7 @@ func ListDatabases(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection: %v", err)
 		return
 	}
 
@@ -92,8 +92,7 @@ print(JSON.stringify(result));`
 		Verb: pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 		return
 	}
 
@@ -111,8 +110,8 @@ print(JSON.stringify(result));`
 	select {
 	case outcome := <-respCh:
 		if outcome.ExitCode != 0 {
-			log.Errorf("failed issuing plain exec: %s, output=%v", outcome.String(), outcome.Output)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("command failed: %s", outcome.Output)})
+			errMsg := fmt.Errorf("command failed: %s", outcome.Output)
+			httputils.AbortWithErr(c, http.StatusInternalServerError, errMsg, "%v", errMsg)
 			return
 		}
 
@@ -124,8 +123,7 @@ print(JSON.stringify(result));`
 			var result []map[string]any
 			if output := cleanMongoOutput(outcome.Output); output != "" {
 				if err := json.Unmarshal([]byte(output), &result); err != nil {
-					log.Errorf("failed parsing mongo response: %v", err)
-					c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse MongoDB response: %v", err)})
+					httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to parse MongoDB response: %v", err)
 					return
 				}
 			}
@@ -137,8 +135,7 @@ print(JSON.stringify(result));`
 		default:
 			databases, err = parseDatabaseCommandOutput(outcome.Output)
 			if err != nil {
-				log.Errorf("failed parsing command output response: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse response: %v", err)})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to parse response: %v", err)
 				return
 			}
 		}
@@ -170,8 +167,7 @@ func ListTables(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection: %v", err)
 		return
 	}
 
@@ -240,8 +236,7 @@ func ListTables(c *gin.Context) {
 		Verb:                      pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 		return
 	}
 
@@ -289,9 +284,7 @@ func ListTables(c *gin.Context) {
 		}
 
 		if err != nil {
-			errMsg := fmt.Sprintf("failed to parse %v response: %v", currentConnectionType, err)
-			log.Error(errMsg)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to parse %v response", currentConnectionType)
 			return
 		}
 		c.JSON(http.StatusOK, tables)
@@ -334,8 +327,7 @@ func GetTableColumns(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
 	if err != nil {
-		log.Errorf("failed fetching connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch connection: %v", err)
 		return
 	}
 
@@ -411,8 +403,7 @@ func GetTableColumns(c *gin.Context) {
 		Verb:           pb.ClientVerbPlainExec,
 	})
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create client: %v", err)
 		return
 	}
 
@@ -445,8 +436,7 @@ func GetTableColumns(c *gin.Context) {
 			response.Columns, err = parseSQLColumns(outcome.Output, currentConnectionType)
 		}
 		if err != nil {
-			log.Errorf("failed parsing columns response, type=%v, err=%v", currentConnectionType, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed to parse columns response: %v", err)})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to parse columns response: %v", err)
 			return
 		}
 		c.JSON(http.StatusOK, response)

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -83,8 +83,7 @@ func SessionReport(c *gin.Context) {
 
 	report, err := models.GetSessionReport(ctx.OrgID, opts)
 	if err != nil {
-		log.Errorf("failed getting report, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed getting report: %v", err)
 		return
 	}
 	c.JSON(http.StatusOK, toOpenAPI(report))

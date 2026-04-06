@@ -34,7 +34,7 @@ func Run() {
 	// Reinitialize libhoop logger to use the same log format configured in client
 	llog.ReinitializeLogger()
 
-	_, _ = monitoring.StartSentry()
+	_, _ = monitoring.StartSentry("agent.null")
 	config, err := agentconfig.Load()
 	if err != nil {
 		log.With("version", vi.Version).Fatal(err)
