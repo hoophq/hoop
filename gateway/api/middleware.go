@@ -158,8 +158,8 @@ func (r *catchAll5xxResponseBodyWriter) Write(b []byte) (int, error) {
 }
 
 func sentryCatchAll5xxMiddleware(c *gin.Context) {
+	defer c.Next()
 	if enabled := appconfig.Get().AnalyticsTracking(); !enabled {
-		c.Next()
 		return
 	}
 
@@ -169,7 +169,6 @@ func sentryCatchAll5xxMiddleware(c *gin.Context) {
 	}
 	c.Writer = rbw
 
-	c.Next()
 	status := c.Writer.Status()
 	if status < 500 {
 		return
@@ -189,7 +188,6 @@ func sentryCatchAll5xxMiddleware(c *gin.Context) {
 			return
 		}
 	})
-	c.Next()
 }
 
 // auditResponseWriter wraps gin.ResponseWriter to capture the HTTP status code and response body
