@@ -149,7 +149,7 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 
 	// validate routes based on permissions from the user groups of a registered user
 	roles := rolesFromContext(c)
-	if !isGroupAllowed(ctx.UserGroups, roles...) {
+	if !isGroupAllowed(c.Request.Method, isAuditorExcluded(c), ctx.UserGroups, roles...) {
 		log.Debugf("forbidden access: %v %v, roles=%v, email=%v",
 			c.Request.Method, c.Request.URL.Path, roles, ctx.UserEmail)
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})

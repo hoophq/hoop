@@ -1,6 +1,7 @@
 package apiroutes
 
 import (
+	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
@@ -8,7 +9,10 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
-const roleContextKey string = "hoop-roles"
+const (
+	roleContextKey          string = "hoop-roles"
+	excludeAuditorContextKey string = "hoop-exclude-auditor"
+)
 
 func rolesFromContext(c *gin.Context) []openapi.RoleType {
 	obj, ok := c.Get(roleContextKey)
@@ -19,28 +23,34 @@ func rolesFromContext(c *gin.Context) []openapi.RoleType {
 	return roles
 }
 
-// isGroupAllowed validates if the groups of a user is allowed to access a route
-func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid bool) {
+func isAuditorExcluded(c *gin.Context) bool {
+	v, _ := c.Get(excludeAuditorContextKey)
+	excluded, _ := v.(bool)
+	return excluded
+}
+
+// isGroupAllowed validates if the groups of a user is allowed to access a route.
+// The httpMethod is used to grant auditors read-only access to all routes unless
+// the route is explicitly excluded via ExcludeAuditorRole.
+func isGroupAllowed(httpMethod string, excludeAuditor bool, userGroups []string, roleNames ...openapi.RoleType) (valid bool) {
 	if slices.Contains(userGroups, types.GroupAdmin) {
-		// admin can access any route
 		return true
 	}
 
-	// it performs validation of route based roles
-	// in case the group exists it must match against a route role
 	for _, groupName := range userGroups {
 		switch groupName {
 		case types.GroupAuditor:
-			// auditor can access only assigned route roles
-			return slices.Contains(roleNames, openapi.RoleAuditorType)
+			if excludeAuditor {
+				return false
+			}
+			// auditors have read-only (GET/HEAD) access to all routes
+			return httpMethod == http.MethodGet || httpMethod == http.MethodHead
 		}
 	}
 
-	// this condition matches against a privileged access
-	// and maintain the default behavior of allowing access to regular users
-	// that doesn't belong to any group.
-	//
-	// if a route doesn't have any role, it's also a standard access
+	// maintain the default behavior of allowing access to regular users
+	// that don't belong to any group.
+	// if a route doesn't have any role, it's also a standard access.
 	return len(roleNames) == 0 || slices.Contains(roleNames, openapi.RoleStandardType)
 }
 
@@ -56,5 +66,11 @@ func ReadOnlyAccessRole(c *gin.Context) {
 		openapi.RoleStandardType,
 		openapi.RoleAuditorType,
 	})
+	c.Next()
+}
+
+// ExcludeAuditorRole denies auditor access to the route even for read-only requests
+func ExcludeAuditorRole(c *gin.Context) {
+	c.Set(excludeAuditorContextKey, true)
 	c.Next()
 }

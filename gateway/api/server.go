@@ -431,6 +431,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiorgs.CreateAgentKey)
 	r.GET("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,
+		apiroutes.ExcludeAuditorRole,
 		r.AuthMiddleware,
 		apiorgs.GetAgentKey)
 	r.DELETE("/orgs/keys",
