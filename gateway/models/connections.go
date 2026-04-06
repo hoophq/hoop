@@ -100,6 +100,16 @@ type ConnectionGuardRailRules struct {
 	GuardRailOutputRules []byte `gorm:"column:guardrail_output_rules;->"`
 }
 
+func (c *ConnectionGuardRailRules) HasEmptyRules() bool {
+	areRulesEmpty := len(c.GuardRailInputRules) == 0 && len(c.GuardRailOutputRules) == 0
+
+	if areRulesEmpty {
+		return true
+	}
+
+	return string(c.GuardRailInputRules) == "[]" && string(c.GuardRailOutputRules) == "[]"
+}
+
 type ConnectionJiraIssueTemplateTypes struct {
 	OrgID string `gorm:"column:org_id"`
 	ID    string `gorm:"column:id"`
