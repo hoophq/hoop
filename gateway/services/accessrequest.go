@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -16,7 +17,7 @@ func GetRuleForConnection(orgID uuid.UUID, connectionName, accessType string) (*
 
 	if len(connectionAttributes) > 0 {
 		rule, err := models.GetRequestRulesByAttributes(models.DB, orgID, connectionAttributes, accessType)
-		if err != nil && err != gorm.ErrRecordNotFound {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("failed fetching access request rules: %s", err)
 		}
 
@@ -26,7 +27,7 @@ func GetRuleForConnection(orgID uuid.UUID, connectionName, accessType string) (*
 	}
 
 	rule, err := models.GetAccessRequestRuleByResourceNameAndAccessType(models.DB, orgID, connectionName, accessType)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("failed fetching access request rule: %s", err)
 	}
 

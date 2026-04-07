@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -90,7 +91,7 @@ func ListTags(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	items, err := models.ListConnectionTags(ctx.OrgID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing connection tags: %v", err)
 		return
 	}
 	var result openapi.ConnectionTagList

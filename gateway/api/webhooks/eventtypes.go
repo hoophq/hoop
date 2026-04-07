@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	svix "github.com/svix/svix-webhooks/go"
 )
@@ -125,14 +125,11 @@ func isApiError(c *gin.Context, op, resourceName string, err error) (failed bool
 	case *svix.Error:
 		msg := fmt.Sprintf("failed performing operation to Svix API, op=%v, resource=%v, status=%v, error=%v, body=%v",
 			op, resourceName, e.Status(), e.Error(), string(e.Body()))
-		log.Warn(msg)
-		c.JSON(http.StatusBadRequest, gin.H{"message": msg})
+		httputils.AbortWithErr(c, http.StatusBadRequest, e, msg)
 		return true
 	case nil:
 	default:
-		msg := fmt.Sprintf("failed performing operation to Svix API, op=%v, resource=%v, err=%v", op, resourceName, err)
-		log.Warn(msg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": msg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed performing operation to Svix API, op=%v, resource=%v", op, resourceName)
 		return true
 	}
 	return false

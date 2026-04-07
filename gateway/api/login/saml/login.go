@@ -1,6 +1,7 @@
 package loginsamlapi
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
@@ -37,8 +39,7 @@ func (h *handler) loadSamlVerifier(c *gin.Context) (idp.SamlVerifier, bool) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "SAML provider not configured"})
 	case nil:
 	default:
-		log.Errorf("failed to load IDP provider: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal server error, failed loading SAML provider"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal server error, failed loading SAML provider")
 	}
 	return samlVerifier, err == nil
 }
@@ -61,8 +62,7 @@ func (h *handler) SamlLogin(c *gin.Context) {
 
 	doc, err := saml.ServiceProvider().BuildAuthRequestDocument()
 	if err != nil {
-		log.Errorf("failed to build SAML auth request document, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to build SAML auth request document"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to build SAML auth request document")
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *handler) SamlLogin(c *gin.Context) {
 
 	if requestID == "" {
 		log.Warnf("SAML request ID is empty, cannot proceed with login")
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, SAML request ID is empty"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("SAML request ID is empty"), "internal error, SAML request ID is empty")
 		return
 	}
 	if requestID[0] == '_' {
@@ -88,8 +88,7 @@ func (h *handler) SamlLogin(c *gin.Context) {
 	}
 	redirectURL, err := parseRedirectURL(c)
 	if err != nil {
-		log.Warnf("failed to parse redirect URL, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to parse redirect URL"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal error, failed to parse redirect URL")
 		return
 	}
 
@@ -101,15 +100,13 @@ func (h *handler) SamlLogin(c *gin.Context) {
 		UpdatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		log.Errorf("internal error storing the login, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error storing the login"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal error storing the login")
 		return
 	}
 
 	authURL, err := saml.ServiceProvider().BuildAuthURLFromDocument("", doc)
 	if err != nil {
-		log.Errorf("failed to build SAML auth URL: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to generate SAML auth URL"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to generate SAML auth URL")
 		return
 	}
 	log.With("state", requestID).Infof("initiate SAML login")
@@ -166,7 +163,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 
 	if responseID == "" {
 		log.Warnf("SAML response ID is empty, cannot proceed with login")
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, SAML response ID is empty"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("SAML response ID is empty"), "internal error, SAML response ID is empty")
 		return
 	}
 	if responseID[0] == '_' {
@@ -201,8 +198,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Warnf("failed to get login by state, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error, failed to get login by state"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal error, failed to get login by state")
 		return
 	}
 

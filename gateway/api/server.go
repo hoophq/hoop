@@ -116,7 +116,7 @@ type Api struct {
 // @scope.profile
 // @scope.email
 // @scope.openid
-func (a *Api) StartAPI(sentryInit bool) {
+func (a *Api) StartAPI() {
 	if os.Getenv("PORT") == "" {
 		os.Setenv("PORT", "8009")
 	}
@@ -153,11 +153,9 @@ func (a *Api) StartAPI(sentryInit bool) {
 	ironRdpInstance.AttachHandlers(ironRdpGroup)
 
 	rg := route.Group(baseURL + "/api")
-	if sentryInit {
-		rg.Use(sentrygin.New(sentrygin.Options{
-			Repanic: true,
-		}))
-	}
+	rg.Use(sentrygin.New(sentrygin.Options{Repanic: true}))
+	rg.Use(sentryCatchAll5xxMiddleware)
+
 	router := apiroutes.New(rg)
 
 	a.buildRoutes(router)
@@ -327,7 +325,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiconnections.UpdateDataMaskingRuleConnection)
 
 	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiai.GetConnectionAnalyzerRule)
 
@@ -955,7 +952,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		auditlogapi.List)
 
 	r.GET("/attributes",
-		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.List)
 	r.GET("/attributes/:name",

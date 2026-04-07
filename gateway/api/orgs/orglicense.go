@@ -2,13 +2,13 @@ package apiorgs
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -42,9 +42,7 @@ func UpdateOrgLicense(c *gin.Context) {
 
 	licenseData, _ := json.Marshal(&req)
 	if err := models.UpdateOrgLicense(ctx.OrgID, licenseData); err != nil {
-		msg := fmt.Sprintf("failed updating license, err=%v", err)
-		log.With("org", ctx.OrgName).Error(msg)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": msg})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating license: %v", err)
 		return
 	}
 	c.JSON(http.StatusNoContent, nil)
@@ -96,13 +94,11 @@ func SignLicense(c *gin.Context) {
 		req.LicenseType, req.AllowedHosts, req.Description, req.ExpireAt)
 	l, err := license.Sign(signingKey, req.LicenseType, req.Description, req.AllowedHosts, expireAt)
 	if err != nil {
-		log.Warnf("failed sign license, type=%v, hosts=%v, reason=%v", req.LicenseType, req.AllowedHosts, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed sign license: %v", err)
 		return
 	}
 	if err := l.Verify(); err != nil {
-		log.Warnf("failed verifying license, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed verifying license: %v", err)
 		return
 	}
 	c.JSON(http.StatusOK, l)
