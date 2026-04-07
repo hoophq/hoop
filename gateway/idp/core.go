@@ -96,6 +96,65 @@ func (v userInfoTokenVerifier) RefreshAccessToken(ctx context.Context, refreshTo
 	return nil, fmt.Errorf("token refresh not supported by this provider")
 }
 
+// SubjectFromExpiredJWT extracts the "sub" claim from a JWT without validating
+// the signature or expiration. This is used to identify the user when the access
+// token is expired so we can look up a refresh token for that user.
+func SubjectFromExpiredJWT(tokenStr string) (string, error) {
+	parts := strings.Split(tokenStr, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("not a JWT token")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
+	}
+	var claims struct {
+		Subject string `json:"sub"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return "", fmt.Errorf("failed to parse JWT claims: %w", err)
+	}
+	if claims.Subject == "" {
+		return "", fmt.Errorf("JWT has no sub claim")
+	}
+	return claims.Subject, nil
+}
+
+// TryRefreshAccessToken attempts to refresh an expired access token using the
+// stored refresh token for the given subject. On success it persists the new
+// tokens and returns the new access token. It returns an empty string and an
+// error when refresh is not possible or fails.
+func TryRefreshAccessToken(tokenVerifier TokenVerifier, subject string) (string, error) {
+	userToken, err := models.GetUserToken(models.DB, subject)
+	if err != nil || userToken == nil {
+		return "", fmt.Errorf("no stored token for subject")
+	}
+	if userToken.RefreshToken == nil || *userToken.RefreshToken == "" {
+		return "", fmt.Errorf("no refresh token available")
+	}
+
+	refresher, ok := tokenVerifier.(TokenRefresher)
+	if !ok {
+		return "", fmt.Errorf("token refresh not supported by this provider")
+	}
+
+	newToken, err := refresher.RefreshAccessToken(context.Background(), *userToken.RefreshToken)
+	if err != nil {
+		return "", fmt.Errorf("failed to refresh access token: %w", err)
+	}
+
+	var newRefreshToken *string
+	if newToken.RefreshToken != "" {
+		newRefreshToken = &newToken.RefreshToken
+	}
+	if err := models.UpsertUserToken(models.DB, subject, newToken.AccessToken, newRefreshToken); err != nil {
+		return "", fmt.Errorf("failed to persist refreshed token: %w", err)
+	}
+
+	log.With("subject", subject).Infof("access token refreshed successfully")
+	return newToken.AccessToken, nil
+}
+
 func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.ProviderType, old, new *models.ServerAuthConfig) (hasChanged bool) {
 	switch providerType {
 	case idptypes.ProviderTypeLocal:

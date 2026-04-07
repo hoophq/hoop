@@ -28,32 +28,11 @@ func CheckUserToken(tokenVerifier idp.UserInfoTokenVerifier, userID string) erro
 			return err
 		}
 
-		// attempt to refresh the token if a refresh token is available
-		if userToken.RefreshToken == nil || *userToken.RefreshToken == "" {
-			return fmt.Errorf("access token is expired, try logging in again")
-		}
-
-		refresher, ok := tokenVerifier.(idp.TokenRefresher)
-		if !ok {
-			return fmt.Errorf("access token is expired, try logging in again")
-		}
-
-		newToken, refreshErr := refresher.RefreshAccessToken(context.Background(), *userToken.RefreshToken)
-		if refreshErr != nil {
+		// attempt to refresh the token using the shared helper
+		if _, refreshErr := idp.TryRefreshAccessToken(tokenVerifier, userID); refreshErr != nil {
 			log.With("user", userID).Warnf("failed to refresh access token: %v", refreshErr)
 			return fmt.Errorf("access token is expired, try logging in again")
 		}
-
-		var newRefreshToken *string
-		if newToken.RefreshToken != "" {
-			newRefreshToken = &newToken.RefreshToken
-		}
-		if err := models.UpsertUserToken(models.DB, userID, newToken.AccessToken, newRefreshToken); err != nil {
-			log.With("user", userID).Errorf("failed to persist refreshed token: %v", err)
-			return fmt.Errorf("access token is expired, try logging in again")
-		}
-
-		log.With("user", userID).Infof("access token refreshed successfully")
 		return nil
 	}
 
