@@ -38,7 +38,7 @@ func NormalizeEnvironment(apiURL string) string {
 
 // sentryTransport defines which transport to start, sync or async.
 // a nil value defaults initalizing a sync sentry transport.
-func StartSentry() (bool, error) {
+func StartSentry(environment string) (bool, error) {
 	if sentryDSN == "" {
 		return false, nil
 	}
@@ -49,7 +49,7 @@ func StartSentry() (bool, error) {
 		// of transactions for performance monitoring.
 		// We recommend adjusting this value in production,
 		TracesSampleRate: 1.0,
-		Environment:      "", // TODO
+		Environment:      environment,
 		Release:          version.Get().Version,
 		Transport:        nil,
 	})

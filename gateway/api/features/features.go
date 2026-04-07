@@ -6,8 +6,8 @@ import (
 	"slices"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -64,8 +64,7 @@ func FeatureUpdate(c *gin.Context) {
 	}
 	err := models.CreateAudit(ctx.OrgID, eventName, ctx.UserEmail, metadata)
 	if err != nil {
-		log.Errorf("fail to update feature %v, reason=%v", req.Name, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to update feature"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to update feature")
 		return
 	}
 	c.JSON(http.StatusNoContent, nil)

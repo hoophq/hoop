@@ -76,6 +76,10 @@ type Connection struct {
 	Attributes                pq.StringArray    `gorm:"column:attributes;type:text[];->"`
 }
 
+func isAuditorContext(ctx UserContext) bool {
+	return slices.Contains(ctx.GetUserGroups(), types.GroupAuditor)
+}
+
 func (c Connection) AsSecrets() map[string]any {
 	dst := map[string]any{}
 	for k, v := range c.Envs {
@@ -98,6 +102,16 @@ type ConnectionGuardRailRules struct {
 	// Read Only Fields
 	GuardRailInputRules  []byte `gorm:"column:guardrail_input_rules;->"`
 	GuardRailOutputRules []byte `gorm:"column:guardrail_output_rules;->"`
+}
+
+func (c *ConnectionGuardRailRules) HasEmptyRules() bool {
+	areRulesEmpty := len(c.GuardRailInputRules) == 0 && len(c.GuardRailOutputRules) == 0
+
+	if areRulesEmpty {
+		return true
+	}
+
+	return string(c.GuardRailInputRules) == "[]" && string(c.GuardRailOutputRules) == "[]"
 }
 
 type ConnectionJiraIssueTemplateTypes struct {
@@ -473,15 +487,16 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
 	CASE
-		-- do not apply any access control if the plugin is not enabled or it is an admin user
-		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
+		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
+		WHEN ac.id IS NULL OR (@is_admin_or_auditor)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
 		ELSE acc.config && (@user_groups)::text[]
 	END`, map[string]any{
-		"org_id":      ctx.GetOrgID(),
-		"nameOrID":    nameOrID,
-		"is_admin":    ctx.IsAdmin(),
-		"user_groups": userGroups,
+		"org_id":              ctx.GetOrgID(),
+		"nameOrID":            nameOrID,
+		"is_admin":            ctx.IsAdmin(),
+		"is_admin_or_auditor": ctx.IsAdmin() || isAuditorContext(ctx),
+		"user_groups":         userGroups,
 	}).
 		First(&conn).
 		Error
@@ -560,15 +575,15 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
 	CASE
-		-- do not apply any access control if the plugin is not enabled or it is an admin user
-		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
+		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
+		WHEN ac.id IS NULL OR (@is_admin_or_auditor)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
 		ELSE acc.config && (@user_groups)::text[]
 	END`, map[string]any{
-		"org_id":      ctx.GetOrgID(),
-		"nameOrID":    nameOrID,
-		"is_admin":    ctx.IsAdmin(),
-		"user_groups": userGroups,
+		"org_id":             ctx.GetOrgID(),
+		"nameOrID":           nameOrID,
+		"is_admin_or_auditor": ctx.IsAdmin() || isAuditorContext(ctx),
+		"user_groups":        userGroups,
 	}).
 		First(&conn).
 		Error
@@ -721,7 +736,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	WHERE c.org_id = ? AND
 	CASE
-		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
 		WHEN ac.id IS NULL OR (?)::BOOL THEN true
 		-- allow if any of the input user groups are in the access control list
 		ELSE acc.config && (?)::text[]
@@ -784,7 +799,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	) ORDER BY c.name ASC`,
 		tagSelectorJsonData,
 		ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(),
-		ctx.IsAdmin(), userGroups, // access control filter
+		ctx.IsAdmin() || isAuditorContext(ctx), userGroups, // access control filter
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,
@@ -806,7 +821,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm string) ([]Connection, error) {
 	var items []Connection
 
-	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin) || slices.Contains(userGroups, types.GroupAuditor)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
 	err := DB.Raw(`
@@ -886,7 +901,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		return nil, 0, err
 	}
 
-	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin) || slices.Contains(userGroups, types.GroupAuditor)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)

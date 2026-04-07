@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
@@ -14,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -45,8 +45,7 @@ func Post(c *gin.Context) {
 	}
 	_, signingKey := appconfig.Get().LicenseSigningKey()
 	if signingKey == nil {
-		log.Errorf("unable to sign license: missing license private key")
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, fmt.Errorf("missing license private key"), "unable to sign license")
 		return
 	}
 	lic, err := license.Sign(
@@ -57,21 +56,18 @@ func Post(c *gin.Context) {
 		(time.Hour*8760)*20, // 20 years
 	)
 	if err != nil {
-		log.Errorf("unable to sign license: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to sign license")
 		return
 	}
 	licenseDataJSONBytes, err := json.Marshal(lic)
 	if err != nil {
-		log.Errorf("unable to encode license to json: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license (json encoding)"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to sign license (json encoding)")
 		return
 	}
 
 	org, _, err := models.CreateOrgGetOrganization(req.OrgName, licenseDataJSONBytes)
 	if err != nil {
-		log.Errorf("failed creating organization, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating organization"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating organization")
 		return
 	}
 
@@ -102,9 +98,7 @@ func Post(c *gin.Context) {
 		// Groups:   []string{types.GroupAdmin},
 	}
 	if err := models.UpdateUser(&user); err != nil {
-		log.Errorf("failed creating user, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating user")
 		return
 	}
 	adminGroup := models.UserGroup{
@@ -113,8 +107,7 @@ func Post(c *gin.Context) {
 		Name:   types.GroupAdmin,
 	}
 	if err := models.InsertUserGroups([]models.UserGroup{adminGroup}); err != nil {
-		log.Errorf("failed creating user group, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user group"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating user group")
 		return
 	}
 	// add default system tags

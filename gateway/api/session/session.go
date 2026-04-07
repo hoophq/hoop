@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"
@@ -25,11 +23,11 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
-	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -141,9 +139,7 @@ func Post(c *gin.Context) {
 
 	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
 	if err != nil {
-		log.Errorf("failed fetch connection %v for exec, err=%v", req.Connection, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec, err=%v", req.Connection, err)
 		return
 	}
 	if conn == nil {
@@ -187,8 +183,7 @@ func Post(c *gin.Context) {
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	analyzeRes, err := AIAnalyze(c, orgID, conn.Name, req.Script)
 	if err != nil {
-		log.Errorf("failed analyzing session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed analyzing session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
 		return
 	}
 
@@ -204,8 +199,7 @@ func Post(c *gin.Context) {
 		}
 
 		if err := models.UpsertSession(newSession); err != nil {
-			log.Errorf("failed creating session, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
 			return
 		}
 
@@ -224,56 +218,10 @@ func Post(c *gin.Context) {
 		}
 	}
 
-	connRules, err := services.GetGuardRailRulesForConnection(ctx.OrgID, conn.Name)
-	if err != nil {
-		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
-		return
-	}
-
-	if connRules != nil {
-		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
-		switch err.(type) {
-		case *guardrails.ErrRuleMatch:
-			// persist session to audit this attempt
-			_ = services.ValidateAndUpsertSession(c, newSession, conn)
-			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
-			if err := models.UpdateSessionEventStream(models.SessionDone{
-				ID:         sid,
-				OrgID:      ctx.OrgID,
-				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
-				BlobStream: fmt.Appendf(nil, `[[0, "e", %q]]`, encErr),
-				ExitCode:   func() *int { v := internalExitCode; return &v }(),
-				Status:     string(openapi.SessionStatusDone),
-			}); err != nil {
-				log.Errorf("unable to update session, err=%v", err)
-			}
-
-			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
-
-			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sid,
-				Output:            err.Error(),
-				OutputStatus:      "failed",
-				ExitCode:          internalExitCode,
-				ExecutionTimeMili: 0,
-				AIAnalysis:        toOpenApiSessionAIAnalysis(analyzeRes),
-			})
-			return
-		case nil:
-		default:
-			errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
-			log.Error(errMsg)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
-			return
-		}
-	}
-
 	if conn.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
 		if err != nil {
-			log.Errorf("failed obtaining jira issue template for %v, reason=%v", conn.Name, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira issue template for %v: %v", conn.Name, err)
 			return
 		}
 		if jiraConfig != nil && jiraConfig.IsActive() {
@@ -287,14 +235,12 @@ func Post(c *gin.Context) {
 				return
 			case nil:
 			default:
-				log.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields: %v", err)
 				return
 			}
 			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
 			if err != nil {
-				log.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request: %v", err)
 				return
 			}
 			newSession.IntegrationsMetadata = map[string]any{
@@ -312,7 +258,7 @@ func Post(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
 		return
 	}
 	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
@@ -326,8 +272,7 @@ func Post(c *gin.Context) {
 		UserAgent:      userAgent,
 	})
 	if err != nil {
-		log.Error(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating client: %v", err)
 		return
 	}
 
@@ -464,9 +409,7 @@ func List(c *gin.Context) {
 
 	sessionList, err := models.ListSessions(ctx.OrgID, ctx.UserID, ctx.IsAuditorOrAdminUser(), option)
 	if err != nil {
-		log.Errorf("failed listing sessions (v2), err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed listing sessions (v2)"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing sessions (v2)")
 		return
 	}
 
@@ -502,9 +445,7 @@ func Get(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed fetching session, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
 
@@ -526,7 +467,7 @@ func Get(c *gin.Context) {
 		}
 
 		if ctx.ApiURL == "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating download link, missing api url"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("missing api url"), "failed generating download link, missing api url")
 			return
 		}
 		hash := sha256.Sum256([]byte(uuid.NewString()))
@@ -572,8 +513,7 @@ func Get(c *gin.Context) {
 	if isAllowed && expandEventStream {
 		session.BlobStream, err = session.GetBlobStream()
 		if err != nil {
-			log.Errorf("failed fetching blob stream from session, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching blob stream from session")
 			return
 		}
 	}
@@ -583,8 +523,7 @@ func Get(c *gin.Context) {
 	if expandParam == "" || slices.Contains(expandedFields, "session_input") {
 		session.BlobInput, err = session.GetBlobInput()
 		if err != nil {
-			log.Errorf("failed fetching input from session, err=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching input from session")
 			return
 		}
 	}
@@ -598,8 +537,7 @@ func Get(c *gin.Context) {
 			return
 		case nil:
 		default:
-			log.With("sid", sessionID).Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing blob stream")
 			return
 		}
 	}
@@ -659,17 +597,13 @@ func DownloadSession(c *gin.Context) {
 	expireAt, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%v", store["expire-at"]))
 	if err != nil {
 		log.Errorf("failed parsing request time, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed processing request"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed processing request")
 		return
 	}
 	token := fmt.Sprintf("%v", store["token"])
 	if token == "" {
 		log.Error("download token is empty")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed processing request"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("download token is empty"), "failed processing request")
 		return
 	}
 
@@ -698,16 +632,12 @@ func DownloadSession(c *gin.Context) {
 	}
 	session, err := models.GetSessionByID(ctx.OrgID, sid)
 	if err != nil || session == nil {
-		log.Errorf("failed fetching session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed fetching session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
 	session.BlobStream, err = session.GetBlobStream()
 	if err != nil {
-		log.Errorf("failed fetching blob stream from session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching blob stream from session")
 		return
 	}
 	output, err := parseBlobStream(session, sessionParseOption{
@@ -718,10 +648,7 @@ func DownloadSession(c *gin.Context) {
 		events:        eventTypes,
 	})
 	if err != nil {
-		log.Errorf("failed parsing blob stream, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed parsing blob stream"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing blob stream")
 		return
 	}
 
@@ -763,17 +690,13 @@ func DownloadSessionInput(c *gin.Context) {
 	expireAt, err := time.Parse(time.RFC3339Nano, fmt.Sprintf("%v", store["expire-at"]))
 	if err != nil {
 		log.Errorf("failed parsing request time, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed processing request"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed processing request")
 		return
 	}
 	token := fmt.Sprintf("%v", store["token"])
 	if token == "" {
 		log.Error("download token is empty")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed processing request"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("download token is empty"), "failed processing request")
 		return
 	}
 
@@ -800,16 +723,12 @@ func DownloadSessionInput(c *gin.Context) {
 	}
 	session, err := models.GetSessionByID(ctx.OrgID, sid)
 	if err != nil || session == nil {
-		log.Errorf("failed fetching session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  http.StatusInternalServerError,
-			"message": "failed fetching session, reason: " + err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
 	output, err := session.GetBlobInput()
 	if err != nil {
-		log.Errorf("failed fetching input from session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching input from session, reason: " + err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching input from session: %v", err)
 		return
 	}
 
@@ -848,9 +767,7 @@ func StreamSessionResult(c *gin.Context) {
 		return
 	case nil:
 	default:
-		log.Errorf("failed fetching session, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
 
@@ -865,8 +782,7 @@ func StreamSessionResult(c *gin.Context) {
 
 	session.BlobStream, err = session.GetBlobStream()
 	if err != nil {
-		log.Errorf("failed fetching blob stream from session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching blob stream from session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching blob stream from session")
 		return
 	}
 
@@ -889,8 +805,7 @@ func StreamSessionResult(c *gin.Context) {
 		events:        eventTypes,
 	})
 	if err != nil {
-		log.Errorf("failed parsing blob stream, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed parsing blob stream"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing blob stream")
 		return
 	}
 
@@ -929,9 +844,7 @@ func PatchMetadata(c *gin.Context) {
 		return
 	case nil:
 	default:
-		msgErr := fmt.Sprintf("failed to update session metadata, reason=%v", err)
-		log.Error(msgErr)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": msgErr})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update session metadata: %v", err)
 		return
 	}
 	c.Writer.WriteHeader(http.StatusNoContent)
@@ -961,8 +874,7 @@ func Kill(c *gin.Context) {
 			return
 		}
 	default:
-		log.Errorf("failed fetching session, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
 
@@ -1145,9 +1057,7 @@ func Provision(c *gin.Context) {
 	// Get user information
 	user, err := models.GetUserByEmail(req.UserEmail)
 	if err != nil {
-		log.Errorf("failed fetching user %v for exec, err=%v", ctx.UserEmail, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching user for exec"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching user %v for exec", ctx.UserEmail)
 		return
 	}
 	if user == nil {
@@ -1165,9 +1075,7 @@ func Provision(c *gin.Context) {
 	// Get connection information
 	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
 	if err != nil {
-		log.Errorf("failed fetch connection %v for exec, err=%v", req.Connection, err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec, err=%v", req.Connection, err)
 		return
 	}
 	if conn == nil {
@@ -1208,55 +1116,10 @@ func Provision(c *gin.Context) {
 		EndSession:           nil,
 	}
 
-	connRules, err := services.GetGuardRailRulesForConnection(ctx.OrgID, conn.Name)
-	if err != nil {
-		log.Errorf("failed obtaining guard rail rules from connection, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed obtaining guard rail rules"})
-		return
-	}
-
-	if connRules != nil {
-		err = guardrails.Validate("input", connRules.GuardRailInputRules, []byte(req.Script))
-		switch err.(type) {
-		case *guardrails.ErrRuleMatch:
-			// persist session to audit this attempt
-			_ = services.ValidateAndUpsertSession(c, newSession, conn)
-
-			encErr := base64.StdEncoding.EncodeToString([]byte(err.Error()))
-			if err := models.UpdateSessionEventStream(models.SessionDone{
-				ID:         sid,
-				OrgID:      ctx.OrgID,
-				EndSession: func() *time.Time { t := time.Now().UTC(); return &t }(),
-				BlobStream: fmt.Appendf(nil, `[[0, "e", %q]]`, encErr),
-				ExitCode:   func() *int { v := internalExitCode; return &v }(),
-				Status:     string(openapi.SessionStatusDone),
-			}); err != nil {
-				log.Errorf("unable to update session, err=%v", err)
-			}
-
-			trackClient.TrackSessionUsageData(analytics.EventSessionFinished, ctx.OrgID, ctx.UserID, sid)
-			c.JSON(http.StatusOK, clientexec.Response{
-				SessionID:         sid,
-				Output:            err.Error(),
-				OutputStatus:      "failed",
-				ExitCode:          internalExitCode,
-				ExecutionTimeMili: 0,
-			})
-			return
-		case nil:
-		default:
-			errMsg := fmt.Sprintf("internal error, failed validating guard rails input rules: %v", err)
-			log.Error(errMsg)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": errMsg})
-			return
-		}
-	}
-
 	if conn.JiraIssueTemplateID.String != "" {
 		issueTemplate, jiraConfig, err := models.GetJiraIssueTemplatesByID(conn.OrgID, conn.JiraIssueTemplateID.String)
 		if err != nil {
-			log.Errorf("failed obtaining jira issue template for %v, reason=%v", conn.Name, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed obtaining jira issue template: %v", err)})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira issue template for %v: %v", conn.Name, err)
 			return
 		}
 		if jiraConfig != nil && jiraConfig.IsActive() {
@@ -1270,14 +1133,12 @@ func Provision(c *gin.Context) {
 				return
 			case nil:
 			default:
-				log.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed parsing jira issue fields: %v", err)
 				return
 			}
 			resp, err := jira.CreateCustomerRequest(issueTemplate, jiraConfig, jiraFields)
 			if err != nil {
-				log.Error(err)
-				c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating jira customer request: %v", err)
 				return
 			}
 			newSession.IntegrationsMetadata = map[string]any{
@@ -1295,15 +1156,14 @@ func Provision(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating session"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating session")
 		return
 	}
 	trackClient.TrackSessionUsageData(analytics.EventSessionCreated, ctx.OrgID, ctx.UserID, sid)
 
 	allGroupsApproved, err := createApprovedReview(ctx, &newSession, conn, user, &req)
 	if err != nil {
-		log.Errorf("failed creating review, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating review")
 		return
 	}
 
@@ -1319,7 +1179,7 @@ func Provision(c *gin.Context) {
 				return
 			}
 
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed updating session"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating session")
 			return
 		}
 		trackClient.TrackSessionUsageData(analytics.EventSessionReviewed, ctx.OrgID, ctx.UserID, sid)
