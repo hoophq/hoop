@@ -121,6 +121,9 @@ func (s *Server) listenAgentMessages(pctx *plugintypes.Context, stream *streamcl
 			if proxyStream.PluginContext().ConnectionSubType == "ssh" {
 				pkt.Spec[pb.SpecClientSSHHostKey] = []byte(appconfig.Get().SSHClientHostKey())
 			}
+			if agentVersion := stream.GetMeta("version"); agentVersion != "" {
+				pkt.Spec[pb.SpecAgentVersion] = []byte(agentVersion)
+			}
 		}
 
 		if err = proxyStream.Send(pkt); err != nil {
