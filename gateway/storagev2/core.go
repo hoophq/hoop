@@ -116,6 +116,7 @@ func (c *Context) GetUserID() string       { return c.UserID }
 func (c *Context) GetLicenseName() string  { return c.OrgLicense }
 func (c *Context) GetUserGroups() []string { return c.UserGroups }
 func (c *Context) IsAdmin() bool           { return slices.Contains(c.UserGroups, types.GroupAdmin) }
+func (c *Context) IsAuditor() bool         { return slices.Contains(c.UserGroups, types.GroupAuditor) }
 func (c *Context) GetSubject() string      { return c.UserID }
 func (c *Context) IsAnonymous() bool       { return c.UserAnonEmail != "" && c.UserAnonSubject != "" }
 func (c *Context) GroupRoleName() string {
