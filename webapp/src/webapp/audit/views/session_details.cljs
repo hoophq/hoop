@@ -13,6 +13,7 @@
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
+   [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
 
@@ -253,7 +254,7 @@
                     [:span param-value]]))]])
             ;; end runbook params
 
-            ;; metadata (internal fields like credentials_expire_at and credentials_session are excluded from display)
+            ;; metadata
             (when (and metadata
                        (seq (dissoc metadata :credentials_expire_at :credential_session)))
               [:div
@@ -287,6 +288,8 @@
             ;; end script area
 
             [session-analysis/main {:ai-analysis (:ai_analysis session)}]
+
+            [guardrails-info/main {:guardrails-info (:guardrails_info session)}]
 
             [data-masking-analytics/main {:session session}]
 
