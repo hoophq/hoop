@@ -70,7 +70,7 @@ func New(opts Options) (*Provider, error) {
 		return nil, err
 	}
 	oidcProvider := oidcProviderConfig.NewProvider(ctx)
-	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+	scopes := []string{oidc.ScopeOpenID, "profile", "email", "offline_access"}
 	if p.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, p.CustomScopes)
 	}
@@ -206,8 +206,20 @@ func downloadJWKS(jwksURL string) (*keyfunc.JWKS, error) {
 	return keyfunc.Get(jwksURL, options)
 }
 
+// RefreshAccessToken exchanges a refresh token for a new access token using the provider's token endpoint.
+func (p *Provider) RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	token := &oauth2.Token{RefreshToken: refreshToken}
+	tokenSource := p.oauth2Config.TokenSource(ctx, token)
+	newToken, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to refresh access token: %w", err)
+	}
+	return newToken, nil
+}
+
 func (p *Provider) GetAudience() string { return p.Audience }
 func (p *Provider) GetAuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	opts = append(opts, oauth2.AccessTypeOffline)
 	return p.oauth2Config.AuthCodeURL(state, opts...)
 }
 

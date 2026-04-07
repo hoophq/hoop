@@ -80,7 +80,7 @@ func generateNewAccessToken(subject, email string) (string, error) {
 		return "", err
 	}
 
-	err = models.UpsertUserToken(models.DB, subject, token)
+	err = models.UpsertUserToken(models.DB, subject, token, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed upserting user token: %v", err)
 	}
