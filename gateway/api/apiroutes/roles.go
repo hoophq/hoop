@@ -26,14 +26,10 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 		return true
 	}
 
-	// it performs validation of route based roles
-	// in case the group exists it must match against a route role
-	for _, groupName := range userGroups {
-		switch groupName {
-		case types.GroupAuditor:
-			// auditor can access only assigned route roles
-			return slices.Contains(roleNames, openapi.RoleAuditorType)
-		}
+	// auditor has read-only access to all routes (like admin),
+	// mutation control is enforced by route-level role middleware
+	if slices.Contains(userGroups, types.GroupAuditor) {
+		return len(roleNames) == 0 || slices.Contains(roleNames, openapi.RoleAuditorType)
 	}
 
 	// this condition matches against a privileged access
@@ -47,6 +43,12 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 // AdminOnlyAccessRole allows only admin users to access this role
 func AdminOnlyAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, []openapi.RoleType{openapi.RoleAdminType})
+	c.Next()
+}
+
+// AdminAndAuditorAccessRole allows admin and auditor users to access this route
+func AdminAndAuditorAccessRole(c *gin.Context) {
+	c.Set(roleContextKey, []openapi.RoleType{openapi.RoleAdminType, openapi.RoleAuditorType})
 	c.Next()
 }
 
