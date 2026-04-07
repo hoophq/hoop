@@ -191,7 +191,11 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	err = models.UpsertUserToken(models.DB, subject, token.AccessToken)
+	var refreshToken *string
+	if token.RefreshToken != "" {
+		refreshToken = &token.RefreshToken
+	}
+	err = models.UpsertUserToken(models.DB, subject, token.AccessToken, refreshToken)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed upserting user token subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)

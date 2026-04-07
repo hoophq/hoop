@@ -285,7 +285,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		return
 	}
 
-	err = models.UpsertUserToken(models.DB, uinfo.Subject, sessionToken)
+	err = models.UpsertUserToken(models.DB, uinfo.Subject, sessionToken, nil)
 	if err != nil {
 		log.Errorf("failed upserting user token, reason=%v", err)
 		redirectToErrURL(c, login.Redirect, "unable to store user token")

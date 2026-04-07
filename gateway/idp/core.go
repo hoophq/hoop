@@ -1,6 +1,7 @@
 package idp
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -51,6 +52,12 @@ type UserInfoTokenVerifier interface {
 	VerifyAccessTokenWithUserInfo(accessToken string) (*idptypes.ProviderUserInfo, error)
 }
 
+// TokenRefresher is an optional interface that token verifiers can implement
+// to support refreshing access tokens using a refresh token (OIDC providers).
+type TokenRefresher interface {
+	RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error)
+}
+
 var (
 	singletonStore         = memory.New()
 	singletonStoreKey      = "1"
@@ -79,6 +86,14 @@ type userInfoTokenVerifier struct {
 	serverConfig            idptypes.ServerConfig
 	currentServerAuthConfig *models.ServerAuthConfig
 	cacheExpirationTime     time.Time
+}
+
+// RefreshAccessToken delegates to the underlying provider if it supports token refresh.
+func (v userInfoTokenVerifier) RefreshAccessToken(ctx context.Context, refreshToken string) (*oauth2.Token, error) {
+	if refresher, ok := v.UserInfoTokenVerifier.(TokenRefresher); ok {
+		return refresher.RefreshAccessToken(ctx, refreshToken)
+	}
+	return nil, fmt.Errorf("token refresh not supported by this provider")
 }
 
 func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.ProviderType, old, new *models.ServerAuthConfig) (hasChanged bool) {
