@@ -28,10 +28,10 @@ func TestIsGroupAllowed(t *testing.T) {
 			want:       true,
 		},
 		{
-			msg:        "it should allow auditor on standard routes with no roles",
+			msg:        "it should deny auditor on standard routes with no roles",
 			groups:     []string{types.GroupAuditor},
 			routeRoles: []openapi.RoleType{},
-			want:       true,
+			want:       false,
 		},
 		{
 			msg:        "it should deny auditor on admin-only routes",
