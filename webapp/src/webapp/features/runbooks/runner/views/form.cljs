@@ -218,7 +218,9 @@
                                                          #(update-state param (-> % .-target .-value)))
                                             :helper-text (:description metadata)
                                             :options (:options metadata)
-                                            :default-value (:default metadata)}]))
+                                            :default-value (:default metadata)
+                                            :minlength (:minlength metadata)
+                                            :maxlength (:maxlength metadata)}]))
 
                 (when-let [err (-> template :data :error)]
                   [error-view err])]]]]))))))

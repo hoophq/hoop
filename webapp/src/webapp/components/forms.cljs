@@ -131,6 +131,8 @@
            on-blur
            rows
            autoFocus
+           minLength
+           maxLength
            not-margin-bottom? ;; TODO: Remove this prop when remove margin-bottom from all inputs
            disabled]}]
   [:div {:class (when-not not-margin-bottom? "mb-regular")}
@@ -156,6 +158,8 @@
       :defaultValue defaultValue
       :autoFocus autoFocus
       :placeholder placeholder
+      :minLength minLength
+      :maxLength maxLength
       :on-change on-change
       :on-blur on-blur
       :on-keyDown on-keyDown
