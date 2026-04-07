@@ -24,16 +24,11 @@ func CheckUserToken(tokenVerifier idp.UserInfoTokenVerifier, userID string) erro
 
 	uinfo, err := tokenVerifier.VerifyAccessToken(userToken.Token)
 	if err != nil {
-		if !strings.Contains(err.Error(), "token is expired") {
-			return err
-		}
-
-		// attempt to refresh the token using the shared helper
-		if _, refreshErr := idp.TryRefreshAccessToken(tokenVerifier, userID); refreshErr != nil {
-			log.With("user", userID).Warnf("failed to refresh access token: %v", refreshErr)
+		if strings.Contains(err.Error(), "token is expired") {
 			return fmt.Errorf("access token is expired, try logging in again")
 		}
-		return nil
+
+		return err
 	}
 
 	if uinfo == "" {

@@ -123,20 +123,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 	case pb.ConnectionOriginClientProxyManager:
 		subject, err := tokenVerifier.VerifyAccessToken(bearerToken)
 		if err != nil {
-			if !strings.Contains(err.Error(), "token is expired") {
-				log.Debugf("failed verifying access token, reason=%v", err)
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
-			}
-			sub, parseErr := idp.SubjectFromExpiredJWT(bearerToken)
-			if parseErr != nil {
-				log.Debugf("failed extracting subject from expired token: %v", parseErr)
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
-			}
-			if _, refreshErr := idp.TryRefreshAccessToken(tokenVerifier, sub); refreshErr != nil {
-				log.Debugf("failed refreshing expired access token: %v", refreshErr)
-				return status.Errorf(codes.Unauthenticated, "invalid authentication")
-			}
-			subject = sub
+			log.Debugf("failed verifying access token, reason=%v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid authentication")
 		}
 		userCtx, err := models.GetUserContext(subject)
 		if err != nil {
@@ -220,20 +208,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			// using the local auth method, otherwise we use the tokenVerifier.VerifyAccessToken
 			subject, err = tokenVerifier.VerifyAccessToken(bearerToken)
 			if err != nil {
-				if !strings.Contains(err.Error(), "token is expired") {
-					log.Debugf("failed verifying access token, reason=%v", err)
-					return status.Errorf(codes.Unauthenticated, "invalid authentication")
-				}
-				sub, parseErr := idp.SubjectFromExpiredJWT(bearerToken)
-				if parseErr != nil {
-					log.Debugf("failed extracting subject from expired token: %v", parseErr)
-					return status.Errorf(codes.Unauthenticated, "invalid authentication")
-				}
-				if _, refreshErr := idp.TryRefreshAccessToken(tokenVerifier, sub); refreshErr != nil {
-					log.Debugf("failed refreshing expired access token: %v", refreshErr)
-					return status.Errorf(codes.Unauthenticated, "invalid authentication")
-				}
-				subject = sub
+				log.Debugf("failed verifying access token, reason=%v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 		}
 
