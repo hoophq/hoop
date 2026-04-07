@@ -76,7 +76,7 @@ func Get(c *gin.Context) {
 			PageSize: 0,
 		}
 
-		resourcesFound, _, err = models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin(), opts)
+		resourcesFound, _, err = models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin() || ctx.IsAuditor(), opts)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("failed listing resources, reason=%v", err))
 		}

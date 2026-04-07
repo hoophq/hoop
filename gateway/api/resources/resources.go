@@ -34,7 +34,7 @@ func GetResource(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
 
-	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin())
+	resource, err := models.GetResourceByName(models.DB, ctx.OrgID, name, ctx.IsAdmin() || ctx.IsAuditor())
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed retrieving resource: %v", err)
 		return
@@ -228,7 +228,7 @@ func ListResources(c *gin.Context) {
 		return
 	}
 
-	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin(), opts)
+	resources, total, err := models.ListResources(models.DB, ctx.OrgID, ctx.UserGroups, ctx.IsAdmin() || ctx.IsAuditor(), opts)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing resources: %v", err)
 		return

@@ -40,7 +40,7 @@ const (
 
 	// RoleAdminType will grant access to all routes.
 	RoleAdminType RoleType = "admin"
-	// RoleAuditorType grants read only access to session related routes
+	// RoleAuditorType grants read-only access to all routes
 	RoleAuditorType RoleType = "auditor"
 	// RoleStandardType will grant access to standard routes
 	RoleStandardType RoleType = "standard"
