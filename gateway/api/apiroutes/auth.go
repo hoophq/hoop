@@ -183,22 +183,18 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL str
 	c.Next()
 }
 
-// tryRefreshFromRequest extracts the subject from an expired JWT in the request,
-// looks up the stored refresh token, and attempts to refresh the access token.
+// tryRefreshFromRequest validates the signature of the expired JWT in the
+// request, extracts the subject, and attempts to refresh the access token.
 // On success it sets the new access token in a response header and cookie so
 // the client can update its stored token.
 func (r *Router) tryRefreshFromRequest(tokenVerifier idp.TokenVerifier, c *gin.Context) (string, error) {
-	token, err := parseToken(c)
+	expiredToken, err := parseToken(c)
 	if err != nil {
 		return "", err
 	}
-	subject, err := idp.SubjectFromExpiredJWT(token)
+	subject, newAccessToken, err := idp.TryRefreshExpiredToken(tokenVerifier, expiredToken)
 	if err != nil {
-		return "", fmt.Errorf("cannot extract subject from expired token: %w", err)
-	}
-	newAccessToken, err := idp.TryRefreshAccessToken(tokenVerifier, subject)
-	if err != nil {
-		log.With("subject", subject).Warnf("failed to refresh expired access token: %v", err)
+		log.Warnf("failed to refresh expired access token: %v", err)
 		return "", fmt.Errorf("access token is expired, try logging in again")
 	}
 
