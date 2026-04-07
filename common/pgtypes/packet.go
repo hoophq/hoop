@@ -139,18 +139,26 @@ func ParseQuery(payload []byte) []byte {
 }
 
 func NewFatalError(msg string, v ...any) *Packet {
+	return newServerError(LevelFatal, ConnectionFailure, msg, v...)
+}
+
+func NewError(msg string, v ...any) *Packet {
+	return newServerError(LevelError, ConnectionFailure, msg, v...)
+}
+
+func newServerError(severity Severity, code Code, msg string, v ...any) *Packet {
 	typ := byte(ServerErrorResponse)
 	p := &Packet{typ: &typ}
 	// Severity: ERROR, FATAL, INFO, etc
 	p.frame = append(p.frame, 'S')
-	p.frame = append(p.frame, LevelFatal...)
+	p.frame = append(p.frame, severity...)
 	p.frame = append(p.frame, '\000')
 	p.frame = append(p.frame, 'V')
-	p.frame = append(p.frame, LevelFatal...)
+	p.frame = append(p.frame, severity...)
 	p.frame = append(p.frame, '\000')
 	// the SQLSTATE code for the error
 	p.frame = append(p.frame, 'C')
-	p.frame = append(p.frame, ConnectionFailure...)
+	p.frame = append(p.frame, code...)
 	p.frame = append(p.frame, '\000')
 	// Message: the primary human-readable error message.
 	// This should be accurate but terse (typically one line).
