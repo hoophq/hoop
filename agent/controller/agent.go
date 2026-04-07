@@ -3,10 +3,12 @@ package controller
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"libhoop"
+	redactortypes "libhoop/redactor/types"
 	"net"
 	"net/url"
 	"os"
@@ -376,7 +378,26 @@ func (a *Agent) sendClientSessionClose(sessionID string, errMsg string) {
 	a.sendClientSessionCloseWithExitCode(sessionID, errMsg, exitCode)
 }
 
+func (a *Agent) sendClientSessionCloseFromError(sessionID string, err error) {
+	if err == nil {
+		a.sendClientSessionCloseWithExitCode(sessionID, "", "0")
+		return
+	}
+
+	var guardrailErr *redactortypes.ErrGuardrailsValidation
+	if errors.As(err, &guardrailErr) {
+		a.sendClientSessionCloseWithGuardRailsInfo(sessionID, "", internalExitCode, guardrailErr.Info())
+		return
+	}
+
+	a.sendClientSessionCloseWithExitCode(sessionID, err.Error(), internalExitCode)
+}
+
 func (a *Agent) sendClientSessionCloseWithExitCode(sessionID string, errMsg, exitCode string) {
+	a.sendClientSessionCloseWithGuardRailsInfo(sessionID, errMsg, exitCode, nil)
+}
+
+func (a *Agent) sendClientSessionCloseWithGuardRailsInfo(sessionID string, errMsg, exitCode string, guardRailsInfo []redactortypes.GuardRailsInfo) {
 	if sessionID == "" {
 		return
 	}
@@ -384,13 +405,22 @@ func (a *Agent) sendClientSessionCloseWithExitCode(sessionID string, errMsg, exi
 	if errMsg != "" {
 		errPayload = []byte(errMsg)
 	}
+	spec := map[string][]byte{
+		pb.SpecGatewaySessionID:  []byte(sessionID),
+		pb.SpecClientExitCodeKey: []byte(exitCode),
+	}
+	if len(guardRailsInfo) > 0 {
+		if rawInfo, err := json.Marshal(guardRailsInfo); err == nil {
+			spec[pb.SpecClientGuardRailsInfoKey] = rawInfo
+		} else {
+			log.With("sid", sessionID).Warnf("failed marshaling guardrails info for session close, err=%v", err)
+		}
+	}
+
 	_ = a.client.Send(&pb.Packet{
 		Type:    pbclient.SessionClose,
 		Payload: errPayload,
-		Spec: map[string][]byte{
-			pb.SpecGatewaySessionID:  []byte(sessionID),
-			pb.SpecClientExitCodeKey: []byte(exitCode),
-		},
+		Spec:    spec,
 	})
 }
 

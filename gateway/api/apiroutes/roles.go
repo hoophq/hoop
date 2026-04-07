@@ -50,6 +50,12 @@ func AdminOnlyAccessRole(c *gin.Context) {
 	c.Next()
 }
 
+// AdminAndAuditorAccessRole allows admin and auditor users to access this route
+func AdminAndAuditorAccessRole(c *gin.Context) {
+	c.Set(roleContextKey, []openapi.RoleType{openapi.RoleAdminType, openapi.RoleAuditorType})
+	c.Next()
+}
+
 // ReadOnlyAccessRole allows standard, admin and auditor roles to access it
 func ReadOnlyAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, []openapi.RoleType{
