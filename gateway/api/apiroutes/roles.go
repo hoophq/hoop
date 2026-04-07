@@ -26,10 +26,14 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 		return true
 	}
 
-	// auditor has read-only access to all routes (like admin),
-	// mutation control is enforced by route-level role middleware
-	if slices.Contains(userGroups, types.GroupAuditor) {
-		return len(roleNames) == 0 || slices.Contains(roleNames, openapi.RoleAuditorType)
+	// it performs validation of route based roles
+	// in case the group exists it must match against a route role
+	for _, groupName := range userGroups {
+		switch groupName {
+		case types.GroupAuditor:
+			// auditor can access only assigned route roles
+			return slices.Contains(roleNames, openapi.RoleAuditorType)
+		}
 	}
 
 	// this condition matches against a privileged access
