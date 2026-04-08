@@ -443,6 +443,12 @@ func RevokeConnectionCredentials(c *gin.Context) {
 		return
 	}
 
+	if cred.SessionID != "" {
+		if err := models.SetSessionRevokedAt(ctx.OrgID, cred.SessionID, time.Now().UTC()); err != nil {
+			log.Warnf("failed setting session revoked_at metadata, err=%v", err)
+		}
+	}
+
 	// Cancel active sessions in each proxy
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {

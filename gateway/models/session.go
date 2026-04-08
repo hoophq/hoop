@@ -519,6 +519,14 @@ func SetSessionCredentialsExpireAt(orgID, sessionID string, expireAt time.Time) 
 		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).Error
 }
 
+// SetSessionRevokedAt stores the credential revocation timestamp in the session metadata.
+func SetSessionRevokedAt(orgID, sessionID string, revokedAt time.Time) error {
+	value := fmt.Sprintf(`{"revoked_at":%q}`, revokedAt.Format(time.RFC3339))
+	return DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).Error
+}
+
 // UpdateSessionEventStream updates a session partially
 func UpdateSessionEventStream(sess SessionDone) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
