@@ -23,6 +23,7 @@ const (
 	SpecClientExecCommandKey     string = "client.command"
 	SpecClientExecArgsKey        string = "terminal.args"
 	SpecClientExecEnvVar         string = "terminal.envvars"
+	SpecAgentVersion             string = "agent.version"
 	SpecAgentConnectionParamsKey string = "agent.connection_params"
 	SpecAwsSSMWebsocketMsgType   string = "aws.websocket.message_type"
 	SpecAwsSSMEc2InstanceId      string = "aws.ssm.ec2.instance_id"
