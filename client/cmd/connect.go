@@ -140,6 +140,8 @@ func runConnect(args []string, clientEnvVars map[string]string) {
 				c.processGracefulExit(fmt.Errorf("internal error, session not found"))
 			}
 
+			printVersionMismatchWarning(string(pkt.Spec[pb.SpecAgentVersion]))
+
 			connectionType := pb.ConnectionType(pkt.Spec[pb.SpecConnectionType])
 			switch connectionType {
 			case pb.ConnectionTypePostgres:
@@ -491,6 +493,24 @@ func (c *connect) printHeader(connectionType pb.ConnectionType, pkt *pb.Packet) 
 	default:
 		fmt.Fprintln(os.Stderr, styles.Fainted("connection: %s | session: %s", c.connectionName, sid))
 	}
+}
+
+func printVersionMismatchWarning(agentVersion string) {
+	cliVersion := version.Get().Version
+	if agentVersion == "" || cliVersion == "" || cliVersion == "unknown" || agentVersion == cliVersion {
+		return
+	}
+	msg := styles.ClientErrorSimple(fmt.Sprintf(
+		"⚠️  VERSION MISMATCH DETECTED! ⚠️\n"+
+			"Your CLI version (%s) does not match the agent version (%s).\n"+
+			"This WILL cause unexpected behavior.\n\n"+
+			"Please update your CLI to match the agent version:\n"+
+			"  brew tap hoophq/brew https://github.com/hoophq/brew.git\n"+
+			"  brew install hoop@%s\n\n"+
+			"For more installation options, visit: https://hoop.dev/docs/clients/cli#installation",
+		cliVersion, agentVersion, agentVersion))
+
+	_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", msg)
 }
 
 func (c *connect) printErrorAndExit(format string, v ...any) {

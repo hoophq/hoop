@@ -70,7 +70,7 @@ func (a *Agent) processMongoDBProtocol(pkt *pb.Packet) {
 		"dlp_gcp_credentials":       connParams.DlpGcpRawCredentialsJSON,
 		"dlp_info_types":            strings.Join(connParams.DLPInfoTypes, ","),
 		"dlp_masking_character":     "#",
-		"analyzer_metrics_rules": analyzerMetricsRules,
+		"analyzer_metrics_rules":    analyzerMetricsRules,
 	}
 	serverWriter, err := libhoop.NewDBCore(context.Background(), streamClient, opts).MongoDB()
 	if err != nil {

@@ -73,7 +73,7 @@ ORDER BY n.nspname, c.relname;`, dbName)
 }
 
 func getMSSQLTablesQuery(dbName string) string {
-	
+
 	return fmt.Sprintf(`
 -- connect to the target database
 USE [%s];
