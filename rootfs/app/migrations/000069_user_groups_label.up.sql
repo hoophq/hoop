@@ -1,0 +1,1 @@
+ALTER TABLE private.user_groups ADD COLUMN IF NOT EXISTS label VARCHAR(255);

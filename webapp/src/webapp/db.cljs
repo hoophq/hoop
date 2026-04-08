@@ -83,6 +83,7 @@
    :updating-connection {:loading true, :data []}
    :user nil
    :user-groups []
+   :user-groups-full []
    :users []
    :users->current-user {:loading true, :data nil}
    :webclient->active-panel nil

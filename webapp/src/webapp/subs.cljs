@@ -24,6 +24,11 @@
    (:user-groups db)))
 
 (re-frame/reg-sub
+ :user-groups-full
+ (fn [db _]
+   (:user-groups-full db)))
+
+(re-frame/reg-sub
  :connections
  (fn [db _]
    (:connections db)))

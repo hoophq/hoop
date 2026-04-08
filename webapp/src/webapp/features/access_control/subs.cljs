@@ -36,27 +36,45 @@
  (fn [groups-with-permissions [_ group-id]]
    (get groups-with-permissions group-id [])))
 
-;; Nova subscription que une grupos de /users/groups com grupos do plugin
+;; Subscription that merges groups from /users/groups with groups from the plugin
 (rf/reg-sub
  :access-control/all-groups
- :<- [:user-groups]
+ :<- [:user-groups-full]
  :<- [:access-control/connections]
- (fn [[user-groups connections]]
-   (let [;; Grupos vindos do endpoint /users/groups
-         system-groups (set (or user-groups []))
+ (fn [[user-groups-full connections]]
+   (let [;; Build a map from group name -> label from the API response
+         groups-map (reduce (fn [acc g]
+                              (let [name (if (string? g) g (:name g))
+                                    label (if (string? g) "" (or (:label g) ""))]
+                                (assoc acc name label)))
+                            {}
+                            (or user-groups-full []))
 
-         ;; Grupos encontrados nas configurações das conexões do plugin
+         ;; Groups found in plugin connection configs (just names)
          plugin-groups (when connections
                          (->> connections
                               (mapcat #(or (:config %) []))
                               (into #{})))
 
-         ;; União de ambos os conjuntos
-         all-groups (into system-groups plugin-groups)
+         ;; Merge plugin groups that don't exist in API groups
+         all-groups-map (reduce (fn [acc group-name]
+                                  (if (contains? acc group-name)
+                                    acc
+                                    (assoc acc group-name "")))
+                                groups-map
+                                (or plugin-groups #{}))
 
-         ;; Filtrar grupo "admin" e retornar como vetor ordenado
-         filtered-groups (-> all-groups
-                             (disj "admin")
-                             sort
-                             vec)]
+         ;; Filter admin group, sort, and return as vector of maps
+         filtered-groups (->> all-groups-map
+                              (remove #(= (key %) "admin"))
+                              (sort-by key)
+                              (mapv (fn [[name label]] {:name name :label label})))]
      filtered-groups)))
+
+;; Subscription to look up a single group's label by name
+(rf/reg-sub
+ :access-control/group-label
+ :<- [:access-control/all-groups]
+ (fn [all-groups [_ group-name]]
+   (let [group (first (filter #(= (:name %) group-name) all-groups))]
+     (or (:label group) ""))))

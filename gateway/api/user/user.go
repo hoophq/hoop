@@ -549,13 +549,20 @@ func ListAllGroups(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing groups")
 		return
 	}
-	dedupeGroups := map[string]string{}
+	dedupeGroups := map[string]openapi.UserGroupResponse{}
 	for _, ug := range userGroups {
-		dedupeGroups[ug.Name] = ug.Name
+		existing, ok := dedupeGroups[ug.Name]
+		if !ok {
+			existing = openapi.UserGroupResponse{Name: ug.Name}
+		}
+		if ug.Label.Valid && ug.Label.String != "" {
+			existing.Label = ug.Label.String
+		}
+		dedupeGroups[ug.Name] = existing
 	}
-	var groupsList []string
-	for groupName := range dedupeGroups {
-		groupsList = append(groupsList, groupName)
+	groupsList := make([]openapi.UserGroupResponse, 0, len(dedupeGroups))
+	for _, g := range dedupeGroups {
+		groupsList = append(groupsList, g)
 	}
 	c.JSON(http.StatusOK, groupsList)
 }
@@ -583,7 +590,7 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
-	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name); err != nil {
+	if err := models.CreateUserGroupWithoutUser(ctx.OrgID, req.Name, req.Label); err != nil {
 		if errors.Is(err, models.ErrAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"message": fmt.Sprintf("group %s already exists", req.Name)})
 			return
@@ -627,6 +634,42 @@ func DeleteGroup(c *gin.Context) {
 	}
 
 	c.Writer.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateGroup
+//
+//	@Summary		Update User Group
+//	@Description	Update a user group's label
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			name	path		string					true	"The name of the group to update"
+//	@Param			request	body		openapi.UserGroupUpdate	true	"Group update object"
+//	@Success		200		{object}	openapi.UserGroupResponse
+//	@Failure		400		{object}	openapi.HTTPError	"{"message": "error message"}"
+//	@Failure		404		{object}	openapi.HTTPError	"{"message": "group not found"}"
+//	@Failure		500		{object}	openapi.HTTPError	"{"message": "server error"}"
+//	@Router			/users/groups/{name} [put]
+func UpdateGroup(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	name := c.Param("name")
+
+	var req openapi.UserGroupUpdate
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	if err := models.UpdateGroupLabel(ctx.OrgID, name, req.Label); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("group %s not found", name)})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating group")
+		return
+	}
+
+	c.JSON(http.StatusOK, openapi.UserGroupResponse{Name: name, Label: req.Label})
 }
 
 func isValidMailAddress(email string) bool {

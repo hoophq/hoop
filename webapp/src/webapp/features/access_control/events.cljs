@@ -97,11 +97,26 @@
        {:fx [[:dispatch [:plugins->update-plugin updated-plugin]]]}))))
 
 (rf/reg-event-fx
+ :access-control/update-group-label
+ (fn [{:keys [db]} [_ {:keys [name label on-success]}]]
+   {:fx [[:dispatch [:fetch {:method "PUT"
+                             :uri (str "/users/groups/" (js/encodeURIComponent name))
+                             :body {:label label}
+                             :on-success (fn [_]
+                                           (rf/dispatch [:users->get-user-groups])
+                                           (when on-success (on-success)))
+                             :on-failure (fn [error]
+                                           (rf/dispatch [:show-snackbar {:level :error
+                                                                         :text "Failed to update group label"
+                                                                         :details error}]))}]]]}))
+
+(rf/reg-event-fx
  :access-control/create-group-with-permissions
- (fn [{:keys [db]} [_ {:keys [name description connections]}]]
+ (fn [{:keys [db]} [_ {:keys [name label description connections]}]]
    {:fx [[:dispatch [:fetch {:method "POST"
                              :uri "/users/groups"
                              :body {:name name
+                                    :label (or label "")
                                     :description description}
                              :on-success (fn [_]
                                            (rf/dispatch [:show-snackbar {:level :success

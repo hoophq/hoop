@@ -83,6 +83,20 @@ type UserPatchSlackID struct {
 type UserGroup struct {
 	// Name of the user group
 	Name string `json:"name" binding:"required" example:"engineering"`
+	// Optional display label for the group
+	Label string `json:"label,omitempty" example:"Engineering Team"`
+}
+
+type UserGroupUpdate struct {
+	// Optional display label for the group
+	Label string `json:"label" example:"Engineering Team"`
+}
+
+type UserGroupResponse struct {
+	// Name of the user group
+	Name string `json:"name" example:"engineering"`
+	// Optional display label for the group
+	Label string `json:"label" example:"Engineering Team"`
 }
 
 type UserInfo struct {

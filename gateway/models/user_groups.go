@@ -12,6 +12,7 @@ type UserGroup struct {
 	UserID           string
 	ServiceAccountId sql.NullString
 	Name             string
+	Label            sql.NullString
 }
 
 func GetUserGroupsByOrgID(orgID string) ([]UserGroup, error) {
@@ -65,7 +66,7 @@ func DeleteUserGroup(orgID string, name string) error {
 }
 
 // CreateUserGroupWithoutUser creates a group entry without binding it to any user
-func CreateUserGroupWithoutUser(orgID string, name string) error {
+func CreateUserGroupWithoutUser(orgID string, name string, label string) error {
 	// Check if a group with the same name already exists in this org
 	var count int64
 	err := DB.Table("private.user_groups").
@@ -82,8 +83,24 @@ func CreateUserGroupWithoutUser(orgID string, name string) error {
 
 	// Create the group if it doesn't exist
 	return DB.Exec(`
-		INSERT INTO private.user_groups (org_id, name)
-		VALUES (?, ?)`,
-		orgID, name,
+		INSERT INTO private.user_groups (org_id, name, label)
+		VALUES (?, ?, ?)`,
+		orgID, name, sql.NullString{String: label, Valid: label != ""},
 	).Error
+}
+
+// UpdateGroupLabel updates the label for all rows of a group in an organization
+func UpdateGroupLabel(orgID string, name string, label string) error {
+	result := DB.Exec(`
+		UPDATE private.user_groups SET label = ?
+		WHERE org_id = ? AND name = ?`,
+		sql.NullString{String: label, Valid: label != ""}, orgID, name,
+	)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
