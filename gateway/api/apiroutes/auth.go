@@ -82,7 +82,7 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 		r.setUserContext(&models.Context{
 			OrgID:          orgID,
 			OrgName:        proto.DefaultOrgName,
-			OrgLicenseData: nil, // not enforcing license for API keys at this moment
+			OrgLicenseData: serverConfig.OrgLicenseData,
 			UserID:         deterministicUuid.String(),
 			UserSubject:    "API_KEY",
 			UserName:       "API_KEY",
