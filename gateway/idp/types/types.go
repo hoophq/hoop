@@ -1,5 +1,7 @@
 package idptypes
 
+import "encoding/json"
+
 type ProviderType string
 
 const (
@@ -22,8 +24,9 @@ type ProviderUserInfo struct {
 }
 
 type ServerConfig struct {
-	OrgID      string
-	AuthMethod ProviderType
-	ApiKey     string
-	GrpcURL    string
+	OrgID          string
+	OrgLicenseData json.RawMessage
+	AuthMethod     ProviderType
+	ApiKey         string
+	GrpcURL        string
 }

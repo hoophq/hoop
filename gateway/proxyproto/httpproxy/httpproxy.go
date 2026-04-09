@@ -243,7 +243,7 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if proxyToken == "" {
-		http.Error(w, "missing Authorization header", http.StatusUnauthorized)
+		http.Error(w, "missing Authorization or X-Api-Key header", http.StatusUnauthorized)
 		return
 	}
 	// token contains Bearer prefix

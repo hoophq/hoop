@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -19,6 +20,7 @@ type ServerAuthConfig struct {
 	WebappUsersManagement *string               `gorm:"column:webapp_users_management"`
 	AdminRoleName         *string               `gorm:"column:admin_role_name"`
 	AuditorRoleName       *string               `gorm:"column:auditor_role_name"`
+	OrgLicenseData        json.RawMessage       `gorm:"column:license_data;->"`
 	ProductAnalytics      *string               `gorm:"column:product_analytics;->"`
 	GrpcServerURL         *string               `gorm:"column:grpc_server_url;->"`
 	SharedSigningKey      *string               `gorm:"column:shared_signing_key;->"`
@@ -44,14 +46,15 @@ func GetServerAuthConfig() (*ServerAuthConfig, error) {
 	err := DB.Raw(`
 	WITH authconfig AS (
 		SELECT
-			org_id, auth_method, oidc_config, saml_config, api_key, rollout_api_key,
-			provider_name, webapp_users_management, admin_role_name, auditor_role_name, updated_at
-		FROM private.authconfig
+			a.org_id, o.license_data, a.auth_method, a.oidc_config, a.saml_config, a.api_key, a.rollout_api_key,
+			provider_name, a.webapp_users_management, a.admin_role_name, a.auditor_role_name, a.updated_at
+		FROM private.authconfig a
+		LEFT JOIN private.orgs o ON a.org_id = o.id
 	), serverconfig AS (
 		SELECT product_analytics, grpc_server_url, shared_signing_key FROM private.serverconfig
 	)
 	SELECT * FROM authconfig
-	FULL OUTER JOIN serverconfig ON true
+	FULL OUTER JOIN serverconfig ON true;
 	`).First(&config).
 		Error
 	if err == gorm.ErrRecordNotFound {
