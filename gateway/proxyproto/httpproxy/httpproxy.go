@@ -235,9 +235,12 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if proxyToken == "" {
 		proxyToken = r.Header.Get(proxyTokenHeader)
 	}
+	if proxyToken == "" {
+		proxyToken = r.Header.Get("X-Api-Key")
+	}
 
 	if proxyToken == "" {
-		http.Error(w, "missing Authorization header", http.StatusUnauthorized)
+		http.Error(w, "missing Authorization or X-Api-Key header", http.StatusUnauthorized)
 		return
 	}
 	// token contains Bearer prefix
@@ -527,7 +530,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// Build raw HTTP request to forward
 	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
 	for key, values := range r.Header {
-		if key == proxyTokenHeader || key == "Host" {
+		if key == proxyTokenHeader || key == "X-Api-Key" || key == "Host" {
 			continue
 		}
 
