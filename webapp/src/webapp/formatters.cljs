@@ -216,3 +216,6 @@
           end-total-minutes (+ (* end-hours 60) end-minutes)]
       (and (>= current-minutes start-total-minutes)
            (<= current-minutes end-total-minutes)))))
+
+(defn title-case [s]
+  (string/replace s #"\b\w" string/upper-case))

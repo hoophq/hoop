@@ -161,6 +161,25 @@
 (rf/reg-event-fx
  :native-client-access->reopen-connect-modal
  (fn [_ [_ connection-name]]
+   ;; Fetch connection data to get JIT info before opening modal
+   {:fx [[:dispatch [:fetch {:method "GET"
+                             :uri (str "/connections/" connection-name)
+                             :on-success #(rf/dispatch [:native-client-access->reopen-modal-with-data % connection-name])
+                             :on-failure #(rf/dispatch [:native-client-access->reopen-modal-fallback connection-name %])}]]]}))
+
+;; Handle successful connection data fetch for reopen
+(rf/reg-event-fx
+ :native-client-access->reopen-modal-with-data
+ (fn [_ [_ response connection-name]]
+   {:fx [[:dispatch [:modal->open {:content [native-client-access-main/main response]
+                                   :maxWidth "1100px"
+                                   :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)}]]]}))
+
+;; Fallback if connection fetch fails - open modal with just connection name
+(rf/reg-event-fx
+ :native-client-access->reopen-modal-fallback
+ (fn [_ [_ connection-name _error]]
+   ;; If fetch fails, proceed with just connection name (fallback to old behavior)
    {:fx [[:dispatch [:modal->open {:content [native-client-access-main/main connection-name]
                                    :maxWidth "1100px"
                                    :custom-on-click-out #(native-client-access-main/minimize-modal connection-name)}]]]}))

@@ -1,15 +1,16 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text Badge]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Tabs Text]]
    ["lucide-react" :refer [Info ShieldCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
    [webapp.components.logs-container :as logs]
    [webapp.components.timer :as timer]
-   [webapp.resources.constants :refer [http-proxy-subtypes]]
    [webapp.connections.native-client-access.constants :as constants]
-   [webapp.connections.native-client-access.custom-credential-views :as custom-views]))
+   [webapp.connections.native-client-access.custom-credential-views :as custom-views]
+   [webapp.formatters :as formatters]
+   [webapp.resources.constants :refer [http-proxy-subtypes]]))
 
 (defn disconnect-session
   "Handle disconnect with confirmation. Calls revoke API to invalidate credential and disconnect active sessions."
@@ -366,7 +367,7 @@
 (defn- connection-established-view
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
-    (let [active-tab (r/atom "credentials")
+  (let [active-tab (r/atom "credentials")
         subtype (:connection_subtype native-client-access-data)
         has-command? (contains? #{"ssh" "rdp"} subtype)]
 
@@ -494,7 +495,8 @@
         "aws-ssm" "AWS SSM"
         "kubernetes" "Kubernetes"
         "httpproxy" "HTTP Proxy"
-        "Unknown")]]
+        (formatters/title-case
+         (:connection_subtype native-client-access-data)))]]
     [:> Box
      [:> Text {:size "2" :class "text-[--gray-12]"}
       "Time left: "]
