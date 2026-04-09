@@ -164,7 +164,7 @@ func createSingleConnection(config *clientconfig.Config, batch *BatchConnectionF
 		connTypeStr = conn.Type
 	}
 	if connTypeStr == "" {
-		connTypeStr = "custom"
+		return fmt.Errorf("no connection type specified (set at top-level or per-connection)")
 	}
 
 	overwrite := batch.Overwrite

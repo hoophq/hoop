@@ -165,6 +165,28 @@ func TestValidateConnectionType(t *testing.T) {
 	}
 }
 
+func TestParseBatchFileMissingType(t *testing.T) {
+	yamlContent := `
+agent: default
+connections:
+  - name: users-db
+    env:
+      HOST: 10.0.1.10
+      USER: admin
+      PASS: secret
+`
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "no-type.yaml")
+	require.NoError(t, os.WriteFile(filePath, []byte(yamlContent), 0644))
+
+	batch, err := parseBatchFile(filePath)
+	require.NoError(t, err)
+
+	// Type should be empty — not defaulted to "custom"
+	assert.Equal(t, "", batch.Type)
+	assert.Equal(t, "", batch.Connections[0].Type)
+}
+
 func TestBatchAccessModeStatus(t *testing.T) {
 	modes := []string{"connect", "exec"}
 
