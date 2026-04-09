@@ -517,7 +517,6 @@ func SetSessionCredentialsExpireAt(orgID, sessionID string, expireAt time.Time) 
 	return DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).
 		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).
-		Update("ended_at", expireAt).
 		Error
 }
 

@@ -336,6 +336,12 @@ func CoerceMetadataFields(metadata map[string]any) error {
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
+	// Lazy cleanup of expired credential sessions
+	err := models.CloseExpiredCredentialSessions()
+	if err != nil {
+		log.Errorf("failed to close expired credential sessions, err=%v", err)
+	}
+
 	option := models.NewSessionOption()
 	for _, optKey := range openapi.AvailableSessionOptions {
 		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
@@ -423,6 +429,12 @@ func List(c *gin.Context) {
 //	@Router					/sessions/{session_id} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+
+	// Lazy cleanup of expired credential sessions
+	err := models.CloseExpiredCredentialSessions()
+	if err != nil {
+		log.Errorf("failed to close expired credential sessions, err=%v", err)
+	}
 
 	sessionID := c.Param("session_id")
 	apiroutes.SetSidSpanAttr(c, sessionID)

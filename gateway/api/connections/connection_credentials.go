@@ -44,6 +44,12 @@ var validConnectionTypes = []string{"postgres", "ssh", "rdp", "aws-ssm", "httppr
 func CreateConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
+	// Lazy cleanup of expired credential sessions
+	err := models.CloseExpiredCredentialSessions()
+	if err != nil {
+		log.Errorf("failed to close expired credential sessions, err=%v", err)
+	}
+
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
@@ -190,6 +196,12 @@ func CreateConnectionCredentials(c *gin.Context) {
 //	@Router			/connections/{nameOrID}/credentials/{sessionID} [post]
 func ResumeConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
+
+	// Lazy cleanup of expired credential sessions
+	err := models.CloseExpiredCredentialSessions()
+	if err != nil {
+		log.Errorf("failed to close expired credential sessions, err=%v", err)
+	}
 
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
