@@ -25,10 +25,9 @@
         proxy-token (:proxy_token connection_credentials)
         protocol (-> js/window .-location .-protocol)
         base-url (str protocol "//" hostname ":" port)
-        custom-headers (str "Authorization: " proxy-token)
-        build-json-content (fn [base-url custom-headers]
-                             {:env {:ANTHROPIC_BASE_URL base-url
-                                    :ANTHROPIC_CUSTOM_HEADERS custom-headers}})]
+        build-json-content (fn [base-url proxy-token]
+                             {:env {:ANTHROPIC_API_KEY proxy-token
+                                    :ANTHROPIC_BASE_URL base-url}})]
     [:<>
 
      ;; Anthropic API URL
@@ -52,19 +51,19 @@
        [:> Heading {:as "h3" :size "4" :weight "bold" :class "text-[--gray-12]"}
         "Add the following configuration"]
        [:> Text {:size "2" :weight "regular" :class "text-[--gray-11]"}
-        "Modify the following values accordingly. If you have more settings, you can leave then, you only need to modify "
+        "Modify the following values accordingly. If you have more settings, you can leave them, you only need to modify "
         [:> Text {:as "span" :size "2" :weight "bold" :class "text-[--gray-11]"}
-         "ANTHROPIC_BASE_URL"]
+         "ANTHROPIC_API_KEY"]
         " and "
         [:> Text {:as "span" :size "2" :weight "bold" :class "text-[--gray-11]"}
-         "ANTHROPIC_CUSTOM_HEADERS"]
+         "ANTHROPIC_BASE_URL"]
         "."]]
       [logs/new-container
        {:status :success
         :id "anthropic-authorization-header"
         :logs [:pre (js/JSON.stringify (clj->js (build-json-content
                                                  base-url
-                                                 custom-headers)) nil 2)]}]]
+                                                 proxy-token)) nil 2)]}]]
 
      [:> Box {:class "space-y-2"}
       [:> Box

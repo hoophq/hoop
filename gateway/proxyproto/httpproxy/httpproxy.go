@@ -37,6 +37,7 @@ const (
 	// we will be able to get kubernetes connections in our database
 	// NOTE in the future we might want to support custom headers as well
 	proxyTokenHeader     = "Authorization"
+	proxyTokenAPIKey     = "X-Api-Key"
 	proxyTokenCookie     = "hoop_proxy_token"
 	negativeAuthCacheTTL = 24 * time.Hour // Invalid auth keys will never be valid, so we will clean this up after hours
 )
@@ -234,6 +235,11 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//Check header (for curl/API usage)
 	if proxyToken == "" {
 		proxyToken = r.Header.Get(proxyTokenHeader)
+	}
+	// Check x-api-key header (for Claude Code / Anthropic SDK clients that send the
+	// proxy token via ANTHROPIC_API_KEY, which maps to the x-api-key header)
+	if proxyToken == "" {
+		proxyToken = r.Header.Get(proxyTokenAPIKey)
 	}
 
 	if proxyToken == "" {
@@ -527,7 +533,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	// Build raw HTTP request to forward
 	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
 	for key, values := range r.Header {
-		if key == proxyTokenHeader || key == "Host" {
+		if key == proxyTokenHeader || key == proxyTokenAPIKey || key == "Host" {
 			continue
 		}
 
