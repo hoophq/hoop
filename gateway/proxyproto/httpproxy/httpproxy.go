@@ -696,7 +696,7 @@ func (sess *httpProxySession) handleSSEStream(
 	// Stream subsequent chunks from the agent.
 	// Each chunk is a raw HTTP chunked-encoding fragment produced by the agent's
 	// httputil.NewChunkedWriter wrapping the gRPC streamWriter.
-	const sseIdleTimeout = 5 * time.Minute
+	const sseIdleTimeout = 90 * time.Second
 	idleTimer := time.NewTimer(sseIdleTimeout)
 	defer idleTimer.Stop()
 
