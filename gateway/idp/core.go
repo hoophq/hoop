@@ -2,6 +2,7 @@ package idp
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -88,16 +89,18 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			newc = *new
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v",
-			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), toStr(newc.SharedSigningKey))
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v,license-data=%v",
+			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), toStr(newc.SharedSigningKey),
+			string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
 			oldc = *old
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v",
-			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), toStr(oldc.SharedSigningKey))
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,shared-signing-key=%v,license-data=%v",
+			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), toStr(oldc.SharedSigningKey),
+			string(oldc.OrgLicenseData))
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeOIDC, idptypes.ProviderTypeIDP:
 		var newc models.ServerAuthConfig
@@ -109,9 +112,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oid = *newc.OidcConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v",
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v",
 			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), oid.IssuerURL, oid.ClientID, oid.ClientSecret,
-			oid.Audience, oid.Scopes, oid.GroupsClaim)
+			oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -123,9 +126,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldOidc = *oldc.OidcConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v",
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v",
 			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldOidc.IssuerURL, oldOidc.ClientID, oldOidc.ClientSecret,
-			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim)
+			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData))
 
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeSAML:
@@ -138,8 +141,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			saml = *newc.SamlConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v",
-			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, toStr(newc.SharedSigningKey))
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v,license-data=%v",
+			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), saml.IdpMetadataURL, saml.GroupsClaim, toStr(newc.SharedSigningKey),
+			string(newc.OrgLicenseData))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -151,8 +155,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldSaml = *oldc.SamlConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v",
-			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, toStr(oldc.SharedSigningKey))
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,idp-metadata-url=%v,groupsclaim=%v,shared-signing-key=%v,license-data=%v",
+			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldSaml.IdpMetadataURL, oldSaml.GroupsClaim, toStr(oldc.SharedSigningKey),
+			string(oldc.OrgLicenseData))
 
 		return newConfigStr != oldConfigStr
 	}
@@ -215,18 +220,23 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 
 	// set server configuration falling back to appconfig
 	appc := appconfig.Get()
+	var orgLicenseData json.RawMessage
 
 	// legacy api key organization id
 	orgID := strings.Split(appc.ApiKey(), "|")[0]
 	// fallback loading from the server auth config in case it's set
-	if serverAuthConfig != nil && serverAuthConfig.OrgID != "" {
-		orgID = serverAuthConfig.OrgID
+	if serverAuthConfig != nil {
+		if serverAuthConfig.OrgID != "" {
+			orgID = serverAuthConfig.OrgID
+		}
+		orgLicenseData = serverAuthConfig.OrgLicenseData
 	}
 	serverConfig := idptypes.ServerConfig{
-		OrgID:      orgID,
-		AuthMethod: providerType,
-		ApiKey:     appc.ApiKey(),
-		GrpcURL:    appc.GrpcURL(),
+		OrgID:          orgID,
+		OrgLicenseData: orgLicenseData,
+		AuthMethod:     providerType,
+		ApiKey:         appc.ApiKey(),
+		GrpcURL:        appc.GrpcURL(),
 	}
 
 	if serverAuthConfig != nil {
