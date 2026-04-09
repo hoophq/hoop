@@ -464,6 +464,39 @@ func TestSSEEndToEnd(t *testing.T) {
 	assert.GreaterOrEqual(t, w.flushCount, 5)
 }
 
+// TestHandleSSEStream_TerminatorDetection verifies that the chunked-encoding
+// terminator ("0\r\n") causes the stream to end even if the channel stays open.
+// This is the real-world scenario: the agent sends the terminator but does NOT
+// send TCPConnectionClose or close the session for SSE.
+func TestHandleSSEStream_TerminatorDetection(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	sess := newTestSession(ctx, cancel)
+	responseChan := make(chan []byte, 100)
+	w := newFlushRecorder()
+
+	headerPacket := buildSSEHeaderPacket(200, nil)
+	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(headerPacket)), nil)
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		responseChan <- []byte("14\r\ndata: {\"n\":1}\n\n\r\n")
+		responseChan <- []byte("0\r\n\r\n") // chunked terminator
+		// IMPORTANT: do NOT close the channel — in production, the agent doesn't
+		// close it for SSE streams (no TCPConnectionClose sent)
+		<-done
+	}()
+
+	sess.handleSSEStream(w, resp, responseChan, "1")
+	close(done)
+
+	body := w.Body.String()
+	assert.Contains(t, body, `{"n":1}`)
+	assert.Contains(t, body, "0\r\n\r\n")
+}
+
 // TestSSEIdleTimeout verifies the idle timeout triggers when no data arrives.
 func TestSSEIdleTimeout(t *testing.T) {
 	// We can't wait 5 minutes in a test. Instead, test the mechanism by

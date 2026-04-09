@@ -723,10 +723,17 @@ func (sess *httpProxySession) handleSSEStream(
 				flusher.Flush()
 			}
 
+			// Detect chunked-encoding termination (zero-length chunk: "0\r\n").
+			// The agent's httputil.ChunkedWriter.Close() writes this when the SSE
+			// stream ends. The agent does NOT send TCPConnectionClose for SSE, so
+			// this is how we know the stream is done.
+			if bytes.Equal(bytes.TrimSpace(data), []byte("0")) {
+				log.Infof("SSE stream ended: received chunked transfer terminator")
+				return
+			}
+
 			// Reset idle timer after each successful chunk
 			if !idleTimer.Stop() {
-				// Drain the timer channel if it already fired between the select
-				// and this point (unlikely but safe)
 				select {
 				case <-idleTimer.C:
 				default:
