@@ -95,12 +95,12 @@ func CloseExpiredCredentialSessions() error {
 
 	for _, cred := range expiredCreds {
 		endTime := time.Now().UTC()
-		_ = UpdateSessionEventStream(SessionDone{
-			ID:         cred.SessionID,
-			OrgID:      cred.OrgID,
-			EndSession: &endTime,
-			Status:     "done",
-		})
+
+		_ = DB.Table("private.sessions").
+			Where("id = ?", cred.SessionID).
+			Update("status", "done").
+			Update("ended_at", endTime).Error
+
 		// Clear session_id so this record is not reprocessed on the next lazy call
 		_ = DB.Table("private.connection_credentials").
 			Where("id = ?", cred.ID).

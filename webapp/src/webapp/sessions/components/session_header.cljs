@@ -52,6 +52,7 @@
                          "/" (:id session))
         can-kill-session? (and (or is-session-owner?
                                    admin?)
+                               (= (:verb session) "exec")
                                (not (= session-status "done")))
         ;; Check if we're on a dedicated session page (e.g., /sessions/{id})
         current-path (.-pathname (.-location js/window))

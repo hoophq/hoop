@@ -444,8 +444,8 @@ func RevokeConnectionCredentials(c *gin.Context) {
 	}
 
 	if cred.SessionID != "" {
-		if err := models.SetSessionRevokedAt(ctx.OrgID, cred.SessionID, time.Now().UTC()); err != nil {
-			log.Warnf("failed setting session revoked_at metadata, err=%v", err)
+		if err := models.SetSessionCredentialsRevokedAt(ctx.OrgID, cred.SessionID, time.Now().UTC()); err != nil {
+			log.Warnf("failed setting session credentials revoked_at metadata, err=%v", err)
 		}
 	}
 

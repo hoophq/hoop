@@ -109,7 +109,38 @@
          (insert-0-before (.getMinutes date)) ":"
          (insert-0-before (.getSeconds date)))))
 
-;; Time window helpers for UTC conversion using date-fns
+
+
+
+(def ^:private month-names
+  ["January" "February" "March" "April" "May" "June"
+   "July" "August" "September" "October" "November" "December"])
+
+(defn time-parsed->readable-datetime
+  "Parses an ISO 8601 date string (e.g. \"2022-10-28T16:09:17.772Z\") into a
+  human-readable format: \"Month DD, YYYY at hh:mm:ss\".
+  The year is omitted when it matches the current year.
+
+  Examples:
+    (time-parsed->readable-datetime \"2000-06-05T14:55:18.000Z\")
+    ;; => \"June 5, 2000 at 14:55:18\"
+
+    (time-parsed->readable-datetime \"2026-04-09T12:44:23.000Z\") ; current year
+    ;; => \"April 9 at 12:44:23\""
+  [iso-str]
+  (let [date         (js/Date. iso-str)
+        pad2         #(->> (str "0" %) (take-last 2) (apply str))
+        month        (get month-names (.getMonth date))
+        day          (.getDate date)
+        year         (.getFullYear date)
+        current-year (.getFullYear (js/Date.))
+        hours        (pad2 (.getHours date))
+        minutes      (pad2 (.getMinutes date))
+        seconds      (pad2 (.getSeconds date))
+        date-part    (if (= year current-year)
+                       (str month " " day)
+                       (str month " " day ", " year))]
+    (str date-part " at " hours ":" minutes ":" seconds)))
 
 (defn local-time->utc-time
   "Converts local time string (HH:mm format) to UTC time string (HH:mm format).
