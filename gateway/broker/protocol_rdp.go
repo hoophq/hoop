@@ -33,6 +33,7 @@ func CreateRDPSession(
 	clientAddr string,
 	protocol string,
 	extractedCreds string,
+	credentialID string,
 	expireAt time.Time,
 	ctxDuration time.Duration,
 ) (*Session, error) {
@@ -57,6 +58,7 @@ func CreateRDPSession(
 		ID:                  sessionID,
 		ClientCommunicator:  connTcp,
 		AgentCommunicator:   client,
+		CredentialID:        credentialID,
 		clientAddr:          clientAddr,
 		dataChannel:         dataChannel,
 		Protocol:            ProtocolRDP,

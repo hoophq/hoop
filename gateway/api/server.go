@@ -157,6 +157,7 @@ func (a *Api) StartAPI() {
 	rg.Use(sentryCatchAll5xxMiddleware)
 
 	router := apiroutes.New(rg)
+
 	a.buildRoutes(router)
 	openapi.RegisterGinValidators()
 
@@ -339,9 +340,13 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.CreateConnectionCredentials,
 	)
-	r.POST("/connections/:nameOrID/credentials/:sessionID",
+	r.POST("/connections/:nameOrID/credentials/:ID",
 		r.AuthMiddleware,
 		apiconnections.ResumeConnectionCredentials,
+	)
+	r.POST("/connections/:nameOrID/credentials/:ID/revoke",
+		r.AuthMiddleware,
+		apiconnections.RevokeConnectionCredentials,
 	)
 
 	r.GET("/connection-tags",

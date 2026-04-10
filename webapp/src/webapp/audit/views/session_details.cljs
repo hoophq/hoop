@@ -163,6 +163,8 @@
               ;; credentials_expire_at is stored in session metadata by the backend
               ;; when connection credentials are issued (see SetSessionCredentialsExpireAt)
               credentials-expire-at (get-in session [:metadata :credentials_expire_at])
+              credentials-revoked-at (get-in session [:metadata :credentials_revoked_at])
+              credentials-revoked-at? (not (cs/blank? credentials-revoked-at))
               credentials-expired? (when credentials-expire-at
                                      (<= (.getTime (js/Date. credentials-expire-at))
                                          (.getTime (js/Date.))))
@@ -256,10 +258,16 @@
 
             ;; metadata
             (when (and metadata
-                       (seq (dissoc metadata :credentials_expire_at :credential_session)))
+                       (seq (dissoc metadata
+                                    :credentials_expire_at
+                                    :credentials_revoked_at
+                                    :credential_session)))
               [:div
                (doall
-                (for [[metadata-key metadata-value] (dissoc metadata :credentials_expire_at :credential_session)]
+                (for [[metadata-key metadata-value] (dissoc metadata
+                                                            :credentials_expire_at
+                                                            :credentials_revoked_at
+                                                            :credential_session)]
                   ^{:key metadata-key}
                   [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
                    [:header {:class "w-32 px-small text-sm font-bold"}
@@ -431,24 +439,33 @@
                 "Execute"]])
 
             ;; Connect button for approved credential requests (verb = connect).
-            ;; Visible when session is:
-            ;;   ready  → review approved, credentials not yet issued
-            ;;   open   → credentials were issued (show validity or expired message)
-            (when (and (or ready?
-                           (and open? credentials-expire-at))
-                       (= (:verb session) "connect")
+            (when (and (= (:verb session) "connect")
+                       (not= (:status session) "open")
                        is-session-owner?)
               (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
                     has-valid-credentials? (and existing-session
+                                                (= (:status existing-session) "open")
                                                 (:connection_credentials existing-session)
                                                 (> (.getTime (js/Date. (:expire_at existing-session)))
                                                    (.getTime (js/Date.))))]
                 (cond
+                  ;; Credentials have been revoked (timestamp passed, backend may not have closed session yet)
+                  credentials-revoked-at?
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "Your credentials have been revoked at "
+                    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"}
+                     (formatters/time-parsed->readable-datetime credentials-revoked-at)]
+                    "."]]
+
                   ;; Credentials have expired (timestamp passed, backend may not have closed session yet)
                   credentials-expired?
                   [:> Flex {:align "center" :justify "end" :gap "4"}
                    [:> Text {:size "2" :class "text-[--gray-11]"}
-                    "Your credentials have expired."]]
+                    "Your credentials have expired at "
+                    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"}
+                     (formatters/time-parsed->readable-datetime credentials-expire-at)]
+                    "."]]
 
                   ;; Credentials exist in local store and are valid — offer to view them
                   has-valid-credentials?
