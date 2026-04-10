@@ -15,10 +15,11 @@ type Attribute struct {
 	Description *string   `gorm:"column:description"`
 	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
 
-	Connections        []ConnectionAttribute        `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessRequestRules []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	GuardrailRules     []GuardrailRuleAttribute     `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	DatamaskingRules   []DatamaskingRuleAttribute   `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	GuardrailRules      []GuardrailRuleAttribute      `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	DatamaskingRules    []DatamaskingRuleAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessControlGroups []AccessControlGroupAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 }
 
 func (Attribute) TableName() string {
@@ -68,6 +69,17 @@ func (DatamaskingRuleAttribute) TableName() string {
 	return "private.datamasking_rules_attributes"
 }
 
+// Access Control Group and Attribute
+type AccessControlGroupAttribute struct {
+	OrgID         uuid.UUID `gorm:"column:org_id;primaryKey"`
+	AttributeName string    `gorm:"column:attribute_name;primaryKey"`
+	GroupName     string    `gorm:"column:group_name;primaryKey"`
+}
+
+func (AccessControlGroupAttribute) TableName() string {
+	return "private.access_control_groups_attributes"
+}
+
 func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error) {
 	var attr Attribute
 	err := db.
@@ -75,6 +87,7 @@ func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error)
 		Preload("AccessRequestRules").
 		Preload("GuardrailRules").
 		Preload("DatamaskingRules").
+		Preload("AccessControlGroups").
 		Where("org_id = ? AND name = ?", orgID, name).
 		First(&attr).Error
 	if err != nil {
@@ -139,6 +152,18 @@ func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 			}
 		}
 
+		if attr.AccessControlGroups != nil {
+			if err := tx.Where("org_id = ? AND attribute_name = ?", attr.OrgID, attr.Name).
+				Delete(&AccessControlGroupAttribute{}).Error; err != nil {
+				return err
+			}
+			if len(attr.AccessControlGroups) > 0 {
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attr.AccessControlGroups).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		return nil
 	})
 }
@@ -177,6 +202,7 @@ func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([
 		Preload("AccessRequestRules").
 		Preload("GuardrailRules").
 		Preload("DatamaskingRules").
+		Preload("AccessControlGroups").
 		Find(&attrs).Error; err != nil {
 		return nil, 0, err
 	}
@@ -336,6 +362,34 @@ func UpsertGuardrailRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string
 		assocs := make([]GuardrailRuleAttribute, len(attributeNames))
 		for i, name := range attributeNames {
 			assocs[i] = GuardrailRuleAttribute{OrgID: orgID, AttributeName: name, GuardrailRuleName: ruleName}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
+	})
+}
+
+// UpsertAccessControlGroupAttributes replaces all attribute associations for the given access control group.
+// If an attribute name does not exist in the attributes table, it is created automatically.
+func UpsertAccessControlGroupAttributes(db *gorm.DB, orgID uuid.UUID, groupName string, attributeNames []string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("org_id = ? AND group_name = ?", orgID, groupName).
+			Delete(&AccessControlGroupAttribute{}).Error; err != nil {
+			return err
+		}
+		if len(attributeNames) == 0 {
+			return nil
+		}
+
+		attributes := make([]Attribute, len(attributeNames))
+		for i, name := range attributeNames {
+			attributes[i] = Attribute{OrgID: orgID, Name: name}
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attributes).Error; err != nil {
+			return err
+		}
+
+		assocs := make([]AccessControlGroupAttribute, len(attributeNames))
+		for i, name := range attributeNames {
+			assocs[i] = AccessControlGroupAttribute{OrgID: orgID, AttributeName: name, GroupName: groupName}
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
 	})

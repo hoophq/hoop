@@ -61,6 +61,11 @@
                                                                          :text (str "Group '" group-name "' deleted successfully!")}])
                                            (rf/dispatch [:users->get-user-groups])
 
+                                           ;; Remove group from all attribute associations
+                                           (rf/dispatch [:access-control/update-group-attributes
+                                                         {:group-name group-name
+                                                          :selected-attributes []}])
+
                                            ;; Obter o plugin atualizado antes de limpar as conexões
                                            (rf/dispatch [:plugins->get-plugin-by-name-with-callback
                                                          "access_control"
@@ -98,7 +103,7 @@
 
 (rf/reg-event-fx
  :access-control/create-group-with-permissions
- (fn [{:keys [db]} [_ {:keys [name description connections]}]]
+ (fn [{:keys [db]} [_ {:keys [name description connections attributes]}]]
    {:fx [[:dispatch [:fetch {:method "POST"
                              :uri "/users/groups"
                              :body {:name name
@@ -116,11 +121,54 @@
                                                                                          :connections connections
                                                                                          :plugin plugin}]))}]))
 
+                                           (when (seq attributes)
+                                             (rf/dispatch [:access-control/update-group-attributes
+                                                           {:group-name name
+                                                            :selected-attributes attributes}]))
+
                                            (js/setTimeout #(rf/dispatch [:navigate :access-control]) 1000))
                              :on-failure (fn [error]
                                            (rf/dispatch [:show-snackbar {:level :error
                                                                          :text "Failed to create access control group"
                                                                          :details error}]))}]]]}))
+
+(rf/reg-event-fx
+ :access-control/update-group-attributes
+ (fn [{:keys [db]} [_ {:keys [group-name selected-attributes]}]]
+   (let [all-attributes (get-in db [:attributes :list :data] [])
+         attr-by-name (into {} (map (juxt :name identity)) all-attributes)
+         selected-set (set selected-attributes)
+         ;; Find attributes that currently reference this group
+         current-set (->> all-attributes
+                          (filter #(some #{group-name} (or (:access_control_group_names %) [])))
+                          (map :name)
+                          set)
+         added (clojure.set/difference selected-set current-set)
+         removed (clojure.set/difference current-set selected-set)
+         make-update-fx (fn [attr-name add?]
+                          (let [attr (get attr-by-name attr-name)
+                                current-groups (set (or (:access_control_group_names attr) []))
+                                new-groups (if add?
+                                             (conj current-groups group-name)
+                                             (disj current-groups group-name))
+                                body (cond-> {:name attr-name
+                                              :connection_names (or (:connection_names attr) [])
+                                              :access_control_group_names (vec new-groups)}
+                                       (:description attr) (assoc :description (:description attr))
+                                       (seq (:access_request_rule_names attr)) (assoc :access_request_rule_names (:access_request_rule_names attr))
+                                       (seq (:guardrail_rule_names attr)) (assoc :guardrail_rule_names (:guardrail_rule_names attr))
+                                       (seq (:datamasking_rule_names attr)) (assoc :datamasking_rule_names (:datamasking_rule_names attr)))]
+                            [:dispatch [:fetch {:method "PUT"
+                                                :uri (str "/attributes/" attr-name)
+                                                :body body
+                                                :on-success #(rf/dispatch [:attributes/list])
+                                                :on-failure #(rf/dispatch [:show-snackbar
+                                                                           {:level :error
+                                                                            :text (str "Failed to update attribute '" attr-name "'")
+                                                                            :details %}])}]]))]
+     {:fx (vec (concat
+                (map #(make-update-fx % true) added)
+                (map #(make-update-fx % false) removed)))})))
 
 (rf/reg-event-fx
  :plugins->get-plugin-by-name-with-callback
