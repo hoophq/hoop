@@ -41,60 +41,49 @@ var sessionsFlags struct {
 	quietOutput    bool
 }
 
-var sessionsExampleDesc = `  # List sessions (default fields: id, user, role, type, start_date, status)
-  hoop sessions
+var sessionsCmd = &cobra.Command{
+	Use:   "sessions",
+	Short: "Manage sessions",
+	Long:  "List and inspect sessions.",
+}
+
+var sessionsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List sessions",
+	Long:  "List sessions you have access to, with optional filters for connection, type, review status, and date range.",
+	Example: `  # List sessions (default fields: id, user, role, type, start_date, status)
+  hoop sessions list
 
   # Show only specific fields
-  hoop sessions --fields id,user,role,type
+  hoop sessions list --fields id,user,role,type
 
   # Filter by role
-  hoop sessions --role my-db
+  hoop sessions list --role my-db
 
   # Pretty-printed JSON (human readable)
-  hoop sessions --json
+  hoop sessions list --json
 
   # Raw compact JSON (for scripting)
-  hoop sessions --quiet
+  hoop sessions list --quiet
 
   # Filter by type and date range (RFC3339)
-  hoop sessions --type postgres --start-date 2024-01-01T00:00:00Z --end-date 2024-01-31T23:59:59Z
+  hoop sessions list --type postgres --start-date 2024-01-01T00:00:00Z --end-date 2024-01-31T23:59:59Z
 
   # Paginate results
-  hoop sessions --limit 20 --offset 40
-
-  # Get a specific session by ID
-  hoop sessions get abc123
-
-  # Get a session as JSON (full input, all fields)
-  hoop sessions get abc123 --json
+  hoop sessions list --limit 20 --offset 40
 
   # Find sessions for a specific role and pipe to jq
-  hoop sessions --role prod-db --quiet | jq '.data[].id'
+  hoop sessions list --role prod-db --quiet | jq '.data[].id'
 
   # List sessions with a review pending approval
-  hoop sessions --review-status pending`
-
-var sessionsCmd = &cobra.Command{
-	Use:     "sessions",
-	Short:   "List sessions",
-	Long:    "List sessions you have access to, with optional filters for connection, type, review status, and date range.",
-	Example: sessionsExampleDesc,
+  hoop sessions list --review-status pending`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runSessions()
 	},
 }
 
-var sessionsHelpCmd = &cobra.Command{
-	Use:   "help",
-	Short: "Show help for the sessions command",
-	Long:  "Display detailed usage, available fields, and examples for the sessions command.",
-	Run: func(cmd *cobra.Command, args []string) {
-		sessionsCmd.Help()
-	},
-}
-
 func init() {
-	f := sessionsCmd.Flags()
+	f := sessionsListCmd.Flags()
 
 	// Filter flags
 	f.StringVar(&sessionsFlags.user, "user", "", "Filter by user subject ID")
@@ -114,10 +103,7 @@ func init() {
 	f.BoolVar(&sessionsFlags.jsonOutput, "json", false, "Output as formatted JSON (human-readable)")
 	f.BoolVar(&sessionsFlags.quietOutput, "quiet", false, "Output as raw compact JSON (for scripting)")
 
-	sessionsCmd.AddCommand(sessionsHelpCmd)
-	// "get" lives under "sessions" (plural) rather than a separate top-level "session"
-	// command to keep all session operations discoverable in one place — consistent with
-	// the gh/kubectl pattern of "noun subcommand" (e.g. gh pr view, kubectl get pod <id>).
+	sessionsCmd.AddCommand(sessionsListCmd)
 	sessionsCmd.AddCommand(sessionsGetCmd)
 	rootCmd.AddCommand(sessionsCmd)
 }
@@ -284,11 +270,11 @@ func displaySessions(resp *sessionsResponse) {
 	}
 
 	fmt.Fprintln(os.Stderr, "\nTry also:")
-	fmt.Fprintln(os.Stderr, "  hoop sessions get <id>                          # inspect a specific session")
-	fmt.Fprintln(os.Stderr, "  hoop sessions get <id> --json                   # full detail as JSON")
-	fmt.Fprintln(os.Stderr, "  hoop sessions --role <name>                     # filter by role")
-	fmt.Fprintln(os.Stderr, "  hoop sessions --review-status pending           # sessions pending approval")
-	fmt.Fprintln(os.Stderr, "  hoop sessions --quiet | jq '.data[].id'         # pipe IDs to jq")
+	fmt.Fprintln(os.Stderr, "  hoop sessions get <id>                               # inspect a specific session")
+	fmt.Fprintln(os.Stderr, "  hoop sessions get <id> --json                        # full detail as JSON")
+	fmt.Fprintln(os.Stderr, "  hoop sessions list --role <name>                     # filter by role")
+	fmt.Fprintln(os.Stderr, "  hoop sessions list --review-status pending           # sessions pending approval")
+	fmt.Fprintln(os.Stderr, "  hoop sessions list --quiet | jq '.data[].id'         # pipe IDs to jq")
 }
 
 // parseSessionFields validates and deduplicates the comma-separated --fields value.
