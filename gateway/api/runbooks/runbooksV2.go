@@ -304,6 +304,85 @@ func DeleteRunbookConfiguration(c *gin.Context) {
 	}
 }
 
+// CreateRunbookFile
+//
+//	@Summary		Create Runbook File
+//	@Description	Commit a new file (or overwrite an existing one) to the git repository associated with the given configuration ID.
+//	@Tags			Runbooks
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string						true	"Repository configuration ID"
+//	@Param			request	body		openapi.RunbookFileCreate	true	"File to create"
+//	@Success		201		{object}	openapi.RunbookFileCreateResponse
+//	@Failure		400,404,409,422,500	{object}	openapi.HTTPError
+//	@Router			/runbooks/configurations/{id}/files [post]
+func CreateRunbookFile(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+
+	var req openapi.RunbookFileCreate
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("invalid request body, reason=%v", err)})
+		return
+	}
+
+	configID := c.Param("id")
+
+	configs, err := models.GetRunbookConfigurationByOrgID(models.DB, ctx.GetOrgID())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "runbook configuration not found"})
+			return
+		}
+		log.Errorf("failed fetching runbook configuration, err=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching runbook configuration"})
+		return
+	}
+
+	var repoConfig *models.RunbookRepositoryConfig
+	for _, rc := range configs.RepositoryConfigs {
+		if uuid.NewSHA1(uuid.NameSpaceURL, []byte(rc.GitUrl)).String() == configID {
+			copy := rc
+			repoConfig = &copy
+			break
+		}
+	}
+	if repoConfig == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "runbook repository configuration not found"})
+		return
+	}
+
+	gitConfig, err := models.BuildCommonConfig(repoConfig)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("failed building git config, reason=%v", err)})
+		return
+	}
+
+	commitSHA, err := runbooks.CommitAndPushFile(gitConfig, &runbooks.CommitFileInput{
+		Path:          req.Path,
+		Content:       req.Content,
+		CommitMessage: req.CommitMessage,
+		AuthorName:    ctx.UserName,
+		AuthorEmail:   ctx.UserEmail,
+		Overwrite:     req.Overwrite,
+	})
+	if err != nil {
+		if errors.Is(err, runbooks.ErrFileAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+			return
+		}
+		log.Errorf("failed committing file to repository, reason=%v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": fmt.Sprintf("failed committing file to repository, reason=%v", err)})
+		return
+	}
+
+	deleteRunbookCache(ctx.GetOrgID(), gitConfig.GetNormalizedGitURL())
+
+	c.JSON(http.StatusCreated, openapi.RunbookFileCreateResponse{
+		Path:      req.Path,
+		CommitSHA: commitSHA,
+	})
+}
+
 func buildConfigMapRepository(config *openapi.RunbookRepository) models.RunbookRepositoryConfig {
 	return models.RunbookRepositoryConfig{
 		GitUrl:        config.GitUrl,
