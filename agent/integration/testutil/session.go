@@ -105,6 +105,15 @@ func SendPGWrite(t T, tr *MockTransport, sessionID, connID string, payload []byt
 	tr.Inject(pkt)
 }
 
+func SendPGConnectHandshake(t T, tr *MockTransport, sessionID, connID, user, database string) {
+	sslReq := PGSSLRequest()
+	startup := PGStartupMessage(user, database)
+	payload := make([]byte, 0, len(sslReq)+len(startup))
+	payload = append(payload, sslReq...)
+	payload = append(payload, startup...)
+	SendPGWrite(t, tr, sessionID, connID, payload)
+}
+
 func WaitForPGReady(t T, tr *MockTransport, timeout time.Duration) {
 	deadline := time.After(timeout)
 	for {
@@ -186,7 +195,6 @@ func ExtractAllQueryResults(pkts []*pb.Packet) []QueryResult {
 	var currentCmdTag string
 	var currentCols []string
 	var currentRows [][]string
-	seenRowDesc := false
 
 	for _, pkt := range pkts {
 		msgs := ParsePGMessages(pkt.Payload)
@@ -196,7 +204,6 @@ func ExtractAllQueryResults(pkts []*pb.Packet) []QueryResult {
 				currentCols = nil
 				currentRows = nil
 				currentCmdTag = ""
-				seenRowDesc = true
 				for _, col := range msg.AsRowDescription() {
 					currentCols = append(currentCols, col)
 				}
@@ -210,7 +217,10 @@ func ExtractAllQueryResults(pkts []*pb.Packet) []QueryResult {
 			case byte('C'):
 				currentCmdTag = msg.AsCommandComplete()
 			case byte('Z'):
-				if seenRowDesc {
+				// Emit a result for any completed statement:
+				// SELECT produces RowDescription+DataRows+CommandComplete,
+				// DDL/DML only produces CommandComplete.
+				if currentCmdTag != "" || currentCols != nil {
 					results = append(results, QueryResult{
 						CommandTag: currentCmdTag,
 						Columns:    currentCols,
@@ -220,7 +230,6 @@ func ExtractAllQueryResults(pkts []*pb.Packet) []QueryResult {
 				currentCols = nil
 				currentRows = nil
 				currentCmdTag = ""
-				seenRowDesc = false
 			}
 		}
 	}
@@ -234,17 +243,14 @@ type QueryResult struct {
 }
 
 func (qr QueryResult) RowCount() int {
-	if qr.Columns == nil {
-		return 0
-	}
-	return len(qr.Rows) - 1
+	return len(qr.Rows)
 }
 
 func (qr QueryResult) Row(i int) []string {
-	if qr.Columns == nil || i+1 >= len(qr.Rows) {
+	if i < 0 || i >= len(qr.Rows) {
 		return nil
 	}
-	return qr.Rows[i+1]
+	return qr.Rows[i]
 }
 
 func (qr QueryResult) HasError() bool {

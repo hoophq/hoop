@@ -12,6 +12,8 @@ import (
 	"github.com/hoophq/hoop/agent/controller"
 	"github.com/hoophq/hoop/agent/integration/testutil"
 	pb "github.com/hoophq/hoop/common/proto"
+	pbagent "github.com/hoophq/hoop/common/proto/agent"
+	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
 const pgTestTimeout = 30 * time.Second
@@ -22,7 +24,7 @@ func TestPG_SimpleQuery(t *testing.T) {
 	sessionID := testutil.OpenPGSession(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database)
 	connID := "conn-1"
 
-	testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGStartupMessage(pg.User, pg.Database))
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
 	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
 	testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery("SELECT 1 AS num"))
@@ -57,6 +59,9 @@ func TestPG_CreateInsertSelectUpdateDelete(t *testing.T) {
 	sessionID := testutil.OpenPGSession(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database)
 	connID := "conn-1"
 	tableName := fmt.Sprintf("test_crud_%d", time.Now().UnixNano())
+
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
 	connectAndQuery := func(t *testing.T, sql string) []testutil.QueryResult {
 		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
@@ -148,6 +153,9 @@ func TestPG_TransactionCommit(t *testing.T) {
 	connID := "conn-1"
 	tableName := fmt.Sprintf("test_tx_commit_%d", time.Now().UnixNano())
 
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
+
 	runQuery := func(sql string) []testutil.QueryResult {
 		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
 		pkts := testutil.CollectPGResponses(t, tr, pgTestTimeout)
@@ -177,6 +185,9 @@ func TestPG_TransactionRollback(t *testing.T) {
 	sessionID := testutil.OpenPGSession(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database)
 	connID := "conn-1"
 	tableName := fmt.Sprintf("test_tx_rollback_%d", time.Now().UnixNano())
+
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
 	runQuery := func(sql string) []testutil.QueryResult {
 		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
@@ -208,6 +219,9 @@ func TestPG_MultipleSequentialQueries(t *testing.T) {
 	agent, tr := startAgent(t)
 	sessionID := testutil.OpenPGSession(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database)
 	connID := "conn-1"
+
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
 	runQuery := func(sql string) []testutil.QueryResult {
 		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
@@ -248,10 +262,13 @@ func TestPG_MultipleConcurrentConnections(t *testing.T) {
 	connID1 := "conn-a"
 	connID2 := "conn-b"
 
-	runQuery := func(connID, sql string) []testutil.QueryResult {
-		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGStartupMessage(pg.User, pg.Database))
-		testutil.WaitForPGReady(t, tr, pgTestTimeout)
+	// Handshake each connection exactly once
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID1, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID2, pg.User, pg.Database)
+	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
+	runQuery := func(connID, sql string) []testutil.QueryResult {
 		testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery(sql))
 		pkts := testutil.CollectPGResponses(t, tr, pgTestTimeout)
 		return testutil.ExtractAllQueryResults(pkts)
@@ -281,14 +298,14 @@ func TestPG_SessionTeardown(t *testing.T) {
 	sessionID := testutil.OpenPGSession(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database)
 	connID := "conn-1"
 
-	testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGStartupMessage(pg.User, pg.Database))
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
 	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
 	testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery("SELECT 1"))
 	testutil.CollectPGResponses(t, tr, pgTestTimeout)
 
 	closePkt := &pb.Packet{
-		Type: "AgentCloseTCPConnection",
+		Type: pbagent.TCPConnectionClose,
 		Spec: map[string][]byte{
 			pb.SpecGatewaySessionID:   []byte(sessionID),
 			pb.SpecClientConnectionID: []byte(connID),
@@ -305,7 +322,7 @@ func TestPG_ErrorBadQuery(t *testing.T) {
 	sessionID := testutil.OpenPGSession(t, tr, pg.Host, pg.Port, pg.User, pg.Password, pg.Database)
 	connID := "conn-1"
 
-	testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGStartupMessage(pg.User, pg.Database))
+	testutil.SendPGConnectHandshake(t, tr, sessionID, connID, pg.User, pg.Database)
 	testutil.WaitForPGReady(t, tr, pgTestTimeout)
 
 	testutil.SendPGWrite(t, tr, sessionID, connID, testutil.PGSimpleQuery("SELECT * FROM nonexistent_table_xyz"))
@@ -353,58 +370,43 @@ func TestPG_ErrorBadCredentials(t *testing.T) {
 	pkt := testutil.BuildSessionOpenPacket("bad-cred-session", string(pb.ConnectionTypePostgres), badEnvVars)
 	tr.Inject(pkt)
 
+	// Wait for SessionOpenOK, then send the PG handshake
+	openOK := tr.ExpectType(t, pbclient.SessionOpenOK, 15*time.Second)
+	_ = openOK
+
+	testutil.SendPGConnectHandshake(t, tr, "bad-cred-session", "conn-1", pg.User, pg.Database)
+
+	// The libhoop proxy should fail authentication and the agent should
+	// send either a PG ErrorResponse or a SessionClose with an error message.
 	timeout := 15 * time.Second
 	deadline := time.After(timeout)
-	for {
+	gotAuthError := false
+	for !gotAuthError {
 		select {
 		case resp := <-tr.RecvCh():
-			if resp.Type == "ClientSessionClose" {
+			switch resp.Type {
+			case pbclient.SessionClose:
 				payload := string(resp.Payload)
 				if len(payload) == 0 {
-					return
+					t.Fatal("expected SessionClose with error payload for bad credentials, got empty payload")
 				}
-				return
-			}
-			if resp.Type == "ClientSessionOpenOK" {
-				tr.Inject(&pb.Packet{
-					Type: "AgentPGConnectionWrite",
-					Spec: map[string][]byte{
-						pb.SpecGatewaySessionID:   []byte("bad-cred-session"),
-						pb.SpecClientConnectionID: []byte("conn-1"),
-					},
-					Payload: testutil.PGStartupMessage(pg.User, pg.Database),
-				})
-
-				connDeadline := time.After(15 * time.Second)
-			connLoop:
-				for {
-					select {
-					case resp := <-tr.RecvCh():
-						if resp.Type == "ClientSessionClose" {
-							return
+				// The error message should reference authentication failure
+				gotAuthError = true
+			case pbclient.PGConnectionWrite:
+				msgs := testutil.ParsePGMessages(resp.Payload)
+				for _, msg := range msgs {
+					if msg.Type == 'E' {
+						errFields := msg.AsErrorResponse()
+						sqlState := errFields['C']
+						// 28P01 = invalid_password, 28000 = invalid_authorization, 08006 = connection_failure
+						if sqlState == "28P01" || sqlState == "28000" || sqlState == "08006" {
+							gotAuthError = true
 						}
-						if resp.Type == "ClientPGConnectionWrite" {
-							msgs := testutil.ParsePGMessages(resp.Payload)
-							for _, msg := range msgs {
-								if msg.Type == 'E' {
-									errFields := msg.AsErrorResponse()
-									if sqlState, ok := errFields['C']; ok {
-										if sqlState == "28P01" || sqlState == "08006" {
-											return
-										}
-									}
-								}
-							}
-							continue connLoop
-						}
-					case <-connDeadline:
-						return
 					}
 				}
 			}
 		case <-deadline:
-			t.Fatalf("timed out waiting for error response for bad credentials")
-			return
+			t.Fatalf("timed out waiting for auth error response for bad credentials")
 		}
 	}
 }

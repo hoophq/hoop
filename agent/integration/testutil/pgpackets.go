@@ -5,7 +5,6 @@ package testutil
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 )
 
 const (
@@ -15,17 +14,30 @@ const (
 
 func PGSSLRequest() []byte {
 	buf := make([]byte, 8)
-	binary.BigEndian.PutUint32(buf[0:4], pgProtocolSSL)
-	binary.BigEndian.PutUint32(buf[4:8], 4)
+	binary.BigEndian.PutUint32(buf[0:4], 8)
+	binary.BigEndian.PutUint32(buf[4:8], pgProtocolSSL)
 	return buf
 }
 
 func PGStartupMessage(user, database string) []byte {
-	params := fmt.Sprintf("user\000%s\000database\000%s\000\000", user, database)
-	bodyLen := 4 + len(params)
-	buf := make([]byte, 4+bodyLen)
-	binary.BigEndian.PutUint32(buf[0:4], uint32(bodyLen))
-	copy(buf[4:], params)
+	var params bytes.Buffer
+	params.WriteString("user")
+	params.WriteByte(0)
+	params.WriteString(user)
+	params.WriteByte(0)
+	params.WriteString("database")
+	params.WriteByte(0)
+	params.WriteString(database)
+	params.WriteByte(0)
+	params.WriteByte(0) // terminator for the parameter list
+
+	// Wire format: [4-byte length][4-byte protocol version][params]
+	// length includes itself: 4 (self) + 4 (version) + params
+	length := 4 + 4 + params.Len()
+	buf := make([]byte, length)
+	binary.BigEndian.PutUint32(buf[0:4], uint32(length))
+	binary.BigEndian.PutUint32(buf[4:8], pgProtocolVersion3)
+	copy(buf[8:], params.Bytes())
 	return buf
 }
 
