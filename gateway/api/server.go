@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/analytics"
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
+	agentidentitiesapi "github.com/hoophq/hoop/gateway/api/agentidentities"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
@@ -277,6 +278,45 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
+
+	// Agent Identities
+	r.GET("/agentidentities",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		agentidentitiesapi.List)
+	r.POST("/agentidentities",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		agentidentitiesapi.Create)
+	r.GET("/agentidentities/:id",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		agentidentitiesapi.Get)
+	r.PUT("/agentidentities/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		agentidentitiesapi.Update)
+	r.DELETE("/agentidentities/:id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		agentidentitiesapi.Delete)
+	r.GET("/agentidentities/:id/secrets",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		agentidentitiesapi.ListSecrets)
+	r.POST("/agentidentities/:id/secrets",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		agentidentitiesapi.CreateSecret)
+	r.DELETE("/agentidentities/:id/secrets/:secret_id",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		agentidentitiesapi.DeleteSecret)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,

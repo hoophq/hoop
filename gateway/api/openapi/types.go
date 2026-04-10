@@ -136,6 +136,43 @@ type ServiceAccount struct {
 	Groups []string `json:"groups" example:"engineering"`
 }
 
+type AgentIdentityStatusType string
+
+const (
+	AgentIdentityStatusActive   AgentIdentityStatusType = "active"
+	AgentIdentityStatusInactive AgentIdentityStatusType = "inactive"
+)
+
+type AgentIdentity struct {
+	// The unique identifier of this resource
+	ID string `json:"id,omitempty" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id,omitempty" readonly:"true" format:"uuid"`
+	// Subject is the unique identity handle for this agent, e.g. "agent:my-bot"
+	Subject string `json:"subject" binding:"required" example:"agent:my-bot"`
+	// The display name of this agent identity
+	Name string `json:"name" example:"my-bot"`
+	// Inactive agent identities cannot access the API
+	Status AgentIdentityStatusType `json:"status" binding:"required" enums:"active,inactive"`
+	// The groups this agent identity belongs to
+	Groups []string `json:"groups" example:"engineering"`
+	// Creation timestamp
+	CreatedAt string `json:"created_at,omitempty" readonly:"true"`
+}
+
+type AgentIdentitySecret struct {
+	// The unique identifier of this secret
+	ID string `json:"id,omitempty" readonly:"true" format:"uuid"`
+	// The first 8 characters of the token, shown for identification
+	KeyPrefix string `json:"key_prefix,omitempty" readonly:"true"`
+	// Creation timestamp
+	CreatedAt string `json:"created_at,omitempty" readonly:"true"`
+	// Optional expiry timestamp
+	ExpiresAt *string `json:"expires_at,omitempty"`
+	// The raw token — only returned once at creation time
+	Token string `json:"token,omitempty" readonly:"true"`
+}
+
 type AgentRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"default"`

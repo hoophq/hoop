@@ -75,6 +75,9 @@ func GetUserContext(subject string) (*Context, error) {
 		UNION
 		SELECT id, org_id, subject, subject AS email, name, status::TEXT, '', '', '', created_at, updated_at
 		FROM private.service_accounts
+		UNION
+		SELECT id, org_id, subject, subject AS email, name, status::TEXT, '', '', '', created_at, updated_at
+		FROM private.agent_identities
 	) SELECT
 		o.id AS org_id,
 		o.name AS org_name,

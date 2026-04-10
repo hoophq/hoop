@@ -93,6 +93,33 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 		return
 	}
 
+	// agent identity token authentication
+	if rawToken, err := parseToken(c); err == nil && strings.HasPrefix(rawToken, "agt-") {
+		ctx, err := models.GetAgentIdentityContext(rawToken)
+		if err != nil {
+			log.Errorf("failed authenticating agent identity token, err=%v", err)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+			return
+		}
+		if ctx == nil || ctx.IsEmpty() {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+			return
+		}
+		if ctx.UserStatus != string(types.UserStatusActive) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+			return
+		}
+		roles := rolesFromContext(c)
+		if !isGroupAllowed(ctx.UserGroups, roles...) {
+			log.Debugf("forbidden access: %v %v, roles=%v, subject=%v",
+				c.Request.Method, c.Request.URL.Path, roles, ctx.UserSubject)
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
+			return
+		}
+		r.setUserContext(ctx, c, serverConfig.GrpcURL, serverConfig.AuthMethod)
+		return
+	}
+
 	// jwt key authentication
 	subject, err := r.validateAccessToken(tokenVerifier, c)
 	if err != nil {
