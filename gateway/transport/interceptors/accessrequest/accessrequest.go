@@ -35,7 +35,8 @@ func getValidatedJitReview(pctx plugintypes.Context) (*plugintypes.ConnectRespon
 			log.With("sid", pctx.SID, "id", jitr.ID, "user", jitr.OwnerEmail, "org", pctx.OrgID,
 				"revoke-at", jitr.RevokedAt.Format(time.RFC3339),
 				"duration", fmt.Sprintf("%vs", jitr.AccessDurationSec)).Infof("jit access granted")
-			newCtx, _ := context.WithTimeout(pctx.Context, time.Duration(jitr.AccessDurationSec)*time.Second)
+			newCtx, cancel := context.WithTimeout(pctx.Context, time.Duration(jitr.AccessDurationSec)*time.Second)
+			_ = cancel // cancel is not called here; the context expires via timeout or when the parent context is done
 			return &plugintypes.ConnectResponse{Context: newCtx, ClientPacket: nil}, nil
 		default:
 			return nil, err
