@@ -620,6 +620,23 @@ func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
 	return res.Error
 }
 
+// SetSessionRejectionReason stores the rejection reason in the session metadata.
+// Unlike UpdateSessionMetadata, this function does not require the session owner's email,
+// allowing reviewers to set the reason after rejecting a request.
+func SetSessionRejectionReason(orgID, sessionID, reason string) error {
+	value, err := json.Marshal(map[string]string{"rejection_reason": reason})
+	if err != nil {
+		return fmt.Errorf("failed to encode rejection reason: %w", err)
+	}
+	res := DB.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", string(value)))
+	if res.Error == nil && res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return res.Error
+}
+
 func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any) error {
 	res := DB.Table("private.sessions").
 		Where("org_id = ? AND id = ? AND user_email = ?", orgID, sid, userEmail).
