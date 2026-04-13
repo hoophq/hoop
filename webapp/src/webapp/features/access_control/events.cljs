@@ -1,5 +1,6 @@
 (ns webapp.features.access-control.events
   (:require
+   [clojure.set :as set]
    [re-frame.core :as rf]))
 
 (rf/reg-event-fx
@@ -143,8 +144,8 @@
                           (filter #(some #{group-name} (or (:access_control_group_names %) [])))
                           (map :name)
                           set)
-         added (clojure.set/difference selected-set current-set)
-         removed (clojure.set/difference current-set selected-set)
+         added (set/difference selected-set current-set)
+         removed (set/difference current-set selected-set)
          make-update-fx (fn [attr-name add?]
                           (let [attr (get attr-by-name attr-name)
                                 current-groups (set (or (:access_control_group_names attr) []))

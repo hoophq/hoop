@@ -109,24 +109,22 @@
         group-connections (rf/subscribe [:access-control/group-permissions group-id])
         group-attributes (rf/subscribe [:access-control/group-attributes group-id])
         attributes-data (rf/subscribe [:attributes/list-data])
-        selected-connections (r/atom [])
-        selected-attributes (r/atom [])
+        selected-connections (r/atom nil)
+        selected-attributes (r/atom nil)
         is-submitting (r/atom false)
         scroll-pos (r/atom 0)]
 
-    ;; Initialize data when component mounts
     (rf/dispatch [:plugins->get-plugin-by-name "access_control"])
     (rf/dispatch [:attributes/list])
 
     (fn [group-id]
-      (when (and (empty? @selected-connections)
-                 (seq @group-connections)
+      (when (and (nil? @selected-connections)
                  (not= (:status @plugin-details) :loading))
-        (reset! selected-connections @group-connections))
+        (reset! selected-connections (vec (or @group-connections []))))
 
-      (when (and (empty? @selected-attributes)
-                 (seq @group-attributes))
-        (reset! selected-attributes @group-attributes))
+      (when (and (nil? @selected-attributes)
+                 (seq @attributes-data))
+        (reset! selected-attributes (vec (or @group-attributes []))))
 
       (let [plugin (:plugin @plugin-details)
             plugin-loaded? (and plugin (:name plugin) (= (:name plugin) "access_control"))
@@ -141,11 +139,11 @@
                                 (do
                                   (rf/dispatch [:access-control/add-group-permissions
                                                 {:group-id group-id
-                                                 :connections @selected-connections
+                                                 :connections (or @selected-connections [])
                                                  :plugin plugin}])
                                   (rf/dispatch [:access-control/update-group-attributes
                                                 {:group-name group-id
-                                                 :selected-attributes @selected-attributes}])
+                                                 :selected-attributes (or @selected-attributes [])}])
                                   (js/setTimeout #(rf/dispatch [:navigate :access-control]) 1000))
 
                                 (do
@@ -212,8 +210,8 @@
 
             [:> Box {:class "space-y-radix-7" :grid-column "span 5 / span 5"}
              [connections-select/main
-              {:connection-ids (mapv :id @selected-connections)
-               :selected-connections @selected-connections
+              {:connection-ids (mapv :id (or @selected-connections []))
+               :selected-connections (or @selected-connections [])
                :on-connections-change (fn [new-connections]
                                         (let [connection-data (mapv (fn [conn]
                                                                       {:id (:value conn)
@@ -234,7 +232,7 @@
                :id "group-attributes-input"
                :name "group-attributes-input"
                :options (mapv #(hash-map :value (:name %) :label (:name %)) all-attributes)
-               :default-value (mapv #(hash-map :value % :label %) @selected-attributes)
+               :default-value (mapv #(hash-map :value % :label %) (or @selected-attributes []))
                :placeholder "Select attributes..."
                :on-change (fn [selected-options]
                             (let [names (mapv :value (js->clj selected-options :keywordize-keys true))]
