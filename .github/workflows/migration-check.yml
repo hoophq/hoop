@@ -1,0 +1,105 @@
+name: Migration Safety Check
+
+on:
+  pull_request:
+    paths:
+      - 'rootfs/app/migrations/**'
+
+jobs:
+  analyze-migrations:
+    name: Analyze Migration Safety
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Detect Migration Changes
+        id: detect
+        run: |-
+          BASE_REF="${{ github.base_ref }}"
+          CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- 'rootfs/app/migrations/' || true)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No migration files changed"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          MIGRATION_CONTENT=""
+          for file in $CHANGED_FILES; do
+            if [ -f "$file" ]; then
+              MIGRATION_CONTENT="${MIGRATION_CONTENT}
+          --- FILE: ${file} ---
+          $(cat "$file")
+          --- END FILE ---
+          "
+            fi
+          done
+          echo "$MIGRATION_CONTENT" > /tmp/migration_content.txt
+          echo "$CHANGED_FILES" > /tmp/changed_files.txt
+          echo "Changed migration files:"
+          echo "$CHANGED_FILES"
+
+      - name: Analyze with Claude
+        if: steps.detect.outputs.has_changes == 'true'
+        id: analyze
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |-
+          chmod +x ./scripts/check-migration-safety.sh
+          if ./scripts/check-migration-safety.sh; then
+            echo "analysis_failed=false" >> $GITHUB_OUTPUT
+          else
+            echo "analysis_failed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post PR Comment
+        if: steps.detect.outputs.has_changes == 'true' && steps.analyze.outputs.analysis_failed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |-
+          ANALYSIS=$(cat /tmp/analysis.txt)
+          COMMENT_BODY="<!-- migration-check-bot -->
+          ${ANALYSIS}
+
+          ---
+          *Automated analysis by Migration Safety Check. Review carefully -- LLM analysis may miss edge cases.*"
+          EXISTING_COMMENT_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | contains("<!-- migration-check-bot -->")) | .id' \
+            | head -1)
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            gh api --method PATCH "repos/${REPO}/issues/comments/${EXISTING_COMMENT_ID}" -f body="$COMMENT_BODY"
+            echo "Updated existing comment ${EXISTING_COMMENT_ID}"
+          else
+            gh pr comment "${PR_NUMBER}" --body "$COMMENT_BODY"
+            echo "Posted new comment"
+          fi
+
+      - name: Post Fallback Comment
+        if: steps.detect.outputs.has_changes == 'true' && steps.analyze.outputs.analysis_failed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |-
+          CHANGED_FILES=$(cat /tmp/changed_files.txt)
+          COMMENT="<!-- migration-check-bot -->
+          ## Migration Safety Analysis
+
+          :warning: **Automated analysis unavailable** -- the LLM API call failed. Please review these migration files manually:
+
+          \`\`\`
+          ${CHANGED_FILES}
+          \`\`\`
+
+          Check for:
+          - Destructive operations (DROP TABLE, DROP COLUMN, TRUNCATE)
+          - Missing or noop .down.sql files
+          - Rollback safety for sandbox deployments
+          ---
+          *Automated analysis by Migration Safety Check.*"
+          gh pr comment "${PR_NUMBER}" --body "$COMMENT"
