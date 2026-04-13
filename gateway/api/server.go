@@ -900,6 +900,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apirunbooks.DeleteRunbookConfiguration,
 	)
+	r.POST("/runbooks/configurations/:id/files",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apirunbooks.CreateRunbookFile,
+	)
 	r.GET("/runbooks",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
