@@ -3,7 +3,6 @@ package slack
 import (
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
@@ -84,7 +83,7 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {
 	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil, false)
 	if err == nil && status == models.ReviewStatusRejected && ev.msg.RejectionReason != "" {
-		if setErr := models.SetSessionRejectionReason(ev.orgID, ev.msg.SessionID, ev.msg.RejectionReason); setErr != nil {
+		if setErr := models.SetReviewRejectionReason(ev.orgID, ev.msg.SessionID, ev.msg.RejectionReason); setErr != nil {
 			log.With("sid", ev.msg.SessionID).Warnf("failed storing rejection reason from slack, err=%v", setErr)
 		}
 	}
@@ -160,10 +159,8 @@ func (p *slackPlugin) notifyOwnerRejected(ev *event, ctx *storagev2.Context, rev
 
 	text := fmt.Sprintf("Your access request for *%s* was *rejected* by %s.", rev.ConnectionName, reviewerName)
 
-	// Include the rejection reason, stripping any trailing "Rejected by ..." line
-	// since that attribution is already in the first sentence above.
-	if reason := stripRejectedByLine(ev.msg.RejectionReason); reason != "" {
-		text += fmt.Sprintf("\n>%s", reason)
+	if ev.msg.RejectionReason != "" {
+		text += fmt.Sprintf("\n>%s", ev.msg.RejectionReason)
 	}
 
 	text += fmt.Sprintf("\nFollow this link to see the details: %s/sessions/%s", p.apiURL, rev.SessionID)
@@ -173,12 +170,3 @@ func (p *slackPlugin) notifyOwnerRejected(ev *event, ctx *storagev2.Context, rev
 	}
 }
 
-// stripRejectedByLine removes a trailing "Rejected by ..." line from a rejection reason
-// so it is not shown redundantly in contexts that already identify the reviewer.
-func stripRejectedByLine(reason string) string {
-	lines := strings.Split(strings.TrimRight(reason, "\n"), "\n")
-	for len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "Rejected by ") {
-		lines = lines[:len(lines)-1]
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}

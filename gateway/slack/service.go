@@ -297,25 +297,6 @@ func (s *SlackService) OpenRejectModal(cb slack.InteractionCallback, privateMeta
 	)
 	commentBlock.Optional = true
 
-	usernameCheckbox := &slack.CheckboxGroupsBlockElement{
-		Type:     slack.METCheckboxGroups,
-		ActionID: "add_username",
-		Options: []*slack.OptionBlockObject{
-			{
-				Text:        &slack.TextBlockObject{Type: slack.PlainTextType, Text: "Add username"},
-				Description: &slack.TextBlockObject{Type: slack.PlainTextType, Text: "Include your username to the details when rejecting this access request."},
-				Value:       "add_username",
-			},
-		},
-	}
-	usernameBlock := slack.NewInputBlock(
-		"add_username_block",
-		&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Add username"},
-		nil,
-		usernameCheckbox,
-	)
-	usernameBlock.Optional = true
-
 	_, err := s.apiClient.OpenView(cb.TriggerID, slack.ModalViewRequest{
 		Type:            slack.VTModal,
 		CallbackID:      "reject-details-modal",
@@ -327,10 +308,9 @@ func (s *SlackService) OpenRejectModal(cb slack.InteractionCallback, privateMeta
 			BlockSet: []slack.Block{
 				slack.NewSectionBlock(&slack.TextBlockObject{
 					Type: slack.MarkdownType,
-					Text: "Optionally include more details or identification for this access request rejection.",
+					Text: "Optionally include more details for this access request rejection.",
 				}, nil, nil),
 				commentBlock,
-				usernameBlock,
 			},
 		},
 	})

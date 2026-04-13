@@ -18,7 +18,6 @@ type rejectModalMetadata struct {
 	EventKind string `json:"event_kind"`
 	GroupName string `json:"group_name"`
 	SlackID   string `json:"slack_id"`
-	SlackName string `json:"slack_name"`
 }
 
 // ProcessEvents start the websocket connection and process the events
@@ -90,7 +89,6 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 				EventKind: fmt.Sprintf("%v", cb.Message.Metadata.EventType),
 				GroupName: groupName,
 				SlackID:   cb.User.ID,
-				SlackName: cb.User.Name,
 			}
 			metaJSON, err := json.Marshal(meta)
 			// OpenRejectModal must be called before Ack() — TriggerID expires ~3s after interaction.
@@ -135,19 +133,6 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 		if block, ok := cb.View.State.Values["rejection_reason_block"]; ok {
 			if elem, ok := block["rejection_reason"]; ok {
 				reason = elem.Value
-			}
-		}
-		addUsername := false
-		if block, ok := cb.View.State.Values["add_username_block"]; ok {
-			if elem, ok := block["add_username"]; ok && len(elem.SelectedOptions) > 0 {
-				addUsername = true
-			}
-		}
-		if addUsername && meta.SlackName != "" {
-			if reason != "" {
-				reason = reason + "\nRejected by " + meta.SlackName
-			} else {
-				reason = "Rejected by " + meta.SlackName
 			}
 		}
 		// Retrieve the original block-action callback so UpdateMessage has the channel,
