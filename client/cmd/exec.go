@@ -166,13 +166,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 		}); err != nil {
 			_, _ = c.client.Close()
 			if jsonMode {
-				exitCode := 1
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:   "error",
-					Message:  fmt.Sprintf("failed opening session with gateway, err=%v", err),
-					ExitCode: &exitCode,
-				})
-				os.Exit(1)
+				fatalErr(true, "failed opening session with gateway, err=%v", err)
 			}
 			c.printErrorAndExit("failed opening session with gateway, err=%v", err)
 		}
@@ -184,13 +178,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 	for {
 		pkt, err := c.client.Recv()
 		if err != nil && jsonMode {
-			exitCode := 1
-			emitJSONEvent(os.Stdout, JSONEvent{
-				Status:   "error",
-				Message:  err.Error(),
-				ExitCode: &exitCode,
-			})
-			os.Exit(1)
+			fatalErr(true, err.Error())
 		}
 		c.processGracefulExit(err)
 		if pkt == nil {
@@ -246,13 +234,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 		case pbclient.SessionOpenAgentOffline:
 			if agentOfflineRetryCounter > 60 {
 				if jsonMode {
-					exitCode := 1
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:   "error",
-						Message:  "agent is offline, max retry reached",
-						ExitCode: &exitCode,
-					})
-					os.Exit(1)
+					fatalErr(true, "agent is offline, max retry reached")
 				}
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
@@ -304,13 +286,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
 				if jsonMode {
-					exitCode := 1
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:   "error",
-						Message:  fmt.Sprintf("failed executing command, err=%v", err),
-						ExitCode: &exitCode,
-					})
-					os.Exit(1)
+					fatalErr(true, "failed executing command, err=%v", err)
 				}
 				c.printErrorAndExit("failed executing command, err=%v", err)
 			}
@@ -361,21 +337,22 @@ func runExec(args []string, clientEnvVars map[string]string) {
 	}
 }
 
+type execSessionResponse struct {
+	ExitCode     int    `json:"exit_code"`
+	Output       string `json:"output"`
+	OutputStatus string `json:"output_status"`
+}
+
 // runExecSession executes an already-approved reviewed session via the API.
 // Used by agents to trigger execution after polling for approval.
 func runExecSession(sessionID string) {
 	jsonMode := outputFlag == "json"
 	config := clientconfig.GetClientConfigOrDie()
 
-	url := fmt.Sprintf("%s/api/sessions/%s/exec", config.ApiURL, sessionID)
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/api/sessions/%s/exec", config.ApiURL, sessionID), nil)
 	if err != nil {
-		if jsonMode {
-			exitCode := 1
-			emitJSONEvent(os.Stdout, JSONEvent{Status: "error", Message: err.Error(), ExitCode: &exitCode})
-			os.Exit(1)
-		}
-		styles.PrintErrorAndExit(err.Error())
+		fatalErr(jsonMode, err.Error())
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.Token))
 	if config.IsApiKey() {
@@ -385,64 +362,39 @@ func runExecSession(sessionID string) {
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {
-		if jsonMode {
-			exitCode := 1
-			emitJSONEvent(os.Stdout, JSONEvent{Status: "error", Message: err.Error(), ExitCode: &exitCode})
-			os.Exit(1)
-		}
-		styles.PrintErrorAndExit(err.Error())
+		fatalErr(jsonMode, err.Error())
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {
-		if jsonMode {
-			exitCode := 1
-			msg := string(body)
-			emitJSONEvent(os.Stdout, JSONEvent{Status: "error", Message: msg, ExitCode: &exitCode})
-			os.Exit(1)
-		}
-		styles.PrintErrorAndExit("failed executing session: %s", string(body))
+		fatalErr(jsonMode, "failed executing session: %s", string(body))
+	}
+	if !jsonMode {
+		fmt.Print(string(body))
+		return
 	}
 
-	if jsonMode {
-		// Parse the API response and emit as a JSONEvent
-		var apiResp map[string]any
-		if err := json.Unmarshal(body, &apiResp); err != nil {
-			exitCode := 1
-			emitJSONEvent(os.Stdout, JSONEvent{Status: "error", Message: err.Error(), ExitCode: &exitCode})
-			os.Exit(1)
-		}
-
-		exitCode := 0
-		if ec, ok := apiResp["exit_code"].(float64); ok {
-			exitCode = int(ec)
-		}
-
-		data := map[string]string{
-			"session_id": sessionID,
-		}
-		if output, ok := apiResp["output"].(string); ok && output != "" {
-			data["stdout"] = output
-		}
-		if outputStatus, ok := apiResp["output_status"].(string); ok {
-			data["output_status"] = outputStatus
-		}
-
-		status := "completed"
-		if resp.StatusCode == http.StatusAccepted {
-			status = "running"
-		}
-
-		emitJSONEvent(os.Stdout, JSONEvent{
-			Status:   status,
-			ExitCode: &exitCode,
-			Data:     data,
-		})
-		os.Exit(exitCode)
+	var apiResp execSessionResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		fatalErr(jsonMode, "parsing response: %v", err)
 	}
 
-	// Non-JSON mode: print output directly
-	fmt.Print(string(body))
+	status := "completed"
+	if resp.StatusCode == http.StatusAccepted {
+		status = "running"
+	}
+	data := map[string]string{"session_id": sessionID}
+	if apiResp.Output != "" {
+		data["stdout"] = apiResp.Output
+	}
+	if apiResp.OutputStatus != "" {
+		data["output_status"] = apiResp.OutputStatus
+	}
+	emitJSONEvent(os.Stdout, JSONEvent{
+		Status:   status,
+		ExitCode: &apiResp.ExitCode,
+		Data:     data,
+	})
+	os.Exit(apiResp.ExitCode)
 }

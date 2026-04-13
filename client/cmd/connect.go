@@ -129,13 +129,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 	for {
 		pkt, err := c.client.Recv()
 		if err != nil && jsonMode {
-			exitCode := 1
-			emitJSONEvent(os.Stdout, JSONEvent{
-				Status:   "error",
-				Message:  err.Error(),
-				ExitCode: &exitCode,
-			})
-			os.Exit(1)
+			fatalErr(true, err.Error())
 		}
 		c.processGracefulExit(err)
 		if pkt == nil {
@@ -429,13 +423,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 		case pbclient.SessionOpenAgentOffline:
 			if agentOfflineRetryCounter > 60 {
 				if jsonMode {
-					exitCode := 1
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:   "error",
-						Message:  "agent is offline, max retry reached",
-						ExitCode: &exitCode,
-					})
-					os.Exit(1)
+					fatalErr(true, "agent is offline, max retry reached")
 				}
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
