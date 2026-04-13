@@ -165,10 +165,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 			Payload: execInputPayload,
 		}); err != nil {
 			_, _ = c.client.Close()
-			if jsonMode {
-				fatalErr(true, "failed opening session with gateway, err=%v", err)
-			}
-			c.printErrorAndExit("failed opening session with gateway, err=%v", err)
+			fatalErr(jsonMode, "failed opening session with gateway, err=%v", err)
 		}
 	}
 	sendOpenSessionPktFn()
@@ -192,17 +189,9 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				c.processGracefulExit(errors.New(msg))
 			}
 			if jsonMode {
-				reviewURL := string(pkt.Payload)
 				sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:  "waiting_approval",
-					Message: "poll status with: hoop admin get sessions " + sessionID + " -o json | check review.status field, then run: hoop exec --session " + sessionID + " --output json",
-					Data: map[string]string{
-						"review_url": reviewURL,
-						"session_id": sessionID,
-					},
-				})
-				os.Exit(0)
+				emitWaitingApprovalAndExit(sessionID, string(pkt.Payload),
+					"poll status with: hoop admin get sessions "+sessionID+" -o json | check review.status field, then run: hoop exec --session "+sessionID+" --output json")
 			} else {
 				loader.Color("yellow")
 				if !loader.Active() {
@@ -222,10 +211,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				loader.Start()
 			}
 			if jsonMode {
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:  "approved",
-					Message: "command approved, running",
-				})
+				emitApproved()
 			} else {
 				loader.Color("green")
 				loader.Suffix = " command approved, running ... "
@@ -239,13 +225,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
 			if jsonMode {
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:  "agent_offline",
-					Message: fmt.Sprintf("agent is offline, retrying in 30s (%v/60)", agentOfflineRetryCounter),
-					Data: map[string]string{
-						"retry": fmt.Sprintf("%v/60", agentOfflineRetryCounter),
-					},
-				})
+				emitAgentOffline(agentOfflineRetryCounter)
 			} else {
 				loader.Color("red")
 				loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
@@ -285,10 +265,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				c.loader.Start()
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
-				if jsonMode {
-					fatalErr(true, "failed executing command, err=%v", err)
-				}
-				c.printErrorAndExit("failed executing command, err=%v", err)
+				fatalErr(jsonMode, "failed executing command, err=%v", err)
 			}
 		case pbclient.WriteStdout:
 			loader.Stop()

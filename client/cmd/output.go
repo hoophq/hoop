@@ -36,3 +36,40 @@ func fatalErr(jsonMode bool, format string, args ...any) {
 	}
 	os.Exit(1)
 }
+
+func emitWaitingApprovalAndExit(sessionID, reviewURL, pollHint string) {
+	emitJSONEvent(os.Stdout, JSONEvent{
+		Status:  "waiting_approval",
+		Message: pollHint,
+		Data: map[string]string{
+			"review_url": reviewURL,
+			"session_id": sessionID,
+		},
+	})
+	os.Exit(0)
+}
+
+func emitApproved() {
+	emitJSONEvent(os.Stdout, JSONEvent{
+		Status:  "approved",
+		Message: "command approved, running",
+	})
+}
+
+func emitAgentOffline(counter int) {
+	emitJSONEvent(os.Stdout, JSONEvent{
+		Status:  "agent_offline",
+		Message: fmt.Sprintf("agent is offline, retrying in 30s (%v/60)", counter),
+		Data: map[string]string{
+			"retry": fmt.Sprintf("%v/60", counter),
+		},
+	})
+}
+
+func emitReady(data map[string]string) {
+	emitJSONEvent(os.Stdout, JSONEvent{
+		Status:  "ready",
+		Message: "ready to accept connections",
+		Data:    data,
+	})
+}

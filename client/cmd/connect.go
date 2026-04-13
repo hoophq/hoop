@@ -138,17 +138,9 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 		switch pb.PacketType(pkt.Type) {
 		case pbclient.SessionOpenWaitingApproval:
 			if jsonMode {
-				reviewURL := string(pkt.Payload)
 				sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:  "waiting_approval",
-					Message: "poll status with: hoop admin get sessions " + sessionID + " -o json | check review.status field",
-					Data: map[string]string{
-						"review_url":  reviewURL,
-						"session_id":  sessionID,
-					},
-				})
-				os.Exit(0)
+				emitWaitingApprovalAndExit(sessionID, string(pkt.Payload),
+					"poll status with: hoop admin get sessions "+sessionID+" -o json | check review.status field")
 			} else {
 				loader.Color("yellow")
 				if !loader.Active() {
@@ -190,15 +182,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": srv.Host().Host,
-							"port": srv.Host().Port,
-							"user": "noop",
-						},
-					})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop"})
 				}
 			case pb.ConnectionTypeMySQL:
 				srv := proxy.NewMySQLServer(c.proxyPort, c.client)
@@ -215,15 +199,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": srv.Host().Host,
-							"port": srv.Host().Port,
-							"user": "noop",
-						},
-					})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop"})
 				}
 			case pb.ConnectionTypeMSSQL:
 				srv := proxy.NewMSSQLServer(c.proxyPort, c.client)
@@ -240,15 +216,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": srv.Host().Host,
-							"port": srv.Host().Port,
-							"user": "noop",
-						},
-					})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop"})
 				}
 			case pb.ConnectionTypeMongoDB:
 				srv := proxy.NewMongoDBServer(c.proxyPort, c.client)
@@ -265,14 +233,10 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": srv.Host().Host,
-							"port": srv.Host().Port,
-							"uri":  fmt.Sprintf("mongodb://noop:noop@%s:%s/?directConnection=true", srv.Host().Host, srv.Host().Port),
-						},
+					emitReady(map[string]string{
+						"host": srv.Host().Host,
+						"port": srv.Host().Port,
+						"uri":  fmt.Sprintf("mongodb://noop:noop@%s:%s/?directConnection=true", srv.Host().Host, srv.Host().Port),
 					})
 				}
 			case pb.ConnectionTypeTCP:
@@ -290,14 +254,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": tcp.Host().Host,
-							"port": tcp.Host().Port,
-						},
-					})
+					emitReady(map[string]string{"host": tcp.Host().Host, "port": tcp.Host().Port})
 				}
 			case pb.ConnectionTypeSSH:
 				c.loader.Stop()
@@ -347,14 +304,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": srv.Host().Host,
-							"port": srv.Host().Port,
-						},
-					})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port})
 				}
 			case pb.ConnectionTypeKubernetes:
 				srv := proxy.NewHttpProxy(c.proxyPort, c.client, pbagent.HttpProxyConnectionWrite)
@@ -378,14 +328,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 					fmt.Printf("export KUBECONFIG=%s\n", kubeconfigFilePath)
 				}
 				if jsonMode {
-					emitJSONEvent(os.Stdout, JSONEvent{
-						Status:  "ready",
-						Message: "ready to accept connections",
-						Data: map[string]string{
-							"host": srv.Host().Host,
-							"port": srv.Host().Port,
-						},
-					})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port})
 				}
 			case pb.ConnectionTypeCommandLine:
 				c.loader.Stop()
@@ -411,10 +354,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 			}
 		case pbclient.SessionOpenApproveOK:
 			if jsonMode {
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:  "approved",
-					Message: "command approved, running",
-				})
+				emitApproved()
 			} else {
 				loader.Color("green")
 				loader.Suffix = " command approved, running ... "
@@ -428,13 +368,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
 			if jsonMode {
-				emitJSONEvent(os.Stdout, JSONEvent{
-					Status:  "agent_offline",
-					Message: fmt.Sprintf("agent is offline, retrying in 30s (%v/60)", agentOfflineRetryCounter),
-					Data: map[string]string{
-						"retry": fmt.Sprintf("%v/60", agentOfflineRetryCounter),
-					},
-				})
+				emitAgentOffline(agentOfflineRetryCounter)
 			} else {
 				loader.Color("red")
 				loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
