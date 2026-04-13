@@ -1,7 +1,9 @@
 package slack
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
@@ -81,6 +83,11 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 
 func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {
 	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil, false)
+	if err == nil && status == models.ReviewStatusRejected && ev.msg.RejectionReason != "" {
+		if setErr := models.SetSessionRejectionReason(ev.orgID, ev.msg.SessionID, ev.msg.RejectionReason); setErr != nil {
+			log.With("sid", ev.msg.SessionID).Warnf("failed storing rejection reason from slack, err=%v", setErr)
+		}
+	}
 	var msg string
 	switch err {
 	case reviewapi.ErrNotFound:
@@ -124,6 +131,9 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 				rev.Status.Str(),
 			)
 		}
+		if rev.Status == models.ReviewStatusRejected {
+			p.notifyOwnerRejected(ev, ctx, rev)
+		}
 		return
 	default:
 		log.With("sid", ev.msg.SessionID).Warnf("failed reviewing, id=%s, internal error=%v",
@@ -133,4 +143,42 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 	if err = ev.ss.PostEphemeralMessage(ev.msg, "%s", msg); err != nil {
 		log.With("sid", ev.msg.SessionID).Warnf("failed updating slack review, reason=%v", err)
 	}
+}
+
+// notifyOwnerRejected sends a DM to the session owner informing them that their
+// access request was rejected. Silently skipped if the owner has no Slack ID.
+func (p *slackPlugin) notifyOwnerRejected(ev *event, ctx *storagev2.Context, rev *models.Review) {
+	ownerSlackID := ptr.ToString(rev.OwnerSlackID)
+	if ownerSlackID == "" {
+		return
+	}
+
+	reviewerName := ctx.UserName
+	if reviewerName == "" {
+		reviewerName = ctx.UserEmail
+	}
+
+	text := fmt.Sprintf("Your access request for *%s* was *rejected* by %s.", rev.ConnectionName, reviewerName)
+
+	// Include the rejection reason, stripping any trailing "Rejected by ..." line
+	// since that attribution is already in the first sentence above.
+	if reason := stripRejectedByLine(ev.msg.RejectionReason); reason != "" {
+		text += fmt.Sprintf("\n>%s", reason)
+	}
+
+	text += fmt.Sprintf("\nFollow this link to see the details: %s/sessions/%s", p.apiURL, rev.SessionID)
+
+	if err := ev.ss.PostMessage(ownerSlackID, text); err != nil {
+		log.With("sid", ev.msg.SessionID).Warnf("failed sending rejection DM to session owner, err=%v", err)
+	}
+}
+
+// stripRejectedByLine removes a trailing "Rejected by ..." line from a rejection reason
+// so it is not shown redundantly in contexts that already identify the reviewer.
+func stripRejectedByLine(reason string) string {
+	lines := strings.Split(strings.TrimRight(reason, "\n"), "\n")
+	for len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "Rejected by ") {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
