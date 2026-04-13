@@ -16,6 +16,7 @@
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
+   [webapp.audit.views.reject-details-modal :as reject-details-modal]
 
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
@@ -191,9 +192,25 @@
                                         force-groups
                                         (some #(contains? force-groups %) user-groups)))
               handle-reject (fn []
-                              (rf/dispatch [:audit->add-review
-                                            session
-                                            "rejected"]))
+                              (rf/dispatch
+                               [:modal->open
+                                {:id "reject-details-modal"
+                                 :maxWidth "500px"
+                                 :content [reject-details-modal/main
+                                           {:user user
+                                            :on-confirm
+                                            (fn [{:keys [comment add-username? user-name]}]
+                                              (let [reason (if (and add-username?
+                                                                    (not (cs/blank? user-name))
+                                                                    (not (cs/blank? comment)))
+                                                             (str comment "\nRejected by " user-name)
+                                                             comment)]
+                                                (rf/dispatch [:audit->add-review
+                                                              session
+                                                              "rejected"
+                                                              :rejection-reason reason])
+                                                (rf/dispatch [:modal->close])))
+                                            :on-cancel #(rf/dispatch [:modal->close])}]}]))
               handle-approve (fn []
                                (rf/dispatch [:audit->add-review
                                              session
@@ -300,6 +317,20 @@
             [guardrails-info/main {:guardrails-info (:guardrails_info session)}]
 
             [data-masking-analytics/main {:session session}]
+
+            ;; Rejection reason — shown when session was denied and a reason was recorded
+            (let [rejection-reason (get-in session [:metadata :rejection_reason])]
+              (when (and (= "REJECTED" review-status)
+                         (not (cs/blank? rejection-reason)))
+                [:> Flex {:align "center"
+                           :justify "between"
+                           :class "w-full rounded-lg bg-[--red-2] px-regular py-small gap-2"}
+                 [:> Flex {:align "center" :gap "2" :class "flex-shrink-0"}
+                  [:> OctagonX {:size 16 :class "text-error-11"}]
+                  [:> Text {:size "2" :weight "medium" :class "text-error-11"}
+                   "Reject Details"]]
+                 [:> Text {:size "2" :class "text-error-11 text-right whitespace-pre-wrap"}
+                  rejection-reason]]))
 
             ;; response logs area
             (when-not (or credentials-expire-at

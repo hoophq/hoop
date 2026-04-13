@@ -175,6 +175,11 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 				rev.Status.Str(),
 			)
 		}
+		if rev.Status == models.ReviewStatusRejected && req.RejectionReason != "" {
+			if setErr := models.SetSessionRejectionReason(rev.OrgID, rev.SessionID, req.RejectionReason); setErr != nil {
+				log.Warnf("failed storing rejection reason, sid=%v, err=%v", rev.SessionID, setErr)
+			}
+		}
 		c.JSON(http.StatusOK, toOpenApiReview(rev))
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating review status: %v", err)

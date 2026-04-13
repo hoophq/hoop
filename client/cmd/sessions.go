@@ -529,6 +529,17 @@ func displaySession(s map[string]any) {
 		}
 	}
 
+	// Rejection reason (stored in session metadata after a rejection).
+	if metadata, ok := s["metadata"].(map[string]any); ok {
+		if reason, ok := metadata["rejection_reason"].(string); ok && reason != "" {
+			sep()
+			fmt.Fprintln(w, "  Rejection Reason")
+			for _, line := range strings.Split(reason, "\n") {
+				fmt.Fprintf(w, "    %s\n", line)
+			}
+		}
+	}
+
 	// AI analysis section.
 	if ai, ok := s["ai_analysis"].(map[string]any); ok {
 		sep()
