@@ -53,9 +53,10 @@ type Review struct {
 	ForceApprovalGroups   pq.StringArray `gorm:"column:force_approval_groups;type:text[]"`
 	MinApprovals          *int           `gorm:"column:min_approvals"`
 
-	CreatedAt  time.Time         `gorm:"column:created_at"`
-	RevokedAt  *time.Time        `gorm:"column:revoked_at"`
-	TimeWindow *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
+	CreatedAt       time.Time         `gorm:"column:created_at"`
+	RevokedAt       *time.Time        `gorm:"column:revoked_at"`
+	TimeWindow      *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
+	RejectionReason *string `gorm:"column:rejection_reason"`
 }
 
 type ReviewTimeWindow struct {

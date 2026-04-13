@@ -152,6 +152,7 @@ type SessionReview struct {
 	AccessRequestRuleName *string           `json:"access_request_rule_name"`
 	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups" gorm:"force_approval_groups;serializer:json;"`
 	MinApprovals          *int              `json:"min_approvals"`
+	RejectionReason *string `json:"rejection_reason"`
 }
 
 func (r *SessionReview) Scan(value any) error {
@@ -235,6 +236,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 				'access_request_rule_name', rv.access_request_rule_name,
 				'min_approvals', rv.min_approvals,
 				'force_approval_groups', rv.force_approval_groups,
+				'rejection_reason', rv.rejection_reason,
 				'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 				'review_groups', (
@@ -358,6 +360,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 					'type', rv.type,
 					'access_duration_sec', rv.access_duration_sec,
 					'status', rv.status,
+					'rejection_reason', rv.rejection_reason,
 					'created_at', to_char(rv.created_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 					'revoked_at', to_char(rv.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
 					'review_groups', (
@@ -620,17 +623,11 @@ func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
 	return res.Error
 }
 
-// SetSessionRejectionReason stores the rejection reason in the session metadata.
-// Unlike UpdateSessionMetadata, this function does not require the session owner's email,
-// allowing reviewers to set the reason after rejecting a request.
-func SetSessionRejectionReason(orgID, sessionID, reason string) error {
-	value, err := json.Marshal(map[string]string{"rejection_reason": reason})
-	if err != nil {
-		return fmt.Errorf("failed to encode rejection reason: %w", err)
-	}
-	res := DB.Table("private.sessions").
-		Where("org_id = ? AND id = ?", orgID, sessionID).
-		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", string(value)))
+// SetReviewRejectionReason stores the rejection reason on the review record for the given session.
+func SetReviewRejectionReason(orgID, sessionID, reason string) error {
+	res := DB.Table("private.reviews").
+		Where("org_id = ? AND session_id = ?", orgID, sessionID).
+		Update("rejection_reason", reason)
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound
 	}

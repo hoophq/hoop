@@ -197,19 +197,13 @@
                                 {:id "reject-details-modal"
                                  :maxWidth "500px"
                                  :content [reject-details-modal/main
-                                           {:user user
-                                            :on-confirm
-                                            (fn [{:keys [comment add-username? user-name]}]
-                                              (let [reason (if (and add-username?
-                                                                    (not (cs/blank? user-name))
-                                                                    (not (cs/blank? comment)))
-                                                             (str comment "\nRejected by " user-name)
-                                                             comment)]
-                                                (rf/dispatch [:audit->add-review
-                                                              session
-                                                              "rejected"
-                                                              :rejection-reason reason])
-                                                (rf/dispatch [:modal->close])))
+                                           {:on-confirm
+                                            (fn [{:keys [comment]}]
+                                              (rf/dispatch [:audit->add-review
+                                                            session
+                                                            "rejected"
+                                                            :rejection-reason comment])
+                                              (rf/dispatch [:modal->close]))
                                             :on-cancel #(rf/dispatch [:modal->close])}]}]))
               handle-approve (fn []
                                (rf/dispatch [:audit->add-review
@@ -318,10 +312,14 @@
 
             [data-masking-analytics/main {:session session}]
 
-            ;; Rejection reason — shown when session was denied and a reason was recorded
-            (let [rejection-reason (get-in session [:metadata :rejection_reason])]
-              (when (and (= "REJECTED" review-status)
-                         (not (cs/blank? rejection-reason)))
+            ;; Rejection reason — shown when session was rejected
+            (let [rejection-reason (get-in session [:review :rejection_reason])
+                  reviewer-email (->> (get-in session [:review :review_groups_data])
+                                      (filter #(= "REJECTED" (:status %)))
+                                      first
+                                      :reviewed_by
+                                      :email)]
+              (when (= "REJECTED" review-status)
                 [:> Flex {:align "center"
                            :justify "between"
                            :class "w-full rounded-lg bg-[--red-2] px-regular py-small gap-2"}
@@ -329,8 +327,13 @@
                   [:> OctagonX {:size 16 :class "text-error-11"}]
                   [:> Text {:size "2" :weight "medium" :class "text-error-11"}
                    "Reject Details"]]
-                 [:> Text {:size "2" :class "text-error-11 text-right whitespace-pre-wrap"}
-                  rejection-reason]]))
+                 [:> Flex {:direction "column" :align "end" :gap "1"}
+                  (when (not (cs/blank? rejection-reason))
+                    [:> Text {:size "2" :class "text-error-11 text-right whitespace-pre-wrap"}
+                     rejection-reason])
+                  (when reviewer-email
+                    [:> Text {:size "2" :class "text-error-11 text-right"}
+                     (str "Rejected by " reviewer-email)])]]))
 
             ;; response logs area
             (when-not (or credentials-expire-at
