@@ -176,7 +176,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 			)
 		}
 		if rev.Status == models.ReviewStatusRejected && req.RejectionReason != "" {
-			if setErr := models.SetSessionRejectionReason(rev.OrgID, rev.SessionID, req.RejectionReason); setErr != nil {
+			if setErr := models.SetReviewRejectionReason(rev.OrgID, rev.SessionID, req.RejectionReason); setErr != nil {
 				log.Warnf("failed storing rejection reason, sid=%v, err=%v", rev.SessionID, setErr)
 			}
 		}
@@ -490,5 +490,6 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
+		RejectionReason: r.RejectionReason,
 	}
 }

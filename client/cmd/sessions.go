@@ -527,11 +527,8 @@ func displaySession(s map[string]any) {
 				}
 			}
 		}
-	}
 
-	// Rejection reason (stored in session metadata after a rejection).
-	if metadata, ok := s["metadata"].(map[string]any); ok {
-		if reason, ok := metadata["rejection_reason"].(string); ok && reason != "" {
+		if reason := toStr(review["rejection_reason"]); reason != "-" && reason != "" {
 			sep()
 			fmt.Fprintln(w, "  Rejection Reason")
 			for _, line := range strings.Split(reason, "\n") {
