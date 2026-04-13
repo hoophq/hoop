@@ -94,6 +94,7 @@ type connect struct {
 	clientArgs     []string
 	connectionName string
 	loader         *spinner.Spinner
+	jsonMode       bool
 }
 
 func runConnect(args []string, clientEnvVars map[string]string, durationFlagChanged bool) {
@@ -128,9 +129,6 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
-		if err != nil && jsonMode {
-			fatalErr(true, err.Error())
-		}
 		c.processGracefulExit(err)
 		if pkt == nil {
 			continue
@@ -182,7 +180,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop"})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop", "password": "noop"})
 				}
 			case pb.ConnectionTypeMySQL:
 				srv := proxy.NewMySQLServer(c.proxyPort, c.client)
@@ -199,7 +197,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop"})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop", "password": "noop"})
 				}
 			case pb.ConnectionTypeMSSQL:
 				srv := proxy.NewMSSQLServer(c.proxyPort, c.client)
@@ -216,7 +214,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 				fmt.Println("------------------------------------------------------------")
 				fmt.Println("ready to accept connections!")
 				if jsonMode {
-					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop"})
+					emitReady(map[string]string{"host": srv.Host().Host, "port": srv.Host().Port, "user": "noop", "password": "noop"})
 				}
 			case pb.ConnectionTypeMongoDB:
 				srv := proxy.NewMongoDBServer(c.proxyPort, c.client)
@@ -362,9 +360,6 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 			sendOpenSessionPktFn()
 		case pbclient.SessionOpenAgentOffline:
 			if agentOfflineRetryCounter > 60 {
-				if jsonMode {
-					fatalErr(true, "agent is offline, max retry reached")
-				}
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
 			if jsonMode {
@@ -570,9 +565,7 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 	if c.loader != nil {
 		c.loader.Stop()
 	}
-	errOutput := styles.ClientError(fmt.Sprintf(format, v...))
-	fmt.Println(errOutput)
-	os.Exit(1)
+	fatalErr(c.jsonMode, format, v...)
 }
 
 func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args []string, verb string) *connect {
@@ -582,6 +575,7 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		clientArgs:     args[1:],
 		connectionName: args[0],
 		loader:         loader,
+		jsonMode:       outputFlag == "json",
 	}
 	grpcClientOptions := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),

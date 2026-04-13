@@ -27,7 +27,6 @@ import (
 )
 
 var noBrowser bool
-var loginToken string
 
 type serverInfo struct {
 	GrpcURL string `json:"grpc_url"`
@@ -43,14 +42,6 @@ var loginCmd = &cobra.Command{
 	Short: "Authenticate at Hoop",
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if loginToken != "" {
-			if err := validateLoginToken(loginToken); err != nil {
-				printErrorAndExit(err.Error())
-			}
-			conf := loadAndValidateConfig()
-			saveConfigWithToken(conf, loginToken)
-			return
-		}
 		conf := loadAndValidateConfig()
 		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v "+
 			" skip_tls_verify=%v",
@@ -65,7 +56,6 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	loginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Print the login url to stdout instead of opening the browser")
-	loginCmd.Flags().StringVar(&loginToken, "token", "", "Provide a pre-existing API key or access token (skips interactive login)")
 	rootCmd.AddCommand(loginCmd)
 }
 
@@ -342,9 +332,3 @@ func isValidURL(addr string) bool {
 	return err == nil && u.Scheme != "" && u.Host != ""
 }
 
-func validateLoginToken(token string) error {
-	if token == "" {
-		return fmt.Errorf("token cannot be empty")
-	}
-	return nil
-}

@@ -165,7 +165,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 			Payload: execInputPayload,
 		}); err != nil {
 			_, _ = c.client.Close()
-			fatalErr(jsonMode, "failed opening session with gateway, err=%v", err)
+			c.processGracefulExit(fmt.Errorf("failed opening session with gateway, err=%v", err))
 		}
 	}
 	sendOpenSessionPktFn()
@@ -174,9 +174,6 @@ func runExec(args []string, clientEnvVars map[string]string) {
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
-		if err != nil && jsonMode {
-			fatalErr(true, err.Error())
-		}
 		c.processGracefulExit(err)
 		if pkt == nil {
 			continue
@@ -219,9 +216,6 @@ func runExec(args []string, clientEnvVars map[string]string) {
 			sendOpenSessionPktFn()
 		case pbclient.SessionOpenAgentOffline:
 			if agentOfflineRetryCounter > 60 {
-				if jsonMode {
-					fatalErr(true, "agent is offline, max retry reached")
-				}
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
 			if jsonMode {
@@ -265,7 +259,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				c.loader.Start()
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
-				fatalErr(jsonMode, "failed executing command, err=%v", err)
+				c.processGracefulExit(fmt.Errorf("failed executing command, err=%v", err))
 			}
 		case pbclient.WriteStdout:
 			loader.Stop()
