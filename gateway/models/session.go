@@ -110,6 +110,7 @@ type Session struct {
 	ExitCode             *int                    `gorm:"column:exit_code"`
 	Review               *SessionReview          `gorm:"column:review;->"`
 	SessionBatchID       *string                 `gorm:"column:session_batch_id"`
+	Type                 string                  `gorm:"column:type"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -452,6 +453,9 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 // UpsertSession updates or create all attributes of a session with exception of
 // session streams
 func UpsertSession(sess Session) error {
+	if sess.Type == "" {
+		sess.Type = "human"
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		// generate deterministic uuid based on the session id to avoid duplicates
 		blobInputID := sql.NullString{
@@ -495,6 +499,7 @@ func UpsertSession(sess Session) error {
 				Status:               sess.Status,
 				ExitCode:             sess.ExitCode,
 				SessionBatchID:       sess.SessionBatchID,
+				Type:                 sess.Type,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
 				AIAnalysis:           sess.AIAnalysis,

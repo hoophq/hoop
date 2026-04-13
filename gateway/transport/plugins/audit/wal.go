@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/proto/spectypes"
@@ -25,8 +27,9 @@ import (
 
 // <audit-path>/<orgid>-<sessionid>-wal
 const (
-	walFolderTmpl    string = `%s/%s-%s-wal`
-	eventLogTypeName string = "_footer_error"
+	walFolderTmpl            string = `%s/%s-%s-wal`
+	walInteractionFolderTmpl string = `%s/%s-%s-%d-wal`
+	eventLogTypeName         string = "_footer_error"
 )
 
 var internalExitCode = func() *int { v := 254; return &v }()
@@ -69,6 +72,47 @@ func (p *auditPlugin) writeOnReceive(sessionID string, eventType eventlogv1.Even
 	return walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventType, event, metadata))
 }
 
+// writeOnReceiveMachine writes an event to the current interaction WAL for a machine session,
+// lazily opening a new interaction WAL if none exists (first packet of a new interaction).
+func (p *auditPlugin) writeOnReceiveMachine(pctx plugintypes.Context, eventType eventlogv1.EventType, event []byte, metadata map[string][]byte) error {
+	stateObj := p.machineSessionStore.Get(pctx.SID)
+	state, ok := stateObj.(*machineSessionState)
+	if !ok {
+		return fmt.Errorf("failed obtaining machine session state for session %v", pctx.SID)
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	// lazily open a new interaction WAL
+	if state.currentWAL == nil {
+		state.currentSequence++
+		now := time.Now().UTC()
+		state.startDate = &now
+		walFolder := fmt.Sprintf(walInteractionFolderTmpl, plugintypes.AuditPath, state.orgID, state.sessionID, state.currentSequence)
+
+		if fi, _ := os.Stat(walFolder); fi != nil {
+			_ = os.RemoveAll(walFolder)
+		}
+
+		walog, err := sessionwal.OpenWriteHeader(walFolder, &sessionwal.Header{
+			EventLogVersion: eventlogv1.Version,
+			OrgID:           state.orgID,
+			SessionID:       state.sessionID,
+			Status:          string(openapi.SessionStatusOpen),
+			StartDate:       state.startDate,
+		})
+		if err != nil {
+			return fmt.Errorf("failed opening interaction wal file: %v", err)
+		}
+		state.currentWAL = &walLogRWMutex{log: walog, folderName: walFolder}
+	}
+
+	state.currentWAL.mu.Lock()
+	defer state.currentWAL.mu.Unlock()
+	return state.currentWAL.log.Write(eventlogv1.New(time.Now().UTC(), eventType, event, metadata))
+}
+
 func (p *auditPlugin) dropWalLog(sid string) {
 	walLogObj := p.walSessionStore.Pop(sid)
 	walogm, ok := walLogObj.(*walLogRWMutex)
@@ -81,6 +125,179 @@ func (p *auditPlugin) dropWalLog(sid string) {
 		log.Errorf("failed removing wal file %q, err=%v", walogm.folderName, err)
 	}
 	walogm.mu.Unlock()
+}
+
+// drainWALResult holds the output of reading and encoding a WAL's contents.
+type drainWALResult struct {
+	rawJSONBlobStream string
+	metrics           SessionMetric
+}
+
+// drainWAL reads all events from a WAL, encodes them as a JSON blob stream, and aggregates DLP metrics.
+// This is the shared logic used by both writeOnClose (human sessions) and closeInteraction (machine sessions).
+func (p *auditPlugin) drainWAL(walogm *walLogRWMutex, protocolConnectionType pb.ConnectionType, startDate *time.Time) (*drainWALResult, error) {
+	var rawJSONBlobStream string
+	metrics := newSessionMetric()
+	var err error
+	metrics.Truncated, err = walogm.log.ReadFull(func(data []byte) error {
+		ev, err := eventlogv1.Decode(data)
+		if err != nil {
+			return err
+		}
+		if infoEnc := ev.GetMetadata(spectypes.DataMaskingInfoKey); infoEnc != nil {
+			dataMaskingInfo, err := spectypes.Decode(infoEnc)
+			if err != nil {
+				log.Warnf("failed decoding data masking info, reason=%v", err)
+				dataMaskingInfo = &spectypes.DataMaskingInfo{}
+			}
+			for _, item := range dataMaskingInfo.Items {
+				if item == nil {
+					continue
+				}
+				metrics.DataMasking.TransformedBytes += item.TransformedBytes
+				if item.Err != nil {
+					metrics.DataMasking.ErrCount++
+					continue
+				}
+
+				for _, ts := range item.Summaries {
+					var redactPerInfoType int64
+					for _, rs := range ts.Results {
+						switch rs.Code {
+						case "SUCCESS":
+							metrics.DataMasking.TotalRedactCount += int64(rs.Count)
+							redactPerInfoType += int64(rs.Count)
+						case "ERROR":
+							metrics.DataMasking.ErrCount++
+						}
+					}
+					if ts.InfoType == "" {
+						continue
+					}
+					metrics.addInfoType(ts.InfoType, redactPerInfoType)
+				}
+			}
+		}
+
+		if len(ev.Payload) == 0 {
+			return nil
+		}
+
+		eventStream := p.truncateTCPEventStream(ev.Payload, protocolConnectionType)
+		eventList := fmt.Sprintf("[%v, %q, %q],",
+			ev.EventTime.Sub(*startDate).Seconds(),
+			string(ev.EventType),
+			base64.StdEncoding.EncodeToString(eventStream),
+		)
+		rawJSONBlobStream += eventList
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rawJSONBlobStream = fmt.Sprintf("[%v]", strings.TrimSuffix(rawJSONBlobStream, ","))
+	metrics.EventSize = int64(len(rawJSONBlobStream))
+	return &drainWALResult{rawJSONBlobStream: rawJSONBlobStream, metrics: metrics}, nil
+}
+
+// closeInteraction drains the current interaction WAL for a machine session,
+// writes blobs and a session_interactions row, and prepares for the next interaction.
+func (p *auditPlugin) closeInteraction(pctx plugintypes.Context, pkt *pb.Packet) error {
+	stateObj := p.machineSessionStore.Get(pctx.SID)
+	state, ok := stateObj.(*machineSessionState)
+	if !ok {
+		return fmt.Errorf("failed obtaining machine session state for session %v", pctx.SID)
+	}
+
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if state.currentWAL == nil {
+		log.With("sid", pctx.SID).Warnf("interaction close received but no interaction WAL is open")
+		return nil
+	}
+
+	walogm := state.currentWAL
+	sequence := state.currentSequence
+	startDate := state.startDate
+
+	// clear current WAL so a new interaction can start
+	state.currentWAL = nil
+	state.startDate = nil
+
+	walogm.mu.Lock()
+	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
+
+	// write final error event if the packet carries one
+	exitCode := parseExitCodeFromInteractionPacket(pkt)
+	if len(pkt.Payload) > 0 {
+		err := walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, pkt.Payload, nil))
+		if err != nil {
+			log.With("sid", pctx.SID).Warnf("failed writing interaction end error, err=%v", err)
+		}
+	}
+
+	protocolConnectionType := pctx.ProtoConnectionType()
+	result, err := p.drainWAL(walogm, protocolConnectionType, startDate)
+	if err != nil {
+		return fmt.Errorf("failed draining interaction WAL: %v", err)
+	}
+
+	var blobFormat *string
+	switch protocolConnectionType {
+	case pb.ConnectionTypePostgres:
+		blobFormat = ptr.String(models.BlobFormatWireProtoType)
+	}
+
+	interactionID := uuid.NewString()
+	endDate := time.Now().UTC()
+
+	err = models.CreateInteractionWithBlobs(
+		models.DB,
+		models.SessionInteraction{
+			ID:        interactionID,
+			SessionID: pctx.SID,
+			OrgID:     pctx.OrgID,
+			Sequence:  sequence,
+			ExitCode:  exitCode,
+			CreatedAt: *startDate,
+			EndedAt:   &endDate,
+		},
+		nil, // TODO: capture interaction input when input tracking is wired
+		json.RawMessage(result.rawJSONBlobStream),
+		blobFormat,
+	)
+
+	log.With("sid", pctx.SID, "sequence", sequence).
+		Infof("finished persisting interaction, err=%v", err)
+
+	if err == nil {
+		if removeErr := os.RemoveAll(walogm.folderName); removeErr != nil {
+			log.Errorf("failed removing interaction wal file %q, err=%v", walogm.folderName, removeErr)
+		}
+	}
+
+	// increment masked metrics for this interaction
+	if maskedErr := models.IncrementSessionMaskedMetrics(models.DB, pctx.SID, result.metrics.DataMasking.InfoTypes); maskedErr != nil {
+		log.With("sid", pctx.SID).Warnf("failed incrementing session masked metrics for interaction, reason=%v", maskedErr)
+	}
+
+	return err
+}
+
+func parseExitCodeFromInteractionPacket(pkt *pb.Packet) *int {
+	exitCodeStr := string(pkt.Spec[pb.SpecClientExitCodeKey])
+	if exitCodeStr == "" {
+		v := 0
+		return &v
+	}
+	ecode, err := strconv.Atoi(exitCodeStr)
+	if err != nil {
+		v := 254
+		return &v
+	}
+	return &ecode
 }
 
 func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error {
@@ -147,8 +364,6 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 
 	walogm.mu.Lock()
 	defer func() { _ = walogm.log.Close(); walogm.mu.Unlock() }()
-	// we could add an attribute to have the last message
-	// propagated as metadata instead inside the stream
 	if errMsg != nil && errMsg != io.EOF {
 		err := walogm.log.Write(eventlogv1.New(time.Now().UTC(), eventlogv1.ErrorType, []byte(errMsg.Error()), nil))
 		if err != nil {
@@ -165,67 +380,8 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 			pctx.SID, wh.SessionID)
 	}
 	protocolConnectionType := pctx.ProtoConnectionType()
-	var rawJSONBlobStream string
-	metrics := newSessionMetric()
-	metrics.Truncated, err = walogm.log.ReadFull(func(data []byte) error {
-		ev, err := eventlogv1.Decode(data)
-		if err != nil {
-			return err
-		}
-		if infoEnc := ev.GetMetadata(spectypes.DataMaskingInfoKey); infoEnc != nil {
-			dataMaskingInfo, err := spectypes.Decode(infoEnc)
-			if err != nil {
-				log.Warnf("failed decoding data masking info, reason=%v", err)
-				dataMaskingInfo = &spectypes.DataMaskingInfo{}
-			}
-			for _, item := range dataMaskingInfo.Items {
-				// it could be decoded with nil items
-				if item == nil {
-					continue
-				}
-				metrics.DataMasking.TransformedBytes += item.TransformedBytes
-				if item.Err != nil {
-					metrics.DataMasking.ErrCount++
-					continue
-				}
 
-				for _, ts := range item.Summaries {
-					var redactPerInfoType int64
-					for _, rs := range ts.Results {
-						switch rs.Code {
-						case "SUCCESS":
-							metrics.DataMasking.TotalRedactCount += int64(rs.Count)
-							redactPerInfoType += int64(rs.Count)
-						case "ERROR":
-							metrics.DataMasking.ErrCount++
-						}
-					}
-					if ts.InfoType == "" {
-						// ignore it, this should only happens
-						// for legacy transformation summary records
-						continue
-					}
-					metrics.addInfoType(ts.InfoType, redactPerInfoType)
-				}
-			}
-		}
-
-		// don't process empty event streams
-		if len(ev.Payload) == 0 {
-			return nil
-		}
-
-		// truncate when event is greater than 5000 bytes for tcp type
-		// it avoids auditing blob content for TCP (files, images, etc)
-		eventStream := p.truncateTCPEventStream(ev.Payload, protocolConnectionType)
-		eventList := fmt.Sprintf("[%v, %q, %q],",
-			ev.EventTime.Sub(*wh.StartDate).Seconds(),
-			string(ev.EventType),
-			base64.StdEncoding.EncodeToString(eventStream),
-		)
-		rawJSONBlobStream += eventList
-		return nil
-	})
+	result, err := p.drainWAL(walogm, protocolConnectionType, wh.StartDate)
 	if err != nil {
 		return err
 	}
@@ -233,15 +389,11 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	var blobFormat *string
 	switch protocolConnectionType {
 	case pb.ConnectionTypePostgres:
-		// Currently limited to PostgreSQL Wire Protocol packet writing.
-		// TODO: Extend to support wire format storage for all database protocols
-		// and implement corresponding API parser mechanisms.
 		blobFormat = ptr.String(models.BlobFormatWireProtoType)
 	}
-	rawJSONBlobStream = fmt.Sprintf("[%v]", strings.TrimSuffix(rawJSONBlobStream, ","))
-	metrics.EventSize = int64(len(rawJSONBlobStream))
+
 	endDate := time.Now().UTC()
-	sessionMetrics, err := metrics.toMap()
+	sessionMetrics, err := result.metrics.toMap()
 	if err != nil {
 		log.With("sid", pctx.SID).Warnf("failed parsing session metrics to map, reason=%v", err)
 	}
@@ -250,7 +402,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 		ID:         wh.SessionID,
 		OrgID:      wh.OrgID,
 		Metrics:    sessionMetrics,
-		BlobStream: json.RawMessage(rawJSONBlobStream),
+		BlobStream: json.RawMessage(result.rawJSONBlobStream),
 		BlobFormat: blobFormat,
 		Status:     string(openapi.SessionStatusDone),
 		ExitCode:   parseExitCodeFromErr(errMsg),
@@ -259,7 +411,7 @@ func (p *auditPlugin) writeOnClose(pctx plugintypes.Context, errMsg error) error
 	log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 		Infof("finished persisting session to store, update-session-err=%v, context-err=%v", err, errMsg)
 
-	err = models.IncrementSessionMaskedMetrics(models.DB, wh.SessionID, metrics.DataMasking.InfoTypes)
+	err = models.IncrementSessionMaskedMetrics(models.DB, wh.SessionID, result.metrics.DataMasking.InfoTypes)
 	if err != nil {
 		log.With("sid", pctx.SID).Warnf("failed incrementing session masked metrics, reason=%v", err)
 	}
