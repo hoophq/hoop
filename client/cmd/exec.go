@@ -323,7 +323,7 @@ func runExecSession(sessionID string) {
 	req, err := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("%s/api/sessions/%s/exec", config.ApiURL, sessionID), nil)
 	if err != nil {
-		fatalErr(jsonMode, err.Error())
+		fatalErr(jsonMode, "%s", err.Error())
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.Token))
 	if config.IsApiKey() {
@@ -333,7 +333,7 @@ func runExecSession(sessionID string) {
 
 	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
 	if err != nil {
-		fatalErr(jsonMode, err.Error())
+		fatalErr(jsonMode, "%s", err.Error())
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)

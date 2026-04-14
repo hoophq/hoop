@@ -65,7 +65,7 @@ func loadAndValidateConfig() *proxyconfig.Config {
 	case err == proxyconfig.ErrEmpty || (err == nil && !conf.IsValid()):
 		configureHostsPrompt(conf)
 	case err != nil:
-		printErrorAndExit(err.Error())
+		printErrorAndExit("%s", err.Error())
 	}
 	return conf
 }
@@ -75,7 +75,7 @@ func saveConfigWithToken(conf *proxyconfig.Config, token string) {
 	if conf.GrpcURL == "" {
 		si, err := fetchServerInfo(conf.ApiURL, conf.Token, conf.TlsCA())
 		if err != nil {
-			printErrorAndExit(err.Error())
+			printErrorAndExit("%s", err.Error())
 		}
 		conf.GrpcURL = si.GrpcURL
 		log.Debugf("obtained remote grpc url %v", conf.GrpcURL)
@@ -83,7 +83,7 @@ func saveConfigWithToken(conf *proxyconfig.Config, token string) {
 	log.Debugf("saving token, length=%v", len(conf.Token))
 	saved, err := conf.Save()
 	if err != nil {
-		printErrorAndExit(err.Error())
+		printErrorAndExit("%s", err.Error())
 	}
 	if saved {
 		fmt.Println("Login succeeded")
