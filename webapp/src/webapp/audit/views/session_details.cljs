@@ -16,13 +16,14 @@
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
-   [webapp.audit.views.reject-details-modal :as reject-details-modal]
+   [webapp.sessions.components.reject-details-modal :as reject-details-modal]
 
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
    [webapp.sessions.components.session-header :as session-header]
-   [webapp.sessions.components.session-details :as session-details-component]))
+   [webapp.sessions.components.session-details :as session-details-component]
+   [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
 (def ^:private export-dictionary
   {:postgres "csv"
@@ -312,28 +313,7 @@
 
             [data-masking-analytics/main {:session session}]
 
-            ;; Rejection reason — shown when session was rejected
-            (let [rejection-reason (get-in session [:review :rejection_reason])
-                  reviewer-email (->> (get-in session [:review :review_groups_data])
-                                      (filter #(= "REJECTED" (:status %)))
-                                      first
-                                      :reviewed_by
-                                      :email)]
-              (when (= "REJECTED" review-status)
-                [:> Flex {:align "center"
-                           :justify "between"
-                           :class "w-full rounded-lg bg-[--red-2] px-regular py-small gap-2"}
-                 [:> Flex {:align "center" :gap "2" :class "flex-shrink-0"}
-                  [:> OctagonX {:size 16 :class "text-error-11"}]
-                  [:> Text {:size "2" :weight "medium" :class "text-error-11"}
-                   "Reject Details"]]
-                 [:> Flex {:direction "column" :align "end" :gap "1"}
-                  (when (not (cs/blank? rejection-reason))
-                    [:> Text {:size "2" :class "text-error-11 text-right whitespace-pre-wrap"}
-                     rejection-reason])
-                  (when reviewer-email
-                    [:> Text {:size "2" :class "text-error-11 text-right"}
-                     (str "Rejected by " reviewer-email)])]]))
+            [rejection-reason/main {:session session}]
 
             ;; response logs area
             (when-not (or credentials-expire-at
