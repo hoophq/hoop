@@ -30,9 +30,11 @@ jobs:
       - name: post changelog as PR comment
         if: always()
         uses: actions/github-script@v8
+        env:
+          CHANGELOG_OUTPUT: ${{ steps.changelog.outputs.changelog }}
         with:
           script: |
-            const output = `${{ steps.changelog.outputs.changelog }}`;
+            const output = process.env.CHANGELOG_OUTPUT;
             if (output && output.trim().length > 0) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
