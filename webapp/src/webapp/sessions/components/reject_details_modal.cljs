@@ -1,4 +1,4 @@
-(ns webapp.audit.views.reject-details-modal
+(ns webapp.sessions.components.reject-details-modal
   (:require
    ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
    [reagent.core :as r]
@@ -8,8 +8,8 @@
   (let [comment (r/atom "")]
     (fn []
       [:> Box {:class "w-full space-y-radix-7"}
-       [:> Box
-        [:> Heading {:as "h1" :size "6" :weight "bold" :class "text-gray-12"}
+       [:> Box {:class "space-y-radix-2"}
+        [:> Heading {:as "h1" :size "7" :weight "bold" :class "text-gray-12"}
          "Reject Details"]
         [:> Text {:as "p" :size "3" :class "text-gray-11"}
          "Optionally include more details for this access request rejection."]]
@@ -21,7 +21,7 @@
 
        [:> Flex {:justify "between" :align "center"}
         [:> Button {:size "3"
-                    :variant "ghost"
+                    :variant "soft"
                     :color "gray"
                     :type "button"
                     :on-click on-cancel}
