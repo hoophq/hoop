@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -90,13 +91,13 @@ func GetInteractionBlobInput(db *gorm.DB, orgID string, blobInputID string) (Blo
 	err := db.Table("private.blobs").
 		Where("org_id = ? AND id = ? AND type = 'session-input'", orgID, blobInputID).
 		First(&blob).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	result := []string{}
+	var result []string
 	if err := json.Unmarshal(blob.BlobStream, &result); err != nil {
 		return "", fmt.Errorf("failed decoding interaction blob input: %v", err)
 	}

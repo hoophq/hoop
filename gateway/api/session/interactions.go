@@ -47,12 +47,13 @@ func ListInteractions(c *gin.Context) {
 	sessionID := c.Param("session_id")
 
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
-	switch {
-	case errors.Is(err, models.ErrNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
+
+	if errors.Is(err, models.ErrNotFound) {
+		httputils.AbortWithErr(c, http.StatusNotFound, err, "session not found")
 		return
-	case err == nil:
-	default:
+	}
+
+	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
