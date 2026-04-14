@@ -52,6 +52,7 @@ import (
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
+	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	webhooksapi "github.com/hoophq/hoop/gateway/api/webhooks"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/transport"
@@ -994,4 +995,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.Delete)
+
+	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
+	mcpServer := apimcpserver.New()
+	r.RouterGroup.Any("/mcp", r.AuthMiddleware, api.AuditMiddleware(), mcpServer.GinHandler)
 }

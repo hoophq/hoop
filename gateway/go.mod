@@ -34,6 +34,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
 	github.com/lib/pq v1.12.3
+	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/openai/openai-go v1.12.0
 	github.com/pkg/errors v0.9.1
 	github.com/russellhaering/gosaml2 v0.11.0
@@ -114,6 +115,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
@@ -149,7 +151,9 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/backo-go v1.1.0 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/sethvargo/go-envconfig v1.3.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
@@ -167,6 +171,7 @@ require (
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
