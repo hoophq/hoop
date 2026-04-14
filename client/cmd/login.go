@@ -53,7 +53,7 @@ var loginCmd = &cobra.Command{
 				configureHostsPrompt(conf)
 			}
 		default:
-			printErrorAndExit(err.Error())
+			printErrorAndExit("%s", err.Error())
 		}
 		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v "+
 			" skip_tls_verify=%v",
@@ -61,13 +61,13 @@ var loginCmd = &cobra.Command{
 		// perform the login and save the token
 		conf.Token, err = doLogin(conf.ApiURL, conf.TlsCA())
 		if err != nil {
-			printErrorAndExit(err.Error())
+			printErrorAndExit("%s", err.Error())
 		}
 		if conf.GrpcURL == "" {
 			// best-effort to obtain the grpc url if it's not set
 			si, err := fetchServerInfo(conf.ApiURL, conf.Token, conf.TlsCA())
 			if err != nil {
-				printErrorAndExit(err.Error())
+				printErrorAndExit("%s", err.Error())
 			}
 			conf.GrpcURL = si.GrpcURL
 			log.Debugf("obtained remote grpc url %v", conf.GrpcURL)
@@ -75,7 +75,7 @@ var loginCmd = &cobra.Command{
 		log.Debugf("saving token, length=%v", len(conf.Token))
 		saved, err := conf.Save()
 		if err != nil {
-			printErrorAndExit(err.Error())
+			printErrorAndExit("%s", err.Error())
 		}
 		if saved {
 			fmt.Println("Login succeeded")
@@ -104,7 +104,7 @@ func configureHostsPrompt(conf *proxyconfig.Config) {
 	}
 	conf.ApiURL = apiURL
 	if _, err := conf.Save(); err != nil {
-		printErrorAndExit(err.Error())
+		printErrorAndExit("%s", err.Error())
 	}
 }
 

@@ -82,7 +82,7 @@ func provisionMySQLRole(db *sql.DB, r pbsystem.DBProvisionerRequest, roleName ro
 	ctx, cancel := context.WithTimeout(context.Background(), connectionTimeoutDuration)
 	defer cancel()
 	if _, err := db.ExecContext(ctx, statement); err != nil {
-		return pbsystem.NewResultError(err.Error())
+		return pbsystem.NewResultError("%s", err.Error())
 	}
 	return &pbsystem.Result{
 		RoleSuffixName: string(roleName),

@@ -68,7 +68,7 @@ var createUserCmd = &cobra.Command{
 			"status":   status,
 		})
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := resp.([]byte)

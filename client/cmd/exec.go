@@ -85,7 +85,7 @@ func parseExecInput(c *connect) (bool, []byte) {
 	info, err := os.Stdin.Stat()
 	if err != nil {
 		sentry.CaptureException(fmt.Errorf("exec - failed obtaining stdin path info, err=%v", err))
-		c.printErrorAndExit(err.Error())
+		c.printErrorAndExit("%s", err.Error())
 	}
 	isStdinInput := false
 	var input []byte

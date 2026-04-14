@@ -275,7 +275,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 	pgConn.ctx = ctx
 
 	transport.PollingUserToken(pgConn.ctx, func(cause error) {
-		pgConn.cancelFn(cause.Error())
+		pgConn.cancelFn("%s", cause.Error())
 	}, tokenVerifier, dba.UserSubject)
 
 	grpcOpts := []*grpc.ClientOptions{

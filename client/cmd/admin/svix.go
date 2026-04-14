@@ -82,7 +82,7 @@ hoop admin create svixet session.close --description --payload file:///path/to/s
 		}
 		resp, err := httpBodyRequest(apir, method, requestBody)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := resp.([]byte)
@@ -129,7 +129,7 @@ hoop admin create svixep ep_2vY1R1AfRPOCHMeK6vLSmpeLKvs --overwrite --url https:
 		}
 		resp, err := httpBodyRequest(apir, method, requestBody)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := resp.([]byte)
@@ -184,7 +184,7 @@ hoop admin create svixmessage file:///tmp/payload.json --event-type session.open
 			"payload":   payloadMap,
 		})
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := resp.([]byte)
