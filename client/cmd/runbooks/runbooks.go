@@ -72,7 +72,7 @@ var lintCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		info, err := os.Stdin.Stat()
 		if err != nil {
-			printErr(err.Error())
+			printErr("%s", err.Error())
 		}
 		var content []byte
 		isStdinInput := info.Mode()&os.ModeCharDevice == 0 || info.Size() > 0

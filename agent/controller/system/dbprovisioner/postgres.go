@@ -128,7 +128,7 @@ func provisionPostgresRole(r pbsystem.DBProvisionerRequest, dbNames []string, ro
 				return pbsystem.NewResultError("failed generating SQL statement for user role %v: %v", userRole, err)
 			}
 			if _, err := db.ExecContext(ctx, statement); err != nil {
-				return pbsystem.NewResultError(err.Error())
+				return pbsystem.NewResultError("%s", err.Error())
 			}
 			return nil
 		}()

@@ -93,7 +93,7 @@ var createConnectionCmd = &cobra.Command{
 		apir.name = NormalizeResourceName(apir.name)
 		envVar, err := parseEnvPerType()
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		connType, subType, _ := strings.Cut(connTypeFlag, "/")
 		protocolConnectionType := pb.ToConnectionType(connType, subType)
@@ -105,11 +105,11 @@ var createConnectionCmd = &cobra.Command{
 				}
 			case pb.ConnectionTypeTCP:
 				if err := validateTcpEnvs(envVar); err != nil {
-					styles.PrintErrorAndExit(err.Error())
+					styles.PrintErrorAndExit("%s", err.Error())
 				}
 			case pb.ConnectionTypePostgres, pb.ConnectionTypeMySQL, pb.ConnectionTypeMSSQL:
 				if err := validateNativeDbEnvs(envVar); err != nil {
-					styles.PrintErrorAndExit(err.Error())
+					styles.PrintErrorAndExit("%s", err.Error())
 				}
 			case pb.ConnectionTypeMongoDB:
 				if envVar["envvar:CONNECTION_STRING"] == "" {
@@ -123,7 +123,7 @@ var createConnectionCmd = &cobra.Command{
 
 			case pb.ConnectionTypeSSH:
 				if err := validateSSHEnvs(envVar); err != nil {
-					styles.PrintErrorAndExit(err.Error())
+					styles.PrintErrorAndExit("%s", err.Error())
 				}
 			default:
 				styles.PrintErrorAndExit("invalid connection type %q", connType)
@@ -132,7 +132,7 @@ var createConnectionCmd = &cobra.Command{
 
 		agentID, err := getAgentIDByName(apir.conf, connAgentFlag)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if agentID == "" && !skipStrictValidation {
 			styles.PrintErrorAndExit("could not find agent by name %q", connAgentFlag)
@@ -168,7 +168,7 @@ var createConnectionCmd = &cobra.Command{
 
 		resp, err := httpBodyRequest(apir, method, connectionBody)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 
 		if apir.decodeTo == "raw" && len(connPuginFlag) == 0 {
@@ -190,7 +190,7 @@ var createConnectionCmd = &cobra.Command{
 
 		pluginList, err := parseConnectionPlugins(config, args[0], connectionID)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 
 		var plugins []string
@@ -204,7 +204,7 @@ var createConnectionCmd = &cobra.Command{
 				if len(plugins) > 0 {
 					fmt.Printf("plugin(s) %v updated\n", plugins)
 				}
-				styles.PrintErrorAndExit(err.Error())
+				styles.PrintErrorAndExit("%s", err.Error())
 			}
 			plugins = append(plugins, fmt.Sprintf("%v", pluginData["name"]))
 		}
