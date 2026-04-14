@@ -80,10 +80,10 @@ func CreateAgentIdentity(a *AgentIdentity) error {
 
 func UpdateAgentIdentity(a *AgentIdentity) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(a).Updates(
-			AgentIdentity{
-				Name:   a.Name,
-				Status: a.Status,
+		res := tx.Table("private.agent_identities").Where("id = ? AND org_id = ?", a.ID, a.OrgID).Updates(
+			map[string]any{
+				"name":   a.Name,
+				"status": a.Status,
 			},
 		)
 		if res.Error != nil {
