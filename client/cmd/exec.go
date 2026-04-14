@@ -3,9 +3,11 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -16,9 +18,11 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
+	"github.com/hoophq/hoop/common/httpclient"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	"github.com/hoophq/hoop/common/version"
 	"github.com/spf13/cobra"
 )
 
@@ -26,10 +30,12 @@ var inputFilepath string
 var inputStdin string
 var autoExec bool
 var silentMode bool
+var execSessionID string
 
 var execExampleDesc = `hoop exec bash -i 'env'
 hoop exec bash -e MYENV=val --input 'env' -- --verbose
 hoop exec bash <<< 'env'
+hoop exec --session <session_id> --output json
 `
 
 // execCmd represents the exec command
@@ -38,12 +44,19 @@ var execCmd = &cobra.Command{
 	Short:   "Execute a given input in a remote resource",
 	Example: execExampleDesc,
 	PreRun: func(cmd *cobra.Command, args []string) {
+		if execSessionID != "" {
+			return
+		}
 		if len(args) < 1 {
 			cmd.Usage()
 			os.Exit(1)
 		}
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		if execSessionID != "" {
+			runExecSession(execSessionID)
+			return
+		}
 		clientEnvVars, err := parseClientEnvVars()
 		if err != nil {
 			fmt.Println(err)
@@ -59,6 +72,8 @@ func init() {
 	execCmd.Flags().StringSliceVarP(&inputEnvVars, "env", "e", nil, "Input environment variables to send")
 	execCmd.Flags().BoolVar(&autoExec, "auto-approve", false, "Automatically run after a command is approved")
 	execCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
+	execCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
+	execCmd.Flags().StringVar(&execSessionID, "session", "", "Execute an approved reviewed session by its ID")
 	rootCmd.AddCommand(execCmd)
 }
 
@@ -114,19 +129,26 @@ func parseExecInput(c *connect) (bool, []byte) {
 }
 
 func runExec(args []string, clientEnvVars map[string]string) {
+	jsonMode := outputFlag == "json"
+	if jsonMode {
+		autoExec = true
+	}
+
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
 		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
 	loader.Color("green")
 	loader.Suffix = " running ..."
-	loader.Start()
+	if !jsonMode {
+		loader.Start()
+	}
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		for {
 			switch <-done {
 			case syscall.SIGTERM, syscall.SIGINT:
-				loader.Stop() // this fixes terminal restore
+				loader.Stop()
 				os.Exit(143)
 			}
 		}
@@ -143,10 +165,12 @@ func runExec(args []string, clientEnvVars map[string]string) {
 			Payload: execInputPayload,
 		}); err != nil {
 			_, _ = c.client.Close()
-			c.printErrorAndExit("failed opening session with gateway, err=%v", err)
+			c.processGracefulExit(fmt.Errorf("failed opening session with gateway, err=%v", err))
 		}
 	}
 	sendOpenSessionPktFn()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
 	agentOfflineRetryCounter := 1
 	for {
 		pkt, err := c.client.Recv()
@@ -161,12 +185,18 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				msg := "require use of --auto-approve option. It's a review command with an invalid device to prompt for execution"
 				c.processGracefulExit(errors.New(msg))
 			}
-			loader.Color("yellow")
-			if !loader.Active() {
-				loader.Start()
+			if jsonMode {
+				sessionID := string(pkt.Spec[pb.SpecGatewaySessionID])
+				emitWaitingApprovalAndExit(sessionID, string(pkt.Payload),
+					"poll status with: hoop admin get sessions "+sessionID+" -o json | check review.status field, then run: hoop exec --session "+sessionID+" --output json")
+			} else {
+				loader.Color("yellow")
+				if !loader.Active() {
+					loader.Start()
+				}
+				loader.Suffix = " waiting command to be approved at " +
+					styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 			}
-			loader.Suffix = " waiting command to be approved at " +
-				styles.Keyword(fmt.Sprintf(" %v ", string(pkt.Payload)))
 		case pbclient.SessionOpenApproveOK:
 			if !autoExec {
 				loader.Stop()
@@ -177,15 +207,23 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				}
 				loader.Start()
 			}
-			loader.Color("green")
-			loader.Suffix = " command approved, running ... "
+			if jsonMode {
+				emitApproved()
+			} else {
+				loader.Color("green")
+				loader.Suffix = " command approved, running ... "
+			}
 			sendOpenSessionPktFn()
 		case pbclient.SessionOpenAgentOffline:
 			if agentOfflineRetryCounter > 60 {
 				c.processGracefulExit(errors.New("agent is offline, max retry reached"))
 			}
-			loader.Color("red")
-			loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
+			if jsonMode {
+				emitAgentOffline(agentOfflineRetryCounter)
+			} else {
+				loader.Color("red")
+				loader.Suffix = fmt.Sprintf(" agent is offline, retrying in 30s (%v/60) ... ", agentOfflineRetryCounter)
+			}
 			time.Sleep(time.Second * 30)
 			agentOfflineRetryCounter++
 			sendOpenSessionPktFn()
@@ -196,7 +234,17 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				Payload: execInputPayload,
 				Spec:    execSpec,
 			}
-			if !silentMode {
+			if jsonMode {
+				sid := string(pkt.Spec[pb.SpecGatewaySessionID])
+				cmd := string(pkt.Spec[pb.SpecClientExecCommandKey])
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status: "running",
+					Data: map[string]string{
+						"session_id": sid,
+						"command":    cmd,
+					},
+				})
+			} else if !silentMode {
 				c.loader.Stop()
 				cmd := string(pkt.Spec[pb.SpecClientExecCommandKey])
 				sid := string(pkt.Spec[pb.SpecGatewaySessionID])
@@ -204,7 +252,6 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				if debugFlag {
 					out = styles.Fainted("<stdin-input> | %s (the input is piped to this command) | session: %s", cmd, sid)
 				}
-				// if it is not set, fallback to previous version
 				if cmd == "" {
 					out = styles.Fainted("session: %s", sid)
 				}
@@ -212,24 +259,113 @@ func runExec(args []string, clientEnvVars map[string]string) {
 				c.loader.Start()
 			}
 			if err := c.client.Send(stdinPkt); err != nil {
-				c.printErrorAndExit("failed executing command, err=%v", err)
+				c.processGracefulExit(fmt.Errorf("failed executing command, err=%v", err))
 			}
 		case pbclient.WriteStdout:
 			loader.Stop()
-			os.Stdout.Write(pkt.Payload)
+			if jsonMode {
+				stdoutBuf.Write(pkt.Payload)
+			} else {
+				os.Stdout.Write(pkt.Payload)
+			}
 		case pbclient.WriteStderr:
 			loader.Stop()
-			os.Stderr.Write(pkt.Payload)
+			if jsonMode {
+				stderrBuf.Write(pkt.Payload)
+			} else {
+				os.Stderr.Write(pkt.Payload)
+			}
 		case pbclient.SessionClose:
 			loader.Stop()
-			if len(pkt.Payload) > 0 {
-				_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
-			}
 			exitCode, err := strconv.Atoi(string(pkt.Spec[pb.SpecClientExitCodeKey]))
 			if err != nil {
-				os.Exit(254)
+				exitCode = 254
+			}
+			if jsonMode {
+				data := map[string]string{}
+				if stdoutBuf.Len() > 0 {
+					data["stdout"] = stdoutBuf.String()
+				}
+				if stderrBuf.Len() > 0 {
+					data["stderr"] = stderrBuf.String()
+				}
+				if len(pkt.Payload) > 0 {
+					data["error"] = string(pkt.Payload)
+				}
+				emitJSONEvent(os.Stdout, JSONEvent{
+					Status:   "completed",
+					Message:  "session closed",
+					ExitCode: &exitCode,
+					Data:     data,
+				})
+				os.Exit(exitCode)
+			}
+			if len(pkt.Payload) > 0 {
+				_, _ = os.Stderr.Write([]byte(styles.ClientError(string(pkt.Payload)) + "\n"))
 			}
 			os.Exit(exitCode)
 		}
 	}
+}
+
+type execSessionResponse struct {
+	ExitCode     int    `json:"exit_code"`
+	Output       string `json:"output"`
+	OutputStatus string `json:"output_status"`
+}
+
+// runExecSession executes an already-approved reviewed session via the API.
+// Used by agents to trigger execution after polling for approval.
+func runExecSession(sessionID string) {
+	jsonMode := outputFlag == "json"
+	config := clientconfig.GetClientConfigOrDie()
+
+	req, err := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("%s/api/sessions/%s/exec", config.ApiURL, sessionID), nil)
+	if err != nil {
+		fatalErr(jsonMode, err.Error())
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.Token))
+	if config.IsApiKey() {
+		req.Header.Set("Api-Key", config.Token)
+	}
+	req.Header.Set("User-Agent", fmt.Sprintf("hoopcli/%v", version.Get().Version))
+
+	resp, err := httpclient.NewHttpClient(config.TlsCA()).Do(req)
+	if err != nil {
+		fatalErr(jsonMode, err.Error())
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		fatalErr(jsonMode, "failed executing session: %s", string(body))
+	}
+	if !jsonMode {
+		fmt.Print(string(body))
+		return
+	}
+
+	var apiResp execSessionResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		fatalErr(jsonMode, "parsing response: %v", err)
+	}
+
+	status := "completed"
+	if resp.StatusCode == http.StatusAccepted {
+		status = "running"
+	}
+	data := map[string]string{"session_id": sessionID}
+	if apiResp.Output != "" {
+		data["stdout"] = apiResp.Output
+	}
+	if apiResp.OutputStatus != "" {
+		data["output_status"] = apiResp.OutputStatus
+	}
+	emitJSONEvent(os.Stdout, JSONEvent{
+		Status:   status,
+		ExitCode: &apiResp.ExitCode,
+		Data:     data,
+	})
+	os.Exit(apiResp.ExitCode)
 }
