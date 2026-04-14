@@ -490,6 +490,6 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
-		RejectionReason: r.RejectionReason,
+		RejectionReason:       r.RejectionReason,
 	}
 }

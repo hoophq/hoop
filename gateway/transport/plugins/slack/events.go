@@ -169,4 +169,3 @@ func (p *slackPlugin) notifyOwnerRejected(ev *event, ctx *storagev2.Context, rev
 		log.With("sid", ev.msg.SessionID).Warnf("failed sending rejection DM to session owner, err=%v", err)
 	}
 }
-

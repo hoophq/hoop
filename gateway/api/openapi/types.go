@@ -764,7 +764,7 @@ type ReviewRequest struct {
 	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
 	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
 	ForceReview     bool                     `json:"force_review" example:"false"`
-	RejectionReason string `json:"rejection_reason" example:"This command is not allowed in production."`
+	RejectionReason string                   `json:"rejection_reason" example:"This command is not allowed in production."`
 }
 
 type SessionReview struct {
