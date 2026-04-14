@@ -69,6 +69,8 @@ type (
 		kubernetesClusterURL         string
 		kubernetesToken              string
 		kubernetesInsecureSkipVerify bool
+
+		experimentalRedactRows string
 	}
 	ioMetricFlush struct {
 		client pb.ClientTransport
@@ -473,6 +475,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		}
 	}
 
+	// EKS integration
 	if _, ok := connParams.EnvVars["envvar:EKS_CLUSTER"]; ok {
 		eksClusterName, eksAwsRegion, eksSessionRole, roleArn, err := parseEksIntegrationEnvs(connParams.EnvVars)
 		if err != nil {
@@ -488,7 +491,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 		connParams.EnvVars["envvar:KUBERNETES_BEARER_TOKEN"] = b64Enc([]byte(tokenBearer))
 	}
 
-	// add rds iam auth token
+	// RDS iam auth token
 	userValue, ok := connParams.EnvVars["envvar:USER"]
 	if ok {
 		d, err := base64.StdEncoding.DecodeString(fmt.Sprintf("%v", userValue))
@@ -518,6 +521,7 @@ func (a *Agent) buildConnectionParams(pkt *pb.Packet) (*pb.AgentConnectionParams
 			}
 		}
 	}
+
 	if b64EncPaswd, ok := connParams.EnvVars["envvar:PASS"]; ok {
 		switch connType {
 		case pb.ConnectionTypePostgres:
@@ -661,6 +665,8 @@ func parseConnectionEnvVars(envVars map[string]any, connType pb.ConnectionType) 
 		kubernetesClusterURL:         envVarS.Getenv("KUBERNETES_CLUSTER_URL"),
 		kubernetesToken:              envVarS.Getenv("KUBERNETES_BEARER_TOKEN"),
 		kubernetesInsecureSkipVerify: envVarS.Getenv("KUBERNETES_INSECURE_SKIP_VERIFY") == "true",
+
+		experimentalRedactRows: envVarS.Getenv("EXPERIMENTAL_REDACT_ROWS"),
 	}
 	switch connType {
 	case pb.ConnectionTypePostgres:
