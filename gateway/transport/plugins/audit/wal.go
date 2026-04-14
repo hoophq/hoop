@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
+	"github.com/hoophq/hoop/gateway/session/interactionbroker"
 	"github.com/hoophq/hoop/gateway/session/wal"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -276,6 +277,9 @@ func (p *auditPlugin) closeInteraction(pctx plugintypes.Context, pkt *pb.Packet)
 		if removeErr := os.RemoveAll(walogm.folderName); removeErr != nil {
 			log.Errorf("failed removing interaction wal file %q, err=%v", walogm.folderName, removeErr)
 		}
+		interactionbroker.Default.Publish(pctx.SID, interactionbroker.InteractionEvent{
+			Type: interactionbroker.InteractionCreated, Sequence: sequence,
+		})
 	}
 
 	// increment masked metrics for this interaction

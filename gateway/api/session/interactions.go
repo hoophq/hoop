@@ -3,6 +3,7 @@ package sessionapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -14,6 +15,42 @@ import (
 
 const defaultInteractionsLimit = 50
 const maxInteractionsLimit = 100
+
+func serializeInteraction(orgID string, interaction models.SessionInteraction) (*interactionResponse, error) {
+	item := interactionResponse{
+		ID:        interaction.ID,
+		Sequence:  interaction.Sequence,
+		ExitCode:  interaction.ExitCode,
+		CreatedAt: interaction.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+	}
+	if interaction.EndedAt != nil {
+		s := interaction.EndedAt.UTC().Format("2006-01-02T15:04:05Z")
+		item.EndedAt = &s
+	}
+
+	if interaction.BlobInputID != nil {
+		input, err := models.GetInteractionBlobInput(models.DB, orgID, *interaction.BlobInputID)
+		if err != nil {
+			return nil, fmt.Errorf("failed fetching interaction input: %v", err)
+		}
+		item.Input = string(input)
+	}
+
+	if interaction.BlobStreamID != nil {
+		blob, err := models.GetInteractionBlobStream(models.DB, orgID, *interaction.BlobStreamID)
+		if err != nil {
+			return nil, fmt.Errorf("failed fetching interaction stream: %v", err)
+		}
+		if blob != nil {
+			item.Output = blob.BlobStream
+		}
+	}
+	if item.Output == nil {
+		item.Output = json.RawMessage(`[]`)
+	}
+
+	return &item, nil
+}
 
 type interactionResponse struct {
 	ID        string          `json:"id"`
@@ -83,43 +120,12 @@ func ListInteractions(c *gin.Context) {
 
 	items := make([]interactionResponse, 0, len(interactions))
 	for _, interaction := range interactions {
-		item := interactionResponse{
-			ID:        interaction.ID,
-			Sequence:  interaction.Sequence,
-			ExitCode:  interaction.ExitCode,
-			CreatedAt: interaction.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		item, err := serializeInteraction(ctx.OrgID, interaction)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed serializing interaction")
+			return
 		}
-		if interaction.EndedAt != nil {
-			s := interaction.EndedAt.UTC().Format("2006-01-02T15:04:05Z")
-			item.EndedAt = &s
-		}
-
-		// fetch input blob
-		if interaction.BlobInputID != nil {
-			input, err := models.GetInteractionBlobInput(models.DB, ctx.OrgID, *interaction.BlobInputID)
-			if err != nil {
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching interaction input")
-				return
-			}
-			item.Input = string(input)
-		}
-
-		// fetch stream blob
-		if interaction.BlobStreamID != nil {
-			blob, err := models.GetInteractionBlobStream(models.DB, ctx.OrgID, *interaction.BlobStreamID)
-			if err != nil {
-				httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching interaction stream")
-				return
-			}
-			if blob != nil {
-				item.Output = blob.BlobStream
-			}
-		}
-		if item.Output == nil {
-			item.Output = json.RawMessage(`[]`)
-		}
-
-		items = append(items, item)
+		items = append(items, *item)
 	}
 
 	c.JSON(http.StatusOK, listInteractionsResponse{

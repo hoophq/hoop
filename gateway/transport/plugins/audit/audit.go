@@ -24,6 +24,7 @@ import (
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/models"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
+	"github.com/hoophq/hoop/gateway/session/interactionbroker"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
@@ -319,8 +320,10 @@ func (p *auditPlugin) closeMachineSession(pctx plugintypes.Context, errMsg error
 	state, ok := stateObj.(*machineSessionState)
 	if !ok {
 		log.With("sid", pctx.SID).Warnf("no machine session state found on disconnect")
-		// still mark session as done
 		p.markSessionDone(pctx, errMsg)
+		interactionbroker.Default.PublishAndRemove(pctx.SID, interactionbroker.InteractionEvent{
+			Type: interactionbroker.SessionEnded,
+		})
 		return
 	}
 
@@ -372,11 +375,17 @@ func (p *auditPlugin) closeMachineSession(pctx plugintypes.Context, errMsg error
 				log.With("sid", pctx.SID).Warnf("failed persisting in-flight interaction: %v", err)
 			} else {
 				_ = os.RemoveAll(walogm.folderName)
+				interactionbroker.Default.Publish(pctx.SID, interactionbroker.InteractionEvent{
+					Type: interactionbroker.InteractionCreated, Sequence: state.currentSequence,
+				})
 			}
 		}
 	}
 
 	p.markSessionDone(pctx, errMsg)
+	interactionbroker.Default.PublishAndRemove(pctx.SID, interactionbroker.InteractionEvent{
+		Type: interactionbroker.SessionEnded,
+	})
 }
 
 func (p *auditPlugin) markSessionDone(pctx plugintypes.Context, errMsg error) {
