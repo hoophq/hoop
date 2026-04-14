@@ -21,6 +21,7 @@ import (
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
+	apikeys "github.com/hoophq/hoop/gateway/api/apikeys"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
@@ -277,6 +278,33 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
+
+	r.GET("/api-keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apikeys.List)
+	r.GET("/api-keys/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apikeys.Get)
+	r.POST("/api-keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateApiKey),
+		apikeys.Create)
+	r.PUT("/api-keys/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateApiKey),
+		apikeys.Update)
+	r.DELETE("/api-keys/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventRevokeApiKey),
+		apikeys.Revoke)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,

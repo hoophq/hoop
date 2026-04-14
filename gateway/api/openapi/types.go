@@ -136,6 +136,54 @@ type ServiceAccount struct {
 	Groups []string `json:"groups" example:"engineering"`
 }
 
+type APIKeyStatusType string
+
+const (
+	APIKeyStatusActive  APIKeyStatusType = "active"
+	APIKeyStatusRevoked APIKeyStatusType = "revoked"
+)
+
+type APIKeyCreateRequest struct {
+	// Human-readable name for the API key
+	Name string `json:"name" binding:"required" example:"anthropic-prod"`
+	// The raw API key value (only accepted at creation, never stored or returned)
+	Key string `json:"key" binding:"required" example:"sk-ant-api03-..."`
+	// Groups to assign to this API key
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type APIKeyUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"anthropic-staging"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type APIKeyResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"anthropic-prod"`
+	// Masked version of the API key for identification
+	MaskedKey string `json:"masked_key" example:"sk-ant-api03-Vg*******"`
+	// Current status of the API key
+	Status APIKeyStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this API key
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this key
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this key
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
 type AgentRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"default"`
