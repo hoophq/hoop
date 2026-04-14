@@ -2,6 +2,7 @@ package runbooks
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"regexp"
 	ttemplate "text/template"
@@ -22,7 +23,7 @@ func defaultStaticTemplateFuncs() ttemplate.FuncMap {
 	return ttemplate.FuncMap{
 		"required": func(msg, s string) (string, error) {
 			if s == "" {
-				return "", fmt.Errorf(msg)
+				return "", errors.New(msg)
 			}
 			return s, nil
 		},

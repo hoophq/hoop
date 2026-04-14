@@ -123,9 +123,9 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.24.0"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -166,9 +166,9 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.24.0"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -209,9 +209,9 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.24.0"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -252,9 +252,9 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.24.0"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -295,9 +295,9 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.24.0"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -342,9 +342,9 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.24.0"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
