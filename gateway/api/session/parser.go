@@ -160,7 +160,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
-		RejectionReason: r.RejectionReason,
+		RejectionReason:       r.RejectionReason,
 	}
 }
 

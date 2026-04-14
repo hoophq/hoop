@@ -262,8 +262,8 @@ func runResourcesCreate(name string) {
 	envVars := parseKeyValuePairs(resourcesCreateFlags.envVars)
 
 	payload := map[string]any{
-		"name":    name,
-		"type":    resourcesCreateFlags.resType,
+		"name":     name,
+		"type":     resourcesCreateFlags.resType,
 		"env_vars": envVars,
 	}
 	if resourcesCreateFlags.subtype != "" {

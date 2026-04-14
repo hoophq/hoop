@@ -152,7 +152,7 @@ type SessionReview struct {
 	AccessRequestRuleName *string           `json:"access_request_rule_name"`
 	ForceApprovalGroups   pq.StringArray    `json:"force_approval_groups" gorm:"force_approval_groups;serializer:json;"`
 	MinApprovals          *int              `json:"min_approvals"`
-	RejectionReason *string `json:"rejection_reason"`
+	RejectionReason       *string           `json:"rejection_reason"`
 }
 
 func (r *SessionReview) Scan(value any) error {
