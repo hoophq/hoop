@@ -6819,6 +6819,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/interactions/stream": {
+            "get": {
+                "description": "Streams interactions for a machine session in real-time via SSE. Sends existing interactions as catch-up, then pushes new ones as they are created.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Stream Session Interactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Only stream interactions with sequence \u003e N",
+                        "name": "after_sequence",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/kill": {
             "post": {
                 "tags": [
