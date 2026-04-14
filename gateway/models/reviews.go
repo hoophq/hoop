@@ -56,7 +56,7 @@ type Review struct {
 	CreatedAt       time.Time         `gorm:"column:created_at"`
 	RevokedAt       *time.Time        `gorm:"column:revoked_at"`
 	TimeWindow      *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
-	RejectionReason *string `gorm:"column:rejection_reason"`
+	RejectionReason *string           `gorm:"column:rejection_reason"`
 }
 
 type ReviewTimeWindow struct {
