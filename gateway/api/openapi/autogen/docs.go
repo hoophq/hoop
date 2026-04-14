@@ -1704,6 +1704,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials/{credentialID}/revoke": {
+            "post": {
+                "description": "Revokes a connection credential, invalidating it and disconnecting any active sessions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Revoke Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the credential to revoke",
+                        "name": "credentialID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/credentials/{sessionID}": {
             "post": {
                 "description": "Resume a connection credentials request after review approval",
@@ -6684,6 +6741,71 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/interactions": {
+            "get": {
+                "description": "Returns the list of interactions for a machine session, with support for pagination via the sequence parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "List Session Interactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Only return interactions with sequence \u003e N",
+                        "name": "after_sequence",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max interactions to return (default: 50, max: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/sessionapi.listInteractionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -12368,6 +12490,14 @@ const docTemplate = `{
                     "description": "The Linux exit code if it's available",
                     "type": "integer"
                 },
+                "guardrails_info": {
+                    "description": "GuardRailsInfo contains information about guardrail rules that matched during the session.\nA non-empty list indicates the session was blocked by at least one guardrail rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionGuardRailsInfo"
+                    },
+                    "readOnly": true
+                },
                 "id": {
                     "description": "The resource unique identifier",
                     "type": "string",
@@ -12524,6 +12654,74 @@ const docTemplate = `{
                 "SessionEventStreamBase64Type",
                 "SessionEventStreamRawQueriesType"
             ]
+        },
+        "openapi.SessionGuardRailMatchedRule": {
+            "type": "object",
+            "properties": {
+                "pattern_regex": {
+                    "description": "PatternRegex that matched (only set when type is pattern_match)",
+                    "type": "string",
+                    "example": "^[A-Z0-9]+"
+                },
+                "type": {
+                    "description": "Type is the internal rule type",
+                    "type": "string",
+                    "enum": [
+                        "deny_words_list",
+                        "pattern_match"
+                    ],
+                    "example": "deny_words_list"
+                },
+                "words": {
+                    "description": "Words matched (only set when type is deny_words_list)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                }
+            }
+        },
+        "openapi.SessionGuardRailsInfo": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "Direction indicates whether the match happened on input or output data",
+                    "type": "string",
+                    "enum": [
+                        "input",
+                        "output"
+                    ],
+                    "example": "input"
+                },
+                "matched_words": {
+                    "description": "MatchedWords are the words that matched the rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                },
+                "rule": {
+                    "description": "Rule is the specific internal rule entry that triggered the match",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionGuardRailMatchedRule"
+                        }
+                    ]
+                },
+                "rule_name": {
+                    "description": "RuleName is the name of the guardrail rule that matched",
+                    "type": "string",
+                    "example": "block-sensitive-data"
+                }
+            }
         },
         "openapi.SessionLabelsType": {
             "type": "object",
@@ -13159,6 +13357,49 @@ const docTemplate = `{
                 },
                 "total_frames": {
                     "type": "integer"
+                }
+            }
+        },
+        "sessionapi.interactionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input": {
+                    "type": "string"
+                },
+                "output": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "sequence": {
+                    "type": "integer"
+                }
+            }
+        },
+        "sessionapi.listInteractionsResponse": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "interactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sessionapi.interactionResponse"
+                    }
                 }
             }
         },

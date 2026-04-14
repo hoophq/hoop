@@ -2,6 +2,7 @@ package sessionapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -31,7 +32,7 @@ type listInteractionsResponse struct {
 
 // ListInteractions returns the list of interactions for a session.
 //
-//	@Summary		List Session Interactions
+//	@Summary	List Session Interactions
 //	@Description	Returns the list of interactions for a machine session, with support for pagination via the sequence parameter.
 //	@Tags			Sessions
 //	@Produce		json
@@ -46,11 +47,11 @@ func ListInteractions(c *gin.Context) {
 	sessionID := c.Param("session_id")
 
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
-	switch err {
-	case models.ErrNotFound:
+	switch {
+	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "not found"})
 		return
-	case nil:
+	case err == nil:
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
