@@ -15,7 +15,7 @@ var createOrgKeyCmd = &cobra.Command{
 		apir := parseResourceOrDie([]string{"orgkeys"}, "POST", outputFlag)
 		resp, err := httpBodyRequest(apir, "POST", nil)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := resp.([]byte)
