@@ -27,7 +27,6 @@ type MachineIdentityCredential struct {
 	MachineIdentityID      string    `gorm:"column:machine_identity_id"`
 	ConnectionCredentialID string    `gorm:"column:connection_credential_id"`
 	ConnectionName         string    `gorm:"column:connection_name"`
-	SecretKey              string    `gorm:"column:secret_key"`
 	CreatedAt              time.Time `gorm:"column:created_at"`
 }
 

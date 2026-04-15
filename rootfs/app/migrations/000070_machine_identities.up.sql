@@ -12,13 +12,14 @@ CREATE TABLE machine_identities (
   CONSTRAINT uq_machine_identities_org_name UNIQUE (org_id, name)
 );
 
+ALTER TABLE connection_credentials ADD COLUMN secret_key TEXT NULL;
+
 CREATE TABLE machine_identity_credentials (
   id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id                   UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
   machine_identity_id      UUID NOT NULL REFERENCES machine_identities(id) ON DELETE CASCADE,
   connection_credential_id UUID NOT NULL REFERENCES connection_credentials(id) ON DELETE CASCADE,
   connection_name          TEXT NOT NULL,
-  secret_key               TEXT NOT NULL DEFAULT '',
   created_at               TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_mi_creds_identity_conn UNIQUE (machine_identity_id, connection_name)
 );

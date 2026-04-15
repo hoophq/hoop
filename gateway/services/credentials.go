@@ -297,6 +297,7 @@ func ProvisionCredentialForConnection(mi *models.MachineIdentity, connName strin
 		ConnectionName: conn.Name,
 		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
 		SecretKeyHash:  secretKeyHash,
+		SecretKey:      &secretKey,
 		SessionID:      sid,
 		CreatedAt:      time.Now().UTC(),
 		ExpireAt:       noExpiry,
@@ -312,7 +313,6 @@ func ProvisionCredentialForConnection(mi *models.MachineIdentity, connName strin
 		MachineIdentityID:      mi.ID,
 		ConnectionCredentialID: dbCred.ID,
 		ConnectionName:         connName,
-		SecretKey:              secretKey,
 		CreatedAt:              time.Now().UTC(),
 	}
 	if err := models.CreateMachineIdentityCredential(mic); err != nil {

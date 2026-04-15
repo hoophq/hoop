@@ -360,7 +360,11 @@ func GetMachineIdentityCredentialInfo(ctx context.Context, orgID, identityName, 
 	connCopy := *conn
 	connCopy.SubType = sql.NullString{String: subtype.String(), Valid: true}
 
-	info := BuildCredentialInfo(cred, &connCopy, serverConf, mic.SecretKey)
+	secretKey := ""
+	if cred.SecretKey != nil {
+		secretKey = *cred.SecretKey
+	}
+	info := BuildCredentialInfo(cred, &connCopy, serverConf, secretKey)
 	return info, nil
 }
 
