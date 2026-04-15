@@ -58,7 +58,7 @@ run-dev-presidio:
 	./scripts/dev/run-presidio.sh
 
 build-dev-client:
-	CGO_ENABLED=0 go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
+	go build -ldflags "-s -w -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" -o ${HOME}/.hoop/bin/hoop github.com/hoophq/hoop/client
 
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
