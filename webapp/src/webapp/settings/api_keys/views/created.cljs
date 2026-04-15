@@ -1,7 +1,7 @@
 (ns webapp.settings.api-keys.views.created
   (:require
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Text]]
-   ["lucide-react" :refer [CheckCircle Copy Key]]
+   ["lucide-react" :refer [CheckCircle Copy Info]]
    [re-frame.core :as rf]
    [reagent.core :as r]))
 
@@ -11,15 +11,15 @@
     (fn []
       (let [raw-key (get-in @created [:data :key])]
         [:> Box {:class "bg-gray-1 min-h-screen flex items-center justify-center p-7"}
-         [:> Box {:class "max-w-lg w-full space-y-radix-6"}
+         [:> Box {:class "max-w-lg w-full space-y-radix-8"}
           [:> Flex {:direction "column" :align "center" :gap "3"}
            [:> Box {:class "p-4 bg-[--accent-3] rounded-full"}
             [:> CheckCircle {:size 40 :class "text-[--accent-9]"}]]
            [:> Heading {:as "h2" :size "7" :align "center"} "Your API key is ready!"]]
 
-          [:> Callout.Root {:color "amber" :variant "surface"}
+          [:> Callout.Root {:color "amber" :variant "soft"}
            [:> Callout.Icon
-            [:> Key {:size 16}]]
+            [:> Info {:size 16}]]
            [:> Callout.Text
             "This is the only time you'll see this key. Copy and store it securely."]]
 
