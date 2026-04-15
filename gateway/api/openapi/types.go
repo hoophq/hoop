@@ -146,12 +146,16 @@ const (
 type APIKeyCreateRequest struct {
 	// Human-readable name for the API key
 	Name string `json:"name" binding:"required" example:"anthropic-prod"`
-	// The raw API key value (only accepted at creation, never stored or returned)
-	Key string `json:"key" binding:"required" example:"sk-ant-api03-..."`
 	// Groups to assign to this API key
 	Groups []string `json:"groups" example:"engineering"`
 	// List of connection IDs to associate with this API key
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+}
+
+type APIKeyCreateResponse struct {
+	APIKeyResponse
+	// The generated API key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
 }
 
 type APIKeyUpdateRequest struct {

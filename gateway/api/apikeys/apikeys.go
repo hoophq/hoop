@@ -60,13 +60,13 @@ func Get(c *gin.Context) {
 // Create API Key
 //
 //	@Summary		Create API Key
-//	@Description	Register a new API key. The raw key is hashed and masked; it cannot be retrieved after creation.
+//	@Description	Generate a new API key. The raw key is returned only once in the response and cannot be retrieved after creation.
 //	@Tags			API Keys
 //	@Accept			json
 //	@Produce		json
 //	@Param			request			body		openapi.APIKeyCreateRequest	true	"The request body resource"
-//	@Success		201				{object}	openapi.APIKeyResponse
-//	@Failure		400,409,422,500	{object}	openapi.HTTPError
+//	@Success		201				{object}	openapi.APIKeyCreateResponse
+//	@Failure		400,409,500		{object}	openapi.HTTPError
 //	@Router			/api-keys [post]
 func Create(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -75,16 +75,13 @@ func Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	if len(req.Key) < 10 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "key must be at least 10 characters"})
-		return
-	}
 
+	rawKey := models.GenerateAPIKey()
 	apiKey := &models.APIKey{
 		OrgID:         ctx.OrgID,
 		Name:          req.Name,
-		KeyHash:       models.HashAPIKey(req.Key),
-		MaskedKey:     models.MaskAPIKey(req.Key),
+		KeyHash:       models.HashAPIKey(rawKey),
+		MaskedKey:     models.MaskAPIKey(rawKey),
 		Status:        "active",
 		Groups:        req.Groups,
 		ConnectionIDs: req.ConnectionIDs,
@@ -94,9 +91,12 @@ func Create(c *gin.Context) {
 	err := models.CreateAPIKey(apiKey)
 	switch err {
 	case models.ErrAlreadyExists:
-		c.JSON(http.StatusConflict, gin.H{"message": "an api key with this name or key value already exists"})
+		c.JSON(http.StatusConflict, gin.H{"message": "an api key with this name already exists"})
 	case nil:
-		c.JSON(http.StatusCreated, toResponse(*apiKey))
+		c.JSON(http.StatusCreated, openapi.APIKeyCreateResponse{
+			APIKeyResponse: toResponse(*apiKey),
+			Key:            rawKey,
+		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating api key")
 	}

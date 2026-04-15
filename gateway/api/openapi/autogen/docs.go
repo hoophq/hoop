@@ -804,7 +804,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Register a new API key. The raw key is hashed and masked; it cannot be retrieved after creation.",
+                "description": "Generate a new API key. The raw key is returned only once in the response and cannot be retrieved after creation.",
                 "consumes": [
                     "application/json"
                 ],
@@ -830,7 +830,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                            "$ref": "#/definitions/openapi.APIKeyCreateResponse"
                         }
                     },
                     "400": {
@@ -841,12 +841,6 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -7981,7 +7975,6 @@ const docTemplate = `{
         "openapi.APIKeyCreateRequest": {
             "type": "object",
             "required": [
-                "key",
                 "name"
             ],
             "properties": {
@@ -8005,15 +7998,94 @@ const docTemplate = `{
                         "engineering"
                     ]
                 },
-                "key": {
-                    "description": "The raw API key value (only accepted at creation, never stored or returned)",
-                    "type": "string",
-                    "example": "sk-ant-api03-..."
-                },
                 "name": {
                     "description": "Human-readable name for the API key",
                     "type": "string",
                     "example": "anthropic-prod"
+                }
+            }
+        },
+        "openapi.APIKeyCreateResponse": {
+            "type": "object",
+            "properties": {
+                "connection_ids": {
+                    "description": "List of connection IDs associated with this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this key",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this key",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "key": {
+                    "description": "The generated API key. This is the only time the full key is shown.",
+                    "type": "string",
+                    "example": "hpk_Ab3fX9kL..."
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the API key for identification",
+                    "type": "string",
+                    "example": "sk-ant-api03-Vg*******"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "anthropic-prod"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the API key",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.APIKeyStatusType"
+                        }
+                    ]
                 }
             }
         },

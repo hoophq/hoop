@@ -1,7 +1,9 @@
 package models
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -38,23 +40,24 @@ type APIKeyConnection struct {
 	CreatedAt    time.Time `gorm:"column:created_at"`
 }
 
+func GenerateAPIKey() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("failed to generate random key: " + err.Error())
+	}
+	return "hpk_" + base64.RawURLEncoding.EncodeToString(b)
+}
+
 func HashAPIKey(rawKey string) string {
 	h := sha256.Sum256([]byte(rawKey))
 	return fmt.Sprintf("%x", h)
 }
 
-// MaskAPIKey masks a raw API key, keeping a short prefix visible.
-// For a key like "sk-ant-api03-VgZiIKFLxxxx...xxxx", it keeps
-// the first 15 characters and replaces the rest with "*******".
-// Keys shorter than 20 characters keep only the first 4 characters visible.
 func MaskAPIKey(rawKey string) string {
-	if len(rawKey) < 20 {
-		if len(rawKey) <= 4 {
-			return strings.Repeat("*", len(rawKey))
-		}
-		return rawKey[:4] + strings.Repeat("*", len(rawKey)-4)
+	if len(rawKey) <= 8 {
+		return strings.Repeat("*", len(rawKey))
 	}
-	return rawKey[:15] + "*******"
+	return rawKey[:8] + strings.Repeat("*", len(rawKey)-8)
 }
 
 func ListAPIKeys(orgID string) ([]APIKey, error) {
