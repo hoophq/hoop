@@ -580,10 +580,10 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		-- allow if any of the user groups are in the access control list
 		ELSE acc.config && (@user_groups)::text[]
 	END`, map[string]any{
-		"org_id":             ctx.GetOrgID(),
-		"nameOrID":           nameOrID,
+		"org_id":              ctx.GetOrgID(),
+		"nameOrID":            nameOrID,
 		"is_admin_or_auditor": ctx.IsAdmin() || isAuditorContext(ctx),
-		"user_groups":        userGroups,
+		"user_groups":         userGroups,
 	}).
 		First(&conn).
 		Error

@@ -761,9 +761,10 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
-	ForceReview bool                     `json:"force_review" example:"false"`
+	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
+	ForceReview     bool                     `json:"force_review" example:"false"`
+	RejectionReason string                   `json:"rejection_reason" example:"This command is not allowed in production."`
 }
 
 type SessionReview struct {
@@ -798,6 +799,8 @@ type SessionReview struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -839,6 +842,8 @@ type Review struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewOwner struct {
