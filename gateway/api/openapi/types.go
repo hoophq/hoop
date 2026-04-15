@@ -175,7 +175,7 @@ type APIKeyResponse struct {
 	// Human-readable name
 	Name string `json:"name" example:"anthropic-prod"`
 	// Masked version of the API key for identification
-	MaskedKey string `json:"masked_key" example:"sk-ant-api03-Vg*******"`
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
 	// Current status of the API key
 	Status APIKeyStatusType `json:"status" enums:"active,revoked"`
 	// Groups assigned to this API key

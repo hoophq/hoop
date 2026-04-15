@@ -8062,7 +8062,7 @@ const docTemplate = `{
                 "masked_key": {
                     "description": "Masked version of the API key for identification",
                     "type": "string",
-                    "example": "sk-ant-api03-Vg*******"
+                    "example": "hpk_1nzb***************************************"
                 },
                 "name": {
                     "description": "Human-readable name",
@@ -8141,7 +8141,7 @@ const docTemplate = `{
                 "masked_key": {
                     "description": "Masked version of the API key for identification",
                     "type": "string",
-                    "example": "sk-ant-api03-Vg*******"
+                    "example": "hpk_1nzb***************************************"
                 },
                 "name": {
                     "description": "Human-readable name",
