@@ -775,6 +775,231 @@ const docTemplate = `{
                 }
             }
         },
+        "/api-keys": {
+            "get": {
+                "description": "List all API keys for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "List API Keys",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.APIKeyResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a new API key. The raw key is hashed and masked; it cannot be retrieved after creation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Create API Key",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys/{nameOrID}": {
+            "get": {
+                "description": "Get an API key by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Get API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an API key's name and/or groups. Only active keys can be updated.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Update API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Revoke an API key (soft delete). The key status is set to revoked and cannot be reactivated.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Revoke API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/attributes": {
             "get": {
                 "description": "List attributes for the organization with optional pagination and search.",
@@ -1685,6 +1910,63 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/connections/{nameOrID}/credentials/{credentialID}/revoke": {
+            "post": {
+                "description": "Revokes a connection credential, invalidating it and disconnecting any active sessions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Revoke Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the credential to revoke",
+                        "name": "credentialID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -7696,6 +7978,166 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.APIKeyCreateRequest": {
+            "type": "object",
+            "required": [
+                "key",
+                "name"
+            ],
+            "properties": {
+                "connection_ids": {
+                    "description": "List of connection IDs to associate with this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                    ]
+                },
+                "groups": {
+                    "description": "Groups to assign to this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "key": {
+                    "description": "The raw API key value (only accepted at creation, never stored or returned)",
+                    "type": "string",
+                    "example": "sk-ant-api03-..."
+                },
+                "name": {
+                    "description": "Human-readable name for the API key",
+                    "type": "string",
+                    "example": "anthropic-prod"
+                }
+            }
+        },
+        "openapi.APIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "connection_ids": {
+                    "description": "List of connection IDs associated with this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this key",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this key",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the API key for identification",
+                    "type": "string",
+                    "example": "sk-ant-api03-Vg*******"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "anthropic-prod"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the API key",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.APIKeyStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.APIKeyStatusType": {
+            "type": "string",
+            "enum": [
+                "active",
+                "revoked"
+            ],
+            "x-enum-varnames": [
+                "APIKeyStatusActive",
+                "APIKeyStatusRevoked"
+            ]
+        },
+        "openapi.APIKeyUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "connection_ids": {
+                    "description": "Updated list of connection IDs (replaces existing connections)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                    ]
+                },
+                "groups": {
+                    "description": "Updated group list (replaces existing groups)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "platform"
+                    ]
+                },
+                "name": {
+                    "description": "Updated display name",
+                    "type": "string",
+                    "example": "anthropic-staging"
+                }
+            }
+        },
         "openapi.AWSAccount": {
             "type": "object",
             "properties": {
@@ -12368,6 +12810,14 @@ const docTemplate = `{
                     "description": "The Linux exit code if it's available",
                     "type": "integer"
                 },
+                "guardrails_info": {
+                    "description": "GuardRailsInfo contains information about guardrail rules that matched during the session.\nA non-empty list indicates the session was blocked by at least one guardrail rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionGuardRailsInfo"
+                    },
+                    "readOnly": true
+                },
                 "id": {
                     "description": "The resource unique identifier",
                     "type": "string",
@@ -12524,6 +12974,74 @@ const docTemplate = `{
                 "SessionEventStreamBase64Type",
                 "SessionEventStreamRawQueriesType"
             ]
+        },
+        "openapi.SessionGuardRailMatchedRule": {
+            "type": "object",
+            "properties": {
+                "pattern_regex": {
+                    "description": "PatternRegex that matched (only set when type is pattern_match)",
+                    "type": "string",
+                    "example": "^[A-Z0-9]+"
+                },
+                "type": {
+                    "description": "Type is the internal rule type",
+                    "type": "string",
+                    "enum": [
+                        "deny_words_list",
+                        "pattern_match"
+                    ],
+                    "example": "deny_words_list"
+                },
+                "words": {
+                    "description": "Words matched (only set when type is deny_words_list)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                }
+            }
+        },
+        "openapi.SessionGuardRailsInfo": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "Direction indicates whether the match happened on input or output data",
+                    "type": "string",
+                    "enum": [
+                        "input",
+                        "output"
+                    ],
+                    "example": "input"
+                },
+                "matched_words": {
+                    "description": "MatchedWords are the words that matched the rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                },
+                "rule": {
+                    "description": "Rule is the specific internal rule entry that triggered the match",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionGuardRailMatchedRule"
+                        }
+                    ]
+                },
+                "rule_name": {
+                    "description": "RuleName is the name of the guardrail rule that matched",
+                    "type": "string",
+                    "example": "block-sensitive-data"
+                }
+            }
         },
         "openapi.SessionLabelsType": {
             "type": "object",
