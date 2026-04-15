@@ -126,7 +126,7 @@ func parseNode(node string) map[string]any {
 			}
 		case "required":
 			specs[fnName] = true
-		case "description", "default", "placeholder":
+		case "description", "default", "placeholder", "minlength", "maxlength":
 			specs[fnName] = fnVal
 		case "options":
 			specs[fnName] = strings.Split(fnVal, " ")
