@@ -997,6 +997,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiattributes.Delete)
 
 	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
-	mcpServer := apimcpserver.New()
+	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)
 	r.RouterGroup.Any("/mcp", r.AuthMiddleware, api.AuditMiddleware(), mcpServer.GinHandler)
 }

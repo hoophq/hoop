@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/version"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -13,7 +14,7 @@ type MCPServer struct {
 	handler *mcp.StreamableHTTPHandler
 }
 
-func New() *MCPServer {
+func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "hoop",
 		Version: version.Get().Version,
@@ -24,6 +25,11 @@ func New() *MCPServer {
 	registerDataMaskingTools(server)
 	registerUserGroupTools(server)
 	registerUserTools(server)
+	registerReviewTools(server, releaseConnFn)
+	registerAccessRequestRuleTools(server)
+	registerRunbookRuleTools(server)
+	registerSessionTools(server)
+	registerServerInfoTools(server)
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return server },
