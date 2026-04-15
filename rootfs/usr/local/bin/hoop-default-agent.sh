@@ -11,7 +11,10 @@ SECRET_KEY_HASH=$(echo -n $SECRET_KEY | sha256sum |awk {'print $1'})
 
 echo "--> starting default agent ..."
 
-psql -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" <<EOF
+# --quiet + redirect suppress the `BEGIN / DELETE 1 / INSERT 0 1 / COMMIT`
+# transaction echo while keeping ON_ERROR_STOP=1 so real SQL errors still
+# surface via `set -eo pipefail` above.
+psql --quiet -v ON_ERROR_STOP=1 "$POSTGRES_DB_URI" >/dev/null <<EOF
 BEGIN;
 DELETE FROM private.agents WHERE name = 'default';
 INSERT INTO private.agents (id, org_id, name, mode, key_hash, status)
