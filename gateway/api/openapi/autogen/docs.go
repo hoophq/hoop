@@ -7978,16 +7978,6 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
-                "connection_ids": {
-                    "description": "List of connection IDs to associate with this API key",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                    ]
-                },
                 "groups": {
                     "description": "Groups to assign to this API key",
                     "type": "array",
@@ -8008,16 +7998,6 @@ const docTemplate = `{
         "openapi.APIKeyCreateResponse": {
             "type": "object",
             "properties": {
-                "connection_ids": {
-                    "description": "List of connection IDs associated with this API key",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                    ]
-                },
                 "created_at": {
                     "description": "Creation timestamp",
                     "type": "string"
@@ -8092,16 +8072,6 @@ const docTemplate = `{
         "openapi.APIKeyResponse": {
             "type": "object",
             "properties": {
-                "connection_ids": {
-                    "description": "List of connection IDs associated with this API key",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                    ]
-                },
                 "created_at": {
                     "description": "Creation timestamp",
                     "type": "string"
@@ -8182,16 +8152,6 @@ const docTemplate = `{
         "openapi.APIKeyUpdateRequest": {
             "type": "object",
             "properties": {
-                "connection_ids": {
-                    "description": "Updated list of connection IDs (replaces existing connections)",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
-                    ]
-                },
                 "groups": {
                     "description": "Updated group list (replaces existing groups)",
                     "type": "array",
