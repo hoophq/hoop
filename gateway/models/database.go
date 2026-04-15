@@ -31,7 +31,7 @@ func InitDatabaseConnection() error {
 			TablePrefix: defaultSchema + ".",
 		},
 		Logger:         logger.Default.LogMode(logger.Silent),
-		TranslateError: true,
+		TranslateError: false,
 	}
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), config)
 	if err != nil {

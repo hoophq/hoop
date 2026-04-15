@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/gateway/idp"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/grpc"
@@ -250,15 +250,21 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, fmt.Errorf("invalid secret access key credentials")
 	}
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		log.Errorf("failed to load IDP provider: %v", err)
-		return nil, err
-	}
+	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
-	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		log.Errorf("Error verifying the user token: %v", err)
-		return nil, err
+	var tokenVerifier idp.UserInfoTokenVerifier
+	if !isMachineCredential {
+		var err error
+		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			log.Errorf("failed to load IDP provider: %v", err)
+			return nil, err
+		}
+
+		if err := usertoken.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+			log.Errorf("Error verifying the user token: %v", err)
+			return nil, err
+		}
 	}
 
 	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
@@ -274,9 +280,11 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 	}
 	pgConn.ctx = ctx
 
-	transport.PollingUserToken(pgConn.ctx, func(cause error) {
-		pgConn.cancelFn("%s", cause.Error())
-	}, tokenVerifier, dba.UserSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(pgConn.ctx, func(cause error) {
+			pgConn.cancelFn("%s", cause.Error())
+		}, tokenVerifier, dba.UserSubject)
+	}
 
 	grpcOpts := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),

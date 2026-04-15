@@ -34,6 +34,7 @@ import (
 	loginlocalapi "github.com/hoophq/hoop/gateway/api/login/local"
 	loginoidcapi "github.com/hoophq/hoop/gateway/api/login/oidc"
 	loginsamlapi "github.com/hoophq/hoop/gateway/api/login/saml"
+	machineidentityapi "github.com/hoophq/hoop/gateway/api/machineidentity"
 	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
@@ -81,6 +82,8 @@ type Api struct {
 
 //	@tag.name	User Management
 //	@tag.description.markdown
+
+//	@tag.name	Machine Identities
 
 //	@tag.name	Server Management
 //	@tag.description.markdown
@@ -277,6 +280,42 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
+
+	r.GET("/machineidentities",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.List)
+	r.GET("/machineidentities/:name",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.Get)
+	r.POST("/machineidentities",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateServiceAccount),
+		machineidentityapi.Create)
+	r.PUT("/machineidentities/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateServiceAccount),
+		machineidentityapi.Update)
+	r.DELETE("/machineidentities/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateServiceAccount),
+		machineidentityapi.Delete)
+	r.GET("/machineidentities/:name/credentials",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		machineidentityapi.ListCredentials)
+	r.POST("/machineidentities/:name/credentials/:connectionName/rotate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		machineidentityapi.RotateCredential)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,

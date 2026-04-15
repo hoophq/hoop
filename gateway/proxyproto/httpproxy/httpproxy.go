@@ -27,7 +27,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
 const (
@@ -365,13 +365,19 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	}
 	ctxDuration := time.Until(dba.ExpireAt)
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		return nil, err
-	}
+	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
-	if err := transport.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
-		return nil, err
+	var tokenVerifier idp.UserInfoTokenVerifier
+	if !isMachineCredential {
+		var err error
+		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			return nil, err
+		}
+
+		if err := usertoken.CheckUserToken(tokenVerifier, dba.UserSubject); err != nil {
+			return nil, err
+		}
 	}
 
 	sid := uuid.NewString()
@@ -392,9 +398,11 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 		},
 	}
 
-	transport.PollingUserToken(session.ctx, func(cause error) {
-		session.cancelFn(cause.Error())
-	}, tokenVerifier, dba.UserSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(session.ctx, func(cause error) {
+			session.cancelFn(cause.Error())
+		}, tokenVerifier, dba.UserSubject)
+	}
 
 	grpcOpts := []*grpc.ClientOptions{
 		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),

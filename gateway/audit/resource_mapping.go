@@ -26,6 +26,8 @@ var root = buildRoutes([]struct {
 	{[]string{"data-masking"}, ResourceDataMasking},
 	{[]string{"serviceaccounts"}, ResourceServiceAccount},
 	{[]string{"service-accounts"}, ResourceServiceAccount},
+	{[]string{"machineidentities"}, ResourceServiceAccount},
+	{[]string{"machine-identities"}, ResourceServiceAccount},
 	{[]string{"serverconfig"}, ResourceServerConfig},
 	{[]string{"server-config"}, ResourceServerConfig},
 	{[]string{"authconfig"}, ResourceAuthConfig},
