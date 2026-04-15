@@ -23,4 +23,13 @@ CREATE INDEX idx_api_keys_org_status ON api_keys(org_id, status);
 ALTER TABLE user_groups ADD COLUMN api_key_id UUID NULL REFERENCES api_keys(id) ON DELETE CASCADE;
 CREATE UNIQUE INDEX idx_user_groups_api_key_name ON user_groups(api_key_id, name) WHERE api_key_id IS NOT NULL;
 
+CREATE TABLE IF NOT EXISTS api_keys_connections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID NOT NULL REFERENCES orgs(id),
+    api_key_id UUID NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+    connection_id UUID NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(api_key_id, connection_id)
+);
+
 COMMIT;

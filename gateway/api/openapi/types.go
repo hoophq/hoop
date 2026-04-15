@@ -150,6 +150,8 @@ type APIKeyCreateRequest struct {
 	Key string `json:"key" binding:"required" example:"sk-ant-api03-..."`
 	// Groups to assign to this API key
 	Groups []string `json:"groups" example:"engineering"`
+	// List of connection IDs to associate with this API key
+	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 }
 
 type APIKeyUpdateRequest struct {
@@ -157,6 +159,8 @@ type APIKeyUpdateRequest struct {
 	Name *string `json:"name" example:"anthropic-staging"`
 	// Updated group list (replaces existing groups)
 	Groups []string `json:"groups" example:"engineering,platform"`
+	// Updated list of connection IDs (replaces existing connections)
+	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 }
 
 type APIKeyResponse struct {
@@ -172,6 +176,8 @@ type APIKeyResponse struct {
 	Status APIKeyStatusType `json:"status" enums:"active,revoked"`
 	// Groups assigned to this API key
 	Groups []string `json:"groups" example:"engineering"`
+	// List of connection IDs associated with this API key
+	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// Subject of the admin who created this key
 	CreatedBy string `json:"created_by"`
 	// Subject of the admin who revoked this key

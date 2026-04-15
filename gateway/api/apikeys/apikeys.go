@@ -81,13 +81,14 @@ func Create(c *gin.Context) {
 	}
 
 	apiKey := &models.APIKey{
-		OrgID:     ctx.OrgID,
-		Name:      req.Name,
-		KeyHash:   models.HashAPIKey(req.Key),
-		MaskedKey: models.MaskAPIKey(req.Key),
-		Status:    "active",
-		Groups:    req.Groups,
-		CreatedBy: ctx.UserEmail,
+		OrgID:         ctx.OrgID,
+		Name:          req.Name,
+		KeyHash:       models.HashAPIKey(req.Key),
+		MaskedKey:     models.MaskAPIKey(req.Key),
+		Status:        "active",
+		Groups:        req.Groups,
+		ConnectionIDs: req.ConnectionIDs,
+		CreatedBy:     ctx.UserEmail,
 	}
 
 	err := models.CreateAPIKey(apiKey)
@@ -143,12 +144,17 @@ func Update(c *gin.Context) {
 	if groups == nil {
 		groups = existing.Groups
 	}
+	connectionIDs := req.ConnectionIDs
+	if connectionIDs == nil {
+		connectionIDs = existing.ConnectionIDs
+	}
 
 	apiKey := &models.APIKey{
-		ID:     existing.ID,
-		OrgID:  ctx.OrgID,
-		Name:   name,
-		Groups: groups,
+		ID:            existing.ID,
+		OrgID:         ctx.OrgID,
+		Name:          name,
+		Groups:        groups,
+		ConnectionIDs: connectionIDs,
 	}
 
 	err = models.UpdateAPIKey(apiKey)
@@ -214,6 +220,7 @@ func toResponse(ak models.APIKey) openapi.APIKeyResponse {
 		MaskedKey:     ak.MaskedKey,
 		Status:        openapi.APIKeyStatusType(ak.Status),
 		Groups:        ak.Groups,
+		ConnectionIDs: ak.ConnectionIDs,
 		CreatedBy:     ak.CreatedBy,
 		DeactivatedBy: ak.DeactivatedBy,
 		CreatedAt:     ak.CreatedAt,
