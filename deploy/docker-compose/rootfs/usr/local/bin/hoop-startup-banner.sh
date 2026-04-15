@@ -82,8 +82,6 @@ line "   ✻  Welcome to Hoop" \
 line ""
 line "      Your gateway is up and running."
 line ""
-line "      UI             ${PUBLIC_URL}" \
-     "      ${DIM}UI${RESET}             ${PUBLIC_URL}"
 line "      Agent          default (connected)" \
      "      ${DIM}Agent${RESET}          default ${GREEN}(connected)${RESET}"
 line "      Docs           https://hoop.dev/docs" \
@@ -91,6 +89,8 @@ line "      Docs           https://hoop.dev/docs" \
 line ""
 rule "╰" "╯"
 echo
-printf "  ${BRAND}※${RESET} Sign in at ${BOLD}%s${RESET} and add your first connection\n" "$PUBLIC_URL"
+printf "  ${BRAND}※${RESET} ${BOLD}First time?${RESET}   Create an account at  ${BOLD}%s/register${RESET}\n" "$PUBLIC_URL"
+printf "    ${BOLD}Returning?${RESET}    Sign in at            ${BOLD}%s/login${RESET}\n" "$PUBLIC_URL"
+echo
 printf "    ${DIM}Stop with Ctrl-C · Logs: docker compose logs <name>${RESET}\n"
 echo
