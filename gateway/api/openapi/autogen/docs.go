@@ -6495,6 +6495,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Filter by external workflow/task correlation id",
+                        "name": "correlation_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Filter by Jira issue key",
                         "name": "jira_issue_key",
                         "in": "query"
@@ -9968,6 +9974,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "bash"
                 },
+                "correlation_id": {
+                    "description": "External workflow/task identifier that groups sessions belonging to the same logical run",
+                    "type": "string",
+                    "example": "task-12345"
+                },
                 "labels": {
                     "description": "DEPRECATED in flavor of metadata",
                     "type": "object",
@@ -10966,6 +10977,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "correlation_id": {
+                    "description": "External workflow/task identifier that groups sessions belonging to the same logical run",
+                    "type": "string",
+                    "example": "task-12345"
+                },
                 "env_vars": {
                     "type": "object",
                     "additionalProperties": {
@@ -11712,6 +11728,11 @@ const docTemplate = `{
                     "description": "Connection name to execute the runbook against",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "correlation_id": {
+                    "description": "External workflow/task id to group related sessions",
+                    "type": "string",
+                    "example": "task-12345"
                 },
                 "env_vars": {
                     "description": "Environment Variables that will be included in the runtime\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem",
@@ -12830,6 +12851,11 @@ const docTemplate = `{
                     "example": {
                         "team": "banking;environment:prod"
                     }
+                },
+                "correlation_id": {
+                    "description": "External workflow/task identifier that groups sessions belonging to the same logical run",
+                    "type": "string",
+                    "example": "task-12345"
                 },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",

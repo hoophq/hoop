@@ -439,6 +439,8 @@ type ExecRequest struct {
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
 	ClientArgs []string `json:"client_args" example:"--verbose"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ExecResponse struct {
@@ -588,6 +590,7 @@ const (
 	SessionOptionReviewStatus        SessionOptionKey = "review.status"
 	SessionOptionReviewApproverEmail SessionOptionKey = "review.approver"
 	SessionOptionBatchID             SessionOptionKey = "batch_id"
+	SessionOptionCorrelationID       SessionOptionKey = "correlation_id"
 	SessionOptionStartDate           SessionOptionKey = "start_date"
 	SessionOptionEndDate             SessionOptionKey = "end_date"
 	SessionOptionOffset              SessionOptionKey = "offset"
@@ -602,6 +605,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionReviewStatus,
 	SessionOptionReviewApproverEmail,
 	SessionOptionBatchID,
+	SessionOptionCorrelationID,
 	SessionOptionStartDate,
 	SessionOptionEndDate,
 	SessionOptionLimit,
@@ -711,6 +715,8 @@ type Session struct {
 	EventSize int64 `json:"event_size" example:"569"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
@@ -733,6 +739,8 @@ type ProvisionSession struct {
 	ClientArgs        []string                 `json:"client_args"`
 	JiraFields        map[string]string        `json:"jira_fields"`
 	TimeWindow        *ReviewSessionTimeWindow `json:"time_window"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ProvisionSessionResponse struct {
@@ -2411,6 +2419,8 @@ type RunbookExec struct {
 	JiraFields map[string]string `json:"jira_fields"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task id to group related sessions
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type RunbookFileCreate struct {
