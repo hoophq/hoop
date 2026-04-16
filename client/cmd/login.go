@@ -45,6 +45,11 @@ var loginCmd = &cobra.Command{
 	Short: "Authenticate at Hoop",
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) > 0 {
+			_ = cmd.Help()
+			return
+		}
+
 		conf := loadAndValidateConfig()
 		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v "+
 			" skip_tls_verify=%v",
