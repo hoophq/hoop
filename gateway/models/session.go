@@ -531,10 +531,11 @@ func SetSessionCredentialsRevokedAt(orgID, sessionID string, revokedAt time.Time
 	value := fmt.Sprintf(`{"credentials_revoked_at":%q}`, revokedAt.Format(time.RFC3339))
 	return DB.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).
-		Update("metadata", gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value)).
-		Update("status", "done").
-		Update("ended_at", revokedAt).
-		Error
+		Updates(map[string]any{
+			"metadata": gorm.Expr("COALESCE(metadata, '{}'::jsonb) || ?::jsonb", value),
+			"status":   "done",
+			"ended_at": revokedAt,
+		}).Error
 }
 
 // UpdateSessionEventStream updates a session partially

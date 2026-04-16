@@ -14,17 +14,18 @@ import (
 type ResourceType string
 
 const (
-	ResourceDataMasking    ResourceType = "data_masking"
-	ResourceGuardrails     ResourceType = "guardrails"
-	ResourceUser           ResourceType = "users"
-	ResourceUserGroup      ResourceType = "user_groups"
-	ResourceServiceAccount ResourceType = "service_accounts"
-	ResourceConnection     ResourceType = "connections"
-	ResourceResource       ResourceType = "resources"
-	ResourceAgent          ResourceType = "agents"
-	ResourceAuthConfig     ResourceType = "auth_config"
-	ResourceServerConfig   ResourceType = "server_config"
-	ResourceOrgKey         ResourceType = "org_keys"
+	ResourceDataMasking     ResourceType = "data_masking"
+	ResourceGuardrails      ResourceType = "guardrails"
+	ResourceUser            ResourceType = "users"
+	ResourceUserGroup       ResourceType = "user_groups"
+	ResourceServiceAccount  ResourceType = "service_accounts"
+	ResourceMachineIdentity ResourceType = "machine_identities"
+	ResourceConnection      ResourceType = "connections"
+	ResourceResource        ResourceType = "resources"
+	ResourceAgent           ResourceType = "agents"
+	ResourceAuthConfig      ResourceType = "auth_config"
+	ResourceServerConfig    ResourceType = "server_config"
+	ResourceOrgKey          ResourceType = "org_keys"
 )
 
 // Action is the operation performed.

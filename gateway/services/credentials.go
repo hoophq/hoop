@@ -268,6 +268,7 @@ func ProvisionCredentialForConnection(mi *models.MachineIdentity, connName strin
 	}
 
 	sid := uuid.NewString()
+	miID := mi.ID
 	newSession := models.Session{
 		ID:                sid,
 		OrgID:             mi.OrgID,
@@ -282,6 +283,7 @@ func ProvisionCredentialForConnection(mi *models.MachineIdentity, connName strin
 		Status:            string(openapi.SessionStatusOpen),
 		CreatedAt:         time.Now().UTC(),
 		IdentityType:      "machine",
+		MachineIdentityID: &miID,
 	}
 	// Persist session
 	if err := models.UpsertSession(newSession); err != nil {

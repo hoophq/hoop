@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
@@ -211,6 +212,7 @@ func ListCredentials(c *gin.Context) {
 			context.Background(), ctx.OrgID, identityName, mic.ConnectionName,
 		)
 		if err != nil {
+			log.Warnf("failed fetching credential info for connection %s on MI %s: %v", mic.ConnectionName, identityName, err)
 			continue
 		}
 		result = append(result, credentialInfoToResponse(credInfo))

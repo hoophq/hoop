@@ -293,19 +293,19 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventCreateServiceAccount),
+		api.TrackRequest(analytics.EventCreateMachineIdentity),
 		machineidentityapi.Create)
 	r.PUT("/machineidentities/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventCreateServiceAccount),
+		api.TrackRequest(analytics.EventUpdateMachineIdentity),
 		machineidentityapi.Update)
 	r.DELETE("/machineidentities/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventCreateServiceAccount),
+		api.TrackRequest(analytics.EventDeleteMachineIdentity),
 		machineidentityapi.Delete)
 	r.GET("/machineidentities/:name/credentials",
 		apiroutes.AdminOnlyAccessRole,
