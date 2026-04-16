@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -22,6 +23,11 @@ type SlackService struct {
 	apiURL        string
 	ctx           context.Context
 	cancelFn      context.CancelFunc
+
+	// pendingRejectItems stores the original block-action InteractionCallback while the
+	// reject-reason modal is open. Key is review_id. Cleaned up on modal submission.
+	pendingRejectMu    sync.Mutex
+	pendingRejectItems map[string]slack.InteractionCallback
 }
 
 const (
@@ -52,14 +58,15 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 	)
 	ctx, cancelFn := context.WithCancel(context.Background())
 	return &SlackService{
-		apiClient:     apiClient,
-		socketClient:  socketClient,
-		slackChannel:  slackChannel,
-		slackBotToken: slackBotToken,
-		instanceID:    instanceID,
-		apiURL:        apiURL,
-		ctx:           ctx,
-		cancelFn:      cancelFn,
+		apiClient:          apiClient,
+		socketClient:       socketClient,
+		slackChannel:       slackChannel,
+		slackBotToken:      slackBotToken,
+		instanceID:         instanceID,
+		apiURL:             apiURL,
+		ctx:                ctx,
+		cancelFn:           cancelFn,
+		pendingRejectItems: make(map[string]slack.InteractionCallback),
 	}, nil
 
 }
@@ -83,12 +90,13 @@ type MessageReviewRequest struct {
 }
 
 type MessageReviewResponse struct {
-	ID        string
-	EventKind string
-	Status    string
-	SessionID string
-	SlackID   string
-	GroupName string
+	ID              string
+	EventKind       string
+	Status          string
+	SessionID       string
+	SlackID         string
+	GroupName       string
+	RejectionReason string
 
 	item slack.InteractionCallback
 }
@@ -265,6 +273,47 @@ func (s *SlackService) UpdateMessagePartialApproval(msg *MessageReviewResponse, 
 	_, _, err := s.apiClient.PostMessage(msg.item.Channel.ID,
 		slack.MsgOptionReplaceOriginal(msg.item.ResponseURL),
 		slack.MsgOptionBlocks(blocks...))
+	return err
+}
+
+// OpenRejectModal opens a Slack modal prompting the reviewer to optionally enter a rejection reason.
+// privateMetadata is a JSON string encoding the review context (review ID, session ID, event kind, group name).
+// Must be called before socketClient.Ack() since TriggerID expires ~3s after the interaction.
+func (s *SlackService) OpenRejectModal(cb slack.InteractionCallback, privateMetadata string) error {
+	commentInput := &slack.PlainTextInputBlockElement{
+		Type:     slack.METPlainTextInput,
+		ActionID: "rejection_reason",
+		Placeholder: &slack.TextBlockObject{
+			Type: slack.PlainTextType,
+			Text: "Share the details here...",
+		},
+		Multiline: true,
+	}
+	commentBlock := slack.NewInputBlock(
+		"rejection_reason_block",
+		&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Comment"},
+		nil,
+		commentInput,
+	)
+	commentBlock.Optional = true
+
+	_, err := s.apiClient.OpenView(cb.TriggerID, slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      "reject-details-modal",
+		PrivateMetadata: privateMetadata,
+		Title:           &slack.TextBlockObject{Type: slack.PlainTextType, Text: "Reject Details"},
+		Submit:          &slack.TextBlockObject{Type: slack.PlainTextType, Text: "Confirm and Reject"},
+		Close:           &slack.TextBlockObject{Type: slack.PlainTextType, Text: "Cancel"},
+		Blocks: slack.Blocks{
+			BlockSet: []slack.Block{
+				slack.NewSectionBlock(&slack.TextBlockObject{
+					Type: slack.MarkdownType,
+					Text: "Optionally include more details for this access request rejection.",
+				}, nil, nil),
+				commentBlock,
+			},
+		},
+	})
 	return err
 }
 

@@ -199,7 +199,7 @@ func GetClientConfigOrDie() *Config {
 	switch err {
 	case ErrEmpty, nil:
 	default:
-		styles.PrintErrorAndExit(err.Error())
+		styles.PrintErrorAndExit("%s", err.Error())
 	}
 	log.Debugf("loaded clientconfig, mode=%v, grpc-tls=%v, api_url=%v, grpc_url=%v, isapikey=%v, tokenlength=%v, tlsca=%v",
 		config.Mode, !config.InsecureGRPC, config.ApiURL, config.GrpcURL, config.IsApiKey(), len(config.Token), config.TlsCAB64Enc != "")

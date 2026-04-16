@@ -26,7 +26,7 @@ var deleteCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		apir := parseResourceOrDie(args, "DELETE", "")
 		if err := httpDeleteRequest(apir); err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.name != "" {
 			fmt.Printf("%s %q deleted\n", apir.resourceType, apir.name)

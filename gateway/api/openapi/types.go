@@ -761,9 +761,10 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
-	ForceReview bool                     `json:"force_review" example:"false"`
+	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
+	ForceReview     bool                     `json:"force_review" example:"false"`
+	RejectionReason string                   `json:"rejection_reason" example:"This command is not allowed in production."`
 }
 
 type SessionReview struct {
@@ -798,6 +799,8 @@ type SessionReview struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -839,6 +842,8 @@ type Review struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewOwner struct {
@@ -2354,6 +2359,24 @@ type RunbookExec struct {
 	JiraFields map[string]string `json:"jira_fields"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+}
+
+type RunbookFileCreate struct {
+	// Path of the file to create relative to the repository root, e.g. "ops/restart.runbook.sh"
+	Path string `json:"path" binding:"required" example:"ops/restart.runbook.sh"`
+	// Content of the runbook file
+	Content string `json:"content" binding:"required"`
+	// Optional commit message. Defaults to "feat: add <path>" when empty.
+	CommitMessage string `json:"commit_message" example:"feat: add restart service runbook"`
+	// If true, overwrite the file if it already exists in the repository
+	Overwrite bool `json:"overwrite"`
+}
+
+type RunbookFileCreateResponse struct {
+	// Path of the created file relative to the repository root
+	Path string `json:"path" example:"ops/restart.runbook.sh"`
+	// SHA of the resulting git commit
+	CommitSHA string `json:"commit_sha" example:"abc123def456abc123def456abc123def456abc1"`
 }
 
 type AccessRequestRule struct {

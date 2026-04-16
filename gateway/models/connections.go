@@ -600,10 +600,10 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 				AND ca.connection_name = c.name
 		)
 	END`, map[string]any{
-		"org_id":             ctx.GetOrgID(),
-		"nameOrID":           nameOrID,
+		"org_id":              ctx.GetOrgID(),
+		"nameOrID":            nameOrID,
 		"is_admin_or_auditor": ctx.IsAdmin() || isAuditorContext(ctx),
-		"user_groups":        userGroups,
+		"user_groups":         userGroups,
 	}).
 		First(&conn).
 		Error

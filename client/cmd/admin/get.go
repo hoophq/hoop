@@ -69,7 +69,7 @@ var getCmd = &cobra.Command{
 		}
 		obj, _, err := httpRequest(apir)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if apir.decodeTo == "raw" {
 			jsonData, _ := obj.([]byte)

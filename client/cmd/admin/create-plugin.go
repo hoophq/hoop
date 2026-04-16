@@ -55,11 +55,11 @@ var createPluginCmd = &cobra.Command{
 		apir := parseResourceOrDie(args, method, outputFlag)
 		pluginEnvVars, err := parsePluginConfig()
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		pluginConnections, err := parsePluginConnections(apir.conf)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 
 		var pluginSource *string
@@ -75,10 +75,10 @@ var createPluginCmd = &cobra.Command{
 		}
 		resp, err := httpBodyRequest(apir, method, pluginBody)
 		if err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 		if _, err = putConfig(apir.conf, apir.name, pluginEnvVars); err != nil {
-			styles.PrintErrorAndExit(err.Error())
+			styles.PrintErrorAndExit("%s", err.Error())
 		}
 
 		if apir.decodeTo == "raw" {

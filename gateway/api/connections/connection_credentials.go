@@ -17,7 +17,11 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/proxyproto/httpproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
+	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/ssmproxy"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
@@ -206,7 +210,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	}
 
 	connNameOrID := c.Param("nameOrID")
-	sessionID := c.Param("sessionID")
+	sessionID := c.Param("ID")
 
 	// Look up the session
 	session, err := models.GetSessionByID(ctx.OrgID, sessionID)
@@ -380,6 +384,87 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	}
 
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey, false, ""))
+}
+
+// RevokeConnectionCredentials
+//
+//	@Summary		Revoke Connection Credentials
+//	@Description	Revokes a connection credential, invalidating it and disconnecting any active sessions
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
+//	@Param			credentialID	path		string	true	"UUID of the credential to revoke"
+//	@Success		204			"No content"
+//	@Failure		400,403,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/credentials/{credentialID}/revoke [post]
+func RevokeConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	credentialID := c.Param("ID")
+
+	if credentialID == "" {
+		c.AbortWithStatusJSON(400, gin.H{"message": "credential ID is required"})
+		return
+	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+	if err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
+		return
+	}
+	if conn == nil {
+		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("connection %s not found", connNameOrID)})
+		return
+	}
+
+	cred, err := models.GetConnectionCredentialsByID(ctx.OrgID, credentialID)
+	if err != nil {
+		if err == models.ErrNotFound {
+			c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("credential %s not found", credentialID)})
+			return
+		}
+		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
+		return
+	}
+
+	if cred.ConnectionName != conn.Name {
+		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("credential %s does not belong to connection %s", credentialID, connNameOrID)})
+		return
+	}
+
+	// Only the credential owner or org admin can revoke
+	if cred.UserSubject != ctx.UserID && !ctx.IsAdmin() {
+		c.AbortWithStatusJSON(403, gin.H{"message": "only the credential owner or admin can revoke"})
+		return
+	}
+
+	if err := models.RevokeConnectionCredentials(ctx.OrgID, credentialID); err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to revoke credential: %v", err)})
+		return
+	}
+
+	if cred.SessionID != "" {
+		if err := models.SetSessionCredentialsRevokedAt(ctx.OrgID, cred.SessionID, time.Now().UTC()); err != nil {
+			log.Warnf("failed setting session credentials revoked_at metadata, err=%v", err)
+		}
+	}
+
+	// Cancel active sessions in each proxy
+	connType := proto.ConnectionType(cred.ConnectionType)
+	switch connType {
+	case proto.ConnectionTypePostgres:
+		postgresproxy.GetServerInstance().RevokeByCredentialID(credentialID)
+	case proto.ConnectionTypeSSH:
+		sshproxy.GetServerInstance().RevokeByCredentialID(credentialID)
+	case proto.ConnectionTypeRDP:
+		broker.RevokeByCredentialID(credentialID)
+	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine:
+		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
+	case proto.ConnectionTypeSSM:
+		// SSM has no persistent session store; DB invalidation blocks new connections
+	}
+
+	c.Status(204)
 }
 
 func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {

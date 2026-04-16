@@ -8,6 +8,7 @@ func init() {
 	createCmd.AddCommand(createAgentCmd)
 	createCmd.AddCommand(createOrgKeyCmd)
 	createCmd.AddCommand(createConnectionCmd)
+	createCmd.AddCommand(createConnectionBatchCmd)
 	createCmd.AddCommand(createPluginCmd)
 	createCmd.AddCommand(createUserCmd)
 	createCmd.AddCommand(createSvcAccountCmd)

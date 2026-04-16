@@ -44,8 +44,8 @@
                                     :placeholder (or placeholder (str "Define a value for " label))
                                     :value (or value default-value "")
                                     :on-change on-change
-                                    :minLength minlength
-                                    :maxLength maxlength
+                                    :minlength minlength
+                                    :maxlength maxlength
                                     :helper-text helper-text}
                                    (when (and
                                           (not= required "false")
@@ -64,8 +64,8 @@
                       :pattern pattern
                       :on-change on-change
                       :on-keyDown number-input-keydown
-                      :minLength minlength
-                      :maxLength maxlength
+                      :minlength minlength
+                      :maxlength maxlength
                       :min min
                       :max max
                       :step step
@@ -83,6 +83,11 @@
      "Error found."]
     [:> Box {:class " text-sm mb-large"}
      error]]])
+
+(defn- validate-min-length [el val minlength]
+  (if (and minlength (not= val "") (< (count val) (js/parseInt minlength 10)))
+    (.setCustomValidity el (str "Minimum length is " minlength " characters"))
+    (.setCustomValidity el "")))
 
 (defn- sort-params-by-order [params metadata]
   (sort-by #(or (:order ((keyword %) metadata)) js/Number.MAX_SAFE_INTEGER) params))
@@ -215,10 +220,16 @@
                                             :required (:required metadata)
                                             :on-change (if (contains? #{"select" "file"} (:type metadata))
                                                          #(update-state param %)
-                                                         #(update-state param (-> % .-target .-value)))
+                                                         (fn [e]
+                                                           (let [val (-> e .-target .-value)]
+                                                             (validate-min-length (.-target e) val
+                                                                                  (:minlength metadata))
+                                                             (update-state param val))))
                                             :helper-text (:description metadata)
                                             :options (:options metadata)
-                                            :default-value (:default metadata)}]))
+                                            :default-value (:default metadata)
+                                            :minlength (:minlength metadata)
+                                            :maxlength (:maxlength metadata)}]))
 
                 (when-let [err (-> template :data :error)]
                   [error-view err])]]]]))))))
