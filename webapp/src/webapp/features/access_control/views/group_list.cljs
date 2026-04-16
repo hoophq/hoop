@@ -47,36 +47,40 @@
 
 (defn group-item []
   (let [show-connections? (r/atom false)]
-    (fn [{:keys [name connections total-items]}]
-      [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
-                           "border-[--gray-a6] border "
-                           (when (> total-items 1) " first:border-b-0")
-                           (when @show-connections? " bg-[--accent-2]"))}
-       [:> Box {:p "5" :class "flex justify-between items-center"}
-        [:> Flex {:direction "column"}
-         [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12]"}
-          name]]
+    (fn [{:keys [name label connections total-items]}]
+      (let [display-name (if (seq label) label name)]
+        [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 data-[state=open]:bg-[--accent-2] "
+                             "border-[--gray-a6] border "
+                             (when (> total-items 1) " first:border-b-0")
+                             (when @show-connections? " bg-[--accent-2]"))}
+         [:> Box {:p "5" :class "flex justify-between items-center"}
+          [:> Flex {:direction "column"}
+           [:> Heading {:as "h3" :size "5" :weight "medium" :class "text-[--gray-12]"}
+            display-name]
+           (when (seq label)
+             [:> Text {:size "2" :class "text-[--gray-11]"}
+              name])]
 
-        [:> Flex {:align "center" :gap "4"}
-         [:> Button {:size "3"
-                     :variant "soft"
-                     :color "gray"
-                     :on-click (fn []
-                                 (rf/dispatch [:navigate :access-control-edit {:group name}]))}
-          "Configure"]
-
-         (when-not (empty? connections)
-           [:> Button {:size "1"
-                       :variant "ghost"
+          [:> Flex {:align "center" :gap "4"}
+           [:> Button {:size "3"
+                       :variant "soft"
                        :color "gray"
-                       :on-click #(swap! show-connections? not)}
-            "Resource Roles"
-            (if @show-connections?
-              [:> ChevronUp {:size 14}]
-              [:> ChevronDown {:size 14}])])]]
+                       :on-click (fn []
+                                   (rf/dispatch [:navigate :access-control-edit {:group name}]))}
+            "Configure"]
 
-       (when @show-connections?
-         [connections-panel {:connections connections}])])))
+           (when-not (empty? connections)
+             [:> Button {:size "1"
+                         :variant "ghost"
+                         :color "gray"
+                         :on-click #(swap! show-connections? not)}
+              "Resource Roles"
+              (if @show-connections?
+                [:> ChevronUp {:size 14}]
+                [:> ChevronDown {:size 14}])])]]
+
+         (when @show-connections?
+           [connections-panel {:connections connections}])]))))
 
 (defn main []
   (let [all-groups (rf/subscribe [:access-control/all-groups])
@@ -93,18 +97,20 @@
 
             groups-filtered-by-connection (if (nil? @selected-connection)
                                             filtered-groups
-                                            (filter (fn [group-name]
-                                                      (let [group-connections (get-group-connections group-name group-permissions)]
+                                            (filter (fn [group]
+                                                      (let [group-connections (get-group-connections (:name group) group-permissions)]
                                                         (some #(= (:name %) @selected-connection) group-connections)))
                                                     filtered-groups))
 
             processed-groups (->> groups-filtered-by-connection
-                                  (map (fn [group-name]
-                                         (let [group-connection-ids (get-group-connections group-name group-permissions)
+                                  (map (fn [group]
+                                         (let [group-name (:name group)
+                                               group-connection-ids (get-group-connections group-name group-permissions)
                                                group-connections (map (fn [conn]
                                                                         (or (get connections-map (:name conn)) conn))
                                                                       group-connection-ids)]
                                            {:name group-name
+                                            :label (:label group)
                                             :active? (contains? group-permissions group-name)
                                             :connections group-connections})))
                                   (sort-by :name))]

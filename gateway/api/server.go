@@ -255,6 +255,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		userapi.CreateGroup)
+	r.PUT("/users/groups/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		userapi.UpdateGroup)
 	r.DELETE("/users/groups/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

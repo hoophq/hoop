@@ -9,6 +9,7 @@
 
 (defn create-form []
   (let [group-name (r/atom "")
+        group-label (r/atom "")
         description (r/atom "")
         selected-connections (r/atom [])
         is-submitting (r/atom false)
@@ -20,6 +21,7 @@
                             (reset! is-submitting true)
                             (rf/dispatch [:access-control/create-group-with-permissions
                                           {:name @group-name
+                                           :label @group-label
                                            :description @description
                                            :connections @selected-connections}]))}
 
@@ -57,7 +59,14 @@
              :class "w-full"
              :autoFocus true
              :disabled @is-submitting
-             :on-change #(reset! group-name (-> % .-target .-value))}]]]
+             :on-change #(reset! group-name (-> % .-target .-value))}]
+           [forms/input
+            {:placeholder "e.g. Engineering Team"
+             :label "Label (optional)"
+             :value @group-label
+             :class "w-full"
+             :disabled @is-submitting
+             :on-change #(reset! group-label (-> % .-target .-value))}]]]
 
          [:> Grid {:columns "7" :gap "7"}
           [:> Box {:grid-column "span 2 / span 2"}
@@ -80,7 +89,9 @@
 (defn edit-form [group-id]
   (let [plugin-details (rf/subscribe [:plugins->plugin-details])
         group-connections (rf/subscribe [:access-control/group-permissions group-id])
+        group-label-sub (rf/subscribe [:access-control/group-label group-id])
         selected-connections (r/atom [])
+        group-label (r/atom nil)
         is-submitting (r/atom false)
         scroll-pos (r/atom 0)]
 
@@ -93,13 +104,23 @@
                  (not= (:status @plugin-details) :loading))
         (reset! selected-connections @group-connections))
 
+      ;; Initialize label from subscription when not yet set
+      (when (nil? @group-label)
+        (reset! group-label (or @group-label-sub "")))
+
       (let [plugin (:plugin @plugin-details)
-            plugin-loaded? (and plugin (:name plugin) (= (:name plugin) "access_control"))]
+            plugin-loaded? (and plugin (:name plugin) (= (:name plugin) "access_control"))
+            display-name (if (seq @group-label) @group-label group-id)]
 
         [:> Box {:class "min-h-screen bg-gray-1"}
          [:form {:on-submit (fn [e]
                               (.preventDefault e)
                               (reset! is-submitting true)
+
+                              ;; Always update the label
+                              (rf/dispatch [:access-control/update-group-label
+                                            {:name group-id
+                                             :label (or @group-label "")}])
 
                               (if plugin-loaded?
                                 (do
@@ -124,7 +145,7 @@
             [:> Flex {:justify "between"
                       :align "center"}
              [:> Heading {:as "h2" :size "8"}
-              (str "Edit group: " group-id)]
+              (str "Edit group: " display-name)]
              [:> Flex {:gap "5" :align "center"}
               [:> Button {:size "4"
                           :variant "ghost"
@@ -133,7 +154,7 @@
                           :type "button"
                           :on-click #(rf/dispatch [:dialog->open
                                                    {:title "Delete Group"
-                                                    :text (str "Are you sure you want to delete the group '" group-id "'? This action cannot be undone.")
+                                                    :text (str "Are you sure you want to delete the group '" display-name "'? This action cannot be undone.")
                                                     :text-action-button "Delete"
                                                     :action-button? true
                                                     :type :danger
@@ -162,7 +183,14 @@
                :label "Name"
                :value group-id
                :disabled true
-               :class "w-full"}]]]
+               :class "w-full"}]
+             [forms/input
+              {:placeholder "e.g. Engineering Team"
+               :label "Label (optional)"
+               :value @group-label
+               :class "w-full"
+               :disabled @is-submitting
+               :on-change #(reset! group-label (-> % .-target .-value))}]]]
 
            [:> Grid {:columns "7" :gap "7"}
             [:> Box {:grid-column "span 2 / span 2"}

@@ -118,4 +118,11 @@
  ::users->set-user-groups
  (fn
    [{:keys [db]} [_ groups]]
-   {:db (assoc db :user-groups groups)}))
+   ;; groups is now [{:name "x" :label "y"} ...] from the API
+   ;; :user-groups keeps backward compat as a list of name strings
+   ;; :user-groups-full stores the full objects for label lookups
+   (let [groups-vec (or groups [])
+         names (mapv (fn [g] (if (string? g) g (:name g))) groups-vec)]
+     {:db (-> db
+              (assoc :user-groups names)
+              (assoc :user-groups-full groups-vec))})))
