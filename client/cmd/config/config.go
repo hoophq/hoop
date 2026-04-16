@@ -23,7 +23,7 @@ func init() {
 	createCmd.Flags().StringVar(&apiURLFlag, "api-url", "", "The API URL to configure (required)")
 	createCmd.Flags().StringVar(&grpcURLFlag, "grpc-url", "", "The gRPC URL to configure (optional)")
 	createCmd.Flags().StringVar(&tlsCAFlag, "tls-ca", "", "The path to the TLS certificate authority to use (optional)")
-	createCmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "The API key to store as the authentication token (optional, overrides HOOP_TOKEN)")
+	createCmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "The API key to store as the authentication token (optional)")
 	viewCmd.Flags().BoolVar(&viewRawFlag, "raw", false, "Display sensitive credentials information")
 
 	_ = createCmd.MarkFlagRequired("api-url")
