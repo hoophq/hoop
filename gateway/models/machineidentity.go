@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type MachineIdentity struct {
@@ -66,7 +66,6 @@ func CreateMachineIdentity(mi *MachineIdentity) error {
 
 func UpdateMachineIdentity(mi *MachineIdentity) error {
 	res := DB.Table("private.machine_identities").
-		Clauses(clause.Returning{}).
 		Where("org_id = ? AND id = ?", mi.OrgID, mi.ID).
 		Updates(map[string]any{
 			"name":             mi.Name,
@@ -156,31 +155,27 @@ func DeleteMachineIdentityCredential(orgID, identityID, connName string) (*Revok
 	}
 
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		// Soft-invalidate: set expire_at to the past
 		if err := tx.Table("private.connection_credentials").
 			Where("org_id = ? AND id = ?", orgID, cred.ID).
 			Update("expire_at", time.Now().UTC().Add(-time.Hour)).Error; err != nil {
 			return fmt.Errorf("failed revoking connection credential: %w", err)
 		}
-
-		// Mark session as done
-		if cred.SessionID != "" {
-			if err := SetSessionCredentialsRevokedAt(orgID, cred.SessionID, time.Now().UTC()); err != nil {
-				fmt.Printf("warn: failed setting session credentials revoked_at: %v\n", err)
-			}
-		}
-
-		// Hard-delete connection_credentials row.
-		// The ON DELETE CASCADE on machine_identity_credentials.connection_credential_id
-		// automatically deletes the junction row.
 		if err := tx.Exec("DELETE FROM private.connection_credentials WHERE id = ?", cred.ID).Error; err != nil {
 			return fmt.Errorf("failed deleting connection credential: %w", err)
 		}
-
 		return nil
 	})
+	if err != nil {
+		return info, err
+	}
 
-	return info, err
+	if cred.SessionID != "" {
+		if err := SetSessionCredentialsRevokedAt(orgID, cred.SessionID, time.Now().UTC()); err != nil {
+			log.Warnf("failed setting session credentials revoked_at: %v", err)
+		}
+	}
+
+	return info, nil
 }
 
 // DeleteAllMachineIdentityCredentials revokes and deletes all credentials for a machine identity.
@@ -207,36 +202,32 @@ func DeleteAllMachineIdentityCredentials(orgID, identityID string) ([]*RevokedCr
 
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		for _, mic := range micRows {
-			// Soft-invalidate
 			if err := tx.Table("private.connection_credentials").
 				Where("org_id = ? AND id = ?", orgID, mic.ConnectionCredentialID).
 				Update("expire_at", time.Now().UTC().Add(-time.Hour)).Error; err != nil {
-				fmt.Printf("warn: failed revoking connection credential %s: %v\n", mic.ConnectionCredentialID, err)
+				log.Warnf("failed revoking connection credential %s: %v", mic.ConnectionCredentialID, err)
 			}
 		}
-
-		// Mark sessions as done
-		for _, info := range infos {
-			if info.SessionID != "" {
-				if err := SetSessionCredentialsRevokedAt(orgID, info.SessionID, time.Now().UTC()); err != nil {
-					fmt.Printf("warn: failed setting session credentials revoked_at for %s: %v\n", info.SessionID, err)
-				}
-			}
-		}
-
-		// Hard-delete connection_credentials rows.
-		// The ON DELETE CASCADE on machine_identity_credentials.connection_credential_id
-		// automatically deletes the junction rows.
 		for _, mic := range micRows {
 			if err := tx.Exec("DELETE FROM private.connection_credentials WHERE id = ?", mic.ConnectionCredentialID).Error; err != nil {
 				return fmt.Errorf("failed deleting connection credential %s: %w", mic.ConnectionCredentialID, err)
 			}
 		}
-
 		return nil
 	})
+	if err != nil {
+		return infos, err
+	}
 
-	return infos, err
+	for _, info := range infos {
+		if info.SessionID != "" {
+			if err := SetSessionCredentialsRevokedAt(orgID, info.SessionID, time.Now().UTC()); err != nil {
+				log.Warnf("failed setting session credentials revoked_at for %s: %v", info.SessionID, err)
+			}
+		}
+	}
+
+	return infos, nil
 }
 
 func GenerateMachineIdentityID(orgID, name string) string {

@@ -102,31 +102,31 @@ func CreateMachineIdentity(ctx context.Context, mi *models.MachineIdentity, attr
 		return nil, fmt.Errorf("failed upserting machine identity attributes: %w", err)
 	}
 
-	// Reconcile ABAC-driven credentials based on attribute overlap with connections
-	if err := ReconcileMachineIdentityCredentials(ctx, mi.OrgID, mi.Name); err != nil {
-		log.Warnf("failed reconciling credentials after creating MI %s: %v", mi.Name, err)
-	}
-
-	// Re-fetch credentials after reconciliation to include any ABAC-provisioned ones
-	allCreds, err := models.ListMachineIdentityCredentials(mi.OrgID, mi.ID)
-	if err != nil {
-		log.Warnf("failed listing credentials after reconciliation for MI %s: %v", mi.Name, err)
-	}
-
-	// Merge: keep the directly-provisioned credentials (which have secret keys in memory)
-	// and add any new ABAC-provisioned ones from the DB
-	directSet := make(map[string]bool, len(credentials))
+	// Inline ABAC provisioning: provision credentials for connections
+	// matched by attribute overlap that weren't already provisioned directly.
+	abacConns, _ := models.GetConnectionNamesMatchingAttributes(models.DB, orgUUID, attributes)
+	hasCredential := make(map[string]bool, len(credentials))
 	for _, c := range credentials {
-		directSet[c.ConnectionName] = true
+		hasCredential[c.ConnectionName] = true
 	}
-	for _, mic := range allCreds {
-		if directSet[mic.ConnectionName] {
+	for _, connName := range abacConns {
+		if hasCredential[connName] {
 			continue
 		}
-		// This is an ABAC-provisioned credential — build info from stored data
-		credInfo, err := GetMachineIdentityCredentialInfo(ctx, mi.OrgID, mi.Name, mic.ConnectionName)
-		if err != nil {
-			log.Warnf("failed building credential info for ABAC connection %s on MI %s: %v", mic.ConnectionName, mi.Name, err)
+		conn, connErr := models.GetConnectionByNameOrID(uc, connName)
+		if connErr != nil || conn == nil {
+			continue
+		}
+		subtype := MapValidSubtypeToHttpProxy(conn)
+		if !slices.Contains(validMachineIdentityConnectionTypes, subtype.String()) {
+			continue
+		}
+		if conn.AccessModeConnect != "enabled" {
+			continue
+		}
+		_, _, credInfo, provErr := ProvisionCredentialForConnection(mi, connName, conn, serverConf)
+		if provErr != nil {
+			log.Warnf("failed provisioning ABAC credential for connection %s on MI %s: %v", connName, mi.Name, provErr)
 			continue
 		}
 		credentials = append(credentials, credInfo)
