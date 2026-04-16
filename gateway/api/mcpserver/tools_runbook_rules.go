@@ -3,11 +3,13 @@ package mcpserver
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gorm.io/gorm"
 )
 
 type runbookRuleFileInput struct {
@@ -81,6 +83,9 @@ func runbookRulesListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ runb
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	rules, err := models.GetRunbookRules(models.DB, sc.GetOrgID(), 0, 0)
 	if err != nil {
@@ -99,10 +104,16 @@ func runbookRulesGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args ru
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	rule, err := models.GetRunbookRuleByID(models.DB, sc.GetOrgID(), args.ID)
 	if err != nil {
-		return errResult("runbook rule not found"), nil, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errResult("runbook rule not found"), nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed fetching runbook rule: %w", err)
 	}
 
 	return jsonResult(runbookRuleToMap(rule))
@@ -112,6 +123,9 @@ func runbookRulesCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	rule := &models.RunbookRules{
@@ -136,10 +150,16 @@ func runbookRulesUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 
 	existing, err := models.GetRunbookRuleByID(models.DB, sc.GetOrgID(), args.ID)
 	if err != nil {
-		return errResult("runbook rule not found"), nil, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errResult("runbook rule not found"), nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed fetching runbook rule: %w", err)
 	}
 
 	if args.Name != "" {
@@ -170,9 +190,15 @@ func runbookRulesDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest, args
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 
 	if err := models.DeleteRunbookRule(models.DB, sc.GetOrgID(), args.ID); err != nil {
-		return errResult("runbook rule not found"), nil, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errResult("runbook rule not found"), nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed deleting runbook rule: %w", err)
 	}
 
 	return textResult(fmt.Sprintf("runbook rule %q deleted successfully", args.ID)), nil, nil

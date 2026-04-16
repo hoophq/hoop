@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -89,6 +90,9 @@ func datamaskingListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ datam
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	rules, err := models.ListDataMaskingRules(sc.GetOrgID())
 	if err != nil {
@@ -107,6 +111,9 @@ func datamaskingGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args dat
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	rule, err := models.GetDataMaskingRuleByID(sc.GetOrgID(), args.ID)
 	if err == models.ErrNotFound {
@@ -123,6 +130,20 @@ func datamaskingCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
+
+	// OSS license check: max 1 rule
+	if sc.GetLicenseType() == license.OSSType {
+		rules, err := models.ListDataMaskingRules(sc.GetOrgID())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed listing data masking rules: %w", err)
+		}
+		if len(rules) >= 1 {
+			return errResult("data masking rules are limited to 1 rule in the OSS version"), nil, nil
+		}
 	}
 
 	rule := &models.DataMaskingRule{
@@ -153,6 +174,9 @@ func datamaskingUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 
 	rule := &models.DataMaskingRule{
 		ID:                   args.ID,
@@ -180,6 +204,9 @@ func datamaskingDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	err := models.DeleteDataMaskingRule(sc.GetOrgID(), args.ID)

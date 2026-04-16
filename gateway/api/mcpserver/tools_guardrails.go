@@ -76,6 +76,9 @@ func guardrailsListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ guardr
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	rules, err := models.ListGuardRailRules(sc.GetOrgID())
 	if err != nil {
@@ -94,6 +97,9 @@ func guardrailsGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args guar
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	rule, err := models.GetGuardRailRules(sc.GetOrgID(), args.ID)
 	if err == models.ErrNotFound {
@@ -110,6 +116,9 @@ func guardrailsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args g
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	validConnectionIDs := filterEmptyStrings(args.ConnectionIDs)
@@ -142,6 +151,9 @@ func guardrailsUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args g
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 
 	validConnectionIDs := filterEmptyStrings(args.ConnectionIDs)
 
@@ -171,6 +183,9 @@ func guardrailsDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest, args g
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	err := models.DeleteGuardRailRules(sc.GetOrgID(), args.ID)

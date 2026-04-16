@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -139,13 +140,20 @@ func connectionsGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args con
 		return errResult("connection not found"), nil, nil
 	}
 
-	return jsonResult(connectionToMap(conn, true))
+	return jsonResult(connectionToMap(conn, sc.IsAdminUser()))
 }
 
 func connectionsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args connectionsCreateInput) (*mcp.CallToolResult, any, error) {
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
+
+	if err := apivalidation.ValidateResourceName(args.Name); err != nil {
+		return errResult(err.Error()), nil, nil
 	}
 
 	existingConn, err := models.GetConnectionByNameOrID(sc, args.Name)
@@ -188,6 +196,9 @@ func connectionsUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	existing, err := models.GetConnectionByNameOrID(sc, args.Name)
@@ -249,6 +260,9 @@ func connectionsDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	err := models.DeleteConnection(sc.GetOrgID(), args.Name)

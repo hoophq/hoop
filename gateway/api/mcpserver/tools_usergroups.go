@@ -70,6 +70,9 @@ func usergroupsCreateHandler(ctx context.Context, _ *mcp.CallToolRequest, args u
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 
 	err := models.CreateUserGroupWithoutUser(sc.GetOrgID(), args.Name)
 	if err != nil {
@@ -83,6 +86,9 @@ func usergroupsDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest, args u
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	if args.Name == types.GroupAdmin {

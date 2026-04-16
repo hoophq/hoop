@@ -92,6 +92,9 @@ func accessRequestRulesListHandler(ctx context.Context, _ *mcp.CallToolRequest, 
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	orgID, err := uuid.Parse(sc.GetOrgID())
 	if err != nil {
@@ -132,6 +135,9 @@ func accessRequestRulesGetHandler(ctx context.Context, _ *mcp.CallToolRequest, a
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAuditorOrAdminUser() {
+		return errResult("admin or auditor access required"), nil, nil
+	}
 
 	orgID, err := uuid.Parse(sc.GetOrgID())
 	if err != nil {
@@ -153,6 +159,9 @@ func accessRequestRulesCreateHandler(ctx context.Context, _ *mcp.CallToolRequest
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	orgID, err := uuid.Parse(sc.GetOrgID())
@@ -236,6 +245,9 @@ func accessRequestRulesUpdateHandler(ctx context.Context, _ *mcp.CallToolRequest
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
 	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
+	}
 
 	orgID, err := uuid.Parse(sc.GetOrgID())
 	if err != nil {
@@ -308,6 +320,9 @@ func accessRequestRulesDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest
 	sc := storageContextFrom(ctx)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if !sc.IsAdminUser() {
+		return errResult("admin access required"), nil, nil
 	}
 
 	orgID, err := uuid.Parse(sc.GetOrgID())
