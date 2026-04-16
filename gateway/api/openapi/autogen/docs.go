@@ -11359,6 +11359,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 2
                 },
+                "rejection_reason": {
+                    "description": "The reason provided by the reviewer when rejecting this review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "This command is not allowed in production."
+                },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
                     "type": "array",
@@ -11499,6 +11505,10 @@ const docTemplate = `{
                 "force_review": {
                     "type": "boolean",
                     "example": false
+                },
+                "rejection_reason": {
+                    "type": "string",
+                    "example": "This command is not allowed in production."
                 },
                 "status": {
                     "description": "The reviewed status\n* APPROVED - Approve the review resource\n* REJECTED - Reject the review resource\n* REVOKED - Revoke an approved review",
@@ -13274,6 +13284,12 @@ const docTemplate = `{
                     "type": "integer",
                     "readOnly": true,
                     "example": 2
+                },
+                "rejection_reason": {
+                    "description": "The reason provided by the reviewer when rejecting this review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "This command is not allowed in production."
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",

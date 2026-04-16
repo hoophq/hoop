@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -164,6 +165,55 @@ func UpdateAPIKey(apiKey *APIKey) error {
 		}
 		return nil
 	})
+}
+
+// GetAPIKeyContext looks up an active API key by its hash and returns
+// a fully populated models.Context for use in auth middleware.
+func GetAPIKeyContext(keyHash string) (*Context, error) {
+	var ctx struct {
+		OrgID          string          `gorm:"column:org_id"`
+		OrgName        string          `gorm:"column:org_name"`
+		OrgLicenseData json.RawMessage `gorm:"column:org_license_data"`
+		APIKeyID       string          `gorm:"column:api_key_id"`
+		APIKeyName     string          `gorm:"column:api_key_name"`
+		Groups         pq.StringArray  `gorm:"column:groups;type:text[]"`
+	}
+	err := DB.Raw(`
+	SELECT ak.id AS api_key_id, ak.name AS api_key_name,
+		o.id AS org_id, o.name AS org_name, o.license_data AS org_license_data,
+		COALESCE((
+			SELECT array_agg(ug.name::TEXT) FROM private.user_groups ug
+			WHERE ug.api_key_id = ak.id
+		), ARRAY[]::TEXT[]) AS groups
+	FROM private.api_keys ak
+	JOIN private.orgs o ON ak.org_id = o.id
+	WHERE ak.key_hash = ? AND ak.status = 'active'`, keyHash).
+		Scan(&ctx).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	if ctx.APIKeyID == "" {
+		return nil, nil
+	}
+	return &Context{
+		OrgID:          ctx.OrgID,
+		OrgName:        ctx.OrgName,
+		OrgLicenseData: ctx.OrgLicenseData,
+		UserID:         ctx.APIKeyID,
+		UserSubject:    ctx.APIKeyID,
+		UserName:       ctx.APIKeyName,
+		UserEmail:      ctx.APIKeyName,
+		UserStatus:     "active",
+		UserGroups:     ctx.Groups,
+	}, nil
+}
+
+// UpdateAPIKeyLastUsed sets the last_used_at timestamp for an API key.
+func UpdateAPIKeyLastUsed(id string) {
+	DB.Table("private.api_keys").
+		Where("id = ?", id).
+		Update("last_used_at", time.Now().UTC())
 }
 
 func RevokeAPIKey(orgID, id, deactivatedBy string) error {
