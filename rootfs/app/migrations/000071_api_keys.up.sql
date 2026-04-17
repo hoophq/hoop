@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE UNIQUE INDEX idx_api_keys_org_name ON api_keys(org_id, name);
 CREATE UNIQUE INDEX idx_api_keys_org_key_hash ON api_keys(org_id, key_hash);
 CREATE INDEX idx_api_keys_org_status ON api_keys(org_id, status);
+CREATE INDEX idx_api_keys_key_hash ON api_keys(key_hash);
 
 ALTER TABLE user_groups ADD COLUMN api_key_id UUID NULL REFERENCES api_keys(id) ON DELETE CASCADE;
 CREATE UNIQUE INDEX idx_user_groups_api_key_name ON user_groups(api_key_id, name) WHERE api_key_id IS NOT NULL;
