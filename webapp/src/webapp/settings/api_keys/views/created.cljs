@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Text]]
    ["lucide-react" :refer [CheckCircle Copy Info]]
    [re-frame.core :as rf]
-   [reagent.core :as r]))
+   [reagent.core :as r]
+   [webapp.components.forms :as forms]))
 
 (defn main []
   (let [created (rf/subscribe [:api-keys/created])
@@ -26,18 +27,20 @@
           [:> Box {:class "space-y-radix-2"}
            [:> Text {:size "2" :weight "bold" :class "text-[--gray-11]"} "Copy your API Key"]
            [:> Flex {:gap "2" :align "center"}
-            [:> Box {:class "flex-1 font-mono text-sm bg-[--gray-2] border border-[--gray-6] rounded-lg p-3 overflow-x-auto whitespace-nowrap"}
-             (or raw-key "")]
+            [:> Box {:class "flex-1"}
+             [forms/input {:value (or raw-key "")
+                           :disabled true
+                           :not-margin-bottom? true}]]
             [:> Button {:variant "soft"
                         :color (if @copied? "green" "gray")
-                        :size "2"
+                        :size "3"
                         :on-click (fn []
                                     (when raw-key
                                       (.then (js/navigator.clipboard.writeText raw-key)
                                              (fn []
                                                (reset! copied? true)
                                                (js/setTimeout #(reset! copied? false) 2000)))))}
-             [:> Copy {:size 14}]
+             [:> Copy {:size 16}]
              (if @copied? "Copied!" "Copy")]]]
 
           [:> Flex {:justify "center"}

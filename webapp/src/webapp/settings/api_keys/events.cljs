@@ -120,6 +120,29 @@
                                      :text "Failed to deactivate API key"
                                      :details error}]]]}))
 
+(rf/reg-event-fx
+ :api-keys/activate
+ (fn [_ [_ id]]
+   {:fx [[:dispatch [:fetch {:method "POST"
+                             :uri (str "/api-keys/" id "/reactivate")
+                             :body {}
+                             :on-success #(rf/dispatch [:api-keys/activate-success])
+                             :on-failure #(rf/dispatch [:api-keys/activate-failure %])}]]]}))
+
+(rf/reg-event-fx
+ :api-keys/activate-success
+ (fn [_ _]
+   {:fx [[:dispatch [:api-keys/list]]
+         [:dispatch [:show-snackbar {:level :success
+                                     :text "API key activated successfully!"}]]]}))
+
+(rf/reg-event-fx
+ :api-keys/activate-failure
+ (fn [_ [_ error]]
+   {:fx [[:dispatch [:show-snackbar {:level :error
+                                     :text "Failed to activate API key"
+                                     :details error}]]]}))
+
 (rf/reg-event-db
  :api-keys/clear-active
  (fn [db _]
