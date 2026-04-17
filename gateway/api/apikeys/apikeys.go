@@ -104,14 +104,14 @@ func Create(c *gin.Context) {
 // Update API Key
 //
 //	@Summary		Update API Key
-//	@Description	Update an API key's name and/or groups. Only active keys can be updated.
+//	@Description	Update an API key's name and/or groups. Works for both active and revoked keys.
 //	@Tags			API Keys
 //	@Accept			json
 //	@Produce		json
-//	@Param			nameOrID		path		string						true	"Name or UUID of the API key"
-//	@Param			request			body		openapi.APIKeyUpdateRequest	true	"The request body resource"
-//	@Success		200				{object}	openapi.APIKeyResponse
-//	@Failure		400,404,422,500	{object}	openapi.HTTPError
+//	@Param			nameOrID	path		string						true	"Name or UUID of the API key"
+//	@Param			request		body		openapi.APIKeyUpdateRequest	true	"The request body resource"
+//	@Success		200			{object}	openapi.APIKeyResponse
+//	@Failure		400,404,409,500	{object}	openapi.HTTPError
 //	@Router			/api-keys/{nameOrID} [put]
 func Update(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -128,10 +128,6 @@ func Update(c *gin.Context) {
 	}
 	if existing == nil {
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-		return
-	}
-	if existing.Status != "active" {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot update a revoked api key"})
 		return
 	}
 

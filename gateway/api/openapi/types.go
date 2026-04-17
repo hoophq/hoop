@@ -145,7 +145,7 @@ const (
 
 type APIKeyCreateRequest struct {
 	// Human-readable name for the API key
-	Name string `json:"name" binding:"required" example:"anthropic-prod"`
+	Name string `json:"name" binding:"required" example:"bob-the-bot"`
 	// Groups to assign to this API key
 	Groups []string `json:"groups" example:"engineering"`
 }
@@ -158,7 +158,7 @@ type APIKeyCreateResponse struct {
 
 type APIKeyUpdateRequest struct {
 	// Updated display name
-	Name *string `json:"name" example:"anthropic-staging"`
+	Name *string `json:"name" example:"payments-automation"`
 	// Updated group list (replaces existing groups)
 	Groups []string `json:"groups" example:"engineering,platform"`
 }
@@ -169,7 +169,7 @@ type APIKeyResponse struct {
 	// Organization ID
 	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
 	// Human-readable name
-	Name string `json:"name" example:"anthropic-prod"`
+	Name string `json:"name" example:"ai-agent"`
 	// Masked version of the API key for identification
 	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
 	// Current status of the API key

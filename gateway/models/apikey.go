@@ -134,7 +134,7 @@ func CreateAPIKey(apiKey *APIKey) error {
 func UpdateAPIKey(apiKey *APIKey) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.api_keys").
-			Where("id = ? AND org_id = ? AND status = 'active'", apiKey.ID, apiKey.OrgID).
+			Where("id = ? AND org_id = ?", apiKey.ID, apiKey.OrgID).
 			Updates(map[string]any{
 				"name": apiKey.Name,
 			})

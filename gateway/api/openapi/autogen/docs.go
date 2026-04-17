@@ -895,7 +895,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update an API key's name and/or groups. Only active keys can be updated.",
+                "description": "Update an API key's name and/or groups. Works for both active and revoked keys.",
                 "consumes": [
                     "application/json"
                 ],
@@ -943,8 +943,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "422": {
-                        "description": "Unprocessable Entity",
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -8044,7 +8044,7 @@ const docTemplate = `{
                 "name": {
                     "description": "Human-readable name for the API key",
                     "type": "string",
-                    "example": "anthropic-prod"
+                    "example": "bob-the-bot"
                 }
             }
         },
@@ -8100,7 +8100,7 @@ const docTemplate = `{
                 "name": {
                     "description": "Human-readable name",
                     "type": "string",
-                    "example": "anthropic-prod"
+                    "example": "ai-agent"
                 },
                 "org_id": {
                     "description": "Organization ID",
@@ -8169,7 +8169,7 @@ const docTemplate = `{
                 "name": {
                     "description": "Human-readable name",
                     "type": "string",
-                    "example": "anthropic-prod"
+                    "example": "ai-agent"
                 },
                 "org_id": {
                     "description": "Organization ID",
@@ -8219,7 +8219,7 @@ const docTemplate = `{
                 "name": {
                     "description": "Updated display name",
                     "type": "string",
-                    "example": "anthropic-staging"
+                    "example": "payments-automation"
                 }
             }
         },
