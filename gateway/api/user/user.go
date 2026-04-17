@@ -544,6 +544,11 @@ func AcceptOrgInvitation(c *gin.Context) {
 		return
 	}
 
+	if ctx.OrgID == req.OrgID {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "cannot accept invitation: already in target organization"})
+		return
+	}
+
 	oldOrgID := ctx.OrgID
 	oldUserUUID := currentUser.ID
 
@@ -575,6 +580,16 @@ func AcceptOrgInvitation(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError,
 			fmt.Errorf("invited user record has empty ID"), "invalid invited user record")
 		return
+	}
+
+	// Remove any stale user_tokens referencing the invited user's placeholder subject
+	// so that subsequent operations (and auth lookups) are not confused by orphaned entries.
+	if invitedUser.Subject != "" {
+		if err := tx.Exec(`DELETE FROM private.user_tokens WHERE user_id = ?`, invitedUser.Subject).Error; err != nil {
+			tx.Rollback()
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed clearing invited user tokens")
+			return
+		}
 	}
 
 	name := invitedUser.Name
