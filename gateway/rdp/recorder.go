@@ -10,7 +10,9 @@ import (
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/rdp/parser"
 )
 
@@ -318,6 +320,18 @@ func (r *RDPSessionRecorder) Close(err error) {
 	if dbErr := models.UpdateSessionEventStream(sessDone); dbErr != nil {
 		log.With("sid", r.sessionID).Errorf("failed to finalize RDP session: %v", dbErr)
 		return
+	}
+
+	// Enqueue async PII analysis if there are bitmap frames to analyze AND the
+	// analysis pipeline is actually enabled on this gateway. Otherwise the job
+	// would sit 'pending' forever and the session would appear stuck.
+	if r.bitmapCount > 0 && analyzer.IsEnabled(appconfig.Get().MSPresidioAnalyzerURL()) {
+		if enqueueErr := models.CreateRDPAnalysisJob(r.orgID, r.sessionID); enqueueErr != nil {
+			log.With("sid", r.sessionID).Warnf("failed to enqueue RDP analysis job: %v", enqueueErr)
+		} else {
+			_ = models.UpdateSessionRDPAnalysisStatus(r.orgID, r.sessionID, "pending")
+			log.With("sid", r.sessionID).Infof("enqueued RDP PII analysis job")
+		}
 	}
 
 	log.With("sid", r.sessionID).Infof("RDP session finalized, events=%d, bitmaps=%d, size=%d bytes",
