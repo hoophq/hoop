@@ -213,7 +213,7 @@
   "Http proxy specific credentials fields"
   [{:keys [command port proxy_token]}]
 
-  (let [{:keys [curl browser]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
+  (let [{:keys [curl browser wildcard]} (some-> command js/JSON.parse (js->clj :keywordize-keys true))]
     [:> Box {:class "space-y-4"}
 
      ;; Host
@@ -248,6 +248,14 @@
        {:status :success
         :id "command-browser"
         :logs browser}]]
+
+     [:> Box {:class "space-y-2"}
+      [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
+       "Command Wildcard Browser"]
+      [logs/new-container
+       {:status :success
+        :id "command-wildcard-browser"
+        :logs wildcard}]]
 
      ;; Port
      [:> Box {:class "space-y-2"}
