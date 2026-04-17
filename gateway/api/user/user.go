@@ -591,15 +591,6 @@ func AcceptOrgInvitation(c *gin.Context) {
 		return
 	}
 
-	// Remove any stale user_tokens for the invited user's placeholder subject.
-	if invitedUser.Subject != "" {
-		if err := tx.Exec(`DELETE FROM private.user_tokens WHERE user_id = ?`, invitedUser.Subject).Error; err != nil {
-			tx.Rollback()
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed clearing invited user tokens")
-			return
-		}
-	}
-
 	// Delete old user (and their groups via CASCADE) to release the UNIQUE subject constraint.
 	if err := tx.Exec(`DELETE FROM private.users WHERE id = ?`, oldUserUUID).Error; err != nil {
 		tx.Rollback()

@@ -1,16 +1,14 @@
 (ns webapp.features.users.views.org-migration-dialog
   (:require
    ["@radix-ui/themes" :refer [AlertDialog Button Flex Text Strong]]
+   ["lucide-react" :refer [Building2 Loader2]]
    [re-frame.core :as rf]
    [reagent.core :as r]))
 
 (defn- migration-loading [org-name]
-  [:div.flex.flex-col.items-center.justify-center.gap-5.py-8
-   [:div.relative.flex.items-center.justify-center
-    [:div.w-16.h-16.rounded-full.border-4.border-gray-100.border-t-blue-600.animate-spin]
-    [:div.absolute.w-8.h-8.rounded-full.bg-blue-50.flex.items-center.justify-center.animate-pulse
-     [:span.text-blue-600.text-lg "✦"]]]
-   [:div.flex.flex-col.items-center.gap-2
+  [:> Flex {:direction "column" :align "center" :justify "center" :gap "4" :py "8"}
+   [:> Loader2 {:size 40 :class "animate-spin text-blue-600"}]
+   [:> Flex {:direction "column" :align "center" :gap "1"}
     [:> Text {:size "4" :weight "bold" :align "center"}
      "Migrating your organization"]
     [:> Text {:size "2" :color "gray" :align "center"}
@@ -24,12 +22,13 @@
     (fn []
       (when-let [invitation (first @invitations)]
         [:> AlertDialog.Root {:open true}
-         [:> AlertDialog.Content {:size "3"
-                                  :max-width "500px"}
+         [:> AlertDialog.Content {:size "3" :max-width "500px"}
           (if @migrating?
             [migration-loading (:org_name invitation)]
             [:<>
-             [:> AlertDialog.Title "Organization Invitation"]
+             [:> Flex {:align "center" :gap "2" :mb "1"}
+              [:> Building2 {:size 20 :class "text-gray-11"}]
+              [:> AlertDialog.Title "Organization Invitation"]]
              [:> AlertDialog.Description {:size "2"}
               [:> Text
                "You have been invited to join "
@@ -49,4 +48,4 @@
                                        (rf/dispatch [:users->accept-org-invitation
                                                      (:org_id invitation)
                                                      #(reset! migrating? false)]))}
-                (str "Join " (:org_name invitation))]]]]]]]))))
+                (str "Join " (:org_name invitation))]]]])]]))))

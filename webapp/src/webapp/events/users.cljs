@@ -63,11 +63,11 @@
                       :on-success (fn [_]
                                     ;; Keep the loading screen visible briefly so the
                                     ;; transition feels intentional, then reload fresh.
-                                    (js/setTimeout #(js/window.location.reload) 1500))
+                                    (js/setTimeout #(js/window.location.reload) 2500))
                       :on-failure (fn [error]
                                     (when on-failure (on-failure))
                                     (rf/dispatch [:show-snackbar {:level :error
-                                                                   :text (or (:message error) "Failed to migrate organization")}]))}]]]}))
+                                                                  :text (or (:message error) "Failed to migrate organization")}]))}]]]}))
 
 (rf/reg-event-fx
  :users->decline-org-invitation
