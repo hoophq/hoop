@@ -958,7 +958,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Revoke an API key (soft delete). The key status is set to revoked and cannot be reactivated.",
+                "description": "Revoke an API key (soft delete). The key status is set to revoked.",
                 "produces": [
                     "application/json"
                 ],
@@ -981,6 +981,53 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys/{nameOrID}/reactivate": {
+            "post": {
+                "description": "Reactivate a revoked API key. Sets status back to active and clears deactivation metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Reactivate API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }

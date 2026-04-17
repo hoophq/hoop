@@ -305,6 +305,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventRevokeApiKey),
 		apikeys.Revoke)
+	r.POST("/api-keys/:nameOrID/reactivate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventReactivateApiKey),
+		apikeys.Reactivate)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,

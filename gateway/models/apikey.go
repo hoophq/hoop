@@ -232,3 +232,20 @@ func RevokeAPIKey(orgID, id, deactivatedBy string) error {
 	}
 	return nil
 }
+
+func ReactivateAPIKey(orgID, id string) error {
+	res := DB.Table("private.api_keys").
+		Where("id = ? AND org_id = ? AND status = 'revoked'", id, orgID).
+		Updates(map[string]any{
+			"status":         "active",
+			"deactivated_by": nil,
+			"deactivated_at": nil,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

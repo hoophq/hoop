@@ -173,10 +173,56 @@ func Update(c *gin.Context) {
 	}
 }
 
+// Reactivate API Key
+//
+//	@Summary		Reactivate API Key
+//	@Description	Reactivate a revoked API key. Sets status back to active and clears deactivation metadata.
+//	@Tags			API Keys
+//	@Produce		json
+//	@Param			nameOrID		path		string	true	"Name or UUID of the API key"
+//	@Success		200				{object}	openapi.APIKeyResponse
+//	@Failure		404,422,500		{object}	openapi.HTTPError
+//	@Router			/api-keys/{nameOrID}/reactivate [post]
+func Reactivate(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	existing, err := models.GetAPIKeyByNameOrID(ctx.OrgID, c.Param("nameOrID"))
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching api key")
+		return
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+		return
+	}
+	if existing.Status == "active" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot reactivate an active api key"})
+		return
+	}
+
+	err = models.ReactivateAPIKey(ctx.OrgID, existing.ID)
+	switch err {
+	case models.ErrNotFound:
+		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+	case nil:
+		updated, err := models.GetAPIKeyByNameOrID(ctx.OrgID, existing.ID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching reactivated api key")
+			return
+		}
+		if updated == nil {
+			c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
+			return
+		}
+		c.JSON(http.StatusOK, toResponse(*updated))
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reactivating api key")
+	}
+}
+
 // Revoke API Key
 //
 //	@Summary		Revoke API Key
-//	@Description	Revoke an API key (soft delete). The key status is set to revoked and cannot be reactivated.
+//	@Description	Revoke an API key (soft delete). The key status is set to revoked.
 //	@Tags			API Keys
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the API key"

@@ -22,6 +22,7 @@ const (
 	EventCreateApiKey                 = "hoop-create-apikey"
 	EventUpdateApiKey                 = "hoop-update-apikey"
 	EventRevokeApiKey                 = "hoop-revoke-apikey"
+	EventReactivateApiKey             = "hoop-reactivate-apikey"
 
 	// review
 	EventUpdateReview = "hoop-update-review"
