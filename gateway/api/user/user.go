@@ -475,7 +475,182 @@ func GetUserInfo(c *gin.Context) {
 		userInfoData.Picture = ctx.UserAnonPicture
 		userInfoData.ID = ctx.UserAnonSubject
 	}
+
+	if isOrgMultiTenant && !ctx.IsAnonymous() {
+		allUsers, err := models.ListUsersByEmail(ctx.UserEmail)
+		if err != nil {
+			log.Warnf("failed listing users by email for pending invitations, err=%v", err)
+		}
+		for _, u := range allUsers {
+			if u.OrgID != ctx.OrgID && u.Status == string(openapi.StatusInvited) {
+				org, err := models.GetOrganizationByNameOrID(u.OrgID)
+				if err != nil {
+					log.Warnf("failed fetching org %s for pending invitation, err=%v", u.OrgID, err)
+					continue
+				}
+				userInfoData.PendingOrgInvitations = append(
+					userInfoData.PendingOrgInvitations,
+					openapi.PendingOrgInvitation{OrgID: org.ID, OrgName: org.Name},
+				)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, userInfoData)
+}
+
+// AcceptOrgInvitation
+//
+//	@Summary		Accept Organization Invitation
+//	@Description	Migrate the current user to an organization they were invited to. The current auto-created organization is deleted if it becomes empty.
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openapi.AcceptOrgInvitationRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.HTTPSuccess
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/userinfo/accept-org-invitation [post]
+func AcceptOrgInvitation(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.AcceptOrgInvitationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	// ctx.UserID holds the IDP subject (subject claim from the access token)
+	idpSubject := ctx.UserID
+
+	// Use subject-based lookup to unambiguously identify the current user,
+	// avoiding false matches when multiple records share the same email in an org
+	currentUser, err := models.GetUserBySubjectAndOrg(idpSubject, ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching current user")
+		return
+	}
+	if currentUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "current user not found"})
+		return
+	}
+
+	// Only match invited users to avoid accidentally targeting an active user from a previous failed migration
+	invitedUser, err := models.GetInvitedUserByEmailAndOrg(ctx.UserEmail, req.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching invited user")
+		return
+	}
+	if invitedUser == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "pending invitation not found for this organization"})
+		return
+	}
+
+	oldOrgID := ctx.OrgID
+	oldUserUUID := currentUser.ID
+
+	if oldUserUUID == invitedUser.ID {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "cannot migrate: current user and invited user are the same record"})
+		return
+	}
+
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, tx.Error, "failed starting transaction")
+		return
+	}
+
+	// Delete old user first to release the UNIQUE subject constraint before activating the invited user
+	if err := tx.Exec(`DELETE FROM private.user_groups WHERE user_id = ?`, oldUserUUID).Error; err != nil {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing user groups")
+		return
+	}
+	if err := tx.Exec(`DELETE FROM private.users WHERE id = ?`, oldUserUUID).Error; err != nil {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing old user record")
+		return
+	}
+
+	if invitedUser.ID == "" {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError,
+			fmt.Errorf("invited user record has empty ID"), "invalid invited user record")
+		return
+	}
+
+	name := invitedUser.Name
+	if ctx.UserName != "" {
+		name = ctx.UserName
+	}
+	picture := invitedUser.Picture
+	if ctx.UserPicture != "" {
+		picture = ctx.UserPicture
+	}
+	result := tx.Exec(`
+		UPDATE private.users
+		SET subject = ?, status = 'active', verified = true, name = ?, picture = ?
+		WHERE id = ?`,
+		idpSubject, name, picture, invitedUser.ID)
+	if result.Error != nil {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError, result.Error, "failed activating invited user")
+		return
+	}
+	if result.RowsAffected == 0 {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError,
+			fmt.Errorf("no rows updated for invited user %s", invitedUser.ID), "failed activating invited user")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed committing migration")
+		return
+	}
+
+	if err := models.DeleteOrganizationIfEmpty(oldOrgID); err != nil {
+		log.Warnf("could not delete old org %s after user migration: %v", oldOrgID, err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "successfully migrated to organization"})
+}
+
+// DeclineOrgInvitation
+//
+//	@Summary		Decline Organization Invitation
+//	@Description	Removes a pending organization invitation so the dialog is dismissed permanently.
+//	@Tags			User Management
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		openapi.AcceptOrgInvitationRequest	true	"The request body resource"
+//	@Success		200		{object}	openapi.HTTPSuccess
+//	@Failure		400,404,500	{object}	openapi.HTTPError
+//	@Router			/userinfo/pending-org-invitation [delete]
+func DeclineOrgInvitation(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.AcceptOrgInvitationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	invitedUser, err := models.GetUserByEmailAndOrg(ctx.UserEmail, req.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching invited user")
+		return
+	}
+	if invitedUser == nil || invitedUser.Status != string(openapi.StatusInvited) {
+		c.JSON(http.StatusNotFound, gin.H{"message": "pending invitation not found for this organization"})
+		return
+	}
+
+	result := models.DB.Exec(`DELETE FROM private.users WHERE org_id = ? AND email = ? AND status = 'invited'`,
+		req.OrgID, ctx.UserEmail)
+	if result.Error != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, result.Error, "failed declining invitation")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "invitation declined"})
 }
 
 // PatchUserSlackID

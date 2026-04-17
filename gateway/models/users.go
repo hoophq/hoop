@@ -78,6 +78,18 @@ func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
 	return user, nil
 }
 
+func GetInvitedUserByEmailAndOrg(email, orgID string) (*User, error) {
+	var user *User
+	if err := DB.Where("org_id = ? AND email = ? AND status = 'invited'", orgID, email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return user, nil
+}
+
 func GetUserByEmail(email string) (*User, error) {
 	var user *User
 	if err := DB.Where("email = ?", email).First(&user).Error; err != nil {
@@ -88,6 +100,12 @@ func GetUserByEmail(email string) (*User, error) {
 	}
 
 	return user, nil
+}
+
+func ListUsersByEmail(email string) ([]User, error) {
+	var users []User
+	err := DB.Where("email = ?", email).Find(&users).Error
+	return users, err
 }
 
 func CreateUser(user User) error {
@@ -108,6 +126,10 @@ func DeleteUser(orgID, subject string) error {
 		Where("org_id = ? AND subject = ?", orgID, subject).
 		Delete(&User{}).
 		Error
+}
+
+func DeleteUserByID(id string) error {
+	return DB.Where("id = ?", id).Delete(&User{}).Error
 }
 
 func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {

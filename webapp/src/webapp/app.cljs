@@ -101,6 +101,7 @@
    [webapp.features.users.events]
    [webapp.features.users.main :as users]
    [webapp.features.users.subs]
+   [webapp.features.users.views.org-migration-dialog :as org-migration-dialog]
    [webapp.guardrails.create-update-form :as guardrail-create-update]
    [webapp.guardrails.main :as guardrails]
    [webapp.integrations.aws-connect :as aws-connect-page]
@@ -271,6 +272,7 @@
              [draggable-card/main]
              [command-palette/command-palette]
              [command-palette/keyboard-listener]
+             [org-migration-dialog/main]
              [sidebar/main panels]]))))))
 
 (defmulti layout identity)

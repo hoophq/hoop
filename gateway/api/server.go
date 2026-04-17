@@ -217,6 +217,14 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.GetUserInfo)
+	r.POST("/userinfo/accept-org-invitation",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.AcceptOrgInvitation)
+	r.DELETE("/userinfo/pending-org-invitation",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.DeclineOrgInvitation)
 	r.GET("/users",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,

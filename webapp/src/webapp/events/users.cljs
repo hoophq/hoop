@@ -39,18 +39,53 @@
  ::users->set-current-user
  (fn
    [{:keys [db]} [_ user server-info]]
-   (let [license-info (:license_info server-info)]
-
-     {:db (assoc db :users->current-user {:loading false
-                                          :data (assoc user
-                                                       :user-management? (= (:webapp_users_management user) "on")
-                                                       :free-license? (not (and (:is_valid license-info)
-                                                                                (= (:type license-info) "enterprise")))
-                                                       :admin? (:is_admin user)
-                                                       ;;:tenancy_type "multi-tenant"
-                                                       )})
+   (let [license-info (:license_info server-info)
+         pending-invitations (:pending_org_invitations user)]
+     {:db (-> db
+              (assoc :users->current-user {:loading false
+                                           :data (assoc user
+                                                        :user-management? (= (:webapp_users_management user) "on")
+                                                        :free-license? (not (and (:is_valid license-info)
+                                                                                 (= (:type license-info) "enterprise")))
+                                                        :admin? (:is_admin user))})
+              (assoc :users->pending-org-invitations (when (seq pending-invitations) pending-invitations)))
       :fx [[:dispatch [:initialize-intercom user]]
            [:dispatch [:close-page-loader]]]})))
+
+(rf/reg-event-fx
+ :users->accept-org-invitation
+ (fn
+   [_ [_ org-id]]
+   {:fx [[:dispatch [:fetch
+                     {:method "POST"
+                      :uri "/userinfo/accept-org-invitation"
+                      :body {:org_id org-id}
+                      :on-success (fn [_]
+                                    ;; Force a full page reload so all org-scoped state
+                                    ;; (connections, agents, groups, etc.) is loaded fresh
+                                    ;; from the new organization context
+                                    (js/window.location.reload))
+                      :on-failure (fn [error]
+                                    (rf/dispatch [:show-snackbar {:level :error
+                                                                   :text (or (:message error) "Failed to migrate organization")}]))}]]]}))
+
+(rf/reg-event-fx
+ :users->decline-org-invitation
+ (fn
+   [_ [_ org-id]]
+   {:fx [[:dispatch [:fetch
+                     {:method "DELETE"
+                      :uri "/userinfo/pending-org-invitation"
+                      :body {:org_id org-id}
+                      :on-success (fn [_]
+                                    (rf/dispatch [:users->clear-pending-org-invitations]))
+                      :on-failure (fn [_]
+                                    (rf/dispatch [:users->clear-pending-org-invitations]))}]]]}))
+
+(rf/reg-event-db
+ :users->clear-pending-org-invitations
+ (fn [db _]
+   (assoc db :users->pending-org-invitations nil)))
 
 (rf/reg-event-fx
  :users->create-new-user
