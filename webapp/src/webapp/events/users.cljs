@@ -55,17 +55,17 @@
 (rf/reg-event-fx
  :users->accept-org-invitation
  (fn
-   [_ [_ org-id]]
+   [_ [_ org-id on-failure]]
    {:fx [[:dispatch [:fetch
                      {:method "POST"
                       :uri "/userinfo/accept-org-invitation"
                       :body {:org_id org-id}
                       :on-success (fn [_]
-                                    ;; Force a full page reload so all org-scoped state
-                                    ;; (connections, agents, groups, etc.) is loaded fresh
-                                    ;; from the new organization context
-                                    (js/window.location.reload))
+                                    ;; Keep the loading screen visible briefly so the
+                                    ;; transition feels intentional, then reload fresh.
+                                    (js/setTimeout #(js/window.location.reload) 1500))
                       :on-failure (fn [error]
+                                    (when on-failure (on-failure))
                                     (rf/dispatch [:show-snackbar {:level :error
                                                                    :text (or (:message error) "Failed to migrate organization")}]))}]]]}))
 

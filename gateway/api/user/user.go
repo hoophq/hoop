@@ -557,41 +557,6 @@ func AcceptOrgInvitation(c *gin.Context) {
 		return
 	}
 
-	tx := models.DB.Begin()
-	if tx.Error != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, tx.Error, "failed starting transaction")
-		return
-	}
-
-	// Delete old user first to release the UNIQUE subject constraint before activating the invited user
-	if err := tx.Exec(`DELETE FROM private.user_groups WHERE user_id = ?`, oldUserUUID).Error; err != nil {
-		tx.Rollback()
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing user groups")
-		return
-	}
-	if err := tx.Exec(`DELETE FROM private.users WHERE id = ?`, oldUserUUID).Error; err != nil {
-		tx.Rollback()
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing old user record")
-		return
-	}
-
-	if invitedUser.ID == "" {
-		tx.Rollback()
-		httputils.AbortWithErr(c, http.StatusInternalServerError,
-			fmt.Errorf("invited user record has empty ID"), "invalid invited user record")
-		return
-	}
-
-	// Remove any stale user_tokens referencing the invited user's placeholder subject
-	// so that subsequent operations (and auth lookups) are not confused by orphaned entries.
-	if invitedUser.Subject != "" {
-		if err := tx.Exec(`DELETE FROM private.user_tokens WHERE user_id = ?`, invitedUser.Subject).Error; err != nil {
-			tx.Rollback()
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed clearing invited user tokens")
-			return
-		}
-	}
-
 	name := invitedUser.Name
 	if ctx.UserName != "" {
 		name = ctx.UserName
@@ -600,11 +565,20 @@ func AcceptOrgInvitation(c *gin.Context) {
 	if ctx.UserPicture != "" {
 		picture = ctx.UserPicture
 	}
+
+	tx := models.DB.Begin()
+	if tx.Error != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, tx.Error, "failed starting transaction")
+		return
+	}
+
+	// Update the invited user (except subject) first to confirm the record still exists
+	// before we commit to deleting the current user.
 	result := tx.Exec(`
 		UPDATE private.users
-		SET subject = ?, status = 'active', verified = true, name = ?, picture = ?
-		WHERE id = ?`,
-		idpSubject, name, picture, invitedUser.ID)
+		SET status = 'active', verified = true, name = ?, picture = ?
+		WHERE id = ? AND status = 'invited'`,
+		name, picture, invitedUser.ID)
 	if result.Error != nil {
 		tx.Rollback()
 		httputils.AbortWithErr(c, http.StatusInternalServerError, result.Error, "failed activating invited user")
@@ -614,6 +588,29 @@ func AcceptOrgInvitation(c *gin.Context) {
 		tx.Rollback()
 		httputils.AbortWithErr(c, http.StatusInternalServerError,
 			fmt.Errorf("no rows updated for invited user %s", invitedUser.ID), "failed activating invited user")
+		return
+	}
+
+	// Remove any stale user_tokens for the invited user's placeholder subject.
+	if invitedUser.Subject != "" {
+		if err := tx.Exec(`DELETE FROM private.user_tokens WHERE user_id = ?`, invitedUser.Subject).Error; err != nil {
+			tx.Rollback()
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed clearing invited user tokens")
+			return
+		}
+	}
+
+	// Delete old user (and their groups via CASCADE) to release the UNIQUE subject constraint.
+	if err := tx.Exec(`DELETE FROM private.users WHERE id = ?`, oldUserUUID).Error; err != nil {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing old user record")
+		return
+	}
+
+	// Now bind the IDP subject to the invited user (UNIQUE constraint is clear after DELETE above).
+	if err := tx.Exec(`UPDATE private.users SET subject = ? WHERE id = ?`, idpSubject, invitedUser.ID).Error; err != nil {
+		tx.Rollback()
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed setting subject on invited user")
 		return
 	}
 
