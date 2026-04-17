@@ -9,18 +9,23 @@
     (-> (js/Date. date-str)
         (.toLocaleDateString "en-US" #js {:year "numeric" :month "short" :day "numeric"}))))
 
+(defn- truncate-key [key-str]
+  (if (and key-str (> (count key-str) 12))
+    (str (subs key-str 0 10) "...")
+    key-str))
+
 (defn main []
   (let [api-keys (rf/subscribe [:api-keys/list-data])]
     (fn []
       [:> Table.Root {:variant "surface"}
        [:> Table.Header
         [:> Table.Row
-         [:> Table.ColumnHeaderCell {:width "180px"} "Key"]
-         [:> Table.ColumnHeaderCell "Name"]
-         [:> Table.ColumnHeaderCell {:width "120px"} "Created at"]
-         [:> Table.ColumnHeaderCell {:width "200px"} "Created by"]
-         [:> Table.ColumnHeaderCell {:width "120px"} "Last used at"]
-         [:> Table.ColumnHeaderCell {:width "40px"} ""]]]
+         [:> Table.ColumnHeaderCell {:width "16.67%"} "Key"]
+         [:> Table.ColumnHeaderCell {:width "16.67%"} "Name"]
+         [:> Table.ColumnHeaderCell {:width "16.67%"} "Created at"]
+         [:> Table.ColumnHeaderCell {:width "16.67%"} "Created by"]
+         [:> Table.ColumnHeaderCell {:width "16.67%"} "Last used at"]
+         [:> Table.ColumnHeaderCell {:width "16.67%"} ""]]]
 
        [:> Table.Body
         (doall
@@ -34,15 +39,15 @@
                   [:> Flex {:align "center" :gap "2" :class "cursor-default"}
                    [:> Unplug {:size 14 :class "text-[--gray-8] shrink-0"}]
                    [:> Text {:class "font-mono text-sm text-[--gray-8]"}
-                    (:masked_key ak)]]]
+                    (truncate-key (:masked_key ak))]]]
                  [:> Flex {:align "center" :gap "2"}
                   [:> KeyRound {:size 14 :class "text-[--gray-9] shrink-0"}]
-                  [:> Text {:class "font-mono text-sm"} (:masked_key ak)]]))]
+                  [:> Text {:class "font-mono text-sm"} (truncate-key (:masked_key ak))]]))]
             [:> Table.Cell (:name ak)]
             [:> Table.Cell (formatted-date (:created_at ak))]
             [:> Table.Cell (:created_by ak)]
             [:> Table.Cell (or (formatted-date (:last_used_at ak)) "—")]
-            [:> Table.Cell
+            [:> Table.Cell {:justify "end"}
              [:> DropdownMenu.Root {:dir "rtl"}
               [:> DropdownMenu.Trigger
                [:> IconButton {:size "1"
@@ -67,6 +72,10 @@
                                               :on-success (fn []
                                                             (rf/dispatch [:api-keys/revoke (:id ak)]))}])}
                    "Deactivate API key"]]
-                 [:> DropdownMenu.Item
-                  {:on-click #(rf/dispatch [:api-keys/activate (:id ak)])}
-                  "Activate API key"])]]]]))]])))
+                 [:<>
+                  [:> DropdownMenu.Item
+                   {:on-click #(rf/dispatch [:navigate :settings-api-keys-configure {} :id (:id ak)])}
+                   "Configure"]
+                  [:> DropdownMenu.Item
+                   {:on-click #(rf/dispatch [:api-keys/activate (:id ak)])}
+                   "Activate API key"]])]]]]))]])))
