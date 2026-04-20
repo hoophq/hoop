@@ -255,7 +255,7 @@
       [logs/new-container
        {:status :success
         :id "command-wildcard-browser"
-        :logs wildcard}]]
+        :logs subdomain}]]
 
      ;; Port
      [:> Box {:class "space-y-2"}
