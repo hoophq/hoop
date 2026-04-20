@@ -612,7 +612,7 @@ func buildConnectionCredentialsResponse(
 		jsonCommandsString := `{
 				"curl": "` + curlCommand + `",
 				"browser": "` + browserCommand + `",
-				"wildcard": "` + browserWildcardCommand + `"
+				"subdomain": "` + browserWildcardCommand + `"
 			}`
 		base.ConnectionType = proto.ConnectionType(connectionType).String()
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{
