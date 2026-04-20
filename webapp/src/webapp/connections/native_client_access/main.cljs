@@ -251,7 +251,7 @@
 
      [:> Box {:class "space-y-2"}
       [:> Text {:size "2" :weight "bold" :class "text-[--gray-12]"}
-       "Command Wildcard Browser"]
+       "Command Subdomain Browser"]
       [logs/new-container
        {:status :success
         :id "command-wildcard-browser"
