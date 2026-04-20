@@ -70,7 +70,7 @@ func New(opts Options) (*Provider, error) {
 		return nil, err
 	}
 	oidcProvider := oidcProviderConfig.NewProvider(ctx)
-	scopes := []string{oidc.ScopeOpenID, "profile", "email", "offline_access"}
+	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
 	if p.CustomScopes != "" {
 		scopes = addCustomScopes(scopes, p.CustomScopes)
 	}

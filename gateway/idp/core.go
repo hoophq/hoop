@@ -3,6 +3,7 @@ package idp
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -18,7 +19,9 @@ import (
 	samlprovider "github.com/hoophq/hoop/gateway/idp/saml"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/oauth2"
+	"golang.org/x/sync/singleflight"
 )
 
 var ErrUnknownIdpProvider = fmt.Errorf("unknown idp provider")
@@ -68,6 +71,11 @@ var (
 	singletonStore         = memory.New()
 	singletonStoreKey      = "1"
 	singletonCacheDuration = time.Minute * 30
+
+	// refreshGroup deduplicates concurrent token refresh requests for the same subject.
+	// When multiple requests arrive with the same expired token, only one refresh call
+	// hits the IDP; the rest wait and reuse the result.
+	refreshGroup singleflight.Group
 )
 
 // LoadServerAuthConfig loads the server authentication configuration and returns it along with the provider type.
@@ -113,7 +121,9 @@ func (v userInfoTokenVerifier) VerifyExpiredTokenSubject(tokenStr string) (strin
 
 // TryRefreshExpiredToken validates the signature of an expired JWT, extracts
 // the subject, looks up the stored refresh token, and exchanges it for a new
-// access token. On success it persists the new tokens and returns (subject, newAccessToken).
+// access token. On success it persists the new tokens, syncs user groups from
+// the IDP userinfo endpoint, and returns (subject, newAccessToken).
+// Concurrent calls for the same subject are deduplicated via singleflight.
 func TryRefreshExpiredToken(tokenVerifier TokenVerifier, expiredToken string) (string, string, error) {
 	sv, ok := tokenVerifier.(ExpiredTokenSubjectVerifier)
 	if !ok {
@@ -124,34 +134,119 @@ func TryRefreshExpiredToken(tokenVerifier TokenVerifier, expiredToken string) (s
 		return "", "", fmt.Errorf("failed to verify expired token: %w", err)
 	}
 
-	userToken, err := models.GetUserToken(models.DB, subject)
-	if err != nil || userToken == nil {
-		return "", "", fmt.Errorf("no stored token for subject")
-	}
-	if userToken.RefreshToken == nil || *userToken.RefreshToken == "" {
-		return "", "", fmt.Errorf("no refresh token available")
+	type refreshResult struct {
+		subject        string
+		newAccessToken string
 	}
 
-	refresher, ok := tokenVerifier.(TokenRefresher)
-	if !ok {
-		return "", "", fmt.Errorf("token refresh not supported by this provider")
-	}
+	result, err, _ := refreshGroup.Do(subject, func() (any, error) {
+		userToken, err := models.GetUserToken(models.DB, subject)
+		if err != nil || userToken == nil {
+			return nil, fmt.Errorf("no stored token for subject")
+		}
+		if userToken.RefreshToken == nil || *userToken.RefreshToken == "" {
+			return nil, fmt.Errorf("no refresh token available")
+		}
 
-	newToken, err := refresher.RefreshAccessToken(context.Background(), *userToken.RefreshToken)
+		refresher, ok := tokenVerifier.(TokenRefresher)
+		if !ok {
+			return nil, fmt.Errorf("token refresh not supported by this provider")
+		}
+
+		newToken, err := refresher.RefreshAccessToken(context.Background(), *userToken.RefreshToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refresh access token: %w", err)
+		}
+
+		var newRefreshToken *string
+		if newToken.RefreshToken != "" {
+			newRefreshToken = &newToken.RefreshToken
+		}
+		if err := models.UpsertUserToken(models.DB, subject, newToken.AccessToken, newRefreshToken); err != nil {
+			return nil, fmt.Errorf("failed to persist refreshed token: %w", err)
+		}
+
+		syncUserGroupsFromUserInfo(tokenVerifier, subject, newToken.AccessToken)
+
+		log.With("subject", subject).Infof("access token refreshed successfully")
+		return &refreshResult{subject: subject, newAccessToken: newToken.AccessToken}, nil
+	})
 	if err != nil {
-		return "", "", fmt.Errorf("failed to refresh access token: %w", err)
+		return "", "", err
 	}
 
-	var newRefreshToken *string
-	if newToken.RefreshToken != "" {
-		newRefreshToken = &newToken.RefreshToken
-	}
-	if err := models.UpsertUserToken(models.DB, subject, newToken.AccessToken, newRefreshToken); err != nil {
-		return "", "", fmt.Errorf("failed to persist refreshed token: %w", err)
+	r := result.(*refreshResult)
+	return r.subject, r.newAccessToken, nil
+}
+
+// syncUserGroupsFromUserInfo fetches fresh group claims from the IDP userinfo
+// endpoint using the new access token and updates the user's groups in the database.
+// This is best-effort: failures are logged but do not fail the refresh flow.
+func syncUserGroupsFromUserInfo(tokenVerifier TokenVerifier, subject, accessToken string) {
+	uiVerifier, ok := tokenVerifier.(UserInfoTokenVerifier)
+	if !ok {
+		return
 	}
 
-	log.With("subject", subject).Infof("access token refreshed successfully")
-	return subject, newToken.AccessToken, nil
+	uinfo, err := uiVerifier.VerifyAccessTokenWithUserInfo(accessToken)
+	if err != nil {
+		log.With("subject", subject).Warnf("failed to fetch userinfo after token refresh: %v", err)
+		return
+	}
+	if !uinfo.MustSyncGroups {
+		return
+	}
+
+	ctx, err := models.GetUserContext(subject)
+	if err != nil || ctx.IsEmpty() {
+		log.With("subject", subject).Warnf("failed to get user context for group sync: %v", err)
+		return
+	}
+
+	userGroups := uinfo.Groups
+	if ctx.IsAdmin() {
+		userGroups = append(userGroups, types.GroupAdmin)
+	}
+
+	encountered := make(map[string]bool)
+	var dedupedGroups []string
+	for _, g := range userGroups {
+		if !encountered[g] {
+			encountered[g] = true
+			dedupedGroups = append(dedupedGroups, g)
+		}
+	}
+
+	newUserGroups := make([]models.UserGroup, 0, len(dedupedGroups))
+	for _, g := range dedupedGroups {
+		newUserGroups = append(newUserGroups, models.UserGroup{
+			OrgID:  ctx.OrgID,
+			UserID: ctx.UserID,
+			Name:   g,
+		})
+	}
+
+	verified := false
+	if uinfo.EmailVerified != nil {
+		verified = *uinfo.EmailVerified
+	}
+	user := models.User{
+		ID:       ctx.UserID,
+		OrgID:    ctx.OrgID,
+		Subject:  subject,
+		Name:     ctx.UserName,
+		Email:    ctx.UserEmail,
+		Verified: verified,
+		Status:   ctx.UserStatus,
+		SlackID:  ctx.UserSlackID,
+	}
+	if ctx.UserHashedPassword != nil {
+		user.HashedPassword = *ctx.UserHashedPassword
+	}
+
+	if err := models.UpdateUserAndUserGroups(&user, newUserGroups); err != nil {
+		log.With("subject", subject).Warnf("failed to sync user groups after token refresh: %v", err)
+	}
 }
 
 func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.ProviderType, old, new *models.ServerAuthConfig) (hasChanged bool) {
