@@ -137,10 +137,45 @@ Two complementary paths:
 - No increase in support tickets citing "unexpected email" or privacy concerns.
 - Mixpanel/PostHog MAU counts stable ±2% through the rollout (proves the hashed ID still dedupes across the Identify mode change).
 
+## Milestones
+
+### M1 — Stop the bleeding: default OSS to identified
+
+**Goal:** stop losing addressable users on every new OSS signup; unlock Intercom outreach to anyone signing up from today onward.
+
+Scope (intentionally minimal):
+- Add `UserEmail` and `UserName` to `types.APIContext` and populate them at auth time.
+- In `gateway/analytics/segment.go:55`, send `email` and `name` as Identify traits for OSS installs. Keep the hashed `user-id` as the primary `UserId` so Mixpanel/PostHog profiles don't split.
+- On signup (`gateway/api/signup/signup.go:126`), pass the real email to Intercom via the existing HMAC flow so the contact is created with an addressable identity.
+- Gate by the existing `IsAnalyticsEnabled()` / `ProductAnalytics` check — if an operator already turned analytics off, nothing changes.
+
+Out of scope for M1: the tri-state `analytics_mode` column, settings UI, per-org opt-in, deletion/archival flows. Hard-coded behavior is fine here — the point is to fix the data loss fast.
+
+Exit criteria: a new OSS signup produces an Intercom contact with a real email within 60 seconds of `/signup` completing.
+
+### M2 — Explicit modes and admin control
+
+- Add `analytics_mode` column (`identified` | `anonymous` | `disabled`) to the org (or `ServerMiscConfig` for self-hosted).
+- Branch the Identify/Track path on mode; existing M1 OSS default remains `identified`.
+- Self-hosted/Enterprise default set to `anonymous` on upgrade to preserve current behavior.
+- Admin settings toggle in Settings → Organization.
+
+### M3 — Consent surface and deletion
+
+- Signup checkbox ("Send me product updates and onboarding emails", default checked).
+- First-run banner for existing OSS orgs to opt in.
+- Deletion path: Intercom `contact.archive` on mode downgrade; delete contact on user delete.
+- Tests + docs (`.env.sample`, README analytics section).
+
+### M4 — CLI-only coverage and hardening
+
+- Server-side Intercom Contacts API call for signups that never touch the webapp (CLI-only OSS users).
+- Email-verification gate before sending to Intercom (avoid polluting with unverified signups).
+- Backfill job for historical hashed users (optional — decide after M1 data lands).
+
 ## Rollout
 
-1. Ship behind feature flag `ANALYTICS_MODE_ENABLED`; default off.
+1. Ship M1 behind feature flag `ANALYTICS_IDENTIFIED_DEFAULT`; default off.
 2. Enable on staging; verify Intercom contact creation + Mixpanel dedupe.
-3. Enable for new OSS cloud signups only (week 1).
-4. Enable opt-in for existing OSS orgs via admin banner (week 2).
-5. Document self-hosted opt-in path (week 3).
+3. Flip the flag on for OSS cloud signups.
+4. M2–M4 follow on the normal release cadence.
