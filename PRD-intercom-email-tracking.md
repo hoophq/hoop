@@ -12,9 +12,12 @@ This PRD proposes inverting the default: **analytics-opted-in users send identif
 
 ## Problem
 
-- New OSS users sign up but are invisible to our growth/lifecycle tooling.
-- Intercom identity verification infrastructure (`gateway/analytics/intercom.go:11`, `GenerateIntercomHmacDigest`) exists but has no email to bind to because the server-side `Identify()` in `gateway/analytics/segment.go:55` sends only a hashed `user-id` and a handful of non-PII traits.
-- The same `Identify` payload feeds Mixpanel, PostHog, **and** Intercom through Segment, so we can't improve Intercom coverage without also shipping PII to the product-analytics destinations (which is fine for identified users, but needs to remain off for the anonymous cohort).
+**Root cause: the default "identified" analytics path is actually anonymizing users.** There is no explicit mode today — every user flows through the same `Identify()` in `gateway/analytics/segment.go:55`, which SHA-256 hashes the user ID and omits email/name entirely. What should be the identified path has been treated as if it were the anonymous path, so users who never opted out of tracking still land in Intercom/Mixpanel/PostHog without an addressable identity.
+
+Downstream effects:
+- New OSS users sign up but are invisible to our growth/lifecycle tooling — we can't email them even though they consented to tracking.
+- Intercom identity verification infrastructure (`gateway/analytics/intercom.go:11`, `GenerateIntercomHmacDigest`) exists but has no email to bind to because the server-side `Identify()` sends only a hashed `user-id` and a handful of non-PII traits.
+- The same `Identify` payload feeds Mixpanel, PostHog, **and** Intercom through Segment, so the fix has to distinguish *who is allowed to receive PII* rather than stripping it globally.
 
 ## Goals
 
