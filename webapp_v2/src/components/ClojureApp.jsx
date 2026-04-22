@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Alert, Center, Stack, Text, Code } from '@mantine/core'
+import { Alert, Center, Loader, Stack, Text, Code } from '@mantine/core'
 
 function loadCSS(href) {
   if (document.querySelector(`link[data-cljs-css]`)) return
@@ -41,6 +41,10 @@ function ClojureApp() {
   const location = useLocation()
   const mountRef = useRef(null)
   const [error, setError] = useState(null)
+  // True while /js/app.js is being fetched for the first time
+  const [cljsLoading, setCljsLoading] = useState(
+    () => !document.querySelector('script[data-cljs-bundle]')
+  )
   // Track whether the CLJS app is ready to receive route updates
   const cljsReadyRef = useRef(false)
 
@@ -59,6 +63,7 @@ function ClojureApp() {
           // init() was already called by shadow-cljs :init-fn — nothing to do.
           // Pushy already parsed the current URL on startup.
           cljsReadyRef.current = true
+          setCljsLoading(false)
           return
         }
         // Bundle was already loaded (user navigated away and came back).
@@ -73,9 +78,11 @@ function ClojureApp() {
           window.hoopRemount()
         }
         cljsReadyRef.current = true
+        setCljsLoading(false)
       })
       .catch(() => {
         setError(true)
+        setCljsLoading(false)
       })
 
     return () => {
@@ -83,7 +90,9 @@ function ClojureApp() {
       cljsReadyRef.current = false
       if (mountRef.current) {
         mountRef.current.innerHTML = ''
-        mountRef.current.id = ''
+        // Do NOT clear id here — in React 18 StrictMode, cleanup runs before
+        // re-mount while the DOM element stays. If the CLJS script loads during
+        // that window it calls getElementById("app") and crashes on null.
       }
     }
   }, [])
@@ -121,7 +130,23 @@ function ClojureApp() {
     )
   }
 
-  return <div ref={mountRef} />
+  return (
+    <>
+      {cljsLoading && (
+        <Center
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'var(--mantine-color-body)',
+            zIndex: 200,
+          }}
+        >
+          <Loader size="lg" />
+        </Center>
+      )}
+      <div ref={mountRef} />
+    </>
+  )
 }
 
 export default ClojureApp

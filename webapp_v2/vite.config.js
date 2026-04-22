@@ -9,6 +9,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    emptyOutDir: true,
+  },
   server: {
     proxy: {
       // API requests → gateway backend
