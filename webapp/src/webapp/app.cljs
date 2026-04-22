@@ -1,6 +1,6 @@
 (ns webapp.app
   (:require
-   ["@radix-ui/themes" :refer [Box Heading Spinner]]
+   ["@radix-ui/themes" :refer [Box Heading]]
    ["ag-grid-community" :refer [AllCommunityModule ModuleRegistry]]
    ["gsap/all" :refer [Draggable gsap]]
    ["sonner" :refer [Toaster]]
@@ -21,6 +21,7 @@
    [webapp.auth.views.logout :as logout]
    [webapp.auth.views.signup :as signup]
    [webapp.components.dialog :as dialog]
+   [webapp.components.loaders :as loaders]
    [webapp.components.draggable-card :as draggable-card]
    [webapp.components.headings :as h]
    [webapp.components.modal :as modals]
@@ -191,11 +192,8 @@
          #(rf/dispatch [:navigate :home])
          1500)))
 
-    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
-      [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:div {:class "flex justify-center"}
-       [:> Spinner {:size "3"}]]]]))
+    [loaders/page-loading-screen {:message "Verifying authentication..."
+                                   :description "Please wait while we complete your sign in"}]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -217,19 +215,11 @@
      #(rf/dispatch [:navigate destiny])
      1500)
 
-    [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-     [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center"}
-      [h/h2 "Verifying authentication..." {:class "mb-4"}]
-      [:div {:class "flex justify-center"}
-       [:> Spinner {:size "3"}]]]]))
+    [loaders/page-loading-screen {:message "Setting up your account..."
+                                   :description "Please wait while we complete your sign up"}]))
 
 (defn loading-transition []
-  [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-   [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-    [:div {:class "text-center"}
-     [h/h2 "Loading..." {:class "mb-4"}]
-     [:div {:class "flex justify-center"}
-      [:> Spinner {:size "3"}]]]]])
+  [loaders/page-loading-screen {}])
 
 (defn- hoop-layout [_]
   (let [user (rf/subscribe [:users->current-user])
@@ -786,13 +776,8 @@
     (if (nil? matched-route)
       (do
         (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
-        [:div {:class "min-h-screen bg-gray-100 flex items-center justify-center"}
-         [:div {:class "bg-white rounded-lg shadow-md p-8 max-w-md w-full"}
-          [:div {:class "text-center"}
-           [h/h2 "Page not found" {:class "mb-4"}]
-           [:p {:class "text-gray-600 mb-6"} "In a few seconds you will be redirected to the home page."]
-           [:div {:class "flex justify-center"}
-            [:> Spinner {:size "3"}]]]]])
+        [loaders/page-loading-screen {:message "Page not found"
+                                       :description "In a few seconds you will be redirected to the home page."}])
 
       [loading-transition])))
 
