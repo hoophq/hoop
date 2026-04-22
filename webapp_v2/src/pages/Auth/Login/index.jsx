@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Container,
   Paper,
   Title,
   TextInput,
@@ -10,15 +9,15 @@ import {
   Text,
   Anchor,
   Stack,
-  Center,
-  Loader,
   Alert,
+  Center,
+  Box,
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
+import PageLoader from '@/components/PageLoader'
 
-// Map error codes from backend to human-readable messages
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
   code_exchange_failure:
@@ -30,6 +29,23 @@ const LOGIN_ERROR_MESSAGES = {
 
 function getLoginErrorMessage(error) {
   return LOGIN_ERROR_MESSAGES[error] || error
+}
+
+function AuthCard({ children }) {
+  return (
+    <Center style={{ minHeight: '100vh', backgroundColor: 'var(--mantine-color-gray-1)' }}>
+      <Box style={{ width: '90%', maxWidth: 400 }}>
+        <Paper shadow="sm" p={40} radius="lg">
+          <img
+            src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
+            alt="hoop"
+            style={{ width: 48, display: 'block', margin: '0 auto 24px' }}
+          />
+          {children}
+        </Paper>
+      </Box>
+    </Center>
+  )
 }
 
 function Login() {
@@ -44,7 +60,6 @@ function Login() {
   const [authMethod, setAuthMethod] = useState(null)
   const [loadingAuthMethod, setLoadingAuthMethod] = useState(true)
 
-  // Check if user is already authenticated
   useEffect(() => {
     if (isAuthenticated) {
       const redirectUrl = getAndClearRedirectUrl()
@@ -56,7 +71,6 @@ function Login() {
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
 
-  // Check for stored login error (set by callback page)
   useEffect(() => {
     const loginError = localStorage.getItem('login_error')
     if (loginError) {
@@ -65,7 +79,6 @@ function Login() {
     }
   }, [])
 
-  // Fetch auth method from /publicserverinfo
   useEffect(() => {
     if (isAuthenticated) return
 
@@ -75,7 +88,6 @@ function Login() {
         const method = serverInfo.auth_method || 'local'
         setAuthMethod(method)
 
-        // If not local auth, redirect immediately to OAuth provider
         if (method !== 'local') {
           redirectToIdp()
         }
@@ -90,7 +102,6 @@ function Login() {
     fetchAuthMethod()
   }, [isAuthenticated])
 
-  // Redirect to IDP (OAuth) provider
   const redirectToIdp = async (options = {}) => {
     setLoading(true)
     try {
@@ -103,7 +114,6 @@ function Login() {
     }
   }
 
-  // Handle local auth login
   const handleLocalLogin = async (e) => {
     e.preventDefault()
     setError(null)
@@ -127,14 +137,12 @@ function Login() {
     }
   }
 
-  // Handle signup redirect
   const handleSignup = async () => {
     if (authMethod === 'local') {
       navigate('/register')
       return
     }
 
-    // For IDP, redirect to signup URL (callback goes to /signup/callback → /signup for org setup)
     try {
       const callbackUrl = `${window.location.origin}/signup/callback`
       const signupUrl = await authService.getSignupUrl(callbackUrl)
@@ -144,88 +152,70 @@ function Login() {
     }
   }
 
-  // Loading state while determining auth method
   if (loadingAuthMethod || (authMethod !== 'local' && !error)) {
-    return (
-      <Center style={{ height: '100vh' }}>
-        <Stack align="center">
-          <Loader size="lg" />
-          <Text size="sm" c="dimmed">
-            Redirecting to login...
-          </Text>
-        </Stack>
-      </Center>
-    )
+    return <PageLoader message="Redirecting to login..." />
   }
 
-  // If OAuth failed to redirect, show a fallback button
   if (authMethod !== 'local' && error) {
     return (
-      <Container size={420} my={40}>
-        <Paper withBorder shadow="md" p={30} mt={30} radius="md">
-          <Title order={2} ta="center" mb="lg">
-            Welcome to Hoop
-          </Title>
-
-          <Alert color="red" mb="md">
-            {error}
-          </Alert>
-
-          <Button fullWidth onClick={() => redirectToIdp({ promptLogin: true })} loading={loading}>
-            Try again
-          </Button>
-        </Paper>
-      </Container>
+      <AuthCard>
+        <Title order={2} ta="center" mb="lg">
+          Welcome to Hoop
+        </Title>
+        <Alert color="red" mb="md">
+          {error}
+        </Alert>
+        <Button fullWidth onClick={() => redirectToIdp({ promptLogin: true })} loading={loading}>
+          Try again
+        </Button>
+      </AuthCard>
     )
   }
 
-  // Local Login (email/password)
   return (
-    <Container size={420} my={40}>
-      <Paper withBorder shadow="md" p={30} mt={30} radius="md">
-        <Title order={2} ta="center" mb="lg">
-          Sign in to your account
-        </Title>
+    <AuthCard>
+      <Title order={2} ta="center" mb="lg">
+        Login
+      </Title>
 
-        {error && (
-          <Alert color="red" mb="md">
-            {error}
-          </Alert>
-        )}
+      {error && (
+        <Alert color="red" mb="md">
+          {error}
+        </Alert>
+      )}
 
-        <form onSubmit={handleLocalLogin}>
-          <Stack>
-            <TextInput
-              label="Email"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              type="email"
-            />
+      <form onSubmit={handleLocalLogin}>
+        <Stack>
+          <TextInput
+            label="Email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            type="email"
+          />
 
-            <PasswordInput
-              label="Password"
-              placeholder="Your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+          <PasswordInput
+            label="Password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
 
-            <Button type="submit" fullWidth loading={loading}>
-              Sign in
-            </Button>
-          </Stack>
-        </form>
+          <Button type="submit" fullWidth loading={loading}>
+            Login
+          </Button>
+        </Stack>
+      </form>
 
-        <Text c="dimmed" size="sm" ta="center" mt="md">
-          Don't have an account?{' '}
-          <Anchor size="sm" onClick={handleSignup}>
-            Sign Up
-          </Anchor>
-        </Text>
-      </Paper>
-    </Container>
+      <Text c="dimmed" size="sm" ta="center" mt="md">
+        Don&apos;t have an account?{' '}
+        <Anchor size="sm" onClick={handleSignup}>
+          Create one
+        </Anchor>
+      </Text>
+    </AuthCard>
   )
 }
 

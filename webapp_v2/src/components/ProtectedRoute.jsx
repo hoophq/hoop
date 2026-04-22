@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { Center, Loader } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
+import PageLoader from '@/components/PageLoader'
 
 function ProtectedRoute({ children }) {
   const location = useLocation()
@@ -85,11 +85,7 @@ function ProtectedRoute({ children }) {
   }
 
   if (initializing) {
-    return (
-      <Center style={{ height: '100vh' }}>
-        <Loader size="lg" />
-      </Center>
-    )
+    return <PageLoader message="Verifying authentication..." />
   }
 
   return children
