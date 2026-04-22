@@ -1,37 +1,53 @@
+/* ── Nav link ──────────────────────────────────────────────── */
+
 .navLink {
   border-radius: 6px;
 }
 
+/*
+ * --mantine-color-gray-0 is overridden on the sidebar root element so that
+ * Mantine's NavLink hover (which uses that variable) resolves to our subtle
+ * white tint instead of the default near-white. No !important needed.
+ */
 .navLink:hover {
   background-color: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-/* Propagate text color to label / icons when hovered */
 .navLink:hover * {
   color: inherit;
 }
 
-.navLink[data-active] {
+/* Active state — override Mantine's --nl-bg / --nl-color */
+.navLink[data-active],
+.navLink[aria-current='page'] {
   background-color: rgba(255, 255, 255, 0.07);
   color: #fff;
+  --nl-bg: rgba(255, 255, 255, 0.07);
+  --nl-color: #fff;
 }
 
-.navLink[data-active] * {
+.navLink[data-active] *,
+.navLink[aria-current='page'] * {
   color: inherit;
 }
 
-.navLink[data-active]:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+.navLink[data-active]:hover,
+.navLink[aria-current='page']:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-/* Blocked/free-license item — dimmed, no interaction */
+.navLink:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 1px;
+}
+
+/* Blocked paid feature — dimmed, still clickable (redirects to upgrade) */
 .navLinkBlocked {
   opacity: 0.45;
-  pointer-events: none;
 }
 
-/* ── Collapsed icon button ─────────────────────────────── */
+/* ── Collapsed icon button ─────────────────────────────────── */
 
 .iconBtn {
   display: flex;
@@ -50,10 +66,94 @@
 
 .iconBtn:hover {
   background-color: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 1px;
 }
 
 .iconBtnActive {
   background-color: rgba(255, 255, 255, 0.07);
   color: #fff;
+}
+
+/* ── Profile disclosure button ─────────────────────────────── */
+
+.profileSection {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.profileBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.75);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.profileBtn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.profileBtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: -2px;
+}
+
+.profileItem {
+  border-radius: 0;
+}
+
+.profileItem:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* ── Skip link (visible on focus for keyboard users) ──────── */
+
+.skipLink {
+  position: fixed;
+  top: -9999px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 12px;
+  background: #3e63dd;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 6px;
+  z-index: 9999;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skipLink:focus {
+  top: 50%;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(62, 99, 221, 0.4);
+}
+
+/* ── Screen-reader-only text ──────────────────────────────── */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }

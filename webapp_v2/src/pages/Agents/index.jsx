@@ -2,31 +2,36 @@ import {
   Title,
   Button,
   Group,
-  Table,
   Loader,
   Text,
   Badge,
-  ActionIcon,
   Stack,
-  Anchor,
   Center,
   Modal,
+  Card,
+  Box,
+  Flex,
 } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trash2, Zap } from 'lucide-react'
+import { Trash2, Zap, CircleDashed } from 'lucide-react'
 import { useAgentStore } from '@/stores/useAgentStore'
 import { useUserStore } from '@/stores/useUserStore'
 import EmptyState from '@/layout/EmptyState'
+import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 
 const AGENTS_DOCS_URL = 'https://hoop.dev/docs/setup/agents'
 
 function AgentStatusBadge({ status }) {
   const isOnline = status === 'CONNECTED'
   return (
-    <Badge color={isOnline ? 'green' : 'red'} variant="light">
+    <Badge
+      color={isOnline ? 'green' : 'red'}
+      variant="light"
+      leftSection={<CircleDashed size={10} />}
+    >
       {isOnline ? 'Online' : 'Offline'}
     </Badge>
   )
@@ -37,16 +42,19 @@ function DeleteAgentModal({ agent, opened, onClose, onConfirm }) {
     <Modal
       opened={opened}
       onClose={onClose}
-      title="Delete Agent"
+      title="Delete agent?"
       centered
       size="sm"
     >
       <Stack>
-        <Text size="sm">
-          This action will instantly remove the agent{' '}
-          <Text component="span" fw={600}>{agent?.name}</Text>{' '}
-          and cannot be undone.
-        </Text>
+        <Stack gap={4}>
+          <Text size="sm">
+            This action will instantly remove the agent{' '}
+            <Text component="span" fw={600}>{agent?.name}</Text>{' '}
+            and cannot be undone.
+          </Text>
+          <Text size="sm">Are you sure you want to delete this agent?</Text>
+        </Stack>
         <Group justify="flex-end" mt="xs">
           <Button variant="subtle" color="gray" onClick={onClose}>
             Cancel
@@ -57,6 +65,37 @@ function DeleteAgentModal({ agent, opened, onClose, onConfirm }) {
         </Group>
       </Stack>
     </Modal>
+  )
+}
+
+function AgentRow({ agent, isAdmin, isLast, onDelete }) {
+  return (
+    <Box
+      p="md"
+      style={isLast ? undefined : { borderBottom: '1px solid var(--mantine-color-default-border)' }}
+    >
+      <Flex align="center">
+        <Box style={{ flex: 1 }}>
+          <Text size="lg" fw={700}>{agent.name}</Text>
+          <Text size="xs" c="dimmed">Version: {agent.version}</Text>
+          <Text size="xs" c="dimmed">ID: {agent.id}</Text>
+        </Box>
+        <Flex align="center" gap="sm">
+          <AgentStatusBadge status={agent.status} />
+          {isAdmin && (
+            <Button
+              size="xs"
+              variant="light"
+              color="red"
+              leftSection={<Trash2 size={14} />}
+              onClick={() => onDelete(agent)}
+            >
+              Delete
+            </Button>
+          )}
+        </Flex>
+      </Flex>
+    </Box>
   )
 }
 
@@ -114,13 +153,11 @@ function Agents() {
       <Stack gap="lg">
         <Group justify="space-between" align="flex-start">
           <Stack gap={4}>
-            <Title order={2}>Agents</Title>
-            <Text size="sm" c="dimmed">
-              View and manage your Agents for your resource roles.{' '}
-              <Anchor href={AGENTS_DOCS_URL} target="_blank" size="sm">
-                Learn more
-              </Anchor>
+            <Title order={1}>Agents</Title>
+            <Text size="md" c="dimmed">
+              View and manage your Agents for your resource roles
             </Text>
+            <DocsBtnCallOut text="Learn more about Agents" href={AGENTS_DOCS_URL} />
           </Stack>
           {isAdmin && agents.length > 0 && (
             <Button onClick={() => navigate('/agents/new')}>
@@ -141,44 +178,17 @@ function Agents() {
             }
           />
         ) : (
-          <Table highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Version</Table.Th>
-                <Table.Th>ID</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {agents.map((agent) => (
-                <Table.Tr key={agent.id}>
-                  <Table.Td fw={500}>{agent.name}</Table.Td>
-                  <Table.Td>
-                    <Text size="xs" c="dimmed">{agent.version}</Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="xs" c="dimmed">{agent.id}</Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <AgentStatusBadge status={agent.status} />
-                  </Table.Td>
-                  <Table.Td>
-                    {isAdmin && (
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        onClick={() => handleDeleteClick(agent)}
-                      >
-                        <Trash2 size={16} />
-                      </ActionIcon>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+          <Card padding={0} withBorder>
+            {agents.map((agent, i) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                isAdmin={isAdmin}
+                isLast={i === agents.length - 1}
+                onDelete={handleDeleteClick}
+              />
+            ))}
+          </Card>
         )}
       </Stack>
     </>
