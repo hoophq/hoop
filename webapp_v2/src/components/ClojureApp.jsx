@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Alert, Center, Loader, Stack, Text, Code } from '@mantine/core'
+import { Alert, Center, Stack, Text, Code } from '@mantine/core'
+import PageLoader from '@/components/PageLoader'
 
 function loadCSS(href) {
   if (document.querySelector(`link[data-cljs-css]`)) return
@@ -132,18 +133,7 @@ function ClojureApp() {
 
   return (
     <>
-      {cljsLoading && (
-        <Center
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'var(--mantine-color-body)',
-            zIndex: 200,
-          }}
-        >
-          <Loader size="lg" />
-        </Center>
-      )}
+      {cljsLoading && <PageLoader overlay />}
       <div ref={mountRef} />
     </>
   )
