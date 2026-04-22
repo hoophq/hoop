@@ -12,8 +12,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/apiutils"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -217,6 +219,10 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		redirectToErrURL(c, login.Redirect, "unable to obtain user from database")
 		return
 	}
+
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	isNewUser := false
 	if usr == nil {
 		org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
 		if err != nil {
@@ -240,6 +246,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 			SlackID:        nil,
 			HashedPassword: nil,
 		}
+		isNewUser = true
 	}
 
 	switch openapi.StatusType(usr.Status) {
@@ -290,6 +297,31 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 		log.Errorf("failed upserting user token, reason=%v", err)
 		redirectToErrURL(c, login.Redirect, "unable to store user token")
 		return
+	}
+
+	userAgent := apiutils.NormalizeUserAgent(c.Request.Header.Values)
+	if isNewUser {
+		trackClient.Identify(&types.APIContext{
+			OrgID:     usr.OrgID,
+			UserID:    usr.Subject,
+			UserEmail: usr.Email,
+		})
+
+		trackClient.Track(usr.Subject, analytics.EventSignup, map[string]any{
+			"org-id":      usr.OrgID,
+			"auth-method": appconfig.Get().AuthMethod(),
+			"user-agent":  userAgent,
+			// "license-type": licenseType,
+			"user-email": usr.Email,
+		})
+	} else {
+		trackClient.Track(usr.Subject, analytics.EventLogin, map[string]any{
+			"org-id":      usr.OrgID,
+			"auth-method": appconfig.Get().AuthMethod(),
+			"user-agent":  userAgent,
+			// "license-type": licenseType,
+			"user-email": usr.Email,
+		})
 	}
 
 	redirectSuccessURL := fmt.Sprintf("%s?token=%v", login.Redirect, sessionToken)

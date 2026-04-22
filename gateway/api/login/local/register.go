@@ -108,10 +108,12 @@ func Register(c *gin.Context) {
 		OrgID:           org.ID,
 		UserID:          userSubject,
 		UserAnonSubject: org.ID,
+		UserEmail:       user.Email,
 	})
 	trackClient.Track(userSubject, analytics.EventSingleTenantFirstUserCreated, map[string]any{
 		"org-id":       org.ID,
 		"api-hostname": c.Request.Host,
+		"user-email":   user.Email,
 	})
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})

@@ -460,8 +460,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 			OrgID:           org.ID,
 			UserID:          newUser.Subject,
 			UserAnonSubject: org.ID,
+			UserEmail:       newUser.Email,
 		})
 		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, map[string]any{
+			"user-email":   newUser.Email,
 			"org-id":       org.ID,
 			"license-type": ctx.GetLicenseType(),
 		})
@@ -500,12 +502,14 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
+			"user-email":   ctx.UserEmail,
 		})
 		return
 	}
 	trackClient.Identify(&types.APIContext{
-		OrgID:  ctx.OrgID,
-		UserID: ctx.UserID,
+		OrgID:     ctx.OrgID,
+		UserID:    ctx.UserID,
+		UserEmail: ctx.UserEmail,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
@@ -515,6 +519,7 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
 			"license-type": licenseType,
+			"user-email":   ctx.UserEmail,
 		})
 	}()
 }

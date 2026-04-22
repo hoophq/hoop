@@ -36,6 +36,8 @@ func (a *Api) TrackRequest(eventName string) func(c *gin.Context) {
 			"api-hostname":   c.Request.Host,
 		}
 		switch eventName {
+		case analytics.EventLogin, analytics.EventSignup:
+			properties["user-email"] = ctx.UserEmail
 		case analytics.EventCreateAgent:
 			requestBody, _ := io.ReadAll(c.Request.Body)
 			data := getBodyAsMap(requestBody)
