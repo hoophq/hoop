@@ -1,14 +1,17 @@
 package apiattributes
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -93,6 +96,7 @@ func Post(c *gin.Context) {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
+		reconcileMachineIdentitiesForAttribute(ctx.GetOrgID(), attr)
 		c.JSON(http.StatusCreated, toResponse(attr))
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating attribute: %v", err)
@@ -146,6 +150,7 @@ func Put(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
+		reconcileMachineIdentitiesForAttribute(ctx.GetOrgID(), attr)
 		c.JSON(http.StatusOK, toResponse(attr))
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating attribute: %v", err)
@@ -298,5 +303,47 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		GuardrailRuleNames:     guardrail,
 		DatamaskingRuleNames:   datamasking,
 		CreatedAt:              a.CreatedAt,
+	}
+}
+
+// reconcileMachineIdentitiesForAttribute triggers credential reconciliation for machine
+// identities affected by a change to an attribute's connections or MI associations.
+func reconcileMachineIdentitiesForAttribute(orgID string, attr *models.Attribute) {
+	ctx := context.Background()
+
+	// If connection associations changed, reconcile MIs for each connection in the attribute
+	if attr.Connections != nil {
+		for _, ca := range attr.Connections {
+			if err := services.ReconcileAllMachineIdentitiesForConnection(ctx, orgID, ca.ConnectionName); err != nil {
+				log.Warnf("failed reconciling MI credentials after attribute %s changed connection %s: %v", attr.Name, ca.ConnectionName, err)
+			}
+		}
+	}
+
+	// If MI associations changed, reconcile each affected MI directly
+	if attr.MachineIdentities != nil {
+		for _, mia := range attr.MachineIdentities {
+			if err := services.ReconcileMachineIdentityCredentials(ctx, orgID, mia.MachineIdentityName); err != nil {
+				log.Warnf("failed reconciling MI %s after attribute %s change: %v", mia.MachineIdentityName, attr.Name, err)
+			}
+		}
+	}
+
+	// Also reconcile MIs that previously had this attribute but were removed (they
+	// may need credentials revoked). Query all MIs that currently have a credential
+	// for connections in this attribute.
+	orgUUID, err := uuid.Parse(orgID)
+	if err != nil {
+		return
+	}
+	miNames, err := models.GetMachineIdentityNamesMatchingAttributes(models.DB, orgUUID, []string{attr.Name})
+	if err != nil {
+		log.Warnf("failed fetching MIs matching attribute %s: %v", attr.Name, err)
+		return
+	}
+	for _, miName := range miNames {
+		if err := services.ReconcileMachineIdentityCredentials(ctx, orgID, miName); err != nil {
+			log.Warnf("failed reconciling MI %s after attribute %s change: %v", miName, attr.Name, err)
+		}
 	}
 }

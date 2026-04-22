@@ -14,6 +14,7 @@ type ConnectionCredentials struct {
 	ConnectionName string    `gorm:"column:connection_name"`
 	ConnectionType string    `gorm:"column:connection_type"`
 	SecretKeyHash  string    `gorm:"column:secret_key_hash"`
+	SecretKey      *string   `gorm:"column:secret_key"`
 	SessionID      string    `gorm:"column:session_id"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	ExpireAt       time.Time `gorm:"column:expire_at"`

@@ -19,6 +19,9 @@ const (
 	EventCreateInvitedUser            = "hoop-create-invited-user"
 	EventCreateServiceAccount         = "hoop-create-serviceaccount"
 	EventUpdateServiceAccount         = "hoop-update-serviceaccount"
+	EventCreateMachineIdentity        = "hoop-create-machine-identity"
+	EventUpdateMachineIdentity        = "hoop-update-machine-identity"
+	EventDeleteMachineIdentity        = "hoop-delete-machine-identity"
 
 	// review
 	EventUpdateReview = "hoop-update-review"

@@ -1704,6 +1704,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials/{credentialID}/revoke": {
+            "post": {
+                "description": "Revokes a connection credential, invalidating it and disconnecting any active sessions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Revoke Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the credential to revoke",
+                        "name": "credentialID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/credentials/{sessionID}": {
             "post": {
                 "description": "Resume a connection credentials request after review approval",
@@ -3445,6 +3502,332 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities": {
+            "get": {
+                "description": "List all machine identities (non-human identities)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "List Machine Identities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.MachineIdentity"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a machine identity (non-human identity) with native credentials for each connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Create Machine Identity",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentity"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentityCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities/{name}": {
+            "get": {
+                "description": "Get a machine identity by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Get Machine Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentity"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update a machine identity. Adding connections provisions new credentials; removing connections revokes them.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Update Machine Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentity"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentityUpdateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a machine identity and revoke all associated credentials",
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Delete Machine Identity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities/{name}/credentials": {
+            "get": {
+                "description": "List full credential details for a machine identity including connection strings and secret keys",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "List Machine Identity Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/machineidentities/{name}/credentials/{connectionName}/rotate": {
+            "post": {
+                "description": "Rotate (regenerate) a credential for a specific connection. The old credential is revoked and a new one is returned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machine Identities"
+                ],
+                "summary": "Rotate Machine Identity Credential",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Machine Identity Name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Connection Name",
+                        "name": "connectionName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10153,6 +10536,224 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.MachineIdentity": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "attributes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "env:prod",
+                        "team:backend"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod-postgres",
+                        "api-proxy"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Production backend service identity"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "backend-prod"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.MachineIdentityCreateResponse": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "attributes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "env:prod",
+                        "team:backend"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod-postgres",
+                        "api-proxy"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "credentials": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Production backend service identity"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "backend-prod"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.MachineIdentityCredentialResponse": {
+            "type": "object",
+            "properties": {
+                "aws_access_key_id": {
+                    "type": "string"
+                },
+                "aws_secret_access_key": {
+                    "type": "string"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "connection_name": {
+                    "type": "string"
+                },
+                "connection_string": {
+                    "type": "string"
+                },
+                "connection_subtype": {
+                    "type": "string"
+                },
+                "connection_type": {
+                    "type": "string"
+                },
+                "database_name": {
+                    "type": "string"
+                },
+                "endpoint_url": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "string"
+                },
+                "proxy_token": {
+                    "type": "string"
+                },
+                "secret_key": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.MachineIdentityUpdateResponse": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "attributes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "env:prod",
+                        "team:backend"
+                    ]
+                },
+                "connection_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "prod-postgres",
+                        "api-proxy"
+                    ]
+                },
+                "created_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Production backend service identity"
+                },
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "backend-prod"
+                },
+                "new_credentials": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.MachineIdentityCredentialResponse"
+                    }
+                },
+                "updated_at": {
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
         "openapi.OrgKeyResponse": {
             "type": "object",
             "properties": {
@@ -12368,11 +12969,28 @@ const docTemplate = `{
                     "description": "The Linux exit code if it's available",
                     "type": "integer"
                 },
+                "guardrails_info": {
+                    "description": "GuardRailsInfo contains information about guardrail rules that matched during the session.\nA non-empty list indicates the session was blocked by at least one guardrail rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionGuardRailsInfo"
+                    },
+                    "readOnly": true
+                },
                 "id": {
                     "description": "The resource unique identifier",
                     "type": "string",
                     "format": "uuid",
                     "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
+                },
+                "identity_type": {
+                    "description": "The type of identity that created this session\n* user - a human user\n* machine - a machine identity (non-human identity)",
+                    "type": "string",
+                    "enum": [
+                        "user",
+                        "machine"
+                    ],
+                    "example": "user"
                 },
                 "integrations_metadata": {
                     "description": "Metadata attributes related to integrations with third party services",
@@ -12386,6 +13004,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.SessionLabelsType"
                         }
                     ]
+                },
+                "machine_identity_id": {
+                    "description": "The machine identity ID if this session was created by a machine identity",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "BF997324-5A27-4778-806A-41EE83598494"
                 },
                 "metadata": {
                     "type": "object",
@@ -12524,6 +13148,74 @@ const docTemplate = `{
                 "SessionEventStreamBase64Type",
                 "SessionEventStreamRawQueriesType"
             ]
+        },
+        "openapi.SessionGuardRailMatchedRule": {
+            "type": "object",
+            "properties": {
+                "pattern_regex": {
+                    "description": "PatternRegex that matched (only set when type is pattern_match)",
+                    "type": "string",
+                    "example": "^[A-Z0-9]+"
+                },
+                "type": {
+                    "description": "Type is the internal rule type",
+                    "type": "string",
+                    "enum": [
+                        "deny_words_list",
+                        "pattern_match"
+                    ],
+                    "example": "deny_words_list"
+                },
+                "words": {
+                    "description": "Words matched (only set when type is deny_words_list)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                }
+            }
+        },
+        "openapi.SessionGuardRailsInfo": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "Direction indicates whether the match happened on input or output data",
+                    "type": "string",
+                    "enum": [
+                        "input",
+                        "output"
+                    ],
+                    "example": "input"
+                },
+                "matched_words": {
+                    "description": "MatchedWords are the words that matched the rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                },
+                "rule": {
+                    "description": "Rule is the specific internal rule entry that triggered the match",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionGuardRailMatchedRule"
+                        }
+                    ]
+                },
+                "rule_name": {
+                    "description": "RuleName is the name of the guardrail rule that matched",
+                    "type": "string",
+                    "example": "block-sensitive-data"
+                }
+            }
         },
         "openapi.SessionLabelsType": {
             "type": "object",
@@ -13208,6 +13900,9 @@ const docTemplate = `{
         {
             "description": "Users are active and assigned to the default organization when they signup. A user could be set to an inactive state preventing it from accessing the platform, however it’s recommended to manage the state of users in the identity provider.\n\n- The ` + "`" + `sub` + "`" + ` claim is used as the main identifier of the user in the platform.\n- The profile of the user is derived from the id_token claims ` + "`" + `email` + "`" + ` and ` + "`" + `name` + "`" + `.\n\nWhen a user authenticates for the first time, it performs an automatic signup that persist the profile claims along with it’s unique identifier.\n​\n### Groups\n\nGroups allows defining who may access or interact with certain resources.\n\n- For connection resources it’s possible to define which groups has access to a specific connection, this is enforced when the Access Control feature is enabled.\n- For review resources, it’s possible to define which groups are allowed to approve an execution, this is enforced when the Review feature is enabled.\n\n\u003e This resource could be managed manually via Webapp or propagated by the identity provider via ID Token. In this mode, groups are sync when a user performs a login.\n\n### Roles\n\n- The ` + "`" + `admin` + "`" + ` group is a special role that grants full access to all resources\n\nThis role should be granted to users that are responsible for managing the Gateway. All other users are regular, meaning that they can access their own resources and interact with connections.\n",
             "name": "User Management"
+        },
+        {
+            "name": "Machine Identities"
         },
         {
             "description": "Routes used to manage and obtain information about the runtime server.",

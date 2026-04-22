@@ -24,7 +24,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
-	"github.com/hoophq/hoop/gateway/transport"
+	"github.com/hoophq/hoop/gateway/transport/usertoken"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -238,6 +238,9 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 			if dba.SessionID != "" {
 				extensions["hoop-credential-session-id"] = dba.SessionID
 			}
+			if models.IsMachineIdentityCredential(dba.ID) {
+				extensions["hoop-is-machine-credential"] = "true"
+			}
 			return &ssh.Permissions{Extensions: extensions}, nil
 		},
 	}
@@ -267,6 +270,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	ctxDurationStr := sshConn.Permissions.Extensions["hoop-context-duration"]
 	credentialSessionID := sshConn.Permissions.Extensions["hoop-credential-session-id"]
 	credentialID := sshConn.Permissions.Extensions["hoop-credential-id"]
+	isMachineCredential := sshConn.Permissions.Extensions["hoop-is-machine-credential"] == "true"
 
 	if connectionName == "" || userSubject == "" {
 		return nil, fmt.Errorf("missing required SSH connection attributes")
@@ -277,14 +281,18 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		return nil, fmt.Errorf("failed parsing context duration: %v", err)
 	}
 
-	tokenVerifier, _, err := idp.NewUserInfoTokenVerifierProvider()
-	if err != nil {
-		log.Errorf("failed to load IDP provider: %v", err)
-		return nil, err
-	}
+	var tokenVerifier idp.UserInfoTokenVerifier
+	if !isMachineCredential {
+		var err error
+		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
+		if err != nil {
+			log.Errorf("failed to load IDP provider: %v", err)
+			return nil, err
+		}
 
-	if err := transport.CheckUserToken(tokenVerifier, userSubject); err != nil {
-		return nil, err
+		if err := usertoken.CheckUserToken(tokenVerifier, userSubject); err != nil {
+			return nil, err
+		}
 	}
 
 	log.
@@ -333,9 +341,11 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		clientNewSshChannel: clientNewCh,
 	}
 
-	transport.PollingUserToken(sessionConn.ctx, func(cause error) {
-		sessionConn.cancelFn(cause.Error())
-	}, tokenVerifier, userSubject)
+	if !isMachineCredential {
+		usertoken.PollingUserToken(sessionConn.ctx, func(cause error) {
+			sessionConn.cancelFn(cause.Error())
+		}, tokenVerifier, userSubject)
+	}
 
 	return sessionConn, nil
 }

@@ -19,6 +19,7 @@ type Attribute struct {
 	AccessRequestRules []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 	GuardrailRules     []GuardrailRuleAttribute     `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 	DatamaskingRules   []DatamaskingRuleAttribute   `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	MachineIdentities  []MachineIdentityAttribute   `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 }
 
 func (Attribute) TableName() string {
@@ -68,6 +69,17 @@ func (DatamaskingRuleAttribute) TableName() string {
 	return "private.datamasking_rules_attributes"
 }
 
+// Machine Identity and Attribute
+type MachineIdentityAttribute struct {
+	OrgID               uuid.UUID `gorm:"column:org_id;primaryKey"`
+	AttributeName       string    `gorm:"column:attribute_name;primaryKey"`
+	MachineIdentityName string    `gorm:"column:machine_identity_name;primaryKey"`
+}
+
+func (MachineIdentityAttribute) TableName() string {
+	return "private.machine_identities_attributes"
+}
+
 func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error) {
 	var attr Attribute
 	err := db.
@@ -75,6 +87,7 @@ func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error)
 		Preload("AccessRequestRules").
 		Preload("GuardrailRules").
 		Preload("DatamaskingRules").
+		Preload("MachineIdentities").
 		Where("org_id = ? AND name = ?", orgID, name).
 		First(&attr).Error
 	if err != nil {
@@ -139,6 +152,18 @@ func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 			}
 		}
 
+		if attr.MachineIdentities != nil {
+			if err := tx.Where("org_id = ? AND attribute_name = ?", attr.OrgID, attr.Name).
+				Delete(&MachineIdentityAttribute{}).Error; err != nil {
+				return err
+			}
+			if len(attr.MachineIdentities) > 0 {
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attr.MachineIdentities).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		return nil
 	})
 }
@@ -177,6 +202,7 @@ func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([
 		Preload("AccessRequestRules").
 		Preload("GuardrailRules").
 		Preload("DatamaskingRules").
+		Preload("MachineIdentities").
 		Find(&attrs).Error; err != nil {
 		return nil, 0, err
 	}
@@ -336,6 +362,75 @@ func UpsertGuardrailRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string
 		assocs := make([]GuardrailRuleAttribute, len(attributeNames))
 		for i, name := range attributeNames {
 			assocs[i] = GuardrailRuleAttribute{OrgID: orgID, AttributeName: name, GuardrailRuleName: ruleName}
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
+	})
+}
+
+// GetMachineIdentityAttributes returns the attribute names associated with a machine identity.
+func GetMachineIdentityAttributes(db *gorm.DB, orgID uuid.UUID, machineIdentityName string) ([]string, error) {
+	var attributeNames []string
+	result := db.Model(&MachineIdentityAttribute{}).
+		Select("attribute_name").
+		Where("org_id = ? AND machine_identity_name = ?", orgID, machineIdentityName).
+		Find(&attributeNames)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return attributeNames, nil
+}
+
+// GetConnectionNamesMatchingAttributes returns distinct connection names that share at least one
+// attribute with the provided attribute names. Used for ABAC credential reconciliation.
+func GetConnectionNamesMatchingAttributes(db *gorm.DB, orgID uuid.UUID, attributeNames []string) ([]string, error) {
+	if len(attributeNames) == 0 {
+		return nil, nil
+	}
+	var connectionNames []string
+	err := db.Model(&ConnectionAttribute{}).
+		Select("DISTINCT connection_name").
+		Where("org_id = ? AND attribute_name IN ?", orgID, attributeNames).
+		Find(&connectionNames).Error
+	return connectionNames, err
+}
+
+// GetMachineIdentityNamesMatchingAttributes returns distinct machine identity names that share at
+// least one attribute with the provided attribute names. Used for ABAC credential reconciliation.
+func GetMachineIdentityNamesMatchingAttributes(db *gorm.DB, orgID uuid.UUID, attributeNames []string) ([]string, error) {
+	if len(attributeNames) == 0 {
+		return nil, nil
+	}
+	var miNames []string
+	err := db.Model(&MachineIdentityAttribute{}).
+		Select("DISTINCT machine_identity_name").
+		Where("org_id = ? AND attribute_name IN ?", orgID, attributeNames).
+		Find(&miNames).Error
+	return miNames, err
+}
+
+// UpsertMachineIdentityAttributes replaces all attribute associations for the given machine identity.
+// If an attribute name does not exist in the attributes table, it is created automatically.
+func UpsertMachineIdentityAttributes(db *gorm.DB, orgID uuid.UUID, machineIdentityName string, attributeNames []string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("org_id = ? AND machine_identity_name = ?", orgID, machineIdentityName).
+			Delete(&MachineIdentityAttribute{}).Error; err != nil {
+			return err
+		}
+		if len(attributeNames) == 0 {
+			return nil
+		}
+
+		attributes := make([]Attribute, len(attributeNames))
+		for i, name := range attributeNames {
+			attributes[i] = Attribute{OrgID: orgID, Name: name}
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attributes).Error; err != nil {
+			return err
+		}
+
+		assocs := make([]MachineIdentityAttribute, len(attributeNames))
+		for i, name := range attributeNames {
+			assocs[i] = MachineIdentityAttribute{OrgID: orgID, AttributeName: name, MachineIdentityName: machineIdentityName}
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
 	})

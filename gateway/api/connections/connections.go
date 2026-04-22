@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/clientexec"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
@@ -105,6 +107,11 @@ func Post(c *gin.Context) {
 		return
 	}
 	resp.Attributes = req.Attributes
+
+	// Reconcile machine identity credentials based on attribute overlap
+	if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
+		log.Warnf("failed reconciling MI credentials after creating connection %s: %v", resp.Name, err)
+	}
 
 	c.JSON(http.StatusCreated, toOpenApi(resp))
 }
@@ -201,6 +208,11 @@ func Put(c *gin.Context) {
 		return
 	}
 	resp.Attributes = req.Attributes
+
+	// Reconcile machine identity credentials based on attribute overlap
+	if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
+		log.Warnf("failed reconciling MI credentials after updating connection %s: %v", resp.Name, err)
+	}
 
 	c.JSON(http.StatusOK, toOpenApi(resp))
 }
@@ -321,6 +333,11 @@ func Patch(c *gin.Context) {
 			return
 		}
 		resp.Attributes = *req.Attributes
+
+		// Reconcile machine identity credentials based on attribute overlap
+		if err := services.ReconcileAllMachineIdentitiesForConnection(context.Background(), ctx.OrgID, resp.Name); err != nil {
+			log.Warnf("failed reconciling MI credentials after patching connection %s: %v", resp.Name, err)
+		}
 	}
 
 	c.JSON(http.StatusOK, toOpenApi(resp))
