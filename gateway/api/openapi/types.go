@@ -193,10 +193,10 @@ type APIKeyResponse struct {
 //
 // Exactly one of SPIFFEID or SPIFFEPrefix must be set. Similarly, exactly
 // one of AgentID or AgentTemplate must be set: AgentID points at a specific
-// agent; AgentTemplate (used with SPIFFEPrefix) renders against the captured
-// suffix to derive the agent name, with available fields
-// {{.WorkloadIdentifier}} (the part after the prefix) and {{.SPIFFEID}}
-// (the full id).
+// agent; AgentTemplate (used with SPIFFEPrefix) renders against the
+// captured suffix to derive the agent name. Available template fields are
+// WorkloadIdentifier (the part after the prefix) and SPIFFEID (the full
+// id); see the SPIFFE deployment docs for examples.
 type AgentSPIFFEMapping struct {
 	// The unique identifier of this resource
 	ID string `json:"id" readonly:"true" format:"uuid"`
@@ -214,9 +214,9 @@ type AgentSPIFFEMapping struct {
 	// exclusive with AgentTemplate.
 	AgentID string `json:"agent_id,omitempty" format:"uuid"`
 	// Go text/template that renders to a Hoop agent name. Used with
-	// SPIFFEPrefix. Available fields: {{.WorkloadIdentifier}},
-	// {{.SPIFFEID}}. Mutually exclusive with AgentID.
-	AgentTemplate string `json:"agent_template,omitempty" example:"{{.WorkloadIdentifier}}"`
+	// SPIFFEPrefix. See the SPIFFE docs for template field details.
+	// Mutually exclusive with AgentID.
+	AgentTemplate string `json:"agent_template,omitempty"`
 	// The groups assigned to the agent when authenticating via this mapping.
 	Groups []string `json:"groups" example:"agents"`
 	// Creation timestamp
