@@ -366,31 +366,3 @@ func UpsertGuardrailRuleAttributes(db *gorm.DB, orgID uuid.UUID, ruleName string
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
 	})
 }
-
-// UpsertAccessControlGroupAttributes replaces all attribute associations for the given access control group.
-// If an attribute name does not exist in the attributes table, it is created automatically.
-func UpsertAccessControlGroupAttributes(db *gorm.DB, orgID uuid.UUID, groupName string, attributeNames []string) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("org_id = ? AND group_name = ?", orgID, groupName).
-			Delete(&AccessControlGroupAttribute{}).Error; err != nil {
-			return err
-		}
-		if len(attributeNames) == 0 {
-			return nil
-		}
-
-		attributes := make([]Attribute, len(attributeNames))
-		for i, name := range attributeNames {
-			attributes[i] = Attribute{OrgID: orgID, Name: name}
-		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attributes).Error; err != nil {
-			return err
-		}
-
-		assocs := make([]AccessControlGroupAttribute, len(attributeNames))
-		for i, name := range attributeNames {
-			assocs[i] = AccessControlGroupAttribute{OrgID: orgID, AttributeName: name, GroupName: groupName}
-		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&assocs).Error
-	})
-}
