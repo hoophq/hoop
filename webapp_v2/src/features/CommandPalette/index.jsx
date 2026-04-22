@@ -9,7 +9,8 @@ import CommandPaletteRoot from './CommandPaletteRoot';
 import MainPage from './MainPage';
 import ResourceRolesPage from './ResourceRolesPage';
 import ConnectionActionsPage, { ACTION_TYPES } from './ConnectionActionsPage';
-import { notifications } from '@mantine/notifications';
+import { notifications } from '@mantine/notifications'
+import { clojureDispatch } from '@/utils/clojureDispatch';
 
 function ConnectedCommandPalette() {
   const navigate = useNavigate();
@@ -78,6 +79,7 @@ function ConnectedCommandPalette() {
         break;
 
       case ACTION_TYPES.NATIVE_CLIENT:
+        clojureDispatch('native-client-access->start-flow', connection?.name)
         break;
 
       case ACTION_TYPES.TEST:

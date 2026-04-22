@@ -1,12 +1,15 @@
 import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import Layout from '@/layout/Layout'
+import PageLayout from '@/layout/PageLayout'
 import ClojureApp from '@/components/ClojureApp'
 
 // React pages (migrated from ClojureScript)
 import Login from '@/pages/Auth/Login'
 import Signup from '@/pages/Auth/Signup'
+import Register from '@/pages/Auth/Register'
 import AuthCallback from '@/pages/Auth/Callback'
+import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 
@@ -34,7 +37,9 @@ function Router() {
       {/* Public Auth Routes — no Layout, no auth required */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/signup/callback" element={<SignupCallback />} />
 
       {/* React pages — fully migrated */}
       <Route
@@ -42,7 +47,9 @@ function Router() {
         element={
           <ProtectedRoute>
             <Layout>
-              <Agents />
+              <PageLayout>
+                <Agents />
+              </PageLayout>
             </Layout>
           </ProtectedRoute>
         }
@@ -52,8 +59,20 @@ function Router() {
         element={
           <ProtectedRoute>
             <Layout>
-              <AgentsCreate />
+              <PageLayout>
+                <AgentsCreate />
+              </PageLayout>
             </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
+      <Route
+        path="/onboarding/*"
+        element={
+          <ProtectedRoute>
+            <ClojureApp />
           </ProtectedRoute>
         }
       />

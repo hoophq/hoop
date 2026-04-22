@@ -3,7 +3,7 @@ import { create } from 'zustand'
 const getSavedCollapsed = () => localStorage.getItem('sidebar') === 'closed'
 
 export const useUIStore = create((set) => ({
-  sidebarOpen: true,
+  sidebarOpen: false,
   sidebarCollapsed: getSavedCollapsed(),
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

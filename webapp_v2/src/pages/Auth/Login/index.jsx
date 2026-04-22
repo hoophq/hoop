@@ -130,13 +130,13 @@ function Login() {
   // Handle signup redirect
   const handleSignup = async () => {
     if (authMethod === 'local') {
-      navigate('/signup')
+      navigate('/register')
       return
     }
 
-    // For IDP, redirect to signup URL
+    // For IDP, redirect to signup URL (callback goes to /signup/callback → /signup for org setup)
     try {
-      const callbackUrl = `${window.location.origin}/auth/callback`
+      const callbackUrl = `${window.location.origin}/signup/callback`
       const signupUrl = await authService.getSignupUrl(callbackUrl)
       window.location.replace(signupUrl)
     } catch (err) {

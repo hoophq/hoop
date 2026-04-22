@@ -1,78 +1,90 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { Center, Loader } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
+import { connectionsService } from '@/services/connections'
 
-/**
- * ProtectedRoute component that ensures user is authenticated before rendering children
- * Follows webapp logic:
- * 1. Check if token exists
- * 2. If no token, save current URL and redirect to login
- * 3. If token exists, fetch user data
- * 4. If user data is empty/invalid, clear token and redirect to login
- * 5. If all checks pass, render children (protected content)
- */
 function ProtectedRoute({ children }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, loading, setUser, setLoading, setServerInfo } = useUserStore()
-  const [shouldRedirect, setShouldRedirect] = useState(false)
+  const { user, setUser, setLoading, setServerInfo } = useUserStore()
+  const [initializing, setInitializing] = useState(true)
+  const [redirectTo, setRedirectTo] = useState(null)
+  const initialized = useRef(false)
+
+  const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
   useEffect(() => {
-    // If not authenticated, save URL and redirect to login
+    // Run only once per component instance — prevents StrictMode double-fire
+    // and avoids re-checking on every location change within the same route.
+    if (initialized.current) return
+    initialized.current = true
+
     if (!isAuthenticated) {
       saveRedirectUrl(window.location.href)
-      setShouldRedirect(true)
+      setRedirectTo('/login')
+      setInitializing(false)
       return
     }
 
-    // If already have user data, no need to fetch again
-    if (user) {
-      return
-    }
-
-    // Fetch user data
-    const fetchUser = async () => {
-      setLoading(true)
+    const initialize = async () => {
       try {
-        const [userData, serverInfo] = await Promise.all([
-          authService.getCurrentUser(),
-          authService.getServerInfo().catch(() => null),
-        ])
+        // Fetch user if not already in store
+        let currentUser = user
+        if (!currentUser) {
+          setLoading(true)
+          const [userData, serverInfo] = await Promise.all([
+            authService.getCurrentUser(),
+            authService.getServerInfo().catch(() => null),
+          ])
+          setLoading(false)
 
-        if (!userData || Object.keys(userData).length === 0) {
-          // User data is empty, token is invalid
-          saveRedirectUrl(window.location.href)
-          logout()
-          setShouldRedirect(true)
-          return
+          if (!userData || Object.keys(userData).length === 0) {
+            saveRedirectUrl(window.location.href)
+            logout()
+            setRedirectTo('/login')
+            return
+          }
+
+          setUser(userData)
+          if (serverInfo) setServerInfo(serverInfo)
+          currentUser = userData
         }
 
-        setUser(userData)
-        if (serverInfo) setServerInfo(serverInfo)
+        // Check onboarding: admin with no connections must go through onboarding.
+        // Skip if already on onboarding routes to avoid a redirect loop.
+        if (currentUser.is_admin && !isOnboardingRoute) {
+          try {
+            const data = await connectionsService.getConnections()
+            const list = Array.isArray(data) ? data : (data?.items ?? data?.data ?? [])
+            if (list.length === 0) {
+              setRedirectTo('/onboarding/setup')
+              return
+            }
+          } catch {
+            // On API error, let the user through rather than blocking access.
+          }
+        }
       } catch (error) {
-        console.error('Failed to fetch user:', error)
-        // On error, logout and redirect
+        console.error('[ProtectedRoute] initialization failed:', error)
         saveRedirectUrl(window.location.href)
         logout()
-        setShouldRedirect(true)
+        setRedirectTo('/login')
       } finally {
-        setLoading(false)
+        setInitializing(false)
       }
     }
 
-    fetchUser()
-  }, [isAuthenticated, user, setUser, setLoading, saveRedirectUrl, logout])
+    initialize()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Redirect to login if needed
-  if (shouldRedirect || !isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+  if (redirectTo) {
+    return <Navigate to={redirectTo} state={{ from: location }} replace />
   }
 
-  // Show loading while fetching user
-  if (loading || !user) {
+  if (initializing) {
     return (
       <Center style={{ height: '100vh' }}>
         <Loader size="lg" />
@@ -80,7 +92,6 @@ function ProtectedRoute({ children }) {
     )
   }
 
-  // User is authenticated and loaded, render protected content
   return children
 }
 

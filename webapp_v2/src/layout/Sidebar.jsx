@@ -1,107 +1,40 @@
-import { NavLink, Stack, Text, Tooltip, UnstyledButton, Avatar, Box, Divider, Badge } from '@mantine/core';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Stack, Text, Tooltip, Box, Divider, Badge, Collapse, Kbd } from '@mantine/core';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Package,
-  LayoutDashboard,
-  SquareCode,
-  BookUp2,
-  GalleryVerticalEnd,
-  Inbox,
-  CircleCheckBig,
-  BookMarked,
-  ShieldCheck,
-  VenetianMask,
-  UserRoundCheck,
-  PackageSearch,
-  BrainCog,
-  Puzzle,
-  Settings,
-  Search,
   ChevronsLeft,
   ChevronsRight,
-  ChevronRight,
   LogOut,
+  MessageSquarePlus,
+  MessageCircleQuestion,
+  ChevronDown,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/useUIStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { openCommandPalette } from '@/features/CommandPalette/spotlight';
+import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './sidebar.constants';
 import classes from './Sidebar.module.css';
 
-// ─── Navigation constants (mirrors webapp's constants.cljs) ────────────────
-//
-// Fields:
-//   label        – display text
-//   path         – route path (omit for action-only items)
-//   icon         – lucide icon component
-//   action       – callback instead of navigation
-//   freeFeature  – available on free license (default true)
-//   adminOnly    – only shown to admin users (default false)
-//   badge        – { text, color } for NEW / BETA indicators, or null
-//   children     – nested items (renders as collapsible NavLink)
-
-export const MAIN_ITEMS = [
-  { label: 'Resources',  path: '/resources',  icon: Package,             freeFeature: true,  adminOnly: false },
-  { label: 'Dashboard',  path: '/dashboard',  icon: LayoutDashboard,     freeFeature: false, adminOnly: true,  upgradeRoute: '/upgrade-plan' },
-  { label: 'Terminal',   path: '/client',     icon: SquareCode,          freeFeature: true,  adminOnly: false },
-  { label: 'Runbooks',   path: '/runbooks',   icon: BookUp2,             freeFeature: true,  adminOnly: false },
-  { label: 'Sessions',   path: '/sessions',   icon: GalleryVerticalEnd,  freeFeature: true,  adminOnly: false },
-  { label: 'Reviews',    path: '/reviews',    icon: Inbox,               freeFeature: true,  adminOnly: false },
-  {
-    label: 'Search',
-    icon: Search,
-    action: () => openCommandPalette(),
-    freeFeature: true,
-    adminOnly: false,
-    badge: { text: 'NEW', color: 'green' },
-  },
-];
-
-export const DISCOVER_ITEMS = [
-  { label: 'Access Request',     path: '/features/access-request',  icon: CircleCheckBig, freeFeature: true,  adminOnly: true },
-  { label: 'Runbooks Setup',     path: '/features/runbooks/setup',  icon: BookMarked,     freeFeature: true,  adminOnly: true },
-  { label: 'Guardrails',         path: '/guardrails',               icon: ShieldCheck,    freeFeature: true,  adminOnly: true },
-  { label: 'AI Data Masking',    path: '/features/data-masking',    icon: VenetianMask,   freeFeature: true,  adminOnly: true },
-  { label: 'Access Control',     path: '/features/access-control',  icon: UserRoundCheck, freeFeature: true,  adminOnly: true },
-  {
-    label: 'Resource Discovery',
-    path: '/integrations/aws-connect',
-    icon: PackageSearch,
-    freeFeature: false,
-    adminOnly: true,
-    badge: { text: 'BETA', color: 'blue' },
-    upgradeRoute: '/upgrade-plan',
-  },
-];
-
-export const ORGANIZATION_ITEMS = [
-  { label: 'Agents', path: '/agents', icon: BrainCog, freeFeature: true, adminOnly: true },
-  {
-    label: 'Integrations',
-    icon: Puzzle,
-    freeFeature: true,
-    adminOnly: true,
-    children: [
-      { label: 'Authentication', path: '/integrations/authentication', freeFeature: true,  adminOnly: true },
-      { label: 'Jira',           path: '/settings/jira',               freeFeature: false, adminOnly: true },
-      { label: 'Webhooks',       path: '/plugins/manage/webhooks',     freeFeature: false, adminOnly: true },
-      { label: 'Slack',          path: '/plugins/manage/slack',        freeFeature: true,  adminOnly: true },
-    ],
-  },
-  {
-    label: 'Settings',
-    icon: Settings,
-    freeFeature: true,
-    adminOnly: true,
-    children: [
-      { label: 'Infrastructure', path: '/settings/infrastructure', freeFeature: true, adminOnly: true },
-      { label: 'License',        path: '/settings/license',        freeFeature: true, adminOnly: true },
-      { label: 'Users',          path: '/organization/users',      freeFeature: true, adminOnly: true },
-    ],
-  },
-];
-
 // ─── Helpers ───────────────────────────────────────────────────────────────
+
+function getUserInitials(user) {
+  if (!user) return '?';
+  const name = user.name || user.email || '';
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+}
+
+function shouldHide(item, isAdmin) {
+  return item.adminOnly && !isAdmin;
+}
+
+function isBlocked(item, isFreeLicense) {
+  return isFreeLicense && item.freeFeature === false;
+}
 
 function isActive(path, pathname) {
   if (!path) return false;
@@ -109,37 +42,146 @@ function isActive(path, pathname) {
   return pathname === path || pathname.startsWith(path + '/');
 }
 
-function getUserInitials(user) {
-  if (!user) return '?';
-  const name = user.name || user.email || '';
-  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
-}
+// ─── Shared NavLink style overrides ────────────────────────────────────────
+// font-weight 600 to match CLJS `font-semibold`; inherit colors from root.
 
-// Returns true when a nav item should be hidden (admin-only for non-admin)
-function shouldHide(item, isAdmin) {
-  return item.adminOnly && !isAdmin;
-}
+const NAV_STYLES = {
+  root:    { color: 'rgba(255,255,255,0.75)', borderRadius: 6 },
+  label:   { color: 'inherit', fontWeight: 600 },
+  section: { color: 'inherit' },
+  chevron: { color: 'inherit' },
+};
 
-// Returns true when a nav item is blocked (paid feature for free user)
-function isBlocked(item, isFreeLicense) {
-  return isFreeLicense && item.freeFeature === false;
-}
+// ─── Badge shown on the right of a nav item ────────────────────────────────
 
-// ─── NavItem badge ─────────────────────────────────────────────────────────
-
-function ItemBadge({ badge, blocked }) {
+function ItemBadge({ badge, blocked, shortcut }) {
   if (blocked) {
     return (
-      <Badge size="xs" variant="outline" color="gray" style={{ color: 'rgba(255,255,255,0.6)', borderColor: 'rgba(255,255,255,0.3)' }}>
+      <Badge
+        size="xs"
+        variant="outline"
+        color="gray"
+        style={{ color: 'rgba(255,255,255,0.5)', borderColor: 'rgba(255,255,255,0.25)', flexShrink: 0 }}
+      >
         Upgrade
       </Badge>
     );
   }
-  if (!badge) return null;
+  const hasBadge = !!badge;
+  const hasShortcut = !!shortcut;
+  if (!hasBadge && !hasShortcut) return null;
   return (
-    <Badge size="xs" variant="filled" color={badge.color}>
-      {badge.text}
-    </Badge>
+    <Box style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      {hasShortcut && (
+        <Text
+          size="xs"
+          style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}
+        >
+          {shortcut}
+        </Text>
+      )}
+      {hasBadge && (
+        <Badge size="xs" variant="filled" color={badge.color} style={{ flexShrink: 0 }}>
+          {badge.text}
+        </Badge>
+      )}
+    </Box>
+  );
+}
+
+// ─── Section heading ───────────────────────────────────────────────────────
+
+function SectionLabel({ label, id }) {
+  return (
+    <Text
+      id={id}
+      size="xs"
+      fw={600}
+      c="white"
+      mb="xs"
+    >
+      {label}
+    </Text>
+  );
+}
+
+// ─── Single expanded nav item ──────────────────────────────────────────────
+
+function NavItem({ item, isAdmin, isFreeLicense }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { setSidebarOpen } = useUIStore();
+
+  if (shouldHide(item, isAdmin)) return null;
+
+  const blocked = isBlocked(item, isFreeLicense);
+  const active = item.path ? isActive(item.path, location.pathname) : false;
+  const closeMobile = () => setSidebarOpen(false);
+
+  // Collapsible parent (Integrations / Settings) — does NOT close sidebar, just expands
+  if (item.children) {
+    const anyChildActive = item.children.some((c) => isActive(c.path, location.pathname));
+    return (
+      <NavLink
+        label={item.label}
+        aria-label={item.label}
+        leftSection={<item.icon size={18} aria-hidden="true" />}
+        defaultOpened={anyChildActive}
+        styles={NAV_STYLES}
+        classNames={{ root: classes.navLink }}
+      >
+        {item.children.map((child) => (
+          <NavItem key={child.path} item={child} isAdmin={isAdmin} isFreeLicense={isFreeLicense} />
+        ))}
+      </NavLink>
+    );
+  }
+
+  // Action item (e.g. Search → open command palette)
+  if (item.action) {
+    return (
+      <NavLink
+        label={item.label}
+        aria-label={item.label}
+        leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
+        rightSection={<ItemBadge badge={item.badge} blocked={blocked} shortcut={item.shortcut} />}
+        onClick={() => { item.action(); closeMobile(); }}
+        styles={NAV_STYLES}
+        classNames={{ root: classes.navLink }}
+      />
+    );
+  }
+
+  // Blocked paid feature → redirect to upgrade
+  if (blocked) {
+    return (
+      <NavLink
+        label={item.label}
+        aria-label={item.label}
+        leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
+        rightSection={<ItemBadge badge={item.badge} blocked={true} />}
+        onClick={() => { navigate(item.upgradeRoute || '/upgrade-plan'); closeMobile(); }}
+        styles={NAV_STYLES}
+        classNames={{ root: `${classes.navLink} ${classes.navLinkBlocked}` }}
+      />
+    );
+  }
+
+  // Standard navigable link — component={Link} renders as <a> for proper keyboard behavior
+  return (
+    <NavLink
+      component={Link}
+      to={item.path}
+      label={item.label}
+      aria-label={item.label}
+      aria-current={active ? 'page' : undefined}
+      leftSection={item.icon ? <item.icon size={18} aria-hidden="true" /> : undefined}
+      rightSection={<ItemBadge badge={item.badge} shortcut={item.shortcut} />}
+      active={active}
+      onClick={closeMobile}
+      styles={NAV_STYLES}
+      classNames={{ root: classes.navLink }}
+    />
   );
 }
 
@@ -157,168 +199,220 @@ function IconBtn({ icon: Icon, label, path, action, onClick }) {
         aria-current={active ? 'page' : undefined}
         className={`${classes.iconBtn} ${active ? classes.iconBtnActive : ''}`}
         onClick={() => {
-          if (onClick) onClick();
-          else if (action) action();
-          else if (path) navigate(path);
+          if (onClick) { onClick(); return; }
+          if (action) { action(); return; }
+          if (path) navigate(path);
         }}
       >
-        <Icon size={18} aria-hidden />
+        <Icon size={18} aria-hidden="true" />
+        <span className={classes.srOnly}>{label}</span>
       </button>
     </Tooltip>
   );
 }
 
-// ─── Section label ─────────────────────────────────────────────────────────
+// ─── User profile disclosure (bottom of sidebar) ──────────────────────────
 
-function SectionLabel({ label }) {
+function ProfileDisclosure({ user, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const displayName = (user?.name || user?.email || 'User').slice(0, 20);
+  const initials = getUserInitials(user);
+
   return (
-    <Text
-      size="xs"
-      fw={600}
-      style={{
-        color: 'rgba(255,255,255,0.35)',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        paddingLeft: 12,
-        paddingTop: 8,
-        paddingBottom: 4,
-      }}
-    >
-      {label}
-    </Text>
-  );
-}
-
-// ─── Shared NavLink style overrides ────────────────────────────────────────
-// `styles` handles static colors (Mantine sets color on sub-elements, not root).
-// CSS module handles hover/active backgrounds via !important.
-
-const NAV_STYLES = {
-  root:    { color: 'rgba(255,255,255,0.75)', borderRadius: 6 },
-  label:   { color: 'inherit' },
-  section: { color: 'inherit' },
-  chevron: { color: 'inherit' },
-};
-
-// ─── Expanded NavLink item ─────────────────────────────────────────────────
-
-function NavItem({ item, isAdmin, isFreeLicense }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  if (shouldHide(item, isAdmin)) return null;
-
-  const blocked = isBlocked(item, isFreeLicense);
-  const active = item.path ? isActive(item.path, location.pathname) : false;
-
-  const handleClick = () => {
-    if (blocked) {
-      navigate(item.upgradeRoute || '/upgrade-plan');
-      return;
-    }
-    if (item.action) { item.action(); return; }
-    if (item.path) navigate(item.path);
-  };
-
-  if (item.children) {
-    const anyChildActive = item.children.some((c) => isActive(c.path, location.pathname));
-    return (
-      <NavLink
-        aria-label={item.label}
-        label={item.label}
-        leftSection={<item.icon size={16} aria-hidden />}
-        rightSection={<ItemBadge badge={item.badge} blocked={blocked} />}
-        defaultOpened={anyChildActive}
-        styles={NAV_STYLES}
-        classNames={{ root: classes.navLink }}
+    <Box className={classes.profileSection}>
+      <button
+        className={classes.profileBtn}
+        aria-expanded={open}
+        aria-label="Open user menu"
+        onClick={() => setOpen((o) => !o)}
       >
-        {item.children.map((child) => (
-          <NavItem key={child.path} item={child} isAdmin={isAdmin} isFreeLicense={isFreeLicense} />
-        ))}
-      </NavLink>
-    );
-  }
+        {/* Avatar circle with initials */}
+        <Box
+          aria-hidden="true"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            backgroundColor: 'rgba(255,255,255,0.2)',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 11,
+            fontWeight: 700,
+            flexShrink: 0,
+            letterSpacing: 0.5,
+          }}
+        >
+          {initials}
+        </Box>
 
-  return (
-    <NavLink
-      aria-label={item.label}
-      aria-current={active ? 'page' : undefined}
-      label={item.label}
-      leftSection={item.icon ? <item.icon size={16} aria-hidden /> : undefined}
-      rightSection={<ItemBadge badge={item.badge} blocked={blocked} />}
-      active={active}
-      onClick={handleClick}
-      styles={NAV_STYLES}
-      classNames={{ root: `${classes.navLink} ${blocked ? classes.navLinkBlocked : ''}` }}
-    />
+        <Text
+          size="sm"
+          fw={600}
+          style={{
+            color: 'inherit',
+            flex: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            textAlign: 'left',
+          }}
+        >
+          {displayName}
+        </Text>
+
+        <ChevronDown
+          size={14}
+          aria-hidden="true"
+          style={{
+            flexShrink: 0,
+            transition: 'transform 150ms ease',
+            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+          }}
+        />
+      </button>
+
+      <Collapse in={open}>
+        <Box style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <NavLink
+            component="a"
+            href="https://github.com/hoophq/hoop/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+            label="Feature request"
+            aria-label="Feature request"
+            leftSection={<MessageSquarePlus size={16} aria-hidden="true" />}
+            styles={NAV_STYLES}
+            classNames={{ root: `${classes.navLink} ${classes.profileItem}` }}
+          />
+          <NavLink
+            component="a"
+            href="https://github.com/hoophq/hoop/discussions"
+            target="_blank"
+            rel="noopener noreferrer"
+            label="Contact support"
+            aria-label="Contact support"
+            leftSection={<MessageCircleQuestion size={16} aria-hidden="true" />}
+            styles={NAV_STYLES}
+            classNames={{ root: `${classes.navLink} ${classes.profileItem}` }}
+          />
+          <NavLink
+            label="Log out"
+            aria-label="Log out"
+            leftSection={<LogOut size={16} aria-hidden="true" />}
+            onClick={onLogout}
+            styles={{ ...NAV_STYLES, root: { ...NAV_STYLES.root, color: 'rgba(255,120,120,0.85)' } }}
+            classNames={{ root: `${classes.navLink} ${classes.profileItem}` }}
+          />
+        </Box>
+      </Collapse>
+    </Box>
   );
 }
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────
 
-function Sidebar() {
-  const location = useLocation();
+function Sidebar({ mobile = false }) {
   const navigate = useNavigate();
   const { sidebarCollapsed, toggleSidebarCollapsed } = useUIStore();
   const { user, isAdmin, isFreeLicense } = useUserStore();
   const { logout } = useAuthStore();
+
+  const skipLink = !mobile && (
+    <a
+      href="#main-content"
+      className={classes.skipLink}
+      onClick={(e) => {
+        e.preventDefault();
+        document.getElementById('main-content')?.focus();
+      }}
+    >
+      Skip to main content
+    </a>
+  );
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
+  const navItemProps = { isAdmin, isFreeLicense };
+
   // ── Collapsed ────────────────────────────────────────────────────────
 
   if (sidebarCollapsed) {
     return (
-      <Stack gap={4} align="center" style={{ height: '100%', padding: '16px 0', boxSizing: 'border-box' }}>
-        <Box mb={8}>
-          <Text fw={800} size="lg" style={{ color: '#fff', lineHeight: 1 }}>H</Text>
+      <Stack
+        component="nav"
+        aria-label="Primary"
+        gap={4}
+        align="center"
+        style={{ height: '100%', padding: '0 16px', boxSizing: 'border-box' }}
+      >
+        {skipLink}
+
+        {/* Logo — symbol only in collapsed mode */}
+        <Box mb="xl" mt="xl">
+          <img
+            src="/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
+            alt="Hoop"
+            height={24}
+            style={{ display: 'block' }}
+          />
         </Box>
 
-        <Divider style={{ width: 40, borderColor: 'rgba(255,255,255,0.1)' }} />
-
-        <Stack gap={2} align="center" mt={4}>
+        <Stack gap={2} align="center" mt={4} role="list" aria-label="Main navigation">
           {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin)).map((item) => (
-            <IconBtn key={item.path || item.label} {...item} />
+            <Box component="li" key={item.path || item.label} style={{ listStyle: 'none' }}>
+              <IconBtn {...item} />
+            </Box>
           ))}
         </Stack>
 
-        <Divider style={{ width: 40, borderColor: 'rgba(255,255,255,0.1)' }} my={4} />
-
-        <Stack gap={2} align="center">
+        <Stack gap={2} align="center" role="list" aria-label="Discover">
           {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin)).map((item) => (
-            <IconBtn key={item.path} {...item} />
+            <Box component="li" key={item.path} style={{ listStyle: 'none' }}>
+              <IconBtn {...item} />
+            </Box>
           ))}
         </Stack>
 
-        <Divider style={{ width: 40, borderColor: 'rgba(255,255,255,0.1)' }} my={4} />
-
-        <Stack gap={2} align="center">
+        <Stack gap={2} align="center" role="list" aria-label="Organization">
           {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin)).map((item) =>
             item.children ? (
-              <IconBtn key={item.label} icon={item.icon} label={item.label} path={item.children[0].path} />
+              <Box component="li" key={item.label} style={{ listStyle: 'none' }}>
+                <IconBtn icon={item.icon} label={item.label} path={item.children[0]?.path} />
+              </Box>
             ) : (
-              <IconBtn key={item.path} {...item} />
+              <Box component="li" key={item.path} style={{ listStyle: 'none' }}>
+                <IconBtn {...item} />
+              </Box>
             )
           )}
         </Stack>
 
-        <Box style={{ flex: 1 }} />
-
-        <Tooltip label={user?.email || 'Profile'} position="right" withArrow>
-          <Avatar
-            size={32}
-            radius="xl"
-            aria-label={user?.name || user?.email || 'User profile'}
-            style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, cursor: 'default' }}
+        <Tooltip label={user?.name || user?.email || 'Profile'} position="right" withArrow>
+          <Box
+            aria-label={user?.name || 'User profile'}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.5,
+              cursor: 'default',
+            }}
           >
             {getUserInitials(user)}
-          </Avatar>
+          </Box>
         </Tooltip>
-
-        <IconBtn icon={LogOut} label="Logout" onClick={handleLogout} />
 
         <Tooltip label="Expand sidebar" position="right" withArrow>
           <button
@@ -326,7 +420,8 @@ function Sidebar() {
             className={classes.iconBtn}
             onClick={toggleSidebarCollapsed}
           >
-            <ChevronsRight size={18} aria-hidden />
+            <ChevronsRight size={18} aria-hidden="true" />
+            <span className={classes.srOnly}>Expand sidebar</span>
           </button>
         </Tooltip>
       </Stack>
@@ -336,80 +431,91 @@ function Sidebar() {
   // ── Expanded ─────────────────────────────────────────────────────────
 
   return (
-    <Stack gap={0} style={{ height: '100%', padding: '16px 12px', boxSizing: 'border-box' }}>
+    <Stack
+      component="nav"
+      aria-label="Primary"
+      gap={0}
+      style={{ height: '100%', padding: '0 16px', boxSizing: 'border-box', '--mantine-color-gray-0': 'rgba(255,255,255,0.05)' }}
+    >
+      {skipLink}
+
       {/* Logo */}
-      <Text fw={800} size="xl" mb="md" style={{ color: '#fff', paddingLeft: 12 }}>
-        Hoop
-      </Text>
-
-      {/* Scrollable nav */}
-      <Box style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }} role="navigation" aria-label="Main navigation">
-
-        <Stack gap={2} mb={4}>
-          {MAIN_ITEMS.map((item) => (
-            <NavItem key={item.path || item.label} item={item} isAdmin={isAdmin} isFreeLicense={isFreeLicense} />
-          ))}
-        </Stack>
-
-        <Divider style={{ borderColor: 'rgba(255,255,255,0.1)' }} my={8} />
-
-        <SectionLabel label="Discover" />
-        <Stack gap={2} mb={4}>
-          {DISCOVER_ITEMS.map((item) => (
-            <NavItem key={item.path} item={item} isAdmin={isAdmin} isFreeLicense={isFreeLicense} />
-          ))}
-        </Stack>
-
-        <Divider style={{ borderColor: 'rgba(255,255,255,0.1)' }} my={8} />
-
-        <SectionLabel label="Organization" />
-        <Stack gap={2}>
-          {ORGANIZATION_ITEMS.map((item) => (
-            <NavItem key={item.path || item.label} item={item} isAdmin={isAdmin} isFreeLicense={isFreeLicense} />
-          ))}
-        </Stack>
+      <Box mb="xl" mt="xl">
+        <img
+          src="/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png"
+          alt="Hoop"
+          width={160}
+          style={{ display: 'block' }}
+        />
       </Box>
 
-      {/* Bottom: profile + collapse */}
-      <Box mt={8}>
-        <Divider style={{ borderColor: 'rgba(255,255,255,0.1)' }} mb={8} />
+      {/* Scrollable nav */}
+      <Box style={{ 
+        flex: 1, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        overflowY: 'auto', 
+        overflowX: 'hidden', 
+        gap: '32px' }}>
 
-        <Box style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 6 }}>
-          <Avatar
-            size={28}
-            radius="xl"
-            aria-label={user?.name || user?.email || 'User profile'}
-            style={{ backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', fontSize: 11, flexShrink: 0 }}
-          >
-            {getUserInitials(user)}
-          </Avatar>
-          <Box style={{ flex: 1, overflow: 'hidden' }}>
-            <Text size="sm" fw={500} style={{ color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {user?.name || user?.email || 'User'}
-            </Text>
-            {user?.name && (
-              <Text size="xs" style={{ color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user.email}
-              </Text>
-            )}
-          </Box>
-          <Tooltip label="Logout" withArrow>
-            <UnstyledButton
-              aria-label="Logout"
-              onClick={handleLogout}
-              style={{ color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center' }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.5)'; }}
-            >
-              <LogOut size={15} aria-hidden />
-            </UnstyledButton>
-          </Tooltip>
+        <Box
+          component="ul"
+          role="list"
+          aria-labelledby="sidebar-main-heading"
+          style={{ padding: 0, margin: 0, listStyle: 'none' }}
+        >
+          <Stack gap={2} mb={4}>
+            {MAIN_ITEMS.map((item) => (
+              <Box component="li" key={item.path || item.label} style={{ listStyle: 'none' }}>
+                <NavItem item={item} {...navItemProps} />
+              </Box>
+            ))}
+          </Stack>
         </Box>
+
+        <Box
+          component="ul"
+          role="list"
+          aria-labelledby="sidebar-discover-heading"
+          style={{ padding: 0, margin: 0, listStyle: 'none' }}
+        >
+          <SectionLabel label="Discover" id="sidebar-discover-heading" />
+          <Stack gap={2} mb={4}>
+            {DISCOVER_ITEMS.map((item) => (
+              <Box component="li" key={item.path} style={{ listStyle: 'none' }}>
+                <NavItem item={item} {...navItemProps} />
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+
+        <Box
+          component="ul"
+          role="list"
+          aria-labelledby="sidebar-organization-heading"
+          style={{ padding: 0, margin: 0, listStyle: 'none' }}
+        >
+          <SectionLabel label="Organization" id="sidebar-organization-heading" />
+          <Stack gap={2}>
+            {ORGANIZATION_ITEMS.map((item) => (
+              <Box component="li" key={item.path || item.label} style={{ listStyle: 'none' }}>
+                <NavItem item={item} {...navItemProps} />
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+
+      </Box>
+
+      {/* Bottom: profile disclosure + collapse toggle */}
+      <Box mt={8}>
+
+        <ProfileDisclosure user={user} onLogout={handleLogout} />
 
         <NavLink
           aria-label="Collapse sidebar"
           label="Collapse"
-          leftSection={<ChevronsLeft size={16} aria-hidden />}
+          leftSection={<ChevronsLeft size={16} aria-hidden="true" />}
           onClick={toggleSidebarCollapsed}
           styles={NAV_STYLES}
           classNames={{ root: classes.navLink }}
