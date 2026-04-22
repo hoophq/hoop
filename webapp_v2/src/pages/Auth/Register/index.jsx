@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Container,
   Paper,
   Title,
   TextInput,
@@ -10,13 +9,14 @@ import {
   Text,
   Anchor,
   Stack,
-  Center,
-  Loader,
   Alert,
+  Center,
+  Box,
 } from '@mantine/core'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
+import PageLoader from '@/components/PageLoader'
 
 function Register() {
   const navigate = useNavigate()
@@ -83,77 +83,81 @@ function Register() {
   }
 
   if (checkingAuthMethod) {
-    return (
-      <Center style={{ height: '100vh' }}>
-        <Loader size="lg" />
-      </Center>
-    )
+    return <PageLoader />
   }
 
   return (
-    <Container size={420} my={40}>
-      <Paper withBorder shadow="md" p={30} mt={30} radius="md">
-        <Title order={2} ta="center" mb="lg">
-          Create an account
-        </Title>
+    <Center style={{ minHeight: '100vh', backgroundColor: 'var(--mantine-color-gray-1)' }}>
+      <Box style={{ width: '90%', maxWidth: 400 }}>
+        <Paper shadow="sm" p={40} radius="lg">
+          <img
+            src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
+            alt="hoop"
+            style={{ width: 48, display: 'block', margin: '0 auto 24px' }}
+          />
 
-        {error && (
-          <Alert color="red" mb="md">
-            {error}
-          </Alert>
-        )}
+          <Title order={2} ta="center" mb="lg">
+            Create an account
+          </Title>
 
-        <form onSubmit={handleSubmit}>
-          <Stack>
-            <TextInput
-              label="Full name"
-              placeholder="Michael Scott"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-            />
+          {error && (
+            <Alert color="red" mb="md">
+              {error}
+            </Alert>
+          )}
 
-            <TextInput
-              label="Email"
-              placeholder="your@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              type="email"
-            />
+          <form onSubmit={handleSubmit}>
+            <Stack>
+              <TextInput
+                label="Full name"
+                placeholder="Full name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+              />
 
-            <PasswordInput
-              label="Password"
-              placeholder="Your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+              <TextInput
+                label="Email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                type="email"
+              />
 
-            <PasswordInput
-              label="Confirm Password"
-              placeholder="Repeat your password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onBlur={validatePasswords}
-              required
-              error={passwordError}
-            />
+              <PasswordInput
+                label="Password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
 
-            <Button type="submit" fullWidth loading={loading}>
-              Register
-            </Button>
-          </Stack>
-        </form>
+              <PasswordInput
+                label="Confirm Password"
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                onBlur={validatePasswords}
+                required
+                error={passwordError}
+              />
 
-        <Text c="dimmed" size="sm" ta="center" mt="md">
-          Already have an account?{' '}
-          <Anchor size="sm" component="a" href="/login">
-            Login
-          </Anchor>
-        </Text>
-      </Paper>
-    </Container>
+              <Button type="submit" fullWidth loading={loading}>
+                Register
+              </Button>
+            </Stack>
+          </form>
+
+          <Text c="dimmed" size="sm" ta="center" mt="md">
+            Already have an account?{' '}
+            <Anchor size="sm" component="a" href="/login">
+              Login
+            </Anchor>
+          </Text>
+        </Paper>
+      </Box>
+    </Center>
   )
 }
 
