@@ -13,6 +13,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/externaljwt"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
@@ -303,6 +304,17 @@ func (i *interceptor) getConnection(name string, userCtx *models.Context) (*type
 }
 
 func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*models.Agent, error) {
+	// SPIFFE JWT-SVID path: when the token shape looks like a JWT and a
+	// SPIFFE provider is configured, validate and resolve via the
+	// agent_spiffe_mappings table. Reject on failure rather than falling
+	// back to the static-token path; identity type is determined by
+	// token shape, not by policy.
+	if looksLikeJWT(bearerToken) {
+		if ag, handled, err := i.authenticateAgentSPIFFE(bearerToken, md); handled {
+			return ag, err
+		}
+	}
+
 	if strings.HasPrefix(bearerToken, "x-agt-") {
 		ag, err := models.GetAgentByToken(bearerToken)
 		if err != nil {
@@ -331,6 +343,95 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, mismatch dsn attributes")
 	}
 	return ag, nil
+}
+
+// authenticateAgentSPIFFE attempts to authenticate an agent via a SPIFFE
+// JWT-SVID. The handled return value indicates whether the SPIFFE path was
+// exercised at all:
+//
+//   - handled=false means no SPIFFE provider is configured, or we are in
+//     observe mode and this looked like a JWT but validation failed. The
+//     caller should fall through to other auth paths. (In observe mode,
+//     successful SPIFFE validation is still used; only failure falls
+//     through, to aid migration.)
+//   - handled=true means the SPIFFE path produced a definitive outcome,
+//     either a resolved agent or a rejection; the caller must not fall
+//     through.
+func (i *interceptor) authenticateAgentSPIFFE(bearerToken string, md metadata.MD) (*models.Agent, bool, error) {
+	provider, err := externaljwt.Get(externaljwt.IssuerSPIFFE)
+	if errors.Is(err, externaljwt.ErrNotConfigured) {
+		return nil, false, nil
+	}
+	if err != nil {
+		log.Debugf("spiffe provider lookup failed, err=%v", err)
+		return nil, false, nil
+	}
+
+	identity, verr := provider.Validate(context.Background(), bearerToken)
+	if verr != nil {
+		md.Delete("authorization")
+		log.Debugf("spiffe svid validation failed, err=%v", verr)
+		// In observe mode, fall through to the static-token paths so
+		// migrating agents are not disrupted.
+		if !appconfig.Get().SPIFFEEnforcing() {
+			return nil, false, nil
+		}
+		return nil, true, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	resolved, rerr := models.ResolveAgentFromSPIFFEID(identity.TrustDomain, identity.Subject)
+	if rerr != nil {
+		md.Delete("authorization")
+		log.With(
+			"spiffe_id", identity.Subject,
+			"trust_domain", identity.TrustDomain,
+		).Warnf("spiffe svid validated but no mapping found, err=%v", rerr)
+		return nil, true, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	if resolved.Agent == nil {
+		md.Delete("authorization")
+		log.With(
+			"spiffe_id", identity.Subject,
+			"agent_name", resolved.AgentName,
+		).Warnf("spiffe mapping resolved to unknown agent")
+		return nil, true, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	log.With(
+		"spiffe_id", identity.Subject,
+		"trust_domain", identity.TrustDomain,
+		"audience", identity.Audience,
+		"svid_type", "jwt",
+		"svid_expires_at", identity.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		"org_id", resolved.Agent.OrgID,
+		"agent_id", resolved.Agent.ID,
+		"agent_name", resolved.Agent.Name,
+	).Info("agent authenticated via spiffe")
+
+	return resolved.Agent, true, nil
+}
+
+// looksLikeJWT returns true when the token has three base64url segments
+// separated by dots, which is cheap to check and rules out DSN/api-key
+// shapes without false positives. Actual validation is delegated to the
+// SPIFFE provider.
+func looksLikeJWT(s string) bool {
+	if s == "" {
+		return false
+	}
+	if strings.HasPrefix(s, "x-agt-") || strings.HasPrefix(s, "xapi-") {
+		return false
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func parseBearerToken(md metadata.MD) (string, bool, error) {

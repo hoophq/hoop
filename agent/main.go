@@ -109,6 +109,10 @@ func runAgentController(conf *agentconfig.Config, cc grpc.ClientConfig, req *pb.
 				return
 			default:
 			}
+			if err := conf.Refresh(); err != nil {
+				log.With("version", vi.Version).Warnf("failed refreshing HOOP_KEY_FILE, using stale token: %v", err)
+			}
+			cc.Token = conf.Token
 			resp, err := grpc.PreConnectRPC(cc, req)
 			if err != nil {
 				log.With("version", vi.Version).Infof("failed pre-connect, reason=%v", err)
@@ -172,6 +176,16 @@ func runDefaultMode(config *agentconfig.Config) error {
 		vi.Version, vi.Platform, config.Type, config.AgentMode, config.URL, !config.IsInsecure(), config.HasTlsCA())
 
 	return backoff.Exponential2x(func(v time.Duration) error {
+		// When the agent is running in SVID mode the JWT-SVID is rotated
+		// by an external sidecar (e.g. spiffe-helper). Re-read the file
+		// before each reconnect so we don't reuse an expired token.
+		// Failure to refresh is non-fatal: we log and retry with the
+		// current value; the gateway will reject if it's too stale.
+		if err := config.Refresh(); err != nil {
+			log.With("version", vi.Version, "backoff", v.String()).
+				Warnf("failed refreshing HOOP_KEY_FILE, using stale token: %v", err)
+		}
+		clientConfig.Token = config.Token
 		log.With("version", vi.Version, "backoff", v.String()).
 			Infof("connecting to %v, tls=%v", clientConfig.ServerAddress, !config.IsInsecure())
 		client, err := grpc.Connect(clientConfig, grpc.WithOption("origin", pb.ConnectionOriginAgent))

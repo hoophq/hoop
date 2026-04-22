@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -19,6 +20,7 @@ import (
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/externaljwt"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
@@ -79,6 +81,16 @@ func Run() {
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
 	goMigrateStep.OK("")
+
+	if err := externaljwt.Init(context.Background()); err != nil {
+		// in enforce mode a failed bootstrap means no agent with an
+		// SVID can authenticate; fail loud. in observe mode we only
+		// warn since static-token agents keep working.
+		if appconfig.Get().SPIFFEEnforcing() {
+			log.Fatalf("failed initializing SPIFFE provider in enforce mode, reason=%v", err)
+		}
+		log.Warnf("failed initializing SPIFFE provider, running without it: %v", err)
+	}
 
 	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {
 		appconfig.GetRef().SetAnalyticsTracking(enabled)

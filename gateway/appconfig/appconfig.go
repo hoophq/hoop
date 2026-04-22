@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/common/envloader"
 
@@ -61,6 +62,13 @@ type Config struct {
 	gatewaySkipTLSVerify            bool
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
+
+	spiffeMode          string
+	spiffeBundleURL     string
+	spiffeBundleFile    string
+	spiffeTrustDomain   string
+	spiffeAudience      string
+	spiffeRefreshPeriod time.Duration
 
 	isLoaded bool
 }
@@ -180,6 +188,11 @@ func Load() error {
 	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
 	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
 
+	spiffeMode, spiffeBundleURL, spiffeBundleFile, spiffeTrustDomain, spiffeAudience, spiffeRefreshPeriod, err := loadSPIFFEConfig()
+	if err != nil {
+		return err
+	}
+
 	runtimeConfig = Config{
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
@@ -220,6 +233,13 @@ func Load() error {
 		// Temporary solution to force token exchange through URL, because the JWT could be too large for cookies.
 		// This will be removed in future versions
 		forceUrlTokenExchange: os.Getenv("URL_TOKEN_EXCHANGE") == "force",
+
+		spiffeMode:          spiffeMode,
+		spiffeBundleURL:     spiffeBundleURL,
+		spiffeBundleFile:    spiffeBundleFile,
+		spiffeTrustDomain:   spiffeTrustDomain,
+		spiffeAudience:      spiffeAudience,
+		spiffeRefreshPeriod: spiffeRefreshPeriod,
 	}
 	return nil
 }
@@ -395,3 +415,91 @@ func isEnvSet(key string) bool {
 	val, isset := os.LookupEnv(key)
 	return isset && val != ""
 }
+
+// SPIFFE mode values.
+//
+//	disabled: no SPIFFE validation at all (default).
+//	observe:  validate JWT-SVIDs presented, log results, but still accept static tokens.
+//	          Used as a migration aid; should be time-boxed.
+//	enforce:  validate JWT-SVIDs presented. Reject on failure. Static-token agents
+//	          continue to work in parallel (identified by token shape, not by policy).
+const (
+	SPIFFEModeDisabled = "disabled"
+	SPIFFEModeObserve  = "observe"
+	SPIFFEModeEnforce  = "enforce"
+)
+
+// loadSPIFFEConfig reads and validates SPIFFE-related env vars. All fields are
+// optional; when mode is "disabled" the other fields are ignored.
+//
+//	HOOP_SPIFFE_MODE             disabled|observe|enforce (default: disabled)
+//	HOOP_SPIFFE_BUNDLE_URL       HTTPS URL to fetch the SPIFFE trust bundle (JWKS-shaped)
+//	HOOP_SPIFFE_BUNDLE_FILE      path to a static trust bundle file (JWKS JSON)
+//	HOOP_SPIFFE_TRUST_DOMAIN     trust domain name, e.g. "customer.com"
+//	HOOP_SPIFFE_AUDIENCE         required audience claim on JWT-SVIDs (default: "hoop-gateway")
+//	HOOP_SPIFFE_REFRESH_PERIOD   go duration for trust bundle refresh (default: 30s)
+func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience string, refresh time.Duration, err error) {
+	mode = os.Getenv("HOOP_SPIFFE_MODE")
+	if mode == "" {
+		mode = SPIFFEModeDisabled
+	}
+	switch mode {
+	case SPIFFEModeDisabled, SPIFFEModeObserve, SPIFFEModeEnforce:
+	default:
+		err = fmt.Errorf("invalid HOOP_SPIFFE_MODE, got=%q, expected disabled|observe|enforce", mode)
+		return
+	}
+
+	if mode == SPIFFEModeDisabled {
+		return
+	}
+
+	bundleURL = os.Getenv("HOOP_SPIFFE_BUNDLE_URL")
+	bundleFile = os.Getenv("HOOP_SPIFFE_BUNDLE_FILE")
+	trustDomain = os.Getenv("HOOP_SPIFFE_TRUST_DOMAIN")
+	audience = os.Getenv("HOOP_SPIFFE_AUDIENCE")
+	if audience == "" {
+		audience = "hoop-gateway"
+	}
+
+	// exactly one source must be set
+	sourcesSet := 0
+	if bundleURL != "" {
+		sourcesSet++
+	}
+	if bundleFile != "" {
+		sourcesSet++
+	}
+	if sourcesSet != 1 {
+		err = fmt.Errorf("SPIFFE mode %q requires exactly one of HOOP_SPIFFE_BUNDLE_URL or HOOP_SPIFFE_BUNDLE_FILE to be set", mode)
+		return
+	}
+	if trustDomain == "" {
+		err = fmt.Errorf("SPIFFE mode %q requires HOOP_SPIFFE_TRUST_DOMAIN to be set", mode)
+		return
+	}
+
+	refresh = 30 * time.Second
+	if v := os.Getenv("HOOP_SPIFFE_REFRESH_PERIOD"); v != "" {
+		refresh, err = time.ParseDuration(v)
+		if err != nil {
+			err = fmt.Errorf("failed parsing HOOP_SPIFFE_REFRESH_PERIOD, reason=%v", err)
+			return
+		}
+		if refresh < time.Second {
+			err = fmt.Errorf("HOOP_SPIFFE_REFRESH_PERIOD must be at least 1s, got=%v", refresh)
+			return
+		}
+	}
+
+	return
+}
+
+func (c Config) SPIFFEMode() string               { return c.spiffeMode }
+func (c Config) SPIFFEEnabled() bool              { return c.spiffeMode != "" && c.spiffeMode != SPIFFEModeDisabled }
+func (c Config) SPIFFEEnforcing() bool            { return c.spiffeMode == SPIFFEModeEnforce }
+func (c Config) SPIFFEBundleURL() string          { return c.spiffeBundleURL }
+func (c Config) SPIFFEBundleFile() string         { return c.spiffeBundleFile }
+func (c Config) SPIFFETrustDomain() string        { return c.spiffeTrustDomain }
+func (c Config) SPIFFEAudience() string           { return c.spiffeAudience }
+func (c Config) SPIFFERefreshPeriod() time.Duration { return c.spiffeRefreshPeriod }

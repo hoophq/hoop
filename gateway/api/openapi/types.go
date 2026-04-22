@@ -188,6 +188,43 @@ type APIKeyResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+// AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
+// agent plus a set of groups that feed into RBAC on authentication.
+//
+// Exactly one of SPIFFEID or SPIFFEPrefix must be set. Similarly, exactly
+// one of AgentID or AgentTemplate must be set: AgentID points at a specific
+// agent; AgentTemplate (used with SPIFFEPrefix) renders against the captured
+// suffix to derive the agent name, with available fields
+// {{.WorkloadIdentifier}} (the part after the prefix) and {{.SPIFFEID}}
+// (the full id).
+type AgentSPIFFEMapping struct {
+	// The unique identifier of this resource
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// SPIFFE trust domain. Must match the trust domain configured on the
+	// gateway for SPIFFE authentication to succeed.
+	TrustDomain string `json:"trust_domain" binding:"required" example:"customer.com"`
+	// Exact SPIFFE ID to match. Mutually exclusive with SPIFFEPrefix.
+	SPIFFEID string `json:"spiffe_id,omitempty" example:"spiffe://customer.com/agent/arqa-prod"`
+	// SPIFFE ID prefix. Matches any SVID whose sub begins with this string;
+	// longest-prefix wins on lookup. Mutually exclusive with SPIFFEID.
+	SPIFFEPrefix string `json:"spiffe_prefix,omitempty" example:"spiffe://customer.com/agent/"`
+	// ID of the Hoop agent this mapping resolves to (exact form). Mutually
+	// exclusive with AgentTemplate.
+	AgentID string `json:"agent_id,omitempty" format:"uuid"`
+	// Go text/template that renders to a Hoop agent name. Used with
+	// SPIFFEPrefix. Available fields: {{.WorkloadIdentifier}},
+	// {{.SPIFFEID}}. Mutually exclusive with AgentID.
+	AgentTemplate string `json:"agent_template,omitempty" example:"{{.WorkloadIdentifier}}"`
+	// The groups assigned to the agent when authenticating via this mapping.
+	Groups []string `json:"groups" example:"agents"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+	// Last update timestamp
+	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
 type AgentRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"default"`
