@@ -3,14 +3,41 @@ import { Loader, Text, Group } from '@mantine/core'
 import { Package, Rotate3d, File, ChevronRight } from 'lucide-react'
 import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from './constants'
 
-export default function MainPage({ 
-  query, 
-  searchStatus, 
-  searchResults, 
-  onResourceSelect, 
-  onConnectionSelect, 
-  onRunbookSelect, 
-  onNavigate 
+function SuggestionsAndQuickAccess({ onNavigate }) {
+  return (
+    <>
+      <SpotlightActionsGroup label="Suggestions">
+        {SUGGESTION_ITEMS.map((item) => (
+          <SpotlightAction
+            key={item.id}
+            label={item.label}
+            leftSection={<item.icon size={16} />}
+            onClick={() => onNavigate(item.path)}
+          />
+        ))}
+      </SpotlightActionsGroup>
+      <SpotlightActionsGroup label="Quick Access">
+        {QUICK_ACCESS_ITEMS.map((item) => (
+          <SpotlightAction
+            key={item.id}
+            label={item.label}
+            leftSection={<item.icon size={16} />}
+            onClick={() => onNavigate(item.path)}
+          />
+        ))}
+      </SpotlightActionsGroup>
+    </>
+  )
+}
+
+export default function MainPage({
+  query,
+  searchStatus,
+  searchResults,
+  onResourceSelect,
+  onConnectionSelect,
+  onRunbookSelect,
+  onNavigate
 }) {
   const hasQuery = query.trim().length >= 2
 
@@ -32,7 +59,12 @@ export default function MainPage({
     const hasResults = resources.length > 0 || connections.length > 0 || runbooks.length > 0
 
     if (searchStatus === 'ready' && !hasResults) {
-      return <SpotlightEmpty>No results found for "{query}"</SpotlightEmpty>
+      return (
+        <>
+          <SpotlightEmpty>No results found for "{query}"</SpotlightEmpty>
+          <SuggestionsAndQuickAccess onNavigate={onNavigate} />
+        </>
+      )
     }
 
     return (
@@ -74,7 +106,7 @@ export default function MainPage({
               const nameParts = rb.name.split('/')
               const folder = nameParts.length > 1 ? nameParts.slice(0, -1).join('/') + '/' : ''
               const filename = nameParts[nameParts.length - 1]
-              
+
               return (
                 <SpotlightAction
                   key={`${rb.repository}:${rb.name}`}
@@ -92,32 +124,10 @@ export default function MainPage({
             })}
           </SpotlightActionsGroup>
         )}
+        <SuggestionsAndQuickAccess onNavigate={onNavigate} />
       </>
     )
   }
 
-  return (
-    <>
-      <SpotlightActionsGroup label="Suggestions">
-        {SUGGESTION_ITEMS.map((item) => (
-          <SpotlightAction
-            key={item.id}
-            label={item.label}
-            leftSection={<item.icon size={16} />}
-            onClick={() => onNavigate(item.path)}
-          />
-        ))}
-      </SpotlightActionsGroup>
-      <SpotlightActionsGroup label="Quick Access">
-        {QUICK_ACCESS_ITEMS.map((item) => (
-          <SpotlightAction
-            key={item.id}
-            label={item.label}
-            leftSection={<item.icon size={16} />}
-            onClick={() => onNavigate(item.path)}
-          />
-        ))}
-      </SpotlightActionsGroup>
-    </>
-  )
+  return <SuggestionsAndQuickAccess onNavigate={onNavigate} />
 }

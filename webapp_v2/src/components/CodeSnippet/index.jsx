@@ -1,28 +1,53 @@
 import { useState } from 'react'
-import { Group, Code, ActionIcon, Tooltip, CopyButton } from '@mantine/core'
+import { Box, ActionIcon, CopyButton } from '@mantine/core'
 import { Copy, Check } from 'lucide-react'
 
-function CodeSnippet({ code, language }) {
+function CodeSnippet({ code }) {
+  const [hovered, setHovered] = useState(false)
+
   return (
-    <Group gap="xs" align="flex-start" wrap="nowrap">
-      <Code block style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-        {code}
-      </Code>
-      <CopyButton value={code} timeout={2000}>
-        {({ copied, copy }) => (
-          <Tooltip label={copied ? 'Copied!' : 'Copy'} withArrow>
+    <Box
+      pos="relative"
+      style={{ backgroundColor: 'var(--mantine-color-dark-8)', borderRadius: 8 }}
+      p="sm"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <Box style={{ overflowX: 'auto', paddingRight: 28 }}>
+        <pre
+          style={{
+            fontFamily: 'monospace',
+            fontSize: 13,
+            color: 'var(--mantine-color-gray-2)',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            margin: 0,
+          }}
+        >
+          {code}
+        </pre>
+      </Box>
+
+      <Box
+        pos="absolute"
+        top={6}
+        right={6}
+        style={{ opacity: hovered ? 1 : 0, transition: 'opacity 120ms ease' }}
+      >
+        <CopyButton value={code} timeout={2000}>
+          {({ copied, copy }) => (
             <ActionIcon
               variant="subtle"
               color={copied ? 'teal' : 'gray'}
+              size="sm"
               onClick={copy}
-              mt={4}
             >
-              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? <Check size={13} /> : <Copy size={13} />}
             </ActionIcon>
-          </Tooltip>
-        )}
-      </CopyButton>
-    </Group>
+          )}
+        </CopyButton>
+      </Box>
+    </Box>
   )
 }
 
