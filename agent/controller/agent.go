@@ -138,9 +138,6 @@ func (a *Agent) Close(cause error) {
 
 func (a *Agent) processPacket(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
-	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-	clientStreamID := sid + clientConnectionID
-
 	log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
 	switch pkt.Type {
 	case pbagent.GatewayConnectOK:
