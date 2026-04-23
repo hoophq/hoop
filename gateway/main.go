@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
@@ -212,6 +214,11 @@ func Run() {
 			}
 		}
 	}
+
+	// Start async RDP PII analysis workers if Presidio is configured.
+	// Workers poll for pending jobs regardless of whether the RDP proxy server is running,
+	// since analysis jobs can be processed by any gateway instance.
+	analyzer.StartWorkerPool(context.Background(), appconfig.Get().MSPresidioAnalyzerURL())
 
 	log.Infof("starting api servers, env-authmethod=%v, env-api-key-set=%v",
 		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
