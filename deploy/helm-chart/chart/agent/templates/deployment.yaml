@@ -29,6 +29,10 @@ spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: hoopagent
       {{- end }}
+      {{- with .Values.additionalInitContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - image: '{{ .Values.image.repository |default "hoophq/hoopdev" }}:{{ .Values.image.tag |default "latest" }}'
         name: agent
@@ -44,6 +48,10 @@ spec:
         - secretRef:
             name: extra-agent-config
         {{- end}}
+        {{- with .Values.volumeMounts }}
+        volumeMounts:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -54,5 +62,9 @@ spec:
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
         {{- toYaml . | nindent 8 }}
       {{- end }}
