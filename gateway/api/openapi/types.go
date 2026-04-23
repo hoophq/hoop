@@ -2517,16 +2517,19 @@ type Attributes struct {
 	GuardrailRuleNames []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	// Datamasking rule names associated with this attribute
 	DatamaskingRuleNames []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	// Access control group names associated with this attribute
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 type AttributeRequest struct {
 	// The name of the attribute
-	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
-	Description            *string  `json:"description" example:"Blocks high-risk SQL commands"`
-	ConnectionNames        []string `json:"connection_names" example:"pgdemo,mysql-prod"`
-	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
-	GuardrailRuleNames     []string `json:"guardrail_rule_names" example:"rule1,rule2"`
-	DatamaskingRuleNames   []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
+	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 }

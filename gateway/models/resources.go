@@ -101,7 +101,17 @@ func ListResources(db *gorm.DB, orgID string, userGroups []string, isAdminOrInte
 				-- do not apply any access control if the plugin is not enabled or it is an admin user
 				WHEN ac.id IS NULL OR (@is_admin_or_internal)::BOOL THEN true
 				-- allow if any of the input user groups are in the access control list
-				ELSE acc.config && (@user_groups)::text[]
+				WHEN acc.config && (@user_groups)::text[] THEN true
+				-- allow if any of the user groups have attributes matching the connection's attributes
+				ELSE EXISTS (
+					SELECT 1
+					FROM private.access_control_groups_attributes acga
+					JOIN private.connections_attributes ca
+						ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+					WHERE acga.org_id = c.org_id
+						AND acga.group_name = ANY((@user_groups)::text[])
+						AND ca.connection_name = c.name
+				)
 		END AND
 		r.name LIKE @name AND
 		r.subtype LIKE @subtype AND

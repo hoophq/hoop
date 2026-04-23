@@ -490,7 +490,17 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
 		WHEN ac.id IS NULL OR (@is_admin_or_auditor)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
-		ELSE acc.config && (@user_groups)::text[]
+		WHEN acc.config && (@user_groups)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((@user_groups)::text[])
+				AND ca.connection_name = c.name
+		)
 	END`, map[string]any{
 		"org_id":              ctx.GetOrgID(),
 		"nameOrID":            nameOrID,
@@ -578,7 +588,17 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
 		WHEN ac.id IS NULL OR (@is_admin_or_auditor)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
-		ELSE acc.config && (@user_groups)::text[]
+		WHEN acc.config && (@user_groups)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((@user_groups)::text[])
+				AND ca.connection_name = c.name
+		)
 	END`, map[string]any{
 		"org_id":              ctx.GetOrgID(),
 		"nameOrID":            nameOrID,
@@ -739,7 +759,17 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
 		WHEN ac.id IS NULL OR (?)::BOOL THEN true
 		-- allow if any of the input user groups are in the access control list
-		ELSE acc.config && (?)::text[]
+		WHEN acc.config && (?)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((?)::text[])
+				AND ca.connection_name = c.name
+		)
 	END AND
 	(
 		COALESCE(c.type::text, '') LIKE ? AND
@@ -799,7 +829,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	) ORDER BY c.name ASC`,
 		tagSelectorJsonData,
 		ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(),
-		ctx.IsAdmin() || isAuditorContext(ctx), userGroups, // access control filter
+		ctx.IsAdmin() || isAuditorContext(ctx), userGroups, userGroups, // access control filter
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,
@@ -844,13 +874,23 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 				-- do not apply any access control if the plugin is not enabled or it is an admin user
 				WHEN ac.id IS NULL OR (?)::BOOL THEN true
 				-- allow if any of the input user groups are in the access control list
-				ELSE acc.config && (?)::text[]
+				WHEN acc.config && (?)::text[] THEN true
+				-- allow if any of the user groups have attributes matching the connection's attributes
+				ELSE EXISTS (
+					SELECT 1
+					FROM private.access_control_groups_attributes acga
+					JOIN private.connections_attributes ca
+						ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+					WHERE acga.org_id = c.org_id
+						AND acga.group_name = ANY((?)::text[])
+						AND ca.connection_name = c.name
+				)
 			END AND (
 				c.name ILIKE ? OR
 				c.type::text ILIKE ? OR
 				c.subtype ILIKE ?
 			)
-		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
+		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
 
 	if err != nil {
 		return nil, err
@@ -963,7 +1003,17 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		-- do not apply any access control if the plugin is not enabled or it is an admin user
 		WHEN ac.id IS NULL OR (?)::BOOL THEN true
 		-- allow if any of the input user groups are in the access control list
-		ELSE acc.config && (?)::text[]
+		WHEN acc.config && (?)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((?)::text[])
+				AND ca.connection_name = c.name
+		)
 	END AND
 	(
 		COALESCE(c.type::text, '') LIKE ? AND
@@ -1024,7 +1074,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	LIMIT ? OFFSET ?`,
 		tagSelectorJsonData,
 		orgID, orgID, orgID, orgID,
-		isAdmin, userGroupsPgArray,
+		isAdmin, userGroupsPgArray, userGroupsPgArray,
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,

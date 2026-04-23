@@ -100,6 +100,7 @@
      :name (r/atom (or (:name initial-data) ""))
      :description (r/atom (or (:description initial-data) ""))
      :connection_ids (r/atom (or (:connection_ids initial-data) []))
+     :attribute-names (r/atom (or (:attributes initial-data) []))
      :score_threshold (r/atom (when (:score_threshold initial-data)
                                 (* (:score_threshold initial-data) 100))) ; Convert float to percentage for display, no default
      :rules (r/atom (if (empty? all-rules) [(create-empty-rule)] all-rules))
@@ -235,6 +236,7 @@
   (let [base-payload {:name @(:name state)
                       :description @(:description state)
                       :connection_ids @(:connection_ids state)
+                      :attributes @(:attribute-names state)
                       :supported_entity_types (prepare-supported-entity-types @(:rules state))
                       :custom_entity_types (prepare-custom-entity-types @(:rules state) @(:custom-rules state))}
         score-threshold @(:score_threshold state)]
