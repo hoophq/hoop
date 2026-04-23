@@ -135,12 +135,89 @@ openLegacyModal: (modalName) => {
 window.hoopDispatch(['modal->open', 'some-modal'])
 ```
 
+## Styling hierarchy — follow this order, never skip levels
+
+**1. Mantine style props** — always first. Cover the vast majority of cases.
+```jsx
+<Box mih="100%" p="md" maw={400} w="90%" h="100vh" bg="gray.0" />
+<Text c="dimmed" fz="sm" fw={600} ta="center" />
+<Stack gap="lg" align="center" />
+```
+
+**2. `Component.extend()` in `src/components/[Name]/theme.js`** — for global defaults that apply to every instance of a component. Imported and assembled in `src/theme.js`.
+```js
+// src/components/NavLink/theme.js
+export const NavLinkTheme = NavLink.extend({
+  defaultProps: { radius: 'sm' },
+  styles: { label: { fontWeight: '600' } },
+})
+```
+
+**3. CSS Module with `var(--mantine-*)` only** — only when Mantine props cannot express the rule (pseudo-elements, `[data-*]` selectors, `:hover` with complex targets). See CSS Modules section below.
+
+### Never use
+
+```jsx
+// ❌ style={{}} — always forbidden
+<Box style={{ borderRadius: 8, color: '#3e63dd', padding: '8px 16px' }} />
+
+// ❌ styles={{}} on instances — code smell: move it to Component.extend() in theme
+<NavLink styles={{ label: { fontWeight: 600 } }} />
+<AppShell styles={{ navbar: { transition: 'width 200ms ease' } }} />
+```
+
+`style={{}}` and `styles={{}}` on instances generate inline styles on the DOM, bypass the theme, and scatter visual decisions across the codebase. If you find yourself reaching for either, step back:
+- Simple value? → use a Mantine prop
+- Repeated across instances? → move to `Component.extend()`
+- Complex selector? → CSS Module with `var(--mantine-*)`
+
+Accepted exceptions for `styles={{}}`:
+- Mantine `Transition` animation spread: `style={transitionStyles}`
+- Structural shell slots (AppShell, Drawer) where `classNames` loses to Mantine's own CSS specificity — use `styles` with constants defined at the top of the file, never with raw hardcoded values inline
+
 ## Styled Components
 
 When Mantine's built-in props and theme tokens are not enough for a visual requirement:
 - Create a dedicated component in `src/components/` (not inline in the page).
-- Use Mantine's `createPolymorphicComponent` / `Box` with `style` prop, or a CSS Module scoped to that component.
+- Use `Component.extend()` in `src/components/[Name]/theme.js` for global defaults.
+- Use a CSS Module scoped to that component for complex selectors only.
 - Never add global CSS or unscoped styles.
+
+### CSS Modules — mandatory rule
+
+CSS Modules are allowed **only** for complex selectors that Mantine props cannot express (pseudo-elements, `:nth-child`, etc.).
+
+**NEVER hardcode design values in CSS Modules.** Every spacing, color, font size, radius, and line-height value must reference a Mantine CSS variable so the theme remains the single source of truth.
+
+Available Mantine CSS variables (set by the theme in `src/theme.js`):
+
+```css
+/* Spacing — xs=4px sm=8px md=16px lg=24px xl=32px */
+var(--mantine-spacing-xs | sm | md | lg | xl)
+
+/* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
+var(--mantine-font-size-xs | sm | md | lg | xl)
+
+/* Line heights */
+var(--mantine-line-height-xs | sm | md | lg | xl)
+
+/* Border radius — xs=4.5px sm=6px md=9px lg=12px xl=18px */
+var(--mantine-radius-xs | sm | md | lg | xl)
+
+/* Colors — e.g. indigo, gray, green, amber, red, sky */
+var(--mantine-color-{name}-{0-9})
+var(--mantine-color-{name}-filled)       /* primary shade, solid bg */
+var(--mantine-color-{name}-light)        /* light variant bg */
+var(--mantine-color-{name}-light-color)  /* light variant text */
+```
+
+```css
+/* ❌ Wrong — hardcoded values leak out of the theme */
+.label { font-size: 12px; margin-bottom: 8px; color: #3e63dd; }
+
+/* ✅ Correct — always reference the theme */
+.label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-indigo-8); }
+```
 
 ## Reference Implementation
 - `pages/Agents/` is the reference page showing the full pattern: store + service + list page + create page

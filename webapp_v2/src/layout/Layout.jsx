@@ -6,6 +6,8 @@ import Sidebar from './Sidebar';
 
 const SIDEBAR_WIDTH = 310;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
+const SIDEBAR_BG = '#182449';
+const SIDEBAR_BORDER = 'rgba(255, 255, 255, 0.1)';
 
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
@@ -29,14 +31,12 @@ function Layout({ children }) {
           collapsed: { mobile: true }, // desktop only — mobile uses Drawer below
         }}
         styles={{
-          navbar: { transition: 'width 200ms ease' },
-          main: { transition: 'padding-left 200ms ease' },
+          navbar: { backgroundColor: SIDEBAR_BG, borderRight: 'none', overflow: 'hidden' },
+          header: { backgroundColor: SIDEBAR_BG, borderBottom: `1px solid ${SIDEBAR_BORDER}` },
         }}
       >
         {/* Mobile-only sticky top bar (lg:hidden equivalent) */}
-        <AppShell.Header
-          style={{ backgroundColor: '#182449', borderBottom: '1px solid rgba(255,255,255,0.1)' }}
-        >
+        <AppShell.Header>
           <Group h="100%" px="md">
             <Burger
               opened={sidebarOpen}
@@ -49,7 +49,7 @@ function Layout({ children }) {
         </AppShell.Header>
 
         {/* Desktop sidebar — always visible above breakpoint */}
-        <AppShell.Navbar style={{ backgroundColor: '#182449', borderRight: 'none', overflow: 'hidden' }}>
+        <AppShell.Navbar>
           <Sidebar />
         </AppShell.Navbar>
 
@@ -66,10 +66,7 @@ function Layout({ children }) {
         padding={0}
         withCloseButton={false}
         overlayProps={{ backgroundOpacity: 0.5 }}
-        styles={{
-          content: { backgroundColor: '#182449' },
-          body: { padding: 0, height: '100%' },
-        }}
+        styles={{ content: { backgroundColor: SIDEBAR_BG }, body: { padding: 0, height: '100%' } }}
         transitionProps={{ duration: 250, timingFunction: 'ease' }}
       >
         <Sidebar mobile />
