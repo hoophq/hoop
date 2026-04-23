@@ -175,6 +175,7 @@ func Post(c *gin.Context) {
 		ConnectionTags:       conn.ConnectionTags,
 		Verb:                 proto.ClientVerbExec,
 		Status:               string(openapi.SessionStatusOpen),
+		Type:                 "human",
 		SessionBatchID:       req.SessionBatchID,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
