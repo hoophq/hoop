@@ -7,9 +7,98 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/lib/pq"
 )
+
+func TestIdentifyTraits(t *testing.T) {
+	ossLicense := json.RawMessage(`{"payload":{"type":"oss"}}`)
+	enterpriseLicense := json.RawMessage(`{"payload":{"type":"enterprise"}}`)
+
+	t.Run("OSS install with email sends email and name traits", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:          "org-1",
+			OrgLicenseData: &ossLicense,
+			UserID:         "user-1",
+			UserEmail:      "alice@example.com",
+			UserName:       "Alice",
+		}
+
+		traits := identifyTraits(ctx, "hashed-id", "env-1")
+
+		assertTrait(t, traits, "email", "alice@example.com")
+		assertTrait(t, traits, "name", "Alice")
+		assertTrait(t, traits, "user-id", "hashed-id")
+		assertTrait(t, traits, "org-id", "org-1")
+	})
+
+	t.Run("Enterprise install omits email and name traits", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:          "org-1",
+			OrgLicenseData: &enterpriseLicense,
+			UserID:         "user-1",
+			UserEmail:      "alice@example.com",
+			UserName:       "Alice",
+		}
+
+		traits := identifyTraits(ctx, "hashed-id", "env-1")
+
+		assertTraitAbsent(t, traits, "email")
+		assertTraitAbsent(t, traits, "name")
+		assertTrait(t, traits, "user-id", "hashed-id")
+	})
+
+	t.Run("OSS install with empty email omits email and name traits", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:          "org-1",
+			OrgLicenseData: &ossLicense,
+			UserID:         "user-1",
+		}
+
+		traits := identifyTraits(ctx, "hashed-id", "env-1")
+
+		assertTraitAbsent(t, traits, "email")
+		assertTraitAbsent(t, traits, "name")
+	})
+
+	t.Run("empty license data defaults to OSS and sends email", func(t *testing.T) {
+		ctx := &types.APIContext{
+			OrgID:     "org-1",
+			UserID:    "user-1",
+			UserEmail: "alice@example.com",
+			UserName:  "Alice",
+		}
+
+		if got := ctx.GetLicenseType(); got != license.OSSType {
+			t.Fatalf("expected empty license data to resolve to %q, got %q", license.OSSType, got)
+		}
+		traits := identifyTraits(ctx, "hashed-id", "env-1")
+
+		assertTrait(t, traits, "email", "alice@example.com")
+		assertTrait(t, traits, "name", "Alice")
+	})
+}
+
+func assertTrait(t *testing.T, traits map[string]any, key string, expected any) {
+	t.Helper()
+	val, ok := traits[key]
+	if !ok {
+		t.Errorf("expected trait %q to exist", key)
+		return
+	}
+	if val != expected {
+		t.Errorf("trait %q = %v, want %v", key, val, expected)
+	}
+}
+
+func assertTraitAbsent(t *testing.T, traits map[string]any, key string) {
+	t.Helper()
+	if _, ok := traits[key]; ok {
+		t.Errorf("expected trait %q to be absent", key)
+	}
+}
 
 func TestSessionUsageProperties(t *testing.T) {
 	now := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)

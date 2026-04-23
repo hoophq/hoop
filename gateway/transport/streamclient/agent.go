@@ -102,6 +102,7 @@ func (s *AgentStream) StreamAgentID() streamtypes.ID {
 func (s *AgentStream) GetOrgID() string       { return s.agent.OrgID }
 func (s *AgentStream) AgentID() string        { return s.agent.ID }
 func (s *AgentStream) AgentName() string      { return s.agent.Name }
+func (s *AgentStream) AgentMode() string      { return s.agent.Mode }
 func (s *AgentStream) AgentVersion() string   { return s.agent.GetMeta("version") }
 func (s *AgentStream) ConnectionName() string { return s.connectionName }
 func (s *AgentStream) String() string         { return s.agent.String() }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/log/bootstrap"
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -41,7 +42,8 @@ func (s *Server) subscribeAgent(stream *streamclient.AgentStream) (err error) {
 	defer func() { stream.Close(pluginContext, err) }()
 
 	connectionrequests.AcceptProxyConnection(stream.GetOrgID(), stream.StreamAgentID(), nil)
-	log.With("connection", stream.ConnectionName()).Infof("agent connected: %s", stream)
+	log.With("connection", stream.ConnectionName()).Debugf("agent connected: %s", stream)
+	bootstrap.AgentConnected(stream.AgentName(), stream.AgentMode())
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
 		Payload: nil,

@@ -45,7 +45,7 @@ func replaceWebappURLIndexFile(apiURL, staticUiPath string) error {
 	indexFileOrigin := filepath.Join(staticUiPath, "index.origin.html")
 	// use the copy of index file if exists
 	if fileBytes, err := os.ReadFile(indexFileOrigin); err == nil {
-		log.Infof("replacing api url from origin at %v with %v", indexFile, apiURL)
+		log.Debugf("replacing api url from origin at %v with %v", indexFile, apiURL)
 		fileBytes = bytes.ReplaceAll(fileBytes, []byte(hardcodedWebappAssetsURL), []byte(apiURL))
 		fileBytes = bytes.ReplaceAll(fileBytes, []byte(hardcodedWebappAppJsVersion), []byte(appVersion))
 		if err := os.WriteFile(indexFile, fileBytes, 0644); err != nil {
@@ -62,7 +62,7 @@ func replaceWebappURLIndexFile(apiURL, staticUiPath string) error {
 		return fmt.Errorf("failed creating index.origin.html copy file at %v, reason=%v", indexFileOrigin, err)
 	}
 
-	log.Infof("replacing api url at %v with %v", indexFile, apiURL)
+	log.Debugf("replacing api url at %v with %v", indexFile, apiURL)
 	fileBytes = bytes.ReplaceAll(fileBytes, []byte(hardcodedWebappAssetsURL), []byte(apiURL))
 	fileBytes = bytes.ReplaceAll(fileBytes, []byte(hardcodedWebappAppJsVersion), []byte(appVersion))
 	if err := os.WriteFile(indexFile, fileBytes, 0644); err != nil {
@@ -76,7 +76,7 @@ func replaceWebappURLAppJsFile(apiURL, staticUiPath, baseRoutePrefix string) err
 	appJsFileOrigin := filepath.Join(staticUiPath, "js/app.origin.js")
 	// use the copy js file if exists
 	if appBytes, err := os.ReadFile(appJsFileOrigin); err == nil {
-		log.Infof("replacing api url from origin at %v with url=%v, base-route-prefix=%q",
+		log.Debugf("replacing api url from origin at %v with url=%v, base-route-prefix=%q",
 			appJsFile, apiURL, baseRoutePrefix)
 		appBytes = bytes.ReplaceAll(appBytes, []byte(hardcodedWebappApiURL), []byte(apiURL))
 		appBytes = bytes.ReplaceAll(appBytes, []byte(hardcodedWebappAssetsURL), []byte(apiURL))
@@ -95,7 +95,7 @@ func replaceWebappURLAppJsFile(apiURL, staticUiPath, baseRoutePrefix string) err
 		return fmt.Errorf("failed creating app.origin.js copy file at %v, reason=%v", appJsFileOrigin, err)
 	}
 
-	log.Infof("replacing api url at %v with url=%v, base-route-prefix=%q",
+	log.Debugf("replacing api url at %v with url=%v, base-route-prefix=%q",
 		appJsFile, apiURL, baseRoutePrefix)
 	appBytes = bytes.ReplaceAll(appBytes, []byte(hardcodedWebappApiURL), []byte(apiURL))
 	appBytes = bytes.ReplaceAll(appBytes, []byte(hardcodedWebappAssetsURL), []byte(apiURL))

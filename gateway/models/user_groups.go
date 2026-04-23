@@ -52,16 +52,18 @@ func InsertUserGroups(userGroups []UserGroup) error {
 
 // DeleteUserGroup deletes all instances of a group from an organization
 func DeleteUserGroup(orgID string, name string) error {
-	result := DB.Where("org_id = ? AND name = ?", orgID, name).Delete(&UserGroup{})
-	if result.Error != nil {
-		return result.Error
-	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("org_id = ? AND name = ?", orgID, name).Delete(&UserGroup{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return ErrNotFound
+		}
 
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-
-	return nil
+		return tx.Where("org_id = ? AND group_name = ?", orgID, name).
+			Delete(&AccessControlGroupAttribute{}).Error
+	})
 }
 
 // CreateUserGroupWithoutUser creates a group entry without binding it to any user

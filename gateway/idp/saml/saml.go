@@ -194,7 +194,7 @@ func getOrCreateSigningKey() (ed25519.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ed25519 key pair: %v", err)
 	}
-	log.Infof("saving shared signing key")
+	log.Debugf("saving shared signing key")
 	err = models.CreateServerSharedSigningKey(base64.StdEncoding.EncodeToString(privKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server shared signing key: %v", err)

@@ -121,6 +121,21 @@ func TestTemplateParseAttributes(t *testing.T) {
 			},
 		},
 		{
+			msg: "it should match [minlength, maxlength] attributes",
+			tmpl: `name = {{ .name
+								| minlength "2"
+								| maxlength "50" }}`,
+			wantAttrs: map[string]any{
+				"name": map[string]any{
+					"description": "",
+					"required":    false,
+					"type":        "text",
+					"minlength":   "2",
+					"maxlength":   "50",
+				},
+			},
+		},
+		{
 			msg: "it should match [placeholder, type, options] attributes",
 			tmpl: `SELECT * FROM gender = {{ .gender
 											| placeholder "the gender type"

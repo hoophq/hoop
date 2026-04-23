@@ -1704,6 +1704,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/connections/{nameOrID}/credentials/{credentialID}/revoke": {
+            "post": {
+                "description": "Revokes a connection credential, invalidating it and disconnecting any active sessions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Connections"
+                ],
+                "summary": "Revoke Connection Credentials",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the connection",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the credential to revoke",
+                        "name": "credentialID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/connections/{nameOrID}/credentials/{sessionID}": {
             "post": {
                 "description": "Resume a connection credentials request after review approval",
@@ -8155,6 +8212,16 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "access_control_group_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "sre"
+                    ]
+                },
                 "access_request_rule_names": {
                     "type": "array",
                     "items": {
@@ -8209,6 +8276,17 @@ const docTemplate = `{
         "openapi.Attributes": {
             "type": "object",
             "properties": {
+                "access_control_group_names": {
+                    "description": "Access control group names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "sre"
+                    ]
+                },
                 "access_request_rule_names": {
                     "description": "Access request rule names associated with this attribute",
                     "type": "array",
@@ -10885,6 +10963,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 2
                 },
+                "rejection_reason": {
+                    "description": "The reason provided by the reviewer when rejecting this review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "This command is not allowed in production."
+                },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
                     "type": "array",
@@ -11025,6 +11109,10 @@ const docTemplate = `{
                 "force_review": {
                     "type": "boolean",
                     "example": false
+                },
+                "rejection_reason": {
+                    "type": "string",
+                    "example": "This command is not allowed in production."
                 },
                 "status": {
                     "description": "The reviewed status\n* APPROVED - Approve the review resource\n* REJECTED - Reject the review resource\n* REVOKED - Revoke an approved review",
@@ -12368,6 +12456,14 @@ const docTemplate = `{
                     "description": "The Linux exit code if it's available",
                     "type": "integer"
                 },
+                "guardrails_info": {
+                    "description": "GuardRailsInfo contains information about guardrail rules that matched during the session.\nA non-empty list indicates the session was blocked by at least one guardrail rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionGuardRailsInfo"
+                    },
+                    "readOnly": true
+                },
                 "id": {
                     "description": "The resource unique identifier",
                     "type": "string",
@@ -12524,6 +12620,74 @@ const docTemplate = `{
                 "SessionEventStreamBase64Type",
                 "SessionEventStreamRawQueriesType"
             ]
+        },
+        "openapi.SessionGuardRailMatchedRule": {
+            "type": "object",
+            "properties": {
+                "pattern_regex": {
+                    "description": "PatternRegex that matched (only set when type is pattern_match)",
+                    "type": "string",
+                    "example": "^[A-Z0-9]+"
+                },
+                "type": {
+                    "description": "Type is the internal rule type",
+                    "type": "string",
+                    "enum": [
+                        "deny_words_list",
+                        "pattern_match"
+                    ],
+                    "example": "deny_words_list"
+                },
+                "words": {
+                    "description": "Words matched (only set when type is deny_words_list)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                }
+            }
+        },
+        "openapi.SessionGuardRailsInfo": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "description": "Direction indicates whether the match happened on input or output data",
+                    "type": "string",
+                    "enum": [
+                        "input",
+                        "output"
+                    ],
+                    "example": "input"
+                },
+                "matched_words": {
+                    "description": "MatchedWords are the words that matched the rule",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "password",
+                        "secret"
+                    ]
+                },
+                "rule": {
+                    "description": "Rule is the specific internal rule entry that triggered the match",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionGuardRailMatchedRule"
+                        }
+                    ]
+                },
+                "rule_name": {
+                    "description": "RuleName is the name of the guardrail rule that matched",
+                    "type": "string",
+                    "example": "block-sensitive-data"
+                }
+            }
         },
         "openapi.SessionLabelsType": {
             "type": "object",
@@ -12724,6 +12888,12 @@ const docTemplate = `{
                     "type": "integer",
                     "readOnly": true,
                     "example": 2
+                },
+                "rejection_reason": {
+                    "description": "The reason provided by the reviewer when rejecting this review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "This command is not allowed in production."
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
