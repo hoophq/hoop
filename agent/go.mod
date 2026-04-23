@@ -4,24 +4,27 @@ go 1.26.2
 
 replace github.com/hoophq/hoop/common => ../common
 
+replace libhoop => ../libhoop
+
 require (
-	github.com/aws/aws-sdk-go-v2 v1.39.6
-	github.com/aws/aws-sdk-go-v2/config v1.27.9
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.9
-	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.6.13
-	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.28.4
-	github.com/aws/aws-sdk-go-v2/service/sts v1.28.5
-	github.com/aws/session-manager-plugin v0.0.0-20251119232423-83812b6d1d99
-	github.com/aws/smithy-go v1.23.2
+	github.com/aws/aws-sdk-go-v2 v1.41.5
+	github.com/aws/aws-sdk-go-v2/config v1.32.14
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
+	github.com/aws/aws-sdk-go-v2/feature/rds/auth v1.6.21
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.41.5
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10
+	github.com/aws/session-manager-plugin v0.0.0-20260401221635-b79d06c1d3a2
+	github.com/aws/smithy-go v1.24.3
 	github.com/getsentry/sentry-go v0.45.1
-	github.com/go-sql-driver/mysql v1.9.0
+	github.com/go-sql-driver/mysql v1.9.3
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/lib/pq v1.10.9
-	github.com/microsoft/go-mssqldb v1.8.0
+	github.com/lib/pq v1.12.3
+	github.com/microsoft/go-mssqldb v1.9.8
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	go.mongodb.org/mongo-driver v1.17.9
 	google.golang.org/grpc v1.80.0
+	libhoop v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -97,12 +100,12 @@ require (
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
-	github.com/xdg-go/scram v1.1.2 // indirect
+	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/host v0.68.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.68.0 // indirect
 	go.opentelemetry.io/contrib/processors/baggage/baggagetrace v0.1.0 // indirect
 	go.opentelemetry.io/contrib/processors/baggagecopy v0.16.0 // indirect
