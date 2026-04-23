@@ -21,8 +21,7 @@ import { useAgentStore } from '@/stores/useAgentStore'
 import { useUserStore } from '@/stores/useUserStore'
 import EmptyState from '@/layout/EmptyState'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
-
-const AGENTS_DOCS_URL = 'https://hoop.dev/docs/setup/agents'
+import { docsUrl } from '@/utils/docsUrl'
 
 function AgentStatusBadge({ status }) {
   const isOnline = status === 'CONNECTED'
@@ -157,7 +156,7 @@ function Agents() {
             <Text size="md" c="dimmed">
               View and manage your Agents for your resource roles
             </Text>
-            <DocsBtnCallOut text="Learn more about Agents" href={AGENTS_DOCS_URL} />
+            <DocsBtnCallOut text="Learn more about Agents" href={docsUrl.setup.agents} />
           </Stack>
           {isAdmin && agents.length > 0 && (
             <Button onClick={() => navigate('/agents/new')}>

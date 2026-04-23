@@ -3,11 +3,8 @@ import { CopyButton } from '@mantine/core'
 import { Copy } from 'lucide-react'
 import CodeSnippet from '@/components/CodeSnippet'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
+import { docsUrl } from '@/utils/docsUrl'
 
-const AGENTS_DOCS_URL = 'https://hoop.dev/docs/setup/agents'
-const K8S_DOCS_URL = 'https://hoop.dev/docs/setup/deployment/kubernetes#agent-deployment'
-const CLI_DOCS_URL = 'https://hoop.dev/docs/clients/command-line/overview'
-const AGENT_CLI_DOCS_URL = 'https://hoop.dev/docs/concepts/agents#standard-mode'
 const HELM_DOCS_URL = 'https://helm.sh/docs/intro/install/'
 
 function InlineCopy({ value }) {
@@ -92,7 +89,7 @@ export function KubernetesDeployment({ hoopKey }) {
         <Text size="sm" fw={700}>Minimal configuration</Text>
         <Text size="xs" c="dimmed">
           Include the following parameters for standard installation, for a full configuration.{' '}
-          <Anchor href={K8S_DOCS_URL} target="_blank" size="xs">Check your docs.</Anchor>
+          <Anchor href={`${docsUrl.setup.deployment.kubernetes}#agent-deployment`} target="_blank" size="xs">Check your docs.</Anchor>
         </Text>
         <Text size="sm" fw={700}>values.yml</Text>
         <CodeSnippet code={valuesYml} />
@@ -115,7 +112,7 @@ export function KubernetesDeployment({ hoopKey }) {
         <Text size="sm" fw={700}>deployment.yml</Text>
         <Text size="xs" c="dimmed">
           For more kubernetes configuration.{' '}
-          <Anchor href="https://hoop.dev/docs/setup/deployment/kubernetes#sidecar-container" target="_blank" size="xs">
+          <Anchor href={`${docsUrl.setup.deployment.kubernetes}#sidecar-container`} target="_blank" size="xs">
             Check the Hoop docs
           </Anchor>
         </Text>
@@ -133,7 +130,7 @@ export function LocalDeployment({ hoopKey }) {
     <Stack gap="lg">
       <Stack gap={0}>
         <Text size="sm" fw={700}>Install Hoop CLI</Text>
-        <DocsBtnCallOut text="See our installation docs for your OS" href={CLI_DOCS_URL} />
+        <DocsBtnCallOut text="See our installation docs for your OS" href={docsUrl.clients.commandLine.overview} />
       </Stack>
 
       <Stack gap="xs">
@@ -146,7 +143,7 @@ export function LocalDeployment({ hoopKey }) {
       <Stack gap={0}>
         <Text size="sm" fw={700}>The hoop agent CLI</Text>
         <Text size="xs" c="dimmed">Learn how to operate this agent using its CLI</Text>
-        <DocsBtnCallOut text="Check our docs" href={AGENT_CLI_DOCS_URL} />
+        <DocsBtnCallOut text="Check our docs" href={`${docsUrl.concepts.agents}#standard-mode`} />
       </Stack>
     </Stack>
   )
@@ -160,7 +157,7 @@ export function DeploymentMain({ installMethod, hoopKey }) {
           <Title order={4}>Agent deployment</Title>
           <Text size="sm" c="dimmed">Setup your Agent in your infrastructure.</Text>
         </Stack>
-        <DocsBtnCallOut text="Learn more about Agents" href={AGENTS_DOCS_URL} />
+        <DocsBtnCallOut text="Learn more about Agents" href={docsUrl.setup.agents} />
       </Grid.Col>
       <Grid.Col span={9}>
         {installMethod === 'docker' && <DockerDeployment hoopKey={hoopKey} />}
