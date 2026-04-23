@@ -28,6 +28,10 @@ function Layout({ children }) {
           breakpoint: 'sm',
           collapsed: { mobile: true }, // desktop only — mobile uses Drawer below
         }}
+        styles={{
+          navbar: { transition: 'width 200ms ease' },
+          main: { transition: 'padding-left 200ms ease' },
+        }}
       >
         {/* Mobile-only sticky top bar (lg:hidden equivalent) */}
         <AppShell.Header
