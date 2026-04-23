@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Center, Stack, Loader, Text, Transition } from '@mantine/core'
 import { XCircle } from 'lucide-react'
 
-function PageLoader({ message, description, error, overlay }) {
+function PageLoader({ message, description, error, overlay, h }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -17,29 +17,24 @@ function PageLoader({ message, description, error, overlay }) {
         backgroundColor: 'var(--mantine-color-body)',
         zIndex: 200,
       }
-    : { height: '100vh' }
+    : undefined
 
   return (
-    <Center style={containerStyle}>
+    <Center style={containerStyle} h={overlay ? undefined : (h ?? '100vh')}>
       <Transition mounted={visible} transition="fade" duration={300}>
         {(styles) => (
           <Stack align="center" gap="xl" style={{ ...styles, maxWidth: 320 }}>
-            <Text
-              style={{
-                fontSize: 22,
-                fontWeight: 700,
-                letterSpacing: '-0.5px',
-                color: 'var(--mantine-color-indigo-8)',
-                lineHeight: 1,
-              }}
-            >
-              hoop
-            </Text>
+            <img
+              src="/images/hoop-branding/SVG/hoop-symbol_black.svg"
+              height={40}
+              width={40}
+              alt="hoop"
+            />
 
             {error ? (
               <XCircle size={32} color="var(--mantine-color-red-6)" strokeWidth={1.5} />
             ) : (
-              <Loader size="sm" type="dots" color="indigo" />
+              <Loader size="sm" type="dots" color="dark" />
             )}
 
             {(message || description) && (
@@ -50,7 +45,7 @@ function PageLoader({ message, description, error, overlay }) {
                   </Text>
                 )}
                 {description && (
-                  <Text size="xs" c="dimmed" ta="center" style={{ opacity: 0.7 }}>
+                  <Text size="xs" c="dimmed" ta="center">
                     {description}
                   </Text>
                 )}

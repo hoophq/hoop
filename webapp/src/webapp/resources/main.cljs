@@ -48,8 +48,7 @@
      "."]]])
 
 (defn- loading-list-view []
-  [:> Box {:class "flex items-center justify-center h-96"}
-   [loaders/simple-loader]])
+  [loaders/page-loading-screen {:full-page false}])
 
 (def resource-types
   [{:id "postgres" :value "postgres" :label "PostgreSQL"}
