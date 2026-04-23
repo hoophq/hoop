@@ -16,7 +16,6 @@ import (
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
-	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
@@ -29,6 +28,7 @@ import (
 	"github.com/hoophq/hoop/gateway/proxyproto/postgresproxy"
 	"github.com/hoophq/hoop/gateway/proxyproto/sshproxy"
 	"github.com/hoophq/hoop/gateway/rdp"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport"
 	"github.com/hoophq/hoop/gateway/webappjs"
 
