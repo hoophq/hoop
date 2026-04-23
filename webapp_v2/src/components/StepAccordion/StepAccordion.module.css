@@ -1,15 +1,11 @@
 .item {
   border: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-lg);
+  border-radius: var(--mantine-radius-xl);
   overflow: hidden;
 }
 
-.item[data-active] {
-  border-color: var(--mantine-color-blue-6);
-}
-
 .item[data-active] .control {
-  background-color: var(--mantine-color-blue-0);
+  background-color: var(--mantine-color-indigo-1);
 }
 
 .item[data-disabled] {
@@ -18,7 +14,7 @@
 }
 
 .control {
-  padding: var(--mantine-spacing-lg);
+  padding: var(--mantine-spacing-md);
 }
 
 .control:focus-visible {
@@ -27,7 +23,7 @@
 }
 
 .content {
-  padding: var(--mantine-spacing-xl) var(--mantine-spacing-lg);
+  padding: var(--mantine-spacing-lg);
   background-color: var(--mantine-color-white);
   border-top: 1px solid var(--mantine-color-default-border);
 }

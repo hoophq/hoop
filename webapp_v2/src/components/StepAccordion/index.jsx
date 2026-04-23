@@ -1,25 +1,28 @@
-import { Accordion, Avatar, Box, Flex, Text } from '@mantine/core'
-import { Check } from 'lucide-react'
-import classes from './StepAccordion.module.css'
+import { Accordion, Avatar, Box, Flex, Text } from '@mantine/core';
+import { Check } from 'lucide-react';
+import classes from './StepAccordion.module.css';
 
 function StepTrigger({ icon, title, subtitle, done }) {
-  const StepIcon = icon
+  const StepIcon = icon;
   return (
     <Flex align="center" gap="md" className={classes.trigger}>
-      <Avatar size={40} variant="soft" color="gray" radius="md">
-        <StepIcon size={18} />
+      <Avatar size={64} variant="soft" color="gray" radius="md">
+        <StepIcon size={16} />
       </Avatar>
       <Box className={classes.triggerBody}>
-        <Text fw={700} fz={24} c="dark">{title}</Text>
-        <Text size="md" c="dimmed">{subtitle}</Text>
+        <Text fw={700} fz={24}>
+          {title}
+        </Text>
+        <Text size="md" c="dimmed">
+          {subtitle}
+        </Text>
       </Box>
-      {done && (
+      {done &&
         <Avatar size="sm" color="green" variant="light" radius="xl" mr="xs">
           <Check size={12} />
-        </Avatar>
-      )}
+        </Avatar>}
     </Flex>
-  )
+  );
 }
 
 /**
@@ -38,26 +41,21 @@ function StepAccordion({ items, value, onChange }) {
       classNames={{
         item: classes.item,
         control: classes.control,
-        content: classes.content,
+        content: classes.content
       }}
     >
-      {items.map((item) => (
+      {items.map(item =>
         <Accordion.Item key={item.value} value={item.value}>
           <Accordion.Control disabled={item.disabled}>
-            <StepTrigger
-              icon={item.icon}
-              title={item.title}
-              subtitle={item.subtitle}
-              done={item.done}
-            />
+            <StepTrigger icon={item.icon} title={item.title} subtitle={item.subtitle} done={item.done} />
           </Accordion.Control>
           <Accordion.Panel>
             {item.content}
           </Accordion.Panel>
         </Accordion.Item>
-      ))}
+      )}
     </Accordion>
-  )
+  );
 }
 
-export default StepAccordion
+export default StepAccordion;
