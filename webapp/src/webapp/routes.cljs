@@ -123,7 +123,13 @@
   [config]
   (let [uri (str (url-for (:handler config) (or (:params config) []))
                  (:query-params config))]
-    (pushy/set-token! history uri)))
+    (pushy/set-token! history uri)
+    ;; Notify the React shell that the URL changed. Pushy uses pushState,
+    ;; which does not fire popstate, so React Router v7 would otherwise
+    ;; miss the transition — the Layout/Sidebar wrapper wouldn't mount
+    ;; until a full page refresh.
+    (when (.getItem js/localStorage "react-shell")
+      (.dispatchEvent js/window (js/PopStateEvent. "popstate")))))
 
 (defn start!
   []

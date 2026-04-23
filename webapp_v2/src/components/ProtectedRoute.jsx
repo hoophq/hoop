@@ -83,7 +83,19 @@ function ProtectedRoute({ children }) {
     initialize()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (redirectTo) {
+  // React Router reuses this ProtectedRoute instance when navigating between
+  // Route entries whose element tree starts with <ProtectedRoute> (both /* and
+  // /onboarding/*). That means redirectTo state survives the navigation it
+  // triggered, and on the next render — with the new pathname — we'd return
+  // <Navigate> again, firing history.replace in a loop until the browser
+  // throttles. Clear redirectTo once we've arrived at the target.
+  useEffect(() => {
+    if (redirectTo && location.pathname === redirectTo) {
+      setRedirectTo(null)
+    }
+  }, [location.pathname, redirectTo])
+
+  if (redirectTo && location.pathname !== redirectTo) {
     return <Navigate to={redirectTo} state={{ from: location }} replace />
   }
 
