@@ -3,45 +3,48 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
+  define: {
+    __BUILD_ID__: JSON.stringify(Date.now().toString())
+  },
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+      '@': path.resolve(__dirname, './src')
+    }
   },
   build: {
     outDir: 'dist',
     sourcemap: false,
-    emptyOutDir: true,
+    emptyOutDir: true
   },
   server: {
     proxy: {
       // API requests → gateway backend
       '/api': {
         target: process.env.VITE_GATEWAY_URL || 'http://localhost:8009',
-        changeOrigin: true,
+        changeOrigin: true
       },
       // ClojureScript assets (JS bundle, CSS, images) → shadow-cljs dev server
       '/js': {
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
-        changeOrigin: true,
+        changeOrigin: true
       },
       '/css': {
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
-        changeOrigin: true,
+        changeOrigin: true
       },
       '/images': {
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
-        changeOrigin: true,
+        changeOrigin: true
       },
       '/data': {
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
-        changeOrigin: true,
+        changeOrigin: true
       },
       '/icons': {
         target: process.env.VITE_CLJS_URL || 'http://localhost:8280',
-        changeOrigin: true,
-      },
-    },
-  },
+        changeOrigin: true
+      }
+    }
+  }
 });
