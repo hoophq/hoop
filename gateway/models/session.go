@@ -43,6 +43,7 @@ type SessionOption struct {
 	ReviewStatus        string
 	ReviewApproverEmail *string
 	BatchID             *string
+	CorrelationID       *string
 	JiraIssueKey        []string
 	StartDate           sql.NullString
 	EndDate             sql.NullString
@@ -110,6 +111,7 @@ type Session struct {
 	ExitCode             *int                    `gorm:"column:exit_code"`
 	Review               *SessionReview          `gorm:"column:review;->"`
 	SessionBatchID       *string                 `gorm:"column:session_batch_id"`
+	CorrelationID        *string                 `gorm:"column:correlation_id"`
 
 	CreatedAt  time.Time  `gorm:"column:created_at"`
 	EndSession *time.Time `gorm:"column:ended_at"`
@@ -221,7 +223,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	err := DB.Raw(`
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
+		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id, s.correlation_id,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.guardrails_info,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		c.resource_name,
@@ -320,6 +322,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
+				THEN s.correlation_id = @correlation_id
+				ELSE true
+			END AND
 			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
 				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
 				ELSE true
@@ -336,6 +342,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"correlation_id":        opt.CorrelationID,
 			"jira_issue_keys":       jiraIssueKeysLower,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
@@ -349,7 +356,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 		err = tx.Raw(`
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
-			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
+			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id, s.correlation_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
 			octet_length(b.blob_stream::text) - 4 AS blob_input_size,
 			c.resource_name,
@@ -417,6 +424,10 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				THEN s.session_batch_id = @batch_id
 				ELSE true
 			END AND
+			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
+				THEN s.correlation_id = @correlation_id
+				ELSE true
+			END AND
 			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
 				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
 				ELSE true
@@ -437,6 +448,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			"review_status":         opt.ReviewStatus,
 			"review_approver_email": opt.ReviewApproverEmail,
 			"batch_id":              opt.BatchID,
+			"correlation_id":        opt.CorrelationID,
 			"jira_issue_keys":       jiraIssueKeysLower,
 			"start_date":            opt.StartDate,
 			"end_date":              opt.EndDate,
@@ -498,6 +510,7 @@ func UpsertSession(sess Session) error {
 				Status:               sess.Status,
 				ExitCode:             sess.ExitCode,
 				SessionBatchID:       sess.SessionBatchID,
+				CorrelationID:        sess.CorrelationID,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
 				AIAnalysis:           sess.AIAnalysis,

@@ -31,6 +31,7 @@ var inputStdin string
 var autoExec bool
 var silentMode bool
 var execSessionID string
+var execCorrelationID string
 
 var execExampleDesc = `hoop exec bash -i 'env'
 hoop exec bash -e MYENV=val --input 'env' -- --verbose
@@ -74,7 +75,23 @@ func init() {
 	execCmd.Flags().BoolVarP(&silentMode, "silent", "s", false, "Silent mode")
 	execCmd.Flags().StringVarP(&outputFlag, "output", "o", "", "Output format. One of: (json)")
 	execCmd.Flags().StringVar(&execSessionID, "session", "", "Execute an approved reviewed session by its ID")
+	execCmd.Flags().StringVar(&execCorrelationID, "correlation-id", "", "External workflow/task id to group related sessions")
 	rootCmd.AddCommand(execCmd)
+}
+
+func validateCorrelationID(v string) error {
+	if v == "" {
+		return nil
+	}
+	if len(v) > 255 {
+		return fmt.Errorf("correlation_id must not exceed 255 characters")
+	}
+	for _, r := range v {
+		if r < 0x20 || r > 0x7E {
+			return fmt.Errorf("correlation_id must contain only printable ASCII characters")
+		}
+	}
+	return nil
 }
 
 func parseFlagInputs(c *connect) []byte {
@@ -134,6 +151,11 @@ func runExec(args []string, clientEnvVars map[string]string) {
 		autoExec = true
 	}
 
+	if err := validateCorrelationID(execCorrelationID); err != nil {
+		fmt.Fprintln(os.Stderr, styles.ClientError(err.Error()))
+		os.Exit(1)
+	}
+
 	config := clientconfig.GetClientConfigOrDie()
 	loader := spinner.New(spinner.CharSets[11], 70*time.Millisecond,
 		spinner.WithWriter(os.Stderr), spinner.WithHiddenCursor(true))
@@ -154,7 +176,7 @@ func runExec(args []string, clientEnvVars map[string]string) {
 		}
 	}()
 
-	c := newClientConnect(config, loader, args, pb.ClientVerbExec)
+	c := newClientConnect(config, loader, args, pb.ClientVerbExec, execCorrelationID)
 	c.client.StartKeepAlive()
 	execSpec := newClientArgsSpec(c.clientArgs, clientEnvVars)
 	isStdinInput, execInputPayload := parseExecInput(c)

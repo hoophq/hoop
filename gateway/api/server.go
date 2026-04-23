@@ -21,6 +21,7 @@ import (
 	accessrequestsapi "github.com/hoophq/hoop/gateway/api/accessrequests"
 	apiagents "github.com/hoophq/hoop/gateway/api/agents"
 	apiai "github.com/hoophq/hoop/gateway/api/ai"
+	apikeys "github.com/hoophq/hoop/gateway/api/apikeys"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	apiattributes "github.com/hoophq/hoop/gateway/api/attributes"
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
@@ -48,6 +49,7 @@ import (
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
+	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
@@ -277,6 +279,39 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateServiceAccount),
 		serviceaccountapi.Update)
+
+	r.GET("/api-keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apikeys.List)
+	r.GET("/api-keys/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apikeys.Get)
+	r.POST("/api-keys",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateApiKey),
+		apikeys.Create)
+	r.PUT("/api-keys/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateApiKey),
+		apikeys.Update)
+	r.DELETE("/api-keys/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventRevokeApiKey),
+		apikeys.Revoke)
+	r.POST("/api-keys/:nameOrID/reactivate",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventReactivateApiKey),
+		apikeys.Reactivate)
 
 	r.POST("/connections",
 		apiroutes.AdminOnlyAccessRole,
@@ -999,4 +1034,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiattributes.Delete)
+
+	// MCP Server — uses Any() because MCP protocol uses POST, GET, and DELETE on the same path
+	mcpServer := apimcpserver.New(api.ReleaseConnectionFn)
+	r.RouterGroup.Any("/mcp", r.AuthMiddleware, api.AuditMiddleware(), mcpServer.GinHandler)
 }

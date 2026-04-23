@@ -67,6 +67,9 @@ type Context struct {
 	// metadata with the review session reference ("credential-session").
 	CredentialSessionID string
 
+	// CorrelationID groups related sessions spawned by an external workflow/task.
+	CorrelationID string
+
 	ParamsData GenericMap
 
 	// hook to cleanup the transport extensions package handlers

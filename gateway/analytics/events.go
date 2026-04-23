@@ -19,6 +19,10 @@ const (
 	EventCreateInvitedUser            = "hoop-create-invited-user"
 	EventCreateServiceAccount         = "hoop-create-serviceaccount"
 	EventUpdateServiceAccount         = "hoop-update-serviceaccount"
+	EventCreateApiKey                 = "hoop-create-apikey"
+	EventUpdateApiKey                 = "hoop-update-apikey"
+	EventRevokeApiKey                 = "hoop-revoke-apikey"
+	EventReactivateApiKey             = "hoop-reactivate-apikey"
 
 	// review
 	EventUpdateReview = "hoop-update-review"
