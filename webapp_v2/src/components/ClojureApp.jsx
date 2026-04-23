@@ -12,21 +12,49 @@ function loadCSS(href) {
   document.head.appendChild(link)
 }
 
+const INIT_POLL_INTERVAL_MS = 25
+const INIT_POLL_TIMEOUT_MS = 10000
+
 /**
- * Loads the ClojureScript bundle.
- * Returns true if this is the first load (init() runs automatically via :init-fn).
- * Returns false if the bundle was already loaded (caller must trigger remount manually).
+ * Resolves once the CLJS bundle has finished running init() — detected by the
+ * presence of window.hoopRemount (the last global set in webapp.core/init).
+ * Polling is used because the <script>'s load event may have already fired.
+ */
+function waitForCljsInit() {
+  if (window.hoopRemount) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const started = Date.now()
+    const id = setInterval(() => {
+      if (window.hoopRemount) {
+        clearInterval(id)
+        resolve()
+      } else if (Date.now() - started > INIT_POLL_TIMEOUT_MS) {
+        clearInterval(id)
+        reject(new Error('CLJS init() timeout'))
+      }
+    }, INIT_POLL_INTERVAL_MS)
+  })
+}
+
+/**
+ * Loads the ClojureScript bundle and resolves once webapp.core/init has
+ * finished running (detected by `window.hoopRemount`). The caller is
+ * always responsible for calling `hoopSetRoute` + `hoopRemount` to render
+ * into the current mount div — init's own `mount-root` may have targeted
+ * a stale or wiped `<div id="app">` (e.g. StrictMode cleanup between the
+ * script's injection and its execution).
  */
 function loadScript(src) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[data-cljs-bundle]`)) {
-      resolve(false) // already loaded — needs manual remount
+    const existing = document.querySelector(`script[data-cljs-bundle]`)
+    if (existing) {
+      waitForCljsInit().then(resolve).catch(reject)
       return
     }
     const script = document.createElement('script')
     script.src = src
     script.setAttribute('data-cljs-bundle', 'true')
-    script.onload = () => resolve(true) // first load — init() fires automatically
+    script.onload = () => waitForCljsInit().then(resolve).catch(reject)
     script.onerror = reject
     document.body.appendChild(script)
   })
@@ -42,10 +70,10 @@ function ClojureApp() {
   const location = useLocation()
   const mountRef = useRef(null)
   const [error, setError] = useState(null)
-  // True while /js/app.js is being fetched for the first time
-  const [cljsLoading, setCljsLoading] = useState(
-    () => !document.querySelector('script[data-cljs-bundle]')
-  )
+  // Show the loader on every ClojureApp mount. It is dismissed only after
+  // we have explicitly called hoopRemount into *this* mount's div, which
+  // guarantees the CLJS tree is actually rendered inside the visible DOM.
+  const [cljsLoading, setCljsLoading] = useState(true)
   // Track whether the CLJS app is ready to receive route updates
   const cljsReadyRef = useRef(false)
 
@@ -59,25 +87,18 @@ function ClojureApp() {
     loadCSS('/css/site.css')
 
     loadScript('/js/app.js')
-      .then((isFirstLoad) => {
-        if (isFirstLoad) {
-          // init() was already called by shadow-cljs :init-fn — nothing to do.
-          // Pushy already parsed the current URL on startup.
-          cljsReadyRef.current = true
-          setCljsLoading(false)
-          return
+      .then(() => {
+        // init() is guaranteed complete (window.hoopRemount is set).
+        // init's own mount-root may have targeted a previous div that has
+        // since been unmounted by React, or had its innerHTML wiped by a
+        // StrictMode cleanup pass. Regardless of how we got here, sync
+        // the active panel to the current URL and render Reagent into
+        // *this* mount's div — which now holds id="app".
+        if (mountRef.current && mountRef.current.id !== 'app') {
+          mountRef.current.id = 'app'
         }
-        // Bundle was already loaded (user navigated away and came back).
-        // Sync the active panel BEFORE remounting so Reagent renders the
-        // correct page immediately (no wrong-panel flash).
-        if (window.hoopSetRoute) {
-          window.hoopSetRoute(window.location.pathname)
-        }
-        // Re-mount Reagent. Guards in app.cljs skip user/gateway refetches
-        // when data already exists in the re-frame db.
-        if (window.hoopRemount) {
-          window.hoopRemount()
-        }
+        window.hoopSetRoute(window.location.pathname)
+        window.hoopRemount()
         cljsReadyRef.current = true
         setCljsLoading(false)
       })
