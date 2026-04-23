@@ -16,7 +16,6 @@ import (
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
-	"github.com/hoophq/hoop/gateway/services"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
