@@ -3,6 +3,7 @@
    ["@radix-ui/themes" :refer [Box Button Flex Heading Text]]
    [re-frame.core :as rf]
    [reagent.core :as r]
+   [webapp.components.attribute-filter :as attribute-filter]
    [webapp.components.loaders :as loaders]
    [webapp.features.promotion :as promotion]
    [webapp.components.resource-role-filter :as resource-role-filter]
@@ -12,6 +13,7 @@
   (let [guardrails-rules-list (rf/subscribe [:guardrails->list])
         min-loading-done (r/atom false)
         selected-connection (r/atom nil)
+        selected-attribute (r/atom nil)
         connections (rf/subscribe [:connections])]
     (rf/dispatch [:guardrails->get-all])
 
@@ -23,14 +25,18 @@
             all-rules (:data @guardrails-rules-list)
             connections-data @connections
             connections-results (:results connections-data)
-            filtered-rules (if (nil? @selected-connection)
-                             all-rules
-                             (filter #(some #{@selected-connection}
-                                            (map :name
-                                                 (filter (fn [conn]
-                                                           (some #{(:id conn)} (:connection_ids %)))
-                                                         (or connections-results []))))
-                                     all-rules))]
+            by-connection (if (nil? @selected-connection)
+                            all-rules
+                            (filter #(some #{@selected-connection}
+                                           (map :name
+                                                (filter (fn [conn]
+                                                          (some #{(:id conn)} (:connection_ids %)))
+                                                        (or connections-results []))))
+                                    all-rules))
+            filtered-rules (if (nil? @selected-attribute)
+                             by-connection
+                             (filter #(some #{@selected-attribute} (or (:attributes %) []))
+                                     by-connection))]
         (cond
           loading?
           [:> Flex {:height "100%" :direction "column" :gap "5"
@@ -57,16 +63,29 @@
                            :on-click #(rf/dispatch [:navigate :create-guardrail])}
                 "Create a new Guardrail"])]]
 
-           [:> Box {:mb "6"}
+           [:> Flex {:mb "6" :gap "2"}
             [resource-role-filter/main {:selected @selected-connection
                                         :on-select #(reset! selected-connection %)
                                         :on-clear #(reset! selected-connection nil)
-                                        :label "Resource Role"}]]
+                                        :label "Resource Role"}]
+            [attribute-filter/main {:selected @selected-attribute
+                                    :on-select #(reset! selected-attribute %)
+                                    :on-clear #(reset! selected-attribute nil)
+                                    :label "Attribute"
+                                    :placeholder "Search attributes"}]]
 
            [:> Box
             (if (empty? filtered-rules)
               [filtered-empty-state {:entity-name "guardrail"
-                                     :filter-value @selected-connection}]
+                                     :filter-value (cond
+                                                     (and @selected-connection @selected-attribute)
+                                                     (str @selected-connection ", " @selected-attribute)
+
+                                                     @selected-connection
+                                                     @selected-connection
+
+                                                     @selected-attribute
+                                                     @selected-attribute)}]
               (for [rules filtered-rules]
                 ^{:key (:id rules)}
                 [:> Box {:class (str "first:rounded-t-lg border-x border-t "

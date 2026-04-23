@@ -761,9 +761,10 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
-	ForceReview bool                     `json:"force_review" example:"false"`
+	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
+	ForceReview     bool                     `json:"force_review" example:"false"`
+	RejectionReason string                   `json:"rejection_reason" example:"This command is not allowed in production."`
 }
 
 type SessionReview struct {
@@ -798,6 +799,8 @@ type SessionReview struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -839,6 +842,8 @@ type Review struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewOwner struct {
@@ -2512,16 +2517,19 @@ type Attributes struct {
 	GuardrailRuleNames []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	// Datamasking rule names associated with this attribute
 	DatamaskingRuleNames []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	// Access control group names associated with this attribute
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 type AttributeRequest struct {
 	// The name of the attribute
-	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
-	Description            *string  `json:"description" example:"Blocks high-risk SQL commands"`
-	ConnectionNames        []string `json:"connection_names" example:"pgdemo,mysql-prod"`
-	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
-	GuardrailRuleNames     []string `json:"guardrail_rule_names" example:"rule1,rule2"`
-	DatamaskingRuleNames   []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
+	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 }

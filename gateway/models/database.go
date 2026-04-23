@@ -19,7 +19,7 @@ const defaultSchema = "private"
 var DB *gorm.DB
 
 func InitDatabaseConnection() error {
-	log.Info("initializing database connection")
+	log.Debug("initializing database connection")
 
 	dsn := appconfig.Get().PgURI()
 	sqlDB, err := sql.Open("pgx", dsn)

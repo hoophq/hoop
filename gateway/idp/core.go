@@ -194,7 +194,7 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 		cacheTimeRemaining := tokenVerifier.cacheExpirationTime.Sub(time.Now().UTC()).
 			Truncate(time.Minute).
 			String()
-		log.Warnf("clearing singleton store for authentication verifier, "+
+		log.Debugf("clearing singleton store for authentication verifier, "+
 			"provider-type=%v, configuration-changed=%v, cache-expired=%v, expires-in=%v",
 			providerType, hasConfigChanged, hasCacheExpired, cacheTimeRemaining)
 	}
@@ -338,7 +338,7 @@ func newLocalProvider(serverAuthConfig *models.ServerAuthConfig) (*localprovider
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ed25519 key pair: %v", err)
 		}
-		log.Infof("saving shared signing key")
+		log.Debugf("saving shared signing key")
 		err = models.CreateServerSharedSigningKey(base64.StdEncoding.EncodeToString(tokenSigningKey))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create server shared signing key: %v", err)

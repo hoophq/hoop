@@ -71,7 +71,7 @@ func logString(ctx context.Context, m api.Module, level, offset, byteCount uint3
 	case 2:
 		log.Warnf("[WASM] %s", string(buf))
 	case 3:
-		log.Infof("[WASM] %s", string(buf))
+		log.Debugf("[WASM] %s", string(buf))
 	case 4:
 		log.Debugf("[WASM] %s", string(buf))
 	}

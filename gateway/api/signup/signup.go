@@ -114,7 +114,7 @@ func Post(c *gin.Context) {
 	_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
 
 	log.With("org_name", req.OrgName, "org_id", org.ID).Infof("user signup up with success")
-	identifySignup(user, c.GetHeader("user-agent"), c.Request.Host, ctx.GetLicenseType())
+	identifySignup(user, c.GetHeader("user-agent"), c.Request.Host, ctx.GetLicenseType(), licenseDataJSONBytes)
 	c.JSON(http.StatusOK, openapi.SignupRequest{
 		OrgID:          org.ID,
 		OrgName:        req.OrgName,
@@ -123,11 +123,14 @@ func Post(c *gin.Context) {
 	})
 }
 
-func identifySignup(u models.User, userAgent, host, licenseType string) {
+func identifySignup(u models.User, userAgent, host, licenseType string, licenseData json.RawMessage) {
 	trackClient := analytics.New()
 	trackClient.Identify(&types.APIContext{
-		OrgID:  u.OrgID,
-		UserID: u.Subject,
+		OrgID:          u.OrgID,
+		OrgLicenseData: &licenseData,
+		UserID:         u.Subject,
+		UserEmail:      u.Email,
+		UserName:       u.Name,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom

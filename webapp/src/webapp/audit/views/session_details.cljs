@@ -16,12 +16,14 @@
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
+   [webapp.sessions.components.reject-details-modal :as reject-details-modal]
 
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
    [webapp.sessions.components.session-header :as session-header]
-   [webapp.sessions.components.session-details :as session-details-component]))
+   [webapp.sessions.components.session-details :as session-details-component]
+   [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
 (def ^:private export-dictionary
   {:postgres "csv"
@@ -191,9 +193,19 @@
                                         force-groups
                                         (some #(contains? force-groups %) user-groups)))
               handle-reject (fn []
-                              (rf/dispatch [:audit->add-review
-                                            session
-                                            "rejected"]))
+                              (rf/dispatch
+                               [:modal->open
+                                {:id "reject-details-modal"
+                                 :maxWidth "500px"
+                                 :content [reject-details-modal/main
+                                           {:on-confirm
+                                            (fn [{:keys [comment]}]
+                                              (rf/dispatch [:audit->add-review
+                                                            session
+                                                            "rejected"
+                                                            :rejection-reason comment])
+                                              (rf/dispatch [:modal->close]))
+                                            :on-cancel #(rf/dispatch [:modal->close])}]}]))
               handle-approve (fn []
                                (rf/dispatch [:audit->add-review
                                              session
@@ -300,6 +312,8 @@
             [guardrails-info/main {:guardrails-info (:guardrails_info session)}]
 
             [data-masking-analytics/main {:session session}]
+
+            [rejection-reason/main {:session session}]
 
             ;; response logs area
             (when-not (or credentials-expire-at

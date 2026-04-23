@@ -167,7 +167,7 @@ func migrateOrganizationRunbooks(db *gorm.DB, orgID string) error {
 }
 
 func RunRunbooksV2() error {
-	log.Info("Starting Runbooks V2 migration")
+	log.Debug("Starting Runbooks V2 migration")
 
 	orgs, err := models.ListAllOrganizations()
 	if err != nil {
@@ -175,7 +175,7 @@ func RunRunbooksV2() error {
 	}
 
 	if len(orgs) == 0 {
-		log.Info("No organizations found, done.")
+		log.Debug("No organizations found, done.")
 		return nil
 	}
 
