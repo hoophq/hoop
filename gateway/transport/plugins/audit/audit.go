@@ -97,6 +97,9 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
+		if pctx.CorrelationID != "" {
+			newSession.CorrelationID = &pctx.CorrelationID
+		}
 
 		if err := models.UpsertSession(newSession); err != nil {
 			return fmt.Errorf("failed persisting session to store, reason=%v", err)

@@ -62,6 +62,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		EventStream:          blobStream,
 		EventSize:            s.BlobStreamSize,
 		SessionBatchID:       s.SessionBatchID,
+		CorrelationID:        s.CorrelationID,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
 		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),

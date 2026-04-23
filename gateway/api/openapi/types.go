@@ -136,6 +136,58 @@ type ServiceAccount struct {
 	Groups []string `json:"groups" example:"engineering"`
 }
 
+type APIKeyStatusType string
+
+const (
+	APIKeyStatusActive  APIKeyStatusType = "active"
+	APIKeyStatusRevoked APIKeyStatusType = "revoked"
+)
+
+type APIKeyCreateRequest struct {
+	// Human-readable name for the API key
+	Name string `json:"name" binding:"required" example:"bob-the-bot"`
+	// Groups to assign to this API key
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type APIKeyCreateResponse struct {
+	APIKeyResponse
+	// The generated API key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
+}
+
+type APIKeyUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"payments-automation"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type APIKeyResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"ai-agent"`
+	// Masked version of the API key for identification
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
+	// Current status of the API key
+	Status APIKeyStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this API key
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this key
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this key
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
 type AgentRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"default"`
@@ -387,6 +439,8 @@ type ExecRequest struct {
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
 	ClientArgs []string `json:"client_args" example:"--verbose"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ExecResponse struct {
@@ -536,6 +590,7 @@ const (
 	SessionOptionReviewStatus        SessionOptionKey = "review.status"
 	SessionOptionReviewApproverEmail SessionOptionKey = "review.approver"
 	SessionOptionBatchID             SessionOptionKey = "batch_id"
+	SessionOptionCorrelationID       SessionOptionKey = "correlation_id"
 	SessionOptionStartDate           SessionOptionKey = "start_date"
 	SessionOptionEndDate             SessionOptionKey = "end_date"
 	SessionOptionOffset              SessionOptionKey = "offset"
@@ -550,6 +605,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionReviewStatus,
 	SessionOptionReviewApproverEmail,
 	SessionOptionBatchID,
+	SessionOptionCorrelationID,
 	SessionOptionStartDate,
 	SessionOptionEndDate,
 	SessionOptionLimit,
@@ -659,6 +715,8 @@ type Session struct {
 	EventSize int64 `json:"event_size" example:"569"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
@@ -681,6 +739,8 @@ type ProvisionSession struct {
 	ClientArgs        []string                 `json:"client_args"`
 	JiraFields        map[string]string        `json:"jira_fields"`
 	TimeWindow        *ReviewSessionTimeWindow `json:"time_window"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ProvisionSessionResponse struct {
@@ -2359,6 +2419,8 @@ type RunbookExec struct {
 	JiraFields map[string]string `json:"jira_fields"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task id to group related sessions
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type RunbookFileCreate struct {

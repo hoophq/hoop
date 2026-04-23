@@ -121,6 +121,11 @@
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.routes :as routes]
+   [webapp.settings.api-keys.events]
+   [webapp.settings.api-keys.main :as api-keys-main]
+   [webapp.settings.api-keys.subs]
+   [webapp.settings.api-keys.views.created :as api-keys-created]
+   [webapp.settings.api-keys.views.form :as api-keys-form]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
@@ -718,6 +723,37 @@
      [routes/wrap-admin-only
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [attributes-form/main :edit]]]]))
+
+(defmethod routes/panels :settings-api-keys-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [api-keys-main/main]]])
+
+(defmethod routes/panels :settings-api-keys-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:api-keys/clear-active])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [api-keys-form/main :create]]]])
+
+(defmethod routes/panels :settings-api-keys-created-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [api-keys-created/main]]])
+
+(defmethod routes/panels :settings-api-keys-configure-panel []
+  (let [id (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
+               :route-params
+               :id)]
+    (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:api-keys/get id])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [api-keys-form/main :configure]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

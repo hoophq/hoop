@@ -25,6 +25,7 @@ const (
 	ResourceAuthConfig     ResourceType = "auth_config"
 	ResourceServerConfig   ResourceType = "server_config"
 	ResourceOrgKey         ResourceType = "org_keys"
+	ResourceApiKey         ResourceType = "api_keys"
 )
 
 // Action is the operation performed.

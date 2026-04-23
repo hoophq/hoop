@@ -32,6 +32,7 @@ var root = buildRoutes([]struct {
 	{[]string{"auth-config"}, ResourceAuthConfig},
 	{[]string{"orgkeys"}, ResourceOrgKey},
 	{[]string{"org-keys"}, ResourceOrgKey},
+	{[]string{"api-keys"}, ResourceApiKey},
 })
 
 func buildRoutes(entries []struct {
