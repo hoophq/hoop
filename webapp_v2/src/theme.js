@@ -1,6 +1,6 @@
-import { createTheme, rem } from '@mantine/core'
-import { SpotlightTheme } from '@/components/Spotlight/theme'
-import { AppShellTheme } from '@/components/AppShell/theme'
+import { createTheme, rem } from '@mantine/core';
+import { SpotlightTheme } from '@/components/Spotlight/theme';
+import { AppShellTheme } from '@/components/AppShell/theme';
 
 // Design tokens mapped from the legacy webapp's Radix UI + Tailwind configuration.
 //
@@ -17,13 +17,11 @@ import { AppShellTheme } from '@/components/AppShell/theme'
 
 export const theme = createTheme({
   primaryColor: 'indigo',
-  primaryShade: 8,    // → Radix shade 9, the solid/saturated action color
+  primaryShade: 8, // → Radix shade 9, the solid/saturated action color
   defaultRadius: 'md',
 
-  fontFamily:
-    "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif",
-  fontFamilyMonospace:
-    "Menlo, Consolas, 'Bitstream Vera Sans Mono', monospace",
+  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif",
+  fontFamilyMonospace: "Menlo, Consolas, 'Bitstream Vera Sans Mono', monospace",
 
   colors: {
     // Radix Indigo — primary action color
@@ -37,21 +35,24 @@ export const theme = createTheme({
       '#abbdf9', // shade 7
       '#8da4ef', // shade 8
       '#3e63dd', // shade 9  ← primaryShade (index 8)
-      '#3358d4', // shade 10
+      '#3358d4' // shade 10
     ],
 
-    // Radix Gray — neutral scale (light mode)
+    // Radix Slate — neutral scale (light mode)
+    // Indices 0–7 = slate1–8 (backgrounds, borders, subtle fills)
+    // Indices 8–9 = slate11–12 (text: low-contrast / high-contrast)
+    // slate9/10 skipped — they sit between border and text ranges, rarely used directly
     gray: [
-      '#fcfcfc', // shade 1
-      '#f9f9f9', // shade 2
-      '#f0f0f0', // shade 3
-      '#e8e8e8', // shade 4
-      '#e0e0e0', // shade 5
-      '#d9d9d9', // shade 6
-      '#cecece', // shade 7
-      '#bbbbbb', // shade 8
-      '#8d8d8d', // shade 9
-      '#838383', // shade 10
+      '#fcfcfd', // slate1  — app background
+      '#f9f9fb', // slate2  — subtle background
+      '#f0f0f3', // slate3  — hovered background
+      '#e8e8ec', // slate4  — selected/active background
+      '#e0e1e6', // slate5  — subtle border
+      '#d9d9e0', // slate6  — border
+      '#cdced6', // slate7  — hovered border
+      '#b9bbc6', // slate8  — solid, contrast fills
+      '#60646c', // slate11 — low-contrast text (dimmed, placeholders, icons)
+      '#1c2024' // slate12 — high-contrast text (body, headings)
     ],
 
     // Radix Green — success / positive feedback
@@ -65,7 +66,7 @@ export const theme = createTheme({
       '#8eceaa', // shade 7
       '#5bb98b', // shade 8
       '#30a46c', // shade 9  ← primaryShade (index 8)
-      '#2b9a66', // shade 10
+      '#2b9a66' // shade 10
     ],
 
     // Radix Amber — warning / caution
@@ -79,7 +80,7 @@ export const theme = createTheme({
       '#e9c162', // shade 7
       '#e2a336', // shade 8
       '#ffc53d', // shade 9  ← primaryShade (index 8)
-      '#ffba18', // shade 10
+      '#ffba18' // shade 10
     ],
 
     // Radix Red — error / destructive actions
@@ -93,7 +94,7 @@ export const theme = createTheme({
       '#f4a9aa', // shade 7
       '#eb8e90', // shade 8
       '#e5484d', // shade 9  ← primaryShade (index 8)
-      '#dc3e42', // shade 10
+      '#dc3e42' // shade 10
     ],
 
     // Radix Sky — informational / neutral highlight
@@ -107,18 +108,20 @@ export const theme = createTheme({
       '#8dcae3', // shade 7
       '#60b3d7', // shade 8
       '#7ce2fe', // shade 9  ← primaryShade (index 8)
-      '#74daf8', // shade 10
-    ],
+      '#74daf8' // shade 10
+    ]
   },
 
   // Radix --space-* scale (4px base).
   // xs=--space-1, sm=--space-2, md=--space-4, lg=--space-5, xl=--space-6
   spacing: {
-    xs: rem(4),
-    sm: rem(8),
-    md: rem(16),
-    lg: rem(24),
-    xl: rem(32),
+    xxs: rem(4),
+    xs: rem(8),
+    sm: rem(16),
+    md: rem(24),
+    lg: rem(32),
+    xl: rem(48),
+    xxl: rem(64)
   },
 
   // Radix radius="large" (radius-factor: 1.5 × base values).
@@ -128,16 +131,16 @@ export const theme = createTheme({
     sm: '6px',
     md: '9px',
     lg: '12px',
-    xl: '18px',
+    xl: '18px'
   },
 
   // Radix --font-size-* scale
   fontSizes: {
-    xs: rem(12),  // --font-size-1
-    sm: rem(14),  // --font-size-2
-    md: rem(16),  // --font-size-3 (body default)
-    lg: rem(18),  // --font-size-4
-    xl: rem(20),  // --font-size-5
+    xs: rem(12), // --font-size-1
+    sm: rem(14), // --font-size-2
+    md: rem(16), // --font-size-3 (body default)
+    lg: rem(18), // --font-size-4
+    xl: rem(20) // --font-size-5
   },
 
   lineHeights: {
@@ -145,23 +148,23 @@ export const theme = createTheme({
     sm: '1.45',
     md: '1.5',
     lg: '1.55',
-    xl: '1.6',
+    xl: '1.6'
   },
 
   // h1=--font-size-7 (28px) … h6=--font-size-2 (14px)
   headings: {
     sizes: {
-      h1: { fontSize: rem(28), fontWeight: '700', lineHeight: '1.3'  },
+      h1: { fontSize: rem(28), fontWeight: '700', lineHeight: '1.3' },
       h2: { fontSize: rem(24), fontWeight: '700', lineHeight: '1.35' },
-      h3: { fontSize: rem(20), fontWeight: '600', lineHeight: '1.4'  },
+      h3: { fontSize: rem(20), fontWeight: '600', lineHeight: '1.4' },
       h4: { fontSize: rem(18), fontWeight: '600', lineHeight: '1.45' },
-      h5: { fontSize: rem(16), fontWeight: '500', lineHeight: '1.5'  },
-      h6: { fontSize: rem(14), fontWeight: '500', lineHeight: '1.5'  },
-    },
+      h5: { fontSize: rem(16), fontWeight: '500', lineHeight: '1.5' },
+      h6: { fontSize: rem(14), fontWeight: '500', lineHeight: '1.5' }
+    }
   },
 
   components: {
     Spotlight: SpotlightTheme,
-    AppShell: AppShellTheme,
-  },
-})
+    AppShell: AppShellTheme
+  }
+});
