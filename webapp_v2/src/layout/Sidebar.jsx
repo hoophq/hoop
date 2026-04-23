@@ -10,9 +10,11 @@ import {
 import { useUIStore } from '@/stores/useUIStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './sidebar.constants';
 import classes from './Sidebar.module.css';
+
+const SIDEBAR_WIDTH = 310;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -235,6 +237,7 @@ function ProfileDisclosure({ user, onLogout, gatewayVersion }) {
   const displayName = (user?.name || user?.email || 'User').slice(0, 20);
   const initials = getUserInitials(user);
   const { pendingOpenSection, clearPendingOpenSection } = useUIStore();
+  const { analyticsTracking } = useUserStore();
   const shouldOpen = pendingOpenSection === '__profile__';
 
   useEffect(() => {
@@ -282,13 +285,15 @@ function ProfileDisclosure({ user, onLogout, gatewayVersion }) {
         classNames={{ root: `${classes.navLink} ${classes.profileItem}` }}
       />
       <NavLink
-        component="a"
-        href="https://github.com/hoophq/hoop/discussions"
-        target="_blank"
-        rel="noopener noreferrer"
+        id="intercom-support-trigger"
         label="Contact support"
         aria-label="Contact support"
         leftSection={<MessageCircleQuestion size={24} aria-hidden="true" />}
+        onClick={() => {
+          if (!analyticsTracking) {
+            window.open('https://github.com/hoophq/hoop/discussions', '_blank')
+          }
+        }}
         styles={NAV_STYLES}
         classNames={{ root: `${classes.navLink} ${classes.profileItem}` }}
       />
@@ -337,16 +342,34 @@ function Sidebar({ mobile = false }) {
 
   const navItemProps = { isAdmin, isFreeLicense };
 
-  // Crossfade: both layers always rendered; CSS opacity transitions between them.
-  // pointerEvents: none on the hidden layer prevents clicks from landing on invisible elements.
-  const layer = (visible) => ({
+  // navKey forces a remount of the expanded nav content each time the sidebar opens,
+  // resetting any collapsible sections and scroll position to their initial state.
+  const [navKey, setNavKey] = useState(0);
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!sidebarCollapsed) setNavKey((k) => k + 1);
+  }, [sidebarCollapsed]);
+ 
+  // Collapsed layer: fade-out quickly (100ms) when expanding, normal fade-in (150ms) when collapsing.
+  // Expanded layer: minWidth prevents text-wrap reflow inside overflow:hidden container while narrow.
+  // Delayed fade-in (150ms) when expanding so content appears after the container has grown.
+  const collapsedLayerStyle = {
     position: 'absolute',
     inset: 0,
-    opacity: visible ? 1 : 0,
-    transform: visible ? 'translateX(0)' : 'translateX(-16px)',
-    transition: 'opacity 150ms ease, transform 150ms ease',
-    pointerEvents: visible ? 'auto' : 'none',
-  });
+    opacity: sidebarCollapsed ? 1 : 0,
+    transition: sidebarCollapsed ? 'opacity 150ms ease' : 'opacity 100ms ease',
+    pointerEvents: sidebarCollapsed ? 'auto' : 'none',
+  };
+
+  const expandedLayerStyle = {
+    position: 'absolute',
+    inset: 0,
+    minWidth: SIDEBAR_WIDTH,
+    opacity: sidebarCollapsed ? 0 : 1,
+    transition: sidebarCollapsed ? 'opacity 100ms ease' : 'opacity 150ms ease 150ms',
+    pointerEvents: sidebarCollapsed ? 'none' : 'auto',
+  };
 
   return (
     <Box style={{
@@ -358,7 +381,7 @@ function Sidebar({ mobile = false }) {
     }}>
 
       {/* ── Collapsed layer (icon-only) ────────────────────────────────── */}
-      <Box aria-hidden={!sidebarCollapsed || undefined} style={layer(sidebarCollapsed)}>
+      <Box aria-hidden={!sidebarCollapsed || undefined} style={collapsedLayerStyle}>
         <Stack
           component="nav"
           aria-label="Primary"
@@ -492,7 +515,7 @@ function Sidebar({ mobile = false }) {
       </Box>
 
       {/* ── Expanded layer (full nav) ──────────────────────────────────── */}
-      <Box aria-hidden={sidebarCollapsed || undefined} style={layer(!sidebarCollapsed)}>
+      <Box aria-hidden={sidebarCollapsed || undefined} style={expandedLayerStyle}>
         <Stack
           component="nav"
           aria-label="Primary"
@@ -510,7 +533,7 @@ function Sidebar({ mobile = false }) {
             />
           </Box>
 
-          <Box style={{
+          <Box key={navKey} style={{
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
