@@ -17,7 +17,7 @@
 
 (defn- left-panel []
   [:aside {:class "rounded-2xl flex flex-col justify-between relative overflow-hidden"
-           :style {:background "linear-gradient(135deg, #111111 0%, #1A1A1A 35%, #2A2A2A 70%, #3A3A3A 100%)"
+           :style {:background "linear-gradient(135deg, #0d1729 0%, #182449 35%, #1e2e5a 70%, #243570 100%)"
                    :padding "44px 40px"
                    :min-height "620px"}}
    [:div {:style {:position "absolute"
@@ -158,8 +158,6 @@
 
         [:> Button {:type "submit"
                     :size "3"
-                    :color "gray"
-                    :high-contrast true
                     :class "w-full mt-5"
                     :disabled @loading}
          (if @loading
