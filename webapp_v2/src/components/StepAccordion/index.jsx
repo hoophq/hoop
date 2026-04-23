@@ -5,11 +5,11 @@ import classes from './StepAccordion.module.css'
 function StepTrigger({ icon, title, subtitle, done }) {
   const StepIcon = icon
   return (
-    <Flex align="center" gap="md" style={{ flex: 1 }}>
+    <Flex align="center" gap="md" className={classes.trigger}>
       <Avatar size={40} variant="soft" color="gray" radius="md">
         <StepIcon size={18} />
       </Avatar>
-      <Box style={{ flex: 1 }}>
+      <Box className={classes.triggerBody}>
         <Text fw={700} fz={24} c="dark">{title}</Text>
         <Text size="md" c="dimmed">{subtitle}</Text>
       </Box>
