@@ -143,32 +143,16 @@ func CreateConnectionCredentials(c *gin.Context) {
 		return
 	}
 
-	connType := proto.ConnectionType(conn.SubType.String)
-	secretKey, secretKeyHash, err := generateSecretKey(connType)
-	if err != nil {
-		log.Warnf("failed to create access credentials, err=%v", err)
-		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
-		return
-	}
-
 	expireAt := time.Now().UTC().Add(time.Duration(req.AccessDurationSec) * time.Second)
 	if expireAt.After(time.Now().UTC().Add(48 * time.Hour)) {
 		c.AbortWithStatusJSON(400, gin.H{"message": "access duration cannot exceed 48 hours"})
 		return
 	}
 
-	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
-		ID:             uuid.NewString(),
-		OrgID:          ctx.OrgID,
-		UserSubject:    ctx.UserID,
-		ConnectionName: conn.Name,
-		ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-		SecretKeyHash:  secretKeyHash,
-		SessionID:      sid,
-		CreatedAt:      time.Now().UTC(),
-		ExpireAt:       expireAt,
-	})
+	connType := proto.ConnectionType(conn.SubType.String)
+	secretKey, db, err := issueOrRefreshCredential(ctx.OrgID, ctx.UserID, conn, connType, sid, expireAt)
 	if err != nil {
+		log.Warnf("failed to issue credential, err=%v", err)
 		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
 		return
 	}
@@ -179,6 +163,104 @@ func CreateConnectionCredentials(c *gin.Context) {
 	}
 
 	c.JSON(201, buildConnectionCredentialsResponse(db, conn, serverConf, secretKey, false, ""))
+}
+
+// issueOrRefreshCredential implements the stable-key contract documented on
+// CreateConnectionCredentials: for a given (user, connection) pair the plaintext
+// secret key is stable across issuances. The row is reused (and its expiration
+// refreshed to the new value) whenever a non-revoked credential exists; the key
+// only changes when the previous credential was revoked or when the row predates
+// the encrypted_secret_key backfill column.
+func issueOrRefreshCredential(
+	orgID, userSubject string,
+	conn *models.Connection,
+	connType proto.ConnectionType,
+	sessionID string,
+	expireAt time.Time,
+) (string, *models.ConnectionCredentials, error) {
+	existing, err := models.GetActiveCredentialByUserAndConnection(orgID, userSubject, conn.Name)
+	if err != nil && err != models.ErrNotFound {
+		return "", nil, fmt.Errorf("failed to look up existing credential: %w", err)
+	}
+
+	if existing != nil {
+		// Close the previous audit session (if any) so it doesn't remain
+		// perpetually "open" once the credential row is re-pointed at the new
+		// session. Errors here are non-fatal since the lazy cleanup path in
+		// CloseExpiredCredentialSessions will catch stragglers.
+		if existing.SessionID != "" && existing.SessionID != sessionID {
+			if err := models.UpdateSessionStatus(orgID, existing.SessionID, string(openapi.SessionStatusDone)); err != nil {
+				log.Warnf("failed closing previous audit session %s, err=%v", existing.SessionID, err)
+			}
+		}
+
+		// Reuse the stable key: decrypt, refresh expiration, keep the same row.
+		if len(existing.EncryptedSecretKey) > 0 {
+			plaintext, decErr := models.DecryptCredentialSecretKey(existing.EncryptedSecretKey)
+			if decErr == nil {
+				if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
+					return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
+				}
+				existing.SessionID = sessionID
+				existing.ExpireAt = expireAt
+				return plaintext, existing, nil
+			}
+			log.Warnf("failed to decrypt stored credential (id=%s), regenerating: %v",
+				existing.ID, decErr)
+		}
+
+		// Backfill path: the row exists but has no ciphertext (created before
+		// migration 000081, or decryption failed). Rotate the secret key in
+		// place so the user still keeps the same credential id, but they will
+		// observe a one-time token change.
+		newSecret, newHash, genErr := generateSecretKey(connType)
+		if genErr != nil {
+			return "", nil, fmt.Errorf("failed to generate secret key: %w", genErr)
+		}
+		ciphertext, encErr := models.EncryptCredentialSecretKey(newSecret)
+		if encErr != nil {
+			return "", nil, fmt.Errorf("failed to encrypt secret key: %w", encErr)
+		}
+		if err := models.UpdateConnectionCredentialsSecret(existing.ID, newHash, ciphertext); err != nil {
+			return "", nil, fmt.Errorf("failed to update credential secret: %w", err)
+		}
+		if err := models.RefreshCredentialExpiration(existing.ID, sessionID, expireAt); err != nil {
+			return "", nil, fmt.Errorf("failed to refresh credential expiration: %w", err)
+		}
+		existing.SecretKeyHash = newHash
+		existing.EncryptedSecretKey = ciphertext
+		existing.SessionID = sessionID
+		existing.ExpireAt = expireAt
+		return newSecret, existing, nil
+	}
+
+	// No active credential for this (user, connection) pair. Create a fresh row
+	// and store both the hash (for proxy auth lookup) and the encrypted copy of
+	// the plaintext (for future reuse).
+	newSecret, newHash, err := generateSecretKey(connType)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to generate secret key: %w", err)
+	}
+	ciphertext, err := models.EncryptCredentialSecretKey(newSecret)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to encrypt secret key: %w", err)
+	}
+	db, err := models.CreateConnectionCredentials(&models.ConnectionCredentials{
+		ID:                 uuid.NewString(),
+		OrgID:              orgID,
+		UserSubject:        userSubject,
+		ConnectionName:     conn.Name,
+		ConnectionType:     proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+		SecretKeyHash:      newHash,
+		EncryptedSecretKey: ciphertext,
+		SessionID:          sessionID,
+		CreatedAt:          time.Now().UTC(),
+		ExpireAt:           expireAt,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	return newSecret, db, nil
 }
 
 // ResumeConnectionCredentials
@@ -344,7 +426,12 @@ func ResumeConnectionCredentials(c *gin.Context) {
 	}
 
 	// If credentials already exist for this session, update the secret key (preserves expiration)
-	// Otherwise create a new record
+	// Otherwise create a new record.
+	//
+	// Resume keeps the legacy rotate-on-call behavior for review/JIT flows:
+	// repeated Resume calls explicitly rotate the token. The encrypted copy is
+	// cleared on rotation so the credential cannot later be mistaken for a
+	// stable-key row by CreateConnectionCredentials.
 	var db *models.ConnectionCredentials
 	if existingCred != nil {
 		if err := models.UpdateConnectionCredentialsSecretKey(existingCred.ID, secretKeyHash); err != nil {
@@ -352,18 +439,29 @@ func ResumeConnectionCredentials(c *gin.Context) {
 			return
 		}
 		existingCred.SecretKeyHash = secretKeyHash
+		existingCred.EncryptedSecretKey = nil
 		db = existingCred
 	} else {
+		// First issuance after review approval: store the encrypted copy so
+		// that if the review requirement is later removed the same token can
+		// be reused via CreateConnectionCredentials.
+		ciphertext, encErr := models.EncryptCredentialSecretKey(secretKey)
+		if encErr != nil {
+			log.Errorf("failed to encrypt secret key, err=%v", encErr)
+			c.AbortWithStatusJSON(500, gin.H{"message": "failed to encrypt secret key"})
+			return
+		}
 		db, err = models.CreateConnectionCredentials(&models.ConnectionCredentials{
-			ID:             uuid.NewString(),
-			OrgID:          ctx.OrgID,
-			UserSubject:    ctx.UserID,
-			ConnectionName: conn.Name,
-			ConnectionType: proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
-			SecretKeyHash:  secretKeyHash,
-			SessionID:      sessionID,
-			CreatedAt:      createdAt,
-			ExpireAt:       expireAt,
+			ID:                 uuid.NewString(),
+			OrgID:              ctx.OrgID,
+			UserSubject:        ctx.UserID,
+			ConnectionName:     conn.Name,
+			ConnectionType:     proto.ToConnectionType(conn.Type, conn.SubType.String).String(),
+			SecretKeyHash:      secretKeyHash,
+			EncryptedSecretKey: ciphertext,
+			SessionID:          sessionID,
+			CreatedAt:          createdAt,
+			ExpireAt:           expireAt,
 		})
 		if err != nil {
 			c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
