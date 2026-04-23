@@ -1,13 +1,23 @@
+/* global __BUILD_ID__ */
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Alert, Center, Stack, Text, Code } from '@mantine/core'
 import PageLoader from '@/components/PageLoader'
 
+// Cache buster defined by Vite at build time (see vite.config.js). A new value
+// per build forces browsers (including in-memory cache) to refetch the CLJS
+// assets instead of reusing a stale copy from a previous deploy.
+const BUILD_ID = typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'
+
+function withVersion(href) {
+  return `${href}${href.includes('?') ? '&' : '?'}v=${BUILD_ID}`
+}
+
 function loadCSS(href) {
   if (document.querySelector(`link[data-cljs-css]`)) return
   const link = document.createElement('link')
   link.rel = 'stylesheet'
-  link.href = href
+  link.href = withVersion(href)
   link.setAttribute('data-cljs-css', 'true')
   document.head.appendChild(link)
 }
@@ -52,7 +62,7 @@ function loadScript(src) {
       return
     }
     const script = document.createElement('script')
-    script.src = src
+    script.src = withVersion(src)
     script.setAttribute('data-cljs-bundle', 'true')
     script.onload = () => waitForCljsInit().then(resolve).catch(reject)
     script.onerror = reject
