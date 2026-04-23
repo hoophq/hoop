@@ -1,14 +1,11 @@
 package transportext
 
 import (
-	"fmt"
-
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	"github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
-	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/jira"
 	"github.com/hoophq/hoop/gateway/models"
 	"google.golang.org/grpc/codes"
@@ -38,25 +35,6 @@ func OnReceive(ctx Context, pkt *proto.Packet) error {
 	switch pkt.Type {
 	case pbagent.SessionOpen:
 		processEventOpenSessionHook(ctx, pkt)
-		conn, err := models.GetConnectionGuardRailRules(ctx.OrgID, ctx.ConnectionName)
-		if err != nil || conn == nil {
-			return fmt.Errorf("unable to obtain connection (empty: %v, name=%v): %v",
-				conn == nil, ctx.ConnectionName, err)
-		}
-		mem.Set(ctx.SID, conn.GuardRailOutputRules)
-	case pbclient.WriteStdout, pbclient.WriteStderr:
-		outputRules, ok := mem.Get(ctx.SID).([]byte)
-		if !ok {
-			return nil
-		}
-		err := guardrails.Validate("output", outputRules, pkt.Payload)
-		switch err.(type) {
-		case *guardrails.ErrRuleMatch:
-			return status.Errorf(codes.FailedPrecondition, err.Error())
-		case nil:
-		default:
-			return fmt.Errorf("internal error, failed validating guard rails output rules: %v", err)
-		}
 	case pbclient.SessionClose:
 		processEventCloseSessiontHook(ctx, pkt)
 		jiraConf, err := models.GetJiraIntegration(ctx.OrgID)

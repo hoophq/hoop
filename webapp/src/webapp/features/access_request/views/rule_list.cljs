@@ -2,7 +2,11 @@
   (:require
    ["@radix-ui/themes" :refer [Box Flex Heading IconButton Text]]
    ["lucide-react" :refer [ChevronRight]]
-   [re-frame.core :as rf]))
+   [re-frame.core :as rf]
+   [reagent.core :as r]
+   [webapp.components.attribute-filter :as attribute-filter]
+   [webapp.components.resource-role-filter :as resource-role-filter]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn rule-item [{:keys [name description]}]
   [:> Box {:class (str "first:rounded-t-6 last:rounded-b-6 "
@@ -22,18 +26,54 @@
      [:> ChevronRight {:size 24}]]]])
 
 (defn main []
-  (let [rules (rf/subscribe [:access-request/rules])]
+  (let [rules (rf/subscribe [:access-request/rules])
+        attributes (rf/subscribe [:attributes/list-data])
+        selected-connection (r/atom nil)
+        selected-attribute (r/atom nil)]
     (fn []
       (let [all-rules (or @rules [])
-            processed-rules (sort-by :name all-rules)]
+            by-connection (if (nil? @selected-connection)
+                            all-rules
+                            (filter #(some #{@selected-connection} (:connection_names %))
+                                    all-rules))
+            by-attribute (if (nil? @selected-attribute)
+                           by-connection
+                           (let [attribute-data (first (filter #(= (:name %) @selected-attribute)
+                                                               (or @attributes [])))
+                                 rule-names (set (or (:access_request_rule_names attribute-data) []))]
+                             (if (seq rule-names)
+                               (filter #(contains? rule-names (:name %)) by-connection)
+                               (filter #(some #{@selected-attribute} (or (:attributes %) []))
+                                       by-connection))))
+            filtered-rules by-attribute
+            processed-rules (sort-by :name filtered-rules)]
 
-        [:> Box
-         (if (empty? processed-rules)
-           [:> Flex {:direction "column" :justify "center" :align "center" :class "h-40"}
-            [:> Text {:size "3" :class "text-gray-500 text-center"}
-             "No rules found"]]
+        [:<>
+         [:> Flex {:mb "6" :gap "2"}
+          [resource-role-filter/main {:selected @selected-connection
+                                      :on-select #(reset! selected-connection %)
+                                      :on-clear #(reset! selected-connection nil)
+                                      :label "Resource Role"}]
+          [attribute-filter/main {:selected @selected-attribute
+                                  :on-select #(reset! selected-attribute %)
+                                  :on-clear #(reset! selected-attribute nil)
+                                  :label "Attribute"
+                                  :placeholder "Search attributes"}]]
 
-           (doall
-            (for [rule processed-rules]
-              ^{:key (:name rule)}
-              [rule-item rule])))]))))
+         [:> Box
+          (if (empty? processed-rules)
+            [filtered-empty-state {:entity-name "Access Request rule"
+                                   :filter-value (cond
+                                                   (and @selected-connection @selected-attribute)
+                                                   (str @selected-connection ", " @selected-attribute)
+
+                                                   @selected-connection
+                                                   @selected-connection
+
+                                                   @selected-attribute
+                                                   @selected-attribute)}]
+
+            (doall
+             (for [rule processed-rules]
+               ^{:key (:name rule)}
+               [rule-item rule])))]]))))

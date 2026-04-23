@@ -55,13 +55,13 @@ export class RemoteDesktopService {
 
     dynamicResizeObservable = new Observable();
     focused = true;
-    
+
     constructor(rdpCanvas, mod) {
         this.module = mod;
         this.canvas = rdpCanvas;
         // Paint canvas black
         this.clearScreenAndWriteText('Loading...');
-        
+
         if (this.module === undefined || this.module === null) {
             this.clearScreenAndWriteText('Error: WebAssembly module is not loaded.');
             throw new Error('Module is undefined or null');
@@ -96,7 +96,7 @@ export class RemoteDesktopService {
             this.clearScreenAndWriteText("Connection Error:\n" + err.message);
         }
     }
-    
+
     clearScreenAndWriteText(text) {
         // Write: 'Connecting...' text, centered
         this.ctx = this.canvas.getContext('2d');
@@ -173,7 +173,7 @@ export class RemoteDesktopService {
                 return RotationUnit.Pixel;
         }
     }
-    
+
     mouseWheel(event) {
         const vertical = event.deltaY !== 0;
         const rotation = vertical ? event.deltaY : event.deltaX;
@@ -183,7 +183,7 @@ export class RemoteDesktopService {
             this.module.DeviceEvent.wheelRotations(vertical, -rotation, rotation_unit),
         ]);
     }
-    
+
     setMouseIn(evt) {
         this.canvas.focus({ preventScroll: true });
         this.mouseIn(evt);
@@ -413,7 +413,7 @@ export class RemoteDesktopService {
 
         let keyEvent;
         let unicodeEvent;
-        
+
         if (evt.type === 'keydown') {
             keyEvent = this.module.DeviceEvent.keyPressed;
             unicodeEvent = this.module.DeviceEvent.unicodePressed;

@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
-	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRule) error {
+func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRule) error {
 	if foundRule != nil {
 		connection := utils.SlicesFindFirstIntersection(foundRule.ConnectionNames, req.ConnectionNames)
 		if connection == nil {
@@ -30,8 +30,8 @@ func validateAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest, foundR
 		return err
 	}
 
-	if len(req.ConnectionNames) == 0 {
-		return fmt.Errorf("connection_names must have at least 1 entry")
+	if len(req.ConnectionNames) == 0 && len(req.Attributes) == 0 {
+		return fmt.Errorf("either connection_names or attributes must have at least 1 entry")
 	}
 
 	if req.AccessType != "jit" && req.AccessType != "command" {
@@ -75,16 +75,14 @@ func CreateAccessRequestRule(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		log.Errorf("failed to parse org ID: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid organization ID"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid organization ID")
 		return
 	}
 
 	if ctx.GetLicenseType() == license.OSSType {
 		count, err := models.CountAccessRequestRules(models.DB, orgID)
 		if err != nil {
-			log.Errorf("failed to count access request rules: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to count access request rules")
 			return
 		}
 
@@ -96,14 +94,26 @@ func CreateAccessRequestRule(c *gin.Context) {
 
 	foundRule, err := models.GetAccessRequestRuleByResourceNamesAndAccessType(models.DB, orgID, req.ConnectionNames, req.AccessType)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		log.Errorf("failed to check existing access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to check existing access request rule")
 		return
 	}
 
-	if err := validateAccessRequestRuleBody(&req, foundRule); err != nil {
+	if err := validateAccessRequestRuleBody(orgID, &req, foundRule); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
+	}
+
+	if req.Attributes != nil {
+		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, req.Attributes, req.AccessType)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get request rules by attributes")
+			return
+		}
+
+		if found != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an access request rule with the same attributes and access type already exists"})
+			return
+		}
 	}
 
 	accessRequestRule := &models.AccessRequestRule{
@@ -126,9 +136,19 @@ func CreateAccessRequestRule(c *gin.Context) {
 			return
 		}
 
-		log.Errorf("failed to create access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create access request rule")
 		return
+	}
+
+	if err := upsertAccessRequestRuleAttributes(ctx, accessRequestRule.Name, req.Attributes); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to upsert access request rule attributes")
+		return
+	}
+
+	for _, attr := range req.Attributes {
+		accessRequestRule.RuleAttributes = append(accessRequestRule.RuleAttributes, models.AccessRequestRuleAttribute{
+			OrgID: orgID, AttributeName: attr, AccessRuleName: accessRequestRule.Name,
+		})
 	}
 
 	c.JSON(http.StatusCreated, toAccessRequestRuleOpenApi(accessRequestRule))
@@ -151,8 +171,7 @@ func GetAccessRequestRule(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		log.Errorf("failed to parse org ID: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid organization ID"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid organization ID")
 		return
 	}
 
@@ -162,8 +181,7 @@ func GetAccessRequestRule(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
 			return
 		}
-		log.Errorf("failed to get access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get access request rule")
 		return
 	}
 
@@ -186,8 +204,7 @@ func ListAccessRequestRules(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		log.Errorf("failed to parse org ID: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid organization ID"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid organization ID")
 		return
 	}
 
@@ -221,8 +238,7 @@ func ListAccessRequestRules(c *gin.Context) {
 
 	accessRequestRules, total, err := models.ListAccessRequestRules(models.DB, orgID, opts)
 	if err != nil {
-		log.Errorf("failed to list access request rules: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to list access request rules"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to list access request rules")
 		return
 	}
 
@@ -272,16 +288,14 @@ func UpdateAccessRequestRule(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		log.Errorf("failed to parse org ID: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid organization ID"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid organization ID")
 		return
 	}
 
 	// Check if another access request rule with the same connection names and access type exists
 	foundRule, err := models.GetAccessRequestRuleByResourceNamesAndAccessType(models.DB, orgID, req.ConnectionNames, req.AccessType)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		log.Errorf("failed to check existing access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to check existing access request rule")
 		return
 	}
 
@@ -292,8 +306,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
 			return
 		}
-		log.Errorf("failed to get access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to get access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get access request rule")
 		return
 	}
 
@@ -302,7 +315,20 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	if err := validateAccessRequestRuleBody(&req, nil); err != nil {
+	if req.Attributes != nil {
+		found, err := models.GetRequestRulesByAttributes(models.DB, orgID, req.Attributes, req.AccessType)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to get request rules by attributes")
+			return
+		}
+
+		if found != nil && found.ID != existingRule.ID {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an access request rule with the same attributes and access type already exists"})
+			return
+		}
+	}
+
+	if err := validateAccessRequestRuleBody(orgID, &req, nil); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
@@ -320,9 +346,20 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	existingRule.MinApprovals = req.MinApprovals
 
 	if err := models.UpdateAccessRequestRule(models.DB, existingRule); err != nil {
-		log.Errorf("failed to update access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to update access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update access request rule")
 		return
+	}
+
+	if err := upsertAccessRequestRuleAttributes(ctx, existingRule.Name, req.Attributes); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to upsert access request rule attributes")
+		return
+	}
+
+	existingRule.RuleAttributes = make([]models.AccessRequestRuleAttribute, 0, len(req.Attributes))
+	for _, attr := range req.Attributes {
+		existingRule.RuleAttributes = append(existingRule.RuleAttributes, models.AccessRequestRuleAttribute{
+			OrgID: orgID, AttributeName: attr, AccessRuleName: existingRule.Name,
+		})
 	}
 
 	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(existingRule))
@@ -345,8 +382,7 @@ func DeleteAccessRequestRule(c *gin.Context) {
 
 	orgID, err := uuid.Parse(ctx.GetOrgID())
 	if err != nil {
-		log.Errorf("failed to parse org ID: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "invalid organization ID"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "invalid organization ID")
 		return
 	}
 
@@ -356,8 +392,7 @@ func DeleteAccessRequestRule(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "access request rule not found"})
 			return
 		}
-		log.Errorf("failed to delete access request rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to delete access request rule"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to delete access request rule")
 		return
 	}
 
@@ -365,12 +400,17 @@ func DeleteAccessRequestRule(c *gin.Context) {
 }
 
 func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessRequestRule {
+	attrs := make([]string, len(rule.RuleAttributes))
+	for i, ra := range rule.RuleAttributes {
+		attrs[i] = ra.AttributeName
+	}
 	return &openapi.AccessRequestRule{
 		ID:                     rule.ID.String(),
 		Name:                   rule.Name,
 		Description:            rule.Description,
 		AccessType:             rule.AccessType,
 		ConnectionNames:        rule.ConnectionNames,
+		Attributes:             attrs,
 		ApprovalRequiredGroups: rule.ApprovalRequiredGroups,
 		ReviewersGroups:        rule.ReviewersGroups,
 		AllGroupsMustApprove:   rule.AllGroupsMustApprove,
@@ -391,4 +431,9 @@ func parseIntParam(value, paramName string) (int, error) {
 		return 0, fmt.Errorf("%s must be non-negative", paramName)
 	}
 	return result, nil
+}
+
+func upsertAccessRequestRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	return models.UpsertAccessRequestRuleAttributes(models.DB, orgID, ruleName, attributeNames)
 }

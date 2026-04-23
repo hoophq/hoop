@@ -33,11 +33,13 @@ func CreateRDPSession(
 	clientAddr string,
 	protocol string,
 	extractedCreds string,
+	credentialID string,
 	expireAt time.Time,
 	ctxDuration time.Duration,
 ) (*Session, error) {
 
 	sessionID := uuid.New()
+
 	ctx, timeoutCancelFn := context.WithTimeoutCause(context.Background(), ctxDuration,
 		fmt.Errorf("connection access expired (%v)",
 			expireAt.Format(time.RFC3339)))
@@ -56,6 +58,7 @@ func CreateRDPSession(
 		ID:                  sessionID,
 		ClientCommunicator:  connTcp,
 		AgentCommunicator:   client,
+		CredentialID:        credentialID,
 		clientAddr:          clientAddr,
 		dataChannel:         dataChannel,
 		Protocol:            ProtocolRDP,

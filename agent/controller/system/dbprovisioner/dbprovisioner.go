@@ -46,7 +46,7 @@ func processDBProvisionerRequest(client pb.ClientTransport, pkt *pb.Packet) {
 	vault, err := secretsmanager.NewVaultProvider()
 	hasVaultProvider := req.Vault != nil
 	if hasVaultProvider && err != nil {
-		sendResponse(client, pbsystem.NewError(sid, err.Error()))
+		sendResponse(client, pbsystem.NewError(sid, "%s", err.Error()))
 		return
 	}
 

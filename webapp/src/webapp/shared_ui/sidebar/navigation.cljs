@@ -1,6 +1,7 @@
 (ns webapp.shared-ui.sidebar.navigation
   (:require
    ["@headlessui/react" :as ui]
+   ["@radix-ui/themes" :refer [Badge Box]]
    ["lucide-react" :refer [ChevronDown ChevronRight Puzzle Settings]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -191,10 +192,15 @@
                                                     "block rounded-md py-2 pr-2 pl-9 text-sm leading-6 "
                                                     (when blocked? " text-opacity-30"))
                                         :aria-label (:label route)}
-                               (:label route)
-                               (when blocked?
-                                 [:div {:class styles/badge-upgrade}
-                                  "Upgrade"])]])))]]))])]])
+                               [:span {:class "flex items-center gap-6"}
+                                (:label route)]
+                               [:> Box {:class "flex gap-2 items-center"}
+                                (when (string? (:badge route))
+                                  [:> Badge {:variant "solid" :color "green"}
+                                   (:badge route)])
+                                (when blocked?
+                                  [:div {:class styles/badge-upgrade}
+                                   "Upgrade"])]]])))]]))])]])
 
            [:li {:class "mt-auto mb-3"}
             [profile-dropdown {:user-data user-data

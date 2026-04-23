@@ -73,6 +73,11 @@ type Connection struct {
 	Envs                      map[string]string `gorm:"column:envs;serializer:json;->"`
 	GuardRailRules            pq.StringArray    `gorm:"column:guardrail_rules;type:text[];->"`
 	ConnectionTags            map[string]string `gorm:"column:connection_tags;serializer:json;->"`
+	Attributes                pq.StringArray    `gorm:"column:attributes;type:text[];->"`
+}
+
+func isAuditorContext(ctx UserContext) bool {
+	return slices.Contains(ctx.GetUserGroups(), types.GroupAuditor)
 }
 
 func (c Connection) AsSecrets() map[string]any {
@@ -97,6 +102,16 @@ type ConnectionGuardRailRules struct {
 	// Read Only Fields
 	GuardRailInputRules  []byte `gorm:"column:guardrail_input_rules;->"`
 	GuardRailOutputRules []byte `gorm:"column:guardrail_output_rules;->"`
+}
+
+func (c *ConnectionGuardRailRules) HasEmptyRules() bool {
+	areRulesEmpty := len(c.GuardRailInputRules) == 0 && len(c.GuardRailOutputRules) == 0
+
+	if areRulesEmpty {
+		return true
+	}
+
+	return string(c.GuardRailInputRules) == "[]" && string(c.GuardRailOutputRules) == "[]"
 }
 
 type ConnectionJiraIssueTemplateTypes struct {
@@ -379,22 +394,45 @@ func DeleteConnection(orgID, name string) error {
 
 // GetConnectionGuardRailRules retrieves the guard rail rules associated with a connection.
 // It does not enforce access control rules
-func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules, error) {
-	var conn ConnectionGuardRailRules
+// func GetConnectionGuardRailRules(orgID, name string) (*ConnectionGuardRailRules, error) {
+// 	var conn ConnectionGuardRailRules
+// 	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
+// 	SELECT
+// 		c.id, c.org_id, c.name,
+// 		(
+// 			SELECT json_agg(r.input) FROM private.guardrail_rules r
+// 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+// 		) AS guardrail_input_rules,
+// 		(
+// 			SELECT json_agg(r.output) FROM private.guardrail_rules r
+// 			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
+// 		) AS guardrail_output_rules
+// 	FROM private.connections c
+// 	WHERE c.org_id = ? AND c.name = ?
+// 	`, orgID, name).First(&conn).Error
+// 	if err != nil {
+// 		if errors.Is(err, gorm.ErrRecordNotFound) {
+// 			return nil, nil
+// 		}
+// 		return nil, err
+// 	}
+// 	return &conn, nil
+// }
+
+func GetConnectionGuardRailRules(orgID, name string) (*[]ConnectionGuardRailRules, error) {
+	var conn []ConnectionGuardRailRules
 	err := DB.Model(&ConnectionGuardRailRules{}).Raw(`
 	SELECT
-		c.id, c.org_id, c.name,
-		(
-			SELECT json_agg(r.input) FROM private.guardrail_rules r
-			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
-		) AS guardrail_input_rules,
-		(
-			SELECT json_agg(r.output) FROM private.guardrail_rules r
-			INNER JOIN private.guardrail_rules_connections rc ON rc.connection_id = c.id AND rc.rule_id = r.id
-		) AS guardrail_output_rules
-	FROM private.connections c
+		rule.org_id,
+		rule.id,
+		rule.name,
+		rule.input AS guardrail_input_rules,
+		rule.output AS guardrail_output_rules
+	FROM private.guardrail_rules rule
+		INNER JOIN private.guardrail_rules_connections rc ON rc.rule_id = rule.id
+		INNER JOIN private.connections c ON c.id = rc.connection_id
 	WHERE c.org_id = ? AND c.name = ?
-	`, orgID, name).First(&conn).Error
+	`, orgID, name).Scan(&conn).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -433,7 +471,11 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -445,15 +487,26 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
 	CASE
-		-- do not apply any access control if the plugin is not enabled or it is an admin user
-		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
+		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
+		WHEN ac.id IS NULL OR (@is_admin_or_auditor)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
-		ELSE acc.config && (@user_groups)::text[]
+		WHEN acc.config && (@user_groups)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((@user_groups)::text[])
+				AND ca.connection_name = c.name
+		)
 	END`, map[string]any{
-		"org_id":      ctx.GetOrgID(),
-		"nameOrID":    nameOrID,
-		"is_admin":    ctx.IsAdmin(),
-		"user_groups": userGroups,
+		"org_id":              ctx.GetOrgID(),
+		"nameOrID":            nameOrID,
+		"is_admin":            ctx.IsAdmin(),
+		"is_admin_or_auditor": ctx.IsAdmin() || isAuditorContext(ctx),
+		"user_groups":         userGroups,
 	}).
 		First(&conn).
 		Error
@@ -463,6 +516,20 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 		}
 		return nil, err
 	}
+	return &conn, nil
+}
+
+// GetConnectionByName retrieves a connection by name only.
+// It doesn't validate user access through access control, if you need it then use GetConnectionByNameOrID
+func GetConnectionByName(db *gorm.DB, name string) (*Connection, error) {
+	var conn Connection
+	err := db.Table(tableConnections).
+		Where("name = ?", name).
+		First(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+
 	return &conn, nil
 }
 
@@ -501,7 +568,11 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.resources r ON r.org_id = c.org_id AND r.name = c.resource_name
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = @org_id
@@ -514,15 +585,25 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	LEFT JOIN private.jira_issue_templates it ON it.id = c.jira_issue_template_id AND it.org_id = @org_id
 	WHERE c.org_id = @org_id AND (c.name = @nameOrID OR c.id::text = @nameOrID) AND
 	CASE
-		-- do not apply any access control if the plugin is not enabled or it is an admin user
-		WHEN ac.id IS NULL OR (@is_admin)::BOOL THEN true
+		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
+		WHEN ac.id IS NULL OR (@is_admin_or_auditor)::BOOL THEN true
 		-- allow if any of the user groups are in the access control list
-		ELSE acc.config && (@user_groups)::text[]
+		WHEN acc.config && (@user_groups)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((@user_groups)::text[])
+				AND ca.connection_name = c.name
+		)
 	END`, map[string]any{
-		"org_id":      ctx.GetOrgID(),
-		"nameOrID":    nameOrID,
-		"is_admin":    ctx.IsAdmin(),
-		"user_groups": userGroups,
+		"org_id":              ctx.GetOrgID(),
+		"nameOrID":            nameOrID,
+		"is_admin_or_auditor": ctx.IsAdmin() || isAuditorContext(ctx),
+		"user_groups":         userGroups,
 	}).
 		First(&conn).
 		Error
@@ -547,6 +628,7 @@ type ConnectionFilterOption struct {
 	Search        string
 	ConnectionIDs []string
 	ResourceName  string
+	Attributes    []string
 }
 
 func (o ConnectionFilterOption) GetTagsAsArray() any {
@@ -632,6 +714,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	searchPattern := opts.GetSearchPattern()
 	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
+	attributes := pq.StringArray(opts.Attributes)
 
 	var items []Connection
 	// TODO: try changing to @ syntax
@@ -659,7 +742,11 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		COALESCE((
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
-		), ARRAY[]::TEXT[]) AS guardrail_rules
+		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 	LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -669,10 +756,20 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	LEFT JOIN private.plugin_connections dlpc ON dlpc.connection_id = c.id AND dlpc.plugin_id = dlp.id
 	WHERE c.org_id = ? AND
 	CASE
-		-- do not apply any access control if the plugin is not enabled or it is an admin user
+		-- do not apply any access control if the plugin is not enabled or it is an admin/auditor user
 		WHEN ac.id IS NULL OR (?)::BOOL THEN true
 		-- allow if any of the input user groups are in the access control list
-		ELSE acc.config && (?)::text[]
+		WHEN acc.config && (?)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((?)::text[])
+				AND ca.connection_name = c.name
+		)
 	END AND
 	(
 		COALESCE(c.type::text, '') LIKE ? AND
@@ -689,6 +786,15 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		-- attributes filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN EXISTS (
+				SELECT 1 FROM private.connections_attributes ca
+				WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+				AND ca.attribute_name = ANY((?)::text[])
+			)
 			ELSE true
 		END AND
 		(
@@ -723,7 +829,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 	) ORDER BY c.name ASC`,
 		tagSelectorJsonData,
 		ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(), ctx.GetOrgID(),
-		ctx.IsAdmin(), userGroups, // access control filter
+		ctx.IsAdmin() || isAuditorContext(ctx), userGroups, userGroups, // access control filter
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,
@@ -732,6 +838,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		attributes, attributes,
 		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 	).Find(&items).Error
 	if err != nil {
@@ -744,7 +851,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm string) ([]Connection, error) {
 	var items []Connection
 
-	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin) || slices.Contains(userGroups, types.GroupAuditor)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	likeQuery := fmt.Sprintf("%%%s%%", searchTerm)
 	err := DB.Raw(`
@@ -767,13 +874,23 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 				-- do not apply any access control if the plugin is not enabled or it is an admin user
 				WHEN ac.id IS NULL OR (?)::BOOL THEN true
 				-- allow if any of the input user groups are in the access control list
-				ELSE acc.config && (?)::text[]
+				WHEN acc.config && (?)::text[] THEN true
+				-- allow if any of the user groups have attributes matching the connection's attributes
+				ELSE EXISTS (
+					SELECT 1
+					FROM private.access_control_groups_attributes acga
+					JOIN private.connections_attributes ca
+						ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+					WHERE acga.org_id = c.org_id
+						AND acga.group_name = ANY((?)::text[])
+						AND ca.connection_name = c.name
+				)
 			END AND (
 				c.name ILIKE ? OR
 				c.type::text ILIKE ? OR
 				c.subtype ILIKE ?
 			)
-		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
+		ORDER BY c.name ASC`, orgID, orgID, isAdmin, userGroupsPgArray, userGroupsPgArray, likeQuery, likeQuery, likeQuery).Find(&items).Error
 
 	if err != nil {
 		return nil, err
@@ -824,13 +941,14 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		return nil, 0, err
 	}
 
-	isAdmin := slices.Contains(userGroups, types.GroupAdmin)
+	isAdmin := slices.Contains(userGroups, types.GroupAdmin) || slices.Contains(userGroups, types.GroupAuditor)
 	userGroupsPgArray := pq.StringArray(userGroups)
 	tagsAsArray := opts.GetTagsAsArray()
 	connectionIDsAsArray := pq.StringArray(opts.ConnectionIDs)
 	searchPattern := opts.GetSearchPattern()
 	namePattern := opts.Name
 	resourceNamePattern := opts.ResourceName
+	attributes := pq.StringArray(opts.Attributes)
 
 	offset := 0
 	if opts.Page > 1 {
@@ -868,6 +986,10 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 			SELECT array_agg(rule_id::TEXT) FROM private.guardrail_rules_connections
 			WHERE private.guardrail_rules_connections.connection_id = c.id
 		), ARRAY[]::TEXT[]) AS guardrail_rules,
+		COALESCE((
+			SELECT array_agg(ca.attribute_name) FROM private.connections_attributes ca
+			WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+		), ARRAY[]::TEXT[]) AS attributes,
 		COUNT(*) OVER() AS total
 	FROM private.connections c
 	LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
@@ -881,7 +1003,17 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		-- do not apply any access control if the plugin is not enabled or it is an admin user
 		WHEN ac.id IS NULL OR (?)::BOOL THEN true
 		-- allow if any of the input user groups are in the access control list
-		ELSE acc.config && (?)::text[]
+		WHEN acc.config && (?)::text[] THEN true
+		-- allow if any of the user groups have attributes matching the connection's attributes
+		ELSE EXISTS (
+			SELECT 1
+			FROM private.access_control_groups_attributes acga
+			JOIN private.connections_attributes ca
+				ON ca.org_id = acga.org_id AND ca.attribute_name = acga.attribute_name
+			WHERE acga.org_id = c.org_id
+				AND acga.group_name = ANY((?)::text[])
+				AND ca.connection_name = c.name
+		)
 	END AND
 	(
 		COALESCE(c.type::text, '') LIKE ? AND
@@ -898,6 +1030,15 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		-- legacy tags
 		CASE WHEN (?)::text[] IS NOT NULL
 			THEN c._tags @> (?)::text[]
+			ELSE true
+		END AND
+		-- attributes filter
+		CASE WHEN (?)::text[] IS NOT NULL
+			THEN EXISTS (
+				SELECT 1 FROM private.connections_attributes ca
+				WHERE ca.org_id = c.org_id AND ca.connection_name = c.name
+				AND ca.attribute_name = ANY((?)::text[])
+			)
 			ELSE true
 		END AND
 		(
@@ -933,7 +1074,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	LIMIT ? OFFSET ?`,
 		tagSelectorJsonData,
 		orgID, orgID, orgID, orgID,
-		isAdmin, userGroupsPgArray,
+		isAdmin, userGroupsPgArray, userGroupsPgArray,
 		opts.Type,
 		opts.SubType,
 		opts.AgentID,
@@ -942,6 +1083,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		namePattern,
 		connectionIDsAsArray, connectionIDsAsArray,
 		tagsAsArray, tagsAsArray,
+		attributes, attributes,
 		searchPattern, searchPattern, searchPattern, searchPattern, searchPattern,
 		opts.PageSize, offset,
 	).Find(&results).Error
@@ -960,4 +1102,62 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	}
 
 	return items, total, nil
+}
+
+func GetConnectionGuardRailRulesByConnectionAndAttribute(db *gorm.DB, orgID uuid.UUID, connectionName string, attributes []string) (*ConnectionGuardRailRules, error) {
+	var conn ConnectionGuardRailRules
+	err := db.Raw(`
+	SELECT
+		''::text AS id,
+		?::text AS org_id,
+		''::text AS name,
+		(
+			SELECT json_agg(r.input) FROM private.guardrail_rules r
+			LEFT JOIN private.guardrail_rules_connections grc ON grc.rule_id = r.id
+			LEFT JOIN private.connections c ON c.id = grc.connection_id AND c.org_id = r.org_id
+			LEFT JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND (c.name = ? OR gra.attribute_name = ANY(?))
+		) AS guardrail_input_rules,
+		(
+			SELECT json_agg(r.output) FROM private.guardrail_rules r
+			LEFT JOIN private.guardrail_rules_connections grc ON grc.rule_id = r.id
+			LEFT JOIN private.connections c ON c.id = grc.connection_id AND c.org_id = r.org_id
+			LEFT JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND (c.name = ? OR gra.attribute_name = ANY(?))
+		) AS guardrail_output_rules
+	`, orgID, orgID, orgID, connectionName, pq.StringArray(attributes), orgID, orgID, connectionName, pq.StringArray(attributes)).Scan(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+	if conn.GuardRailInputRules == nil && conn.GuardRailOutputRules == nil {
+		return nil, nil
+	}
+	return &conn, nil
+}
+
+func GetConnectionGuardRailRulesByAttribute(db *gorm.DB, orgID uuid.UUID, attributes []string) (*ConnectionGuardRailRules, error) {
+	var conn ConnectionGuardRailRules
+	err := db.Raw(`
+	SELECT
+		''::text AS id,
+		?::text AS org_id,
+		''::text AS name,
+		(
+			SELECT json_agg(r.input) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND gra.attribute_name = ANY(?)
+		) AS guardrail_input_rules,
+		(
+			SELECT json_agg(r.output) FROM private.guardrail_rules r
+			INNER JOIN private.guardrail_rules_attributes gra ON gra.org_id = ?::uuid AND gra.guardrail_rule_name = r.name
+			WHERE r.org_id = ?::uuid AND gra.attribute_name = ANY(?)
+		) AS guardrail_output_rules
+	`, orgID, orgID, orgID, pq.StringArray(attributes), orgID, orgID, pq.StringArray(attributes)).Scan(&conn).Error
+	if err != nil {
+		return nil, err
+	}
+	if conn.GuardRailInputRules == nil && conn.GuardRailOutputRules == nil {
+		return nil, nil
+	}
+	return &conn, nil
 }

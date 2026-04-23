@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
@@ -14,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -45,8 +45,7 @@ func Post(c *gin.Context) {
 	}
 	_, signingKey := appconfig.Get().LicenseSigningKey()
 	if signingKey == nil {
-		log.Errorf("unable to sign license: missing license private key")
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, fmt.Errorf("missing license private key"), "unable to sign license")
 		return
 	}
 	lic, err := license.Sign(
@@ -57,21 +56,18 @@ func Post(c *gin.Context) {
 		(time.Hour*8760)*20, // 20 years
 	)
 	if err != nil {
-		log.Errorf("unable to sign license: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to sign license")
 		return
 	}
 	licenseDataJSONBytes, err := json.Marshal(lic)
 	if err != nil {
-		log.Errorf("unable to encode license to json: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to sign license (json encoding)"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to sign license (json encoding)")
 		return
 	}
 
 	org, _, err := models.CreateOrgGetOrganization(req.OrgName, licenseDataJSONBytes)
 	if err != nil {
-		log.Errorf("failed creating organization, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating organization"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating organization")
 		return
 	}
 
@@ -102,9 +98,7 @@ func Post(c *gin.Context) {
 		// Groups:   []string{types.GroupAdmin},
 	}
 	if err := models.UpdateUser(&user); err != nil {
-		log.Errorf("failed creating user, err=%v", err)
-		sentry.CaptureException(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating user")
 		return
 	}
 	adminGroup := models.UserGroup{
@@ -113,15 +107,14 @@ func Post(c *gin.Context) {
 		Name:   types.GroupAdmin,
 	}
 	if err := models.InsertUserGroups([]models.UserGroup{adminGroup}); err != nil {
-		log.Errorf("failed creating user group, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating user group"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating user group")
 		return
 	}
 	// add default system tags
 	_ = models.UpsertBatchConnectionTags(apiconnections.DefaultConnectionTags(org.ID))
 
 	log.With("org_name", req.OrgName, "org_id", org.ID).Infof("user signup up with success")
-	identifySignup(user, c.GetHeader("user-agent"), c.Request.Host, ctx.GetLicenseType())
+	identifySignup(user, c.GetHeader("user-agent"), c.Request.Host, ctx.GetLicenseType(), licenseDataJSONBytes)
 	c.JSON(http.StatusOK, openapi.SignupRequest{
 		OrgID:          org.ID,
 		OrgName:        req.OrgName,
@@ -130,20 +123,24 @@ func Post(c *gin.Context) {
 	})
 }
 
-func identifySignup(u models.User, userAgent, host, licenseType string) {
-	client := analytics.New()
-	client.Identify(&types.APIContext{
-		OrgID:  u.OrgID,
-		UserID: u.Subject,
+func identifySignup(u models.User, userAgent, host, licenseType string, licenseData json.RawMessage) {
+	trackClient := analytics.New()
+	trackClient.Identify(&types.APIContext{
+		OrgID:          u.OrgID,
+		OrgLicenseData: &licenseData,
+		UserID:         u.Subject,
+		UserEmail:      u.Email,
+		UserName:       u.Name,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(u.Subject, analytics.EventSignup, map[string]any{
+		trackClient.Track(u.Subject, analytics.EventSignup, map[string]any{
 			"user-agent":   userAgent,
 			"org-id":       u.OrgID,
 			"api-hostname": host,
 			"license-type": licenseType,
 		})
+		trackClient.Close()
 	}()
 }

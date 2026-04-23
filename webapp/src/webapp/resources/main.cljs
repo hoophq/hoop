@@ -5,6 +5,7 @@
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
+            [webapp.components.attribute-filter :as attribute-filter]
             [webapp.components.loaders :as loaders]
             [webapp.components.infinite-scroll :refer [infinite-scroll]]
             [webapp.connections.constants :as connection-constants]
@@ -261,6 +262,7 @@
         selected-tags (r/atom {})
         tags-popover-open? (r/atom false)
         selected-resource (r/atom nil)
+        selected-attribute (r/atom nil)
         search-debounce-timer (r/atom nil)
         connections-metadata (rf/subscribe [:connections->metadata])]
 
@@ -286,7 +288,7 @@
             connections-loading? (= :loading (:loading connections-state))
             ;; Conditional logic based on active tab
             current-loading? (if (= @active-tab "resources") resources-loading? connections-loading?)
-            has-filters? (or (seq @selected-tags) @selected-resource)
+            has-filters? (or (seq @selected-tags) @selected-resource @selected-attribute)
             current-count (if (= @active-tab "resources")
                             (count resources-data)
                             (count connections-data))
@@ -301,7 +303,8 @@
                                                   :page 1
                                                   :force-refresh? true}
                                            (and (not (cs/blank? search-value))
-                                                (> (count search-value) 2)) (assoc :search search-value))]
+                                                (> (count search-value) 2)) (assoc :search search-value)
+                                           @selected-attribute (assoc :attribute @selected-attribute))]
                              (if (= @active-tab "resources")
                                (rf/dispatch [:resources/get-resources-paginated request])
                                (rf/dispatch [:connections/get-connections-paginated request]))))]
@@ -314,6 +317,7 @@
                             (reset! search-name "")
                             (reset! selected-tags {})
                             (reset! selected-resource nil)
+                            (reset! selected-attribute nil)
                             (when @search-debounce-timer
                               (js/clearTimeout @search-debounce-timer))
                             (reset! search-debounce-timer nil)
@@ -322,7 +326,8 @@
                               (rf/dispatch [:resources/get-resources-paginated
                                             {:page 1 :force-refresh? true :filters {}}])
                               (rf/dispatch [:connections/get-connections-paginated
-                                            {:page 1 :force-refresh? true :filters {}}])))}
+                                            {:page 1 :force-refresh? true :filters {}
+                                             :attribute @selected-attribute}]))) }
 
           ;; Sticky Header with Title, Tabs and Filters
           [:> Box {:class "sticky top-0 z-10 bg-gray-1 pt-10 pb-4 space-y-4"}
@@ -347,6 +352,7 @@
                            :on-click (fn []
                                        (reset! selected-tags {})
                                        (reset! selected-resource nil)
+                                       (reset! selected-attribute nil)
                                        (reset! search-name "")
                                        (when @search-debounce-timer
                                          (js/clearTimeout @search-debounce-timer))
@@ -354,7 +360,8 @@
                                          (rf/dispatch [:resources/get-resources-paginated
                                                        {:page 1 :force-refresh? true :filters {}}])
                                          (rf/dispatch [:connections/get-connections-paginated
-                                                       {:page 1 :force-refresh? true :filters {}}])))}
+                                                       {:page 1 :force-refresh? true :filters {}
+                                                        :attribute nil}])))}
                 "Clear Filters"])
 
              ;; Search
@@ -381,7 +388,13 @@
                                                                              :search trimmed :filters {}}])
                                                               (rf/dispatch [:connections/get-connections-paginated
                                                                             {:page 1 :force-refresh? true
-                                                                             :search trimmed :filters {}}])))
+                                                                             :search trimmed
+                                                                             :filters (cond-> {}
+                                                                                        (not-empty @selected-tags)
+                                                                                        (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tags))
+                                                                                        @selected-resource
+                                                                                        (assoc :subtype @selected-resource))
+                                                                             :attribute @selected-attribute}])))
                                                           500)))))}
               [:> TextField.Slot [:> Search {:size 16}]]]
 
@@ -417,6 +430,25 @@
                     (apply-filter (cond-> {}
                                     (not-empty new-selected) (assoc :tag_selector (tag-selector/tags-to-query-string new-selected))
                                     @selected-resource (assoc :subtype @selected-resource))))]]])
+             
+             (when (= @active-tab "roles")
+               [attribute-filter/main {:selected @selected-attribute
+                                       :on-select (fn [attribute-name]
+                                                    (reset! selected-attribute attribute-name)
+                                                    (apply-filter (cond-> {}
+                                                                    (not-empty @selected-tags)
+                                                                    (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tags))
+                                                                    @selected-resource
+                                                                    (assoc :subtype @selected-resource))))
+                                       :on-clear (fn []
+                                                   (reset! selected-attribute nil)
+                                                   (apply-filter (cond-> {}
+                                                                   (not-empty @selected-tags)
+                                                                   (assoc :tag_selector (tag-selector/tags-to-query-string @selected-tags))
+                                                                   @selected-resource
+                                                                   (assoc :subtype @selected-resource))))
+                                       :label "Attribute"
+                                       :placeholder "Search attributes"}])
 
              ;; Resource Type
              [resource-type-component @selected-resource
@@ -443,12 +475,12 @@
            (cond
              ;; Loading state when no data
              (and resources-loading? (empty? resources-data))
-             [:> Box {:class "flex-1 min-h-96"}
+             [:> Box {:class "flex-1 min-h-96 h-[calc(100vh-12rem)"}
               [loading-list-view]]
 
              ;; Empty state
              (and (empty? resources-data) (not resources-loading?))
-             [:> Box {:class "flex flex-col min-h-96"}
+             [:> Box {:class "flex flex-col min-h-96 h-[calc(100vh-12rem)"}
               [empty-list-view (-> @user :data :admin?)]]
 
              ;; Content
@@ -472,12 +504,12 @@
            (cond
              ;; Loading state when no data
              (and connections-loading? (empty? connections-data))
-             [:> Box {:class "flex-1 min-h-96"}
+             [:> Box {:class "flex-1 min-h-96 h-[calc(100vh-12rem)"}
               [loading-list-view]]
 
              ;; Empty state
              (and (empty? connections-data) (not connections-loading?))
-             [:> Box {:class "flex flex-col min-h-96"}
+             [:> Box {:class "flex flex-col min-h-96 h-[calc(100vh-12rem)]"}
               [empty-list-view (-> @user :data :admin?)]]
 
              ;; Content
@@ -490,7 +522,11 @@
                                   (when-not connections-loading?
                                     (rf/dispatch [:connections/get-connections-paginated
                                                   {:page (inc (:current-page connections-state 1))
-                                                   :force-refresh? false}])))
+                                                   :force-refresh? false
+                                                   :filters (:active-filters connections-state)
+                                                   :search (:active-search connections-state)
+                                                   :name (:active-name connections-state)
+                                                   :attribute (:active-attribute connections-state)}])))
                   :has-more? (:has-more? connections-state)
                   :loading? connections-loading?}
                  [:div]])])]]]))))

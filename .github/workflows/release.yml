@@ -21,11 +21,15 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
       - name: Test
         run: make test
 
@@ -148,13 +152,21 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -185,13 +197,21 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -222,13 +242,21 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -259,13 +287,21 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -296,13 +332,21 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -337,13 +381,21 @@ jobs:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ github.ref_name }}
 
       - name: Setup Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.23.8"
+          go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      - name: Setup Rust for WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Generate WASM
+        run: make generate-wasm
 
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
@@ -398,7 +450,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Tar Files
     environment: production
-    needs: 
+    needs:
       - test
       - darwin-amd64
       - darwin-arm64
@@ -413,7 +465,7 @@ jobs:
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
-        
+
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -428,7 +480,7 @@ jobs:
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: make merge-artifacts
-          
+
       - name: Build Tar Files for All Architectures
         env:
           GIT_TAG: ${{ env.GIT_TAG }}
@@ -439,7 +491,7 @@ jobs:
           GOOS=windows GOARCH=arm64 make build-tar-files
           GOOS=linux GOARCH=amd64 make build-tar-files
           GOOS=linux GOARCH=arm64 make build-tar-files
-        
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
@@ -742,3 +794,17 @@ jobs:
         run: make publish-sentry-sourcemaps
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - name: Tag libhoop with release tag
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Push tag
+        working-directory: ./libhoop
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          git tag "$GIT_TAG" 2>/dev/null || true
+          git push origin "$GIT_TAG"

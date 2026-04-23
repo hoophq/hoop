@@ -2,6 +2,7 @@ package apifeatures
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -37,8 +39,7 @@ func PostChatCompletions(c *gin.Context) {
 
 	isFeatureEnabled, err := models.IsFeatureAskAiEnabled(ctx.OrgID)
 	if err != nil {
-		log.Errorf("unable to verify if ask-ai feature is enabled, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "unable to verify feature status"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "unable to verify feature status")
 		return
 	}
 	if !isFeatureEnabled {
@@ -51,8 +52,7 @@ func PostChatCompletions(c *gin.Context) {
 	defer cancelFn()
 	req, err := http.NewRequestWithContext(timeoutCtx, "POST", apiURL, c.Request.Body)
 	if err != nil {
-		log.Errorf("failed creating request to ask ai, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to create request"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create request")
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -66,15 +66,13 @@ func PostChatCompletions(c *gin.Context) {
 	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Errorf("failed reading resquest body, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed reading request body from remote api"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading request body from remote api")
 		return
 	}
 	log.Debugf("writing response body for /v1/chat/completions, status=%v, response-length=%v",
 		resp.StatusCode, len(data))
 	if _, err := c.Writer.Write(data); err != nil {
-		log.Errorf("failed writing response body, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed writing response body"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, errors.New("failed writing response body to client"), "failed writing response body")
 		return
 	}
 	if resp.StatusCode > 299 {

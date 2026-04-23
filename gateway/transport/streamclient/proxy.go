@@ -92,6 +92,8 @@ func NewProxy(pluginCtx *plugintypes.Context, s pb.Transport_ConnectServer) *Pro
 	stream.pluginCtx.SID = sessionID
 	stream.pluginCtx.ClientOrigin = stream.GetMeta("origin")
 	stream.pluginCtx.ClientVerb = stream.GetMeta("verb")
+	stream.pluginCtx.CredentialSessionID = stream.GetMeta("credential-session-id")
+	stream.pluginCtx.CorrelationID = stream.GetMeta("correlation-id")
 	return stream
 }
 

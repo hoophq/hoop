@@ -73,6 +73,17 @@ func (s *proxyServer) Start(listenAddr, hostsKeyB64Enc string) (err error) {
 	return nil
 }
 
+// RevokeByCredentialID cancels all connections using the given credential ID.
+// This triggers the same cleanup flow as when a credential expires.
+func (s *proxyServer) RevokeByCredentialID(credentialID string) {
+	s.connectionStore.Range(func(key, value any) bool {
+		if sshConn, ok := value.(*sshConnection); ok && sshConn.credentialID == credentialID {
+			sshConn.cancelFn("credential revoked")
+		}
+		return true
+	})
+}
+
 func (s *proxyServer) Stop() error {
 	instance, _ := instanceStore.LoadAndDelete(instanceKey)
 	if server, ok := instance.(*proxyServer); ok {
@@ -171,6 +182,7 @@ type pendingReplyQueue struct {
 type sshConnection struct {
 	id                  string
 	sid                 string
+	credentialID        string
 	ctx                 context.Context
 	cancelFn            func(msg string, a ...any)
 	grpcClient          pb.ClientTransport
@@ -178,6 +190,7 @@ type sshConnection struct {
 	sshConn             *ssh.ServerConn
 	sshChannels         sync.Map
 	pendingRequests     sync.Map // maps channelID (uint16) to *pendingReplyQueue
+	channelWg           sync.WaitGroup
 }
 
 func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*sshConnection, error) {
@@ -212,17 +225,20 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 			// Session duration remaining based on the expiration time
 			ctxDuration := dba.ExpireAt.Sub(time.Now().UTC())
 
-			log.Infof("obtained access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
-				dba.ID, dba.UserSubject, dba.ConnectionName,
+			log.Infof("obtained access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
+				dba.ID, dba.UserSubject, dba.ConnectionName, sid,
 				dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
-			return &ssh.Permissions{
-				Extensions: map[string]string{
-					"hoop-user-subject":     dba.UserSubject,
-					"hoop-connection-name":  dba.ConnectionName,
-					"hoop-context-duration": ctxDuration.String(),
-				},
-			}, nil
+			extensions := map[string]string{
+				"hoop-credential-id":    dba.ID,
+				"hoop-user-subject":     dba.UserSubject,
+				"hoop-connection-name":  dba.ConnectionName,
+				"hoop-context-duration": ctxDuration.String(),
+			}
+			if dba.SessionID != "" {
+				extensions["hoop-credential-session-id"] = dba.SessionID
+			}
+			return &ssh.Permissions{Extensions: extensions}, nil
 		},
 	}
 
@@ -249,6 +265,8 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	connectionName := sshConn.Permissions.Extensions["hoop-connection-name"]
 	userSubject := sshConn.Permissions.Extensions["hoop-user-subject"]
 	ctxDurationStr := sshConn.Permissions.Extensions["hoop-context-duration"]
+	credentialSessionID := sshConn.Permissions.Extensions["hoop-credential-session-id"]
+	credentialID := sshConn.Permissions.Extensions["hoop-credential-id"]
 
 	if connectionName == "" || userSubject == "" {
 		return nil, fmt.Errorf("missing required SSH connection attributes")
@@ -273,6 +291,18 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		With("sid", sid, "remote-addr", conn.RemoteAddr()).
 		Debugf("create new ssh connection, user=%v, connection_name=%v", userSubject, connectionName)
 
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, connectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, userSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", sid),
+	}
+	if credentialSessionID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", credentialSessionID))
+	}
+
 	// connect to the gateway gRPC server
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
@@ -282,14 +312,7 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
 		// it should be safe to skip verify here as we are connecting to localhost
 		TLSSkipVerify: true,
-	},
-		grpc.WithOption(grpc.OptionConnectionName, connectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, userSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sid),
-	)
+	}, grpcOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to grpc server, err=%v", err)
 	}
@@ -297,9 +320,10 @@ func newSSHConnection(sid, connID string, conn net.Conn, hostKey ssh.Signer) (*s
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired, resourceid=%v", connID))
 	sessionConn := &sshConnection{
-		id:  connID,
-		sid: sid,
-		ctx: ctx,
+		id:           connID,
+		sid:          sid,
+		credentialID: credentialID,
+		ctx:          ctx,
 		cancelFn: func(msg string, a ...any) {
 			cancelFn(fmt.Errorf(msg, a...))
 			timeoutCancelFn()
@@ -325,6 +349,20 @@ func (c *sshConnection) handleConnection() {
 	// wait for the connection to be closed
 	// either by the client, server, or context cancellation
 	<-c.ctx.Done()
+
+	// Wait for all channel data-forwarding goroutines to flush remaining writes
+	// to the gRPC stream. Without this, SessionClose can be sent before trailing
+	// data packets, causing the agent to tear down the session prematurely.
+	flushDone := make(chan struct{})
+	go func() {
+		c.channelWg.Wait()
+		close(flushDone)
+	}()
+	select {
+	case <-flushDone:
+	case <-time.After(5 * time.Second):
+		log.With("sid", c.sid, "conn", c.id).Warnf("timed out waiting for channel goroutines to finish")
+	}
 
 	ctxErr := context.Cause(c.ctx)
 	log.With("sid", c.sid, "conn", c.id).Infof("ssh connection closed, reason=%v", ctxErr)
@@ -547,6 +585,12 @@ func (c *sshConnection) handleServerWrite() {
 		channelID++
 		go c.handleChannel(newCh, channelID)
 	}
+	// The SSH client disconnected (clientNewSshChannel was closed).
+	// Cancel the context so handleConnection proceeds to close the gRPC stream
+	// and the SSH TCP connection. Without this, handleConnection blocks forever
+	// at <-c.ctx.Done() and c.sshConn.Close() is never called, causing the
+	// client-side ProxyCommand to hang waiting for the TCP FIN.
+	c.cancelFn("ssh client disconnected")
 }
 
 func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
@@ -580,7 +624,9 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	// the client may still be waiting to receive data (e.g., git clone sends a command
 	// then waits for the response). The channel will be closed when we receive
 	// a CloseChannel message from the agent.
+	c.channelWg.Add(1)
 	go func() {
+		defer c.channelWg.Done()
 		buf := make([]byte, 32*1024)
 		for {
 			n, readErr := clientCh.Read(buf)
@@ -613,7 +659,9 @@ func (c *sshConnection) handleChannel(newCh ssh.NewChannel, channelID uint16) {
 	}()
 
 	// handle incoming requests from the client
+	c.channelWg.Add(1)
 	go func() {
+		defer c.channelWg.Done()
 		for req := range clientRequests {
 			log.With("sid", c.sid, "conn", c.id, "ch", channelID, "type", req.Type).Debug("received client ssh request")
 

@@ -1,0 +1,130 @@
+{{- if and .Values.dataMasking.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidio-envoy-proxy
+  labels:
+    app: presidio-envoy-proxy
+spec:
+  replicas: {{ .Values.dataMasking.envoyProxy.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: presidio-envoy-proxy
+  template:
+    metadata:
+      labels:
+        app: presidio-envoy-proxy
+      annotations:
+        checksum/envoy-config: {{ include (print $.Template.BasePath "/presidio-envoy-config.yaml") . | sha256sum }}
+    spec:
+      containers:
+      - name: envoy
+        image: '{{ .Values.dataMasking.envoyProxy.imageRepository | default "envoyproxy/envoy" }}:{{ .Values.dataMasking.envoyProxy.imageTag | default "v1.33-latest" }}'
+        imagePullPolicy: {{ .Values.dataMasking.envoyProxy.imagePullPolicy | default "Always" }}
+        resources:
+          {{- toYaml .Values.dataMasking.envoyProxy.resources | nindent 10 }}
+        ports:
+          - name: http
+            containerPort: 3010
+            protocol: TCP
+          - name: admin
+            containerPort: 9901
+            protocol: TCP  
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 9901
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: 9901
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        volumeMounts:
+          - name: envoy-config
+            mountPath: /etc/envoy
+            readOnly: true
+      volumes:
+        - name: envoy-config
+          configMap:
+            name: presidio-envoy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    hoop.dev/note: 'resource deprecated and unused due to the introduction of envoy proxy'
+  name: presidio-analyzer
+spec:
+  selector:
+    app: presidio-analyzer
+  ports:
+    - port: 3000
+      name: api
+      protocol: TCP
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    hoop.dev/note: 'resource deprecated and unused due to the introduction of envoy proxy'
+  name: presidio-anonymizer
+spec:
+  selector:
+    app: presidio-anonymizer
+  ports:
+    - port: 3000
+      name: api
+      protocol: TCP
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidio-analyzer-envoy
+spec:
+  clusterIP: None # headless service
+  selector:
+    app: presidio-analyzer
+  ports:
+    - port: 3000
+      name: api
+      protocol: TCP
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidio-anonymizer-envoy
+spec:
+  clusterIP: None # headless service
+  selector:
+    app: presidio-anonymizer
+  ports:
+    - port: 3000
+      name: api
+      protocol: TCP
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidio-envoy-lb
+  labels:
+    app: presidio-envoy-proxy
+spec:
+  selector:
+    app: presidio-envoy-proxy
+  ports:
+    - name: http
+      port: 3010
+      targetPort: 3010
+      protocol: TCP
+    - name: admin
+      port: 9901
+      targetPort: 9901
+      protocol: TCP
+{{ end -}}

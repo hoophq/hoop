@@ -91,6 +91,19 @@ func (s *PGServer) Stop() error {
 
 func (s *PGServer) ListenAddr() string { return s.listenAddr }
 
+// RevokeByCredentialID cancels all connections using the given credential ID.
+// This triggers the same cleanup flow as when a credential expires.
+func (s *PGServer) RevokeByCredentialID(credentialID string) {
+	if s.connectionStore == nil {
+		return
+	}
+	for _, obj := range s.connectionStore.List() {
+		if pgConn, ok := obj.(*postgresConn); ok && pgConn.credentialID == credentialID {
+			pgConn.cancelFn("credential revoked")
+		}
+	}
+}
+
 func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, error) {
 	lis, err := net.Listen("tcp4", listenAddr)
 	if err != nil {
@@ -147,6 +160,7 @@ func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, erro
 type postgresConn struct {
 	sid           string
 	id            string
+	credentialID  string
 	ctx           context.Context
 	cancelFn      func(msg string, a ...any)
 	streamClient  pb.ClientTransport
@@ -247,12 +261,13 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, err
 	}
 
-	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, expires-at=%v (in %v)",
-		dba.ID, dba.UserSubject, dba.ConnectionName,
+	log.Infof("obtained db access by id, id=%v, subject=%v, connection=%v, session_id=%v, expires-at=%v (in %v)",
+		dba.ID, dba.UserSubject, dba.ConnectionName, sid,
 		dba.ExpireAt.Format(time.RFC3339), ctxDuration.Truncate(time.Second).String())
 
 	ctx, cancelFn := context.WithCancelCause(context.Background())
 	ctx, timeoutCancelFn := context.WithTimeoutCause(ctx, ctxDuration, fmt.Errorf("connection access expired (%v)", dba.ExpireAt.Format(time.RFC3339)))
+	pgConn.credentialID = dba.ID
 	pgConn.cancelFn = func(msg string, a ...any) {
 		cancelFn(fmt.Errorf(msg, a...))
 		timeoutCancelFn()
@@ -260,8 +275,20 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 	pgConn.ctx = ctx
 
 	transport.PollingUserToken(pgConn.ctx, func(cause error) {
-		pgConn.cancelFn(cause.Error())
+		pgConn.cancelFn("%s", cause.Error())
 	}, tokenVerifier, dba.UserSubject)
+
+	grpcOpts := []*grpc.ClientOptions{
+		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
+		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
+		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
+		grpc.WithOption("origin", pb.ConnectionOriginClient),
+		grpc.WithOption("verb", pb.ClientVerbConnect),
+		grpc.WithOption("session-id", sid),
+	}
+	if dba.SessionID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
+	}
 
 	client, err := grpc.Connect(grpc.ClientConfig{
 		ServerAddress: grpc.LocalhostAddr,
@@ -271,14 +298,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		TLSCA:         appconfig.Get().GrpcClientTLSCa(),
 		// it should be safe to skip verify here as we are connecting to localhost
 		TLSSkipVerify: true,
-	},
-		grpc.WithOption(grpc.OptionConnectionName, dba.ConnectionName),
-		grpc.WithOption(grpckey.ImpersonateAuthKeyHeaderKey, grpckey.ImpersonateSecretKey),
-		grpc.WithOption(grpckey.ImpersonateUserSubjectHeaderKey, dba.UserSubject),
-		grpc.WithOption("origin", pb.ConnectionOriginClient),
-		grpc.WithOption("verb", pb.ClientVerbConnect),
-		grpc.WithOption("session-id", sid),
-	)
+	}, grpcOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed connecting to grpc server, err=%v", err)
 	}
@@ -306,7 +326,7 @@ func (c *postgresConn) handleTcpConnection() {
 
 	// propagate any errors to the underline client connection
 	if ctxErr != nil {
-		_, _ = c.Write(pgtypes.NewFatalError(ctxErr.Error()).Encode())
+		_, _ = c.Write(pgtypes.NewFatalError("%s", ctxErr.Error()).Encode())
 	}
 
 	// wait 2 seconds for cleaning up session gracefully

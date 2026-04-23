@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
@@ -79,8 +80,7 @@ func Post(c *gin.Context) {
 	if licenseType == license.OSSType {
 		rules, err := models.ListDataMaskingRules(ctx.GetOrgID())
 		if err != nil {
-			log.Errorf("failed listing data masking rules, reason=%v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules: %v", err)
 			return
 		}
 
@@ -130,7 +130,8 @@ func Post(c *gin.Context) {
 		Set("supported_entity_types", supportedEntityTypes).
 		Set("custom_entity_types", customEntityTypes).
 		Set("score_threshold", req.ScoreThreshold).
-		Set("connection_ids", req.ConnectionIDs)
+		Set("connection_ids", req.ConnectionIDs).
+		Set("attributes", req.Attributes)
 	defer func() { evt.Log(c) }()
 
 	if rule != nil {
@@ -143,10 +144,14 @@ func Post(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
 	case nil:
+		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
+			return
+		}
+		rule.Attributes = req.Attributes
 		c.JSON(http.StatusCreated, toOpenApi(rule))
 	default:
-		log.Errorf("Failed creating data masking rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating data masking rule: %v", err)
 	}
 }
 
@@ -201,7 +206,8 @@ func Put(c *gin.Context) {
 		Set("supported_entity_types", supportedEntityTypes).
 		Set("custom_entity_types", customEntityTypes).
 		Set("score_threshold", req.ScoreThreshold).
-		Set("connection_ids", req.ConnectionIDs)
+		Set("connection_ids", req.ConnectionIDs).
+		Set("attributes", req.Attributes)
 	defer func() { evt.Log(c) }()
 
 	rule, err := models.UpdateDataMaskingRule(&models.DataMaskingRule{
@@ -220,10 +226,14 @@ func Put(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 	case nil:
+		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
+			return
+		}
+		rule.Attributes = req.Attributes
 		c.JSON(http.StatusOK, toOpenApi(rule))
 	default:
-		log.Errorf("Failed updating data masking rule: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating data masking rule: %v", err)
 	}
 }
 
@@ -241,8 +251,7 @@ func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	ruleList, err := models.ListDataMaskingRules(ctx.GetOrgID())
 	if err != nil {
-		log.Errorf("failed listing data masking rules, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing data masking rules: %v", err)
 		return
 	}
 
@@ -273,8 +282,7 @@ func Get(c *gin.Context) {
 	case nil:
 		c.JSON(http.StatusOK, toOpenApi(rule))
 	default:
-		log.Errorf("failed fetching data masking rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
 	}
 }
 
@@ -303,8 +311,7 @@ func Delete(c *gin.Context) {
 	case nil:
 		c.Writer.WriteHeader(http.StatusNoContent)
 	default:
-		log.Errorf("failed removing data masking rule, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed removing data masking rule: %v", err)
 	}
 }
 
@@ -335,9 +342,15 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 			CustomEntityTypesEntrys: customEntityTypes,
 			ScoreThreshold:          obj.ScoreThreshold,
 			ConnectionIDs:           obj.ConnectionIDs,
+			Attributes:              obj.Attributes,
 			UpdatedAt:               obj.UpdatedAt,
 		},
 	}
+}
+
+func upsertDatamaskingRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	return models.UpsertDatamaskingRuleAttributes(models.DB, orgID, ruleName, attributeNames)
 }
 
 func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
@@ -379,4 +392,3 @@ func parseRequestPayload(c *gin.Context) *openapi.DataMaskingRuleRequest {
 	}
 	return &req
 }
-

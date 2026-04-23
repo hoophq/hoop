@@ -17,11 +17,13 @@ const (
 	SpecDLPTransformationSummary string = "dlp.transformation_summary" // Deprecated: see spectypes.DataMaskingInfoKey
 	SpecClientConnectionID       string = "client.connection_id"
 	SpecClientExitCodeKey        string = "client.exit_code"
+	SpecClientGuardRailsInfoKey  string = "client.guardrails_info"
 	SpecClientRequestPort        string = "client.request_port"
 	SpecClientSSHHostKey         string = "client.ssh_host_key"
 	SpecClientExecCommandKey     string = "client.command"
 	SpecClientExecArgsKey        string = "terminal.args"
 	SpecClientExecEnvVar         string = "terminal.envvars"
+	SpecAgentVersion             string = "agent.version"
 	SpecAgentConnectionParamsKey string = "agent.connection_params"
 	SpecAwsSSMWebsocketMsgType   string = "aws.websocket.message_type"
 	SpecAwsSSMEc2InstanceId      string = "aws.ssm.ec2.instance_id"

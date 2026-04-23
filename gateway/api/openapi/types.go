@@ -40,7 +40,7 @@ const (
 
 	// RoleAdminType will grant access to all routes.
 	RoleAdminType RoleType = "admin"
-	// RoleAuditorType grants read only access to session related routes
+	// RoleAuditorType grants read-only access to all routes
 	RoleAuditorType RoleType = "auditor"
 	// RoleStandardType will grant access to standard routes
 	RoleStandardType RoleType = "standard"
@@ -134,6 +134,58 @@ type ServiceAccount struct {
 	Status ServiceAccountStatusType `json:"status" binding:"required" enums:"active,inactive"`
 	// The groups in which this service account belongs to
 	Groups []string `json:"groups" example:"engineering"`
+}
+
+type APIKeyStatusType string
+
+const (
+	APIKeyStatusActive  APIKeyStatusType = "active"
+	APIKeyStatusRevoked APIKeyStatusType = "revoked"
+)
+
+type APIKeyCreateRequest struct {
+	// Human-readable name for the API key
+	Name string `json:"name" binding:"required" example:"bob-the-bot"`
+	// Groups to assign to this API key
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type APIKeyCreateResponse struct {
+	APIKeyResponse
+	// The generated API key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
+}
+
+type APIKeyUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"payments-automation"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type APIKeyResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"ai-agent"`
+	// Masked version of the API key for identification
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
+	// Current status of the API key
+	Status APIKeyStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this API key
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this key
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this key
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
 type AgentRequest struct {
@@ -271,6 +323,11 @@ type Connection struct {
 	MinReviewApprovals *int `json:"min_review_approvals" example:"2"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields []string `json:"mandatory_metadata_fields" example:"environment,tier"`
+	// JitAccessDurationSec is the fixed access duration in seconds enforced by a JIT access request rule.
+	// When set, the user cannot choose a custom duration and must request access for this exact window.
+	JitAccessDurationSec *int `json:"jit_access_duration_sec,omitempty" example:"1800"`
+	// Attributes associated with this connection
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type ConnectionPatch struct {
@@ -338,6 +395,8 @@ type ConnectionPatch struct {
 	JiraIssueTemplateID *string `json:"jira_issue_template_id" example:"B19BBA55-8646-4D94-A40A-C3AFE2F4BAFD"`
 	// MandatoryMetadataFields are fields that must be present in the metadata for this connection for every session.
 	MandatoryMetadataFields *[]string `json:"mandatory_metadata_fields" example:"environment,tier"`
+	// Attributes associated with this connection
+	Attributes *[]string `json:"attributes" example:"production,pii"`
 }
 
 type ConnectionTagCreateRequest struct {
@@ -380,6 +439,8 @@ type ExecRequest struct {
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
 	ClientArgs []string `json:"client_args" example:"--verbose"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ExecResponse struct {
@@ -529,6 +590,7 @@ const (
 	SessionOptionReviewStatus        SessionOptionKey = "review.status"
 	SessionOptionReviewApproverEmail SessionOptionKey = "review.approver"
 	SessionOptionBatchID             SessionOptionKey = "batch_id"
+	SessionOptionCorrelationID       SessionOptionKey = "correlation_id"
 	SessionOptionStartDate           SessionOptionKey = "start_date"
 	SessionOptionEndDate             SessionOptionKey = "end_date"
 	SessionOptionOffset              SessionOptionKey = "offset"
@@ -543,6 +605,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionReviewStatus,
 	SessionOptionReviewApproverEmail,
 	SessionOptionBatchID,
+	SessionOptionCorrelationID,
 	SessionOptionStartDate,
 	SessionOptionEndDate,
 	SessionOptionLimit,
@@ -557,6 +620,39 @@ const (
 	SessionStatusReady SessionStatusType = "ready"
 	SessionStatusDone  SessionStatusType = "done"
 )
+
+type SessionGuardRailMatchedRule struct {
+	// Type is the internal rule type
+	Type string `json:"type" enums:"deny_words_list,pattern_match" example:"deny_words_list"`
+	// Words matched (only set when type is deny_words_list)
+	Words []string `json:"words,omitempty" example:"password,secret"`
+	// PatternRegex that matched (only set when type is pattern_match)
+	PatternRegex string `json:"pattern_regex,omitempty" example:"^[A-Z0-9]+"`
+}
+
+type SessionGuardRailsInfo struct {
+	// RuleName is the name of the guardrail rule that matched
+	RuleName string `json:"rule_name" example:"block-sensitive-data"`
+	// Rule is the specific internal rule entry that triggered the match
+	Rule SessionGuardRailMatchedRule `json:"rule"`
+	// Direction indicates whether the match happened on input or output data
+	Direction string `json:"direction" enums:"input,output" example:"input"`
+	// MatchedWords are the words that matched the rule
+	MatchedWords []string `json:"matched_words,omitempty" example:"password,secret"`
+}
+
+type SessionAIAnalysis struct {
+	// RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:
+	RiskLevel string `json:"risk_level" example:"high"`
+	// Title is a short description of the identified risk in the session
+	Title string `json:"title" example:"Potential Data Leakage"`
+	// Explanation provides a detailed explanation of the identified risk and why the session was flagged
+	Explanation string `json:"explanation" example:"The script contains queries that may expose sensitive data."`
+	// Action taken based on the risk assessment. Possible values are:
+	// * `allow_execution` - allow the session to execute
+	// * `block_execution` - block the session from executing
+	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
+}
 
 type Session struct {
 	// The resource unique identifier
@@ -619,10 +715,17 @@ type Session struct {
 	EventSize int64 `json:"event_size" example:"569"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
 	EndSession *time.Time `json:"end_date" example:"2024-07-25T15:56:35.361101Z"`
+	// The AI analysis of the session if it's available
+	AIAnalysis *SessionAIAnalysis `json:"ai_analysis" readonly:"true"`
+	// GuardRailsInfo contains information about guardrail rules that matched during the session.
+	// A non-empty list indicates the session was blocked by at least one guardrail rule.
+	GuardRailsInfo []SessionGuardRailsInfo `json:"guardrails_info" readonly:"true"`
 }
 
 type ProvisionSession struct {
@@ -636,6 +739,8 @@ type ProvisionSession struct {
 	ClientArgs        []string                 `json:"client_args"`
 	JiraFields        map[string]string        `json:"jira_fields"`
 	TimeWindow        *ReviewSessionTimeWindow `json:"time_window"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ProvisionSessionResponse struct {
@@ -716,9 +821,10 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
-	ForceReview bool                     `json:"force_review" example:"false"`
+	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
+	ForceReview     bool                     `json:"force_review" example:"false"`
+	RejectionReason string                   `json:"rejection_reason" example:"This command is not allowed in production."`
 }
 
 type SessionReview struct {
@@ -753,6 +859,8 @@ type SessionReview struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -794,6 +902,8 @@ type Review struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewOwner struct {
@@ -1288,6 +1398,8 @@ type GuardRailRuleRequest struct {
 
 	// List of connection IDs that this guardrail applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
+	// Attributes associated with this guardrail rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 }
 
 type GuardRailRuleResponse struct {
@@ -1337,7 +1449,8 @@ type GuardRailRuleResponse struct {
 
 	// List of connection IDs that this guardrail applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
-
+	// Attributes associated with this guardrail rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -1687,8 +1800,10 @@ type SecurityAuditLogResponse struct {
 	CreatedAt              time.Time      `json:"created_at" example:"2023-08-15T14:30:45Z"`
 	ResourceType           string         `json:"resource_type" example:"connections"`
 	Action                 string         `json:"action" example:"create"`
-	ResourceID             string         `json:"resource_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
-	ResourceName           string         `json:"resource_name" example:"my-connection"`
+	HttpMethod             string         `json:"http_method" example:"POST"`
+	HttpStatus             int            `json:"http_status" example:"201"`
+	HttpPath               string         `json:"http_path" example:"/api/connections"`
+	ClientIP               string         `json:"client_ip" example:"192.168.1.100"`
 	RequestPayloadRedacted map[string]any `json:"request_payload_redacted" swaggertype:"object,string"`
 	Outcome                bool           `json:"outcome" example:"true"`
 	ErrorMessage           string         `json:"error_message" example:""`
@@ -1707,6 +1822,8 @@ type DataMaskingRuleRequest struct {
 	Description string `json:"description" example:"Mask email addresses in the data"`
 	// The connections that this rule applies to
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
+	// Attributes associated with this data masking rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// The registered entity types that this rule applies to
 	SupportedEntityTypes []SupportedEntityTypesEntry `json:"supported_entity_types"`
 	// The minimal detection score threshold for the entities to be masked.
@@ -1869,7 +1986,13 @@ type ConnectionCredentialsResponse struct {
 	// The connection subtype
 	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
 	// The connection information
-	ConnectionCredentials any `json:"connection_credentials"`
+	ConnectionCredentials any `json:"connection_credentials,omitempty"`
+	// The session ID associated with this credential access
+	SessionID string `json:"session_id" format:"uuid" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	// Whether this credential request requires review/JIT approval
+	HasReview bool `json:"has_review" example:"false"`
+	// The review ID if review is required
+	ReviewID string `json:"review_id,omitempty" format:"uuid" example:"3CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
 	// When the database access connection expires
 	ExpireAt time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
 	// When the resource was created
@@ -2296,6 +2419,26 @@ type RunbookExec struct {
 	JiraFields map[string]string `json:"jira_fields"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task id to group related sessions
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
+}
+
+type RunbookFileCreate struct {
+	// Path of the file to create relative to the repository root, e.g. "ops/restart.runbook.sh"
+	Path string `json:"path" binding:"required" example:"ops/restart.runbook.sh"`
+	// Content of the runbook file
+	Content string `json:"content" binding:"required"`
+	// Optional commit message. Defaults to "feat: add <path>" when empty.
+	CommitMessage string `json:"commit_message" example:"feat: add restart service runbook"`
+	// If true, overwrite the file if it already exists in the repository
+	Overwrite bool `json:"overwrite"`
+}
+
+type RunbookFileCreateResponse struct {
+	// Path of the created file relative to the repository root
+	Path string `json:"path" example:"ops/restart.runbook.sh"`
+	// SHA of the resulting git commit
+	CommitSHA string `json:"commit_sha" example:"abc123def456abc123def456abc123def456abc1"`
 }
 
 type AccessRequestRule struct {
@@ -2309,6 +2452,8 @@ type AccessRequestRule struct {
 	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Attributes associated with this access request rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -2336,6 +2481,8 @@ type AccessRequestRuleRequest struct {
 	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Attributes associated with this access request rule
+	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
 	ApprovalRequiredGroups []string `json:"approval_required_groups" binding:"required" example:"developers,analysts"`
 	// Whether all groups must approve
@@ -2348,4 +2495,103 @@ type AccessRequestRuleRequest struct {
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
 	MinApprovals *int `json:"min_approvals,omitempty" example:"2"`
+}
+
+type AIProviderRequest struct {
+	// Name for the AI provider
+	Provider string `json:"provider" binding:"required" enums:"openai,anthropic,azure-openai,custom" example:"openai"`
+	// Base URL of the AI API
+	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// API key for authentication
+	ApiKey *string `json:"api_key" example:"sk-..."`
+	// Model to use
+	Model string `json:"model" binding:"required" example:"gpt-4o"`
+}
+
+type AIProviderResponse struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Name for the AI provider
+	Provider string `json:"provider" example:"openai"`
+	// Base URL of the AI API
+	ApiUrl *string `json:"api_url" example:"https://api.openai.com/v1"`
+	// API key for authentication
+	ApiKey *string `json:"api_key" example:"sk-..."`
+	// Model to use
+	Model string `json:"model" example:"gpt-4o"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AISessionAnalyzerRiskEvaluation struct {
+	// Action for low-risk sessions
+	LowRiskAction string `json:"low_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Action for medium-risk sessions
+	MediumRiskAction string `json:"medium_risk_action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Action for high-risk sessions
+	HighRiskAction string `json:"high_risk_action" enums:"allow_execution,block_execution" example:"block_execution"`
+}
+
+type AISessionAnalyzerRuleRequest struct {
+	// Unique name for the rule
+	Name string `json:"name" binding:"required" example:"block-dangerous-queries"`
+	// Optional description
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names this rule applies to
+	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Risk evaluation actions per level
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
+}
+
+type AISessionAnalyzerRule struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique name for the rule
+	Name string `json:"name" example:"block-dangerous-queries"`
+	// Optional description
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names this rule applies to
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Risk evaluation actions per level
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time the resource was updated
+	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type Attributes struct {
+	// The resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Organization ID that owns this attribute
+	OrgID string `json:"org_id" format:"uuid" readonly:"true" example:"37EEBC20-D8DF-416B-8AC2-01B6EB456318"`
+	// The name of the attribute
+	Name string `json:"name" example:"default-session-attribute"`
+	// The description of the attribute
+	Description *string `json:"description" example:"Blocks high-risk SQL commands"`
+	// Connection names associated with this attribute
+	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Access request rule names associated with this attribute
+	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	// Guardrail rule names associated with this attribute
+	GuardrailRuleNames []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	// Datamasking rule names associated with this attribute
+	DatamaskingRuleNames []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	// Access control group names associated with this attribute
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
+	// The time the resource was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+}
+
+type AttributeRequest struct {
+	// The name of the attribute
+	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
+	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 }

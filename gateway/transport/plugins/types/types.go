@@ -62,6 +62,14 @@ type Context struct {
 	ClientVerb   string
 	ClientOrigin string
 
+	// CredentialSessionID is the review session ID associated with a JIT credential.
+	// Set when a proxy connects using a JIT credential; used to tag the proxy session
+	// metadata with the review session reference ("credential-session").
+	CredentialSessionID string
+
+	// CorrelationID groups related sessions spawned by an external workflow/task.
+	CorrelationID string
+
 	ParamsData GenericMap
 
 	// hook to cleanup the transport extensions package handlers

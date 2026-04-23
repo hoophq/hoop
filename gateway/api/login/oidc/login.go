@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
@@ -79,8 +80,7 @@ func (h *handler) Login(c *gin.Context) {
 		UpdatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		log.Errorf("internal error storing the login, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "internal error storing the login"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "internal error storing the login")
 		return
 	}
 
@@ -452,12 +452,16 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 
 	if isFirstUserInOrg {
 		trackClient := analytics.New()
+		defer trackClient.Close()
 		// When the first user is created, there's already an
 		// anonymous event tracked with his org id. We need to
 		// merge this anonymous event with the identified user
 		trackClient.Identify(&types.APIContext{
 			OrgID:           org.ID,
+			OrgLicenseData:  &org.LicenseData,
 			UserID:          newUser.Subject,
+			UserEmail:       newUser.Email,
+			UserName:        newUser.Name,
 			UserAnonSubject: org.ID,
 		})
 		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, map[string]any{
@@ -491,9 +495,10 @@ func updateLoginState(login *models.Login) {
 // analyticsTrack tracks the user signup/login event
 func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.Context) {
 	licenseType := ctx.GetLicenseType()
-	client := analytics.New()
+	trackClient := analytics.New()
+	defer trackClient.Close()
 	if !isNewUser {
-		client.Track(ctx.UserID, analytics.EventLogin, map[string]any{
+		trackClient.Track(ctx.UserID, analytics.EventLogin, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,
@@ -501,14 +506,17 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		})
 		return
 	}
-	client.Identify(&types.APIContext{
-		OrgID:  ctx.OrgID,
-		UserID: ctx.UserID,
+	trackClient.Identify(&types.APIContext{
+		OrgID:          ctx.OrgID,
+		OrgLicenseData: &ctx.OrgLicenseData,
+		UserID:         ctx.UserID,
+		UserEmail:      ctx.UserEmail,
+		UserName:       ctx.UserName,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
 		time.Sleep(time.Second * 10)
-		client.Track(ctx.UserID, analytics.EventSignup, map[string]any{
+		trackClient.Track(ctx.UserID, analytics.EventSignup, map[string]any{
 			"org-id":       ctx.OrgID,
 			"auth-method":  appconfig.Get().AuthMethod(),
 			"user-agent":   userAgent,

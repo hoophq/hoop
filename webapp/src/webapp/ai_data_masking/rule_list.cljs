@@ -4,7 +4,10 @@
    ["lucide-react" :refer [ChevronDown ChevronUp]]
    [re-frame.core :as rf]
    [reagent.core :as r]
-   [webapp.connections.constants :as connection-constants]))
+   [webapp.components.attribute-filter :as attribute-filter]
+   [webapp.connections.constants :as connection-constants]
+   [webapp.components.resource-role-filter :as resource-role-filter]
+   [webapp.components.filtered-empty-state :refer [filtered-empty-state]]))
 
 (defn- get-rule-connections
   [connections connection-ids]
@@ -103,24 +106,63 @@
                              :connections-loading? (or connections-loading? (nil? connections-results))}])])))
 
 (defn main [{:keys [rules on-configure]}]
-  (let [connections (rf/subscribe [:connections])]
+  (let [connections (rf/subscribe [:connections])
+        selected-connection (r/atom nil)
+        selected-attribute (r/atom nil)]
     (fn []
       (let [connections-data @connections
             connections-loading? (:loading connections-data)
-            connections-results (:results connections-data)]
-        [:> Box
-         (doall
-          (for [rule rules]
-            ^{:key (:id rule)}
-            [rule-item
-             (assoc rule
-                    :total-items (count rules)
-                    :on-configure on-configure
-                    :connections-loading? connections-loading?
-                    :connection_ids (:connection_ids rule)
-                    :connections-results connections-results
-                    :connections (if (and connections-results (not connections-loading?))
-                                   (get-rule-connections
-                                    connections-results
-                                    (:connection_ids rule))
-                                   []))]))]))))
+            connections-results (:results connections-data)
+            by-connection (if (nil? @selected-connection)
+                            rules
+                            (filter (fn [rule]
+                                      (let [rule-connections (if (and connections-results (not connections-loading?))
+                                                               (get-rule-connections
+                                                                connections-results
+                                                                (:connection_ids rule))
+                                                               [])]
+                                        (some #(= (:name %) @selected-connection) rule-connections)))
+                                    rules))
+            filtered-rules (if (nil? @selected-attribute)
+                             by-connection
+                             (filter #(some #{@selected-attribute} (or (:attributes %) []))
+                                     by-connection))]
+        [:<>
+         [:> Flex {:mb "6" :gap "2"}
+          [resource-role-filter/main {:selected @selected-connection
+                                      :on-select #(reset! selected-connection %)
+                                      :on-clear #(reset! selected-connection nil)
+                                      :label "Resource Role"}]
+          [attribute-filter/main {:selected @selected-attribute
+                                  :on-select #(reset! selected-attribute %)
+                                  :on-clear #(reset! selected-attribute nil)
+                                  :label "Attribute"
+                                  :placeholder "Search attributes"}]]
+
+         [:> Box
+          (if (empty? filtered-rules)
+            [filtered-empty-state {:entity-name "AI Data Masking rule"
+                                   :filter-value (cond
+                                                   (and @selected-connection @selected-attribute)
+                                                   (str @selected-connection ", " @selected-attribute)
+
+                                                   @selected-connection
+                                                   @selected-connection
+
+                                                   @selected-attribute
+                                                   @selected-attribute)}]
+            (doall
+             (for [rule filtered-rules]
+               ^{:key (:id rule)}
+               [rule-item
+                (assoc rule
+                       :total-items (count filtered-rules)
+                       :on-configure on-configure
+                       :connections-loading? connections-loading?
+                       :connection_ids (:connection_ids rule)
+                       :connections-results connections-results
+                       :connections (if (and connections-results (not connections-loading?))
+                                      (get-rule-connections
+                                       connections-results
+                                       (:connection_ids rule))
+                                      []))])))]]))))

@@ -10,6 +10,11 @@
    :audit->session-logs {:status :idle, :data nil}
    :audit->session-stream-result {:status :idle, :data nil}
    :audit->filtered-session-by-id {:status :idle, :data [] :errors [] :search-term "" :offset 0 :has-more? false :loading false}
+   :audit-logs {:status :idle
+                :data []
+                :pagination {:total 0 :page 1 :size 25 :has-more? false}
+                :filters {:actor-email nil :created-after nil :created-before nil}
+                :expanded-rows #{}}
    :connections {:loading true :details {}}
    :connections->pagination {:data []
                              :loading false
@@ -96,4 +101,11 @@
               :keep-metadata? false}
    :runbooks->exec {:status :idle :data nil}
    :runbooks-rules {:list {:status :idle :data [] :error nil}
-                    :active-rule {:status :idle :data nil :error nil}}})
+                    :active-rule {:status :idle :data nil :error nil}}
+   :attributes {:list {:status :idle :data []}
+                :active {:status :idle :data nil}
+                :submitting? false}
+   :api-keys {:list {:status :idle :data []}
+              :active {:status :idle :data nil}
+              :created {:status :idle :data nil}
+              :submitting? false}})

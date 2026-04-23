@@ -1,7 +1,6 @@
 package audit
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/memory"
 	mssqltypes "github.com/hoophq/hoop/common/mssqltypes"
@@ -16,9 +16,10 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
 	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -72,6 +73,11 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			return fmt.Errorf("connection not found")
 		}
 
+		var sessionMetadata map[string]any
+		if pctx.CredentialSessionID != "" {
+			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
+		}
+
 		newSession := models.Session{
 			ID:                   pctx.SID,
 			OrgID:                pctx.OrgID,
@@ -84,17 +90,25 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			ConnectionTags:       pctx.ConnectionTags,
 			Verb:                 pctx.ClientVerb,
 			Labels:               nil,
-			Metadata:             nil,
+			Metadata:             sessionMetadata,
 			IntegrationsMetadata: nil,
 			Status:               string(openapi.SessionStatusOpen),
 			ExitCode:             nil,
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
+		if pctx.CorrelationID != "" {
+			newSession.CorrelationID = &pctx.CorrelationID
+		}
 
-		if err := services.UpsertSession(context.Background(), newSession, *connection); err != nil {
+		if err := models.UpsertSession(newSession); err != nil {
 			return fmt.Errorf("failed persisting session to store, reason=%v", err)
 		}
+
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
+		trackClient.TrackSessionUsageData(analytics.EventSessionCreated, pctx.OrgID, pctx.UserID, pctx.SID)
 	}
 	p.mu = sync.RWMutex{}
 	memorySessionStore.Set(pctx.SID, pctx.AgentID)
@@ -106,9 +120,47 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	switch pb.PacketType(pkt.GetType()) {
 	case pbagent.SessionOpen:
 		// update session input when executing ad-hoc executions via cli
-		if strings.HasPrefix(pctx.ClientOrigin, pb.ConnectionOriginClient) {
+		if pctx.ClientOrigin == pb.ConnectionOriginClient && pctx.ClientVerb == "exec" {
 			if err := models.UpdateSessionInput(pctx.OrgID, pctx.SID, string(pkt.Payload)); err != nil {
 				return nil, plugintypes.InternalErr("failed updating session input", err)
+			}
+
+			// Check AI
+			orgID := uuid.MustParse(pctx.OrgID)
+			analyzeRes, err := sessionapi.AIAnalyze(pctx.Context, orgID, pctx.ConnectionName, string(pkt.Payload))
+			if err != nil {
+				log.With("sid", pctx.SID, "org_id", pctx.OrgID).Errorf("failed analyzing session input with AI, err=%v", err)
+				return nil, plugintypes.InternalErr("failed analyzing session input with AI", err)
+			}
+
+			if analyzeRes != nil {
+				session, err := models.GetSessionByID(pctx.OrgID, pctx.SID)
+				if err != nil {
+					return nil, plugintypes.InternalErr("failed getting session by ID", err)
+				}
+
+				session.AIAnalysis = analyzeRes
+
+				shouldBlock := analyzeRes.Action == string(models.BlockExecution)
+				if shouldBlock {
+					session.Status = string(openapi.SessionStatusDone)
+					session.ExitCode = internalExitCode
+					endTime := time.Now().UTC()
+					session.EndSession = &endTime
+				}
+
+				if err := models.UpsertSession(*session); err != nil {
+					log.Errorf("failed updating session, err=%v", err)
+					return nil, plugintypes.InternalErr("failed updating session", err)
+				}
+				trackClient := analytics.New()
+				defer trackClient.Close()
+
+				trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
+
+				if shouldBlock {
+					return nil, plugintypes.NewPacketErr("session blocked by AI risk analyzer", nil)
+				}
 			}
 		}
 
@@ -205,7 +257,11 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 			log.With("sid", pctx.SID, "origin", pctx.ClientOrigin, "verb", pctx.ClientVerb).
 				Warnf("failed closing session, reason=%v", err)
 		}
+		trackClient := analytics.New()
+		defer trackClient.Close()
+
 		_ = models.SetSessionMetricsEndedAt(models.DB, pctx.SID)
+		trackClient.TrackSessionUsageData(analytics.EventSessionFinished, pctx.OrgID, pctx.UserID, pctx.SID)
 	}()
 }
 

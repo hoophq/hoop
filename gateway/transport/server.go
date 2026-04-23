@@ -47,7 +47,7 @@ type (
 const listenAddr = "0.0.0.0:8010"
 
 func (s *Server) StartRPCServer() {
-	log.Printf("starting gateway at %v", listenAddr)
+	log.Debugf("starting gateway at %v", listenAddr)
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		sentry.CaptureException(err)
@@ -77,7 +77,7 @@ func (s *Server) StartRPCServer() {
 	}
 	pb.RegisterTransportServer(grpcServer, s)
 	handleGracefulShutdown()
-	log.Infof("server transport created, tls=%v", s.TLSConfig != nil)
+	log.Debugf("server transport created, tls=%v", s.TLSConfig != nil)
 	if err := grpcServer.Serve(listener); err != nil {
 		sentry.CaptureException(err)
 		log.Fatalf("failed to serve: %v", err)

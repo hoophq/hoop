@@ -14,6 +14,7 @@ type ConnectionCredentials struct {
 	ConnectionName string    `gorm:"column:connection_name"`
 	ConnectionType string    `gorm:"column:connection_type"`
 	SecretKeyHash  string    `gorm:"column:secret_key_hash"`
+	SessionID      string    `gorm:"column:session_id"`
 	CreatedAt      time.Time `gorm:"column:created_at"`
 	ExpireAt       time.Time `gorm:"column:expire_at"`
 }
@@ -38,7 +39,7 @@ func GetConnectionCredentialsByID(orgID, id string) (*ConnectionCredentials, err
 // if a user has a valid connection credential, it could be used to connect in the requested resource
 func GetValidConnectionCredentialsBySecretKey(connectionTypes []string, secretKeyHash string) (*ConnectionCredentials, error) {
 	var resp ConnectionCredentials
-	err := DB.Debug().Table("private.connection_credentials").
+	err := DB.Table("private.connection_credentials").
 		Where("connection_type IN ? AND secret_key_hash = ?", connectionTypes, secretKeyHash).
 		First(&resp).
 		Error
@@ -59,4 +60,61 @@ func GetConnectionByTypeAndID(connectionType, id string) (*ConnectionCredentials
 		return nil, ErrNotFound
 	}
 	return &resp, err
+}
+
+// GetConnectionCredentialsBySessionID retrieves a connection credential by session ID
+func GetConnectionCredentialsBySessionID(orgID, sessionID string) (*ConnectionCredentials, error) {
+	var resp ConnectionCredentials
+	err := DB.Table("private.connection_credentials").
+		Where("org_id = ? AND session_id = ?", orgID, sessionID).
+		First(&resp).
+		Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	return &resp, err
+}
+
+// UpdateConnectionCredentialsSecretKey updates the secret key hash of an existing credential
+func UpdateConnectionCredentialsSecretKey(id, secretKeyHash string) error {
+	return DB.Table("private.connection_credentials").
+		Where("id = ?", id).
+		Update("secret_key_hash", secretKeyHash).Error
+}
+
+// CloseExpiredCredentialSessions closes sessions for expired connection credentials
+// This is called lazily when accessing credentials or sessions
+func CloseExpiredCredentialSessions() error {
+	var expiredCreds []ConnectionCredentials
+	err := DB.Table("private.connection_credentials").
+		Where("expire_at < NOW() AND session_id IS NOT NULL AND session_id != ''").
+		Find(&expiredCreds).Error
+	if err != nil {
+		return err
+	}
+
+	for _, cred := range expiredCreds {
+		endTime := time.Now().UTC()
+
+		_ = DB.Table("private.sessions").
+			Where("id = ?", cred.SessionID).
+			Update("status", "done").
+			Update("ended_at", endTime).Error
+
+		// Clear session_id so this record is not reprocessed on the next lazy call
+		_ = DB.Table("private.connection_credentials").
+			Where("id = ?", cred.ID).
+			Update("session_id", nil).Error
+	}
+
+	return nil
+}
+
+// RevokeConnectionCredentials invalidates a credential by setting ExpireAt to the past.
+// This prevents new connections and existing sessions will be terminated when proxies
+// check credential validity or when RevokeByCredentialID is called on each proxy.
+func RevokeConnectionCredentials(orgID, credentialID string) error {
+	return DB.Table("private.connection_credentials").
+		Where("org_id = ? AND id = ?", orgID, credentialID).
+		Update("expire_at", time.Now().UTC().Add(-time.Hour)).Error
 }

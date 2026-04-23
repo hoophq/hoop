@@ -19,7 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/guardrails"
 	"github.com/hoophq/hoop/gateway/idp"
-	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/transport/connectionrequests"
 	transportext "github.com/hoophq/hoop/gateway/transport/extensions"
 	accessrequestinterceptor "github.com/hoophq/hoop/gateway/transport/interceptors/accessrequest"
@@ -56,7 +56,7 @@ func requestProxyConnection(stream *streamclient.ProxyStream) error {
 		default:
 			log.With("user", pctx.UserEmail, "agentname", pctx.AgentName, "connection", pctx.ConnectionName).
 				Warnf("failed to establish connection with agent, reason=%v", err)
-			return status.Errorf(codes.Aborted, err.Error())
+			return status.Errorf(codes.Aborted, "%s", err.Error())
 		}
 	}
 	return nil
@@ -108,7 +108,9 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 	userAgent := apiutils.NormalizeUserAgent(func(key string) []string {
 		return []string{stream.GetMeta("user-agent")}
 	})
-	analytics.New().Track(pctx.UserID, eventName, map[string]any{
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(pctx.UserID, eventName, map[string]any{
 		"org-id":                pctx.OrgID,
 		"license-type":          pctx.OrgLicenseType,
 		"connection-name":       pctx.ConnectionName,
@@ -175,7 +177,7 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 		connectResponse, err := accessrequestinterceptor.OnReceive(pctx, pkt)
 		if err != nil {
 			log.With("sid", pctx.SID).Errorf("access request interceptor error: %v", err)
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		}
 		if connectResponse != nil {
 			if connectResponse.Context != nil {
@@ -193,10 +195,10 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 			if v.HasInternalErr() {
 				log.With("sid", pctx.SID).Errorf("plugin rejected packet, %v", v.FullErr())
 			}
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		case nil: // noop
 		default:
-			return status.Errorf(codes.Internal, err.Error())
+			return status.Errorf(codes.Internal, "%s", err.Error())
 		}
 
 		// this function must deperecate the plugin system above
@@ -218,7 +220,7 @@ func (s *Server) listenClientMessages(stream *streamclient.ProxyStream) error {
 			err = s.processClientPacket(stream, pkt, pctx)
 			if err != nil {
 				log.With("sid", pctx.SID, "agent-id", pctx.AgentID).Warnf("failed processing client packet, err=%v", err)
-				return status.Errorf(codes.FailedPrecondition, err.Error())
+				return status.Errorf(codes.FailedPrecondition, "%s", err.Error())
 			}
 		}
 	}
@@ -243,7 +245,7 @@ func handleExtensionOnReceive(pctx plugintypes.Context, pkt *pb.Packet) error {
 }
 
 func getGuardRailsRulesForConnection(pctx *plugintypes.Context) (json.RawMessage, error) {
-	connGuardRailRules, err := models.GetConnectionGuardRailRules(pctx.OrgID, pctx.ConnectionName)
+	connGuardRailRules, err := services.GetGuardRailRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed obtaining guard rail rules, err=%v", err)
 	}
@@ -346,7 +348,7 @@ func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.P
 		var entityTypesJsonData json.RawMessage
 		if s.AppConfig.DlpProvider() == "mspresidio" {
 			var err error
-			entityTypesJsonData, err = models.GetDataMaskingEntityTypes(pctx.OrgID, pctx.ConnectionID)
+			entityTypesJsonData, err = services.GetDataMaskingRulesForConnection(pctx.OrgID, pctx.ConnectionName)
 			if err != nil {
 				log.With("sid", pctx.SID, "connection-id", pctx.ConnectionID).Errorf("failed getting data masking entity types, err=%v", err)
 				return status.Errorf(codes.Internal, "failed obtaining data masking entity types, err=%v", err)
@@ -486,7 +488,7 @@ func validateConnectionType(clientVerb string, pctx plugintypes.Context) error {
 		switch connType {
 		case pb.ConnectionTypeTCP, pb.ConnectionTypeSSH:
 			return status.Errorf(codes.InvalidArgument,
-				fmt.Sprintf("exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName))
+				"exec is not allowed for %v type connections. Use 'hoop connect %s' instead", connType, pctx.ConnectionName)
 		}
 	}
 	return nil

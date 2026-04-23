@@ -43,7 +43,10 @@
                   [["/runbooks/edit/" :connection-id] :runbooks-edit]
                   ["/data-masking" :ai-data-masking]
                   ["/data-masking/new" :create-ai-data-masking]
-                  [["/data-masking/edit/" :ai-data-masking-id] :edit-ai-data-masking]]
+                  [["/data-masking/edit/" :ai-data-masking-id] :edit-ai-data-masking]
+                  ["/ai-session-analyzer" :ai-session-analyzer]
+                  ["/ai-session-analyzer/rules/new" :create-ai-session-analyzer-rule]
+                  [["/ai-session-analyzer/rules/edit/" :rule-name] :edit-ai-session-analyzer-rule]]
      "/guardrails" [["" :guardrails]
                     ["/new" :create-guardrail]
                     [["/edit/" :guardrail-id] :edit-guardrail]]
@@ -75,7 +78,15 @@
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
-                  ["/jira" :settings-jira]]
+                  ["/audit-logs" :settings-audit-logs]
+                  ["/attributes" :settings-attributes]
+                  ["/attributes/new" :settings-attributes-new]
+                  [["/attributes/edit/" :name] :settings-attributes-edit]
+                  ["/jira" :settings-jira]
+                  ["/api-keys" :settings-api-keys]
+                  ["/api-keys/new" :settings-api-keys-new]
+                  ["/api-keys/created" :settings-api-keys-created]
+                  [["/api-keys/" :id "/configure"] :settings-api-keys-configure]]
      "/signup" :signup-hoop
      "/signup/callback" :signup-callback-hoop
      "/upgrade-plan" :upgrade-plan}]))

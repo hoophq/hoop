@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/hoophq/hoop/client/cmd/styles"
 	clientconfig "github.com/hoophq/hoop/client/config"
@@ -110,39 +108,40 @@ func displayConnections(connections []map[string]any) {
 	config := clientconfig.GetClientConfigOrDie()
 	agentInfo := fetchAgentInfo(config)
 
-	w := tabwriter.NewWriter(os.Stdout, 6, 4, 3, ' ', tabwriter.TabIndent)
-	defer w.Flush()
-
-	if outputFlag == "wide" {
-		fmt.Fprintln(w, "NAME\tCOMMAND\tTYPE\tAGENT\tSTATUS\tTAGS\t")
-	} else {
-		fmt.Fprintln(w, "NAME\tTYPE\tAGENT\tSTATUS\t")
-	}
-
 	// Sort connections by name
 	sortConnections(connections)
 
-	for _, conn := range connections {
-		name := toStr(conn["name"])
-		connType := toStr(conn["type"])
-		status := toStr(conn["status"])
-		agentID := toStr(conn["agent_id"])
+	var headers []string
+	var rows [][]string
 
-		// Get agent name
-		agentName := getAgentName(agentInfo, agentID)
-
-		if outputFlag == "wide" {
+	if outputFlag == "wide" {
+		headers = []string{"NAME", "COMMAND", "TYPE", "AGENT", "STATUS", "TAGS"}
+		for _, conn := range connections {
+			agentName := getAgentName(agentInfo, toStr(conn["agent_id"]))
 			cmdList, _ := conn["command"].([]any)
-			command := joinCommand(cmdList)
-			tags := formatConnectionTags(conn["connection_tags"])
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t",
-				name, command, connType, agentName, status, tags)
-		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t",
-				name, connType, agentName, status)
+			rows = append(rows, []string{
+				toStr(conn["name"]),
+				joinCommand(cmdList),
+				toStr(conn["type"]),
+				agentName,
+				toStr(conn["status"]),
+				formatConnectionTags(conn["connection_tags"]),
+			})
 		}
-		fmt.Fprintln(w)
+	} else {
+		headers = []string{"NAME", "TYPE", "AGENT", "STATUS"}
+		for _, conn := range connections {
+			agentName := getAgentName(agentInfo, toStr(conn["agent_id"]))
+			rows = append(rows, []string{
+				toStr(conn["name"]),
+				toStr(conn["type"]),
+				agentName,
+				toStr(conn["status"]),
+			})
+		}
 	}
+
+	fmt.Println(styles.RenderTable(headers, rows))
 }
 
 func fetchAgentInfo(config *clientconfig.Config) map[string]map[string]any {

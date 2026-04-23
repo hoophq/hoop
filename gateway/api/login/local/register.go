@@ -9,6 +9,7 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -38,8 +39,7 @@ func Register(c *gin.Context) {
 	// fetch user by email
 	existingUser, err := models.GetUserByEmail(user.Email)
 	if err != nil {
-		log.Errorf("failed fetching user by email %s, reason=%v", user.Email, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed fetching user by email, reason=" + err.Error()})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching user by email: %v", err)
 		return
 	}
 	if existingUser != nil {
@@ -52,8 +52,7 @@ func Register(c *gin.Context) {
 	// limitation comes to make sure things are working as expected.
 	org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
 	if err != nil {
-		log.Debugf("failed fetching default organization, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to fetch default organization"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to fetch default organization: %v", err)
 		return
 	}
 	// if there is one user already, do not allow new users to be created
@@ -67,14 +66,13 @@ func Register(c *gin.Context) {
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed to hash password"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to hash password")
 		return
 	}
 
 	tokenString, err := generateNewAccessToken(user.Email, user.Email)
 	if err != nil {
-		log.Errorf("failed generating access token, reason=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed generating token"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating token")
 		return
 	}
 
@@ -94,8 +92,7 @@ func Register(c *gin.Context) {
 	})
 
 	if err != nil {
-		log.Debugf("failed creating user, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create user")
 		return
 	}
 
@@ -105,9 +102,14 @@ func Register(c *gin.Context) {
 		Name:   adminGroupName,
 	}
 	trackClient := analytics.New()
+	defer trackClient.Close()
+
 	trackClient.Identify(&types.APIContext{
 		OrgID:           org.ID,
+		OrgLicenseData:  &org.LicenseData,
 		UserID:          userSubject,
+		UserEmail:       user.Email,
+		UserName:        user.Name,
 		UserAnonSubject: org.ID,
 	})
 	trackClient.Track(userSubject, analytics.EventSingleTenantFirstUserCreated, map[string]any{
@@ -117,8 +119,7 @@ func Register(c *gin.Context) {
 
 	err = models.InsertUserGroups([]models.UserGroup{adminUserGroup})
 	if err != nil {
-		log.Errorf("failed creating user group, err=%v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create user group"})
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create user group")
 		return
 	}
 

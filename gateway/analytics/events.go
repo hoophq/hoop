@@ -19,6 +19,10 @@ const (
 	EventCreateInvitedUser            = "hoop-create-invited-user"
 	EventCreateServiceAccount         = "hoop-create-serviceaccount"
 	EventUpdateServiceAccount         = "hoop-update-serviceaccount"
+	EventCreateApiKey                 = "hoop-create-apikey"
+	EventUpdateApiKey                 = "hoop-update-apikey"
+	EventRevokeApiKey                 = "hoop-revoke-apikey"
+	EventReactivateApiKey             = "hoop-reactivate-apikey"
 
 	// review
 	EventUpdateReview = "hoop-update-review"
@@ -65,4 +69,14 @@ const (
 	// connect
 	EventGrpcConnect            = "hoop-grpc-connect"
 	EventApiProxymanagerConnect = "hoop-api-proxymanager-connect"
+
+	// ai
+	EventSessionAIAnalysisProviderUpdated = "hoop-session-ai-analysis-provider-updated"
+	EventSessionAIAnalysisRuleCreated     = "hoop-session-ai-analysis-rule-created"
+	EventSessionAIAnalysisRuleUpdated     = "hoop-session-ai-analysis-rule-updated"
+
+	// sessions
+	EventSessionCreated  = "hoop-session-created"
+	EventSessionReviewed = "hoop-session-reviewed"
+	EventSessionFinished = "hoop-session-finished"
 )

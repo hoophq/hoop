@@ -11,14 +11,19 @@
    [webapp.audit.views.results-container :as results-container]
    [webapp.audit.views.session-data-raw :as session-data-raw]
    [webapp.audit.views.session-data-video :as session-data-video]
+   [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
+   [webapp.audit.views.guardrails-info :as guardrails-info]
+   [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
    [webapp.audit.views.time-window-modal :as time-window-modal]
+   [webapp.sessions.components.reject-details-modal :as reject-details-modal]
 
    [webapp.components.loaders :as loaders]
    [webapp.formatters :as formatters]
    [webapp.utilities :as utilities]
    [webapp.sessions.components.session-header :as session-header]
-   [webapp.sessions.components.session-details :as session-details-component]))
+   [webapp.sessions.components.session-details :as session-details-component]
+   [webapp.sessions.components.rejection-reason :as rejection-reason]))
 
 (def ^:private export-dictionary
   {:postgres "csv"
@@ -82,8 +87,11 @@
   [_ session]
   (let [event-stream (:event_stream session)
         session-id (:id session)
-        start-date (:start_date session)]
-    [session-data-video/main event-stream session-id start-date]))
+        connection-subtype (:connection_subtype session)
+        metrics (:metrics session)]
+    (if (= connection-subtype "rdp")
+      [session-data-rdp/main event-stream session-id metrics]
+      [session-data-video/main event-stream session-id])))
 
 (defmethod ^:private session-event-stream :default
   [_ session]
@@ -134,7 +142,7 @@
       (rf/dispatch [:audit->get-session-by-id session]))
 
     (fn []
-      (r/with-let []
+      (r/with-let [connecting-status (r/atom :ready)]
         (let [session (:session @session-details)
               user (:data @user-details)
               session-user-id (:user_id session)
@@ -153,6 +161,19 @@
                            (not= (:name (:data @connection-details)) connection-name))
                   (rf/dispatch [:connections->get-connection-details connection-name]))
               ready? (= (:status session) "ready")
+              open? (= (:status session) "open")
+              ;; credentials_expire_at is stored in session metadata by the backend
+              ;; when connection credentials are issued (see SetSessionCredentialsExpireAt)
+              credentials-expire-at (get-in session [:metadata :credentials_expire_at])
+              credentials-revoked-at (get-in session [:metadata :credentials_revoked_at])
+              credentials-revoked-at? (not (cs/blank? credentials-revoked-at))
+              credentials-expired? (when credentials-expire-at
+                                     (<= (.getTime (js/Date. credentials-expire-at))
+                                         (.getTime (js/Date.))))
+              credentials-remaining-min (when (and credentials-expire-at (not credentials-expired?))
+                                          (max 1 (js/Math.ceil (/ (- (.getTime (js/Date. credentials-expire-at))
+                                                                     (.getTime (js/Date.)))
+                                                                  60000))))
               can-review? (let [user-groups (set (:groups user))]
                             (and (some (fn [review-group]
                                          (and (= "PENDING" (:status review-group))
@@ -172,9 +193,19 @@
                                         force-groups
                                         (some #(contains? force-groups %) user-groups)))
               handle-reject (fn []
-                              (rf/dispatch [:audit->add-review
-                                            session
-                                            "rejected"]))
+                              (rf/dispatch
+                               [:modal->open
+                                {:id "reject-details-modal"
+                                 :maxWidth "500px"
+                                 :content [reject-details-modal/main
+                                           {:on-confirm
+                                            (fn [{:keys [comment]}]
+                                              (rf/dispatch [:audit->add-review
+                                                            session
+                                                            "rejected"
+                                                            :rejection-reason comment])
+                                              (rf/dispatch [:modal->close]))
+                                            :on-cancel #(rf/dispatch [:modal->close])}]}]))
               handle-approve (fn []
                                (rf/dispatch [:audit->add-review
                                              session
@@ -239,10 +270,16 @@
 
             ;; metadata
             (when (and metadata
-                       (seq metadata))
+                       (seq (dissoc metadata
+                                    :credentials_expire_at
+                                    :credentials_revoked_at
+                                    :credential_session)))
               [:div
                (doall
-                (for [[metadata-key metadata-value] metadata]
+                (for [[metadata-key metadata-value] (dissoc metadata
+                                                            :credentials_expire_at
+                                                            :credentials_revoked_at
+                                                            :credential_session)]
                   ^{:key metadata-key}
                   [:div {:class "flex gap-small items-center py-small border-t last:border-b"}
                    [:header {:class "w-32 px-small text-sm font-bold"}
@@ -270,11 +307,17 @@
                      [:article script-data]]]))])
             ;; end script area
 
+            [session-analysis/main {:ai-analysis (:ai_analysis session)}]
+
+            [guardrails-info/main {:guardrails-info (:guardrails_info session)}]
 
             [data-masking-analytics/main {:session session}]
 
+            [rejection-reason/main {:session session}]
+
             ;; response logs area
-            (when-not (or ready?
+            (when-not (or credentials-expire-at
+                          ready?
                           (and (some #(= "PENDING" (:status %))
                                      review-groups)
                                (= "PENDING" review-status)))
@@ -345,23 +388,24 @@
                   [:> ChevronDown {:size 16}]]]
                 [:> DropdownMenu.Content
                  (when-not
-                  (and (get-in session [:review :time_window :configuration :start_time])
-                       (get-in session [:review :time_window :configuration :end_time]))
-                   [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                  (or (= (:verb session) "connect")
+                      (and (get-in session [:review :time_window :configuration :start_time])
+                           (get-in session [:review :time_window :configuration :end_time])))
+                   [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
                                           :on-click open-time-window-modal}
                     "Approve in a Time Window"
-                    [:> CalendarClock {:size 16 :class "text-gray-10 group-hover:text-white"}]])
-                 [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                    [:> CalendarClock {:size 16 :class "text-gray-10"}]])
+                 [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
                                         :on-click handle-approve}
                   "Approve"
-                  [:> Check {:size 16 :class "text-gray-10 group-hover:text-white"}]]
+                  [:> Check {:size 16 :class "text-gray-10"}]]
                  (when can-force-approve?
                    [:<>
                     [:> DropdownMenu.Separator]
-                    [:> DropdownMenu.Item {:class "flex justify-between gap-4 group"
+                    [:> DropdownMenu.Item {:class "flex justify-between gap-4 group cursor-pointer hover:bg-gray-2"
                                            :on-click handle-force-approve}
                      "Force Approve"
-                     [:> CheckCheck {:size 16 :class "text-gray-10 group-hover:text-white"}]]])]]])
+                     [:> CheckCheck {:size 16 :class "text-gray-10"}]]])]]])
 
             ;; execution schedule information (time window)
             (when (and ready?
@@ -406,7 +450,72 @@
                            :on-click (fn []
                                        (reset! executing-status :loading)
                                        (rf/dispatch [:audit->execute-session session]))}
-                "Execute"]])]])
+                "Execute"]])
+
+            ;; Connect button for approved credential requests (verb = connect).
+            (when (and (= (:verb session) "connect")
+                       (not= (:status session) "open")
+                       is-session-owner?)
+              (let [existing-session @(rf/subscribe [:native-client-access->current-session connection-name])
+                    has-valid-credentials? (and existing-session
+                                                (= (:status existing-session) "open")
+                                                (:connection_credentials existing-session)
+                                                (> (.getTime (js/Date. (:expire_at existing-session)))
+                                                   (.getTime (js/Date.))))]
+                (cond
+                  ;; Credentials have been revoked (timestamp passed, backend may not have closed session yet)
+                  credentials-revoked-at?
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "Your credentials have been revoked at "
+                    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"}
+                     (formatters/time-parsed->readable-datetime credentials-revoked-at)]
+                    "."]]
+
+                  ;; Credentials have expired (timestamp passed, backend may not have closed session yet)
+                  credentials-expired?
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "Your credentials have expired at "
+                    [:> Text {:size "2" :weight "medium" :class "text-[--gray-11]"}
+                     (formatters/time-parsed->readable-datetime credentials-expire-at)]
+                    "."]]
+
+                  ;; Credentials exist in local store and are valid — offer to view them
+                  has-valid-credentials?
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    (if credentials-remaining-min
+                      (str "Credentials valid for " credentials-remaining-min
+                           " minute" (when (not= credentials-remaining-min 1) "s") ".")
+                      "You already have active credentials for this connection.")]
+                   [:> Button {:size "2"
+                               :color "green"
+                               :on-click (fn []
+                                           (rf/dispatch [:modal->close])
+                                           (rf/dispatch [:native-client-access->reopen-connect-modal connection-name]))}
+                    "View Credentials"]]
+
+                  ;; No credentials in local store — allow requesting / rotating
+                  :else
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    (if credentials-remaining-min
+                      (str "Credentials valid for " credentials-remaining-min
+                           " minute" (when (not= credentials-remaining-min 1) "s")
+                           ". Click Connect to rotate credentials.")
+                      "Your access has been approved. Click Connect to obtain credentials.")]
+                   [:> Button {:size "2"
+                               :color "green"
+                               :loading (= @connecting-status :connecting)
+                               :disabled (not= @connecting-status :ready)
+                               :on-click (fn []
+                                           (reset! connecting-status :connecting)
+                                           (rf/dispatch [:native-client-access->resume-credentials
+                                                         connection-name
+                                                         (:id session)
+                                                         #(reset! connecting-status :ready)]))}
+                    "Connect"]])))]])
 
 
         (finally

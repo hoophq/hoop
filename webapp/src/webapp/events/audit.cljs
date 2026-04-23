@@ -426,7 +426,8 @@
  (fn
    [_ [_ session status & {:keys [start-time
                                   end-time
-                                  force-review]}]]
+                                  force-review
+                                  rejection-reason]}]]
    (let [body (cond-> {:status (string/upper-case status)}
                 (and start-time end-time)
                 (assoc :time_window {:type "time_range"
@@ -434,7 +435,10 @@
                                                      :end_time (formatters/local-time->utc-time end-time)}})
 
                 force-review
-                (assoc :force_review true))]
+                (assoc :force_review true)
+
+                (not (string/blank? rejection-reason))
+                (assoc :rejection_reason rejection-reason))]
      {:fx [[:dispatch
             [:fetch {:method "PUT"
                      :uri (str "/reviews/" (-> session :review :id))
@@ -487,29 +491,6 @@
                                :on-failure failure}]]]})))
 
 (rf/reg-event-fx
- :audit->connect-session
- (fn
-   [{:keys [db]} [_ session connecting-status]]
-   (let [connection-name (:connection session)
-         revoke-at (when (get-in session [:review :revoke_at])
-                     (js/Date. (get-in session [:review :revoke_at])))
-         not-revoked? (when revoke-at (> (.getTime revoke-at) (.getTime (js/Date.))))
-         access-duration (get-in session [:review :access_duration])]
-
-     (if not-revoked?
-       ;; If not revoked, connect
-       {:fx [[:dispatch [:connections->start-connect-with-settings
-                         {:connection-name connection-name
-                          :port "8999"
-                          :access-duration access-duration}
-                         connecting-status]]]}
-
-       ;; If revoked, show error message
-       {:fx [[:dispatch [:show-snackbar {:level :error
-                                         :text "This connection approval has expired."}]]
-             [:dispatch [:reset-connecting-status connecting-status]]]}))))
-
-(rf/reg-event-fx
  :audit->kill-session
  (fn
    [{:keys [db]} [_ session killing-status]]
@@ -529,38 +510,3 @@
                                                          {:level :error
                                                           :text "Failed to kill session"
                                                           :details error}]))}]]]}))
-
-(rf/reg-fx
- :reset-connecting-status
- (fn [connecting-status]
-   (when (and connecting-status (satisfies? IAtom connecting-status))
-     (reset! connecting-status :ready))))
-
-(rf/reg-event-fx
- :audit->get-session-logs-data
- (fn
-   [{:keys [db]} [_ session-id]]
-   {:db (assoc-in db [:audit->session-logs] {:status :loading :data nil})
-    :fx [[:dispatch [:fetch
-                     {:method "GET"
-                      :uri (str "/sessions/" session-id "?expand=event_stream,session_input&event_stream=base64")
-                      :on-success #(rf/dispatch [:audit->set-session-logs-data %])
-                      :on-failure (fn [error]
-                                    (rf/dispatch [:show-snackbar
-                                                  {:text "Failed to load session logs"
-                                                   :level :error
-                                                   :details error}])
-                                    (rf/dispatch [:audit->set-session-logs-error]))}]]]}))
-
-(rf/reg-event-db
- :audit->set-session-logs-data
- (fn
-   [db [_ session-data]]
-   (assoc-in db [:audit->session-logs] {:status :success
-                                        :data (:event_stream session-data)})))
-
-(rf/reg-event-db
- :audit->set-session-logs-error
- (fn
-   [db [_]]
-   (assoc-in db [:audit->session-logs] {:status :error :data nil})))

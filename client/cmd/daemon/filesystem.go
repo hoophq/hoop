@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
@@ -100,12 +101,19 @@ func createEnvFileIfNotExists(env map[string]string) (string, error) {
 		return "", err
 	}
 
-	content := ""
-	for k, v := range env {
-		content += fmt.Sprintf("%s=%s\n", k, v)
+	// Sort keys for deterministic output
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var content strings.Builder
+	for _, k := range keys {
+		content.WriteString(fmt.Sprintf("%s=%s\n", k, env[k]))
 	}
 
-	if err := writeFileIfNotExists(envPath, content, 0o600); err != nil {
+	if err := writeFileIfNotExists(envPath, content.String(), 0o600); err != nil {
 		log.Errorf("error writing env file: %v", err)
 		return "", err
 	}

@@ -3,7 +3,8 @@
    ["@radix-ui/themes" :refer [Badge Flex Text]]
    ["lucide-react" :refer [BookMarked BrainCog CircleCheckBig GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
-                           ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2]]
+                           ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
+                           Sparkles]]
    [re-frame.core :as rf]
    [webapp.config :as config]
    [webapp.routes :as routes]))
@@ -35,6 +36,8 @@
                               :class css-size}]))
    "AIDataMasking" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> VenetianMask {:size size}])
+   "AISessionAnalyzer" (fn [& [{:keys [size] :or {size 24}}]]
+                         [:> Sparkles {:size size}])
    "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
                      [:> UserRoundCheck {:size size}])
    "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
@@ -146,6 +149,13 @@
     :free-feature? false
     :upgrade-plan-route :jira-templates
     :admin-only? true}
+   {:name "AISessionAnalyzer"
+    :label "AI Session Analyzer"
+    :icon (get icons-registry "AISessionAnalyzer")
+    :uri (routes/url-for :ai-session-analyzer)
+    :navigate :ai-session-analyzer
+    :free-feature? true
+    :admin-only? true}
    {:name "AIDataMasking"
     :label "AI Data Masking"
     :icon (get icons-registry "AIDataMasking")
@@ -222,13 +232,36 @@
 
 ;; Settings
 (def settings-management
-  [{:name "infrastructure"
+  [{:name "api-keys"
+    :label "API Keys"
+    :uri (routes/url-for :settings-api-keys)
+    :navigate :settings-api-keys
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false
+    :badge "NEW"}
+   {:name "attributes"
+    :label "Attributes"
+    :uri (routes/url-for :settings-attributes)
+    :navigate :settings-attributes
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false
+    :badge "NEW"}
+   {:name "infrastructure"
     :label "Infrastructure"
     :uri (routes/url-for :settings-infrastructure)
     :navigate :settings-infrastructure
     :free-feature? true
     :admin-only? true
     :selfhosted-only? true}
+   {:name "audit-logs"
+    :label "Internal Audit Logs"
+    :uri (routes/url-for :settings-audit-logs)
+    :navigate :settings-audit-logs
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false}
    {:name "license"
     :label "License"
     :uri (routes/url-for :license-management)

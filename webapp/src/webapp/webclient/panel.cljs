@@ -35,7 +35,9 @@
    [webapp.webclient.components.panels.metadata :as metadata-panel]
    [webapp.webclient.components.side-panel :refer [with-panel]]
    [webapp.webclient.log-area.main :as log-area]
-   [webapp.webclient.quickstart :as quickstart]))
+   [webapp.webclient.quickstart :as quickstart]
+   [webapp.features.ai-session-analyzer.views.ai-analyzer-card :refer [ai-analyzer-card]]
+   [webapp.features.ai-session-analyzer.views.ai-block-card :refer [ai-block-card]]))
 
 (defn discover-connection-type [connection]
   (cond
@@ -194,6 +196,8 @@
         active-panel (rf/subscribe [:webclient->active-panel])
         parallel-mode-active? (rf/subscribe [:parallel-mode/is-active?])
         parallel-mode-promotion-seen (rf/subscribe [:parallel-mode/promotion-seen])
+        script-response (rf/subscribe [:editor-plugin->script])
+        role-has-rule? (rf/subscribe [:ai-session-analyzer/role-has-rule?])
 
         dark-mode? (r/atom (= (.getItem js/localStorage "dark-mode") "true"))
         db-schema-collapsed? (r/atom false)
@@ -204,6 +208,7 @@
         metadata (r/atom [])
         metadata-key (r/atom "")
         metadata-value (r/atom "")]
+
     (rf/dispatch [:gateway->get-info])
 
     (fn [{:keys [script-output]}]
@@ -290,6 +295,7 @@
                                                   (save-code-to-localstorage value))
                                                 editor-debounce-time)))
 
+            ai-data (get-in @script-response [:data :ai_analysis])
             mandatory-metadata-fields (seq (:mandatory_metadata_fields current-connection))
             needs-jira-template? (boolean (and current-connection
                                                (not (cs/blank? (:jira_issue_template_id current-connection)))))
@@ -371,7 +377,8 @@
                   [:div {:class "h-full flex flex-col"}
                    (when (= "custom" (:type current-connection))
                      [connection-state-indicator @dark-mode? (:command current-connection)])
-                   [:> Box {:aria-label "Script editor. Press Escape to exit editor"
+                   [:> Box {:class "flex-1 min-h-0 overflow-hidden"
+                            :aria-label "Script editor. Press Escape to exit editor"
                             :aria-describedby "editor-instructions"
                             :tabIndex "0"
                             :on-focus (fn [e]
@@ -384,7 +391,16 @@
                                materialDark
                                materialLight)
                       :extensions codemirror-exts
-                      :on-change optimized-change-handler}]]]]
+                      :on-change optimized-change-handler}]]
+                   (when @role-has-rule?
+                     (cond
+                       (= :loading (:status @script-response))
+                       [ai-analyzer-card]
+
+                       (= "block_execution" (:action ai-data))
+                       [ai-block-card {:title (:title ai-data)
+                                       :explanation (:explanation ai-data)}]))]]
+
 
                  [:> Flex {:direction "column" :justify "between" :class "h-full border-t border-gray-3"
                            :role "region"

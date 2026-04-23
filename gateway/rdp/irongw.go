@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -166,6 +167,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		peerAddr,
 		broker.ProtocolRDP,
 		extractedCreds,
+		dba.ID,
 		dba.ExpireAt,
 		ctxDuration,
 	)
@@ -180,16 +182,46 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		return
 	}
 
+	// Get user context for session recording
+	userCtx, err := models.GetUserContext(dba.UserSubject)
+	if err != nil {
+		log.Errorf("Failed to get user context: %v", err)
+		return
+	}
+
+	// Initialize RDP session recorder
+	recorder := NewRDPSessionRecorder(
+		sessionID,
+		userCtx.OrgID,
+		userCtx.UserID,
+		userCtx.UserName,
+		userCtx.UserEmail,
+		connectionModel.Name,
+		"", // connection subtype
+	)
+
+	// Create session in database
+	if err := recorder.CreateSession(); err != nil {
+		log.Errorf("Failed to create RDP session record: %v", err)
+		// Continue anyway - recording is optional
+	}
+
 	transport.PollingUserToken(context.Background(), func(cause error) {
 		session.Close()
 	}, tokenVerifier, dba.UserSubject)
 
-	// Register session
 	// Clean up session on exit
+	var sessionErrMu sync.Mutex
+	var sessionErr error
 	defer func() {
 		if session != nil {
 			session.Close()
 		}
+		// Finalize recording with the error if any
+		sessionErrMu.Lock()
+		err := sessionErr
+		sessionErrMu.Unlock()
+		recorder.Close(err)
 	}()
 
 	sessionConn := session.ToConn()
@@ -248,6 +280,9 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		return
 	}
 
+	// Record handshake data for session recording
+	recorder.RecordHandshake(pkt)
+
 	err = ws.WriteMessage(websocket.BinaryMessage, pkt)
 	if err != nil {
 		log.Errorf("Failed to write message: %v", err)
@@ -256,17 +291,31 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 	// From here on, its standard TCP RDP flow, so we just
 	// pipe all data between WebSocket and TLS connection
+	// We also record all traffic for session recording
+
+	// Use a done channel to signal when the websocket read goroutine exits
+	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
 		for {
 			_, msg, err := ws.ReadMessage()
 			if err != nil {
-				log.Errorf("Failed to read message: %v", err)
+				log.Infof("WebSocket closed: %v", err)
+				sessionErrMu.Lock()
+				sessionErr = err
+				sessionErrMu.Unlock()
 				return
 			}
 
+			// Record client -> server traffic (input events)
+			recorder.RecordInput(msg)
+
 			if _, err = tlsClient.Write(msg); err != nil {
 				log.Errorf("Failed to write message: %v", err)
+				sessionErrMu.Lock()
+				sessionErr = err
+				sessionErrMu.Unlock()
 				return
 			}
 		}
@@ -275,15 +324,31 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	for {
 		n, err = tlsClient.Read(buffer)
 		if err != nil {
-			log.Errorf("Failed to read message: %v", err)
+			log.Infof("TLS connection closed: %v", err)
+			sessionErrMu.Lock()
+			sessionErr = err
+			sessionErrMu.Unlock()
 			break
 		}
+
+		// Record server -> client traffic (bitmap updates, etc.)
+		recorder.RecordOutput(buffer[:n])
+
 		err = ws.WriteMessage(websocket.BinaryMessage, buffer[:n])
 		if err != nil {
 			log.Errorf("Failed to write message: %v", err)
+			sessionErrMu.Lock()
+			sessionErr = err
+			sessionErrMu.Unlock()
 			break
 		}
 	}
+
+	// Close tlsClient to unblock any pending reads/writes
+	tlsClient.Close()
+
+	// Wait for the websocket read goroutine to finish
+	<-done
 
 	log.Infof("Iron Session closed")
 }

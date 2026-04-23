@@ -83,6 +83,14 @@
    [webapp.features.access-request.main :as access-request]
    [webapp.features.access-request.subs]
    [webapp.features.access-request.views.rule-form :as rule-form]
+   [webapp.features.ai-session-analyzer.events]
+   [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
+   [webapp.features.ai-session-analyzer.subs]
+   [webapp.features.ai-session-analyzer.views.rule-form :as ai-session-analyzer-rule-form]
+   [webapp.features.attributes.events]
+   [webapp.features.attributes.main :as attributes-main]
+   [webapp.features.attributes.subs]
+   [webapp.features.attributes.views.form :as attributes-form]
    [webapp.features.runbooks.setup.events]
    [webapp.features.runbooks.setup.main :as runbooks-setup]
    [webapp.features.runbooks.setup.subs]
@@ -113,10 +121,16 @@
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.routes :as routes]
+   [webapp.settings.api-keys.events]
+   [webapp.settings.api-keys.main :as api-keys-main]
+   [webapp.settings.api-keys.subs]
+   [webapp.settings.api-keys.views.created :as api-keys-created]
+   [webapp.settings.api-keys.views.form :as api-keys-form]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
    [webapp.settings.license.panel :as license-management]
+   [webapp.audit-logs.main :as audit-logs]
    [webapp.shared-ui.sidebar.main :as sidebar]
    [webapp.slack.slack-new-organization :as slack-new-organization]
    [webapp.slack.slack-new-user :as slack-new-user]
@@ -292,6 +306,12 @@
     [routes/wrap-admin-only
      [routes/wrap-selfhosted-only
       [infrastructure/main]]]]])
+
+(defmethod routes/panels :settings-audit-logs-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-screen"}
+    [routes/wrap-admin-only
+     [audit-logs/main]]]])
 
 (defmethod routes/panels :agents-panel []
   [layout :application-hoop
@@ -654,6 +674,86 @@
      [:div {:class "bg-gray-1 min-h-full h-max relative"}
       [routes/wrap-admin-only
        [ai-data-masking-create-update/main :edit]]]]))
+
+(defmethod routes/panels :ai-session-analyzer-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [ai-session-analyzer/main]]])
+
+(defmethod routes/panels :create-ai-session-analyzer-rule-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:ai-session-analyzer/clear-active-rule])
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-max relative"}
+    [routes/wrap-admin-only
+     [ai-session-analyzer-rule-form/main :create]]]])
+
+(defmethod routes/panels :edit-ai-session-analyzer-rule-panel []
+  (let [pathname (.. js/window -location -pathname)
+        current-route (bidi/match-route @routes/routes pathname)
+        rule-name (:rule-name (:route-params current-route))]
+    (rf/dispatch [:destroy-page-loader])
+    [layout :application-hoop
+     [:div {:class "bg-gray-1 min-h-full h-max relative"}
+      [routes/wrap-admin-only
+       [ai-session-analyzer-rule-form/main :edit {:rule-name rule-name}]]]]))
+
+(defmethod routes/panels :settings-attributes-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [attributes-main/main]]])
+
+(defmethod routes/panels :settings-attributes-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:attributes/clear-active])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [attributes-form/main :create]]]])
+
+(defmethod routes/panels :settings-attributes-edit-panel []
+  (let [attr-name (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
+                      :route-params
+                      :name)]
+    (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:attributes/get attr-name])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [attributes-form/main :edit]]]]))
+
+(defmethod routes/panels :settings-api-keys-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [api-keys-main/main]]])
+
+(defmethod routes/panels :settings-api-keys-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:api-keys/clear-active])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [api-keys-form/main :create]]]])
+
+(defmethod routes/panels :settings-api-keys-created-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [api-keys-created/main]]])
+
+(defmethod routes/panels :settings-api-keys-configure-panel []
+  (let [id (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
+               :route-params
+               :id)]
+    (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:api-keys/get id])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [api-keys-form/main :configure]]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;

@@ -31,3 +31,19 @@
  (fn [db]
    (get-in db [:connection-setup :config :mandatory-metadata-fields] [])))
 
+;; Attributes
+(rf/reg-sub
+ :resources/selected-attributes
+ (fn [db]
+   (get-in db [:connection-setup :attributes :selected] [])))
+
+(rf/reg-sub
+ :resources/initial-attributes
+ (fn [db]
+   (get-in db [:connection-setup :attributes :initial] [])))
+
+(rf/reg-sub
+ :resources/attributes-initialized?
+ (fn [db]
+   (get-in db [:connection-setup :attributes :initialized?] false)))
+
