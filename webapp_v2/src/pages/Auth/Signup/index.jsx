@@ -9,12 +9,11 @@ import {
   Text,
   Anchor,
   Stack,
-  Center,
-  Loader,
   Alert,
   Box,
 } from '@mantine/core'
 import { authService } from '@/services/auth'
+import PageLoader from '@/components/PageLoader'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -81,11 +80,7 @@ function Signup() {
   }
 
   if (loadingUser) {
-    return (
-      <Center style={{ height: '100vh' }}>
-        <Loader size="lg" />
-      </Center>
-    )
+    return <PageLoader />
   }
 
   return (

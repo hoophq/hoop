@@ -2,11 +2,9 @@ import {
   Title,
   Button,
   Group,
-  Loader,
   Text,
   Badge,
   Stack,
-  Center,
   Modal,
   Card,
   Box,
@@ -22,6 +20,8 @@ import { useUserStore } from '@/stores/useUserStore'
 import EmptyState from '@/layout/EmptyState'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
+import PageLoader from '@/components/PageLoader'
+import { useMinDelay } from '@/hooks/useMinDelay'
 
 function AgentStatusBadge({ status }) {
   const isOnline = status === 'CONNECTED'
@@ -106,6 +106,7 @@ function Agents() {
   const [selectedAgent, setSelectedAgent] = useState(null)
 
   const isAdmin = user?.is_admin
+  const showLoader = useMinDelay(loading, 500)
 
   useEffect(() => {
     fetchAgents()
@@ -128,12 +129,8 @@ function Agents() {
     }
   }
 
-  if (loading) {
-    return (
-      <Center h={200}>
-        <Loader />
-      </Center>
-    )
+  if (showLoader) {
+    return <PageLoader h={400} />
   }
 
   if (error) {
