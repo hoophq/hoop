@@ -68,7 +68,7 @@ make run-dev-presidio
 
 Hoop can authenticate agents with SPIFFE JWT-SVIDs instead of DSN tokens. For local development we ship a minter that generates a trust bundle, signing key, and a short-lived JWT on your workstation — no SPIRE server required. See [`documentation/setup/deployment/spiffe.mdx`](../documentation/setup/deployment/spiffe.mdx) for the full feature docs.
 
-1. Mint the SPIFFE artifacts and patch `.env` with `HOOP_SPIFFE_*` vars (observe mode):
+1. Mint the SPIFFE artifacts and patch `.env` with `HOOP_SPIFFE_*` vars:
 
 ```sh
 make run-dev-spiffe-prep
@@ -78,7 +78,7 @@ This writes a managed block into `.env`:
 
 ```sh
 # <<<HOOP_SPIFFE_DEV>>>
-HOOP_SPIFFE_MODE=observe
+HOOP_SPIFFE_MODE=enforce
 HOOP_SPIFFE_TRUST_DOMAIN=local.test
 HOOP_SPIFFE_BUNDLE_FILE=/app/spiffe/bundle.jwks
 HOOP_SPIFFE_AUDIENCE=http://127.0.0.1:8009
@@ -139,9 +139,9 @@ make run-dev-spiffe-prep         # new agent.jwt, same bundle
 
 To rotate the signing key too, delete `dist/dev/spiffe/priv.pem` before running prep, then restart the gateway so it refreshes the bundle.
 
-#### Switching to enforce mode
+#### Disabling SPIFFE
 
-Edit `.env` and change `HOOP_SPIFFE_MODE=observe` to `HOOP_SPIFFE_MODE=enforce`, then restart `run-dev`. In `enforce` mode the gateway rejects agents that don't present a valid SVID (DSN fallback is disabled).
+Edit `.env` and change `HOOP_SPIFFE_MODE=enforce` to `HOOP_SPIFFE_MODE=disabled` (or remove the managed block entirely), then restart `run-dev`. `enforce` is the only "on" value — the gateway always rejects invalid SVIDs and never falls back to DSN on a JWT-shaped token.
 
 ## Swagger / OpenAPI
 

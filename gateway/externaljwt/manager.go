@@ -20,9 +20,12 @@ var mgr = &manager{providers: map[IssuerType]Provider{}}
 
 // Init reads configuration from appconfig and initializes any configured
 // providers. It is safe to call multiple times but subsequent calls are
-// no-ops. Init returns an error if a provider is configured but fails to
-// initialize; callers may choose to fail startup or log-and-continue
-// depending on the SPIFFE mode.
+// no-ops. Init returns an error if a provider is configured but its
+// initial bundle fetch fails; callers should log and continue rather
+// than crashing, because the provider is still registered and its
+// background refresh loop will retry on its own. Crashing here would
+// take unrelated auth paths (DSN, static tokens) offline as collateral
+// damage for a SPIFFE-only hiccup.
 //
 // The background refresh goroutines are started by Init and only stopped
 // when Close is called on the manager.
@@ -55,7 +58,6 @@ func Init(ctx context.Context) error {
 	log.With(
 		"trust_domain", cfg.SPIFFETrustDomain(),
 		"audience", cfg.SPIFFEAudience(),
-		"mode", cfg.SPIFFEMode(),
 	).Info("spiffe: provider initialized")
 	return nil
 }

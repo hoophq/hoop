@@ -83,13 +83,14 @@ func Run() {
 	goMigrateStep.OK("")
 
 	if err := externaljwt.Init(context.Background()); err != nil {
-		// in enforce mode a failed bootstrap means no agent with an
-		// SVID can authenticate; fail loud. in observe mode we only
-		// warn since static-token agents keep working.
-		if appconfig.Get().SPIFFEEnforcing() {
-			log.Fatalf("failed initializing SPIFFE provider in enforce mode, reason=%v", err)
-		}
-		log.Warnf("failed initializing SPIFFE provider, running without it: %v", err)
+		// Bootstrap failures are typically transient (bundle URL
+		// unreachable, JWKS file not yet present) and the provider's
+		// background refresh loop will retry. Warn instead of crashing
+		// so a SPIFFE issue does not take DSN-token agents offline as
+		// collateral damage. JWT-SVID auth keeps failing until the
+		// bundle refreshes, which is visible via agent logs and the
+		// "spiffe: bundle refresh failed" warnings.
+		log.Warnf("failed initializing SPIFFE provider, background refresh will retry: %v", err)
 	}
 
 	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {

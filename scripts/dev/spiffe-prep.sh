@@ -4,7 +4,7 @@
 # the JWT but keeps the signing key (and therefore the bundle) stable.
 #
 # After running this, `make run-dev` will start the gateway with
-# SPIFFE validation enabled in observe mode.
+# SPIFFE validation enabled (enforce mode).
 set -eo pipefail
 
 SPIFFE_DIR="${SPIFFE_DIR:-dist/dev/spiffe}"
@@ -43,7 +43,7 @@ awk -v b="$BEGIN" -v e="$END" '
 
 cat >> "$TMP" <<EOF
 $BEGIN
-HOOP_SPIFFE_MODE=observe
+HOOP_SPIFFE_MODE=enforce
 HOOP_SPIFFE_TRUST_DOMAIN=$TRUST_DOMAIN
 HOOP_SPIFFE_BUNDLE_FILE=/app/spiffe/bundle.jwks
 HOOP_SPIFFE_AUDIENCE=$AUDIENCE
@@ -53,7 +53,7 @@ EOF
 
 mv "$TMP" .env
 
-echo "==> .env updated with HOOP_SPIFFE_* (observe mode)"
+echo "==> .env updated with HOOP_SPIFFE_* (enforce mode)"
 echo
 echo "next steps:"
 echo "  1. make run-dev              # starts gateway with SPIFFE validation"

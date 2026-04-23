@@ -419,20 +419,20 @@ func isEnvSet(key string) bool {
 // SPIFFE mode values.
 //
 //	disabled: no SPIFFE validation at all (default).
-//	observe:  validate JWT-SVIDs presented, log results, but still accept static tokens.
-//	          Used as a migration aid; should be time-boxed.
 //	enforce:  validate JWT-SVIDs presented. Reject on failure. Static-token agents
 //	          continue to work in parallel (identified by token shape, not by policy).
+//	          Bad HOOP_SPIFFE_* env values fail startup; a failed initial bundle
+//	          fetch logs a warning and is retried by the background refresh loop
+//	          so an unreachable bundle does not take DSN agents offline.
 const (
 	SPIFFEModeDisabled = "disabled"
-	SPIFFEModeObserve  = "observe"
 	SPIFFEModeEnforce  = "enforce"
 )
 
 // loadSPIFFEConfig reads and validates SPIFFE-related env vars. All fields are
 // optional; when mode is "disabled" the other fields are ignored.
 //
-//	HOOP_SPIFFE_MODE             disabled|observe|enforce (default: disabled)
+//	HOOP_SPIFFE_MODE             disabled|enforce (default: disabled)
 //	HOOP_SPIFFE_BUNDLE_URL       HTTPS URL to fetch the SPIFFE trust bundle (JWKS-shaped)
 //	HOOP_SPIFFE_BUNDLE_FILE      path to a static trust bundle file (JWKS JSON)
 //	HOOP_SPIFFE_TRUST_DOMAIN     trust domain name, e.g. "customer.com"
@@ -444,9 +444,9 @@ func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience stri
 		mode = SPIFFEModeDisabled
 	}
 	switch mode {
-	case SPIFFEModeDisabled, SPIFFEModeObserve, SPIFFEModeEnforce:
+	case SPIFFEModeDisabled, SPIFFEModeEnforce:
 	default:
-		err = fmt.Errorf("invalid HOOP_SPIFFE_MODE, got=%q, expected disabled|observe|enforce", mode)
+		err = fmt.Errorf("invalid HOOP_SPIFFE_MODE, got=%q, expected disabled|enforce", mode)
 		return
 	}
 
@@ -496,8 +496,7 @@ func loadSPIFFEConfig() (mode, bundleURL, bundleFile, trustDomain, audience stri
 }
 
 func (c Config) SPIFFEMode() string               { return c.spiffeMode }
-func (c Config) SPIFFEEnabled() bool              { return c.spiffeMode != "" && c.spiffeMode != SPIFFEModeDisabled }
-func (c Config) SPIFFEEnforcing() bool            { return c.spiffeMode == SPIFFEModeEnforce }
+func (c Config) SPIFFEEnabled() bool              { return c.spiffeMode == SPIFFEModeEnforce }
 func (c Config) SPIFFEBundleURL() string          { return c.spiffeBundleURL }
 func (c Config) SPIFFEBundleFile() string         { return c.spiffeBundleFile }
 func (c Config) SPIFFETrustDomain() string        { return c.spiffeTrustDomain }
