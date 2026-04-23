@@ -94,13 +94,15 @@ function AgentsCreate() {
     <Stack gap="xl">
       <Grid gutter="xl">
         <Grid.Col span={3}>
-          <Text fw={500} size="md">Installation method</Text>
-          <Text size="sm" c="dimmed" mt={4}>
-            Select the type of environment to setup the agent in your infrastructure.
-          </Text>
+          <Stack gap="xs">
+            <Title order={4}>Installation method</Title>
+            <Text size="sm" c="dimmed">
+              Select the type of environment to setup the agent in your infrastructure.
+            </Text>
+          </Stack>
         </Grid.Col>
         <Grid.Col span={9}>
-          <Stack gap="sm">
+          <Stack gap="xs">
             {INSTALL_METHODS.map((method) => (
               <MethodCard
                 key={method.id}

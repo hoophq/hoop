@@ -13,13 +13,27 @@ function withVersion(href) {
   return `${href}${href.includes('?') ? '&' : '?'}v=${BUILD_ID}`
 }
 
-function loadCSS(href) {
-  if (document.querySelector(`link[data-cljs-css]`)) return
+// The CLJS app ships its own Tailwind/Radix stylesheet. It would otherwise
+// leak into every React page (the <link> lives in <head> forever), so we
+// toggle `link.disabled` on ClojureApp mount/unmount: the browser keeps the
+// parsed stylesheet in memory, remounts are instant and flash-free, and its
+// rules only apply while a CLJS route is actually rendered.
+function enableCLJSCSS(href) {
+  const existing = document.querySelector('link[data-cljs-css]')
+  if (existing) {
+    existing.disabled = false
+    return
+  }
   const link = document.createElement('link')
   link.rel = 'stylesheet'
   link.href = withVersion(href)
   link.setAttribute('data-cljs-css', 'true')
   document.head.appendChild(link)
+}
+
+function disableCLJSCSS() {
+  const link = document.querySelector('link[data-cljs-css]')
+  if (link) link.disabled = true
 }
 
 const INIT_POLL_INTERVAL_MS = 25
@@ -94,7 +108,7 @@ function ClojureApp() {
       mountRef.current.id = 'app'
     }
 
-    loadCSS('/css/site.css')
+    enableCLJSCSS('/css/site.css')
 
     loadScript('/js/app.js')
       .then(() => {
@@ -120,6 +134,7 @@ function ClojureApp() {
     return () => {
       localStorage.removeItem('react-shell')
       cljsReadyRef.current = false
+      disableCLJSCSS()
       if (mountRef.current) {
         mountRef.current.innerHTML = ''
         // Do NOT clear id here — in React 18 StrictMode, cleanup runs before

@@ -219,6 +219,40 @@ var(--mantine-color-{name}-light-color)  /* light variant text */
 .label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-indigo-8); }
 ```
 
+## Text color — use Mantine tokens, not raw names
+
+- For secondary text use `c="dimmed"`. The `--mantine-color-dimmed` variable is overridden globally in `src/main.jsx` to match the legacy webapp's Radix `--gray-11` (`gray.8` = `#8d8d8d`). Mantine's default (`gray.6` = `#d9d9d9`) has ~1.8:1 contrast on white — fails WCAG AA.
+- Never use raw names like `c="dark"` or `c="light"` — those palettes are not defined in `theme.js` and silently fall back to Mantine defaults. Use `c="gray.9"` for near-black, or simply omit the prop to inherit `var(--mantine-color-text)`.
+- When adding a new palette or changing `primaryColor`, re-verify `c="dimmed"` contrast in DevTools.
+
+## CSS Layers — do not disable
+
+- The project loads Mantine via `@mantine/core/styles.layer.css` (not `styles.css`) and declares layer order in `src/layers.css`:
+  ```css
+  @layer mantine, app;
+  ```
+- `mantine` holds Mantine's built-in component CSS. `app` is declared but left empty — CSS Modules stay **outside** any named layer, which gives them the highest precedence in the cascade.
+- Without this, Mantine's internal classes (`.mantine-Accordion-item`, etc.) compete with your CSS Module classes at equal specificity, and bundle import order decides the winner. Layers make CSS Modules win deterministically.
+- Practical consequence: when you add a new CSS Module that targets a Mantine slot via `classNames={{}}`, you do NOT need `!important` or doubled selectors (`.foo.foo {}`).
+- DO NOT change the Mantine import to `styles.css` (without `.layer`) — that reintroduces the cascade bug.
+
+### CLJS stylesheet isolation
+
+The legacy CLJS app (`/webapp`) ships its own stylesheet (`/css/site.css`, Tailwind + Radix). `ClojureApp.jsx` loads it as a regular `<link rel="stylesheet" data-cljs-css>` on mount, and on unmount toggles `link.disabled = true`. Remounts re-enable the same `<link>` — the browser keeps the parsed stylesheet in memory, so there is no re-fetch and no flash of unstyled content. This is why the CLJS CSS does NOT need a `@layer legacy` wrap: while a React-only route is rendered, the CLJS stylesheet is disabled and its rules do not enter the cascade at all.
+
+Rules:
+- Do NOT remove the `disableCLJSCSS()` call in ClojureApp's cleanup. Without it, Tailwind/Radix rules leak into every React page as soon as the user visits a CLJS route once.
+- Do NOT switch to `<style>@import url(...) layer(...)</style>` — it works in theory but `@import` is processed serially by the CSS parser, producing a visible FOUC on mount and unpredictable timing on unmount.
+
+## Symptom — "my CSS Module does nothing on a Mantine component"
+
+Debug checklist:
+1. Is the CSS Module imported in the JSX? (Vite only bundles it if there's `import classes from './X.module.css'`.)
+2. Are classes applied via `classNames={{ slot: classes.foo }}`, not `className`? Internal slots of Mantine components ignore `className`.
+3. Is the slot name correct? Check the "Styles API" section of the Mantine component's docs.
+4. Does the CSS Module use only `var(--mantine-*)` values? Hardcoded hex/px are forbidden by the styling hierarchy — exception: `Sidebar.module.css` uses `rgba(255,255,255,…)` intentionally because it paints dark-on-dark where Mantine's gray palette (calibrated for light) would not fit.
+5. If it still doesn't apply and `layers.css` is imported, inspect the rule in DevTools and confirm it's inside `@layer mantine` — if not, the `styles.layer.css` import was broken.
+
 ## Reference Implementation
 - `pages/Agents/` is the reference page showing the full pattern: store + service + list page + create page
 
