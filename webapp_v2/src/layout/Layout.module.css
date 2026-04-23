@@ -1,0 +1,9 @@
+/* Drawer slots — classNames approach works here (no Mantine default bg conflict) */
+.drawerContent {
+  background-color: var(--sidebar-bg);
+}
+
+.drawerBody {
+  padding: 0;
+  height: 100%;
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Box, ActionIcon, CopyButton } from '@mantine/core'
 import { Copy, Check } from 'lucide-react'
+import classes from './CodeSnippet.module.css'
 
 function CodeSnippet({ code }) {
   const [hovered, setHovered] = useState(false)
@@ -8,31 +9,21 @@ function CodeSnippet({ code }) {
   return (
     <Box
       pos="relative"
-      style={{ backgroundColor: 'var(--mantine-color-dark-8)', borderRadius: 8 }}
+      className={classes.root}
       p="sm"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <Box style={{ overflowX: 'auto', paddingRight: 28 }}>
-        <pre
-          style={{
-            fontFamily: 'monospace',
-            fontSize: 13,
-            color: 'var(--mantine-color-gray-2)',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            margin: 0,
-          }}
-        >
-          {code}
-        </pre>
-      </Box>
+      <div className={classes.scroll}>
+        <pre className={classes.pre}>{code}</pre>
+      </div>
 
       <Box
         pos="absolute"
         top={6}
         right={6}
-        style={{ opacity: hovered ? 1 : 0, transition: 'opacity 120ms ease' }}
+        className={classes.copyBtn}
+        data-visible={hovered || undefined}
       >
         <CopyButton value={code} timeout={2000}>
           {({ copied, copy }) => (

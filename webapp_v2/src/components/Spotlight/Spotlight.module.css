@@ -1,0 +1,16 @@
+.actionsGroup.actionsGroup::before {
+  padding-inline-start: 0;
+  text-transform: none;
+  font-size: var(--mantine-font-size-xs);
+  line-height: var(--mantine-line-height-xs);
+  margin-bottom: var(--mantine-spacing-sm);
+  font-weight: 400;
+}
+
+.actionLabel.actionLabel {
+  font-size: var(--mantine-font-size-sm);
+}
+
+.actionsList.actionsList {
+  padding: 0 var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-md);
+}

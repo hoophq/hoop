@@ -1,40 +1,42 @@
-/* Each item: bordered box with rounded corners */
 .item {
   border: 1px solid var(--mantine-color-default-border);
-  border-radius: 12px;
+  border-radius: var(--mantine-radius-lg);
   overflow: hidden;
 }
 
-/* When open: blue border on entire item */
 .item[data-active] {
   border-color: var(--mantine-color-blue-6);
 }
 
-/* When open: light blue tint on the header/control area */
 .item[data-active] .control {
   background-color: var(--mantine-color-blue-0);
 }
 
-/* Disabled */
 .item[data-disabled] {
   opacity: 0.7;
   pointer-events: none;
 }
 
-/* Control: p-5 = 24px padding */
 .control {
-  padding: 24px;
+  padding: var(--mantine-spacing-lg);
 }
 
-/* Remove Mantine's default focus outline on control — item border handles it */
 .control:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--mantine-color-blue-5);
 }
 
-/* Content: white background, border-top, px=24px py=40px */
 .content {
-  padding: 40px 24px;
-  background-color: white;
+  padding: var(--mantine-spacing-xl) var(--mantine-spacing-lg);
+  background-color: var(--mantine-color-white);
   border-top: 1px solid var(--mantine-color-default-border);
+}
+
+/* Trigger row layout — flex: 1 cannot be expressed via Mantine props */
+.trigger {
+  flex: 1;
+}
+
+.triggerBody {
+  flex: 1;
 }

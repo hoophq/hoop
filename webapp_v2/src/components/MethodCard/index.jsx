@@ -1,24 +1,13 @@
 import { Box, Flex, Avatar, Text } from '@mantine/core'
+import classes from './MethodCard.module.css'
 
-/**
- * Selection card for setup wizards (agents, connections, etc.)
- *
- * method: { id, label, description, iconDark, iconLight }
- * selected: boolean
- * onSelect: (id) => void
- */
 function MethodCard({ method, selected, onSelect }) {
   return (
     <Box
       p="sm"
       onClick={() => onSelect(method.id)}
-      style={{
-        border: '1px solid var(--mantine-color-default-border)',
-        borderRadius: 12,
-        cursor: 'pointer',
-        backgroundColor: selected ? '#182449' : 'transparent',
-        transition: 'background-color 120ms ease',
-      }}
+      className={classes.card}
+      data-selected={selected || undefined}
     >
       <Flex gap="sm" align="center">
         <Avatar
