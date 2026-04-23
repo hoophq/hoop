@@ -147,6 +147,34 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy authentication (access token)
 	default:
+		if isApiKey && strings.HasPrefix(bearerToken, "hpk_") {
+			keyHash := models.HashAPIKey(bearerToken)
+			ctx, err := models.GetAPIKeyContext(keyHash)
+			if err != nil {
+				log.Errorf("failed looking up api key, err=%v", err)
+				return status.Errorf(codes.Internal, "internal error")
+			}
+			if ctx == nil {
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			go models.UpdateAPIKeyLastUsed(ctx.UserID)
+			ctx.UserID = ctx.UserSubject
+			gwctx := &GatewayContext{
+				UserContext: *ctx,
+			}
+			connectionName := commongrpc.MetaGet(md, "connection-name")
+			conn, err := i.getConnection(connectionName, ctx)
+			if err != nil {
+				return err
+			}
+			if conn == nil {
+				return status.Errorf(codes.NotFound, "connection not found")
+			}
+			gwctx.Connection = *conn
+			ctxVal = gwctx
+			break
+		}
+
 		if isApiKey {
 			log.Debug("user provided an api key for authentication")
 			if appconfig.Get().OrgMultitenant() {
@@ -329,6 +357,9 @@ func parseBearerToken(md metadata.MD) (string, bool, error) {
 		return tokenParts[1], true, nil
 	}
 
-	// new api key format
-	return tokenParts[1], strings.HasPrefix(tokenParts[1], "xapi-"), nil
+	// new api key formats
+	if strings.HasPrefix(tokenParts[1], "xapi-") || strings.HasPrefix(tokenParts[1], "hpk_") {
+		return tokenParts[1], true, nil
+	}
+	return tokenParts[1], false, nil
 }

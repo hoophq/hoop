@@ -53,8 +53,6 @@
           [:> LogOut {:size 24
                       :aria-hidden "true"}]
           "Log out"]]
-        [:li {:class "flex flex-col mt-3 gap-1"}
-         [:> Text {:size "1" :weight "light" :class "light text-gray-7"}
-          (str "Webapp Version " config/app-version)]
+        [:li {:class "mt-3"}
          [:> Text {:size "1" :weight "light" :class "light text-gray-7"}
           (str "Gateway Version " gateway-version)]]]]))])
