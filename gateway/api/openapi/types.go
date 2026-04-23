@@ -1171,6 +1171,8 @@ type ServerLicenseInfo struct {
 type PublicServerInfo struct {
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
+	// Whether the server requires initial setup (no users have been registered yet)
+	SetupRequired bool `json:"setup_required" example:"true"`
 }
 
 type IdpProviderNameType string

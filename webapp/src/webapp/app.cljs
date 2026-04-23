@@ -115,6 +115,8 @@
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
+   [webapp.setup.main :as setup]
+   [webapp.setup.events]
    [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
@@ -343,6 +345,9 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
+
+(defmethod routes/panels :setup-panel []
+  [layout :auth [setup/main]])
 
 (defmethod routes/panels :onboarding-panel []
   [layout :auth [onboarding/main]])
@@ -787,6 +792,12 @@
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
+
+        (and (-> @gateway-public-info :data :setup_required)
+             (not= @active-panel :setup-panel))
+        (do
+          (rf/dispatch [:navigate :setup])
+          [loading-transition])
 
         :else
         [theme-provider
