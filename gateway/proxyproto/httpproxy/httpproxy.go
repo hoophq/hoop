@@ -109,7 +109,7 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	if err != nil {
 		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
-	log.Infof("starting http proxy server at %v", listenAddr)
+	log.Debugf("starting http proxy server at %v", listenAddr)
 
 	server := &HttpProxyServer{
 		listener:   lis,
@@ -134,11 +134,11 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	go func() {
 		var err error
 		if tlsConfig != nil {
-			log.Infof("http proxy server using TLS")
+			log.Debugf("http proxy server using TLS")
 			server.httpServer.TLSConfig = tlsConfig
 			err = server.httpServer.ServeTLS(lis, "", "")
 		} else {
-			log.Infof("http proxy server using plain HTTP")
+			log.Debugf("http proxy server using plain HTTP")
 			err = server.httpServer.Serve(lis)
 		}
 		if err != nil && err != http.ErrServerClosed {

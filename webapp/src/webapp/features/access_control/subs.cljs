@@ -36,6 +36,14 @@
  (fn [groups-with-permissions [_ group-id]]
    (get groups-with-permissions group-id [])))
 
+(rf/reg-sub
+ :access-control/group-attributes
+ :<- [:attributes/list-data]
+ (fn [attributes [_ group-id]]
+   (->> attributes
+        (filter #(some #{group-id} (or (:access_control_group_names %) [])))
+        (mapv :name))))
+
 ;; Nova subscription que une grupos de /users/groups com grupos do plugin
 (rf/reg-sub
  :access-control/all-groups

@@ -124,8 +124,11 @@ func Create(c *gin.Context) {
 
 	trackClient := ctx.Analytics()
 	trackClient.Identify(&types.APIContext{
-		OrgID:  ctx.OrgID,
-		UserID: userSubject,
+		OrgID:          ctx.OrgID,
+		OrgLicenseData: ctx.OrgLicenseData,
+		UserID:         userSubject,
+		UserEmail:      newUser.Email,
+		UserName:       newUser.Name,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom
@@ -214,10 +217,13 @@ func Update(c *gin.Context) {
 	trackClient := analytics.New()
 	defer trackClient.Close()
 	trackClient.Identify(&types.APIContext{
-		OrgID:      ctx.OrgID,
-		UserID:     existingUser.ID,
-		UserStatus: existingUser.Status,
-		SlackID:    existingUser.SlackID,
+		OrgID:          ctx.OrgID,
+		OrgLicenseData: ctx.OrgLicenseData,
+		UserID:         existingUser.ID,
+		UserEmail:      existingUser.Email,
+		UserName:       existingUser.Name,
+		UserStatus:     existingUser.Status,
+		SlackID:        existingUser.SlackID,
 	})
 
 	c.JSON(http.StatusOK, openapi.User{

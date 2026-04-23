@@ -106,7 +106,10 @@ func Register(c *gin.Context) {
 
 	trackClient.Identify(&types.APIContext{
 		OrgID:           org.ID,
+		OrgLicenseData:  &org.LicenseData,
 		UserID:          userSubject,
+		UserEmail:       user.Email,
+		UserName:        user.Name,
 		UserAnonSubject: org.ID,
 	})
 	trackClient.Track(userSubject, analytics.EventSingleTenantFirstUserCreated, map[string]any{

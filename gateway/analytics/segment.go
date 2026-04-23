@@ -10,6 +10,7 @@ import (
 	"net/url"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -52,6 +53,25 @@ func (s *Segment) Close() {
 	}
 }
 
+// identifyTraits builds the trait set for an Identify call. On OSS installs
+// the user's real email and name are attached so Intercom can address them;
+// Enterprise keeps the pseudonymous hashed user-id as the only identifier.
+func identifyTraits(ctx *types.APIContext, hashedUserID, environmentName string) analytics.Traits {
+	traits := analytics.NewTraits().
+		Set("org-id", ctx.OrgID).
+		Set("user-id", hashedUserID).
+		Set("is-admin", ctx.IsAdminUser()).
+		Set("environment", environmentName).
+		Set("status", ctx.UserStatus).
+		Set("client-version", version.Get().Version)
+
+	if ctx.GetLicenseType() == license.OSSType && ctx.UserEmail != "" {
+		traits = traits.SetEmail(ctx.UserEmail).SetName(ctx.UserName)
+	}
+
+	return traits
+}
+
 func (s *Segment) Identify(ctx *types.APIContext) {
 	if s.Client == nil || ctx == nil || ctx.UserID == "" || ctx.OrgID == "" ||
 		!appconfig.Get().AnalyticsTracking() {
@@ -63,13 +83,7 @@ func (s *Segment) Identify(ctx *types.APIContext) {
 	_ = s.Client.Enqueue(analytics.Identify{
 		UserId:      hashedUserID,
 		AnonymousId: ctx.UserAnonSubject,
-		Traits: analytics.NewTraits().
-			Set("org-id", ctx.OrgID).
-			Set("user-id", hashedUserID).
-			Set("is-admin", ctx.IsAdminUser()).
-			Set("environment", s.environmentName).
-			Set("status", ctx.UserStatus).
-			Set("client-version", version.Get().Version),
+		Traits:      identifyTraits(ctx, hashedUserID, s.environmentName),
 	})
 
 	_ = s.Client.Enqueue(analytics.Group{

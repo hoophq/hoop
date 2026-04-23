@@ -7,6 +7,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/log/bootstrap"
 	"github.com/hoophq/hoop/common/monitoring"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
@@ -41,9 +42,9 @@ import (
 )
 
 func Run() {
+	bootstrap.Start()
 	ver := version.Get()
-	log.Infof("version=%s, compiler=%s, go=%s, platform=%s, commit=%s, multitenant=%v, build-date=%s",
-		ver.Version, ver.Compiler, ver.GoVersion, ver.Platform, ver.GitCommit, appconfig.Get().OrgMultitenant(), ver.BuildDate)
+	bootstrap.Header(ver.Version, ver.Platform, ver.GitCommit)
 
 	if err := appconfig.Load(); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
@@ -57,19 +58,27 @@ func Run() {
 		log.Fatal(err)
 	}
 
+	bootstrap.Phase("Bootstrapping")
+
 	pgURI, migrationPathFiles := appconfig.Get().PgURI(), appconfig.Get().MigrationPathFiles()
+	migrateStep := bootstrap.Step("Database migrations")
 	if err := modelsbootstrap.MigrateDB(pgURI, migrationPathFiles); err != nil {
+		migrateStep.Fail(err)
 		log.Fatal(err)
 	}
+	migrateStep.OK("")
 
 	apiURL := appconfig.Get().FullApiURL()
 	if err := models.InitDatabaseConnection(); err != nil {
 		log.Fatal(err)
 	}
 
+	goMigrateStep := bootstrap.Step("Golang migrations")
 	if err := modelsbootstrap.RunGolangMigrations(); err != nil {
+		goMigrateStep.Fail(err)
 		log.Fatalf("failed running golang migrations, reason=%v", err)
 	}
+	goMigrateStep.OK("")
 
 	if enabled, err := analytics.IsAnalyticsEnabled(); err == nil {
 		appconfig.GetRef().SetAnalyticsTracking(enabled)
@@ -77,14 +86,16 @@ func Run() {
 
 	isOrgMultiTenant := appconfig.Get().OrgMultitenant()
 	if !isOrgMultiTenant {
-		log.Infof("provisioning default organization")
+		orgStep := bootstrap.Step("Default organization")
 		_, serverConfig, err := idp.NewTokenVerifierProvider()
 		if err != nil {
+			orgStep.Fail(err)
 			log.Fatalf("failed initializing token verifier provider, reason=%v", err)
 		}
 
 		org, isNewOrg, err := models.CreateOrgGetOrganization(proto.DefaultOrgName, nil)
 		if err != nil {
+			orgStep.Fail(err)
 			log.Fatal(err)
 		}
 
@@ -111,10 +122,11 @@ func Run() {
 
 		// TODO(san): refactor to propagate the defined user name roles as context to routes
 		if err := apiserverconfig.SetGlobalGatewayUserRoles(); err != nil {
+			orgStep.Fail(err)
 			log.Fatalf("failed setting global gateway user roles, reason=%v", err)
 		}
 
-		log.Infof("self hosted setup completed, dlp-provider=%v", appconfig.Get().DlpProvider())
+		orgStep.OK(fmt.Sprintf("dlp=%s", appconfig.Get().DlpProvider()))
 	}
 
 	if err := modelsbootstrap.AddDefaultRunbooks(); err != nil {
@@ -169,29 +181,36 @@ func Run() {
 		log.Fatalf("failed to get server config, reason=%v", err)
 	}
 
-	log.Infof("starting proxy servers")
+	bootstrap.Phase("Starting proxies")
 	if serverConfig != nil {
 		pgc := serverConfig.PostgresServerConfig
 		if pgc != nil && pgc.ListenAddress != "" {
+			step := bootstrap.Step("Postgres proxy")
 			err := postgresproxy.GetServerInstance().Start(serverConfig.PostgresServerConfig.ListenAddress, tlsConfig)
 			if err != nil {
+				step.Fail(err)
 				log.Fatalf("failed to start postgres server, reason=%v", err)
 			}
+			step.OK(pgc.ListenAddress)
 		}
 
 		sshc := serverConfig.SSHServerConfig
 		if sshc != nil && sshc.ListenAddress != "" && len(sshc.HostsKey) > 0 {
+			step := bootstrap.Step("SSH proxy")
 			err := sshproxy.GetServerInstance().Start(
 				serverConfig.SSHServerConfig.ListenAddress,
 				serverConfig.SSHServerConfig.HostsKey,
 			)
 			if err != nil {
+				step.Fail(err)
 				log.Fatalf("failed to start ssh server, reason=%v", err)
 			}
+			step.OK(sshc.ListenAddress)
 		}
 
 		rdpc := serverConfig.RDPServerConfig
 		if rdpc != nil && rdpc.ListenAddress != "" {
+			step := bootstrap.Step("RDP proxy")
 			// Initialize RDP bitmap parser for session recording
 			if err := rdp.InitParser(); err != nil {
 				log.Warnf("failed to initialize RDP bitmap parser, recording will store raw data: %v", err)
@@ -200,21 +219,49 @@ func Run() {
 				serverConfig.RDPServerConfig.ListenAddress, tlsConfig, appconfig.Get().GatewayAllowPlaintext(),
 			)
 			if err != nil {
+				step.Fail(err)
 				log.Fatalf("failed to start rdp server, reason=%v", err)
 			}
+			step.OK(rdpc.ListenAddress)
 		}
 
 		httpc := serverConfig.HttpProxyServerConfig
 		if httpc != nil && httpc.ListenAddress != "" {
+			step := bootstrap.Step("HTTP proxy")
 			err = httpproxy.GetServerInstance().Start(httpc.ListenAddress, tlsConfig)
 			if err != nil {
+				step.Fail(err)
 				log.Fatalf("failed to start http proxy server, reason=%v", err)
 			}
+			tlsState := "plain"
+			if tlsConfig != nil {
+				tlsState = "tls"
+			}
+			step.OK(fmt.Sprintf("%s %s", httpc.ListenAddress, tlsState))
 		}
 	}
 
-	log.Infof("starting api servers, env-authmethod=%v, env-api-key-set=%v",
-		appconfig.Get().AuthMethod(), len(appconfig.Get().ApiKey()) > 0)
+	bootstrap.Phase("Starting API")
+	grpcStep := bootstrap.Step("gRPC gateway")
 	go g.StartRPCServer()
+	tlsState := "tls off"
+	if tlsConfig != nil {
+		tlsState = "tls on"
+	}
+	grpcStep.OK(fmt.Sprintf(":8010 %s", tlsState))
+
+	apiStep := bootstrap.Step("HTTP API")
+	authDetail := fmt.Sprintf("auth=%s", appconfig.Get().AuthMethod())
+	if len(appconfig.Get().ApiKey()) > 0 {
+		authDetail += " api-key=set"
+	}
+	apiStep.OK(fmt.Sprintf("%s %s", appconfig.Get().ApiURL(), authDetail))
+
+	urls := map[string]string{
+		"Web UI":  appconfig.Get().ApiURL(),
+		"Gateway": "localhost:8010",
+	}
+	bootstrap.Ready(urls)
+
 	a.StartAPI()
 }

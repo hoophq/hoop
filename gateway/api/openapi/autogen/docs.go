@@ -8682,6 +8682,16 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "access_control_group_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "sre"
+                    ]
+                },
                 "access_request_rule_names": {
                     "type": "array",
                     "items": {
@@ -8736,6 +8746,17 @@ const docTemplate = `{
         "openapi.Attributes": {
             "type": "object",
             "properties": {
+                "access_control_group_names": {
+                    "description": "Access control group names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "sre"
+                    ]
+                },
                 "access_request_rule_names": {
                     "description": "Access request rule names associated with this attribute",
                     "type": "array",
