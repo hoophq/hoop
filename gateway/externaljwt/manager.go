@@ -41,6 +41,7 @@ func Init(ctx context.Context) error {
 		Audience:      cfg.SPIFFEAudience(),
 		BundleURL:     cfg.SPIFFEBundleURL(),
 		BundleFile:    cfg.SPIFFEBundleFile(),
+		BundleJWKS:    cfg.SPIFFEBundleJWKS(),
 		RefreshPeriod: cfg.SPIFFERefreshPeriod(),
 	})
 	if err != nil {

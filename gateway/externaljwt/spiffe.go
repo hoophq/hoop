@@ -20,17 +20,21 @@ import (
 
 // SPIFFEConfig bundles the runtime inputs for a SPIFFE JWT-SVID provider.
 //
-// Exactly one of BundleURL or BundleFile must be non-empty. The content at
-// either source is expected to be a JWKS JSON document (RFC 7517); the SPIFFE
+// Exactly one of BundleURL, BundleFile or BundleJWKS must be non-empty. The
+// content is expected to be a JWKS JSON document (RFC 7517); the SPIFFE
 // JWT bundle format is a JWKS at its core. Support for the full
 // SPIFFE Trust Bundle format (with trust-domain wrapper) and the Workload
 // API UDS source can be added later without changing this package's
 // exported surface.
 type SPIFFEConfig struct {
-	TrustDomain   string
-	Audience      string
-	BundleURL     string
-	BundleFile    string
+	TrustDomain string
+	Audience    string
+	BundleURL   string
+	BundleFile  string
+	// BundleJWKS is the raw JWKS JSON document. When set, it is used as-is
+	// and no I/O is performed. Useful for env-var-based deployments where
+	// the operator ships the bundle as a Kubernetes Secret env var.
+	BundleJWKS    string
 	RefreshPeriod time.Duration
 
 	// HTTPClient is used for bundle URL fetches. Defaults to a client with
@@ -61,8 +65,18 @@ func NewSPIFFEProvider(ctx context.Context, cfg SPIFFEConfig) (*spiffeProvider, 
 	if cfg.Audience == "" {
 		return nil, fmt.Errorf("spiffe: audience is required")
 	}
-	if (cfg.BundleURL == "") == (cfg.BundleFile == "") {
-		return nil, fmt.Errorf("spiffe: exactly one of bundle_url or bundle_file must be set")
+	sources := 0
+	if cfg.BundleURL != "" {
+		sources++
+	}
+	if cfg.BundleFile != "" {
+		sources++
+	}
+	if cfg.BundleJWKS != "" {
+		sources++
+	}
+	if sources != 1 {
+		return nil, fmt.Errorf("spiffe: exactly one of bundle_url, bundle_file or bundle_jwks must be set")
 	}
 	if cfg.BundleURL != "" {
 		if _, err := url.Parse(cfg.BundleURL); err != nil {
@@ -166,6 +180,9 @@ func (p *spiffeProvider) Refresh(ctx context.Context) error {
 }
 
 func (p *spiffeProvider) fetchBundle(ctx context.Context) (json.RawMessage, error) {
+	if p.cfg.BundleJWKS != "" {
+		return json.RawMessage(p.cfg.BundleJWKS), nil
+	}
 	if p.cfg.BundleFile != "" {
 		data, err := os.ReadFile(p.cfg.BundleFile)
 		if err != nil {

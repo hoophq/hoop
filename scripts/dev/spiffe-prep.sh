@@ -28,6 +28,15 @@ echo "==> minting SPIFFE artifacts under $SPIFFE_DIR"
   -audience "$AUDIENCE" \
   -ttl "$TTL")
 
+# Embed the bundle directly into .env as base64. The gateway accepts
+# HOOP_SPIFFE_BUNDLE_JWKS as either raw JSON or base64-encoded JWKS JSON;
+# base64 is used here so the env var stays on a single line and survives
+# whatever shell/editor the operator is using. spiffe-mint reuses the
+# signing key across invocations, so this value is stable across reruns
+# (only the JWT rotates), which means no gateway restart is needed to
+# pick up fresh JWTs.
+BUNDLE_B64=$(base64 < "$SPIFFE_DIR/bundle.jwks" | tr -d '\n')
+
 # Idempotently update .env. We manage a marker block so prep can be
 # re-run without duplicating entries; anything the user adds outside
 # the markers is preserved.
@@ -45,7 +54,7 @@ cat >> "$TMP" <<EOF
 $BEGIN
 HOOP_SPIFFE_MODE=enforce
 HOOP_SPIFFE_TRUST_DOMAIN=$TRUST_DOMAIN
-HOOP_SPIFFE_BUNDLE_FILE=/app/spiffe/bundle.jwks
+HOOP_SPIFFE_BUNDLE_JWKS=$BUNDLE_B64
 HOOP_SPIFFE_AUDIENCE=$AUDIENCE
 HOOP_SPIFFE_REFRESH_PERIOD=30s
 $END
@@ -53,7 +62,7 @@ EOF
 
 mv "$TMP" .env
 
-echo "==> .env updated with HOOP_SPIFFE_* (enforce mode)"
+echo "==> .env updated with HOOP_SPIFFE_* (enforce mode, bundle inline as env)"
 echo
 echo "next steps:"
 echo "  1. make run-dev              # starts gateway with SPIFFE validation"

@@ -24,59 +24,16 @@ defaultAgent:
   grpcTlsCa: ''
   grpcSkipVerify: false
 
-# -- Enable a second sidecar agent authenticated via SPIFFE JWT-SVID.
-# Runs alongside defaultAgent without replacing it: the agent container
-# reads HOOP_KEY_FILE=/run/spiffe/agent.jwt, and a spiffe-helper sidecar
-# writes/rotates that file by talking to the node-local SPIRE agent over
-# the SPIFFE CSI volume.
-# Requires the SPIFFE CSI Driver (csi.spiffe.io) and a SPIRE agent
-# DaemonSet reachable from the node. A private.agent_spiffe_mappings
-# row must exist for the SPIFFE ID this agent presents.
-defaultAgentSpiffe:
-  enabled: false
-  imageRepository: 'hoophq/hoopdev'
-  imageTag: latest
-  imagePullPolicy: Always
-  # Where the agent connects to the gateway. Defaults to the in-pod
-  # gRPC port so this sidecar doesn't egress.
-  grpcHost: 127.0.0.1:8010
-  grpcSkipVerify: false
-  # Cosmetic HOOP_NAME passed to the agent. Identity is resolved from
-  # the SPIFFE mapping, not this field, but setting it yields cleaner
-  # logs. Leave empty to omit.
-  name: ''
-  # resources:
-  #   limits:
-  #     cpu: 512m
-  #     memory: 512Mi
-  #   requests:
-  #     cpu: 128m
-  #     memory: 256Mi
-
-  spiffeHelper:
-    image: ghcr.io/spiffe/spiffe-helper:0.9.1
-    imagePullPolicy: IfNotPresent
-    # Unix socket path to the SPIRE Workload API as exposed by the CSI
-    # driver. Override only if your CSI driver mounts it elsewhere.
-    agentAddress: /spiffe-workload-api/spire-agent.sock
-    # Required. Must match config.HOOP_SPIFFE_AUDIENCE on the gateway.
-    audience: ''
-    # resources:
-    #   limits:
-    #     cpu: 100m
-    #     memory: 64Mi
-    #   requests:
-    #     cpu: 50m
-    #     memory: 32Mi
-
 # -- Ship a static SPIFFE trust bundle (JWKS) as a Kubernetes Secret
-# mounted into the gateway at /app/spiffe/bundle.jwks. Set
-# config.HOOP_SPIFFE_BUNDLE_FILE to that path when using this.
+# injected into the gateway as the HOOP_SPIFFE_BUNDLE_JWKS env var (via
+# secretKeyRef — no volume mount is created). When this is set,
+# config.HOOP_SPIFFE_MODE should be "enforce" and
+# config.HOOP_SPIFFE_TRUST_DOMAIN must also be set.
 # Leave empty when the gateway fetches the bundle over HTTPS via
-# config.HOOP_SPIFFE_BUNDLE_URL.
+# config.HOOP_SPIFFE_BUNDLE_URL instead.
 # Accepts either raw JWKS JSON (detected by a leading '{') or a
 # base64-encoded single-line JWKS, which is friendlier to shell-heredoc
-# value substitution pipelines.
+# value substitution pipelines. The gateway auto-detects both.
 spiffeBundle:
   jwks: ''
 
