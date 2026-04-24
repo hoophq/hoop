@@ -284,3 +284,24 @@ func parseRawQueries(blobStream json.RawMessage, connProtoType proto.ConnectionT
 	rawQueries, err := json.Marshal(out)
 	return rawQueries, blobSize, err
 }
+
+// ParseSessionOutput returns the stdout and stderr of a session as a UTF-8 string,
+// loading the blob stream from the database if needed. Returns an empty string
+// (no error) when the session has no recorded stream.
+func ParseSessionOutput(s *models.Session) (string, error) {
+	if s.BlobStream == nil {
+		stream, err := s.GetBlobStream()
+		if err != nil {
+			return "", err
+		}
+		s.BlobStream = stream
+	}
+	if s.BlobStream == nil {
+		return "", nil
+	}
+	out, err := parseBlobStream(s, sessionParseOption{events: []string{"o", "e"}})
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}

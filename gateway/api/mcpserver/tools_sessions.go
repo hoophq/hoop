@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -27,6 +28,16 @@ type sessionsGetInput struct {
 	ID string `json:"id" jsonschema:"session ID"`
 }
 
+type sessionsGetContentInput struct {
+	ID            string `json:"id" jsonschema:"session ID"`
+	IncludeInput  *bool  `json:"include_input,omitempty" jsonschema:"include the session input script (default true)"`
+	IncludeOutput *bool  `json:"include_output,omitempty" jsonschema:"include the session stdout+stderr output (default true)"`
+}
+
+type sessionsGetAnalysisInput struct {
+	ID string `json:"id" jsonschema:"session ID"`
+}
+
 func registerSessionTools(server *mcp.Server) {
 	openWorld := false
 
@@ -41,6 +52,20 @@ func registerSessionTools(server *mcp.Server) {
 		Description: "Get session details and metadata by ID. Returns metadata only, not session content or binary data",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, sessionsGetHandler)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "sessions_get_content",
+		Description: "Get the input script and stdout/stderr output of a session. " +
+			"Only the session owner or an admin/auditor can read another user's session content.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+	}, sessionsGetContentHandler)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "sessions_get_analysis",
+		Description: "Get Hoop's AI analysis for a session: risk level, title, explanation, recommended action. " +
+			"Returns status=unavailable when the session has no analysis yet (e.g. still in progress).",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+	}, sessionsGetAnalysisHandler)
 }
 
 func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsListInput) (*mcp.CallToolResult, any, error) {
@@ -136,6 +161,96 @@ func sessionsGetHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessio
 	}
 
 	return jsonResult(sessionToMap(session))
+}
+
+func sessionsGetContentHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsGetContentInput) (*mcp.CallToolResult, any, error) {
+	sc := storageContextFrom(ctx)
+	if sc == nil {
+		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if args.ID == "" {
+		return errResult("id is required"), nil, nil
+	}
+
+	session, err := models.GetSessionByID(sc.OrgID, args.ID)
+	switch err {
+	case models.ErrNotFound:
+		return errResult("session not found"), nil, nil
+	case nil:
+	default:
+		return nil, nil, fmt.Errorf("failed fetching session: %w", err)
+	}
+
+	if session.UserID != sc.UserID && !sc.IsAuditorOrAdminUser() {
+		return errResult("access denied: you can only view your own sessions or must be admin/auditor"), nil, nil
+	}
+
+	includeInput := args.IncludeInput == nil || *args.IncludeInput
+	includeOutput := args.IncludeOutput == nil || *args.IncludeOutput
+
+	result := map[string]any{
+		"id":         session.ID,
+		"connection": session.Connection,
+		"status":     session.Status,
+		"verb":       session.Verb,
+	}
+	if includeInput {
+		input, err := session.GetBlobInput()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed reading session input: %w", err)
+		}
+		result["input"] = string(input)
+	}
+	if includeOutput {
+		output, err := sessionapi.ParseSessionOutput(session)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed reading session output: %w", err)
+		}
+		result["output"] = output
+	}
+	if session.ExitCode != nil {
+		result["exit_code"] = *session.ExitCode
+	}
+	return jsonResult(result)
+}
+
+func sessionsGetAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsGetAnalysisInput) (*mcp.CallToolResult, any, error) {
+	sc := storageContextFrom(ctx)
+	if sc == nil {
+		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if args.ID == "" {
+		return errResult("id is required"), nil, nil
+	}
+
+	session, err := models.GetSessionByID(sc.OrgID, args.ID)
+	switch err {
+	case models.ErrNotFound:
+		return errResult("session not found"), nil, nil
+	case nil:
+	default:
+		return nil, nil, fmt.Errorf("failed fetching session: %w", err)
+	}
+
+	if session.UserID != sc.UserID && !sc.IsAuditorOrAdminUser() {
+		return errResult("access denied: you can only view your own sessions or must be admin/auditor"), nil, nil
+	}
+
+	if session.AIAnalysis == nil {
+		return jsonResult(map[string]any{
+			"session_id": session.ID,
+			"status":     "unavailable",
+			"message":    "AI analysis is not yet available for this session",
+		})
+	}
+	return jsonResult(map[string]any{
+		"session_id":  session.ID,
+		"status":      "ready",
+		"risk_level":  session.AIAnalysis.RiskLevel,
+		"title":       session.AIAnalysis.Title,
+		"explanation": session.AIAnalysis.Explanation,
+		"action":      session.AIAnalysis.Action,
+	})
 }
 
 func sessionToMap(s *models.Session) map[string]any {
