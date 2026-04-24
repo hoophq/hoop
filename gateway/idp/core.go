@@ -112,9 +112,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oid = *newc.OidcConfig
 		}
 
-		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v",
+		newConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
 			toStr(newc.AuthMethod), toStr(newc.ApiKey), toStr(newc.GrpcServerURL), oid.IssuerURL, oid.ClientID, oid.ClientSecret,
-			oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData))
+			oid.Audience, oid.Scopes, oid.GroupsClaim, string(newc.OrgLicenseData), mcpConfigFingerprint(newc.McpAuthConfig))
 
 		var oldc models.ServerAuthConfig
 		if old != nil {
@@ -126,9 +126,9 @@ func (v userInfoTokenVerifier) hasServerConfigChanged(providerType idptypes.Prov
 			oldOidc = *oldc.OidcConfig
 		}
 
-		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v",
+		oldConfigStr := fmt.Sprintf("authmethod=%v,apikey=%v,grpcurl=%v,issuer=%v,clientid=%v,clientsecret=%v,audience=%v,scopes=%v,groupsclaim=%v,license-data=%v,mcp=%v",
 			toStr(oldc.AuthMethod), toStr(oldc.ApiKey), toStr(oldc.GrpcServerURL), oldOidc.IssuerURL, oldOidc.ClientID, oldOidc.ClientSecret,
-			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData))
+			oldOidc.Audience, oldOidc.Scopes, oldOidc.GroupsClaim, string(oldc.OrgLicenseData), mcpConfigFingerprint(oldc.McpAuthConfig))
 
 		return newConfigStr != oldConfigStr
 	case idptypes.ProviderTypeSAML:
@@ -367,3 +367,10 @@ func newSamlProvider(serverAuthConfig *models.ServerAuthConfig) (*samlprovider.P
 }
 
 func toStr(s *string) string { return ptr.ToString(s) }
+
+func mcpConfigFingerprint(c *models.ServerMcpAuthConfig) string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("enabled=%v,resource=%v,groupsclaim=%v", c.Enabled, c.ResourceURI, c.GroupsClaim)
+}
