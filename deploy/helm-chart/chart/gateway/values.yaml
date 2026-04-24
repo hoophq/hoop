@@ -24,19 +24,6 @@ defaultAgent:
   grpcTlsCa: ''
   grpcSkipVerify: false
 
-# -- Ship a static SPIFFE trust bundle (JWKS) as a Kubernetes Secret
-# injected into the gateway as the HOOP_SPIFFE_BUNDLE_JWKS env var (via
-# secretKeyRef — no volume mount is created). When this is set,
-# config.HOOP_SPIFFE_MODE should be "enforce" and
-# config.HOOP_SPIFFE_TRUST_DOMAIN must also be set.
-# Leave empty when the gateway fetches the bundle over HTTPS via
-# config.HOOP_SPIFFE_BUNDLE_URL instead.
-# Accepts either raw JWKS JSON (detected by a leading '{') or a
-# base64-encoded single-line JWKS, which is friendlier to shell-heredoc
-# value substitution pipelines. The gateway auto-detects both.
-spiffeBundle:
-  jwks: ''
-
 # -- Enable PostgreSQL
 postgres:
   # it default to host mount when enabled
@@ -157,6 +144,20 @@ config:
   # RDP_PII_SNAPSHOT_INTERVAL: '0.25'
   # RDP_PII_SCORE_THRESHOLD: '0.9'
   # RDP_PII_ENTITY_DENYLIST: 'DATE_TIME,NRP'
+
+  ## SPIFFE / JWT-SVID authentication
+  ## When HOOP_SPIFFE_MODE=enforce, the gateway validates agent JWT-SVIDs
+  ## against the SPIFFE trust bundle. Supply the bundle via exactly one of:
+  ##   HOOP_SPIFFE_BUNDLE_JWKS (inline — raw JWKS JSON or base64 of it;
+  ##                            autodetected by the gateway on the env side),
+  ##   HOOP_SPIFFE_BUNDLE_URL  (HTTPS fetch, refreshed on HOOP_SPIFFE_REFRESH_PERIOD),
+  ##   HOOP_SPIFFE_BUNDLE_FILE (path mounted into the container).
+  # HOOP_SPIFFE_MODE: 'enforce'
+  # HOOP_SPIFFE_TRUST_DOMAIN: 'customer.com'
+  # HOOP_SPIFFE_AUDIENCE: 'https://hoop.customer.com'
+  # HOOP_SPIFFE_REFRESH_PERIOD: '5m'
+  # HOOP_SPIFFE_BUNDLE_URL: ''
+  # HOOP_SPIFFE_BUNDLE_JWKS: ''
 
 mainService:
   # -- Annotations to add in the main service

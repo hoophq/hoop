@@ -24,7 +24,7 @@ config: {}
 
 # -- Authenticate the agent to the gateway via SPIFFE JWT-SVID instead of HOOP_KEY.
 # When enabled:
-#   * config.HOOP_KEY is ignored; the agent reads HOOP_KEY_FILE=/run/spiffe/agent.jwt
+#   * config.HOOP_KEY is ignored; the agent reads HOOP_SPIFFE_KEY_FILE=/run/spiffe/agent.jwt
 #   * config.HOOP_GATEWAY_URL is ignored; set spiffe.grpcHost to your gateway's
 #     gRPC endpoint (host:port, e.g. grpc.hoop.example.com:8010)
 #   * a spiffe-helper sidecar writes /run/spiffe/agent.jwt on a shared emptyDir
@@ -41,8 +41,8 @@ spiffe:
   grpcHost: ''
   # Skip TLS verification when dialing the gateway. Dev/testing only.
   grpcSkipVerify: false
-  # Optional cosmetic HOOP_NAME passed to the agent. Identity is resolved
-  # from the SPIFFE mapping, not this field. Leave empty to omit.
+  # Optional cosmetic HOOP_SPIFFE_NAME passed to the agent. Identity is
+  # resolved from the SPIFFE mapping, not this field. Leave empty to omit.
   name: ''
 
   spiffeHelper:

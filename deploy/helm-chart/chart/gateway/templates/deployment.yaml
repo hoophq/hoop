@@ -39,14 +39,6 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
-        {{- if .Values.spiffeBundle.jwks }}
-        env:
-        - name: HOOP_SPIFFE_BUNDLE_JWKS
-          valueFrom:
-            secretKeyRef:
-              name: hoop-spiffe-bundle
-              key: bundle.jwks
-        {{- end }}
         resources:
           {{- toYaml .Values.resources.gw | nindent 10 }}
         {{- if .Values.persistence.enabled }}

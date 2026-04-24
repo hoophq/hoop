@@ -10,8 +10,8 @@
 #
 # On each invocation this script idempotently seeds the dev DB with a
 # `spiffe-agent` row and a matching `agent_spiffe_mappings` row, then
-# runs the agent in the foreground with HOOP_KEY_FILE pointed at the
-# minted JWT. Ctrl-C stops only the agent; the gateway keeps running.
+# runs the agent in the foreground with HOOP_SPIFFE_KEY_FILE pointed at
+# the minted JWT. Ctrl-C stops only the agent; the gateway keeps running.
 set -eo pipefail
 
 SPIFFE_DIR="${SPIFFE_DIR:-dist/dev/spiffe}"
@@ -36,9 +36,9 @@ for c in "$APP_CONTAINER" "$DB_CONTAINER"; do
 done
 
 # Rebuild the client binary if it's missing or older than agent/config
-# (which is where the HOOP_KEY_FILE loader lives). A stale binary silently
-# falls through to "missing HOOP_KEY" because it doesn't know about the
-# file-based loader yet.
+# (which is where the HOOP_SPIFFE_KEY_FILE loader lives). A stale binary
+# silently falls through to "missing HOOP_KEY" because it doesn't know
+# about the file-based loader yet.
 needs_rebuild=0
 if [[ ! -x "$HOOP_BIN" ]]; then
   needs_rebuild=1
@@ -92,13 +92,13 @@ EOT
 # invocations, so in practice the bundle value is stable and no restart
 # is needed unless TRUST_DOMAIN or SPIFFE_ID changed.
 
-echo "==> starting host agent with HOOP_KEY_FILE=$SPIFFE_DIR/agent.jwt"
+echo "==> starting host agent with HOOP_SPIFFE_KEY_FILE=$SPIFFE_DIR/agent.jwt"
 echo "    (Ctrl-C stops the agent; run-dev keeps going)"
 echo
 
-export HOOP_KEY_FILE="$PWD/$SPIFFE_DIR/agent.jwt"
+export HOOP_SPIFFE_KEY_FILE="$PWD/$SPIFFE_DIR/agent.jwt"
 export HOOP_GRPCURL="127.0.0.1:8010"
-export HOOP_NAME="$AGENT_NAME"
+export HOOP_SPIFFE_NAME="$AGENT_NAME"
 export HOOP_TLS_SKIP_VERIFY="true"
 
 exec "$HOOP_BIN" start agent
