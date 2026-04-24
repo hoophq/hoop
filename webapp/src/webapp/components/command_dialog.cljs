@@ -44,7 +44,7 @@
      :open open?
      :label title
      :onOpenChange on-open-change
-     :className "fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"})
+     :className "fixed inset-0 z-[201] flex items-start justify-center pt-[20vh]"})
    [theme-provider
     [:<>
      ;; Manual overlay for click outside with blur effect

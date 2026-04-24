@@ -23,8 +23,8 @@ export function DockerDeployment({ hoopKey }) {
   const runCommand = `docker container run \\\n-e HOOP_KEY='${hoopKey}' \\\n--rm -d hoophq/hoopdev`;
 
   return (
-    <Stack gap="lg">
-      <Stack gap="xs">
+    <Stack gap="xl">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Docker image repository
         </Text>
@@ -39,11 +39,11 @@ export function DockerDeployment({ hoopKey }) {
         </Box>
       </Stack>
 
-      <Stack gap="xs">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Environment variables
         </Text>
-        <Table verticalSpacing="xs" horizontalSpacing="sm" withTableBorder>
+        <Table verticalSpacing="sm" horizontalSpacing="md" withTableBorder>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>env-var</Table.Th>
@@ -53,7 +53,7 @@ export function DockerDeployment({ hoopKey }) {
           <Table.Tbody>
             <Table.Tr>
               <Table.Td>
-                <Flex gap="xs" align="center">
+                <Flex gap="sm" align="center">
                   <Text size="sm" ff="monospace">
                     HOOP_KEY
                   </Text>
@@ -61,7 +61,7 @@ export function DockerDeployment({ hoopKey }) {
                 </Flex>
               </Table.Td>
               <Table.Td>
-                <Flex gap="xs" align="center">
+                <Flex gap="sm" align="center">
                   <Text size="xs" ff="monospace" style={{ wordBreak: 'break-all' }}>
                     {hoopKey}
                   </Text>
@@ -73,7 +73,7 @@ export function DockerDeployment({ hoopKey }) {
         </Table>
       </Stack>
 
-      <Stack gap="xs">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Manually running in a Docker container
         </Text>
@@ -94,8 +94,8 @@ export function KubernetesDeployment({ hoopKey }) {
   const deploymentYml = `apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: hoopagent\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: hoopagent\n  template:\n    metadata:\n      labels:\n        app: hoopagent\n    spec:\n      containers:\n      - name: hoopagent\n        image: hoophq/hoopdev\n        env:\n        - name: HOOP_KEY\n          value: '${hoopKey}'`;
 
   return (
-    <Stack gap="lg">
-      <Stack gap="xs">
+    <Stack gap="xl">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Minimal configuration
         </Text>
@@ -111,7 +111,7 @@ export function KubernetesDeployment({ hoopKey }) {
         <CodeSnippet code={valuesYml} />
       </Stack>
 
-      <Stack gap="xs">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Standalone deployment
         </Text>
@@ -132,7 +132,7 @@ export function KubernetesDeployment({ hoopKey }) {
         <CodeSnippet code={helmManifests} />
       </Stack>
 
-      <Stack gap="xs">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           deployment.yml
         </Text>
@@ -153,15 +153,15 @@ export function LocalDeployment({ hoopKey }) {
   const startCmd = `hoop agent start`;
 
   return (
-    <Stack gap="lg">
-      <Stack gap="xs">
+    <Stack gap="xl">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Install Hoop CLI
         </Text>
         <DocsBtnCallOut text="See our installation docs for your OS" href={docsUrl.clients.commandLine.overview} />
       </Stack>
 
-      <Stack gap="xs">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           Export your HOOP_KEY and run it
         </Text>
@@ -172,7 +172,7 @@ export function LocalDeployment({ hoopKey }) {
         <CodeSnippet code={startCmd} />
       </Stack>
 
-      <Stack gap="xs">
+      <Stack gap="sm">
         <Text size="sm" fw={700}>
           The hoop agent CLI
         </Text>
@@ -187,10 +187,10 @@ export function LocalDeployment({ hoopKey }) {
 
 export function DeploymentMain({ installMethod, hoopKey }) {
   return (
-    <Grid gutter="xl">
+    <Grid gutter="xxl">
       <Grid.Col span={3}>
-        <Stack gap="sm">
-          <Stack gap="xs">
+        <Stack gap="md">
+          <Stack gap="sm">
             <Title order={4}>Agent deployment</Title>
             <Text size="sm" c="dimmed">
               Setup your Agent in your infrastructure.
