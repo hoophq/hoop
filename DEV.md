@@ -112,7 +112,7 @@ This script:
 - reads `POSTGRES_DB_URI` from `hoopdev`'s env and seeds two rows in `hoopdevpg` (idempotent):
   - `private.agents` → a `spiffe-agent` row
   - `private.agent_spiffe_mappings` → maps `spiffe://local.test/agent/local-dev` to that agent
-- launches the agent on your host with `HOOP_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
+- launches the agent on your host with `HOOP_SPIFFE_KEY_FILE=dist/dev/spiffe/agent.jwt`, `HOOP_GRPCURL=127.0.0.1:8010`
 
 The trust bundle is delivered to the gateway via `HOOP_SPIFFE_BUNDLE_JWKS` in `.env` (set by `run-dev-spiffe-prep`), so this script does not touch the gateway container's filesystem.
 
