@@ -29,9 +29,11 @@ config: {}
 #     gRPC endpoint (host:port, e.g. grpc.hoop.example.com:8010)
 #   * a spiffe-helper sidecar writes /run/spiffe/agent.jwt on a shared emptyDir
 #     and rotates it before expiry
-# Requires the SPIFFE CSI Driver (csi.spiffe.io) and a SPIRE agent DaemonSet
-# reachable from the node. A private.agent_spiffe_mappings row must exist on
-# the gateway for the SPIFFE ID this pod presents.
+# Requires a SPIRE Agent DaemonSet reachable from each node where this agent
+# may be scheduled, plus a private.agent_spiffe_mappings row on the gateway
+# for the SPIFFE ID this pod presents. The chart additionally needs one of:
+#   * SPIFFE CSI Driver (csi.spiffe.io) installed — when workloadAPI.type=csi
+#   * hostPath access allowed by Pod Security Admission — when workloadAPI.type=hostPath
 # Using SPIFFE is the recommended way to run replicaCount > 1, since each
 # replica receives its own short-lived SVID instead of sharing a static
 # HOOP_KEY (which causes stream flapping on the gateway).
@@ -45,11 +47,30 @@ spiffe:
   # resolved from the SPIFFE mapping, not this field. Leave empty to omit.
   name: ''
 
+  # How the spiffe-helper sidecar reaches the SPIRE Workload API socket
+  # exposed by the node-local SPIRE Agent. Pick one of:
+  #   csi      — uses the SPIFFE CSI Driver (csi.spiffe.io). Requires the
+  #              driver installed as a DaemonSet. Compatible with Pod
+  #              Security Admission "baseline" and "restricted".
+  #   hostPath — mounts the node's socket directory directly. Drops the
+  #              CSI Driver dependency at the cost of requiring a Pod
+  #              Security Admission profile that allows hostPath volumes.
+  workloadAPI:
+    type: csi
+    # Only used when type=hostPath. Directory on the node where the SPIRE
+    # Agent exposes its Workload API socket. Defaults to the SPIRE Helm
+    # chart's convention; adjust if your SPIRE install uses a different
+    # socket_path.
+    hostPath: /run/spire/agent-sockets
+
   spiffeHelper:
     image: ghcr.io/spiffe/spiffe-helper:0.9.1
     imagePullPolicy: IfNotPresent
-    # Unix socket path to the SPIRE Workload API as exposed by the CSI
-    # driver. Override only if your CSI driver mounts it elsewhere.
+    # Unix socket path (as seen inside the sidecar) to the SPIRE Workload
+    # API. Default matches the SPIFFE CSI Driver's convention; for
+    # hostPath mode the filename is usually different (e.g. api.sock or
+    # agent.sock, depending on your SPIRE agent's socket_path). Override
+    # to match your SPIRE install.
     agentAddress: /spiffe-workload-api/spire-agent.sock
     # Required. Must match config.HOOP_SPIFFE_AUDIENCE on the gateway.
     audience: ''
