@@ -391,7 +391,7 @@ function Sidebar({ mobile = false }) {
         >
           {skipLink}
 
-          <Box mb="xl" mt="xl" style={{ flexShrink: 0 }}>
+          <Box mb="lg" mt="lg" style={{ flexShrink: 0 }}>
             <img
               src="/images/hoop-branding/SVG/hoop-symbol+text_white.svg"
               alt="Hoop"
@@ -524,7 +524,7 @@ function Sidebar({ mobile = false }) {
         >
           {skipLink}
 
-          <Box mb="xl" mt="xl" style={{ flexShrink: 0, padding: '0 16px' }}>
+          <Box mb="lg" mt="lg" style={{ flexShrink: 0, padding: '0 16px' }}>
             <img
               src="/images/hoop-branding/PNG/hoop-symbol+text_white@4x.png"
               alt="Hoop"

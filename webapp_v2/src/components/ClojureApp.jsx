@@ -1,5 +1,5 @@
 /* global __BUILD_ID__ */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Alert, Center, Stack, Text, Code } from '@mantine/core'
 import PageLoader from '@/components/PageLoader'
@@ -36,6 +36,45 @@ function disableCLJSCSS() {
   if (link) link.disabled = true
 }
 
+// Module-level singletons — these survive every ClojureApp mount/unmount cycle
+// so the Reagent tree rendered inside `cljsHost` is never destroyed once built.
+// When ClojureApp unmounts we move the host into a hidden parking node; on the
+// next mount we move it back into the visible container. DOM subtree (and thus
+// React/Reagent fiber state) stays alive across the whole app lifetime.
+let cljsHost = null
+let cljsParking = null
+let cljsInitialized = false
+// Last pathname synced into the CLJS active-panel. When ClojureApp re-mounts
+// on the same path (e.g. /dashboard → /agents → /dashboard), we can skip the
+// re-sync and reveal the host immediately — the tree already shows the right
+// panel. When the path is stale, we hide the host for a frame while re-frame
+// propagates the new active-panel to Reagent, so the user never sees the old
+// panel flash before the new one renders.
+let lastSyncedPath = null
+
+function getParkingNode() {
+  if (!cljsParking) {
+    cljsParking = document.createElement('div')
+    cljsParking.setAttribute('data-cljs-parking', 'true')
+    cljsParking.style.display = 'none'
+    document.body.appendChild(cljsParking)
+  }
+  return cljsParking
+}
+
+function getCljsHost() {
+  if (!cljsHost) {
+    cljsHost = document.createElement('div')
+    cljsHost.id = 'app'
+    // Park it until a ClojureApp instance claims it. mount-root in the CLJS
+    // bundle looks up `#app` via getElementById — parking it inside <body>
+    // keeps that lookup working even if the bundle's init() fires between
+    // our cleanup and next mount (e.g. in React 18 StrictMode double-effect).
+    getParkingNode().appendChild(cljsHost)
+  }
+  return cljsHost
+}
+
 const INIT_POLL_INTERVAL_MS = 25
 const INIT_POLL_TIMEOUT_MS = 10000
 
@@ -60,14 +99,6 @@ function waitForCljsInit() {
   })
 }
 
-/**
- * Loads the ClojureScript bundle and resolves once webapp.core/init has
- * finished running (detected by `window.hoopRemount`). The caller is
- * always responsible for calling `hoopSetRoute` + `hoopRemount` to render
- * into the current mount div — init's own `mount-root` may have targeted
- * a stale or wiped `<div id="app">` (e.g. StrictMode cleanup between the
- * script's injection and its execution).
- */
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[data-cljs-bundle]`)
@@ -85,73 +116,110 @@ function loadScript(src) {
 }
 
 /**
- * ClojureApp — mounts the ClojureScript/Reagent app inside the React shell.
+ * ClojureApp — bridges the ClojureScript/Reagent app into the React shell.
+ *
+ * The CLJS tree lives inside a singleton `<div id="app">` that is created
+ * once per page load and reused across every mount. On unmount the host is
+ * moved into a hidden parking node (not destroyed), so switching between a
+ * React route and a CLJS route does NOT trigger a Reagent re-render — the
+ * old flash of blank content + loader is gone.
+ *
+ * Route changes are propagated via `window.hoopSetRoute`; re-frame then
+ * updates the active panel and Reagent reconciles into the existing DOM.
  *
  * Requires the shadow-cljs dev server running on port 8280 (or VITE_CLJS_URL).
  * Start it with: cd webapp && npm run shadow:watch:hoop-ui
  */
 function ClojureApp() {
   const location = useLocation()
-  const mountRef = useRef(null)
+  const containerRef = useRef(null)
   const [error, setError] = useState(null)
-  // Show the loader on every ClojureApp mount. It is dismissed only after
-  // we have explicitly called hoopRemount into *this* mount's div, which
-  // guarantees the CLJS tree is actually rendered inside the visible DOM.
-  const [cljsLoading, setCljsLoading] = useState(true)
-  // Track whether the CLJS app is ready to receive route updates
-  const cljsReadyRef = useRef(false)
+  // Only show the loader on the very first mount — when cljsInitialized is
+  // already true the host already holds a rendered Reagent tree, and the
+  // handoff is instant.
+  const [cljsLoading, setCljsLoading] = useState(!cljsInitialized)
+  const cljsReadyRef = useRef(cljsInitialized)
 
-  useEffect(() => {
+  // useLayoutEffect so the parking↔container swap happens before the browser
+  // paints the empty <div ref={containerRef} /> React just rendered.
+  useLayoutEffect(() => {
     localStorage.setItem('react-shell', 'true')
-
-    if (mountRef.current) {
-      mountRef.current.id = 'app'
-    }
-
     enableCLJSCSS('/css/site.css')
 
-    loadScript('/js/app.js')
-      .then(() => {
-        // init() is guaranteed complete (window.hoopRemount is set).
-        // init's own mount-root may have targeted a previous div that has
-        // since been unmounted by React, or had its innerHTML wiped by a
-        // StrictMode cleanup pass. Regardless of how we got here, sync
-        // the active panel to the current URL and render Reagent into
-        // *this* mount's div — which now holds id="app".
-        if (mountRef.current && mountRef.current.id !== 'app') {
-          mountRef.current.id = 'app'
-        }
-        window.hoopSetRoute(window.location.pathname)
-        window.hoopRemount()
-        cljsReadyRef.current = true
-        setCljsLoading(false)
-      })
-      .catch(() => {
-        setError(true)
-        setCljsLoading(false)
-      })
+    const host = getCljsHost()
+    const currentPath = window.location.pathname
+    const needsResync = cljsInitialized && lastSyncedPath !== currentPath
+
+    if (needsResync) {
+      // Mask the host while re-frame swaps the active panel. Without this
+      // the user sees one frame of the previous panel (whatever was rendered
+      // before unmount) before Reagent reconciles to the new one.
+      host.style.visibility = 'hidden'
+    }
+
+    if (containerRef.current && host.parentNode !== containerRef.current) {
+      // appendChild auto-detaches from the parking node; the subtree (and
+      // any React/Reagent fiber state) comes with it.
+      containerRef.current.appendChild(host)
+    }
+
+    if (cljsInitialized) {
+      try {
+        window.hoopSetRoute(currentPath)
+        lastSyncedPath = currentPath
+      } catch (e) {
+        console.warn('[ClojureApp] hoopSetRoute failed on remount', e)
+      }
+      cljsReadyRef.current = true
+      if (needsResync) {
+        // Two RAFs: first commits the re-frame-triggered Reagent render,
+        // second paints it. Reveal after that so the first visible frame
+        // already shows the new panel.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            host.style.visibility = ''
+          })
+        })
+      }
+    } else {
+      loadScript('/js/app.js')
+        .then(() => {
+          window.hoopSetRoute(currentPath)
+          // init() has already called mount-root once into #app. Call
+          // hoopRemount defensively in case init ran while the host was
+          // still parked (detached subtree is a valid React root, but we
+          // want to be certain Reagent is rendered into the live DOM).
+          window.hoopRemount()
+          lastSyncedPath = currentPath
+          cljsInitialized = true
+          cljsReadyRef.current = true
+          setCljsLoading(false)
+        })
+        .catch(() => {
+          setError(true)
+          setCljsLoading(false)
+        })
+    }
 
     return () => {
       localStorage.removeItem('react-shell')
       cljsReadyRef.current = false
       disableCLJSCSS()
-      if (mountRef.current) {
-        mountRef.current.innerHTML = ''
-        // Do NOT clear id here — in React 18 StrictMode, cleanup runs before
-        // re-mount while the DOM element stays. If the CLJS script loads during
-        // that window it calls getElementById("app") and crashes on null.
+      // Park the host. Do NOT clear innerHTML — preserving the Reagent tree
+      // across mounts is the whole point of the singleton pattern.
+      if (host.parentNode) {
+        getParkingNode().appendChild(host)
       }
     }
   }, [])
 
-  // Sync the CLJS active panel whenever React Router changes the pathname.
-  // This handles sidebar navigation between ClojureScript routes without a
-  // full remount — React Router pushes state but pushy only hears popstate,
-  // so we bridge the gap by calling hoopSetRoute directly.
+  // Sync the CLJS active panel whenever React Router changes the pathname
+  // while ClojureApp is mounted (e.g. sidebar navigation between CLJS routes).
   useEffect(() => {
     if (cljsReadyRef.current && window.hoopSetRoute) {
       try {
         window.hoopSetRoute(location.pathname)
+        lastSyncedPath = location.pathname
       } catch (e) {
         console.warn('[ClojureApp] hoopSetRoute failed for', location.pathname, e)
       }
@@ -180,7 +248,7 @@ function ClojureApp() {
   return (
     <>
       {cljsLoading && <PageLoader overlay />}
-      <div ref={mountRef} />
+      <div ref={containerRef} />
     </>
   )
 }
