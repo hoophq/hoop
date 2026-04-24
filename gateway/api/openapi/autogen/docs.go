@@ -7369,6 +7369,192 @@ const docTemplate = `{
                 }
             }
         },
+        "/spiffe-mappings": {
+            "get": {
+                "description": "List all SPIFFE-ID to agent mappings in the caller's organization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "List SPIFFE Mappings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Map a SPIFFE identity (exact URI or URI prefix) onto a Hoop agent.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "Create SPIFFE Mapping",
+                "parameters": [
+                    {
+                        "description": "The mapping to create",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/spiffe-mappings/{id}": {
+            "put": {
+                "description": "Update an existing SPIFFE-ID to agent mapping.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "Update SPIFFE Mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The mapping fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove a SPIFFE-ID to agent mapping.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "Delete SPIFFE Mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/userinfo": {
             "get": {
                 "description": "Get own user's information",
@@ -8673,6 +8859,70 @@ const docTemplate = `{
                 "version": {
                     "type": "string",
                     "example": "1.23.10"
+                }
+            }
+        },
+        "openapi.AgentSPIFFEMapping": {
+            "type": "object",
+            "required": [
+                "trust_domain"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "ID of the Hoop agent this mapping resolves to (exact form). Mutually\nexclusive with AgentTemplate.",
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "agent_template": {
+                    "description": "Go text/template that renders to a Hoop agent name. Used with\nSPIFFEPrefix. See the SPIFFE docs for template field details.\nMutually exclusive with AgentID.",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "groups": {
+                    "description": "The groups assigned to the agent when authenticating via this mapping.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "agents"
+                    ]
+                },
+                "id": {
+                    "description": "The unique identifier of this resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "spiffe_id": {
+                    "description": "Exact SPIFFE ID to match. Mutually exclusive with SPIFFEPrefix.",
+                    "type": "string",
+                    "example": "spiffe://customer.com/agent/arqa-prod"
+                },
+                "spiffe_prefix": {
+                    "description": "SPIFFE ID prefix. Matches any SVID whose sub begins with this string;\nlongest-prefix wins on lookup. Mutually exclusive with SPIFFEID.",
+                    "type": "string",
+                    "example": "spiffe://customer.com/agent/"
+                },
+                "trust_domain": {
+                    "description": "SPIFFE trust domain. Must match the trust domain configured on the\ngateway for SPIFFE authentication to succeed.",
+                    "type": "string",
+                    "example": "customer.com"
+                },
+                "updated_at": {
+                    "description": "Last update timestamp",
+                    "type": "string",
+                    "readOnly": true
                 }
             }
         },

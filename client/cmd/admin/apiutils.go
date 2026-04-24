@@ -129,6 +129,15 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		if method == "POST" {
 			apir.suffixEndpoint = "/api/serviceaccounts"
 		}
+	case "spiffe-mapping", "spiffe-mappings", "spiffemapping", "spiffemappings":
+		apir.resourceList = true
+		apir.resourceCreate = true
+		apir.resourceUpdate = true
+		apir.resourceDelete = true
+		apir.suffixEndpoint = path.Join("/api/spiffe-mappings", apir.name)
+		if method == "POST" {
+			apir.suffixEndpoint = "/api/spiffe-mappings"
+		}
 	case "review", "reviews":
 		apir.suffixEndpoint = path.Join("/api/reviews", apir.name)
 	case "plugin", "plugins":

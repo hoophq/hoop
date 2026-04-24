@@ -12,6 +12,7 @@ func init() {
 	createCmd.AddCommand(createPluginCmd)
 	createCmd.AddCommand(createUserCmd)
 	createCmd.AddCommand(createSvcAccountCmd)
+	createCmd.AddCommand(createSpiffeMappingCmd)
 	createCmd.AddCommand(createSvixEventTypeCmd)
 	createCmd.AddCommand(createSvixEndppointCmd)
 	createCmd.AddCommand(createSvixMessageCmd)
