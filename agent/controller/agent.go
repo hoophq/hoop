@@ -136,26 +136,8 @@ func (a *Agent) Close(cause error) {
 	_, _ = a.client.Close()
 }
 
-func (a *Agent) getOrAddConnMutex(connId string, connType string) *sync.Mutex {
-	a.connMtxStoreMtx.Lock()
-	defer a.connMtxStoreMtx.Unlock()
-
-	if _, ok := a.connMtx[connId+connType]; !ok {
-		a.connMtx[connId+connType] = &sync.Mutex{}
-	}
-	return a.connMtx[connId+connType]
-}
-
 func (a *Agent) processPacket(pkt *pb.Packet) {
 	sid := string(pkt.Spec[pb.SpecGatewaySessionID])
-	clientConnectionID := string(pkt.Spec[pb.SpecClientConnectionID])
-	clientStreamID := sid + clientConnectionID
-
-	// Make it pipelined for each connection but parallel between connections
-	mtx := a.getOrAddConnMutex(clientStreamID, pkt.Type)
-	mtx.Lock()
-	defer mtx.Unlock()
-
 	log.With("sid", sid).Debugf("received client packet [%v]", pkt.Type)
 	switch pkt.Type {
 	case pbagent.GatewayConnectOK:
@@ -234,16 +216,7 @@ func (a *Agent) Run() error {
 		default:
 		}
 
-		// SSH data packets are processed synchronously so that gRPC flow
-		// control propagates backpressure from the destination SSH server
-		// all the way back to the SCP/SSH client. Without this, Recv()
-		// keeps draining packets into goroutines that pile up in memory
-		// while blocked on the SSH channel's flow control window.
-		if pkt.Type == pbagent.SSHConnectionWrite {
-			a.processPacket(pkt)
-		} else {
-			go a.processPacket(pkt)
-		}
+		a.processPacket(pkt)
 	}
 }
 
