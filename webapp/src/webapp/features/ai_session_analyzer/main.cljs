@@ -9,26 +9,30 @@
    [webapp.features.ai-session-analyzer.views.empty-state :as empty-state]
    [webapp.features.ai-session-analyzer.views.rule-list :as rule-list]))
 
-(defn- loading-view []
-  [:> Flex {:justify "center" :align "center"}
-   [loaders/simple-loader {:size "6" :border-size "4"}]])
-
 (defn main []
   (let [rules-data (rf/subscribe [:ai-session-analyzer/rules])
         loading-rules? (rf/subscribe [:ai-session-analyzer/rules-loading])
         loading-config? (rf/subscribe [:ai-session-analyzer/provider-loading])
         provider-data (rf/subscribe [:ai-session-analyzer/provider])
         active-tab (r/atom "rules")
+        min-loading-done (r/atom false)
         promotion-seen? (r/atom (boolean (.getItem (.-localStorage js/window) "ai-session-analyzer-promotion-seen")))]
 
     (rf/dispatch [:ai-session-analyzer/get-rules])
     (rf/dispatch [:ai-session-analyzer/get-provider])
 
+    (js/setTimeout #(reset! min-loading-done true) 1500)
+
     (fn []
       (let [has-rules? (and (:data @rules-data) (seq (:data @rules-data)))
-            provider-configured? (= :success (:status @provider-data))]
+            provider-configured? (= :success (:status @provider-data))
+            loading? (or (= :loading (:status @rules-data))
+                         (not @min-loading-done))]
 
-        (if (not @promotion-seen?)
+        (cond
+          loading? [loaders/page-loading-screen {:full-page false}]
+
+          (not @promotion-seen?)
           [:> Box {:class "h-full bg-gray-1"}
            [promotion/ai-session-analyzer-promotion
             {:mode :empty-state
@@ -36,6 +40,7 @@
                                   (.setItem (.-localStorage js/window) "ai-session-analyzer-promotion-seen" "true")
                                   (reset! promotion-seen? true))}]]
 
+          :else
           [:> Box {:class "h-full flex flex-col bg-gray-1 px-4 py-10 sm:px-6 lg:px-20 lg:pt-16 lg:pb-10 h-full"}
            [:> Flex {:direction "column" :gap "5" :class "h-full"}
 
@@ -62,7 +67,7 @@
 
               [:> Tabs.Content {:value "rules"}
                (cond
-                 @loading-rules? [loading-view]
+                 @loading-rules? [loaders/page-loading-screen {:full-page false}]
                  (not has-rules?) [empty-state/main
                                    {:provider-configured? provider-configured?
                                     :on-configure #(reset! active-tab "configure")}]
@@ -70,5 +75,5 @@
 
               [:> Tabs.Content {:value "configure"}
                (if @loading-config?
-                 [loading-view]
+                 [loaders/page-loading-screen {:full-page false}]
                  [config-view/main active-tab])]]]]])))))
