@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,11 +55,23 @@ type (
 const (
 	OptionConnectionName OptionKey = "connection-name"
 	LocalhostAddr                  = "127.0.0.1:8010"
-
-	// MaxRecvMsgSize defines the maximum message size in bytes that can be received.
-	// Set to allow protocols to transmit larger data chunks in a single packet.
-	MaxRecvMsgSize int = 1024 * 1024 * 17 // 17 MiB
 )
+
+var (
+	defaultMaxRecvMsgSize = 1024 * 1024 * 17 // 17 MiB
+	// MaxRecvMsgSize defines the maximum message size in bytes that can be received.
+	// It can be overridden via HOOP_GRPC_MESSAGE_SIZE_BYTES to accommodate larger payloads.
+	MaxRecvMsgSize = initMaxRecvMsgSize()
+)
+
+func initMaxRecvMsgSize() int {
+	if envVal := os.Getenv("HOOP_GRPC_MESSAGE_SIZE_BYTES"); envVal != "" {
+		if parsedVal, err := strconv.Atoi(envVal); err == nil && parsedVal > 0 {
+			return parsedVal
+		}
+	}
+	return defaultMaxRecvMsgSize
+}
 
 func WithOption(optKey OptionKey, val string) *ClientOptions {
 	return &ClientOptions{optionKey: optKey, optionVal: val}
