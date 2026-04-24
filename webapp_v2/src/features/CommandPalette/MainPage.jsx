@@ -45,8 +45,8 @@ export default function MainPage({
     if (searchStatus === 'searching') {
       return (
         <SpotlightEmpty>
-          <Loader size="sm" />
-          <Text size="sm" c="dimmed" ml="xs">Searching...</Text>
+          <Loader size="xs" />
+          <Text size="xs" c="dimmed" ml="xs">Searching...</Text>
         </SpotlightEmpty>
       )
     }

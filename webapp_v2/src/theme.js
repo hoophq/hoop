@@ -112,16 +112,16 @@ export const theme = createTheme({
     ]
   },
 
-  // Radix --space-* scale (4px base).
-  // xs=--space-1, sm=--space-2, md=--space-4, lg=--space-5, xl=--space-6
+  // 4pt base scale with exponential steps.
+  // xs=4  sm=8  md=16  lg=24  xl=32  xxl=48  xxxl=64
   spacing: {
-    xxs: rem(4),
-    xs: rem(8),
-    sm: rem(16),
-    md: rem(24),
-    lg: rem(32),
-    xl: rem(48),
-    xxl: rem(64)
+    xs: rem(4),
+    sm: rem(8),
+    md: rem(16),
+    lg: rem(24),
+    xl: rem(32),
+    xxl: rem(48),
+    xxxl: rem(64)
   },
 
   // Radix radius="large" (radius-factor: 1.5 × base values).
