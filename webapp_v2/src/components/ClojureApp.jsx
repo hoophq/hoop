@@ -184,12 +184,12 @@ function ClojureApp() {
     } else {
       loadScript('/js/app.js')
         .then(() => {
+          // init() has already called mount-root into #app by the time
+          // waitForCljsInit resolves. The host is parked in <body> while
+          // detached, so getElementById("app") still finds it — Reagent's
+          // initial render lands in the live singleton either way. We only
+          // need to align the active panel with the current URL.
           window.hoopSetRoute(currentPath)
-          // init() has already called mount-root once into #app. Call
-          // hoopRemount defensively in case init ran while the host was
-          // still parked (detached subtree is a valid React root, but we
-          // want to be certain Reagent is rendered into the live DOM).
-          window.hoopRemount()
           lastSyncedPath = currentPath
           cljsInitialized = true
           cljsReadyRef.current = true

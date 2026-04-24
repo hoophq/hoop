@@ -13,13 +13,16 @@
   (let [rules (rf/subscribe [:access-request/rules])
         status (rf/subscribe [:access-request/status])
         current-user (rf/subscribe [:users->current-user])
-        promotion-seen (r/atom (.getItem (.-localStorage js/window) "access-request-promotion-seen"))]
+        promotion-seen (r/atom (.getItem (.-localStorage js/window) "access-request-promotion-seen"))
+        min-loading-done (r/atom false)]
 
     (rf/dispatch [:access-request/list-rules])
+    (js/setTimeout #(reset! min-loading-done true) 1500)
 
     (fn []
       (let [has-rules? (and @rules (seq @rules))
-            loading? (= :loading @status)
+            loading? (or (= :loading @status)
+                         (not @min-loading-done))
             free-license? (get-in @current-user [:data :free-license?])
             rules-count (count (or @rules []))
             limit-reached? (and free-license? (>= rules-count 1))]
