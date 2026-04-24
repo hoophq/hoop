@@ -74,9 +74,15 @@ spec:
           readOnly: true
       volumes:
       - name: spiffe-workload-api
+        {{- if eq (.Values.spiffe.workloadAPI.type | default "csi") "hostPath" }}
+        hostPath:
+          path: {{ .Values.spiffe.workloadAPI.hostPath | default "/run/spire/agent-sockets" }}
+          type: Directory
+        {{- else }}
         csi:
           driver: csi.spiffe.io
           readOnly: true
+        {{- end }}
       - name: spiffe-tokens
         emptyDir:
           medium: Memory
