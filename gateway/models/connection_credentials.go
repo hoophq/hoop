@@ -134,6 +134,16 @@ func RefreshCredentialExpiration(id, sessionID string, expireAt time.Time) error
 		}).Error
 }
 
+// ClearCredentialSession unlinks the credential from its audit session without
+// invalidating the credential itself. Used by the "close session" endpoint so
+// the user can reconnect later with the same token while the prior audit
+// session is finalised.
+func ClearCredentialSession(id string) error {
+	return DB.Table("private.connection_credentials").
+		Where("id = ?", id).
+		Update("session_id", nil).Error
+}
+
 // CloseExpiredCredentialSessions closes sessions for expired connection credentials
 // This is called lazily when accessing credentials or sessions
 func CloseExpiredCredentialSessions() error {

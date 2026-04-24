@@ -487,7 +487,7 @@ func ResumeConnectionCredentials(c *gin.Context) {
 // RevokeConnectionCredentials
 //
 //	@Summary		Revoke Connection Credentials
-//	@Description	Revokes a connection credential, invalidating it and disconnecting any active sessions
+//	@Description	Revokes a connection credential, invalidating the stored token and disconnecting any active sessions. The next credential request for the same (user, connection) pair will issue a fresh token.
 //	@Tags			Connections
 //	@Produce		json
 //	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
@@ -500,39 +500,9 @@ func RevokeConnectionCredentials(c *gin.Context) {
 	connNameOrID := c.Param("nameOrID")
 	credentialID := c.Param("ID")
 
-	if credentialID == "" {
-		c.AbortWithStatusJSON(400, gin.H{"message": "credential ID is required"})
-		return
-	}
-
-	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
-	if err != nil {
-		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
-		return
-	}
-	if conn == nil {
-		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("connection %s not found", connNameOrID)})
-		return
-	}
-
-	cred, err := models.GetConnectionCredentialsByID(ctx.OrgID, credentialID)
-	if err != nil {
-		if err == models.ErrNotFound {
-			c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("credential %s not found", credentialID)})
-			return
-		}
-		c.AbortWithStatusJSON(500, gin.H{"message": err.Error()})
-		return
-	}
-
-	if cred.ConnectionName != conn.Name {
-		c.AbortWithStatusJSON(404, gin.H{"message": fmt.Sprintf("credential %s does not belong to connection %s", credentialID, connNameOrID)})
-		return
-	}
-
-	// Only the credential owner or org admin can revoke
-	if cred.UserSubject != ctx.UserID && !ctx.IsAdmin() {
-		c.AbortWithStatusJSON(403, gin.H{"message": "only the credential owner or admin can revoke"})
+	cred, conn, errResp := loadCredentialForMutation(ctx, connNameOrID, credentialID)
+	if errResp != nil {
+		c.AbortWithStatusJSON(errResp.status, gin.H{"message": errResp.message})
 		return
 	}
 
@@ -547,22 +517,109 @@ func RevokeConnectionCredentials(c *gin.Context) {
 		}
 	}
 
-	// Cancel active sessions in each proxy
+	terminateActiveCredentialSessions(cred, conn)
+
+	c.Status(204)
+}
+
+// CloseConnectionCredentials
+//
+//	@Summary		Close Connection Credentials Session
+//	@Description	Ends the current audit session for a credential and tears down any active proxy connections, but keeps the credential itself usable. The stored token is preserved so the next credential request for the same (user, connection) pair returns the same value. For explicit token invalidation use the revoke endpoint.
+//	@Tags			Connections
+//	@Produce		json
+//	@Param			nameOrID		path		string	true	"Name or UUID of the connection"
+//	@Param			credentialID	path		string	true	"UUID of the credential"
+//	@Success		204			"No content"
+//	@Failure		400,403,404,500	{object}	openapi.HTTPError
+//	@Router			/connections/{nameOrID}/credentials/{credentialID}/close [post]
+func CloseConnectionCredentials(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	connNameOrID := c.Param("nameOrID")
+	credentialID := c.Param("ID")
+
+	cred, conn, errResp := loadCredentialForMutation(ctx, connNameOrID, credentialID)
+	if errResp != nil {
+		c.AbortWithStatusJSON(errResp.status, gin.H{"message": errResp.message})
+		return
+	}
+
+	// Close the audit session (if still linked) and unlink it from the
+	// credential so the next issuance starts a fresh Session row. The
+	// credential row itself (including the encrypted_secret_key) is preserved
+	// so the stable-key contract holds across disconnects.
+	if cred.SessionID != "" {
+		if err := models.UpdateSessionStatus(ctx.OrgID, cred.SessionID, "done"); err != nil {
+			log.Warnf("failed closing audit session %s, err=%v", cred.SessionID, err)
+		}
+	}
+	if err := models.ClearCredentialSession(cred.ID); err != nil {
+		c.AbortWithStatusJSON(500, gin.H{"message": fmt.Sprintf("failed to close credential session: %v", err)})
+		return
+	}
+
+	terminateActiveCredentialSessions(cred, conn)
+
+	c.Status(204)
+}
+
+type handlerError struct {
+	status  int
+	message string
+}
+
+// loadCredentialForMutation loads a credential and validates that the caller is
+// allowed to mutate it. Used by both Revoke and Close.
+func loadCredentialForMutation(ctx *storagev2.Context, connNameOrID, credentialID string) (*models.ConnectionCredentials, *models.Connection, *handlerError) {
+	if credentialID == "" {
+		return nil, nil, &handlerError{status: 400, message: "credential ID is required"}
+	}
+
+	conn, err := models.GetConnectionByNameOrID(ctx, connNameOrID)
+	if err != nil {
+		return nil, nil, &handlerError{status: 500, message: err.Error()}
+	}
+	if conn == nil {
+		return nil, nil, &handlerError{status: 404, message: fmt.Sprintf("connection %s not found", connNameOrID)}
+	}
+
+	cred, err := models.GetConnectionCredentialsByID(ctx.OrgID, credentialID)
+	if err != nil {
+		if err == models.ErrNotFound {
+			return nil, nil, &handlerError{status: 404, message: fmt.Sprintf("credential %s not found", credentialID)}
+		}
+		return nil, nil, &handlerError{status: 500, message: err.Error()}
+	}
+
+	if cred.ConnectionName != conn.Name {
+		return nil, nil, &handlerError{status: 404, message: fmt.Sprintf("credential %s does not belong to connection %s", credentialID, connNameOrID)}
+	}
+
+	if cred.UserSubject != ctx.UserID && !ctx.IsAdmin() {
+		return nil, nil, &handlerError{status: 403, message: "only the credential owner or admin can perform this action"}
+	}
+
+	return cred, conn, nil
+}
+
+// terminateActiveCredentialSessions tears down any in-flight proxy sessions for
+// the given credential. Shared by Revoke (with DB invalidation) and Close
+// (without DB invalidation).
+func terminateActiveCredentialSessions(cred *models.ConnectionCredentials, conn *models.Connection) {
 	connType := proto.ConnectionType(cred.ConnectionType)
 	switch connType {
 	case proto.ConnectionTypePostgres:
-		postgresproxy.GetServerInstance().RevokeByCredentialID(credentialID)
+		postgresproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeSSH:
-		sshproxy.GetServerInstance().RevokeByCredentialID(credentialID)
+		sshproxy.GetServerInstance().RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeRDP:
-		broker.RevokeByCredentialID(credentialID)
+		broker.RevokeByCredentialID(cred.ID)
 	case proto.ConnectionTypeHttpProxy, proto.ConnectionTypeKubernetes, proto.ConnectionTypeClaudeCode, proto.ConnectionTypeCommandLine:
 		httpproxy.GetServerInstance().RevokeBySecretKeyHash(cred.SecretKeyHash)
 	case proto.ConnectionTypeSSM:
-		// SSM has no persistent session store; DB invalidation blocks new connections
+		// SSM has no persistent session store; proxies reject new connections
+		// at next auth check when the credential is revoked.
 	}
-
-	c.Status(204)
 }
 
 func mapValidSubtypeToHttpProxy(conn *models.Connection) proto.ConnectionType {

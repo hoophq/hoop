@@ -383,6 +383,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiconnections.RevokeConnectionCredentials,
 	)
+	r.POST("/connections/:nameOrID/credentials/:ID/close",
+		r.AuthMiddleware,
+		apiconnections.CloseConnectionCredentials,
+	)
 
 	r.GET("/connection-tags",
 		apiroutes.ReadOnlyAccessRole,
