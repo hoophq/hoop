@@ -233,7 +233,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		userapi.Create)
-	r.PUT("/users/:id",
+	r.PUT("/users/:emailOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
@@ -243,7 +243,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventUpdateUser),
 		userapi.PatchSlackID)
-	r.DELETE("/users/:id",
+	r.DELETE("/users/:emailOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
