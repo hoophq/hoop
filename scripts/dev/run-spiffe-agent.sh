@@ -55,10 +55,6 @@ if [[ $needs_rebuild -eq 1 ]]; then
   make build-dev-client
 fi
 
-echo "==> copying bundle.jwks into $APP_CONTAINER:/app/spiffe/"
-docker exec "$APP_CONTAINER" mkdir -p /app/spiffe
-docker cp "$SPIFFE_DIR/bundle.jwks" "$APP_CONTAINER":/app/spiffe/bundle.jwks
-
 echo "==> seeding agent + spiffe mapping (idempotent) via $DB_CONTAINER"
 PG_URI="$(docker exec "$APP_CONTAINER" printenv POSTGRES_DB_URI || true)"
 if [[ -z "$PG_URI" ]]; then
@@ -89,10 +85,12 @@ INSERT INTO private.agent_spiffe_mappings
   ON CONFLICT DO NOTHING;
 EOT
 
-# Fallback: if the bundle.jwks arrived after the gateway already
-# initialised externaljwt (i.e. when prep was run after run-dev
-# started), the refresh timer will pick it up within
-# HOOP_SPIFFE_REFRESH_PERIOD (default 30s in prep.sh). No restart needed.
+# The bundle is injected into the gateway as HOOP_SPIFFE_BUNDLE_JWKS in
+# .env by spiffe-prep.sh, so there is nothing to copy into the container.
+# If prep was re-run while the gateway was up, restart 'make run-dev' so
+# the new .env is re-read; spiffe-mint reuses its signing key across
+# invocations, so in practice the bundle value is stable and no restart
+# is needed unless TRUST_DOMAIN or SPIFFE_ID changed.
 
 echo "==> starting host agent with HOOP_KEY_FILE=$SPIFFE_DIR/agent.jwt"
 echo "    (Ctrl-C stops the agent; run-dev keeps going)"

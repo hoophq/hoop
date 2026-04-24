@@ -2,4 +2,4 @@ apiVersion: v2
 name: hoop-chart
 description: A Helm chart for Hoop
 type: application
-version: 0.0.2
+version: 0.0.4

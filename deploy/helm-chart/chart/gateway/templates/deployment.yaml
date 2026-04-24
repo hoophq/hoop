@@ -39,19 +39,20 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
+        {{- if .Values.spiffeBundle.jwks }}
+        env:
+        - name: HOOP_SPIFFE_BUNDLE_JWKS
+          valueFrom:
+            secretKeyRef:
+              name: hoop-spiffe-bundle
+              key: bundle.jwks
+        {{- end }}
         resources:
           {{- toYaml .Values.resources.gw | nindent 10 }}
-        {{- if or .Values.persistence.enabled .Values.spiffeBundle.jwks }}
-        volumeMounts:
         {{- if .Values.persistence.enabled }}
+        volumeMounts:
         - mountPath: /opt/hoop/sessions
           name: walsessions
-        {{- end }}
-        {{- if .Values.spiffeBundle.jwks }}
-        - mountPath: /app/spiffe
-          name: spiffe-bundle
-          readOnly: true
-        {{- end }}
         {{- end }}
         ports:
         - containerPort: 8010
@@ -77,81 +78,11 @@ spec:
         - secretRef:
             name: hoop-config
       {{- end }}
-      {{- if .Values.defaultAgentSpiffe.enabled }}
-      - image: '{{ .Values.defaultAgentSpiffe.imageRepository | default "hoophq/hoopdev" }}:{{ .Values.defaultAgentSpiffe.imageTag | default "latest" }}'
-        name: defaultagent-spiffe
-        args:
-        - hoop
-        - start
-        - agent
-        imagePullPolicy: {{ .Values.defaultAgentSpiffe.imagePullPolicy | default "Always" }}
-        env:
-        - name: HOOP_KEY_FILE
-          value: /run/spiffe/agent.jwt
-        - name: HOOP_GRPCURL
-          value: '{{ .Values.defaultAgentSpiffe.grpcHost | default "127.0.0.1:8010" }}'
-        {{- if .Values.defaultAgentSpiffe.name }}
-        - name: HOOP_NAME
-          value: '{{ .Values.defaultAgentSpiffe.name }}'
-        {{- end }}
-        {{- if .Values.defaultAgentSpiffe.grpcSkipVerify }}
-        - name: HOOP_TLS_SKIP_VERIFY
-          value: 'true'
-        {{- end }}
-        {{- with .Values.defaultAgentSpiffe.resources }}
-        resources:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        volumeMounts:
-        - mountPath: /run/spiffe
-          name: spiffe-tokens
-          readOnly: true
-        {{- if $.Values.persistence.enabled }}
-        - mountPath: /opt/hoop/sessions
-          name: walsessions
-        {{- end }}
-      - name: spiffe-helper
-        image: '{{ .Values.defaultAgentSpiffe.spiffeHelper.image | default "ghcr.io/spiffe/spiffe-helper:0.9.1" }}'
-        imagePullPolicy: {{ .Values.defaultAgentSpiffe.spiffeHelper.imagePullPolicy | default "IfNotPresent" }}
-        args: ["-config", "/etc/spiffe-helper/helper.conf"]
-        {{- with .Values.defaultAgentSpiffe.spiffeHelper.resources }}
-        resources:
-          {{- toYaml . | nindent 10 }}
-        {{- end }}
-        volumeMounts:
-        - name: spiffe-workload-api
-          mountPath: /spiffe-workload-api
-          readOnly: true
-        - name: spiffe-tokens
-          mountPath: /run/spiffe
-        - name: spiffe-helper-config
-          mountPath: /etc/spiffe-helper
-          readOnly: true
-      {{- end }}
-      {{- if or .Values.persistence.enabled .Values.defaultAgentSpiffe.enabled .Values.spiffeBundle.jwks }}
-      volumes:
       {{- if .Values.persistence.enabled }}
+      volumes:
       - name: walsessions
         persistentVolumeClaim:
           claimName: {{ .Values.persistence.existingClaim | default "walsessions" }}
-      {{- end }}
-      {{- if .Values.defaultAgentSpiffe.enabled }}
-      - name: spiffe-workload-api
-        csi:
-          driver: csi.spiffe.io
-          readOnly: true
-      - name: spiffe-tokens
-        emptyDir:
-          medium: Memory
-      - name: spiffe-helper-config
-        configMap:
-          name: spiffe-helper-config
-      {{- end }}
-      {{- if .Values.spiffeBundle.jwks }}
-      - name: spiffe-bundle
-        secret:
-          secretName: hoop-spiffe-bundle
-      {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
