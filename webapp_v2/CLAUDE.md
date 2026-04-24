@@ -53,6 +53,7 @@ src/
 ### Components
 - `src/components/` = Reusable across the whole app. Receive props, no direct store access preferred.
 - `src/pages/[Page]/components/` = Scoped to that page/domain only.
+- **Before creating a new component**, check `COMPONENTS.md` — it catalogs every existing component, hook, store, and service with usage examples.
 
 ### Layout
 - `src/layout/` = Shared layout infrastructure (Sidebar, Header, EmptyState, Layout container)
@@ -119,6 +120,8 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 
 ## Re-frame Interop (CLJS ↔ React)
 
+See `CLJS_PATTERNS.md` for the complete CLJS → React mapping (state, HTTP, lifecycle, routing, Tailwind → Mantine, and how to find CLJS source files).
+
 When React needs to trigger a CLJS re-frame action (e.g., navigate to a CLJS-owned route, open a CLJS modal):
 
 - **Never call `window.hoopDispatch` directly from a component.** Always wrap it in a Zustand store method. This makes it trivial to swap the underlying mechanism when the CLJS side is eventually removed.
@@ -175,6 +178,39 @@ Accepted exceptions for `styles={{}}`:
 - Mantine `Transition` animation spread: `style={transitionStyles}`
 - Structural shell slots (AppShell, Drawer) where `classNames` loses to Mantine's own CSS specificity — use `styles` with constants defined at the top of the file, never with raw hardcoded values inline
 
+## Wrapping Mantine components with context-specific styles
+
+When a Mantine component (NavLink, Button, Drawer, Badge…) needs styles specific to one context, **create a wrapper component** that owns all the visual decisions. Never scatter `classNames` or `styles` props across call sites.
+
+### Where the wrapper lives — reusability decides
+
+| The wrapper is used… | Put it in… | Example |
+|---|---|---|
+| Across the whole app | `src/components/` | `StatusBadge` used in Sessions, Agents, Resources |
+| Only inside one layout section | `src/layout/[Section]/` | `SidebarNavLink` only used in the Sidebar |
+| Only inside one page or feature | `src/pages/[Page]/components/` | `RunbookActionButton` only used in Runbooks |
+
+**`src/components/` is for truly reusable components.** A component whose styles are hard-coded for a specific context (dark sidebar, data table, modal shell) is NOT reusable — even if it wraps a generic Mantine component. Keep it co-located with the context it serves.
+
+### Rules
+
+1. **Apply all styles inside the wrapper** via `classNames={{}}` pointing to a co-located CSS Module. Never pass `styles={{}}` on instances.
+2. **Expose semantic props** (`danger`, `blocked`, `profileItem`) so call sites stay declarative and free of CSS class logic.
+3. **The CSS Module is the single source of truth** for that component's appearance — one file to read, one file to change.
+
+```jsx
+// ✅ Correct — wrapper owns classNames, call site stays clean
+<SidebarNavLink danger label="Log out" onClick={onLogout} />
+
+// ❌ Wrong — styling leaks into the call site
+<NavLink
+  styles={{ root: { color: 'rgba(255,120,120,0.85)' } }}
+  classNames={{ root: classes.navLink }}
+  label="Log out"
+  onClick={onLogout}
+/>
+```
+
 ## Styled Components
 
 When Mantine's built-in props and theme tokens are not enough for a visual requirement:
@@ -192,8 +228,8 @@ CSS Modules are allowed **only** for complex selectors that Mantine props cannot
 Available Mantine CSS variables (set by the theme in `src/theme.js`):
 
 ```css
-/* Spacing — xs=4px sm=8px md=16px lg=24px xl=32px */
-var(--mantine-spacing-xs | sm | md | lg | xl)
+/* Spacing — xs=4px sm=8px md=16px lg=24px xl=32px xxl=48px xxxl=64px */
+var(--mantine-spacing-xs | sm | md | lg | xl | xxl | xxxl)
 
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
 var(--mantine-font-size-xs | sm | md | lg | xl)
@@ -261,3 +297,5 @@ This project is a migration of `../webapp/` (ClojureScript) to React — not a g
 Before implementing any behavior (mobile nav, modals, transitions, keyboard handling, etc.),
 check how it works in the original app first (`../webapp/src/webapp/`). Replicate the behavior
 using Mantine/React equivalents. Do not invent new patterns when the original already has one.
+
+**When migrating a page**, follow `MIGRATION_CHECKLIST.md` — it covers every step from reading the CLJS source to updating the routing table, including verification against the original behavior.

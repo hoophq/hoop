@@ -182,7 +182,7 @@
          1500)))
 
     [loaders/page-loading-screen {:message "Verifying authentication..."
-                                   :description "Please wait while we complete your sign in"}]))
+                                  :description "Please wait while we complete your sign in"}]))
 
 (defn signup-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
@@ -205,7 +205,7 @@
      1500)
 
     [loaders/page-loading-screen {:message "Setting up your account..."
-                                   :description "Please wait while we complete your sign up"}]))
+                                  :description "Please wait while we complete your sign up"}]))
 
 (defn loading-transition []
   [loaders/page-loading-screen {}])
@@ -262,6 +262,8 @@
                [dialog/new-dialog]
                [snackbar/snackbar]
                [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
                panels]
               ;; Normal mode: full layout with sidebar and cmdk
               [:section
@@ -775,7 +777,7 @@
       (do
         (js/setTimeout #(rf/dispatch [:navigate :home]) 5000)
         [loaders/page-loading-screen {:message "Page not found"
-                                       :description "In a few seconds you will be redirected to the home page."}])
+                                      :description "In a few seconds you will be redirected to the home page."}])
 
       [loading-transition])))
 

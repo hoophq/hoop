@@ -4,7 +4,6 @@ import {
   SquareCode,
   BookUp2,
   GalleryVerticalEnd,
-  Inbox,
   CircleCheckBig,
   BookMarked,
   ShieldCheck,
@@ -19,6 +18,8 @@ import {
   Layers
 } from 'lucide-react';
 import { openCommandPalette } from '@/features/CommandPalette/spotlight';
+
+// ─── Nav items ─────────────────────────────────────────────────────────────
 
 export const MAIN_ITEMS = [
   { label: 'Resources', path: '/resources', icon: Package, freeFeature: true, adminOnly: false },

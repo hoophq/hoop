@@ -70,7 +70,7 @@ function DeleteAgentModal({ agent, opened, onClose, onConfirm }) {
 function AgentRow({ agent, isAdmin, isLast, onDelete }) {
   return (
     <Box
-      p="md"
+      p="lg"
       style={isLast ? undefined : { borderBottom: '1px solid var(--mantine-color-default-border)' }}
     >
       <Flex align="center">
@@ -79,7 +79,7 @@ function AgentRow({ agent, isAdmin, isLast, onDelete }) {
           <Text size="xs" c="dimmed">Version: {agent.version}</Text>
           <Text size="xs" c="dimmed">ID: {agent.id}</Text>
         </Box>
-        <Flex align="center" gap="sm">
+        <Flex align="center" gap="md">
           <AgentStatusBadge status={agent.status} />
           {isAdmin && (
             <Button
@@ -146,9 +146,9 @@ function Agents() {
         onConfirm={handleDeleteConfirm}
       />
 
-      <Stack gap="lg">
+      <Stack gap="xxl">
         <Group justify="space-between" align="flex-start">
-          <Stack gap={4}>
+          <Stack gap="sm">
             <Title order={1}>Agents</Title>
             <Text size="md" c="dimmed">
               View and manage your Agents for your resource roles

@@ -58,7 +58,7 @@ function AgentsCreate() {
   const hoopKey = agentKey?.token ?? ''
 
   const step1Content = (
-    <Grid gutter="xl">
+    <Grid gutter="xxl">
       <Grid.Col span={3}>
         <Text fw={500} size="md">Set an Agent name</Text>
         <Text size="sm" c="dimmed" mt={4}>
@@ -67,7 +67,7 @@ function AgentsCreate() {
       </Grid.Col>
       <Grid.Col span={9}>
         <form onSubmit={handleCreate}>
-          <Stack gap="md" align="flex-start">
+          <Stack gap="lg" align="flex-start">
             <TextInput
               label="Name"
               placeholder="Enter the name of the Agent"
@@ -91,10 +91,10 @@ function AgentsCreate() {
   )
 
   const step2Content = (
-    <Stack gap="xl">
-      <Grid gutter="xl">
+    <Stack gap="xxl">
+      <Grid gutter="xxl">
         <Grid.Col span={3}>
-          <Stack gap="xs">
+          <Stack gap="sm">
             <Title order={4}>Installation method</Title>
             <Text size="sm" c="dimmed">
               Select the type of environment to setup the agent in your infrastructure.
@@ -102,7 +102,7 @@ function AgentsCreate() {
           </Stack>
         </Grid.Col>
         <Grid.Col span={9}>
-          <Stack gap="xs">
+          <Stack gap="sm">
             {INSTALL_METHODS.map((method) => (
               <MethodCard
                 key={method.id}
@@ -122,7 +122,7 @@ function AgentsCreate() {
   )
 
   return (
-    <Stack gap="lg">
+    <Stack gap="xl">
       <Button
         variant="transparent"
         color="gray"
@@ -134,7 +134,7 @@ function AgentsCreate() {
         Back
       </Button>
 
-      <Stack gap={4}>
+      <Stack gap="sm">
         <Title order={1}>Setup new Agent</Title>
         <Text size="md" c="dimmed">
           Follow the steps below to setup a new Agent in your environment

@@ -233,6 +233,10 @@ When merging `main` into a feature branch:
 
 These two files are the authoritative source of truth for frontend work. Do not skip them.
 
+Additionally, read these before the specific task:
+- **Building UI or adding a component** → also read `webapp_v2/COMPONENTS.md` (catalog of existing components, hooks, stores, services — check before creating anything new).
+- **Migrating a CLJS page to React** → also read `webapp_v2/MIGRATION_CHECKLIST.md` (step-by-step process) and `webapp_v2/CLJS_PATTERNS.md` (CLJS → React pattern mapping).
+
 ### Quick orientation
 
 - New React pages live in `webapp_v2/src/pages/`
