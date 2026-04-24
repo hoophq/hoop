@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -93,6 +94,7 @@ func Get(c *gin.Context) {
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
 	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
+	serverInfoData.FeatureFlags = featureflag.SnapshotForOrg(ctx.OrgID)
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
 		IsValid:      err == nil,
 		VerifyError:  licenseVerifyErr,

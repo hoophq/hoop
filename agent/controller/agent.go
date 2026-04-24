@@ -20,6 +20,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller/awseks"
+	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/agent/controller/system/dbprovisioner"
 	"github.com/hoophq/hoop/agent/controller/system/runbookhook"
 	"github.com/hoophq/hoop/agent/rds"
@@ -30,6 +31,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	pbgateway "github.com/hoophq/hoop/common/proto/gateway"
 	pbsystem "github.com/hoophq/hoop/common/proto/system"
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
@@ -160,6 +162,8 @@ func (a *Agent) processPacket(pkt *pb.Packet) {
 	switch pkt.Type {
 	case pbagent.GatewayConnectOK:
 		log.Infof("connected with success to %v", a.config.URL)
+	case pbgateway.FeatureFlagUpdate:
+		featureflagstate.Update(pkt.Spec)
 	case pbagent.SessionOpen:
 		a.processSessionOpen(pkt)
 
