@@ -258,7 +258,10 @@
 
             :else
             (if react-shell?
-              ;; Shell mode: React owns sidebar + cmdk, render only content + overlays
+              ;; Shell mode: React owns sidebar, render only content + overlays.
+              ;; The command palette stays on the CLJS side for CLJS routes because
+              ;; the React Mantine Spotlight loses its styling under the CLJS
+              ;; Tailwind/Radix stylesheet (unlayered rules beat Mantine's @layer mantine).
               [:section
                {:class "antialiased h-screen"}
                [:> Toaster {:position "top-right"}]
@@ -268,6 +271,8 @@
                [dialog/new-dialog]
                [snackbar/snackbar]
                [draggable-card/main]
+               [command-palette/command-palette]
+               [command-palette/keyboard-listener]
                panels]
               ;; Normal mode: full layout with sidebar and cmdk
               [:section
