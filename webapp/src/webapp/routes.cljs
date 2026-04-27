@@ -78,6 +78,7 @@
                   [["/" :session-id] :session-details]]
      "/settings" [["/license" :license-management]
                   ["/infrastructure" :settings-infrastructure]
+                  ["/experimental" :settings-experimental]
                   ["/audit-logs" :settings-audit-logs]
                   ["/attributes" :settings-attributes]
                   ["/attributes/new" :settings-attributes-new]
