@@ -122,7 +122,7 @@ export const ORGANIZATION_ITEMS = [
         adminOnly: true,
         badge: { text: 'NEW', color: 'green' }
       },
-      { label: 'Infrastructure', path: '/settings/infrastructure', freeFeature: true, adminOnly: true },
+      { label: 'Infrastructure', path: '/settings/infrastructure', freeFeature: true, adminOnly: true, selfhostedOnly: true },
       { label: 'License', path: '/settings/license', freeFeature: true, adminOnly: true },
       { label: 'Internal Audit Logs', path: '/settings/audit-logs', freeFeature: true, adminOnly: true },
       { label: 'Users', path: '/organization/users', freeFeature: true, adminOnly: true }

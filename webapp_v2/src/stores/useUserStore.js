@@ -18,12 +18,13 @@ function loadIntercomScript() {
 export const useUserStore = create((set, get) => ({
   user: null,
   isAdmin: false,
+  isSelfHosted: false,
   isFreeLicense: true,
   analyticsTracking: false,
   gatewayVersion: null,
   loading: false,
 
-  setUser: (user) => set({ user, isAdmin: !!user?.is_admin }),
+  setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
   setServerInfo: (serverInfo) => {
     const license = serverInfo?.license_info
     const isFreeLicense = !(license?.is_valid && license?.type === 'enterprise')
@@ -33,7 +34,7 @@ export const useUserStore = create((set, get) => ({
   setLoading: (loading) => set({ loading }),
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
-    set({ user: null, isAdmin: false, isFreeLicense: true, analyticsTracking: false, gatewayVersion: null })
+    set({ user: null, isAdmin: false, isSelfHosted: false, isFreeLicense: true, analyticsTracking: false, gatewayVersion: null })
   },
 
   initIntercom: (user) => {

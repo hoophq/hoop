@@ -19,9 +19,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // API requests → gateway backend
+      // API requests → gateway backend.
+      // Reads API_URL from .env — same variable the CLJS build uses via shadow-cljs closure-defines.
       '/api': {
-        target: process.env.VITE_GATEWAY_URL || 'http://localhost:8009',
+        target: process.env.API_URL || 'http://localhost:8009',
         changeOrigin: true
       },
       // ClojureScript assets (JS bundle, CSS, images) → shadow-cljs dev server

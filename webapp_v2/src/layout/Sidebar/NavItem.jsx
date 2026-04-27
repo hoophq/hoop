@@ -8,7 +8,7 @@ import { shouldHide, isBlocked, isActive } from './helpers';
 // ─── Collapsible nav item (Integrations / Settings) ───────────────────────
 // Separate component so useEffect can run on mount to clear pendingOpenSection.
 
-export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, defaultOpened, onMount }) {
+export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, isSelfHosted, defaultOpened, onMount }) {
   useEffect(() => {
     onMount?.();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -21,7 +21,7 @@ export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, defaultOpened
       defaultOpened={defaultOpened}
     >
       {item.children.map((child) => (
-        <NavItem key={child.path} item={child} isAdmin={isAdmin} isFreeLicense={isFreeLicense} />
+        <NavItem key={child.path} item={child} isAdmin={isAdmin} isFreeLicense={isFreeLicense} isSelfHosted={isSelfHosted} />
       ))}
     </SidebarNavLink>
   );
@@ -29,12 +29,12 @@ export function CollapsibleNavItem({ item, isAdmin, isFreeLicense, defaultOpened
 
 // ─── Single expanded nav item ──────────────────────────────────────────────
 
-export function NavItem({ item, isAdmin, isFreeLicense }) {
+export function NavItem({ item, isAdmin, isFreeLicense, isSelfHosted }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore();
 
-  if (shouldHide(item, isAdmin)) return null;
+  if (shouldHide(item, isAdmin, isSelfHosted)) return null;
 
   const blocked = isBlocked(item, isFreeLicense);
   const active = item.path ? isActive(item.path, location.pathname) : false;
@@ -47,6 +47,7 @@ export function NavItem({ item, isAdmin, isFreeLicense }) {
         item={item}
         isAdmin={isAdmin}
         isFreeLicense={isFreeLicense}
+        isSelfHosted={isSelfHosted}
         defaultOpened={shouldOpen}
         onMount={shouldOpen ? clearPendingOpenSection : undefined}
       />

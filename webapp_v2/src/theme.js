@@ -151,10 +151,10 @@ export const theme = createTheme({
     xl: '1.6'
   },
 
-  // h1=--font-size-7 (28px) … h6=--font-size-2 (14px)
+  // h1=--font-size-8 (36px) … h6=--font-size-2 (14px) — mirrors Radix size="8" used in CLJS page titles
   headings: {
     sizes: {
-      h1: { fontSize: rem(28), fontWeight: '700', lineHeight: '1.3' },
+      h1: { fontSize: rem(36), fontWeight: '700', lineHeight: '1.3' },
       h2: { fontSize: rem(24), fontWeight: '700', lineHeight: '1.35' },
       h3: { fontSize: rem(20), fontWeight: '600', lineHeight: '1.4' },
       h4: { fontSize: rem(18), fontWeight: '600', lineHeight: '1.45' },
