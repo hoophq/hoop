@@ -32,7 +32,8 @@ var (
 )
 
 type serverInfo struct {
-	GrpcURL string `json:"grpc_url"`
+	GrpcURL      string          `json:"grpc_url"`
+	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
 
 type login struct {

@@ -137,6 +137,18 @@ func (s *AgentStream) Close(pctx plugintypes.Context, errMsg error) error {
 	return nil
 }
 
+// ListAgentsByOrg returns all live agent streams belonging to the given org.
+func ListAgentsByOrg(orgID string) []*AgentStream {
+	items := agentStore.Filter(func(_ string) bool { return true })
+	var result []*AgentStream
+	for _, obj := range items {
+		if stream, ok := obj.(*AgentStream); ok && stream.GetOrgID() == orgID {
+			result = append(result, stream)
+		}
+	}
+	return result
+}
+
 func (s *AgentStream) parseDefaultMetadata() map[string]string {
 	metadata := map[string]string{}
 	for _, key := range defaultAgentMetadataKeys {

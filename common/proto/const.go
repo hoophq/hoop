@@ -36,6 +36,7 @@ const (
 	SpecAgentMSPresidioAnonymizerURL string = "agent.mspresidio_anonymizer_url"
 	SpecAgentGCPRawCredentialsKey    string = "agent.gcp_credentials"
 
+	SpecFeatureFlagsKey    string = "feature-flags"
 	SpecTCPServerConnectKey string = "tcp.server_connect"
 	SpecReviewDataKey       string = "review.data"
 	SpecGatewayReviewID     string = "review.id"

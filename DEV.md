@@ -224,3 +224,72 @@ docker buildx build \
   --push .
 ```
 
+## Feature Flags
+
+The codebase has a per-org feature flag system that lets you ship experimental code behind toggles. Flags default to off — merging to `main` is always safe.
+
+### Adding a new flag
+
+Add one entry to the `catalog` map in `common/featureflag/featureflag.go`:
+
+```go
+"experimental.my_feature": {
+    Name:        "experimental.my_feature",
+    Description: "Short description shown to org admins",
+    Default:     false,
+    Stability:   StabilityExperimental, // or StabilityBeta
+    Components:  []Component{ComponentGateway, ComponentAgent},
+},
+```
+
+That's it. No migrations, no frontend changes. The flag appears automatically in the admin UI at **Settings > Experimental**.
+
+**Naming:** `<stability>.<snake_case_name>` (e.g. `experimental.ssh_multiplex`, `beta.new_proxy`).
+
+### Gating code
+
+**Gateway:**
+
+```go
+import "github.com/hoophq/hoop/common/featureflag"
+
+if featureflag.IsEnabled(orgID, "experimental.my_feature") {
+    // new path
+}
+```
+
+**Agent:**
+
+```go
+import "github.com/hoophq/hoop/agent/controller/featureflagstate"
+
+if featureflagstate.IsEnabled("experimental.my_feature") {
+    // new path
+}
+```
+
+The agent receives flag updates from the gateway in real-time via gRPC — no polling needed.
+
+**Webapp (ClojureScript):** flags are available in the `/serverinfo` response under `feature_flags`.
+
+### Enabling a flag
+
+An org admin goes to **Settings > Experimental** in the webapp and flips the switch. The change persists to the DB, updates the gateway cache, and broadcasts to all connected agents immediately.
+
+### Rules
+
+- Every experimental PR **must** gate its behavior behind `IsEnabled`. No ungated experimental code on `main`.
+- `Default` is almost always `false`. Unknown flags return `false`.
+- Removing a flag from the catalog disables it everywhere automatically.
+- License gating is orthogonal — feature flags compose on top of license checks.
+
+### Key files
+
+| What | Path |
+|------|------|
+| Flag catalog (source of truth) | `common/featureflag/featureflag.go` |
+| Gateway: check a flag | `featureflag.IsEnabled(orgID, name)` |
+| Agent: check a flag | `agent/controller/featureflagstate/featureflagstate.go` |
+| REST API | `gateway/api/featureflags/featureflags.go` |
+| DB model | `gateway/models/org_feature_flags.go` |
+| Admin UI | `webapp/src/webapp/settings/experimental/` |

@@ -27,6 +27,7 @@ import (
 	auditlogapi "github.com/hoophq/hoop/gateway/api/auditlog"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	apidatamasking "github.com/hoophq/hoop/gateway/api/datamasking"
+	apifeatureflags "github.com/hoophq/hoop/gateway/api/featureflags"
 	apifeatures "github.com/hoophq/hoop/gateway/api/features"
 	apiguardrails "github.com/hoophq/hoop/gateway/api/guardrails"
 	apihealthz "github.com/hoophq/hoop/gateway/api/healthz"
@@ -894,6 +895,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		apidatamasking.Delete)
+
+	// feature flags
+	r.GET("/feature-flags",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apifeatureflags.List)
+	r.PUT("/feature-flags/:name",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apifeatureflags.Update)
 
 	// server config routes
 	r.GET("/serverconfig/misc",

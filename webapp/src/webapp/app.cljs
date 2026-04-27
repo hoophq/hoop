@@ -128,6 +128,9 @@
    [webapp.settings.api-keys.subs]
    [webapp.settings.api-keys.views.created :as api-keys-created]
    [webapp.settings.api-keys.views.form :as api-keys-form]
+   [webapp.settings.experimental.events]
+   [webapp.settings.experimental.main :as settings-experimental]
+   [webapp.settings.experimental.subs]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
@@ -301,6 +304,12 @@
    [:div {:class "bg-gray-1 p-radix-7 min-h-full h-screen"}
     [routes/wrap-admin-only
      [license-management/main]]]])
+
+(defmethod routes/panels :settings-experimental-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [settings-experimental/main]]]])
 
 (defmethod routes/panels :settings-infrastructure-panel []
   [layout :application-hoop

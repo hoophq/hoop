@@ -255,6 +255,14 @@
     :free-feature? true
     :admin-only? true
     :selfhosted-only? true}
+   {:name "experimental"
+    :label "Experimental"
+    :uri (routes/url-for :settings-experimental)
+    :navigate :settings-experimental
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false
+    :badge "BETA"}
    {:name "audit-logs"
     :label "Internal Audit Logs"
     :uri (routes/url-for :settings-audit-logs)
