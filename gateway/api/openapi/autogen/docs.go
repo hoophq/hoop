@@ -7877,9 +7877,7 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/users/{id}": {
+            },
             "put": {
                 "description": "Updates an existing user",
                 "consumes": [
@@ -11448,6 +11446,11 @@ const docTemplate = `{
                         "saml"
                     ],
                     "example": "local"
+                },
+                "setup_required": {
+                    "description": "Whether the server requires initial setup (no users have been registered yet)",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
