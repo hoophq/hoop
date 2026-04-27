@@ -66,6 +66,7 @@ Gateway backend (port 8009)
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
+| `/settings/license` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -97,7 +98,6 @@ Gateway backend (port 8009)
 /features/ai-session-analyzer/*
 /guardrails/*
 /jira-templates/*
-/settings/license
 /settings/attributes/*
 /settings/jira
 /settings/audit-logs
