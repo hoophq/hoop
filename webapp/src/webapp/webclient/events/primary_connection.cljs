@@ -5,10 +5,22 @@
 
 ;; Events
 (rf/reg-event-fx
+ :primary-connection/initialize-from-query-or-persistence
+ (fn [_ _]
+   (let [search-string (.. js/window -location -search)
+         url-params (new js/URLSearchParams search-string)
+         role-from-query (.get url-params "role")]
+     (if (and role-from-query (not= role-from-query ""))
+       {:fx [[:dispatch [:connections->get-connection-details
+                         role-from-query
+                         [:primary-connection/set-from-details]]]]}
+       {:fx [[:dispatch [:primary-connection/load-persisted]]]}))))
+
+(rf/reg-event-fx
  :primary-connection/initialize-with-persistence
  (fn [{:keys [db]} _]
    {:db (assoc-in db [:editor :connections :status] :loading)
-    :fx [[:dispatch-later {:ms 500 :dispatch [:primary-connection/load-persisted]}]]}))
+    :fx [[:dispatch-later {:ms 500 :dispatch [:primary-connection/initialize-from-query-or-persistence]}]]}))
 
 (rf/reg-event-db
  :primary-connection/set-filter
@@ -30,6 +42,7 @@
                       :multi-connections {:selected compatible-multiples}})
       :fx [[:dispatch [:editor-plugin/clear-language]]
            [:dispatch [:primary-connection/persist-selected]]
+           [:dispatch [:primary-connection/update-url-with-role (:name new-primary)]]
            [:dispatch [:database-schema->clear-schema]]
            [:dispatch [:ai-session-analyzer/get-role-rule (:name new-primary)]]]})))
 
@@ -80,9 +93,22 @@
                        (not= "disabled" (:access_mode_exec connection)))]
      (if enabled?
        {:db (assoc-in db [:editor :connections :selected] connection)
-        :fx [[:dispatch [:ai-session-analyzer/get-role-rule (or (:name connection) (:id connection))]]]}
+        :fx [[:dispatch [:ai-session-analyzer/get-role-rule (or (:name connection) (:id connection))]]
+             [:dispatch [:primary-connection/update-url-with-role (or (:name connection) (:id connection))]]]}
        {:db (assoc-in db [:editor :connections :selected] nil)
         :fx [[:dispatch [:primary-connection/clear-selected]]]}))))
+
+(rf/reg-event-fx
+ :primary-connection/update-url-with-role
+ (fn [_ [_ role-name]]
+   (when role-name
+     (let [current-url (.. js/window -location -href)
+           url (js/URL. current-url)
+           search-params (.-searchParams url)]
+       (.set search-params "role" role-name)
+       (set! (.-search url) (.toString search-params))
+       (.replaceState js/history nil "" (.toString url))))
+   {}))
 
 ;; Dialog Events (for compact UI)
 (rf/reg-event-db

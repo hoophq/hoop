@@ -63,8 +63,6 @@
         search-term (r/atom "")
         search-debounce-timer (r/atom nil)]
 
-    (rf/dispatch [:primary-connection/initialize-with-persistence])
-
     (fn []
       (let [all-connections (or (:data @connections) [])
             connections-loading? (= :loading (:loading @connections))

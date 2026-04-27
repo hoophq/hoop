@@ -125,9 +125,17 @@ build-go: build-empty-folder
 
 build-webapp:
 	mkdir -p ${DIST_FOLDER}
+	# Build CLJS bundle
 	cd ./webapp && npm install && npm run release:hoop-ui && cd ../
 	cat ./webapp/src/webapp/version.js | awk -F"'" '{printf "%s", $$2}' > ./webapp/resources/version.txt
-	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ./webapp/resources .
+	# Build React shell (webapp_v2)
+	cd ./webapp_v2 && npm ci && npm run build && cd ../
+	# Merge: CLJS resources first, React shell on top (React's index.html wins)
+	mkdir -p ${DIST_FOLDER}/_ui_merge
+	cp -a ./webapp/resources/. ${DIST_FOLDER}/_ui_merge/
+	cp -a ./webapp_v2/dist/. ${DIST_FOLDER}/_ui_merge/public/
+	tar -czf ${DIST_FOLDER}/webapp.tar.gz -C ${DIST_FOLDER}/_ui_merge .
+	rm -rf ${DIST_FOLDER}/_ui_merge
 
 extract-webapp:
 	mkdir -p ./rootfs/app/ui && tar -xf ${DIST_FOLDER}/webapp.tar.gz -C rootfs/app/ui/

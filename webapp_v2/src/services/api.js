@@ -1,0 +1,48 @@
+import axios from 'axios'
+import { useAuthStore } from '@/stores/useAuthStore'
+
+// Mirrors the CLJS get-api-url logic: use VITE_API_URL if set, otherwise build
+// from window.location so the app works at any host/port without configuration.
+function getApiUrl() {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  return `${window.location.protocol}//${window.location.host}/api`
+}
+
+const api = axios.create({
+  baseURL: getApiUrl(),
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Request interceptor: Add JWT token to all requests
+api.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().token
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// Response interceptor: Handle 401 by saving redirect URL and logging out
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      const authStore = useAuthStore.getState()
+
+      // Save current URL for redirect after auth
+      const currentUrl = window.location.href
+      authStore.saveRedirectUrl(currentUrl)
+
+      // Logout (clears token)
+      authStore.logout()
+
+      // Redirect to login
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  },
+)
+
+export default api

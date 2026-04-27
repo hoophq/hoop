@@ -39,9 +39,7 @@
                                      by-connection))]
         (cond
           loading?
-          [:> Flex {:height "100%" :direction "column" :gap "5"
-                    :class "bg-gray-1" :align "center" :justify "center"}
-           [loaders/simple-loader]]
+          [loaders/page-loading-screen {:full-page false}]
 
           (empty? all-rules)
           [:> Box {:class "bg-gray-1 h-full"}
