@@ -16,9 +16,9 @@ type HTTPSuccess struct {
 	Message string `json:"message" example:"operation completed successfully"`
 }
 
-// AcceptOrgInvitationRequest is used to accept or decline a pending org invitation
-type AcceptOrgInvitationRequest struct {
-	OrgID string `json:"org_id" binding:"required" format:"uuid"`
+// OrgInvitationRequest is used to accept or decline a pending org invitation
+type OrgInvitationRequest struct {
+	Action string `json:"action" binding:"required" enums:"accept,decline"`
 }
 
 type Login struct {
@@ -97,8 +97,6 @@ type UserGroup struct {
 // PendingOrgInvitation represents an organization the user has been invited to
 // but has not yet joined. Only populated in multi-tenant environments.
 type PendingOrgInvitation struct {
-	// Organization unique identifier
-	OrgID string `json:"org_id" format:"uuid"`
 	// Organization name
 	OrgName string `json:"org_name"`
 }

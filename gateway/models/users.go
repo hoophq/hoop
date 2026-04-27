@@ -132,6 +132,28 @@ func DeleteUserByID(id string) error {
 	return DB.Where("id = ?", id).Delete(&User{}).Error
 }
 
+// PromoteInvitedUser atomically migrates a user to an invited org.
+// It deletes the current user record first (releasing the UNIQUE subject constraint)
+// then promotes the invited record by binding the subject and activating it.
+func PromoteInvitedUser(invitedUserID, currentUserOrgID, idpSubject, name, picture string) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(
+			`DELETE FROM private.users WHERE org_id = ? AND subject = ?`,
+			currentUserOrgID, idpSubject,
+		).Error; err != nil {
+			return err
+		}
+		return tx.Exec(
+			`UPDATE private.users SET status = 'active', verified = true, subject = ?, name = ?, picture = ? WHERE id = ? AND status = 'invited'`,
+			idpSubject, name, picture, invitedUserID,
+		).Error
+	})
+}
+
+func DeletePendingInvitationByEmail(email string) error {
+	return DB.Exec(`DELETE FROM private.users WHERE email = ? AND status = 'invited'`, email).Error
+}
+
 func UpdateUserAndUserGroups(user *User, userGroups []UserGroup) error {
 	tx := DB.Begin()
 	if err := tx.Save(&user).Error; err != nil {

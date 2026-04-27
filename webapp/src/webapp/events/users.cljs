@@ -55,14 +55,12 @@
 (rf/reg-event-fx
  :users->accept-org-invitation
  (fn
-   [_ [_ org-id on-failure]]
+   [_ [_ on-failure]]
    {:fx [[:dispatch [:fetch
                      {:method "POST"
-                      :uri "/userinfo/accept-org-invitation"
-                      :body {:org_id org-id}
+                      :uri "/orgs/invitations"
+                      :body {:action "accept"}
                       :on-success (fn [_]
-                                    ;; Keep the loading screen visible briefly so the
-                                    ;; transition feels intentional, then reload fresh.
                                     (js/setTimeout #(js/window.location.reload) 2500))
                       :on-failure (fn [error]
                                     (when on-failure (on-failure))
@@ -72,11 +70,11 @@
 (rf/reg-event-fx
  :users->decline-org-invitation
  (fn
-   [_ [_ org-id]]
+   [_ _]
    {:fx [[:dispatch [:fetch
-                     {:method "DELETE"
-                      :uri "/userinfo/pending-org-invitation"
-                      :body {:org_id org-id}
+                     {:method "POST"
+                      :uri "/orgs/invitations"
+                      :body {:action "decline"}
                       :on-success (fn [_]
                                     (rf/dispatch [:users->clear-pending-org-invitations]))
                       :on-failure (fn [_]

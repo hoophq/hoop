@@ -40,12 +40,11 @@
                [:> Button {:color "gray"
                            :highContrast true
                            :variant "soft"
-                           :on-click #(rf/dispatch [:users->decline-org-invitation (:org_id invitation)])}
+                           :on-click #(rf/dispatch [:users->decline-org-invitation])}
                 "Stay in current org"]]
               [:> AlertDialog.Action
                [:> Button {:on-click (fn []
                                        (reset! migrating? true)
                                        (rf/dispatch [:users->accept-org-invitation
-                                                     (:org_id invitation)
                                                      #(reset! migrating? false)]))}
                 (str "Join " (:org_name invitation))]]]])]]))))
