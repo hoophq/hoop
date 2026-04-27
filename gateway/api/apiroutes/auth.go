@@ -130,11 +130,17 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 	// jwt key authentication
 	subject, err := r.validateAccessToken(tokenVerifier, c)
 	if err != nil {
-		tokenHeader := c.GetHeader("authorization")
-		log.Infof("failed authenticating, %v, length=%v, reason=%v, url-path=%v",
-			parseHeaderForDebug(tokenHeader), len(tokenHeader), err, c.Request.URL.Path)
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-		return
+		// attempt to refresh expired tokens using a stored refresh token
+		if strings.Contains(err.Error(), "token is expired") {
+			subject, err = r.tryRefreshFromRequest(tokenVerifier, c)
+		}
+		if err != nil {
+			tokenHeader := c.GetHeader("authorization")
+			log.Infof("failed authenticating, %v, length=%v, reason=%v, url-path=%v",
+				parseHeaderForDebug(tokenHeader), len(tokenHeader), err, c.Request.URL.Path)
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+			return
+		}
 	}
 
 	ctx, err := models.GetUserContext(subject)
@@ -209,6 +215,36 @@ func (r *Router) setUserContext(ctx *models.Context, c *gin.Context, grpcURL str
 			WithProviderType(providerType),
 	)
 	c.Next()
+}
+
+// tryRefreshFromRequest validates the signature of the expired JWT in the
+// request, extracts the subject, and attempts to refresh the access token.
+// On success it sets the new access token in a response header and cookie so
+// the client can update its stored token.
+func (r *Router) tryRefreshFromRequest(tokenVerifier idp.TokenVerifier, c *gin.Context) (string, error) {
+	expiredToken, err := parseToken(c)
+	if err != nil {
+		return "", err
+	}
+	subject, newAccessToken, err := idp.TryRefreshExpiredToken(tokenVerifier, expiredToken)
+	if err != nil {
+		log.Warnf("failed to refresh expired access token: %v", err)
+		return "", fmt.Errorf("access token is expired, try logging in again")
+	}
+
+	// signal the client with the refreshed token
+	c.Header("X-New-Access-Token", newAccessToken)
+	isSecure := c.Request.TLS != nil || c.Request.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "hoop_access_token",
+		Value:    newAccessToken,
+		Path:     "/",
+		MaxAge:   0,
+		HttpOnly: false,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return subject, nil
 }
 
 // validateToken validates the access token by the user info if it's an opaque token
