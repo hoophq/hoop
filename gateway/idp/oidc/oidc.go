@@ -355,9 +355,10 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 		return uinfo, nil, fmt.Errorf("'sub' claim is missing or empty")
 	}
 
-	if err := p.validateOidcAzpClaim(claims); err != nil {
-		return uinfo, nil, err
-	}
+	// Do no validate the azp claim, cause of the DCR
+	// if err := p.validateOidcAzpClaim(claims); err != nil {
+	// 	return uinfo, nil, err
+	// }
 
 	if iss, _ := claims["iss"].(string); iss != "" && iss != p.IssuerURL {
 		return uinfo, nil, fmt.Errorf("untrusted issuer, got=%q, want=%q", iss, p.IssuerURL)
