@@ -1,5 +1,11 @@
 # Component Catalog
 
+## Strategy — We own every component
+
+App code **never imports UI primitives directly from Mantine**. Every primitive (Table, Button, TextInput, Badge, …) is wrapped in `src/components/` before being used in pages or layout. This makes the visual layer centrally owned, easy to audit, and Storybook-ready.
+
+**Rule of thumb:** if a component doesn't have a wrapper in this catalog yet, create one before using it in more than one place.
+
 Before creating a new component, check this list. Re-use what already exists.
 
 ---
@@ -40,6 +46,39 @@ import CodeSnippet from '@/components/CodeSnippet'
 
 <CodeSnippet code="docker run ..." />
 ```
+
+### `Table`
+Surface-style table — matches Radix `Table.Root variant="surface"` from the legacy webapp. Re-exports all sub-components so call sites never import from Mantine directly.
+```jsx
+import Table from '@/components/Table'
+
+// Standard table with column headers
+<Table>
+  <Table.Thead>
+    <Table.Tr>
+      <Table.Th>Name</Table.Th>
+      <Table.Th>Status</Table.Th>
+    </Table.Tr>
+  </Table.Thead>
+  <Table.Tbody>
+    <Table.Tr>
+      <Table.Td>agent-1</Table.Td>
+      <Table.Td>Online</Table.Td>
+    </Table.Tr>
+  </Table.Tbody>
+</Table>
+
+// Key-value table (no thead — use Table.Th as row labels)
+<Table>
+  <Table.Tbody>
+    <Table.Tr>
+      <Table.Th w="30%">Hostname</Table.Th>
+      <Table.Td>app.hoop.dev</Table.Td>
+    </Table.Tr>
+  </Table.Tbody>
+</Table>
+```
+Styles: bordered container with `border-radius`, subtle gray header background, row separators. Defined in `components/Table/Table.module.css`.
 
 ### `DocsBtnCallOut`
 Bordered link to external documentation. Equivalent of `webapp.components.callout-link` in CLJS.
@@ -153,6 +192,7 @@ useAuthStore.getState().token
 | `connections.js` | GET `/connections` list |
 | `search.js` | GET `/search?term=` |
 | `infrastructure.js` | GET/PUT `/serverconfig/misc` |
+| `license.js` | GET `/serverinfo` (extracts `license_info`), PUT `/orgs/license` |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
 
