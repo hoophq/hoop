@@ -13,6 +13,7 @@ import SignupCallback from '@/pages/Auth/SignupCallback'
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
+import SettingsLicense from '@/pages/Settings/License'
 
 /**
  * Routing strategy:
@@ -68,7 +69,7 @@ function Router() {
         }
       />
 
-      {/* Settings pages — migrated from ClojureScript */}
+      {/* Settings — migrated from ClojureScript */}
       <Route
         path="/settings/infrastructure"
         element={
@@ -76,6 +77,19 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsInfrastructure />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/settings/license"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsLicense />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

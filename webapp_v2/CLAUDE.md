@@ -50,9 +50,22 @@ src/
 - One file per domain: `services/agents.js`, `services/resources.js`, etc.
 - Services return axios promises. Stores handle the response.
 
-### Components
-- `src/components/` = Reusable across the whole app. Receive props, no direct store access preferred.
-- `src/pages/[Page]/components/` = Scoped to that page/domain only.
+### Components — Component Library Strategy
+
+**Every UI primitive is wrapped.** We own every component — even a Button, a Table, a TextInput. App code never imports these directly from Mantine; it always imports from `@/components/`. This gives us:
+- A single place to change the visual behaviour of any primitive across the whole app
+- A Storybook-ready inventory: every component in `src/components/` is a candidate for a story
+- Portability: if we ever replace Mantine, only the wrapper internals change, not the app
+
+**How to apply this rule:**
+1. Check `COMPONENTS.md` first — the component you need may already exist.
+2. If it doesn't exist, create a wrapper in `src/components/[Name]/index.jsx` that imports the Mantine primitive internally and re-exports a styled, opinionated version.
+3. The wrapper owns all `classNames`, `styles`, and default props. Call sites stay clean.
+4. Update `COMPONENTS.md` with usage examples after creating the wrapper.
+
+**Scope:**
+- `src/components/` = Reusable across the whole app. No direct Mantine imports at call sites for any component that has a wrapper.
+- `src/pages/[Page]/components/` = Scoped to that page/domain only. May still import Mantine directly if no wrapper exists yet and it's too specific to generalise.
 - **Before creating a new component**, check `COMPONENTS.md` — it catalogs every existing component, hook, store, and service with usage examples.
 
 ### Layout

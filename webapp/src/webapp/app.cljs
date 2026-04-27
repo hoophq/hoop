@@ -306,12 +306,6 @@
 ;; HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;
 
-(defmethod routes/panels :license-management-panel []
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 p-radix-7 min-h-full h-screen"}
-    [routes/wrap-admin-only
-     [license-management/main]]]])
-
 (defmethod routes/panels :settings-audit-logs-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-screen"}
