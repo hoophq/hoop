@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,6 +31,9 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	registerRunbookRuleTools(server)
 	registerSessionTools(server)
 	registerServerInfoTools(server)
+	registerMeTools(server)
+	registerExecTools(server)
+	registerSchemaTools(server)
 
 	handler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return server },
@@ -39,10 +43,13 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	return &MCPServer{handler: handler}
 }
 
-// GinHandler bridges Gin auth context into the MCP request context,
-// then delegates to StreamableHTTPHandler.
+// GinHandler bridges Gin auth context (storage context + access token) into
+// the MCP request context, then delegates to StreamableHTTPHandler.
 func (m *MCPServer) GinHandler(c *gin.Context) {
 	sc := storagev2.ParseContext(c)
-	req := c.Request.WithContext(withStorageContext(c.Request.Context(), sc))
+	token := apiroutes.GetAccessTokenFromRequest(c)
+	ctx := withStorageContext(c.Request.Context(), sc)
+	ctx = withAccessToken(ctx, token)
+	req := c.Request.WithContext(ctx)
 	m.handler.ServeHTTP(c.Writer, req)
 }
