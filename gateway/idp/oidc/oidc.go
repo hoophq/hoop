@@ -238,7 +238,10 @@ func (p *Provider) VerifyExpiredTokenSubject(tokenStr string) (string, error) {
 
 func (p *Provider) GetAudience() string { return p.Audience }
 func (p *Provider) GetAuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
-	opts = append(opts, oauth2.AccessTypeOffline)
+	if slices.Contains(p.oauth2Config.Scopes, "offline_access") {
+		opts = append(opts, oauth2.AccessTypeOffline)
+	}
+
 	return p.oauth2Config.AuthCodeURL(state, opts...)
 }
 
