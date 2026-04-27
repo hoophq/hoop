@@ -65,6 +65,7 @@ Gateway backend (port 8009)
 | `/signup/callback` | React | Done (IDP signup callback) |
 | `/agents` | React | Done |
 | `/agents/new` | React | Done |
+| `/settings/infrastructure` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -97,7 +98,6 @@ Gateway backend (port 8009)
 /guardrails/*
 /jira-templates/*
 /settings/license
-/settings/infrastructure
 /settings/attributes/*
 /settings/jira
 /settings/audit-logs

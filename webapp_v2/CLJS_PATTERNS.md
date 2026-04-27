@@ -171,6 +171,20 @@ const { id } = useParams()
 {loading ? <PageLoader /> : <Content />}
 ```
 
+### `callout-link` → `DocsBtnCallOut`
+
+```cljs
+;; CLJS — webapp.components.callout-link
+[callout-link/main {:href "https://hoop.dev/docs/..." :text "Learn more about gRPC"}]
+```
+
+```jsx
+// React — already exists in @/components/DocsBtnCallOut
+import DocsBtnCallOut from '@/components/DocsBtnCallOut'
+
+<DocsBtnCallOut href="https://hoop.dev/docs/..." text="Learn more about gRPC" />
+```
+
 ### List rendering
 
 ```cljs

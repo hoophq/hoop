@@ -9,8 +9,10 @@ export function getUserInitials(user) {
     .join('');
 }
 
-export function shouldHide(item, isAdmin) {
-  return item.adminOnly && !isAdmin;
+export function shouldHide(item, isAdmin, isSelfHosted = false) {
+  if (item.adminOnly && !isAdmin) return true;
+  if (item.selfhostedOnly && !isSelfHosted) return true;
+  return false;
 }
 
 export function isBlocked(item, isFreeLicense) {

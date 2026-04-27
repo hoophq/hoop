@@ -312,13 +312,6 @@
     [routes/wrap-admin-only
      [license-management/main]]]])
 
-(defmethod routes/panels :settings-infrastructure-panel []
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-full"}
-    [routes/wrap-admin-only
-     [routes/wrap-selfhosted-only
-      [infrastructure/main]]]]])
-
 (defmethod routes/panels :settings-audit-logs-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-screen"}

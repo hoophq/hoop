@@ -20,10 +20,10 @@ function SectionLabel({ label, id }) {
 export function SidebarExpanded({ skipLink, navKey }) {
   const navigate = useNavigate();
   const { toggleSidebarCollapsed } = useUIStore();
-  const { user, isAdmin, isFreeLicense, gatewayVersion } = useUserStore();
+  const { user, isAdmin, isSelfHosted, isFreeLicense, gatewayVersion } = useUserStore();
   const { logout } = useAuthStore();
 
-  const navItemProps = { isAdmin, isFreeLicense };
+  const navItemProps = { isAdmin, isFreeLicense, isSelfHosted };
 
   const handleLogout = () => {
     logout();
