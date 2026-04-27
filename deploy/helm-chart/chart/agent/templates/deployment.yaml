@@ -9,6 +9,7 @@ metadata:
   {{- end }}
   {{- end }}
 spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
   selector:
     matchLabels:
       app: hoopagent
@@ -20,6 +21,9 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
         checksum/extra-config: {{ include (print $.Template.BasePath "/extra-agent-config.yaml") . | sha256sum }}
+        {{- if .Values.spiffe.enabled }}
+        checksum/spiffe-helper-config: {{ include (print $.Template.BasePath "/spiffe-helper-config.yaml") . | sha256sum }}
+        {{- end }}
       {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -44,6 +48,48 @@ spec:
         - secretRef:
             name: extra-agent-config
         {{- end}}
+        {{- if .Values.spiffe.enabled }}
+        volumeMounts:
+        - mountPath: /run/spiffe
+          name: spiffe-tokens
+          readOnly: true
+        {{- end }}
+      {{- if .Values.spiffe.enabled }}
+      - name: spiffe-helper
+        image: '{{ .Values.spiffe.spiffeHelper.image | default "ghcr.io/spiffe/spiffe-helper:0.9.1" }}'
+        imagePullPolicy: {{ .Values.spiffe.spiffeHelper.imagePullPolicy | default "IfNotPresent" }}
+        args: ["-config", "/etc/spiffe-helper/helper.conf"]
+        {{- with .Values.spiffe.spiffeHelper.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /spiffe-workload-api
+          readOnly: true
+        - name: spiffe-tokens
+          mountPath: /run/spiffe
+        - name: spiffe-helper-config
+          mountPath: /etc/spiffe-helper
+          readOnly: true
+      volumes:
+      - name: spiffe-workload-api
+        {{- if eq (.Values.spiffe.workloadAPI.type | default "csi") "hostPath" }}
+        hostPath:
+          path: {{ .Values.spiffe.workloadAPI.hostPath | default "/run/spire/agent-sockets" }}
+          type: Directory
+        {{- else }}
+        csi:
+          driver: csi.spiffe.io
+          readOnly: true
+        {{- end }}
+      - name: spiffe-tokens
+        emptyDir:
+          medium: Memory
+      - name: spiffe-helper-config
+        configMap:
+          name: hoopagent-spiffe-helper
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

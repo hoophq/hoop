@@ -69,13 +69,13 @@ spec:
         envFrom:
         - secretRef:
             name: hoop-config
-      {{ end -}}
+      {{- end }}
       {{- if .Values.persistence.enabled }}
       volumes:
       - name: walsessions
         persistentVolumeClaim:
           claimName: {{ .Values.persistence.existingClaim | default "walsessions" }}
-      {{ end -}}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
