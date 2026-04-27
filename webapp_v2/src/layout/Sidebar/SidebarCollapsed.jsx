@@ -9,7 +9,7 @@ import classes from './Sidebar.module.css';
 
 export function SidebarCollapsed({ skipLink }) {
   const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore();
-  const { user, isAdmin } = useUserStore();
+  const { user, isAdmin, isSelfHosted } = useUserStore();
 
   return (
     <Stack
@@ -32,7 +32,7 @@ export function SidebarCollapsed({ skipLink }) {
 
       <div className={classes.collapsedScrollArea}>
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
-          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin)).map((item) => (
+          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
               <IconBtn {...item} />
             </Box>
@@ -42,7 +42,7 @@ export function SidebarCollapsed({ skipLink }) {
         <Box mt="xxl" w="100%">
           <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
           <Stack gap={2} align="center" role="list" aria-label="Discover">
-            {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin)).map((item) => (
+            {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) => (
               <Box component="li" key={item.path} className={classes.listItem}>
                 <IconBtn {...item} />
               </Box>
@@ -53,7 +53,7 @@ export function SidebarCollapsed({ skipLink }) {
         <Box mt="xxl" w="100%">
           <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
           <Stack gap={2} align="center" role="list" aria-label="Organization">
-            {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin)).map((item) =>
+            {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted)).map((item) =>
               item.children ? (
                 <Box component="li" key={item.label} className={classes.listItem}>
                   <IconBtn

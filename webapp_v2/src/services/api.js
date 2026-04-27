@@ -1,8 +1,15 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/useAuthStore'
 
+// Mirrors the CLJS get-api-url logic: use VITE_API_URL if set, otherwise build
+// from window.location so the app works at any host/port without configuration.
+function getApiUrl() {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  return `${window.location.protocol}//${window.location.host}/api`
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: getApiUrl(),
   headers: {
     'Content-Type': 'application/json',
   },

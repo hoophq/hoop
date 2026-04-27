@@ -42,12 +42,13 @@ import CodeSnippet from '@/components/CodeSnippet'
 ```
 
 ### `DocsBtnCallOut`
-Bordered link to external documentation.
+Bordered link to external documentation. Equivalent of `webapp.components.callout-link` in CLJS.
 ```jsx
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 
-<DocsBtnCallOut href="https://hoop.dev/docs/..." label="Read the docs" />
+<DocsBtnCallOut href="https://hoop.dev/docs/..." text="Learn more about gRPC" />
 ```
+Props: `href` (string), `text` (string).
 
 ### `MethodCard`
 Selectable card for picking an installation/deployment method (icon + label + description).
@@ -83,6 +84,32 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
+
+---
+
+## Page Patterns
+
+### Settings `SectionRow`
+Settings pages use a 2-column grid (description left, control right) via an inline `SectionRow` component defined per-page. Each settings page defines its own since it's not used outside that domain.
+
+```jsx
+function SectionRow({ title, description, callout, children }) {
+  return (
+    <Grid columns={7} gutter="xl">
+      <Grid.Col span={2}>
+        <Stack gap="xs">
+          <Title order={4}>{title}</Title>
+          <Text size="sm" c="dimmed">{description}</Text>
+          {callout}  {/* optional DocsBtnCallOut */}
+        </Stack>
+      </Grid.Col>
+      <Grid.Col span={5}>{children}</Grid.Col>
+    </Grid>
+  )
+}
+```
+
+Reference: `pages/Settings/Infrastructure/index.jsx`.
 
 ---
 
@@ -125,6 +152,7 @@ useAuthStore.getState().token
 | `agents.js` | CRUD `/agents` and `/agents/:id` |
 | `connections.js` | GET `/connections` list |
 | `search.js` | GET `/search?term=` |
+| `infrastructure.js` | GET/PUT `/serverconfig/misc` |
 
 When adding a new service file, follow the pattern in `services/agents.js`.
 
