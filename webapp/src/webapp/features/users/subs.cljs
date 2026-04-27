@@ -34,3 +34,8 @@
  (fn [db]
    (or (get-in db [:features :users :promotion-seen])
        (boolean (.getItem (.-localStorage js/window) "users-promotion-seen")))))
+
+(rf/reg-sub
+ :users/pending-org-invitations
+ (fn [db _]
+   (:users->pending-org-invitations db)))

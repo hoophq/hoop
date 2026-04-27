@@ -220,6 +220,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		userapi.GetUserInfo)
+	r.POST("/orgs/invitations",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		userapi.HandleOrgInvitation)
 	r.GET("/users",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
