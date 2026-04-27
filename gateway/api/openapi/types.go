@@ -1998,6 +1998,22 @@ type ServerAuthConfig struct {
 	AuditorRoleName string `json:"auditor_role_name" default:"auditor"`
 }
 
+// ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the
+// /mcp endpoint per the MCP 2025-11-25 authorization specification. When
+// disabled (the default), /mcp continues to accept Hoop-issued bearer tokens
+// only; when enabled, /mcp additionally accepts JWTs issued by the configured
+// OIDC issuer whose `aud` claim matches resource_uri.
+type ServerMcpAuthConfig struct {
+	// Whether the /mcp endpoint accepts IdP-issued OAuth 2.1 JWTs in addition
+	// to Hoop-issued bearer tokens.
+	Enabled bool `json:"enabled"`
+	// Canonical resource URI used for RFC 8707 audience binding. Defaults to
+	// "<API_URL>/mcp" when empty. Must match the `aud` claim of inbound JWTs.
+	ResourceURI string `json:"resource_uri" example:"https://use.hoop.dev/mcp"`
+	// JWT claim name from which user groups are extracted. Defaults to "groups".
+	GroupsClaim string `json:"groups_claim" example:"groups"`
+}
+
 type GenerateApiKeyResponse struct {
 	// The API key that was generated to rollout the previous api_key.
 	RolloutApiKey string `json:"rollout_api_key" example:"xapi-WqIAoYhKuIv2IPmVkfsyyK"`
