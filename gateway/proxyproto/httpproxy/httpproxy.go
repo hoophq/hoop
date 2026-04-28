@@ -23,6 +23,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
+	sessionapi "github.com/hoophq/hoop/gateway/api/session"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
@@ -108,7 +109,7 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	if err != nil {
 		return fmt.Errorf("failed listening to address %v, err=%v", listenAddr, err)
 	}
-	log.Infof("starting http proxy server at %v", listenAddr)
+	log.Debugf("starting http proxy server at %v", listenAddr)
 
 	server := &HttpProxyServer{
 		listener:   lis,
@@ -133,11 +134,11 @@ func (s *HttpProxyServer) Start(listenAddr string, tlsConfig *tls.Config) error 
 	go func() {
 		var err error
 		if tlsConfig != nil {
-			log.Infof("http proxy server using TLS")
+			log.Debugf("http proxy server using TLS")
 			server.httpServer.TLSConfig = tlsConfig
 			err = server.httpServer.ServeTLS(lis, "", "")
 		} else {
-			log.Infof("http proxy server using plain HTTP")
+			log.Debugf("http proxy server using plain HTTP")
 			err = server.httpServer.Serve(lis)
 		}
 		if err != nil && err != http.ErrServerClosed {
@@ -281,7 +282,20 @@ func (s *HttpProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		negativeAuthCache.Delete(secretKeyHash)
 	}
 
-	session, err := s.getOrCreateSession(secretKeyHash)
+	// The correlation ID is session-scoped: it is only honored on the request that
+	// creates the long-lived hoop session for this credential. Later requests reusing
+	// the session will have their X-Hoop-Correlation-Id header ignored.
+	correlationID := r.Header.Get("X-Hoop-Correlation-Id")
+	var correlationIDPtr *string
+	if correlationID != "" {
+		correlationIDPtr = &correlationID
+	}
+	if err := sessionapi.ValidateCorrelationID(correlationIDPtr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	session, err := s.getOrCreateSession(secretKeyHash, correlationID)
 	if err != nil {
 		var credErr *credentialError
 		if errors.As(err, &credErr) {
@@ -348,7 +362,7 @@ func (s *HttpProxyServer) getSessionOrRelease(secretKeyHash string) (*httpProxyS
 	return nil, nil
 }
 
-func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySession, error) {
+func (s *HttpProxyServer) getOrCreateSession(secretKeyHash, correlationID string) (*httpProxySession, error) {
 	// First try to get existing valid session
 	sess, err := s.getSessionOrRelease(secretKeyHash)
 	if err != nil {
@@ -406,6 +420,9 @@ func (s *HttpProxyServer) getOrCreateSession(secretKeyHash string) (*httpProxySe
 	}
 	if dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
+	}
+	if correlationID != "" {
+		grpcOpts = append(grpcOpts, grpc.WithOption("correlation-id", correlationID))
 	}
 
 	// Do gRPC connection setup outside lock (this can take time)

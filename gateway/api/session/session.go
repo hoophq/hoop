@@ -55,6 +55,7 @@ type SessionPostBody struct {
 	ClientArgs     []string                  `json:"client_args"`
 	JiraFields     map[string]string         `json:"jira_fields"`
 	SessionBatchID *string                   `json:"session_batch_id"`
+	CorrelationID  *string                   `json:"correlation_id"`
 }
 
 func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*models.SessionAIAnalysis, error) {
@@ -137,6 +138,11 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	if err := ValidateCorrelationID(req.CorrelationID); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	conn, err := models.GetConnectionByNameOrID(ctx, req.Connection)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetch connection %v for exec, err=%v", req.Connection, err)
@@ -177,6 +183,7 @@ func Post(c *gin.Context) {
 		Status:               string(openapi.SessionStatusOpen),
 		Type:                 "human",
 		SessionBatchID:       req.SessionBatchID,
+		CorrelationID:        req.CorrelationID,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}
@@ -300,6 +307,24 @@ func Post(c *gin.Context) {
 	}
 }
 
+// ValidateCorrelationID ensures the correlation id is bounded and printable.
+// Accepts nil/empty (treated as absent). Shared by REST, provision, runbook and gRPC paths.
+func ValidateCorrelationID(v *string) error {
+	if v == nil || *v == "" {
+		return nil
+	}
+	s := *v
+	if len(s) > 255 {
+		return fmt.Errorf("correlation_id must not exceed 255 characters")
+	}
+	for _, r := range s {
+		if r < 0x20 || r > 0x7E {
+			return fmt.Errorf("correlation_id must contain only printable ASCII characters")
+		}
+	}
+	return nil
+}
+
 func CoerceMetadataFields(metadata map[string]any) error {
 	if len(metadata) > 20 {
 		return fmt.Errorf("metadata field must have less than 10 fields")
@@ -326,6 +351,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			type			query		string	false	"Filter by connection's type"
 //	@Param			review.approver	query		string	false	"Filter by the approver's email of a review"
 //	@Param			review.status	query		string	false	"Filter by the review status"
+//	@Param			correlation_id	query		string	false	"Filter by external workflow/task correlation id"
 //	@Param			jira_issue_key	query		string	false	"Filter by Jira issue key"
 //	@Param			start_date		query		string	false	"Filter starting on this date"	Format(RFC3339)
 //	@Param			end_date		query		string	false	"Filter ending on this date"	Format(RFC3339)
@@ -359,6 +385,10 @@ func List(c *gin.Context) {
 				option.ReviewApproverEmail = &queryOptVal
 			case openapi.SessionOptionBatchID:
 				option.BatchID = &queryOptVal
+			case openapi.SessionOptionCorrelationID:
+				if queryOptVal != "" {
+					option.CorrelationID = &queryOptVal
+				}
 			case openapi.SessionOptionJiraIssueKey:
 				keys := strings.Split(queryOptVal, ",")
 				for i, k := range keys {
@@ -1055,6 +1085,11 @@ func Provision(c *gin.Context) {
 		return
 	}
 
+	if err := ValidateCorrelationID(req.CorrelationID); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	// Get user information
 	user, err := models.GetUserByEmail(req.UserEmail)
 	if err != nil {
@@ -1113,6 +1148,7 @@ func Provision(c *gin.Context) {
 		Verb:                 verb,
 		Status:               string(openapi.SessionStatusOpen),
 		ExitCode:             nil,
+		CorrelationID:        req.CorrelationID,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,
 	}

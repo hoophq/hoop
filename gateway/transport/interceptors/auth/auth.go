@@ -13,6 +13,7 @@ import (
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/clientexec"
+	"github.com/hoophq/hoop/gateway/externaljwt"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
@@ -147,6 +148,34 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 		}
 	// client proxy authentication (access token)
 	default:
+		if isApiKey && strings.HasPrefix(bearerToken, "hpk_") {
+			keyHash := models.HashAPIKey(bearerToken)
+			ctx, err := models.GetAPIKeyContext(keyHash)
+			if err != nil {
+				log.Errorf("failed looking up api key, err=%v", err)
+				return status.Errorf(codes.Internal, "internal error")
+			}
+			if ctx == nil {
+				return status.Errorf(codes.Unauthenticated, "invalid authentication")
+			}
+			go models.UpdateAPIKeyLastUsed(ctx.UserID)
+			ctx.UserID = ctx.UserSubject
+			gwctx := &GatewayContext{
+				UserContext: *ctx,
+			}
+			connectionName := commongrpc.MetaGet(md, "connection-name")
+			conn, err := i.getConnection(connectionName, ctx)
+			if err != nil {
+				return err
+			}
+			if conn == nil {
+				return status.Errorf(codes.NotFound, "connection not found")
+			}
+			gwctx.Connection = *conn
+			ctxVal = gwctx
+			break
+		}
+
 		if isApiKey {
 			log.Debug("user provided an api key for authentication")
 			if appconfig.Get().OrgMultitenant() {
@@ -274,23 +303,49 @@ func (i *interceptor) getConnection(name string, userCtx *models.Context) (*type
 	}, nil
 }
 
+// authenticateAgent dispatches agent authentication by token shape. Each
+// supported format has a unique shape and a single auth backend:
+//
+//   - "x-agt-..."       → legacy static token lookup
+//   - "<scheme>://..."  → DSN (per-agent secret)
+//   - "xxx.yyy.zzz"     → SPIFFE JWT-SVID
+//
+// Shape alone determines the path; there is no fallback. An agent on SPIFFE
+// sends JWTs, an agent on DSN sends URLs — both can coexist on the same
+// gateway. A bad-shape or failed SPIFFE token is rejected outright rather
+// than retried against the DSN path.
 func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*models.Agent, error) {
-	if strings.HasPrefix(bearerToken, "x-agt-") {
-		ag, err := models.GetAgentByToken(bearerToken)
-		if err != nil {
-			md.Delete("authorization")
-			log.Debugf("invalid agent authentication (legacy auth), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
-			return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
-		}
-		return ag, nil
+	switch {
+	case strings.HasPrefix(bearerToken, "x-agt-"):
+		return i.authenticateAgentStatic(bearerToken, md)
+	case strings.Contains(bearerToken, "://"):
+		return i.authenticateAgentDSN(bearerToken, md)
+	case looksLikeJWT(bearerToken):
+		return i.authenticateAgentSPIFFE(bearerToken, md)
+	default:
+		md.Delete("authorization")
+		log.Debugf("unrecognized agent token shape, tokenlength=%v", len(bearerToken))
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
+}
+
+func (i *interceptor) authenticateAgentStatic(bearerToken string, md metadata.MD) (*models.Agent, error) {
+	ag, err := models.GetAgentByToken(bearerToken)
+	if err != nil {
+		md.Delete("authorization")
+		log.Debugf("invalid agent authentication (legacy auth), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	return ag, nil
+}
+
+func (i *interceptor) authenticateAgentDSN(bearerToken string, md metadata.MD) (*models.Agent, error) {
 	dsn, err := dsnkeys.Parse(bearerToken)
 	if err != nil {
 		md.Delete("authorization")
 		log.Debugf("invalid agent authentication (dsn), tokenlength=%v, client-metadata=%v, err=%v", len(bearerToken), md, err)
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
-
 	ag, err := models.GetAgentByToken(dsn.SecretKeyHash)
 	if err != nil {
 		md.Delete("authorization")
@@ -303,6 +358,72 @@ func (i *interceptor) authenticateAgent(bearerToken string, md metadata.MD) (*mo
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication, mismatch dsn attributes")
 	}
 	return ag, nil
+}
+
+// authenticateAgentSPIFFE authenticates an agent via a SPIFFE JWT-SVID. The
+// caller has already confirmed the token is JWT-shaped, so any failure
+// here (provider not configured, signature invalid, mapping missing) is
+// terminal — no fallback to DSN/static paths.
+func (i *interceptor) authenticateAgentSPIFFE(bearerToken string, md metadata.MD) (*models.Agent, error) {
+	provider, err := externaljwt.Get(externaljwt.IssuerSPIFFE)
+	if err != nil {
+		md.Delete("authorization")
+		if errors.Is(err, externaljwt.ErrNotConfigured) {
+			log.Debug("rejecting spiffe svid: provider not configured")
+		} else {
+			log.Debugf("spiffe provider lookup failed, err=%v", err)
+		}
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	identity, verr := provider.Validate(context.Background(), bearerToken)
+	if verr != nil {
+		md.Delete("authorization")
+		log.Debugf("spiffe svid validation failed, err=%v", verr)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	resolved, rerr := models.ResolveAgentFromSPIFFEID(identity.TrustDomain, identity.Subject)
+	if rerr != nil {
+		md.Delete("authorization")
+		log.With(
+			"spiffe_id", identity.Subject,
+			"trust_domain", identity.TrustDomain,
+		).Warnf("spiffe svid validated but no mapping found, err=%v", rerr)
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+	if resolved.Agent == nil {
+		md.Delete("authorization")
+		log.With(
+			"spiffe_id", identity.Subject,
+			"agent_name", resolved.AgentName,
+		).Warnf("spiffe mapping resolved to unknown agent")
+		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
+	}
+
+	log.With(
+		"spiffe_id", identity.Subject,
+		"trust_domain", identity.TrustDomain,
+		"audience", identity.Audience,
+		"svid_type", "jwt",
+		"svid_expires_at", identity.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		"org_id", resolved.Agent.OrgID,
+		"agent_id", resolved.Agent.ID,
+		"agent_name", resolved.Agent.Name,
+	).Info("agent authenticated via spiffe")
+
+	return resolved.Agent, nil
+}
+
+// looksLikeJWT returns true when the token has three non-empty dot-separated
+// segments — the shape of a JWT/JWS compact serialization. Actual validation
+// (signature, audience, expiry) is delegated to the SPIFFE provider.
+func looksLikeJWT(s string) bool {
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	return parts[0] != "" && parts[1] != "" && parts[2] != ""
 }
 
 func parseBearerToken(md metadata.MD) (string, bool, error) {
@@ -329,6 +450,9 @@ func parseBearerToken(md metadata.MD) (string, bool, error) {
 		return tokenParts[1], true, nil
 	}
 
-	// new api key format
-	return tokenParts[1], strings.HasPrefix(tokenParts[1], "xapi-"), nil
+	// new api key formats
+	if strings.HasPrefix(tokenParts[1], "xapi-") || strings.HasPrefix(tokenParts[1], "hpk_") {
+		return tokenParts[1], true, nil
+	}
+	return tokenParts[1], false, nil
 }

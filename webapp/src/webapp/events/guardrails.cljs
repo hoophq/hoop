@@ -108,7 +108,7 @@
  (fn
    [{:keys [db]} [_ rule]]
    (let [{:keys [id name description
-                 connection_ids
+                 connection_ids attributes
                  input output]} rule
          rule-builder (fn [rule]
                         {:_id (or (:_id rule) (random-uuid)) ;; internal use
@@ -119,7 +119,8 @@
                       {:id (or id "")
                        :name (or name "")
                        :description (or description "")
-                       :connection_ids (or connection_ids [])}
+                       :connection_ids (or connection_ids [])
+                       :attributes (or attributes [])}
                       (if (seq (:rules input))
                         {:input (mapv rule-builder (:rules input))}
                         {:input [{:type "" :rule "" :details ""}]})
@@ -141,6 +142,7 @@
                                               :name ""
                                               :description ""
                                               :connection_ids []
+                                              :attributes []
                                               :connections []
                                               :input [{:type "" :rule "" :details ""}]
                                               :output [{:type "" :rule "" :details ""}]}]]]}))

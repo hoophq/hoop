@@ -110,7 +110,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 	ossig.handleOsInterrupt()
 	loader.Suffix = " connecting to gateway..."
 
-	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
+	c := newClientConnect(config, loader, args, pb.ClientVerbConnect, "")
 	sendOpenSessionPktFn := func() {
 		spec := newClientArgsSpec(c.clientArgs, clientEnvVars)
 		if durationFlagChanged {
@@ -520,7 +520,7 @@ func (c *connect) processGracefulExit(err error) {
 				os.Exit(0)
 			}
 			fmt.Printf("\n\n")
-			c.printErrorAndExit(err.Error())
+			c.printErrorAndExit("%s", err.Error())
 		case *proxy.SSHServer:
 			v.Close()
 			if err == io.EOF {
@@ -532,17 +532,17 @@ func (c *connect) processGracefulExit(err error) {
 				}
 				os.Exit(0)
 			}
-			c.printErrorAndExit(err.Error())
+			c.printErrorAndExit("%s", err.Error())
 		case proxy.Closer:
 			v.Close()
 			time.Sleep(time.Millisecond * 500)
 			if err == io.EOF {
 				os.Exit(0)
 			}
-			c.printErrorAndExit(err.Error())
+			c.printErrorAndExit("%s", err.Error())
 		}
 	}
-	c.printErrorAndExit(err.Error())
+	c.printErrorAndExit("%s", err.Error())
 }
 
 func (c *connect) printHeader(connectionType pb.ConnectionType, pkt *pb.Packet) {
@@ -588,7 +588,7 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 	fatalErr(c.jsonMode, format, v...)
 }
 
-func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args []string, verb string) *connect {
+func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args []string, verb, correlationID string) *connect {
 	c := &connect{
 		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),
@@ -602,14 +602,17 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", verb),
 	}
+	if correlationID != "" {
+		grpcClientOptions = append(grpcClientOptions, grpc.WithOption("correlation-id", correlationID))
+	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {
-		c.printErrorAndExit(err.Error())
+		c.printErrorAndExit("%s", err.Error())
 	}
 	clientConfig.UserAgent = fmt.Sprintf("hoopcli/%v", version.Get().Version)
 	c.client, err = grpc.Connect(clientConfig, grpcClientOptions...)
 	if err != nil {
-		c.printErrorAndExit(err.Error())
+		c.printErrorAndExit("%s", err.Error())
 	}
 	return c
 }

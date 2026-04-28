@@ -4,9 +4,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
+	"github.com/hoophq/hoop/gateway/models"
 )
 
 // GetPublicServerInfo
@@ -24,8 +27,17 @@ func Get(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to load server auth config: %v", err)
 		return
 	}
-	publicServerInfo := openapi.PublicServerInfo{
-		AuthMethod: string(authMethod),
+
+	setupRequired := false
+	if !appconfig.Get().OrgMultitenant() {
+		org, err := models.GetOrganizationByNameOrID(proto.DefaultOrgName)
+		if err == nil {
+			setupRequired = org.TotalUsers == 0
+		}
 	}
-	c.JSON(http.StatusOK, publicServerInfo)
+
+	c.JSON(http.StatusOK, openapi.PublicServerInfo{
+		AuthMethod:    string(authMethod),
+		SetupRequired: setupRequired,
+	})
 }

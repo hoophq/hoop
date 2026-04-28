@@ -191,7 +191,11 @@ func (h *handler) LoginCallback(c *gin.Context) {
 		return
 	}
 
-	err = models.UpsertUserToken(models.DB, subject, token.AccessToken)
+	var refreshToken *string
+	if token.RefreshToken != "" {
+		refreshToken = &token.RefreshToken
+	}
+	err = models.UpsertUserToken(models.DB, subject, token.AccessToken, refreshToken)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed upserting user token subject=%s, email=%s, reason=%v", uinfo.Subject, uinfo.Email, err)
 		log.Error(login.Outcome)
@@ -458,7 +462,10 @@ func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) 
 		// merge this anonymous event with the identified user
 		trackClient.Identify(&types.APIContext{
 			OrgID:           org.ID,
+			OrgLicenseData:  &org.LicenseData,
 			UserID:          newUser.Subject,
+			UserEmail:       newUser.Email,
+			UserName:        newUser.Name,
 			UserAnonSubject: org.ID,
 		})
 		trackClient.Track(newUser.Subject, analytics.EventSingleTenantFirstUserCreated, map[string]any{
@@ -504,8 +511,11 @@ func (h *handler) analyticsTrack(isNewUser bool, userAgent string, ctx *models.C
 		return
 	}
 	trackClient.Identify(&types.APIContext{
-		OrgID:  ctx.OrgID,
-		UserID: ctx.UserID,
+		OrgID:          ctx.OrgID,
+		OrgLicenseData: &ctx.OrgLicenseData,
+		UserID:         ctx.UserID,
+		UserEmail:      ctx.UserEmail,
+		UserName:       ctx.UserName,
 	})
 	go func() {
 		// wait some time until the identify call get times to reach to intercom

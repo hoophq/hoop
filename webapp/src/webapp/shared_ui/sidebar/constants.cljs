@@ -232,7 +232,15 @@
 
 ;; Settings
 (def settings-management
-  [{:name "attributes"
+  [{:name "api-keys"
+    :label "API Keys"
+    :uri (routes/url-for :settings-api-keys)
+    :navigate :settings-api-keys
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false
+    :badge "NEW"}
+   {:name "attributes"
     :label "Attributes"
     :uri (routes/url-for :settings-attributes)
     :navigate :settings-attributes
@@ -247,17 +255,25 @@
     :free-feature? true
     :admin-only? true
     :selfhosted-only? true}
-   {:name "license"
-    :label "License"
-    :uri (routes/url-for :license-management)
-    :navigate :license-management
+   {:name "experimental"
+    :label "Experimental"
+    :uri (routes/url-for :settings-experimental)
+    :navigate :settings-experimental
     :free-feature? true
     :admin-only? true
-    :selfhosted-only? false}
+    :selfhosted-only? false
+    :badge "BETA"}
    {:name "audit-logs"
     :label "Internal Audit Logs"
     :uri (routes/url-for :settings-audit-logs)
     :navigate :settings-audit-logs
+    :free-feature? true
+    :admin-only? true
+    :selfhosted-only? false}
+   {:name "license"
+    :label "License"
+    :uri (routes/url-for :license-management)
+    :navigate :license-management
     :free-feature? true
     :admin-only? true
     :selfhosted-only? false}

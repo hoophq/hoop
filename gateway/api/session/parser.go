@@ -62,6 +62,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		EventStream:          blobStream,
 		EventSize:            s.BlobStreamSize,
 		SessionBatchID:       s.SessionBatchID,
+		CorrelationID:        s.CorrelationID,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
 		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),
@@ -160,6 +161,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
+		RejectionReason:       r.RejectionReason,
 	}
 }
 
@@ -281,4 +283,25 @@ func parseRawQueries(blobStream json.RawMessage, connProtoType proto.ConnectionT
 	}
 	rawQueries, err := json.Marshal(out)
 	return rawQueries, blobSize, err
+}
+
+// ParseSessionOutput returns the stdout and stderr of a session as a UTF-8 string,
+// loading the blob stream from the database if needed. Returns an empty string
+// (no error) when the session has no recorded stream.
+func ParseSessionOutput(s *models.Session) (string, error) {
+	if s.BlobStream == nil {
+		stream, err := s.GetBlobStream()
+		if err != nil {
+			return "", err
+		}
+		s.BlobStream = stream
+	}
+	if s.BlobStream == nil {
+		return "", nil
+	}
+	out, err := parseBlobStream(s, sessionParseOption{events: []string{"o", "e"}})
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }

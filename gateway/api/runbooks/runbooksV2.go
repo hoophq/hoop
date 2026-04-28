@@ -463,6 +463,11 @@ func RunbookExec(c *gin.Context) {
 		return
 	}
 
+	if err := sessionapi.ValidateCorrelationID(req.CorrelationID); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	connectionName := req.ConnectionName
 	connection, err := getConnection(ctx, c, connectionName)
 	if err != nil {
@@ -567,6 +572,7 @@ func RunbookExec(c *gin.Context) {
 		UserEmail:            ctx.UserEmail,
 		Status:               string(openapi.SessionStatusOpen),
 		SessionBatchID:       req.SessionBatchID,
+		CorrelationID:        req.CorrelationID,
 		ExitCode:             nil,
 		CreatedAt:            time.Now().UTC(),
 		EndSession:           nil,

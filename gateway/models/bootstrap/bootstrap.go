@@ -27,11 +27,11 @@ func MigrateDB(postgresURI, migrationPathFiles string) error {
 	if dirty {
 		return fmt.Errorf("database is in a dirty state, requires manual intervention to fix it")
 	}
-	log.Infof("loaded migration version=%v, is-nil-version=%v", ver, err == migrate.ErrNilVersion)
+	log.Debugf("loaded migration version=%v, is-nil-version=%v", ver, err == migrate.ErrNilVersion)
 	err = m.Up()
 	switch err {
 	case migrate.ErrNilVersion, migrate.ErrNoChange, nil:
-		log.Infof("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
+		log.Debugf("processed db migration with success, nochange=%v", err == migrate.ErrNoChange)
 	default:
 		// It usually happens when there's the last number is above
 		// the local migration files. Let it proceed to be able to rollback
@@ -47,7 +47,7 @@ func MigrateDB(postgresURI, migrationPathFiles string) error {
 }
 
 func RunGolangMigrations() error {
-	log.Info("running golang migration scripts!")
+	log.Debug("running golang migration scripts!")
 
 	// Run RunbooksV2 migration
 	err := migrations.RunRunbooksV2()

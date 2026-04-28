@@ -527,6 +527,14 @@ func displaySession(s map[string]any) {
 				}
 			}
 		}
+
+		if reason := toStr(review["rejection_reason"]); reason != "-" && reason != "" {
+			sep()
+			fmt.Fprintln(w, "  Rejection Reason")
+			for _, line := range strings.Split(reason, "\n") {
+				fmt.Fprintf(w, "    %s\n", line)
+			}
+		}
 	}
 
 	// AI analysis section.

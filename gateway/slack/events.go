@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,15 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )
+
+// rejectModalMetadata holds the review context serialized into a Slack modal's private_metadata.
+type rejectModalMetadata struct {
+	ReviewID  string `json:"review_id"`
+	SessionID string `json:"session_id"`
+	EventKind string `json:"event_kind"`
+	GroupName string `json:"group_name"`
+	SlackID   string `json:"slack_id"`
+}
 
 // ProcessEvents start the websocket connection and process the events
 // in a go routine. It's a blocking method
@@ -50,27 +60,57 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 		log.Debugf("ignored %+v\n", ev)
 		return
 	}
-	log.Infof("received interaction, user=%v, domain=%s, metaevent=%s",
-		cb.User.ID, cb.Team.Domain, cb.Message.Metadata.EventType)
+	log.Infof("received interaction, user=%v, domain=%s, type=%s",
+		cb.User.ID, cb.Team.Domain, cb.Type)
 
 	switch cb.Type {
 	case slack.InteractionTypeBlockActions:
 		// See https://api.slack.com/apis/connections/socket-implement#button
+		actionID := cb.ActionCallback.BlockActions[0].ActionID
+
+		// reviewUID:GroupName:IndexNo
+		blockID := cb.ActionCallback.BlockActions[0].BlockID
+		groupName := ""
+		if parts := strings.Split(blockID, ":"); len(parts) == 3 {
+			groupName = parts[1]
+		}
+
+		if actionID == "review-rejected" {
+			// Persist the block-action callback so the view submission handler can use it
+			// as the item — preserving channel, message blocks, responseURL, etc.
+			reviewID := fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[reviewIDMetadataKey])
+			s.pendingRejectMu.Lock()
+			s.pendingRejectItems[reviewID] = cb
+			s.pendingRejectMu.Unlock()
+
+			meta := rejectModalMetadata{
+				ReviewID:  reviewID,
+				SessionID: fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[sessionIDMetadataKey]),
+				EventKind: fmt.Sprintf("%v", cb.Message.Metadata.EventType),
+				GroupName: groupName,
+				SlackID:   cb.User.ID,
+			}
+			metaJSON, err := json.Marshal(meta)
+			// OpenRejectModal must be called before Ack() — TriggerID expires ~3s after interaction.
+			if err != nil {
+				log.Warnf("failed to serialize reject modal metadata: %v", err)
+			} else if err := s.OpenRejectModal(cb, string(metaJSON)); err != nil {
+				log.Warnf("failed to open reject modal: %v", err)
+			}
+			log.Info("sending ack back to slack (reject modal opened)!")
+			s.socketClient.Ack(*ev.Request, nil)
+			return
+		}
+
+		// Approved path — send directly to the processing channel.
 		reviewResponse := MessageReviewResponse{
 			EventKind: fmt.Sprintf("%v", cb.Message.Metadata.EventType),
 			ID:        fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[reviewIDMetadataKey]),
 			SessionID: fmt.Sprintf("%v", cb.Message.Metadata.EventPayload[sessionIDMetadataKey]),
-			Status:    "rejected",
+			Status:    "approved",
 			SlackID:   cb.User.ID,
+			GroupName: groupName,
 			item:      cb,
-		}
-		if cb.ActionCallback.BlockActions[0].ActionID == "review-approved" {
-			reviewResponse.Status = "approved"
-		}
-		// reviewUID:GroupName:IndexNo
-		blockID := cb.ActionCallback.BlockActions[0].BlockID
-		if parts := strings.Split(blockID, ":"); len(parts) == 3 {
-			reviewResponse.GroupName = parts[1]
 		}
 		select {
 		case respCh <- &reviewResponse:
@@ -78,6 +118,53 @@ func (s *SlackService) processInteractive(respCh chan *MessageReviewResponse, ev
 			log.Warnf("timeout (2s) on sending review response, id=%v, status=%v",
 				reviewResponse.ID, reviewResponse.Status)
 		}
+
+	case slack.InteractionTypeViewSubmission:
+		if cb.View.CallbackID != "reject-details-modal" {
+			break
+		}
+		var meta rejectModalMetadata
+		if err := json.Unmarshal([]byte(cb.View.PrivateMetadata), &meta); err != nil {
+			log.Warnf("failed to parse reject modal metadata: %v", err)
+			s.socketClient.Ack(*ev.Request, nil)
+			return
+		}
+		reason := ""
+		if block, ok := cb.View.State.Values["rejection_reason_block"]; ok {
+			if elem, ok := block["rejection_reason"]; ok {
+				reason = elem.Value
+			}
+		}
+		// Retrieve the original block-action callback so UpdateMessage has the channel,
+		// message blocks, and responseURL — making reject behave identically to approve.
+		s.pendingRejectMu.Lock()
+		originalCb, hasPending := s.pendingRejectItems[meta.ReviewID]
+		if hasPending {
+			delete(s.pendingRejectItems, meta.ReviewID)
+		}
+		s.pendingRejectMu.Unlock()
+
+		item := cb
+		if hasPending {
+			item = originalCb
+		}
+
+		reviewResponse := MessageReviewResponse{
+			EventKind:       meta.EventKind,
+			ID:              meta.ReviewID,
+			SessionID:       meta.SessionID,
+			Status:          "rejected",
+			SlackID:         meta.SlackID,
+			GroupName:       meta.GroupName,
+			RejectionReason: reason,
+			item:            item,
+		}
+		select {
+		case respCh <- &reviewResponse:
+		case <-time.After(time.Second * 2):
+			log.Warnf("timeout (2s) on sending rejection review response, id=%v", reviewResponse.ID)
+		}
+
 	default:
 	}
 	log.Info("sending ack back to slack!")

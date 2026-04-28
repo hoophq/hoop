@@ -1,0 +1,73 @@
+# Example: Batch connection creation for hoop CLI
+# Usage: hoop admin create connections --from-file batch-connections.yaml
+
+# Top-level defaults (applied to all connections unless overridden)
+agent: default
+type: database/postgres
+overwrite: false
+
+# Optional: shared tags applied to all connections
+tags:
+  env: production
+  team: platform
+
+# Optional: shared access modes (default: connect, exec, runbooks)
+access_modes:
+  - connect
+  - exec
+  - runbooks
+
+# List of connections to create
+connections:
+  - name: users-db
+    env:
+      HOST: 10.0.1.10
+      USER: admin
+      PASS: file:///etc/hoop/secrets/users-db-pass.txt
+      PORT: "5432"
+      DB: users
+
+  - name: orders-db
+    env:
+      HOST: 10.0.1.11
+      USER: admin
+      PASS: base64://c2VjcmV0cGFzc3dvcmQ=
+      PORT: "5432"
+      DB: orders
+
+  - name: analytics-db
+    env:
+      HOST: 10.0.1.12
+      USER: readonly
+      PASS: analytics-readonly-pass
+      PORT: "5432"
+      DB: analytics
+    # Per-connection tag override
+    tags:
+      env: production
+      team: data
+    # Restrict access modes for this connection only
+    access_modes:
+      - connect
+
+  # Override type for a specific connection
+  - name: redis-cache
+    type: application/tcp
+    env:
+      HOST: 10.0.1.20
+      PORT: "6379"
+    tags:
+      env: production
+      team: infra
+
+  # Override agent for a specific connection
+  - name: staging-db
+    agent: staging-agent
+    env:
+      HOST: 10.0.2.10
+      USER: admin
+      PASS: staging-pass
+      PORT: "5432"
+      DB: app
+    tags:
+      env: staging

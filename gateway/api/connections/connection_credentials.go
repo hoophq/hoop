@@ -601,13 +601,18 @@ func buildConnectionCredentialsResponse(
 				host = apiURL.Hostname()
 			}
 		}
+		if host == "0.0.0.0" || host == "127.0.0.1" {
+			host = "localhost"
+		}
 		baseCommand := fmt.Sprintf("%s://%s:%s/", scheme, host, serverPort)
 		curlCommand := fmt.Sprintf("curl -H 'Authorization: %s' %s", secretKey, baseCommand)
 		browserCommand := fmt.Sprintf("%s%s", baseCommand, secretKey)
+		browserWildcardCommand := fmt.Sprintf("%s://%s.%s:%s/%s", scheme, cred.ConnectionName, host, serverPort, secretKey)
 
 		jsonCommandsString := `{
 				"curl": "` + curlCommand + `",
-				"browser": "` + browserCommand + `"
+				"browser": "` + browserCommand + `",
+				"subdomain": "` + browserWildcardCommand + `"
 			}`
 		base.ConnectionType = proto.ConnectionType(connectionType).String()
 		base.ConnectionCredentials = &openapi.HttpProxyConnectionInfo{

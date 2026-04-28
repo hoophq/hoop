@@ -775,6 +775,272 @@ const docTemplate = `{
                 }
             }
         },
+        "/api-keys": {
+            "get": {
+                "description": "List all API keys for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "List API Keys",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.APIKeyResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Generate a new API key. The raw key is returned only once in the response and cannot be retrieved after creation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Create API Key",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys/{nameOrID}": {
+            "get": {
+                "description": "Get an API key by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Get API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an API key's name and/or groups. Works for both active and revoked keys.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Update API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Revoke an API key (soft delete). The key status is set to revoked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Revoke API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api-keys/{nameOrID}/reactivate": {
+            "post": {
+                "description": "Reactivate a revoked API key. Sets status back to active and clears deactivation metadata.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API Keys"
+                ],
+                "summary": "Reactivate API Key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the API key",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.APIKeyResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/attributes": {
             "get": {
                 "description": "List attributes for the organization with optional pagination and search.",
@@ -2446,6 +2712,94 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/feature-flags": {
+            "get": {
+                "description": "List all feature flags from the catalog with their per-org state",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "List Feature Flags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.FeatureFlagItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/feature-flags/{name}": {
+            "put": {
+                "description": "Enable or disable a feature flag for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "Update Feature Flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature flag name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -6276,6 +6630,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Filter by external workflow/task correlation id",
+                        "name": "correlation_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Filter by Jira issue key",
                         "name": "jira_issue_key",
                         "in": "query"
@@ -7215,6 +7575,192 @@ const docTemplate = `{
                 }
             }
         },
+        "/spiffe-mappings": {
+            "get": {
+                "description": "List all SPIFFE-ID to agent mappings in the caller's organization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "List SPIFFE Mappings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Map a SPIFFE identity (exact URI or URI prefix) onto a Hoop agent.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "Create SPIFFE Mapping",
+                "parameters": [
+                    {
+                        "description": "The mapping to create",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/spiffe-mappings/{id}": {
+            "put": {
+                "description": "Update an existing SPIFFE-ID to agent mapping.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "Update SPIFFE Mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The mapping fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.AgentSPIFFEMapping"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove a SPIFFE-ID to agent mapping.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SPIFFE"
+                ],
+                "summary": "Delete SPIFFE Mapping",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mapping ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/userinfo": {
             "get": {
                 "description": "Get own user's information",
@@ -7537,9 +8083,7 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/users/{id}": {
+            },
             "put": {
                 "description": "Updates an existing user",
                 "consumes": [
@@ -7868,6 +8412,204 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.APIKeyCreateRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "groups": {
+                    "description": "Groups to assign to this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "name": {
+                    "description": "Human-readable name for the API key",
+                    "type": "string",
+                    "example": "bob-the-bot"
+                }
+            }
+        },
+        "openapi.APIKeyCreateResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this key",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this key",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "key": {
+                    "description": "The generated API key. This is the only time the full key is shown.",
+                    "type": "string",
+                    "example": "hpk_Ab3fX9kL..."
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the API key for identification",
+                    "type": "string",
+                    "example": "hpk_1nzb***************************************"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "ai-agent"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the API key",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.APIKeyStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.APIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created this key",
+                    "type": "string"
+                },
+                "deactivated_at": {
+                    "description": "Revocation timestamp",
+                    "type": "string"
+                },
+                "deactivated_by": {
+                    "description": "Subject of the admin who revoked this key",
+                    "type": "string"
+                },
+                "groups": {
+                    "description": "Groups assigned to this API key",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering"
+                    ]
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_used_at": {
+                    "description": "Timestamp of last usage",
+                    "type": "string"
+                },
+                "masked_key": {
+                    "description": "Masked version of the API key for identification",
+                    "type": "string",
+                    "example": "hpk_1nzb***************************************"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "ai-agent"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "status": {
+                    "description": "Current status of the API key",
+                    "enum": [
+                        "active",
+                        "revoked"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.APIKeyStatusType"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.APIKeyStatusType": {
+            "type": "string",
+            "enum": [
+                "active",
+                "revoked"
+            ],
+            "x-enum-varnames": [
+                "APIKeyStatusActive",
+                "APIKeyStatusRevoked"
+            ]
+        },
+        "openapi.APIKeyUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "groups": {
+                    "description": "Updated group list (replaces existing groups)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "platform"
+                    ]
+                },
+                "name": {
+                    "description": "Updated display name",
+                    "type": "string",
+                    "example": "payments-automation"
                 }
             }
         },
@@ -8324,12 +9066,86 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.AgentSPIFFEMapping": {
+            "type": "object",
+            "required": [
+                "trust_domain"
+            ],
+            "properties": {
+                "agent_id": {
+                    "description": "ID of the Hoop agent this mapping resolves to (exact form). Mutually\nexclusive with AgentTemplate.",
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "agent_template": {
+                    "description": "Go text/template that renders to a Hoop agent name. Used with\nSPIFFEPrefix. See the SPIFFE docs for template field details.\nMutually exclusive with AgentID.",
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string",
+                    "readOnly": true
+                },
+                "groups": {
+                    "description": "The groups assigned to the agent when authenticating via this mapping.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "agents"
+                    ]
+                },
+                "id": {
+                    "description": "The unique identifier of this resource",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "spiffe_id": {
+                    "description": "Exact SPIFFE ID to match. Mutually exclusive with SPIFFEPrefix.",
+                    "type": "string",
+                    "example": "spiffe://customer.com/agent/arqa-prod"
+                },
+                "spiffe_prefix": {
+                    "description": "SPIFFE ID prefix. Matches any SVID whose sub begins with this string;\nlongest-prefix wins on lookup. Mutually exclusive with SPIFFEID.",
+                    "type": "string",
+                    "example": "spiffe://customer.com/agent/"
+                },
+                "trust_domain": {
+                    "description": "SPIFFE trust domain. Must match the trust domain configured on the\ngateway for SPIFFE authentication to succeed.",
+                    "type": "string",
+                    "example": "customer.com"
+                },
+                "updated_at": {
+                    "description": "Last update timestamp",
+                    "type": "string",
+                    "readOnly": true
+                }
+            }
+        },
         "openapi.AttributeRequest": {
             "type": "object",
             "required": [
                 "name"
             ],
             "properties": {
+                "access_control_group_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "sre"
+                    ]
+                },
                 "access_request_rule_names": {
                     "type": "array",
                     "items": {
@@ -8384,6 +9200,17 @@ const docTemplate = `{
         "openapi.Attributes": {
             "type": "object",
             "properties": {
+                "access_control_group_names": {
+                    "description": "Access control group names associated with this attribute",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "engineering",
+                        "sre"
+                    ]
+                },
                 "access_request_rule_names": {
                     "description": "Access request rule names associated with this attribute",
                     "type": "array",
@@ -9669,6 +10496,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "bash"
                 },
+                "correlation_id": {
+                    "description": "External workflow/task identifier that groups sessions belonging to the same logical run",
+                    "type": "string",
+                    "example": "task-12345"
+                },
                 "labels": {
                     "description": "DEPRECATED in flavor of metadata",
                     "type": "object",
@@ -9730,6 +10562,60 @@ const docTemplate = `{
                     "description": "If the ` + "`" + `output` + "`" + `` + "`" + ` field is truncated or not",
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "openapi.FeatureFlagItem": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "description": "Components affected by this flag",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gateway",
+                        "agent"
+                    ]
+                },
+                "default": {
+                    "description": "Default value when not explicitly set",
+                    "type": "boolean",
+                    "example": false
+                },
+                "description": {
+                    "description": "Human-readable description",
+                    "type": "string",
+                    "example": "New IronRDP-based proxy"
+                },
+                "enabled": {
+                    "description": "Current effective value for the organization",
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "description": "The feature flag name",
+                    "type": "string",
+                    "example": "experimental.rdp_v2"
+                },
+                "stability": {
+                    "description": "Stability level",
+                    "type": "string",
+                    "enum": [
+                        "experimental",
+                        "beta"
+                    ],
+                    "example": "experimental"
+                }
+            }
+        },
+        "openapi.FeatureFlagUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the feature flag should be enabled",
+                    "type": "boolean"
                 }
             }
         },
@@ -10667,6 +11553,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "correlation_id": {
+                    "description": "External workflow/task identifier that groups sessions belonging to the same logical run",
+                    "type": "string",
+                    "example": "task-12345"
+                },
                 "env_vars": {
                     "type": "object",
                     "additionalProperties": {
@@ -10815,6 +11706,11 @@ const docTemplate = `{
                         "saml"
                     ],
                     "example": "local"
+                },
+                "setup_required": {
+                    "description": "Whether the server requires initial setup (no users have been registered yet)",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
@@ -11060,6 +11956,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": 2
                 },
+                "rejection_reason": {
+                    "description": "The reason provided by the reviewer when rejecting this review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "This command is not allowed in production."
+                },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
                     "type": "array",
@@ -11200,6 +12102,10 @@ const docTemplate = `{
                 "force_review": {
                     "type": "boolean",
                     "example": false
+                },
+                "rejection_reason": {
+                    "type": "string",
+                    "example": "This command is not allowed in production."
                 },
                 "status": {
                     "description": "The reviewed status\n* APPROVED - Approve the review resource\n* REJECTED - Reject the review resource\n* REVOKED - Revoke an approved review",
@@ -11403,6 +12309,11 @@ const docTemplate = `{
                     "description": "Connection name to execute the runbook against",
                     "type": "string",
                     "example": "pgdemo"
+                },
+                "correlation_id": {
+                    "description": "External workflow/task id to group related sessions",
+                    "type": "string",
+                    "example": "task-12345"
                 },
                 "env_vars": {
                     "description": "Environment Variables that will be included in the runtime\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem",
@@ -12239,6 +13150,13 @@ const docTemplate = `{
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
                     "type": "boolean"
                 },
+                "feature_flags": {
+                    "description": "Effective feature flags for the caller's organization",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
                 "go_debug": {
                     "description": "Expose ` + "`" + `GODEBUG` + "`" + ` flags enabled",
                     "type": "string",
@@ -12521,6 +13439,11 @@ const docTemplate = `{
                     "example": {
                         "team": "banking;environment:prod"
                     }
+                },
+                "correlation_id": {
+                    "description": "External workflow/task identifier that groups sessions belonging to the same logical run",
+                    "type": "string",
+                    "example": "task-12345"
                 },
                 "end_date": {
                     "description": "When the execution ended. A null value indicates the session is still running",
@@ -12975,6 +13898,12 @@ const docTemplate = `{
                     "type": "integer",
                     "readOnly": true,
                     "example": 2
+                },
+                "rejection_reason": {
+                    "description": "The reason provided by the reviewer when rejecting this review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "This command is not allowed in production."
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",
