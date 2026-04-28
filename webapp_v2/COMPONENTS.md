@@ -78,7 +78,9 @@ import Table from '@/components/Table'
   </Table.Tbody>
 </Table>
 ```
-Styles: bordered container with `border-radius`, subtle gray header background, row separators. Defined in `components/Table/Table.module.css`.
+Styles: `1px solid gray.3` border with `border-radius`, subtle gray.1 header background, row separators, `verticalSpacing="sm"` / `horizontalSpacing="md"`. Defined in `components/Table/Table.module.css`.
+
+> **Note on `Table.Th`**: The wrapper's CSS already sets `font-size: xs` and `font-weight: 600` on all `th` cells. Do not wrap the content in `<Text size="xs">` — it's redundant.
 
 ### `DocsBtnCallOut`
 Bordered link to external documentation. Equivalent of `webapp.components.callout-link` in CLJS.
