@@ -29,9 +29,8 @@ function ConnectionFilter({ value, onChange, connections }) {
     >
       <Popover.Target>
         <Button
-          variant={value ? 'light' : 'default'}
+          variant={value ? 'light' : 'outline'}
           color="gray"
-          variant="outline"
           leftSection={<Rotate3d size={14} />}
           rightSection={
             value ? (
