@@ -40,7 +40,7 @@ export const MAIN_ITEMS = [
     action: () => openCommandPalette(),
     freeFeature: true,
     adminOnly: false,
-    badge: { text: 'NEW', color: 'indigo' },
+    badge: { text: 'NEW', color: 'green' },
     shortcut: '⌘K'
   }
 ];
@@ -116,13 +116,26 @@ export const ORGANIZATION_ITEMS = [
     adminOnly: true,
     children: [
       {
+        label: 'API Keys',
+        path: '/settings/api-keys',
+        freeFeature: true,
+        adminOnly: true,
+        badge: { text: 'NEW', color: 'green' }
+      },
+      {
         label: 'Attributes',
         path: '/settings/attributes',
         freeFeature: true,
         adminOnly: true,
         badge: { text: 'NEW', color: 'green' }
       },
-      { label: 'Infrastructure', path: '/settings/infrastructure', freeFeature: true, adminOnly: true, selfhostedOnly: true },
+      {
+        label: 'Infrastructure',
+        path: '/settings/infrastructure',
+        freeFeature: true,
+        adminOnly: true,
+        selfhostedOnly: true
+      },
       { label: 'License', path: '/settings/license', freeFeature: true, adminOnly: true },
       { label: 'Internal Audit Logs', path: '/settings/audit-logs', freeFeature: true, adminOnly: true },
       { label: 'Users', path: '/organization/users', freeFeature: true, adminOnly: true }

@@ -56,6 +56,7 @@ export const docsUrl = {
       overview: 'https://hoop.dev/docs/clients/webapp/overview',
       creatingConnection: 'https://hoop.dev/docs/clients/webapp/creating-connection',
       managingAccess: 'https://hoop.dev/docs/clients/webapp/managing-accesss',
+      userManagement: 'https://hoop.dev/docs/clients/webapp/managing-accesss',
       monitoringSessions: 'https://hoop.dev/docs/clients/webapp/monitoring-sessions',
     },
     commandLine: {

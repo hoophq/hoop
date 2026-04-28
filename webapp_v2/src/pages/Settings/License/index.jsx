@@ -99,7 +99,7 @@ function SettingsLicense() {
       <Group justify="space-between" align="flex-start" mb="xxxl">
         <Stack gap="xs">
           <Title order={1}>License</Title>
-          <Text size="sm" c="dimmed">
+          <Text size="lg" c="dimmed">
             View and manage your organization's license.
           </Text>
         </Stack>

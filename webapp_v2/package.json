@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@mantine/core": "^8.3.18",
+    "@mantine/dates": "^8.3.18",
     "@mantine/hooks": "^8.3.18",
     "@mantine/notifications": "^8.3.18",
     "@mantine/spotlight": "^8.3.18",
     "axios": "^1.13.5",
+    "dayjs": "^1.11.20",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

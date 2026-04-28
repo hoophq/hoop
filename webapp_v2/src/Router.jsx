@@ -14,6 +14,13 @@ import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import SettingsInfrastructure from '@/pages/Settings/Infrastructure'
 import SettingsLicense from '@/pages/Settings/License'
+import SettingsApiKeys from '@/pages/Settings/ApiKeys'
+import SettingsApiKeysForm from '@/pages/Settings/ApiKeys/Form'
+import SettingsApiKeysCreated from '@/pages/Settings/ApiKeys/Created'
+import SettingsAttributes from '@/pages/Settings/Attributes'
+import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
+import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
+import OrganizationUsers from '@/pages/Organization/Users'
 
 /**
  * Routing strategy:
@@ -90,6 +97,122 @@ function Router() {
             <Layout>
               <PageLayout>
                 <SettingsLicense />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* API Keys */}
+      <Route
+        path="/settings/api-keys"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsApiKeys />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/api-keys/new"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsApiKeysForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/api-keys/created"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsApiKeysCreated />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/api-keys/:id/configure"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsApiKeysForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Attributes */}
+      <Route
+        path="/settings/attributes"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsAttributes />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/attributes/new"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsAttributesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings/attributes/edit/:name"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsAttributesForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Audit Logs */}
+      <Route
+        path="/settings/audit-logs"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <SettingsAuditLogs />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Organization */}
+      <Route
+        path="/organization/users"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PageLayout>
+                <OrganizationUsers />
               </PageLayout>
             </Layout>
           </ProtectedRoute>
