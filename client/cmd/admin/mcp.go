@@ -27,9 +27,7 @@ var mcpAuthCmd = &cobra.Command{
 
 When enabled, the /api/mcp endpoint accepts JWTs issued by the configured OIDC
 issuer (in addition to legacy Hoop bearer tokens). The audience claim of inbound
-JWTs must match the configured resource URI.
-
-See: https://hoop.dev/docs/mcp/auth`,
+JWTs must match the configured resource URI.`,
 }
 
 var mcpAuthEnableCmd = &cobra.Command{
