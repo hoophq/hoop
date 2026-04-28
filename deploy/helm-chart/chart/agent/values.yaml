@@ -43,6 +43,14 @@ spiffe:
   grpcHost: ''
   # Skip TLS verification when dialing the gateway. Dev/testing only.
   grpcSkipVerify: false
+  # Force plaintext gRPC when dialing the gateway (sets HOOP_GRPC_INSECURE).
+  # In SPIFFE mode the agent normally always uses TLS for non-loopback URLs;
+  # set this to true when the gateway's gRPC port doesn't terminate TLS
+  # (typically local clusters where TLS_KEY/TLS_CERT are unset). Production
+  # deployments should always leave this false and run a TLS-terminated
+  # gateway. Mutually informational with grpcSkipVerify: when grpcInsecure
+  # is true, no TLS handshake is attempted, so grpcSkipVerify is irrelevant.
+  grpcInsecure: false
   # Optional cosmetic HOOP_SPIFFE_NAME passed to the agent. Identity is
   # resolved from the SPIFFE mapping, not this field. Leave empty to omit.
   name: ''

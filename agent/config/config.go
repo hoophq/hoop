@@ -104,7 +104,10 @@ func loadFromSVIDFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	insecure := grpcURL == grpc.LocalhostAddr
+	// HOOP_GRPC_INSECURE=true forces plaintext gRPC for non-loopback URLs.
+	// Intended for local development against a gateway that doesn't terminate
+	// TLS on its gRPC port; production deployments should always run TLS.
+	insecure := grpcURL == grpc.LocalhostAddr || os.Getenv("HOOP_GRPC_INSECURE") == "true"
 	return &Config{
 		Name:        os.Getenv("HOOP_SPIFFE_NAME"),
 		Type:        clientconfig.ModeSVID,
