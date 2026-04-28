@@ -27,7 +27,7 @@ extraSecret: {}
 # the gateway, which distributes connections across healthy agents.
 # When using more than one replica, consider setting deploymentStrategy.type to
 # RollingUpdate to avoid downtime during deployments.
-replicaCount: 1
+replicas: 1
 
 # -- Deployment strategy
 deploymentStrategy:

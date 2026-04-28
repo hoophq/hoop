@@ -9,7 +9,7 @@ metadata:
   {{- end }}
   {{- end }}
 spec:
-  replicas: {{ .Values.replicaCount | default 1 }}
+  replicas: {{ .Values.replicas | default 1 }}
   selector:
     matchLabels:
       app: hoopagent
