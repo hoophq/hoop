@@ -53,14 +53,24 @@ func buildAttributeModel(orgID uuid.UUID, req openapi.AttributeRequest) *models.
 		}
 	}
 
+	var acgAttrs []models.AccessControlGroupAttribute
+	if req.AccessControlGroupNames != nil {
+		acgAttrs = make([]models.AccessControlGroupAttribute, len(req.AccessControlGroupNames))
+
+		for i, groupName := range req.AccessControlGroupNames {
+			acgAttrs[i] = models.AccessControlGroupAttribute{OrgID: orgID, AttributeName: req.Name, GroupName: groupName}
+		}
+	}
+
 	return &models.Attribute{
-		OrgID:              orgID,
-		Name:               req.Name,
-		Description:        req.Description,
-		Connections:        connAttrs,
-		AccessRequestRules: arrAttrs,
-		GuardrailRules:     grAttrs,
-		DatamaskingRules:   dmAttrs,
+		OrgID:               orgID,
+		Name:                req.Name,
+		Description:         req.Description,
+		Connections:         connAttrs,
+		AccessRequestRules:  arrAttrs,
+		GuardrailRules:      grAttrs,
+		DatamaskingRules:    dmAttrs,
+		AccessControlGroups: acgAttrs,
 	}
 }
 
@@ -293,16 +303,22 @@ func toResponse(a *models.Attribute) openapi.Attributes {
 		datamasking[i] = dm.DatamaskingRuleName
 	}
 
+	accessControlGroups := make([]string, len(a.AccessControlGroups))
+	for i, acg := range a.AccessControlGroups {
+		accessControlGroups[i] = acg.GroupName
+	}
+
 	return openapi.Attributes{
-		ID:                     a.ID.String(),
-		OrgID:                  a.OrgID.String(),
-		Name:                   a.Name,
-		Description:            a.Description,
-		ConnectionNames:        connections,
-		AccessRequestRuleNames: accessRequest,
-		GuardrailRuleNames:     guardrail,
-		DatamaskingRuleNames:   datamasking,
-		CreatedAt:              a.CreatedAt,
+		ID:                      a.ID.String(),
+		OrgID:                   a.OrgID.String(),
+		Name:                    a.Name,
+		Description:             a.Description,
+		ConnectionNames:         connections,
+		AccessRequestRuleNames:  accessRequest,
+		GuardrailRuleNames:      guardrail,
+		DatamaskingRuleNames:    datamasking,
+		AccessControlGroupNames: accessControlGroups,
+		CreatedAt:               a.CreatedAt,
 	}
 }
 

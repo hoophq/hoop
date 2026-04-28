@@ -22,6 +22,10 @@ const (
 	EventCreateMachineIdentity        = "hoop-create-machine-identity"
 	EventUpdateMachineIdentity        = "hoop-update-machine-identity"
 	EventDeleteMachineIdentity        = "hoop-delete-machine-identity"
+	EventCreateApiKey                 = "hoop-create-apikey"
+	EventUpdateApiKey                 = "hoop-update-apikey"
+	EventRevokeApiKey                 = "hoop-revoke-apikey"
+	EventReactivateApiKey             = "hoop-reactivate-apikey"
 
 	// review
 	EventUpdateReview = "hoop-update-review"

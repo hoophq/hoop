@@ -115,12 +115,22 @@
    [webapp.onboarding.events.aws-connect-events]
    [webapp.onboarding.events.effects]
    [webapp.onboarding.main :as onboarding]
+   [webapp.setup.main :as setup]
+   [webapp.setup.events]
    [webapp.onboarding.resource-providers :as onboarding-resource-providers]
    [webapp.onboarding.setup :as onboarding-setup]
    [webapp.onboarding.setup-resource :as onboarding-setup-resource]
    [webapp.onboarding.setup-agent :as onboarding-setup-agent]
    [webapp.plugins.views.manage-plugin :as manage-plugin]
    [webapp.routes :as routes]
+   [webapp.settings.api-keys.events]
+   [webapp.settings.api-keys.main :as api-keys-main]
+   [webapp.settings.api-keys.subs]
+   [webapp.settings.api-keys.views.created :as api-keys-created]
+   [webapp.settings.api-keys.views.form :as api-keys-form]
+   [webapp.settings.experimental.events]
+   [webapp.settings.experimental.main :as settings-experimental]
+   [webapp.settings.experimental.subs]
    [webapp.settings.infrastructure.events]
    [webapp.settings.infrastructure.main :as infrastructure]
    [webapp.settings.infrastructure.subs]
@@ -295,6 +305,12 @@
     [routes/wrap-admin-only
      [license-management/main]]]])
 
+(defmethod routes/panels :settings-experimental-panel []
+  [layout :application-hoop
+   [:div {:class "bg-gray-1 min-h-full h-full"}
+    [routes/wrap-admin-only
+     [settings-experimental/main]]]])
+
 (defmethod routes/panels :settings-infrastructure-panel []
   [layout :application-hoop
    [:div {:class "bg-gray-1 min-h-full h-full"}
@@ -338,6 +354,9 @@
 
 (defmethod routes/panels :home-redirect-panel []
   [layout :application-hoop [home/home-panel-hoop]])
+
+(defmethod routes/panels :setup-panel []
+  [layout :auth [setup/main]])
 
 (defmethod routes/panels :onboarding-panel []
   [layout :auth [onboarding/main]])
@@ -719,6 +738,37 @@
       [:div {:class "bg-gray-1 min-h-full h-max relative"}
        [attributes-form/main :edit]]]]))
 
+(defmethod routes/panels :settings-api-keys-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [api-keys-main/main]]])
+
+(defmethod routes/panels :settings-api-keys-new-panel []
+  (rf/dispatch [:destroy-page-loader])
+  (rf/dispatch [:api-keys/clear-active])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [:div {:class "bg-gray-1 min-h-full h-max relative"}
+     [api-keys-form/main :create]]]])
+
+(defmethod routes/panels :settings-api-keys-created-panel []
+  (rf/dispatch [:destroy-page-loader])
+  [layout :application-hoop
+   [routes/wrap-admin-only
+    [api-keys-created/main]]])
+
+(defmethod routes/panels :settings-api-keys-configure-panel []
+  (let [id (-> (bidi/match-route @routes/routes (.. js/window -location -pathname))
+               :route-params
+               :id)]
+    (rf/dispatch [:destroy-page-loader])
+    (rf/dispatch [:api-keys/get id])
+    [layout :application-hoop
+     [routes/wrap-admin-only
+      [:div {:class "bg-gray-1 min-h-full h-max relative"}
+       [api-keys-form/main :configure]]]]))
+
 ;;;;;;;;;;;;;;;;;;;;;
 ;; END HOOP PANELS ;;
 ;;;;;;;;;;;;;;;;;;;;;
@@ -751,6 +801,12 @@
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
+
+        (and (-> @gateway-public-info :data :setup_required)
+             (not= @active-panel :setup-panel))
+        (do
+          (rf/dispatch [:navigate :setup])
+          [loading-transition])
 
         :else
         [theme-provider

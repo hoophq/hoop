@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/log/bootstrap"
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -41,11 +43,13 @@ func (s *Server) subscribeAgent(stream *streamclient.AgentStream) (err error) {
 	defer func() { stream.Close(pluginContext, err) }()
 
 	connectionrequests.AcceptProxyConnection(stream.GetOrgID(), stream.StreamAgentID(), nil)
-	log.With("connection", stream.ConnectionName()).Infof("agent connected: %s", stream)
+	log.With("connection", stream.ConnectionName()).Debugf("agent connected: %s", stream)
+	bootstrap.AgentConnected(stream.AgentName(), stream.AgentMode())
 	_ = stream.Send(&pb.Packet{
 		Type:    pbagent.GatewayConnectOK,
 		Payload: nil,
 	})
+	sendFeatureFlagSeed(stream)
 	return s.listenAgentMessages(&pluginContext, stream)
 }
 
@@ -261,4 +265,37 @@ func buildLegacyGuardRailErrorMessage(rawInfo []byte) (string, bool) {
 	}
 
 	return "Blocked by the following Hoop Guardrails Rules: " + strings.Join(parts, ", "), true
+}
+
+func sendFeatureFlagSeed(stream *streamclient.AgentStream) {
+	snapshot := featureflag.SnapshotForOrg(stream.GetOrgID())
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		log.Warnf("failed marshalling feature flags for agent %s: %v", stream.AgentName(), err)
+		return
+	}
+	_ = stream.Send(&pb.Packet{
+		Type: pbgateway.FeatureFlagUpdate,
+		Spec: map[string][]byte{pb.SpecFeatureFlagsKey: data},
+	})
+}
+
+// SendFeatureFlagUpdateToOrg fans out the current feature flag snapshot
+// to all live agent streams for the given org.
+func SendFeatureFlagUpdateToOrg(orgID string) {
+	snapshot := featureflag.SnapshotForOrg(orgID)
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		log.Warnf("failed marshalling feature flags for org %s: %v", orgID, err)
+		return
+	}
+	pkt := &pb.Packet{
+		Type: pbgateway.FeatureFlagUpdate,
+		Spec: map[string][]byte{pb.SpecFeatureFlagsKey: data},
+	}
+	for _, stream := range streamclient.ListAgentsByOrg(orgID) {
+		if err := stream.Send(pkt); err != nil {
+			log.With("agent", stream.AgentName()).Warnf("failed sending feature flag update: %v", err)
+		}
+	}
 }

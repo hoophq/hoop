@@ -15,11 +15,12 @@ type Attribute struct {
 	Description *string   `gorm:"column:description"`
 	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
 
-	Connections        []ConnectionAttribute        `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	AccessRequestRules []AccessRequestRuleAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	GuardrailRules     []GuardrailRuleAttribute     `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	DatamaskingRules   []DatamaskingRuleAttribute   `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
-	MachineIdentities  []MachineIdentityAttribute   `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	Connections         []ConnectionAttribute         `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessRequestRules  []AccessRequestRuleAttribute  `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	GuardrailRules      []GuardrailRuleAttribute      `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	DatamaskingRules    []DatamaskingRuleAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	MachineIdentities   []MachineIdentityAttribute    `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
+	AccessControlGroups []AccessControlGroupAttribute `gorm:"foreignKey:OrgID,AttributeName;references:OrgID,Name"`
 }
 
 func (Attribute) TableName() string {
@@ -80,6 +81,17 @@ func (MachineIdentityAttribute) TableName() string {
 	return "private.machine_identities_attributes"
 }
 
+// Access Control Group and Attribute
+type AccessControlGroupAttribute struct {
+	OrgID         uuid.UUID `gorm:"column:org_id;primaryKey"`
+	AttributeName string    `gorm:"column:attribute_name;primaryKey"`
+	GroupName     string    `gorm:"column:group_name;primaryKey"`
+}
+
+func (AccessControlGroupAttribute) TableName() string {
+	return "private.access_control_groups_attributes"
+}
+
 func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error) {
 	var attr Attribute
 	err := db.
@@ -88,6 +100,7 @@ func GetAttribute(db *gorm.DB, orgID uuid.UUID, name string) (*Attribute, error)
 		Preload("GuardrailRules").
 		Preload("DatamaskingRules").
 		Preload("MachineIdentities").
+		Preload("AccessControlGroups").
 		Where("org_id = ? AND name = ?", orgID, name).
 		First(&attr).Error
 	if err != nil {
@@ -164,6 +177,18 @@ func UpsertAttribute(db *gorm.DB, attr *Attribute) error {
 			}
 		}
 
+		if attr.AccessControlGroups != nil {
+			if err := tx.Where("org_id = ? AND attribute_name = ?", attr.OrgID, attr.Name).
+				Delete(&AccessControlGroupAttribute{}).Error; err != nil {
+				return err
+			}
+			if len(attr.AccessControlGroups) > 0 {
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&attr.AccessControlGroups).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		return nil
 	})
 }
@@ -203,6 +228,7 @@ func ListAttributes(db *gorm.DB, orgID uuid.UUID, opts AttributeFilterOption) ([
 		Preload("GuardrailRules").
 		Preload("DatamaskingRules").
 		Preload("MachineIdentities").
+		Preload("AccessControlGroups").
 		Find(&attrs).Error; err != nil {
 		return nil, 0, err
 	}

@@ -102,6 +102,7 @@ func (s *AgentStream) StreamAgentID() streamtypes.ID {
 func (s *AgentStream) GetOrgID() string       { return s.agent.OrgID }
 func (s *AgentStream) AgentID() string        { return s.agent.ID }
 func (s *AgentStream) AgentName() string      { return s.agent.Name }
+func (s *AgentStream) AgentMode() string      { return s.agent.Mode }
 func (s *AgentStream) AgentVersion() string   { return s.agent.GetMeta("version") }
 func (s *AgentStream) ConnectionName() string { return s.connectionName }
 func (s *AgentStream) String() string         { return s.agent.String() }
@@ -134,6 +135,18 @@ func (s *AgentStream) Close(pctx plugintypes.Context, errMsg error) error {
 	_ = connectionstatus.SetOffline(s.GetOrgID(), s.StreamAgentID(), s.parseDefaultMetadata())
 	disconnectProxiesByAgent(pctx, errMsg)
 	return nil
+}
+
+// ListAgentsByOrg returns all live agent streams belonging to the given org.
+func ListAgentsByOrg(orgID string) []*AgentStream {
+	items := agentStore.Filter(func(_ string) bool { return true })
+	var result []*AgentStream
+	for _, obj := range items {
+		if stream, ok := obj.(*AgentStream); ok && stream.GetOrgID() == orgID {
+			result = append(result, stream)
+		}
+	}
+	return result
 }
 
 func (s *AgentStream) parseDefaultMetadata() map[string]string {

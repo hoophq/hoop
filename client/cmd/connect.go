@@ -110,7 +110,7 @@ func runConnect(args []string, clientEnvVars map[string]string, durationFlagChan
 	ossig.handleOsInterrupt()
 	loader.Suffix = " connecting to gateway..."
 
-	c := newClientConnect(config, loader, args, pb.ClientVerbConnect)
+	c := newClientConnect(config, loader, args, pb.ClientVerbConnect, "")
 	sendOpenSessionPktFn := func() {
 		spec := newClientArgsSpec(c.clientArgs, clientEnvVars)
 		if durationFlagChanged {
@@ -588,7 +588,7 @@ func (c *connect) printErrorAndExit(format string, v ...any) {
 	fatalErr(c.jsonMode, format, v...)
 }
 
-func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args []string, verb string) *connect {
+func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args []string, verb, correlationID string) *connect {
 	c := &connect{
 		proxyPort:      connectFlags.proxyPort,
 		connStore:      memory.New(),
@@ -601,6 +601,9 @@ func newClientConnect(config *clientconfig.Config, loader *spinner.Spinner, args
 		grpc.WithOption(grpc.OptionConnectionName, c.connectionName),
 		grpc.WithOption("origin", pb.ConnectionOriginClient),
 		grpc.WithOption("verb", verb),
+	}
+	if correlationID != "" {
+		grpcClientOptions = append(grpcClientOptions, grpc.WithOption("correlation-id", correlationID))
 	}
 	clientConfig, err := config.GrpcClientConfig()
 	if err != nil {

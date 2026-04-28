@@ -26,10 +26,14 @@ import (
 	"golang.org/x/term"
 )
 
-var noBrowser bool
+var (
+	noBrowser  bool
+	apiKeyFlag string
+)
 
 type serverInfo struct {
-	GrpcURL string `json:"grpc_url"`
+	GrpcURL      string          `json:"grpc_url"`
+	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
 }
 
 type login struct {
@@ -42,10 +46,24 @@ var loginCmd = &cobra.Command{
 	Short: "Authenticate at Hoop",
 	Long:  `Login to gain access to hoop usage.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) > 0 {
+			_ = cmd.Help()
+			return
+		}
+
 		conf := loadAndValidateConfig()
 		log.Debugf("loaded configuration file, mode=%v, grpc_url=%v, api_url=%v, tlsca=%v, tokenlength=%v "+
 			" skip_tls_verify=%v",
 			conf.Mode, conf.GrpcURL, conf.ApiURL, len(conf.TlsCAB64Enc) > 0, len(conf.Token), conf.SkipTLSVerify)
+
+		if apiKeyFlag != "" {
+			if !strings.HasPrefix(apiKeyFlag, "hpk_") {
+				printErrorAndExit("invalid API key format, expected 'hpk_' prefix")
+			}
+			saveConfigWithToken(conf, apiKeyFlag)
+			return
+		}
+
 		token, err := doLogin(conf.ApiURL, conf.TlsCA())
 		if err != nil {
 			printErrorAndExit("%s", err.Error())
@@ -56,6 +74,7 @@ var loginCmd = &cobra.Command{
 
 func init() {
 	loginCmd.Flags().BoolVar(&noBrowser, "no-browser", false, "Print the login url to stdout instead of opening the browser")
+	loginCmd.Flags().StringVar(&apiKeyFlag, "api-key", "", "Authenticate using an API key instead of browser login")
 	rootCmd.AddCommand(loginCmd)
 }
 

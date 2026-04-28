@@ -68,7 +68,7 @@ func HandleConnection(c *gin.Context) {
 		return
 	}
 
-	log.Infof("WebSocket connection established for agent=%s", agent.Name)
+	log.Debugf("WebSocket connection established for agent=%s", agent.Name)
 
 	for {
 		messageType, data, err := wsConn.ReadMessage()

@@ -62,6 +62,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		EventStream:          blobStream,
 		EventSize:            s.BlobStreamSize,
 		SessionBatchID:       s.SessionBatchID,
+		CorrelationID:        s.CorrelationID,
 		StartSession:         s.CreatedAt,
 		EndSession:           s.EndSession,
 		AIAnalysis:           toOpenApiSessionAIAnalysis(s.AIAnalysis),
@@ -162,6 +163,7 @@ func topOpenApiReview(r *models.SessionReview) *openapi.SessionReview {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
+		RejectionReason:       r.RejectionReason,
 	}
 }
 

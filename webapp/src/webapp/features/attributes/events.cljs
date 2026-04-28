@@ -162,7 +162,8 @@
                                 body (cond-> {:name attr-name
                                               :connection_names (vec new-conns)}
                                        (:description attr) (assoc :description (:description attr))
-                                       (seq (:access_request_rule_names attr)) (assoc :access_request_rule_names (:access_request_rule_names attr)))]
+                                       (seq (:access_request_rule_names attr)) (assoc :access_request_rule_names (:access_request_rule_names attr))
+                                       (seq (:access_control_group_names attr)) (assoc :access_control_group_names (:access_control_group_names attr)))]
                             [:dispatch [:fetch {:method "PUT"
                                                 :uri (str "/attributes/" attr-name)
                                                 :body body

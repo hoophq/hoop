@@ -18,6 +18,10 @@ const (
 	ModeEnv = "env"
 	// ModeEnv is when a client is loaded with the environment variable HOOP_KEY
 	ModeDsn = "dsn"
+	// ModeSVID is when an agent is loaded with the environment variable
+	// HOOP_KEY_FILE pointing at a file that contains a bare JWT-SVID.
+	// The file is re-read on every reconnect so rotated tokens are picked up.
+	ModeSVID = "svid"
 	// ModeLocal detects if the client has found a local instance
 	// of the hoop gateway, this mode indicates the gRPC connection
 	// should be established without tls encryption. For security

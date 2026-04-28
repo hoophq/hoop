@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zapgrpc"
@@ -74,7 +75,14 @@ var (
 
 func NewDefaultLogger(additionalWriterLogger io.Writer) *zap.Logger {
 	if LogEncoding == "" {
-		LogEncoding = "json"
+		// When stdout is an interactive terminal and the user hasn't opted out
+		// via NO_COLOR, default to human-readable output. Any non-TTY sink
+		// (piped, CI, log aggregator) keeps the machine-friendly JSON.
+		if isatty.IsTerminal(os.Stdout.Fd()) && os.Getenv("NO_COLOR") == "" {
+			LogEncoding = "human"
+		} else {
+			LogEncoding = "json"
+		}
 	}
 	logLevel := parseToAtomicLevel(os.Getenv("LOG_LEVEL"))
 	stdoutSink, closeOut, err := zap.Open("stdout")

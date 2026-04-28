@@ -44,7 +44,7 @@ func (r *RDPProxy) Start(listenAddr string, tlsConfig *tls.Config, acceptPlainTe
 		return nil
 	}
 
-	log.Infof("starting rdp server proxy at %v", listenAddr)
+	log.Debugf("starting rdp server proxy at %v", listenAddr)
 	//start new tcp listener for rdp clients
 	server, err := runRDPProxyServer(listenAddr, tlsConfig, acceptPlainText)
 	if err != nil {

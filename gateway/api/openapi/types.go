@@ -136,6 +136,95 @@ type ServiceAccount struct {
 	Groups []string `json:"groups" example:"engineering"`
 }
 
+type APIKeyStatusType string
+
+const (
+	APIKeyStatusActive  APIKeyStatusType = "active"
+	APIKeyStatusRevoked APIKeyStatusType = "revoked"
+)
+
+type APIKeyCreateRequest struct {
+	// Human-readable name for the API key
+	Name string `json:"name" binding:"required" example:"bob-the-bot"`
+	// Groups to assign to this API key
+	Groups []string `json:"groups" example:"engineering"`
+}
+
+type APIKeyCreateResponse struct {
+	APIKeyResponse
+	// The generated API key. This is the only time the full key is shown.
+	Key string `json:"key" example:"hpk_Ab3fX9kL..."`
+}
+
+type APIKeyUpdateRequest struct {
+	// Updated display name
+	Name *string `json:"name" example:"payments-automation"`
+	// Updated group list (replaces existing groups)
+	Groups []string `json:"groups" example:"engineering,platform"`
+}
+
+type APIKeyResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"ai-agent"`
+	// Masked version of the API key for identification
+	MaskedKey string `json:"masked_key" example:"hpk_1nzb***************************************"`
+	// Current status of the API key
+	Status APIKeyStatusType `json:"status" enums:"active,revoked"`
+	// Groups assigned to this API key
+	Groups []string `json:"groups" example:"engineering"`
+	// Subject of the admin who created this key
+	CreatedBy string `json:"created_by"`
+	// Subject of the admin who revoked this key
+	DeactivatedBy *string `json:"deactivated_by,omitempty"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Revocation timestamp
+	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
+	// Timestamp of last usage
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
+// agent plus a set of groups that feed into RBAC on authentication.
+//
+// Exactly one of SPIFFEID or SPIFFEPrefix must be set. Similarly, exactly
+// one of AgentID or AgentTemplate must be set: AgentID points at a specific
+// agent; AgentTemplate (used with SPIFFEPrefix) renders against the
+// captured suffix to derive the agent name. Available template fields are
+// WorkloadIdentifier (the part after the prefix) and SPIFFEID (the full
+// id); see the SPIFFE deployment docs for examples.
+type AgentSPIFFEMapping struct {
+	// The unique identifier of this resource
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// SPIFFE trust domain. Must match the trust domain configured on the
+	// gateway for SPIFFE authentication to succeed.
+	TrustDomain string `json:"trust_domain" binding:"required" example:"customer.com"`
+	// Exact SPIFFE ID to match. Mutually exclusive with SPIFFEPrefix.
+	SPIFFEID string `json:"spiffe_id,omitempty" example:"spiffe://customer.com/agent/arqa-prod"`
+	// SPIFFE ID prefix. Matches any SVID whose sub begins with this string;
+	// longest-prefix wins on lookup. Mutually exclusive with SPIFFEID.
+	SPIFFEPrefix string `json:"spiffe_prefix,omitempty" example:"spiffe://customer.com/agent/"`
+	// ID of the Hoop agent this mapping resolves to (exact form). Mutually
+	// exclusive with AgentTemplate.
+	AgentID string `json:"agent_id,omitempty" format:"uuid"`
+	// Go text/template that renders to a Hoop agent name. Used with
+	// SPIFFEPrefix. See the SPIFFE docs for template field details.
+	// Mutually exclusive with AgentID.
+	AgentTemplate string `json:"agent_template,omitempty"`
+	// The groups assigned to the agent when authenticating via this mapping.
+	Groups []string `json:"groups" example:"agents"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at" readonly:"true"`
+	// Last update timestamp
+	UpdatedAt time.Time `json:"updated_at" readonly:"true"`
+}
+
 type AgentRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"default"`
@@ -387,6 +476,8 @@ type ExecRequest struct {
 	Metadata map[string]any `json:"metadata"`
 	// Additional arguments that will be joined when construction the command to be executed
 	ClientArgs []string `json:"client_args" example:"--verbose"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ExecResponse struct {
@@ -536,6 +627,7 @@ const (
 	SessionOptionReviewStatus        SessionOptionKey = "review.status"
 	SessionOptionReviewApproverEmail SessionOptionKey = "review.approver"
 	SessionOptionBatchID             SessionOptionKey = "batch_id"
+	SessionOptionCorrelationID       SessionOptionKey = "correlation_id"
 	SessionOptionStartDate           SessionOptionKey = "start_date"
 	SessionOptionEndDate             SessionOptionKey = "end_date"
 	SessionOptionOffset              SessionOptionKey = "offset"
@@ -550,6 +642,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionReviewStatus,
 	SessionOptionReviewApproverEmail,
 	SessionOptionBatchID,
+	SessionOptionCorrelationID,
 	SessionOptionStartDate,
 	SessionOptionEndDate,
 	SessionOptionLimit,
@@ -659,6 +752,8 @@ type Session struct {
 	EventSize int64 `json:"event_size" example:"569"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 	// When the execution started
 	StartSession time.Time `json:"start_date" example:"2024-07-25T15:56:35.317601Z"`
 	// When the execution ended. A null value indicates the session is still running
@@ -687,6 +782,8 @@ type ProvisionSession struct {
 	ClientArgs        []string                 `json:"client_args"`
 	JiraFields        map[string]string        `json:"jira_fields"`
 	TimeWindow        *ReviewSessionTimeWindow `json:"time_window"`
+	// External workflow/task identifier that groups sessions belonging to the same logical run
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type ProvisionSessionResponse struct {
@@ -767,9 +864,10 @@ type ReviewRequest struct {
 	// * APPROVED - Approve the review resource
 	// * REJECTED - Reject the review resource
 	// * REVOKED - Revoke an approved review
-	Status      ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
-	TimeWindow  *ReviewSessionTimeWindow `json:"time_window"`
-	ForceReview bool                     `json:"force_review" example:"false"`
+	Status          ReviewRequestStatusType  `json:"status" binding:"required" example:"APPROVED"`
+	TimeWindow      *ReviewSessionTimeWindow `json:"time_window"`
+	ForceReview     bool                     `json:"force_review" example:"false"`
+	RejectionReason string                   `json:"rejection_reason" example:"This command is not allowed in production."`
 }
 
 type SessionReview struct {
@@ -804,6 +902,8 @@ type SessionReview struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewSessionTimeWindow struct {
@@ -845,6 +945,8 @@ type Review struct {
 	MinApprovals *int `json:"min_approvals" readonly:"true" example:"2"`
 	// Groups that can force approve sessions for this review
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
+	// The reason provided by the reviewer when rejecting this review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
 }
 
 type ReviewOwner struct {
@@ -1075,6 +1177,8 @@ type ServerLicenseInfo struct {
 type PublicServerInfo struct {
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
+	// Whether the server requires initial setup (no users have been registered yet)
+	SetupRequired bool `json:"setup_required" example:"true"`
 }
 
 type IdpProviderNameType string
@@ -1135,6 +1239,30 @@ type ServerInfo struct {
 	// * enabled - Analytics/tracking are enabled
 	// * disabled - Analytics/tracking are disabled
 	AnalyticsTracking string `json:"analytics_tracking" enums:"enabled,disabled" example:"enabled"`
+	// Effective feature flags for the caller's organization
+	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
+}
+
+// FeatureFlagItem represents a single feature flag from the catalog with its per-org state.
+type FeatureFlagItem struct {
+	// The feature flag name
+	Name string `json:"name" example:"experimental.rdp_v2"`
+	// Human-readable description
+	Description string `json:"description" example:"New IronRDP-based proxy"`
+	// Default value when not explicitly set
+	Default bool `json:"default" example:"false"`
+	// Stability level
+	Stability string `json:"stability" enums:"experimental,beta" example:"experimental"`
+	// Components affected by this flag
+	Components []string `json:"components" example:"gateway,agent"`
+	// Current effective value for the organization
+	Enabled bool `json:"enabled" example:"false"`
+}
+
+// FeatureFlagUpdateRequest is the body for PUT /feature-flags/:name
+type FeatureFlagUpdateRequest struct {
+	// Whether the feature flag should be enabled
+	Enabled bool `json:"enabled" binding:"required_with=Enabled"`
 }
 
 type LivenessCheck struct {
@@ -2360,6 +2488,8 @@ type RunbookExec struct {
 	JiraFields map[string]string `json:"jira_fields"`
 	// Batch identifier to group sessions that were executed simultaneously
 	SessionBatchID *string `json:"session_batch_id,omitempty" example:"batch-abc-123"`
+	// External workflow/task id to group related sessions
+	CorrelationID *string `json:"correlation_id,omitempty" example:"task-12345"`
 }
 
 type RunbookFileCreate struct {
@@ -2518,18 +2648,21 @@ type Attributes struct {
 	GuardrailRuleNames []string `json:"guardrail_rule_names" example:"rule1,rule2"`
 	// Datamasking rule names associated with this attribute
 	DatamaskingRuleNames []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	// Access control group names associated with this attribute
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 }
 
 type AttributeRequest struct {
 	// The name of the attribute
-	Name                   string   `json:"name" binding:"required" example:"default-session-attribute"`
-	Description            *string  `json:"description" example:"Blocks high-risk SQL commands"`
-	ConnectionNames        []string `json:"connection_names" example:"pgdemo,mysql-prod"`
-	AccessRequestRuleNames []string `json:"access_request_rule_names" example:"rule1,rule2"`
-	GuardrailRuleNames     []string `json:"guardrail_rule_names" example:"rule1,rule2"`
-	DatamaskingRuleNames   []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	Name                    string   `json:"name" binding:"required" example:"default-session-attribute"`
+	Description             *string  `json:"description" example:"Blocks high-risk SQL commands"`
+	ConnectionNames         []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	AccessRequestRuleNames  []string `json:"access_request_rule_names" example:"rule1,rule2"`
+	GuardrailRuleNames      []string `json:"guardrail_rule_names" example:"rule1,rule2"`
+	DatamaskingRuleNames    []string `json:"datamasking_rule_names" example:"rule1,rule2"`
+	AccessControlGroupNames []string `json:"access_control_group_names" example:"engineering,sre"`
 }
 
 type MachineIdentity struct {
