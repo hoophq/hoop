@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/version"
@@ -11,6 +12,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// Sends MCP-level ping requests at this interval to keep idle sessions warm.
+// Without this, long-running tool handlers (e.g. reviews_wait) sit silently on
+// the wire long enough that intermediate layers tear down the connection.
+const mcpKeepAliveInterval = 30 * time.Second
+
 type MCPServer struct {
 	handler *mcp.StreamableHTTPHandler
 }
@@ -19,7 +25,9 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "hoop",
 		Version: version.Get().Version,
-	}, nil)
+	}, &mcp.ServerOptions{
+		KeepAlive: mcpKeepAliveInterval,
+	})
 
 	registerConnectionTools(server)
 	registerGuardrailTools(server)

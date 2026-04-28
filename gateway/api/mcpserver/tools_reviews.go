@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -39,6 +40,11 @@ type reviewsExecuteInput struct {
 	ID string `json:"id" jsonschema:"review ID or session ID of an APPROVED one-time review"`
 }
 
+type reviewsWaitInput struct {
+	ID             string `json:"id" jsonschema:"review ID or session ID to wait on"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"max wait in seconds (default 60, max 300). Timeout is not an error: the response carries timed_out=true and the current status — call again to keep waiting."`
+}
+
 func registerReviewTools(server *mcp.Server, releaseConnFn reviewapi.TransportReleaseConnectionFunc) {
 	openWorld := false
 
@@ -68,6 +74,15 @@ func registerReviewTools(server *mcp.Server, releaseConnFn reviewapi.TransportRe
 			"shape as exec: completed, or status=running after a 50s timeout (poll sessions_get).",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: &openWorld},
 	}, reviewsExecuteHandler)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "reviews_wait",
+		Description: "Long-poll a review until it reaches a terminal status (APPROVED, REJECTED, REVOKED, " +
+			"EXECUTED) or the timeout elapses. Use after exec returns status=pending_approval. The response " +
+			"shape mirrors reviews_get and adds timed_out (true when the timeout was reached without a " +
+			"terminal status — call again to keep waiting) and waited_seconds.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+	}, reviewsWaitHandler)
 }
 
 // Per-session lock to prevent concurrent executions of the same review.
@@ -316,6 +331,81 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 			return nil, nil, fmt.Errorf("failed updating review: %w", err)
 		}
 	}
+}
+
+func reviewsWaitHandler(ctx context.Context, _ *mcp.CallToolRequest, args reviewsWaitInput) (*mcp.CallToolResult, any, error) {
+	sc := storageContextFrom(ctx)
+	if sc == nil {
+		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if args.ID == "" {
+		return errResult("id is required"), nil, nil
+	}
+	orgID := sc.GetOrgID()
+
+	// Eager fetch: a non-existent review fails fast and never enters the
+	// poll loop. Org-scoping is enforced by GetReviewByIdOrSid.
+	initial, err := models.GetReviewByIdOrSid(orgID, args.ID)
+	switch err {
+	case models.ErrNotFound:
+		return errResult("review not found"), nil, nil
+	case nil:
+		if initial == nil {
+			return errResult("review not found"), nil, nil
+		}
+	default:
+		return nil, nil, fmt.Errorf("failed fetching review: %w", err)
+	}
+	if isReviewTerminal(initial.Status) {
+		return reviewsWaitResult(initial, false, 0), nil, nil
+	}
+
+	rev, timedOut, waited, err := waitUntil(ctx, resolveWaitTimeout(args.TimeoutSeconds),
+		func() (*models.Review, bool, error) {
+			r, err := models.GetReviewByIdOrSid(orgID, args.ID)
+			if err != nil {
+				return nil, false, err
+			}
+			if r == nil {
+				return nil, false, models.ErrNotFound
+			}
+			return r, isReviewTerminal(r.Status), nil
+		})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if rev == nil {
+				rev = initial
+			}
+			return reviewsWaitResult(rev, false, waited), nil, nil
+		}
+		if errors.Is(err, models.ErrNotFound) {
+			return errResult("review not found"), nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed waiting on review: %w", err)
+	}
+	if rev == nil {
+		rev = initial
+	}
+	return reviewsWaitResult(rev, timedOut, waited), nil, nil
+}
+
+func reviewsWaitResult(r *models.Review, timedOut bool, waited time.Duration) *mcp.CallToolResult {
+	body := reviewToMap(r)
+	body["timed_out"] = timedOut
+	body["waited_seconds"] = int(waited.Seconds())
+	res, _, _ := jsonResult(body)
+	return res
+}
+
+func isReviewTerminal(s models.ReviewStatusType) bool {
+	switch s {
+	case models.ReviewStatusApproved,
+		models.ReviewStatusRejected,
+		models.ReviewStatusRevoked,
+		models.ReviewStatusExecuted:
+		return true
+	}
+	return false
 }
 
 func reviewToMap(r *models.Review) map[string]any {

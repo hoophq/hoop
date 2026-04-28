@@ -29,7 +29,7 @@ func registerExecTools(server *mcp.Server) {
 		Name: "exec",
 		Description: "Run a one-shot command or query against a Hoop connection on behalf of the authenticated user. " +
 			"Mirrors `hoop exec`. Returns one of three envelopes: `status=completed` with output, " +
-			"`status=pending_approval` with a review_id (poll reviews_get; once APPROVED call reviews_execute), " +
+			"`status=pending_approval` with a review_id (call reviews_wait to long-poll; once APPROVED call reviews_execute), " +
 			"or `status=running` with a session_id (after a 50s timeout; poll sessions_get). " +
 			"Authorization, data masking, guardrails, and review gates are enforced by the gateway — " +
 			"this tool does not bypass any of them.",
@@ -115,7 +115,7 @@ func execResponseToEnvelope(resp *clientexec.Response, sessionID string) (*mcp.C
 			"review_id":  sessionID,
 			"review_url": resp.Output,
 			"message":    "Approval required before this execution can run",
-			"next_step":  "poll reviews_get with review_id; once status=APPROVED call reviews_execute",
+			"next_step":  "call reviews_wait with review_id (long-polls until status changes); once status=APPROVED call reviews_execute",
 		})
 	}
 

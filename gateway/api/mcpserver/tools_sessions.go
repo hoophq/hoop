@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -38,6 +39,11 @@ type sessionsGetAnalysisInput struct {
 	ID string `json:"id" jsonschema:"session ID"`
 }
 
+type sessionsWaitAnalysisInput struct {
+	ID             string `json:"id" jsonschema:"session ID whose AI analysis to wait for"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"max wait in seconds (default 60, max 300). Timeout is not an error: the response carries timed_out=true and status=unavailable."`
+}
+
 func registerSessionTools(server *mcp.Server) {
 	openWorld := false
 
@@ -66,6 +72,15 @@ func registerSessionTools(server *mcp.Server) {
 			"Returns status=unavailable when the session has no analysis yet (e.g. still in progress).",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, sessionsGetAnalysisHandler)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "sessions_wait_analysis",
+		Description: "Long-poll until Hoop's AI analysis for a session is available, or the timeout elapses. " +
+			"AI analysis is generated asynchronously after a session ends, so a session that just completed " +
+			"may take a moment. Response shape mirrors sessions_get_analysis and adds timed_out and " +
+			"waited_seconds. Timeout is not an error.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
+	}, sessionsWaitAnalysisHandler)
 }
 
 func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsListInput) (*mcp.CallToolResult, any, error) {
@@ -251,6 +266,79 @@ func sessionsGetAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, arg
 		"explanation": session.AIAnalysis.Explanation,
 		"action":      session.AIAnalysis.Action,
 	})
+}
+
+func sessionsWaitAnalysisHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessionsWaitAnalysisInput) (*mcp.CallToolResult, any, error) {
+	sc := storageContextFrom(ctx)
+	if sc == nil {
+		return nil, nil, fmt.Errorf("unauthorized: missing auth context")
+	}
+	if args.ID == "" {
+		return errResult("id is required"), nil, nil
+	}
+
+	// Eager fetch: validates existence and ownership before entering the
+	// poll loop. Subsequent polls inherit the same authorization (the
+	// session row's user_id never changes).
+	initial, err := models.GetSessionByID(sc.OrgID, args.ID)
+	switch err {
+	case models.ErrNotFound:
+		return errResult("session not found"), nil, nil
+	case nil:
+	default:
+		return nil, nil, fmt.Errorf("failed fetching session: %w", err)
+	}
+	if initial.UserID != sc.UserID && !sc.IsAuditorOrAdminUser() {
+		return errResult("access denied: you can only view your own sessions or must be admin/auditor"), nil, nil
+	}
+	if initial.AIAnalysis != nil {
+		return sessionsWaitAnalysisResult(initial, false, 0), nil, nil
+	}
+
+	sess, timedOut, waited, err := waitUntil(ctx, resolveWaitTimeout(args.TimeoutSeconds),
+		func() (*models.Session, bool, error) {
+			s, err := models.GetSessionByID(sc.OrgID, args.ID)
+			if err != nil {
+				return nil, false, err
+			}
+			return s, s.AIAnalysis != nil, nil
+		})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if sess == nil {
+				sess = initial
+			}
+			return sessionsWaitAnalysisResult(sess, false, waited), nil, nil
+		}
+		if errors.Is(err, models.ErrNotFound) {
+			return errResult("session not found"), nil, nil
+		}
+		return nil, nil, fmt.Errorf("failed waiting on session analysis: %w", err)
+	}
+	if sess == nil {
+		sess = initial
+	}
+	return sessionsWaitAnalysisResult(sess, timedOut, waited), nil, nil
+}
+
+func sessionsWaitAnalysisResult(s *models.Session, timedOut bool, waited time.Duration) *mcp.CallToolResult {
+	body := map[string]any{
+		"session_id":     s.ID,
+		"timed_out":      timedOut,
+		"waited_seconds": int(waited.Seconds()),
+	}
+	if s.AIAnalysis == nil {
+		body["status"] = "unavailable"
+		body["message"] = "AI analysis is not yet available for this session"
+	} else {
+		body["status"] = "ready"
+		body["risk_level"] = s.AIAnalysis.RiskLevel
+		body["title"] = s.AIAnalysis.Title
+		body["explanation"] = s.AIAnalysis.Explanation
+		body["action"] = s.AIAnalysis.Action
+	}
+	res, _, _ := jsonResult(body)
+	return res
 }
 
 func sessionToMap(s *models.Session) map[string]any {
