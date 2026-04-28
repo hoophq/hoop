@@ -98,6 +98,16 @@ src/
 - Functional components with hooks
 - Named exports for stores, default exports for page components
 - Keep components small and focused
+- **JSX text with variables**: always use template strings or plain strings — never HTML entities (`&apos;`, `&quot;`, etc.) and never mix bare text with JSX expressions.
+  ```jsx
+  // ❌ Wrong
+  <Text>&apos;{name}&apos; cannot be undone.</Text>
+  <Text>Hello {name}!</Text>
+
+  // ✅ Correct
+  <Text>{`'${name}' cannot be undone.`}</Text>
+  <Text>{'Hello ' + name + '!'}</Text>
+  ```
 
 ## Authentication Flow
 
@@ -304,6 +314,21 @@ Debug checklist:
 
 ## Reference Implementation
 - `pages/Agents/` is the reference page showing the full pattern: store + service + list page + create page
+
+## Required reading — do this before every task
+
+**Read these files at the start of every session, before writing any code:**
+
+1. `CONTEXT_MIGRATION.md` — architecture, shell/bridge contracts, routing split, migration status. Required for any work in this repo.
+2. `CLAUDE.md` (this file) — coding rules, styling hierarchy, component strategy.
+3. `COMPONENTS.md` — catalog of every existing component, hook, store, and service. **Check before creating anything new.**
+
+**Additionally, for specific task types:**
+- **Migrating a CLJS page to React** → also read `MIGRATION_CHECKLIST.md` and `CLJS_PATTERNS.md`
+- **Building UI or adding a component** → `COMPONENTS.md` is mandatory (already listed above)
+- **Any behavior that exists in the original app** → read the CLJS source first under `../webapp/src/webapp/` and replicate it; do not invent patterns the original already has
+
+Skipping these reads is the leading cause of regressions: wrong column structure, invented UI that diverges from the original, components duplicated instead of reused, and styling that bypasses the theme.
 
 ## Migration Rule
 This project is a migration of `../webapp/` (ClojureScript) to React — not a greenfield build.

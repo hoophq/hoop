@@ -67,6 +67,15 @@ Gateway backend (port 8009)
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
 | `/settings/license` | React | Done |
+| `/settings/api-keys` | React | Done |
+| `/settings/api-keys/new` | React | Done |
+| `/settings/api-keys/created` | React | Done |
+| `/settings/api-keys/:id/configure` | React | Done |
+| `/settings/attributes` | React | Done |
+| `/settings/attributes/new` | React | Done |
+| `/settings/attributes/edit/:name` | React | Done |
+| `/settings/audit-logs` | React | Done |
+| `/organization/users` | React | Done |
 | `/*` (catch-all) | ClojureApp (CLJS) | Ongoing |
 
 ---
@@ -98,10 +107,7 @@ Gateway backend (port 8009)
 /features/ai-session-analyzer/*
 /guardrails/*
 /jira-templates/*
-/settings/attributes/*
-/settings/jira
-/settings/audit-logs
-/organization/users
+/settings/jira  (belongs to Integrations — route will be renamed when migrated)
 /plugins/*
 /integrations/authentication
 /integrations/aws-connect/*

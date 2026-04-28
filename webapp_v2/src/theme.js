@@ -15,6 +15,22 @@ import { AppShellTheme } from '@/components/AppShell/theme';
 //
 // Font sizes: Radix --font-size-* scale (12/14/16/18/20px for xs–xl).
 
+export function cssVariablesResolver() {
+  return {
+    variables: {
+      '--sidebar-bg': '#182449',
+      '--sidebar-border': 'rgba(255, 255, 255, 0.1)',
+      // slate11/12 are not in the gray array — wired here as semantic tokens.
+      '--mantine-color-body': '#fcfcfd',   // slate1  — page background (Mantine default is #fff)
+      '--mantine-color-text': '#1c2024',   // slate12 — body text, headings
+      '--mantine-color-dimmed': '#60646c', // slate11 — secondary text, icons
+      '--mantine-color-placeholder': '#b9bbc6' // slate8 — placeholder text
+    },
+    light: {},
+    dark: {}
+  };
+}
+
 export const theme = createTheme({
   primaryColor: 'indigo',
   primaryShade: 8, // → Radix shade 9, the solid/saturated action color
@@ -38,10 +54,11 @@ export const theme = createTheme({
       '#3358d4' // shade 10
     ],
 
-    // Radix Slate — neutral scale (light mode)
-    // Indices 0–7 = slate1–8 (backgrounds, borders, subtle fills)
-    // Indices 8–9 = slate11–12 (text: low-contrast / high-contrast)
-    // slate9/10 skipped — they sit between border and text ranges, rarely used directly
+    // Radix Slate — neutral scale (light mode), slate1–10 mapped sequentially.
+    // slate11 (#60646c) and slate12 (#1c2024) are not in this array — they are
+    // wired as semantic tokens in cssVariablesResolver:
+    //   --mantine-color-dimmed → slate11   (secondary text, icons, placeholders)
+    //   --mantine-color-text   → slate12   (body text, headings)
     gray: [
       '#fcfcfd', // slate1  — app background
       '#f9f9fb', // slate2  — subtle background
@@ -50,9 +67,9 @@ export const theme = createTheme({
       '#e0e1e6', // slate5  — subtle border
       '#d9d9e0', // slate6  — border
       '#cdced6', // slate7  — hovered border
-      '#b9bbc6', // slate8  — solid, contrast fills
-      '#60646c', // slate11 — low-contrast text (dimmed, placeholders, icons)
-      '#1c2024' // slate12 — high-contrast text (body, headings)
+      '#b9bbc6', // slate8  — solid/contrast fills
+      '#8b8d98', // slate9  — tertiary icons, disabled text
+      '#82838e' // slate10 — secondary icons
     ],
 
     // Radix Green — success / positive feedback

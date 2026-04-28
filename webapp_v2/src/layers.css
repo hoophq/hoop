@@ -1,1 +1,26 @@
 @layer mantine, app;
+
+/* Increase input border contrast: gray.4 (subtle) → gray.6 (hovered border / slate7).
+   Declared outside @layer so it wins over the mantine-layer default. */
+[data-mantine-color-scheme='light'] .mantine-Input-wrapper[data-variant='default'] {
+  --input-bd: var(--mantine-color-gray-6);
+}
+
+/* Popover / dropdown: border gray-2 → gray-6 for contrast; shadow lifts it off the page background. */
+[data-mantine-color-scheme='light'] [data-position] {
+  --popover-border-color: var(--mantine-color-gray-6);
+  --popover-shadow: var(--mantine-shadow-sm);
+}
+
+/* Combobox option hover: gray-0 (near-white, barely visible) → gray-2 (slate3, hovered background).
+   [role="option"] targets ComboboxOption elements inside any floating dropdown. */
+@media (hover: hover) {
+  [data-mantine-color-scheme='light'] [data-position] [role='option']:hover:not([data-combobox-selected], [data-combobox-disabled]) {
+    background-color: var(--mantine-color-gray-2);
+  }
+}
+@media (hover: none) {
+  [data-mantine-color-scheme='light'] [data-position] [role='option']:active:not([data-combobox-selected], [data-combobox-disabled]) {
+    background-color: var(--mantine-color-gray-2);
+  }
+}

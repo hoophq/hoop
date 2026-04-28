@@ -126,6 +126,139 @@ Route guard — checks auth, fetches user, handles onboarding redirect. Already 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
 
+### `Badge`
+Semantic status badge. Use the `variant` shorthand to express meaning; falls back to standard Mantine props otherwise.
+```jsx
+import Badge from '@/components/Badge'
+
+<Badge variant="active">Active</Badge>       // green filled
+<Badge variant="inactive">Deactivated</Badge> // gray outline
+<Badge variant="warning">Reviewing</Badge>   // yellow filled
+<Badge variant="danger">Failed</Badge>       // red filled
+// Standard Mantine props also work:
+<Badge color="indigo" variant="outline">Custom</Badge>
+```
+
+### `ActionMenu`
+Dropdown action menu for table rows and cards. Uses a `MoreHorizontal` icon trigger.
+```jsx
+import ActionMenu from '@/components/ActionMenu'
+
+<ActionMenu>
+  <ActionMenu.Item onClick={() => navigate('/configure')}>Configure</ActionMenu.Item>
+  <ActionMenu.Divider />
+  <ActionMenu.Item danger onClick={handleDelete}>Delete</ActionMenu.Item>
+</ActionMenu>
+```
+Props on `ActionMenu.Item`: `onClick`, `disabled`, `danger` (red color).
+
+### `Modal`
+Application modal dialog wrapping Mantine `Modal` with centered + radius defaults.
+```jsx
+import Modal from '@/components/Modal'
+import { useDisclosure } from '@mantine/hooks'
+
+const [opened, { open, close }] = useDisclosure(false)
+<Modal opened={opened} onClose={close} title="Add User" size="lg">
+  {/* form content */}
+</Modal>
+```
+
+### `Select`
+Single-value select input.
+```jsx
+import Select from '@/components/Select'
+
+<Select
+  label="Status"
+  data={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]}
+  value={status}
+  onChange={setStatus}
+/>
+```
+
+### `MultiSelect`
+Multi-value select input, commonly used for groups and connection lists.
+```jsx
+import MultiSelect from '@/components/MultiSelect'
+
+<MultiSelect
+  label="Groups"
+  data={groupOptions}
+  value={selectedGroups}
+  onChange={setSelectedGroups}
+  searchable
+  clearable
+/>
+```
+
+### `Switch`
+Toggle switch for boolean settings.
+```jsx
+import Switch from '@/components/Switch'
+
+<Switch label="Enable integration" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
+```
+
+### `TextInput`
+Standard text input field.
+```jsx
+import TextInput from '@/components/TextInput'
+
+<TextInput label="Name" placeholder="e.g. my-key" value={name} onChange={(e) => setName(e.currentTarget.value)} />
+```
+
+### `PasswordInput`
+Password / secret input with visibility toggle.
+```jsx
+import PasswordInput from '@/components/PasswordInput'
+
+<PasswordInput label="API Token" value={token} onChange={(e) => setToken(e.currentTarget.value)} />
+// Read-only (for generated passwords):
+<PasswordInput value={password} readOnly />
+```
+
+### `Pagination`
+Page-based pagination control.
+```jsx
+import Pagination from '@/components/Pagination'
+
+<Pagination total={totalPages} value={page} onChange={setPage} />
+```
+
+### `Accordion`
+Expandable accordion. Re-exports sub-components so call sites never import from Mantine.
+```jsx
+import Accordion from '@/components/Accordion'
+
+<Accordion>
+  <Accordion.Item value="details">
+    <Accordion.Control>Show details</Accordion.Control>
+    <Accordion.Panel>Expanded content here</Accordion.Panel>
+  </Accordion.Item>
+</Accordion>
+```
+
+### `CopyButton`
+Icon button that copies `value` to the clipboard. Shows a checkmark for 2 seconds after copying.
+```jsx
+import CopyButton from '@/components/CopyButton'
+
+<CopyButton value="secret-key-here" />
+<CopyButton value={key} label="Copy API Key" size="md" />
+```
+
+### `DatePickerInput`
+Date or date range picker. Requires `@mantine/dates` (already installed). Styles imported in `main.jsx`.
+```jsx
+import DatePickerInput from '@/components/DatePickerInput'
+
+// Single date:
+<DatePickerInput label="Start date" value={date} onChange={setDate} />
+// Date range:
+<DatePickerInput type="range" label="Period" value={[start, end]} onChange={setRange} w={220} size="sm" />
+```
+
 ---
 
 ## Page Patterns

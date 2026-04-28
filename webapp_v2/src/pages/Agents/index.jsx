@@ -14,7 +14,7 @@ import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trash2, Zap, CircleDashed } from 'lucide-react'
+import { Trash2, CircleDashed } from 'lucide-react'
 import { useAgentStore } from '@/stores/useAgentStore'
 import { useUserStore } from '@/stores/useUserStore'
 import EmptyState from '@/layout/EmptyState'
@@ -164,7 +164,6 @@ function Agents() {
 
         {agents.length === 0 ? (
           <EmptyState
-            icon={Zap}
             title="No agents yet"
             description="Create a new Agent to your Organization to show it here"
             action={
