@@ -141,6 +141,7 @@
    [webapp.slack.slack-new-user :as slack-new-user]
    [webapp.subs :as subs]
    [webapp.upgrade-plan.main :as upgrade-plan]
+   [webapp.utilities :refer [clear-cookie get-cookie-value]]
    [webapp.views.home :as home]
    [webapp.webclient.events.codemirror]
    [webapp.webclient.events.primary-connection]
@@ -150,21 +151,6 @@
 
 ;; Tracking initialization is now handled by :tracking->initialize-if-allowed
 ;; which is dispatched after gateway info is loaded and checks do_not_track
-(defn- get-cookie-value
-  "Helper function to extract cookie value by name"
-  [cookie-name]
-  (when-let [cookie-string (.-cookie js/document)]
-    (let [cookies (cs/split cookie-string #"; ")
-          target-cookie (some #(when (cs/starts-with? % (str cookie-name "="))
-                                 %) cookies)]
-      (when target-cookie
-        (subs target-cookie (+ (count cookie-name) 1))))))
-
-(defn- clear-cookie
-  "Helper function to clear a cookie by setting it to empty with past expiration"
-  [cookie-name]
-  (set! js/document.cookie (str cookie-name "=; max-age=0; path=/")))
-
 (defn auth-callback-panel-hoop
   "This panel works for receiving the token and storing in the session for later requests"
   []
