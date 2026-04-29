@@ -12,6 +12,21 @@
         url-params-map (into (sorted-map) url-params-list)]
     url-params-map))
 
+(defn get-cookie-value
+  "Read a cookie value by name from document.cookie."
+  [cookie-name]
+  (when-let [cookie-string (.-cookie js/document)]
+    (let [cookies (string/split cookie-string #"; ")
+          target-cookie (some #(when (string/starts-with? % (str cookie-name "="))
+                                 %) cookies)]
+      (when target-cookie
+        (subs target-cookie (+ (count cookie-name) 1))))))
+
+(defn clear-cookie
+  "Delete a cookie by name on path=/."
+  [cookie-name]
+  (set! js/document.cookie (str cookie-name "=; max-age=0; path=/")))
+
 (defn sanitize-string [s]
   (let [special-words #{"of" "the" "and"}
         capitalize (fn [word]
