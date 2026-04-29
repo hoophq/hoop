@@ -782,7 +782,6 @@
     (.registerModules ModuleRegistry #js[AllCommunityModule])
 
     (fn []
-      (println "gateway-public-info" @gateway-public-info)
       (cond
         (-> @gateway-public-info :loading)
         [loading-transition]
