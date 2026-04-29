@@ -1,16 +1,9 @@
 (ns webapp.http.request
   (:require
-   [re-frame.core :as rf]
-   [webapp.utilities :refer [clear-cookie get-cookie-value]]))
+   [re-frame.core :as rf]))
 
 (defn- maybe-update-token!
   [headers]
-  ;; Cookie set by the gateway (initial login or refresh) — copy to
-  ;; localStorage and immediately clear it so localStorage stays the
-  ;; single source of truth.
-  (when-let [cookie-token (get-cookie-value "hoop_access_token")]
-    (.setItem js/localStorage "jwt-token" cookie-token)
-    (clear-cookie "hoop_access_token"))
   (when-let [new-token (.get headers "x-new-access-token")]
     (.setItem js/localStorage "jwt-token" new-token)))
 
