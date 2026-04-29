@@ -11,7 +11,7 @@
    [webapp.guardrails.connections-section :as connections-section]
    [webapp.guardrails.rules-table :as rules-table]))
 
-(defn guardrail-form [form-type guardrails scroll-pos]
+(defn guardrail-form [form-type guardrails scroll-pos free-license?]
   (let [state (helpers/create-form-state guardrails)
         handlers (helpers/create-form-handlers state)
         attributes-data (rf/subscribe [:attributes/list-data])]
@@ -81,6 +81,7 @@
              [rules-table/main
               (merge
                {:title "Input rules"
+                :free-license? free-license?
                 :state (:input state)
                 :words-state (:input-words state)
                 :pattern-state (:input-pattern state)
@@ -91,6 +92,7 @@
              [rules-table/main
               (merge
                {:title "Output rules"
+                :free-license? free-license?
                 :state (:output state)
                 :words-state (:output-words state)
                 :pattern-state (:output-pattern state)
@@ -104,6 +106,7 @@
 
 (defn main [form-type]
   (let [guardrails->active-guardrail (rf/subscribe [:guardrails->active-guardrail])
+        user (rf/subscribe [:users->current-user])
         scroll-pos (r/atom 0)]
 
     (rf/dispatch [:attributes/list])
@@ -111,10 +114,9 @@
     (fn []
       (r/with-let [handle-scroll #(reset! scroll-pos (.-scrollY js/window))]
         (.addEventListener js/window "scroll" handle-scroll)
-        
         (if (= :loading (:status @guardrails->active-guardrail))
           [loading]
-          [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos])
+          [guardrail-form form-type (:data @guardrails->active-guardrail) scroll-pos (-> @user :data :free-license?)])
 
         (finally
           (.removeEventListener js/window "scroll" handle-scroll)
