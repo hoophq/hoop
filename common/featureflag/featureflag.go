@@ -40,6 +40,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway, ComponentAgent, ComponentClient},
 	},
+	"experimental.log_exec_input": {
+		Name:        "experimental.log_exec_input",
+		Description: "Include the truncated exec input as a structured log attribute on the agent (for SIEM export). May log sensitive content.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 }
 
 // All returns every registered flag, sorted by name.

@@ -2725,6 +2725,94 @@ const docTemplate = `{
                 }
             }
         },
+        "/feature-flags": {
+            "get": {
+                "description": "List all feature flags from the catalog with their per-org state",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "List Feature Flags",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.FeatureFlagItem"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/feature-flags/{name}": {
+            "put": {
+                "description": "Enable or disable a feature flag for the organization",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Feature Flags"
+                ],
+                "summary": "Update Feature Flag",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Feature flag name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.FeatureFlagItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/features/ask-ai/v1/chat/completions": {
             "post": {
                 "description": "Proxy to OpenAI chat completions ` + "`" + `/vi/chat/completions` + "`" + `",
@@ -7352,6 +7440,124 @@ const docTemplate = `{
                 }
             }
         },
+        "/sessions/{session_id}/interactions": {
+            "get": {
+                "description": "Returns the list of interactions for a machine session, with support for pagination via the sequence parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "List Session Interactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Only return interactions with sequence \u003e N",
+                        "name": "after_sequence",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max interactions to return (default: 50, max: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/sessionapi.listInteractionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/{session_id}/interactions/stream": {
+            "get": {
+                "description": "Streams interactions for a machine session in real-time via SSE. Sends existing interactions as catch-up, then pushes new ones as they are created.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Sessions"
+                ],
+                "summary": "Stream Session Interactions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The session ID",
+                        "name": "session_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Only stream interactions with sequence \u003e N",
+                        "name": "after_sequence",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sessions/{session_id}/kill": {
             "post": {
                 "tags": [
@@ -10685,6 +10891,60 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.FeatureFlagItem": {
+            "type": "object",
+            "properties": {
+                "components": {
+                    "description": "Components affected by this flag",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gateway",
+                        "agent"
+                    ]
+                },
+                "default": {
+                    "description": "Default value when not explicitly set",
+                    "type": "boolean",
+                    "example": false
+                },
+                "description": {
+                    "description": "Human-readable description",
+                    "type": "string",
+                    "example": "New IronRDP-based proxy"
+                },
+                "enabled": {
+                    "description": "Current effective value for the organization",
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "description": "The feature flag name",
+                    "type": "string",
+                    "example": "experimental.rdp_v2"
+                },
+                "stability": {
+                    "description": "Stability level",
+                    "type": "string",
+                    "enum": [
+                        "experimental",
+                        "beta"
+                    ],
+                    "example": "experimental"
+                }
+            }
+        },
+        "openapi.FeatureFlagUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether the feature flag should be enabled",
+                    "type": "boolean"
+                }
+            }
+        },
         "openapi.FeatureRequest": {
             "type": "object",
             "required": [
@@ -13434,6 +13694,13 @@ const docTemplate = `{
                     "description": "Indicates if session download functionality is disabled\n* true - Session download is disabled and not available to users\n* false - Session download is enabled and available to users",
                     "type": "boolean"
                 },
+                "feature_flags": {
+                    "description": "Effective feature flags for the caller's organization",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
                 "go_debug": {
                     "description": "Expose ` + "`" + `GODEBUG` + "`" + ` flags enabled",
                     "type": "string",
@@ -14631,6 +14898,49 @@ const docTemplate = `{
                 },
                 "total_frames": {
                     "type": "integer"
+                }
+            }
+        },
+        "sessionapi.interactionResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "string"
+                },
+                "exit_code": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input": {
+                    "type": "string"
+                },
+                "output": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "sequence": {
+                    "type": "integer"
+                }
+            }
+        },
+        "sessionapi.listInteractionsResponse": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "interactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/sessionapi.interactionResponse"
+                    }
                 }
             }
         },

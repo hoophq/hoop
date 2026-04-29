@@ -114,19 +114,19 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - **IMPORTANT**: Migration numbering must to be sequential. Check existing migrations before creating new ones to avoid conflicts. If a migration with the same number already exists in `origin/main`, it migration needs to be renamed to a higher number during merge conflict resolution.
 
 ## Critical Dev Workflows
-| Task | Command | Notes |
-|------|---------|-------|
-| Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
-| Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
-| Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
-| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly) |
-| Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
-| Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
-| Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
-| Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
-| Format Swagger annotations | `swag fmt` | Run in `gateway/` |
-| Create new SQL migration | `migrate create -ext sql -dir rootfs/app/migrations -seq name` | |
-| Publish release | `make publish` | Requires GitHub CLI (`gh`) |
+| Task                       | Command                                                        | Notes                                                              |
+|----------------------------|----------------------------------------------------------------|--------------------------------------------------------------------|
+| Start Postgres             | `make run-dev-postgres`                                        | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG   |
+| Start Presidio (DLP)       | `make run-dev-presidio`                                        | Optional, for data masking dev                                     |
+| Run gateway + agent        | `make run-dev`                                                 | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
+| Build dev CLI              | `make build-dev-client`                                        | Output: `$HOME/.hoop/bin/hoop` (plaintext-friendly)                |
+| Build webapp into gateway  | `make build-dev-webapp`                                        | Then rerun `make run-dev`                                          |
+| Build Rust agent (dev)     | `make build-dev-rust`                                          | Cross-compiles for Linux from macOS                                |
+| Run tests                  | `make test-oss`                                                | Auto-links `libhoop` and generates WASM first                      |
+| Regenerate OpenAPI         | `make generate-openapi-docs`                                   | After any API route/schema change                                  |
+| Format Swagger annotations | `swag fmt`                                                     | Run in `gateway/`                                                  |
+| Create new SQL migration   | `migrate create -ext sql -dir rootfs/app/migrations -seq name` |                                                                    |
+| Publish release            | `make publish`                                                 | Requires GitHub CLI (`gh`)                                         |
 
 ## External Integrations
 - **PostgreSQL**: Mandatory state store for gateway.
@@ -171,6 +171,8 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Agent controller handlers follow one-file-per-protocol in `agent/controller/`.
 - Gateway API handlers follow one-package-per-domain in `gateway/api/` (e.g., `gateway/api/connections/`, `gateway/api/session/`).
 - Models use GORM; each entity gets its own file in `gateway/models/`.
+- Model functions in `gateway/` must receive `*gorm.DB` as a parameter — never use a global DB variable.
+- Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound` to the caller — never swallow it by returning `nil, nil`. Let callers decide how to handle not-found cases.
 - `libhoop` must stay independent — no imports from `gateway/`, `agent/`, `client/`, or `common/`.
 - Services layer: Business logic lives in `gateway/services/` — keep models focused on data, services on business logic.
 
@@ -197,21 +199,21 @@ When merging `main` into a feature branch:
 4. For code conflicts, prefer keeping the feature branch's approach unless it's clearly superseded by main.
 
 ## Key File Reference
-| What | Path |
-|------|------|
-| Go workspace | `go.work` |
-| Gateway entrypoint | `gateway/main.go` |
-| Agent entrypoint | `agent/main.go` |
-| CLI entrypoint | `client/hoop.go` → `client/cmd/root.go` |
-| Proto definition | `common/proto/transport.proto` |
-| Packet constants | `common/proto/agent/`, `common/proto/client/`, `common/proto/gateway/` |
-| Agent packet dispatch | `agent/controller/agent.go` → `processPacket()` |
-| App config | `gateway/appconfig/appconfig.go` |
-| Auth/IDP | `gateway/idp/core.go` |
-| API route registration | `gateway/api/server.go` → `buildRoutes()` |
-| Role definitions | `gateway/api/apiroutes/roles.go` |
-| Plugin registration | `gateway/main.go` (search `RegisteredPlugins`) |
-| SQL migrations | `rootfs/app/migrations/` |
-| Dev run script | `scripts/dev/run.sh` |
-| Env sample | `.env.sample` |
-| Webapp entry | `webapp/src/webapp/core.cljs` |
+| What                   | Path                                                                   |
+|------------------------|------------------------------------------------------------------------|
+| Go workspace           | `go.work`                                                              |
+| Gateway entrypoint     | `gateway/main.go`                                                      |
+| Agent entrypoint       | `agent/main.go`                                                        |
+| CLI entrypoint         | `client/hoop.go` → `client/cmd/root.go`                                |
+| Proto definition       | `common/proto/transport.proto`                                         |
+| Packet constants       | `common/proto/agent/`, `common/proto/client/`, `common/proto/gateway/` |
+| Agent packet dispatch  | `agent/controller/agent.go` → `processPacket()`                        |
+| App config             | `gateway/appconfig/appconfig.go`                                       |
+| Auth/IDP               | `gateway/idp/core.go`                                                  |
+| API route registration | `gateway/api/server.go` → `buildRoutes()`                              |
+| Role definitions       | `gateway/api/apiroutes/roles.go`                                       |
+| Plugin registration    | `gateway/main.go` (search `RegisteredPlugins`)                         |
+| SQL migrations         | `rootfs/app/migrations/`                                               |
+| Dev run script         | `scripts/dev/run.sh`                                                   |
+| Env sample             | `.env.sample`                                                          |
+| Webapp entry           | `webapp/src/webapp/core.cljs`                                          |
