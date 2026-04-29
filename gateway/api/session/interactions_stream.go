@@ -54,7 +54,7 @@ func StreamInteractions(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"message": "user is not allowed to access this session"})
 		return
 	}
-	if session.Type != "machine" {
+	if session.IdentityType != "machine" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "streaming interactions is only supported for machine sessions"})
 		return
 	}

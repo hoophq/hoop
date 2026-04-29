@@ -62,9 +62,9 @@ type Context struct {
 	ClientVerb   string
 	ClientOrigin string
 
-	// SessionType distinguishes human vs machine sessions.
-	// "machine" enables WAL-per-interaction; empty or "human" uses the default WAL-per-session flow.
-	SessionType string
+	// IdentityType distinguishes user (human) vs machine sessions.
+	// "machine" enables WAL-per-interaction; empty or "user" uses the default WAL-per-session flow.
+	IdentityType string
 
 	// CredentialSessionID is the review session ID associated with a JIT credential.
 	// Set when a proxy connects using a JIT credential; used to tag the proxy session

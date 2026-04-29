@@ -32,8 +32,8 @@ import (
 var memorySessionStore = memory.New()
 
 const (
-	SessionTypeHuman   = "human"
-	SessionTypeMachine = "machine"
+	identityTypeMachine = "machine"
+	identityTypeUser    = "user"
 )
 
 // machineSessionState tracks the current interaction WAL and sequence counter for a machine session.
@@ -81,7 +81,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 	pctx.ParamsData["status"] = string(openapi.SessionStatusOpen)
 	pctx.ParamsData["start_date"] = &startDate
 
-	isMachine := pctx.SessionType == SessionTypeMachine
+	isMachine := pctx.IdentityType == identityTypeMachine
 	if isMachine {
 		// machine sessions: don't open a WAL yet (no interaction started)
 		p.machineSessionStore.Set(pctx.SID, &machineSessionState{
@@ -113,9 +113,9 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			sessionMetadata = map[string]any{"credential_session": pctx.CredentialSessionID}
 		}
 
-		sessionType := SessionTypeHuman
+		sessionIdentityType := identityTypeUser
 		if isMachine {
-			sessionType = SessionTypeMachine
+			sessionIdentityType = identityTypeMachine
 		}
 
 		newSession := models.Session{
@@ -134,7 +134,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 			IntegrationsMetadata: nil,
 			Status:               string(openapi.SessionStatusOpen),
 			ExitCode:             nil,
-			Type:                 sessionType,
+			IdentityType:         sessionIdentityType,
 			CreatedAt:            startDate,
 			EndSession:           nil,
 		}
@@ -158,7 +158,7 @@ func (p *auditPlugin) OnConnect(pctx plugintypes.Context) error {
 
 func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plugintypes.ConnectResponse, error) {
 	// handle interaction close for machine sessions
-	if pb.PacketType(pkt.GetType()) == pbclient.InteractionClose && pctx.SessionType == SessionTypeMachine {
+	if pb.PacketType(pkt.GetType()) == pbclient.InteractionClose && pctx.IdentityType == identityTypeMachine {
 		return nil, p.closeInteraction(pctx, pkt)
 	}
 
@@ -300,7 +300,7 @@ func (p *auditPlugin) closeSession(pctx plugintypes.Context, err error) {
 	go func() {
 		defer memorySessionStore.Del(pctx.SID)
 
-		if pctx.SessionType == SessionTypeMachine {
+		if pctx.IdentityType == identityTypeMachine {
 			p.closeMachineSession(pctx, err)
 		} else {
 			if err := p.writeOnClose(pctx, err); err != nil {
@@ -409,7 +409,7 @@ func (p *auditPlugin) markSessionDone(pctx plugintypes.Context, errMsg error) {
 
 // dispatchWrite routes WAL writes to either the session WAL (human) or interaction WAL (machine).
 func (p *auditPlugin) dispatchWrite(pctx plugintypes.Context, eventType eventlogv1.EventType, event []byte, metadata map[string][]byte) error {
-	if pctx.SessionType == SessionTypeMachine {
+	if pctx.IdentityType == identityTypeMachine {
 		return p.writeOnReceiveMachine(pctx, eventType, event, metadata)
 	}
 	return p.writeOnReceive(pctx.SID, eventType, event, metadata)

@@ -111,7 +111,6 @@ type Session struct {
 	ExitCode             *int                    `gorm:"column:exit_code"`
 	Review               *SessionReview          `gorm:"column:review;->"`
 	SessionBatchID       *string                 `gorm:"column:session_batch_id"`
-	Type                 string                  `gorm:"column:type"`
 	MachineIdentityID    *string                 `gorm:"column:machine_identity_id"`
 	IdentityType         string                  `gorm:"column:identity_type"`
 	CorrelationID        *string                 `gorm:"column:correlation_id"`
@@ -227,7 +226,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	SELECT
 		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
-		s.machine_identity_id, s.identity_type, s.correlation_id, s.type,
+		s.machine_identity_id, s.identity_type, s.correlation_id,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.guardrails_info,
 		octet_length(b.blob_stream::text) - 4 AS blob_input_size, -- sub 4 for the db header
 		c.resource_name,
@@ -472,8 +471,8 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 // UpsertSession updates or create all attributes of a session with exception of
 // session streams
 func UpsertSession(sess Session) error {
-	if sess.Type == "" {
-		sess.Type = "human"
+	if sess.IdentityType == "" {
+		sess.IdentityType = "user"
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		// generate deterministic uuid based on the session id to avoid duplicates
@@ -521,7 +520,6 @@ func UpsertSession(sess Session) error {
 				MachineIdentityID:    sess.MachineIdentityID,
 				IdentityType:         sess.IdentityType,
 				CorrelationID:        sess.CorrelationID,
-				Type:                 sess.Type,
 				CreatedAt:            sess.CreatedAt,
 				EndSession:           sess.EndSession,
 				AIAnalysis:           sess.AIAnalysis,

@@ -2,9 +2,6 @@ BEGIN;
 
 SET search_path TO private;
 
-CREATE TYPE enum_session_type AS ENUM ('human', 'machine');
-ALTER TABLE sessions ADD COLUMN type enum_session_type NOT NULL DEFAULT 'human';
-
 CREATE TABLE session_interactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES sessions(id),
